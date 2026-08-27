@@ -260,8 +260,7 @@ final class FixSetTests: XCTestCase {
         }
 
         await store.delete(mistake, in: live.id)
-        XCTAssertEqual(store.restorable?.set.id, mistake.id)
-        let undone = await store.restore()
+        let undone = await store.restore(mistake, in: live.id)
         XCTAssertTrue(undone)
 
         XCTAssertEqual(store.sets.map(\.reps), [5, 4])
@@ -431,7 +430,8 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.fix])
 
         server.refuseFix = nil
-        await store.flushPendingSets(force: true)
+        clockMs += SetQueue.undoWindowMs
+        await store.flushPendingSets()
 
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5, 85])
     }
@@ -488,9 +488,9 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1", "set_2"],
                        "inside its window the log still holds the row")
         XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.delete])
-        XCTAssertEqual(store.restorable?.set.id, "set_2")
 
-        await store.flushPendingSets(force: true)
+        clockMs += SetQueue.undoWindowMs
+        await store.flushPendingSets()
 
         XCTAssertEqual(server.deleted, ["set_2"])
         XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1"])
@@ -504,28 +504,40 @@ final class FixSetTests: XCTestCase {
         let store = makeStore(sync: server, undoWindowMs: 9_000)
         await store.connect(to: account(signedIn: true))
 
-        await store.delete(set("set_1", 82.5, 5, at: 2_000, number: 1), in: "ses_1")
-        let undone = await store.restore()
+        let taken = set("set_1", 82.5, 5, at: 2_000, number: 1)
+        await store.delete(taken, in: "ses_1")
+        let undone = await store.restore(taken, in: "ses_1")
         XCTAssertTrue(undone)
 
-        await store.flushPendingSets(force: true)
+        clockMs += SetQueue.undoWindowMs
+        await store.flushPendingSets()
 
         XCTAssertTrue(server.deleted.isEmpty, "nothing was ever deleted")
         XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1"])
         XCTAssertEqual(server.corrected, ["set_1"], "what came back re-asserts what this device holds")
-        XCTAssertNil(store.restorable, "one deletion, one undo")
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 0, "one deletion, one undo, nothing owed")
     }
 
-    func testADeleteCannotBeTakenBackOnceItsWindowHasClosed() async {
+    // The window register is what refuses an undo past its own clock (`WithheldWindowTests`). Asked
+    // anyway, the store offers the row back as an append under the id that went out rather than
+    // pretending the DELETE never happened — and a finished session refusing that append is SAID.
+    func testARestoreAfterTheDeleteWentIsOfferedAsAnAppendAndItsRefusalIsSaid() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
 
-        await store.delete(set("set_1", 82.5, 5, at: 2_000, number: 1), in: "ses_1")
+        let gone = set("set_1", 82.5, 5, at: 2_000, number: 1)
+        await store.delete(gone, in: "ses_1")
 
-        XCTAssertNil(store.restorable)
-        let undone = await store.restore()
-        XCTAssertFalse(undone)
-        XCTAssertEqual(server.deleted, ["set_1"])
+        XCTAssertEqual(server.deleted, ["set_1"], "a zero-length window sends at once")
+        XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_2"])
+
+        let putBack = await store.restore(gone, in: "ses_1")
+        XCTAssertTrue(putBack)
+
+        XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_2"], "a finished session takes no new set")
+        XCTAssertEqual(store.refusals.map(\.id), ["set_1"])
+        XCTAssertEqual(store.refusals.map(\.reason), ["the session closed before this set reached it"])
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "and nothing is left owed")
     }
 
     func testAShelfDeleteTakenBackPutsTheRowBackWhereItWas() async {
@@ -533,10 +545,11 @@ final class FixSetTests: XCTestCase {
         let store = makeStore(sync: nil, undoWindowMs: 9_000)
         await store.connect(to: account(signedIn: false))
 
-        await store.delete(set("set_1", 82.5, 5, at: 2_000), in: "ses_local")
+        let taken = set("set_1", 82.5, 5, at: 2_000)
+        await store.delete(taken, in: "ses_local")
         XCTAssertEqual(shelf().session("ses_local")?.sets.map(\.id), ["set_2"])
 
-        let undone = await store.restore()
+        let undone = await store.restore(taken, in: "ses_local")
         XCTAssertTrue(undone)
 
         XCTAssertEqual(shelf().session("ses_local")?.sets.map(\.id), ["set_1", "set_2"])
@@ -550,18 +563,19 @@ final class FixSetTests: XCTestCase {
         let store = makeStore(sync: server, undoWindowMs: 9_000)
         await store.connect(to: account(signedIn: true))
 
-        await store.delete(set("set_2", 100, 4, at: 3_000), in: "ses_local")
+        let taken = set("set_2", 100, 4, at: 3_000)
+        await store.delete(taken, in: "ses_local")
 
         server.online = true
         await store.connect(to: account(signedIn: true))
         XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "the claim took the shelf while the window was open")
         XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "and the deleted row never went")
         XCTAssertNotNil(server.finishes["ses_local"], "the claim finished the session on the log")
-        XCTAssertEqual(store.restorable?.set.id, "set_2", "the offer is still on screen")
 
-        let undone = await store.restore()
+        let undone = await store.restore(taken, in: "ses_local")
         XCTAssertTrue(undone)
-        await store.flushPendingSets(force: true)
+        clockMs += SetQueue.undoWindowMs
+        await store.flushPendingSets()
 
         XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "a finished session takes no new set")
         XCTAssertEqual(store.refusals.map(\.id), ["set_2"])

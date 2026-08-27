@@ -887,6 +887,148 @@ TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
   }
 }
 
+// The two halves of the note contract, against the column: a correction that never names the note
+// leaves the lifter's own word standing, and an empty note is the CLEAR — stored as '', never null.
+TEST(pg_gym_a_correction_leaves_a_note_it_does_not_name_and_stores_an_empty_one_as_the_clear) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+                     82.5, 8, SetKind::working, 8.5, "felt heavy", t1 + 1'000});
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+
+  SetFix rpeOnly;
+  rpeOnly.rpeNamed = true;
+  rpeOnly.rpe = 7.5;
+  std::optional<Set> moved = repo.updateSet(wm::UserId{kUser}, corrected(*stored, rpeOnly));
+  REQUIRE(moved.has_value());
+  CHECK_EQ(moved->note, std::string("felt heavy"));
+  CHECK_EQ(moved->rpe, std::optional<double>(7.5));
+
+  SetFix clearsTheNote;
+  clearsTheNote.note = "";
+  std::optional<Set> cleared = repo.updateSet(wm::UserId{kUser}, corrected(*moved, clearsTheNote));
+  REQUIRE(cleared.has_value());
+  CHECK_EQ(cleared->note, std::string(""));
+  CHECK_EQ(cleared->rpe, std::optional<double>(7.5));   // the clear named the note alone
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result row = w.exec_params(
+        "SELECT note, note IS NULL, rpe::float8 FROM gym_sets WHERE id = $1", "set_pg000001");
+    REQUIRE_EQ(row.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(row[0][0].as<std::string>(), std::string(""));
+    CHECK_FALSE(row[0][1].as<bool>());
+    CHECK_EQ(row[0][2].as<double>(), 7.5);
+  }
+}
+
+// The domain's ceiling is 4000 BYTES; the column is unbounded `text`, so it takes what the domain
+// passed and hands it back whole — bytes, not characters (this note is 3999 characters).
+TEST(pg_gym_a_four_thousand_byte_note_survives_the_column_whole) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+
+  SetFix atTheBound;
+  atTheBound.note = std::string(kMaxSetNoteBytes - 2, 'x') + "\xC3\xA9";
+  std::optional<Set> fixed = repo.updateSet(wm::UserId{kUser}, corrected(*stored, atTheBound));
+
+  REQUIRE(fixed.has_value());
+  CHECK_EQ(fixed->note, *atTheBound.note);
+  CHECK_EQ(fixed->note.size(), static_cast<std::size_t>(4000));
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result row = w.exec_params(
+        "SELECT octet_length(note), char_length(note) FROM gym_sets WHERE id = $1", "set_pg000001");
+    REQUIRE_EQ(row.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(row[0][0].as<int>(), 4000);
+    CHECK_EQ(row[0][1].as<int>(), 3999);
+  }
+}
+
+// A fix that overtakes the append it corrects cannot destroy the only copy of a set, because it
+// cannot WRITE one: the UPDATE matches no row, the revision CTE copies no row, and nothing lands.
+TEST(pg_gym_a_correction_of_a_set_the_store_never_held_writes_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  const Set owed{SetId{"set_pg000009"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1,
+                 47.5, 4, SetKind::drop, 9.5, "the fix that arrived first", t1 + 1'000};
+
+  CHECK_EQ(repo.updateSet(wm::UserId{kUser}, owed), std::optional<Set>());
+
+  CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000009"}), std::optional<Set>());
+  CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_sets WHERE id = $1", "set_pg000009").size(),
+             static_cast<std::size_t>(0));
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE set_id = $1", "set_pg000009").size(),
+             static_cast<std::size_t>(0));
+  }
+  // And the append that was owed still lands, under its own id, carrying its own values.
+  SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000009", 85.0, t1 + 2'000));
+  REQUIRE(landed.set.has_value());
+  CHECK_EQ(landed.set->weightKg, 85.0);
+  CHECK_EQ(landed.set->note, std::string(""));
+  CHECK_EQ(landed.set->rpe, std::optional<double>());
+}
+
+// The domain takes any number in 1–10; the column is numeric(3,1) and keeps ONE decimal. The halves
+// the fix sheets send cross unchanged; a finer value is rounded, and the reply says so at once.
+TEST(pg_gym_the_rpe_column_keeps_one_decimal_and_the_reply_carries_what_it_kept) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+
+  for (double rated : {6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0}) {
+    SetFix fix;
+    fix.rpeNamed = true;
+    fix.rpe = rated;
+    std::optional<Set> fixed = repo.updateSet(wm::UserId{kUser}, corrected(*stored, fix));
+    REQUIRE(fixed.has_value());
+    CHECK_EQ(fixed->rpe, std::optional<double>(rated));
+  }
+
+  SetFix finer;
+  finer.rpeNamed = true;
+  finer.rpe = 8.25;
+  std::optional<Set> rounded = repo.updateSet(wm::UserId{kUser}, corrected(*stored, finer));
+  REQUIRE(rounded.has_value());
+  CHECK_EQ(rounded->rpe, std::optional<double>(8.3));   // the column's scale, told to the client
+
+  SetFix cleared;
+  cleared.rpeNamed = true;
+  std::optional<Set> empty = repo.updateSet(wm::UserId{kUser}, corrected(*stored, cleared));
+  REQUIRE(empty.has_value());
+  CHECK_EQ(empty->rpe, std::optional<double>());
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result row = w.exec_params("SELECT rpe IS NULL FROM gym_sets WHERE id = $1", "set_pg000001");
+    REQUIRE_EQ(row.size(), static_cast<std::size_t>(1));
+    CHECK(row[0][0].as<bool>());
+  }
+}
+
 // The lock is its OWN statement: a data-modifying CTE reads the snapshot its statement began with, taken
 // before the lock is granted, so without it two corrections copy the same pre-existing row.
 TEST(pg_gym_parallel_corrections_of_one_set_keep_every_version_that_ever_stood) {

@@ -66,7 +66,6 @@ class TargetSheetSignAndClearTests {
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},
-                onDelete = {},
                 onClose = {},
                 say = {},
             )

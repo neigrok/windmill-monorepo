@@ -67,8 +67,9 @@ class FixSheetKeypadTests {
         compose.onNodeWithText("70").assertIsDisplayed()
         compose.onNodeWithText("Save the fix").performClick()
         compose.runOnIdle {
-            assertEquals(70.0, saved()!!.weightKg, 0.0)
-            assertEquals("nothing else moved", 5, saved()!!.reps)
+            assertEquals(70.0, saved()!!.weightKg)
+            assertNull("a fix names only what it changes, so nothing else is on the wire",
+                saved()!!.reps)
         }
     }
 
@@ -85,7 +86,7 @@ class FixSheetKeypadTests {
         compose.onNodeWithText("Save the fix").performClick()
         compose.runOnIdle {
             assertEquals(8, saved()!!.reps)
-            assertEquals(82.5, saved()!!.weightKg, 0.0)
+            assertNull("the weight did not move, so it is not in the fix", saved()!!.weightKg)
         }
     }
 

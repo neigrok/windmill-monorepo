@@ -50,6 +50,11 @@ import works.windmill.platform.design.WindmillSpace
 
 // Everything here RENDERS the `Review` the domain computed and nothing here computes one.
 object Finish {
+    // The one act, said the same way at all three of its doors — the finish screen's slight
+    // session, the log row's long press, and the session review screen. Read from here by each of
+    // them so three spellings of one act cannot drift apart.
+    const val discard = "Discard session"
+
     data class Head(val title: String, val subtitle: String, val at: String)
 
     data class Tile(val value: String, val label: String)
@@ -382,25 +387,12 @@ private fun KeepAsRoutine(
     }
 }
 
-// It deletes for good: nothing on this screen may suggest it can be got back, and the tap that does
-// it is confirmed — there is no undo behind a discard.
+// The confirmation is gone and so is the sentence it carried: a destructive act gets an UNDO, not a
+// dialog (13-gestures Law 2), and the session is withheld for nine seconds with nothing sent. The
+// screen leaves at once, because the delete has already happened as far as the lifter is concerned.
 @Composable
 private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
     if (finished.slight) {
-        var confirming by remember { mutableStateOf(false) }
-        if (confirming) {
-            ConfirmDialog(
-                title = "Discard this session?",
-                body = "Discarding deletes the session and its sets. There is no undoing it.",
-                confirm = "Discard",
-                destructive = true,
-                onConfirm = {
-                    confirming = false
-                    onDiscard()
-                },
-                onKeep = { confirming = false },
-            )
-        }
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier.fillMaxWidth(),
@@ -411,10 +403,10 @@ private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable(role = Role.Button) { confirming = true },
+                    .clickable(role = Role.Button, onClick = onDiscard),
             ) {
                 Text(
-                    "Discard session",
+                    Finish.discard,
                     style = WindmillFont.body(16, FontWeight.SemiBold),
                     color = GymSkin.alarmInk,
                 )

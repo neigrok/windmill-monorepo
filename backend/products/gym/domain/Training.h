@@ -58,6 +58,10 @@ constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
 // The ceiling on every display name a lifter types, counted in BYTES.
 constexpr std::size_t kMaxNameLength = 240;
 
+// The ceiling on a set's note, counted in BYTES and never trimmed. The `note` column is unbounded
+// `text`, so this is the ONLY enforcement — and `log_set`'s schema states the same number.
+constexpr std::size_t kMaxSetNoteBytes = 4000;
+
 // Trims the ends before the ceiling is measured. ASCII whitespace only.
 std::string trimmedName(std::string text);
 

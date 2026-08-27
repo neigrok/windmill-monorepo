@@ -299,8 +299,11 @@ class ClaimReplayTests {
         assertEquals("still one row per set — a correction is never a second row",
             listOf("set_a", "set_b"), server.sets.getValue("ses_1").map { it.id })
         assertEquals(listOf(90.0, 82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertEquals("only the set that actually moved was corrected",
-            listOf(Triple("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))),
+        assertEquals("only the set that actually moved was corrected, and the replay restates the " +
+            "whole stored row rather than a diff — the account's copy must end up saying what the " +
+            "shelf says, rpe and note included",
+            listOf(Triple("ses_1", "set_a", SetFix(aSet("set_a", at = 1_100)
+                .copy(weightKg = 90.0, reps = 3, kind = SetKind.Working)))),
             server.fixes)
         assertTrue("and the session settled", localLog.finished.isEmpty())
     }
@@ -344,8 +347,8 @@ class ClaimReplayTests {
             server.sets.getValue("ses_1").map { it.id })
         assertEquals("and the account holds what the lifter fixed it to",
             listOf(90.0, 82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertEquals(listOf(Triple("ses_1", "set_a",
-            SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))), server.fixes)
+        assertEquals(listOf(Triple("ses_1", "set_a", SetFix(aSet("set_a", at = 1_100)
+            .copy(weightKg = 90.0, reps = 3, kind = SetKind.Working)))), server.fixes)
         assertTrue(localLog.finished.isEmpty())
     }
 

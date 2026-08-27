@@ -100,7 +100,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = emptyList(), lookedAt = setOf("prop_1"),
-                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = { doors += it.id }, say = {},
+                backTo = "Coach", onBack = {}, onReview = { doors += it.id }, say = {},
             )
         }
 
@@ -126,7 +126,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = emptyList(), lookedAt = emptySet(),
-                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
+                backTo = "Coach", onBack = {}, onReview = {}, say = {},
             )
         }
         compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
@@ -159,7 +159,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = receipts, lookedAt = emptySet(),
-                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
+                backTo = "Coach", onBack = {}, onReview = {}, say = {},
             )
         }
         compose.onNodeWithText("1 change to Push Day · waiting").assertIsDisplayed()

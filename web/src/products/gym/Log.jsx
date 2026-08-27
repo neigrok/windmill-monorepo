@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import { BodyweightReading, useBodyweight, WeighInChip, WeighInSheet } from './bodyweight/Bodyweight.jsx';
-import { deletedLine, deleteFailure, fixFailure, movesAfterRead, setsAfter, UNDO_MS } from './fix.js';
+import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, e1rmLabel, finishHref, firstSessionLabel,
@@ -35,7 +35,12 @@ export function LogNotOpen({ log, onSignIn }) {
 export function LogList({ log, onSignIn }) {
   const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
-  const weeks = weeksOf(summaries, { complete: older.status === 'end' });
+  // A session withheld for deletion is off the log for the length of its window — the transient is
+  // the only place it still exists, and the only way back — and off it for good once the store has
+  // answered for it.
+  const discarded = log.hidden('session');
+  const shown = summaries.filter((summary) => !discarded.has(summary.id));
+  const weeks = weeksOf(shown, { complete: older.status === 'end' });
   // The reading at the head and the chip in the reach band are the two halves of one number.
   const weights = useBodyweight();
   const [weighing, setWeighing] = useState(false);
@@ -45,8 +50,8 @@ export function LogList({ log, onSignIn }) {
       <header className="gym-head gym-log-head">
         <div>
           <h1 className="gym-title">The log</h1>
-          {summaries.length > 0 && (
-            <p className="gym-log-count">{loadedLine(summaries.length, weeks.length)}</p>
+          {shown.length > 0 && (
+            <p className="gym-log-count">{loadedLine(shown.length, weeks.length)}</p>
           )}
           <BodyweightReading latest={weights.latest} />
         </div>
@@ -70,13 +75,13 @@ export function LogList({ log, onSignIn }) {
       )}
       {phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
       {phase === 'failed' && <LogNotOpen log={log} onSignIn={onSignIn} />}
-      {phase !== 'loading' && phase !== 'failed' && summaries.length === 0 && (
+      {phase !== 'loading' && phase !== 'failed' && shown.length === 0 && (
         <>
           <p className="gym-quiet">No sessions yet.</p>
           <p className="gym-quiet">The first one you log lands here, newest first.</p>
         </>
       )}
-      {summaries.length > 0 && (
+      {shown.length > 0 && (
         <>
           {weeks.map((week) => (
             <section className="gym-week" key={week.startedAt}>
@@ -90,7 +95,7 @@ export function LogList({ log, onSignIn }) {
               </ul>
             </section>
           ))}
-          {phase !== 'failed' && <LogFoot older={older} oldest={summaries[summaries.length - 1]} />}
+          {phase !== 'failed' && <LogFoot older={older} oldest={shown[shown.length - 1]} />}
         </>
       )}
       <div className="gym-reach-spacer" aria-hidden="true" />
@@ -157,58 +162,38 @@ function SessionRow({ summary }) {
 }
 
 export function SessionDetail({ id, log }) {
-  // Destructured: depending on the whole `log` literal would re-fire the withheld delete's cleanup every render.
-  const { say, reloadLog } = log;
+  const { say, reloadLog, withhold } = log;
   const view = useGymRead(
     () => Promise.all([gymApi.session(id), gymApi.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
     [id],
   );
-  // moves: set id → the store's row, or null for a deleted set.
+  // moves: set id → the store's row, for a set this screen corrected in place. A set DELETED is not
+  // here in any form: whether it is still withheld or already spent, the room is what knows, and the
+  // room outlives this screen.
   const [moves, setMoves] = useState(() => new Map());
   const [fixing, setFixing] = useState(null);
 
-  // Deletes are withheld UNDO_MS before sending; a list, since several can be armed at once.
-  const withheld = useRef([]);
-
-  const settle = useCallback((setId) => {
-    const held = withheld.current.find((each) => each.set.id === setId);
-    if (held) clearTimeout(held.timer);
-    withheld.current = withheld.current.filter((each) => each.set.id !== setId);
-    return held?.set ?? null;
-  }, []);
-
-  const sendDelete = useCallback(async (setId) => {
-    const set = settle(setId);
-    if (!set) return;
-    try {
-      await gymApi.deleteSet(id, setId);
-    } catch (error) {
-      setMoves((current) => new Map(current).set(setId, set));
-      say(deleteFailure(error));
-      return;
-    }
-    reloadLog();
-  }, [id, settle, say, reloadLog]);
-
-  // Unmount sends every still-withheld delete; a closed tab sends none and the set stands.
-  useEffect(() => () => {
-    withheld.current.forEach((held) => {
-      sendDelete(held.set.id);
-      say(deletedLine(held.set));
-    });
-  }, [sendDelete, say]);
-
-  const withholdDelete = (set) => {
+  // Withheld: nothing is on the wire until the window closes, and leaving this screen does not close
+  // it. The transient the room draws is the only Undo there is.
+  const dropSet = (set) => {
     setFixing(null);
-    setMoves((current) => new Map(current).set(set.id, null));
-    withheld.current = [...withheld.current, { set, timer: setTimeout(() => sendDelete(set.id), UNDO_MS) }];
-    say(deletedLine(set), { label: 'Undo', run: () => { if (settle(set.id)) setMoves((current) => new Map(current).set(set.id, set)); } });
+    withhold({
+      kind: 'set',
+      id: set.id,
+      line: deletedLine(set),
+      send: async () => {
+        await gymApi.deleteSet(id, set.id);
+        await reloadLog();
+      },
+      refused: (error) => say(deleteFailure(error)),
+    });
   };
 
-  // A re-read drops the corrections in hand; the withheld deletes stay, nothing was sent for them.
+  // A re-read drops the corrections in hand; the deletes it must not drop are the room's, and a
+  // re-read cannot reach them.
   const reread = () => {
-    setMoves(movesAfterRead);
+    setMoves(new Map());
     view.retry();
   };
 
@@ -248,8 +233,10 @@ export function SessionDetail({ id, log }) {
   }
 
   const { session } = view.data.detail;
-  // Fold the moves in before anything is derived off the sets.
-  const sets = setsAfter(view.data.detail.sets, moves);
+  // Fold the moves in, then take out what the window is holding, before anything is derived off the
+  // sets: a withheld delete is as gone from this screen as a settled one, and comes back on Undo.
+  const goneSets = log.hidden('set');
+  const sets = setsAfter(view.data.detail.sets, moves).filter((set) => !goneSets.has(set.id));
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
   const frozen = planFrozenLabel(session);
   return (
@@ -318,7 +305,7 @@ export function SessionDetail({ id, log }) {
           movement={names.get(fixing.exerciseId) ?? fixing.exerciseId}
           session={session}
           onSave={(fix) => saveFix(fixing, fix)}
-          onDelete={() => withholdDelete(fixing)}
+          onDelete={() => dropSet(fixing)}
           onClose={() => setFixing(null)}
         />
       )}

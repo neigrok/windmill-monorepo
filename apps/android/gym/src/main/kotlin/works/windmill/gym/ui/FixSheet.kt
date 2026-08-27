@@ -14,8 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,13 +31,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
@@ -53,10 +63,15 @@ fun FixSheet(
     var weightKg by remember(set.id) { mutableDoubleStateOf(set.weightKg) }
     var reps by remember(set.id) { mutableIntStateOf(set.reps) }
     var kind by remember(set.id) { mutableStateOf(set.kind) }
+    // Seeded from what the LOG holds, so a sheet opened and closed sends nothing: only a field the
+    // lifter moved travels, and the note's empty string is a clear rather than an omission.
+    var rpe by remember(set.id) { mutableStateOf(set.rpe) }
+    var note by remember(set.id) { mutableStateOf(set.note) }
     // The rack's own pad, raised from the numeral it corrects. It takes the whole sheet rather than
     // opening a second one over it: a modal over a modal is a layer the phone does not need, and the
     // pad is a whole answer to the same question the sheet is asking.
     var typing by remember(set.id) { mutableStateOf<KeypadEntry.Mode?>(null) }
+    val haptics = rememberGymHaptics()
 
     val pad = typing
     if (pad != null) {
@@ -72,10 +87,15 @@ fun FixSheet(
         return
     }
 
+    // The sheet SCROLLS: a note is the one field here that can grow, and without this it grew the
+    // sheet until Save the fix and Delete set were off the bottom of a phone with the keyboard up —
+    // the two acts the sheet exists for, unreachable behind the lifter's own words.
     Column(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
+            .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(horizontal = WindmillSpace.x4)
             .padding(top = WindmillSpace.x5, bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -164,14 +184,53 @@ fun FixSheet(
             onPick = { kind = it },
         )
 
+        RpeBand(rpe, onPick = { rpe = it })
+
+        // The lifter's own words about this set. The log answers an overlong note with one generic
+        // sentence about the whole fix, so the bound is counted HERE, in bytes, and said at the
+        // field — this is the only reason anybody will read.
+        val tooLong = SetEffort.noteOverlong(note)
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            label = { Text(SetEffort.noteLabel) },
+            isError = tooLong,
+            supportingText = {
+                Text(
+                    if (tooLong) SetEffort.noteTooLong else SetEffort.noteCaption,
+                    style = GymType.numeral(11),
+                    color = if (tooLong) GymSkin.alarmInk else GymSkin.inkFaint,
+                )
+            },
+            textStyle = WindmillFont.body(15),
+            shape = RoundedCornerShape(WindmillRadius.md),
+            colors = gymFieldColours(),
+            // Six lines and then it scrolls inside itself: a four-thousand-byte note may not be
+            // allowed to push the counter that measures it out of the sheet.
+            maxLines = 6,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // The same counter the note editor draws, drawn the same way: chrome only in the last fifth,
+        // alarm past the bound, and off the same count the refusal above reads.
+        SetEffort.noteCounter(note)?.let {
+            Text(
+                it,
+                style = GymType.numeral(12),
+                color = if (tooLong) GymSkin.alarmInk else GymSkin.inkFaint,
+            )
+        }
+
         Box(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
+                .alpha(if (tooLong) 0.4f else 1f)
                 .background(GymSkin.accent)
-                .clickable(role = Role.Button) {
-                    onSave(SetFix(weightKg = weightKg, reps = reps, kind = kind))
+                .clickable(enabled = !tooLong, role = Role.Button) {
+                    haptics.saved()
+                    onSave(SetFix(set, weightKg = weightKg, reps = reps, kind = kind,
+                                  rpe = rpe, note = note))
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -190,6 +249,57 @@ fun FixSheet(
                 Text("$it keeps its own numbers", style = GymType.numeral(12), color = GymSkin.inkFaint)
             }
         }
+    }
+}
+
+// Nine half-points and a way back to nothing. A segmented row of ten would give each seat 34dp on a
+// phone, under the tap floor, so the band SCROLLS and every seat keeps its full width — the choice a
+// segmented control makes is the same one, and only the geometry differs.
+@Composable
+private fun RpeBand(picked: Double?, onPick: (Double?) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+        Text(SetEffort.rpeLabel, style = WindmillFont.body(14), color = GymSkin.inkDim)
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // The way back is the one seat holding a word rather than a numeral, so it takes the
+            // body face; every other seat is tabular, as every numeral in this room is.
+            RpeSeat(SetEffort.rpeUnrated, SetEffort.rpeUnrated, picked == null, numeral = false) { onPick(null) }
+            SetEffort.rpeBand.forEach { value ->
+                RpeSeat(SetEffort.rpeNumeral(value), SetEffort.rpeReading(value), picked == value) { onPick(value) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RpeSeat(label: String, said: String, picked: Boolean, numeral: Boolean = true,
+                    onTap: () -> Unit) {
+    Box(
+        Modifier
+            .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
+            .clip(RoundedCornerShape(WindmillRadius.md))
+            .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
+            .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
+                    RoundedCornerShape(WindmillRadius.md))
+            .clickable(role = Role.RadioButton, onClick = onTap)
+            // A bare numeral would be read out as a number with no scale, so every seat says
+            // which one it belongs to; the unrated seat's label already is that sentence.
+            .semantics(mergeDescendants = true) {
+                contentDescription = said
+                selected = picked
+            }
+            .padding(horizontal = WindmillSpace.x2),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = if (numeral) GymType.numeral(15, if (picked) FontWeight.Bold else FontWeight.Normal)
+                    else WindmillFont.body(14, if (picked) FontWeight.Bold else FontWeight.Normal),
+            color = if (picked) GymSkin.accent else GymSkin.inkDim,
+            maxLines = 1,
+        )
     }
 }
 

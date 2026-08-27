@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WindmillPlatform
 
 // The expiry is printed from the server's reply, never counted off this device's clock.
@@ -112,6 +113,23 @@ struct CoachDoors {
     let base: URL
     let mint: () async -> Result<SessionShare, TrainingStore.WriteFailure>
     let revoke: () async -> TrainingStore.WriteFailure?
+}
+
+// The system share sheet over a link the log has only just minted. `ShareLink` needs its value up
+// front and a share token is a round trip, so this is the one place the room reaches for UIKit.
+struct SharedLink: Identifiable, Equatable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let link: SharedLink
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [link.url], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 struct CoachShareCard: View {

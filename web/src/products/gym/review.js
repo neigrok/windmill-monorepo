@@ -67,9 +67,7 @@ export function comparison(against, catalog) {
 }
 
 // Discarding deletes the session and its sets, and the wire has no restore.
-export const DISCARD_CONFIRM = {
-  title: 'Discard this session?',
-  body: 'Discarding deletes the session and its sets. There is no undoing it.',
-  confirm: 'Discard',
-  keep: 'Keep it',
-};
+// The discard is withheld like every other delete in this room, so the sentence the transient says
+// is all there is: a confirmation on an act that has an undo is ceremony (13-gestures.md Law 2), and
+// the words that promised no way back are false now that there is one.
+export const SESSION_DELETED = 'Session deleted.';

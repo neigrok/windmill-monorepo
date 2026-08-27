@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../../src/shell/apiBase.js';
-import { browserWith, findByClass, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
+import { browserWith, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
 
-const quiet = { catalog: [], session: null, say: () => {} };
+// The room a screen is drawn inside: it must carry the withheld window, because every screen here
+// draws around what the window is holding.
+const quiet = roomLog();
 
 function thread(over = {}) {
   return {

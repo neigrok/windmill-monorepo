@@ -1,6 +1,7 @@
 package works.windmill.gym.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,7 +104,7 @@ class ThreadTests {
         assertEquals("1 conversation · yours to delete", Threads.counted(1))
         assertEquals("0 conversations · yours to delete", Threads.counted(0))
         assertTrue("nothing on this screen speaks of unread anything",
-            listOf(Threads.counted(9), Threads.none, Threads.past, Threads.deleteRule, Threads.open,
+            listOf(Threads.counted(9), Threads.none, Threads.past, Threads.open,
                 Threads.outOfReach)
                 .none { it.contains("unread", ignoreCase = true) || it.contains("new message", ignoreCase = true) })
         assertTrue("no member of Threads is named for an unread anything",
@@ -125,13 +126,19 @@ class ThreadTests {
                 routineId = "rt_1", routine = "Push A").line(august))
     }
 
+    // The act left this screen for the list's row, and every word about it went too: what the delete
+    // KEEPS is now said by the transient at the moment of the act, and what it cannot take back was
+    // deleted outright — it can, for nine seconds, like every other delete in the room.
     @Test
-    fun theDeleteSaysWhatItKeepsBeforeItIsOffered() {
-        assertEquals(
-            "Deleting the conversation keeps what it changed: an applied change stays in the " +
-                "routine’s history. There is no undoing the delete.",
-            Threads.deleteRule,
-        )
+    fun nothingOnThisScreenLecturesAboutADeleteThatIsMadeSomewhereElse() {
+        val everything = listOf(Threads.title, Threads.open, Threads.door, Threads.conversation,
+            Threads.none, Threads.past, Threads.outOfReach, Threads.counted(2))
+        assertTrue("no standing caption survives about deleting",
+            everything.none { it.contains("Deleting", ignoreCase = true) })
+        assertFalse("and nothing here claims finality the undo has made false",
+            everything.any { it.contains("no undoing", ignoreCase = true) })
+        assertTrue("the constant that carried it is gone, not merely unused",
+            Threads::class.java.declaredFields.map { it.name }.none { it == "deleteRule" })
     }
 
     @Test

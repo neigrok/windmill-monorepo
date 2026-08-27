@@ -12,14 +12,14 @@ struct RoutinesScreen: View {
     // Proposals whose review was closed without a decision this visit: the card reads `still waiting`.
     let undecided: Set<String>
     let onOpen: (String) -> Void
+    // Withheld for nine seconds and taken back on the room's transient: nothing is on the wire yet.
+    let onDelete: (Routine) -> Void
     let onNew: () -> Void
     let onStartLogging: () -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
     let onSettings: () -> Void
     let onSignIn: () -> Void
-    // nil once something already reaches this log.
-    let onConnect: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
 
@@ -37,7 +37,20 @@ struct RoutinesScreen: View {
                     .listRowInsets(rowInsets)
             } else {
                 Section {
-                    ForEach(store.routines) { routine in row(routine) }
+                    ForEach(store.routines) { routine in
+                        row(routine)
+                            // One action, trailing, no full swipe: Duplicate stays in the editor's
+                            // overflow, because two revealed actions hide the routine's own name
+                            // while the lifter decides which one they are deciding about.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    GymConfirm.revealed()
+                                    onDelete(routine)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
                 } header: {
                     Text("\(Readout.routineCount(store.routines.count)) · nothing running")
                         .font(GymType.numeral(11.5))
@@ -152,12 +165,12 @@ struct RoutinesScreen: View {
         .buttonStyle(.plain)
     }
 
+    // The connect pitch has two homes and this list is neither: the settings row below and the page
+    // it opens (`15-the-routine.md`, I33). A room-level interruption in the middle of doing something
+    // else is exactly what the other two homes were cut for.
     @ViewBuilder
     private var doors: some View {
         Section {
-            if let onConnect {
-                ConnectInvite(open: onConnect)
-            }
             Button(action: onSettings) {
                 HStack {
                     Label("Gym settings", systemImage: "gearshape")

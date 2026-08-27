@@ -1,13 +1,33 @@
 import AVFoundation
 import UIKit
 
-// Confirmation sound and haptic.
+// Confirmation sound, and the room's one haptic vocabulary (`13-gestures.md` Law 5, ledger `1z`):
+// light on a swipe, medium on a save, success on a finish. Nothing buzzes on a scroll, and nothing
+// buzzes twice for one act — a logged set is the medium below and no other.
+//
+// Only the set confirmation is gated on a preference, because that is the one the settings screen
+// names ("Set confirmation"). The other three are the platform's ordinary feedback and answer to the
+// system's own haptics switch.
 @MainActor
 enum GymConfirm {
     static func setLogged(under preferences: GymPreferences) {
         if preferences.confirmHaptic { tap.impactOccurred() }
         guard preferences.confirmSound else { return }
         play(hz: 760, seconds: 0.07)
+    }
+
+    // A swipe that reveals or acts — the walk between movements, a row's Delete, a notice dismissed.
+    static func revealed() {
+        stroke.impactOccurred()
+    }
+
+    // A correction, a routine, a weigh-in: something the lifter committed on purpose.
+    static func saved() {
+        tap.impactOccurred()
+    }
+
+    static func finished() {
+        landed.notificationOccurred(.success)
     }
 
     static func restLanded(under preferences: GymPreferences) {
@@ -17,6 +37,8 @@ enum GymConfirm {
     }
 
     private static let tap = UIImpactFeedbackGenerator(style: .medium)
+    private static let stroke = UIImpactFeedbackGenerator(style: .light)
+    private static let landed = UINotificationFeedbackGenerator()
 
     private static let engine = AVAudioEngine()
     private static let voice = AVAudioPlayerNode()

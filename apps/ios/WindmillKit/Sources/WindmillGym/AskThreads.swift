@@ -207,13 +207,6 @@ public enum AskThreads {
         about a plateau is still findable in six weeks.
         """
 
-    public static let delete = "Delete this conversation"
-
-    public static let deleteNote = """
-        The conversation goes for good. A change you applied stays in the routine’s history — that \
-        is a fact about your program, not a message.
-        """
-
     public static let reading = "reading your conversations…"
 
     public static let fromTheConversation = "Open the conversation"

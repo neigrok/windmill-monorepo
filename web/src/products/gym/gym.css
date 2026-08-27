@@ -754,6 +754,10 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-sheet.gym-fix {
   padding: 20px 16px 30px;
   border-radius: 26px 26px 0 0;
+  /* The one sheet in the room tall enough to pass the top of a phone: it scrolls inside itself
+     rather than pushing its own Save off the screen. */
+  max-height: 92vh;
+  overflow-y: auto;
 }
 .gym-fix-head {
   display: flex;
@@ -898,6 +902,59 @@ button.gym-set:focus-visible .gym-set-fix,
   background: var(--set-done-soft);
   color: var(--set-done);
 }
+/* Ten seats across a phone's width: `Not rated`, then six to ten by halves. They are one row and
+   never wrap — the band is read as a line, and a seat that dropped below the others would read as a
+   different control. */
+.gym-fix-rpe {
+  margin-top: 12px;
+}
+.gym-fix-rpe .gym-fix-label {
+  display: block;
+  flex: none;
+  margin-bottom: 6px;
+}
+.gym-rpes {
+  display: flex;
+  gap: 4px;
+}
+.gym-rpe {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--gym-line);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+/* The unrated seat carries words and not a glyph, so it takes the width its words need and the nine
+   numbers share what is left. Sized by content, it is the one seat that must not shrink. */
+.gym-rpe.is-unrated {
+  flex: 0 0 auto;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+.gym-rpe.is-on {
+  border-color: var(--gym-line-strong);
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+  font-weight: 800;
+}
+.gym-fix-note {
+  margin-top: 14px;
+}
+/* The line that keeps a RECORD apart from an instruction. It is the field's description and reads as
+   quietly as one; it is not an aside and never leaves the field. */
+.gym-fix-note-caption {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
 .gym-fix-save {
   width: 100%;
   height: 56px;
@@ -910,6 +967,12 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 16px;
   font-weight: 800;
   cursor: pointer;
+}
+/* A refused note is the one thing that holds the Save: it says why under the field, and the button
+   stays where it is rather than disappearing out from under the thumb. */
+.gym-fix-save.is-inert {
+  opacity: 0.45;
+  cursor: default;
 }
 .gym-fix-foot {
   margin-top: 10px;
@@ -1642,7 +1705,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* Destructive, and it cannot be undone. */
+/* Destructive, and withheld — the room's transient holds the way back for the length of the window. */
 .gym-short {
   margin-top: 18px;
 }
@@ -2156,8 +2219,11 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-/* Already over is a real state: a name arrives prefilled from a store whose own ceiling is 240
-   BYTES, so `70/60` is the true count of a field that has stopped accepting keys. */
+/* Already over is a real state, and every counter that wears this class reads it: a name arrives
+   prefilled from a store whose own ceiling is 240 BYTES, so `70/60` is the true count of a field
+   that has stopped accepting keys, and a set note opens from the store at whatever length it was
+   written. A counter past its bound is drawn in alarm ink wherever it is drawn — the note editor's
+   `.gym-note-count` says the same thing in the same token. */
 .gym-name-count.is-over {
   color: var(--alarm-ink);
 }
@@ -3088,7 +3154,8 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-thread-proposals {
   margin-top: 20px;
 }
-/* Armed, it does not turn red — there is no red in this product — it brightens. */
+/* One press, no arming: the delete is withheld and the room's transient carries the way back, so
+   nothing here has a second state to draw. There is no red in this product. */
 .gym-thread-delete {
   margin-top: 26px;
   padding-top: 16px;
@@ -3111,10 +3178,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
-}
-.gym-thread-delete-verb.is-armed {
-  border-color: var(--gym-ink);
-  color: var(--gym-ink);
 }
 /* Drawn only where the wire carried a thread. */
 .gym-proposal-thread,

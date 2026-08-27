@@ -20,6 +20,14 @@ public enum Readout {
         "\(weight(weightKg)) × \(reps)"
     }
 
+    // The column keeps one decimal, so a whole rating prints whole: `8`, never `8.0`.
+    public static func rpe(_ rated: Double) -> String {
+        guard rated.isFinite else { return "—" }
+        let held = (rated * 10).rounded() / 10
+        guard held != held.rounded() else { return String(Int(held)) }
+        return String(held)
+    }
+
     // nil reps is `max`, not a zero and not a blank.
     public static func repTarget(_ reps: Int?) -> String {
         guard let reps else { return "max" }

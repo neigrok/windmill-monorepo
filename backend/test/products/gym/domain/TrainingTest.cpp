@@ -420,6 +420,11 @@ TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
   }));
   CHECK(rejects([&] {
     SetFix fix;
+    fix.note = std::string(4001, 'x');
+    corrected(stored, fix);
+  }));
+  CHECK(rejects([&] {
+    SetFix fix;
     fix.note = std::string("x") + '\0' + "y";
     corrected(stored, fix);
   }));

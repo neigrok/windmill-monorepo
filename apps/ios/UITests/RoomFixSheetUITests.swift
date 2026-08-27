@@ -59,7 +59,57 @@ final class RoomFixSheetUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Save the fix"].exists, "the fix sheet lost its own commit")
     }
 
+    // D10 · a counter over its bound goes alarm wherever it is drawn, and drawing one costs the sheet
+    // vertical room. With a long note typed and the keyboard up, both of the sheet's commits — the
+    // save and the delete — still have to be reachable.
+    func testTheSheetStillReachesSaveAndDeleteUnderALongNoteWithTheKeyboardUp() {
+        logOneSetAndKeepTheSession()
+
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "20 × 5")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "the finished session drew no set to fix")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Fix this set"].waitForExistence(timeout: 10),
+                      "the set row opened no fix sheet")
+
+        let field = noteField
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "the fix sheet drew no note field")
+        field.tap()
+        XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 10), "the note raised no keyboard")
+        field.typeText(String(repeating: "felt heavy through the sticking point ", count: 6))
+
+        for commit in ["Save the fix", "Delete set"] {
+            let button = app.buttons[commit]
+            XCTAssertTrue(button.exists, "the sheet lost \(commit)")
+            XCTAssertTrue(scrolledTo(button),
+                          "\(commit) cannot be reached under a long note — \(app.debugDescription)")
+        }
+    }
+
     // MARK: - the ways in
+
+    // The sheet's own scroll view, never the app's middle: with a keyboard up the middle of the
+    // screen is the keyboard, and a swipe there scrolls nothing.
+    private func scrolledTo(_ button: XCUIElement) -> Bool {
+        // Named by what it holds: the keyboard puts a scroll view of its own on screen, and
+        // `firstMatch` picks that one often enough to make the drag land on nothing.
+        let sheet = app.scrollViews
+            .containing(NSPredicate(format: "label == %@", "Fix this set")).firstMatch
+        guard sheet.exists else { return false }
+        // Dragged between two points the keyboard does not cover, so the stroke lands on the sheet.
+        let from = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        let to = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        for _ in 0..<6 {
+            if button.isHittable { return true }
+            from.press(forDuration: 0.05, thenDragTo: to)
+        }
+        return button.isHittable
+    }
+
+    // A vertical `TextField` is a text view on some releases and a text field on others.
+    private var noteField: XCUIElement {
+        let views = app.textViews
+        return views.count > 0 ? views.firstMatch : app.textFields.firstMatch
+    }
 
     // One workout, one set, finished and kept — which lands the room on the session the fix sheet is
     // opened from. Kept rather than discarded: a discarded session has no set to correct.
@@ -85,6 +135,10 @@ final class RoomFixSheetUITests: XCTestCase {
             .first { $0.exists }
         XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")
         keep?.tap()
-        XCTAssertFalse(app.buttons["Discard session"].exists, "the finish sheet is still up")
+        // Named by the sheet's own head: the session review screen underneath draws a
+        // `Discard session` of its own now (Law 1), so that button no longer means "the sheet".
+        XCTAssertFalse(app.staticTexts["Session finished"].exists
+                       || app.staticTexts["Ended early"].exists,
+                       "the finish sheet is still up")
     }
 }

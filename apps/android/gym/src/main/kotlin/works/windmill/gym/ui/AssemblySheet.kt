@@ -27,9 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -229,16 +227,9 @@ fun AssemblySheet(
                 if (!row.canDrop) {
                     card()
                 } else {
-                    // `confirmValueChange` is a predicate and stays one: Compose consults it more than
-                    // once per gesture, so a drop performed inside it would be applied twice. The drop
-                    // is the settled value's own effect, which runs once.
-                    val swipe = rememberSwipeToDismissBoxState(
-                        confirmValueChange = { it != SwipeToDismissBoxValue.Settled },
-                    )
-                    LaunchedEffect(swipe.currentValue) {
-                        if (swipe.currentValue == SwipeToDismissBoxValue.Settled) return@LaunchedEffect
+                    val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
                         // A drop the walk refuses puts the row back where it was.
-                        if (!onDrop(row.id)) swipe.reset()
+                        if (!onDrop(row.id)) reset()
                     }
                     SwipeToDismissBox(
                         state = swipe,

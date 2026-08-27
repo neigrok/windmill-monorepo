@@ -70,6 +70,7 @@ class RoutinesScreenTests {
                 onJustStart = { doors += "start" },
                 onBuild = { drafts += it },
                 onOpenRoutine = { doors += "open:$it" },
+                onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
                 onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
@@ -99,18 +100,21 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // Duplicate alone: deleting a routine has no undo yet, so it stays inside the editor where it
-    // takes a trip to reach.
+    // The overflow carries BOTH now, and that is what satisfies Law 1 for this row's swipe for free:
+    // Delete is a real button a screen reader can reach, so the swipe declares no custom action of
+    // its own. Duplicate stays here rather than on a second swipe action, which would hide the row's
+    // own name behind the lane while a lifter decided.
     @Test
-    fun testTheRowsOverflowOffersDuplicateAndNothingDestructive() {
+    fun testTheRowsOverflowOffersDuplicateAndTheDeleteItsSwipeAlsoMakes() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
         val drafts = mutableListOf<RoutineDraft>()
-        home(scope, doors, drafts)
+        val store = home(scope, doors, drafts)
+        val routineId = store.routines.single().id
 
         compose.onNodeWithContentDescription("More for Push Day").performClick()
         compose.onNodeWithText("Duplicate").assertIsDisplayed()
-        compose.onNodeWithText("Delete", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Delete routine").assertIsDisplayed()
         compose.onNodeWithText("Duplicate").performClick()
 
         compose.runOnIdle {
@@ -119,6 +123,13 @@ class RoutinesScreenTests {
             assertEquals("and the lifter names it themselves", "", drafts.single().name)
             assertEquals(listOf("bench-press"), drafts.single().entries.map { it.exerciseId })
             assertEquals("nothing else fired", emptyList<String>(), doors)
+        }
+
+        compose.onNodeWithContentDescription("More for Push Day").performClick()
+        compose.onNodeWithText("Delete routine").performClick()
+        compose.runOnIdle {
+            assertEquals("the same act the swipe makes, and the room withholds it",
+                listOf("delete:$routineId"), doors)
         }
         scope.cancel()
     }
@@ -154,6 +165,7 @@ class RoutinesScreenTests {
                 onJustStart = { doors += "start" },
                 onBuild = { doors += "build" },
                 onOpenRoutine = { doors += "open:$it" },
+                onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
                 onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },

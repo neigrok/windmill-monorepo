@@ -245,10 +245,10 @@ Web: "…and some rooms only open once you have an account" (`SignInDialog.jsx` 
 where the gym log and mirror need an account). Per-surface truth, or one sentence everywhere?
 
 **0t · one product has one home, and the web's IA is now the phones'** → ruled 2026-08-24, built
-2026-08-25, the Log head's bodyweight reading with it on 2026-08-26 (`Log.jsx:5` `BodyweightReading`,
+2026-08-25, the Log head's bodyweight reading with it on 2026-08-26 (`Log.jsx:6` `BodyweightReading`,
 `LogScreen.swift:158-161`, `LogScreen.kt:152`); nothing owed.
 Every surface draws Routines · The log · Coach (`GymApp.jsx:24`, `GymRoom.swift:39-40`,
-`GymRoom.kt:117`); the web has no Today, and the live-session mirror heads Routines home
+`GymRoom.kt:126-130`); the web has no Today, and the live-session mirror heads Routines home
 (`Mirror.jsx`) with its charter whole — it never offers a Finish, it says "Not training now." over
 "Workouts start on your phone." in words rather than as a greyed control, and it never says
 "resting" — pinned by `screens.test.js`. The web's hash grammar was ruled with it: `#/gym` IS the
@@ -616,18 +616,22 @@ apostrophe (`AskApi.cpp:16-81`), pinned whole by `AskApiTest.cpp` and repeated v
 client suites, because a client never rewrites server text. What does not move: the verdict codes
 `ask-thread-taken`, `ask-thread-full`, `ask-session-open`, `ask-daily-limit`, `ask-out-of-budget`,
 `ask-not-configured`, the thread turn's wire enum `from: "lifter" | "ask"` (`TrainingJson.cpp:496`)
-and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1135`). The CSV
+and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1233`). The CSV
 export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadRepository.cpp:224`), not
 the JSON enum. The human share is "Share this workout" on every surface (`share/share.js:12`,
 `CoachShare.swift:27`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
 not on the room (`connect.js:5-7`, `ConnectedLog.swift:111`).
 
-**1s · `set.rpe` is drawn on the web and enterable on no surface** → give it a control or delete
-the render. `Log.jsx:299` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
-already accepts it, and the prompt forbids the model estimating one. The phones carry it as a
-decoded field that no view reads (`Training.swift:152`, `domain/Training.kt:107`). The Coach wave adds a
-set-note field to the fix sheet and rules the same must happen for RPE, or the render goes: a set
-row never prints a number the lifter cannot touch on any surface.
+**1s · `set.rpe` is drawn on the web and enterable on no surface** → ruled and built 2026-08-27 on
+all three, nothing owed. **The control was given, not the render deleted.** Every fix sheet now edits
+both — RPE 6 to 10 by halves with a way back to no rating at all, and a plain `Set note` field
+captioned *A record for you — not an instruction to Coach.* (`FixSheet.jsx:76-120`,
+`FixSheet.swift`, `FixSheet.kt`) — and both phones' session rows print them when present
+(`SessionScreen.swift:80-82`, `SessionScreen.kt:527`) beside the web's row, which already did. The
+two fields are the one place an omission and a clearing must not be confused: an rpe is cleared by
+NAMING it null and a note by naming it the empty string, while a field nobody touched is not sent at
+all (`fixOf`, `fix.js:97-104`; the server reads exactly that at
+`adapters/json/TrainingJson.cpp:117-127`). A set row prints no number the lifter cannot touch.
 
 **1v · a rail may not carry its selected state in colour alone, and on iOS 26 the room does not own
 that colour at all** → re-scoped 2026-08-26; Android is built, iOS is the platform's, and what is
@@ -635,8 +639,8 @@ left is one token question for the surfaces that still honour a tint.
 **Android is closed, measured.** The rail carries selection on four channels, not one:
 `GymSkin.ink` `#EDEBF0` selected against `GymSkin.inkFaint` `#8D8896` (**2.91:1**, up from iris's
 1.17:1), a filled glyph against an outlined one per seat, a bold label against a normal one, and the
-indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `GymRoom.kt:873-898`,
-`railIcon` at `:900-904`.
+indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `GymRoom.kt:973-998`,
+`railIcon` at `:1000-1004`.
 **On iOS the question is not answerable by a token.** Sampled on the shipped build (iPhone 17, iOS
 26.3), the system tab bar paints both labels itself — `#FFFFFF` selected against `#F6F3FA`
 unselected, **1.10:1** — draws its own selection capsule (`#47444A` on `#262328`, 1.62:1), and
@@ -681,15 +685,18 @@ be right — a 22pt heading is not a "big number" — but it is currently a dive
 and the Coach wave's boards inherited it. Either `brand-foundations.md` narrows the display role to
 numerals inside gym, or gym's titles take Baloo 2.
 
-**1z · one logged set feels like two different things on the two phones** → pick one sensation.
-iOS confirms a set with `UIImpactFeedbackGenerator(style: .medium)` (`GymConfirm.swift:19`); Android
-confirms the same act with `HapticFeedbackType.LongPress` (`GymConfirm.kt:20`). A long-press and a
-medium impact are not the same feeling, and a logged set should not feel like a long-press — it is a
-confirmation, not a held gesture. Both are gated on the same `confirmHaptic` preference, so the
-divergence is in the sensation only. Worth settling before the gesture wave adds a second and a third
-haptic, because a vocabulary that starts inconsistent stays inconsistent: gym ships exactly ONE
-haptic today, and the *light on a swipe · medium on a save · success on a finish* vocabulary is
-Lift's design recorded on `gym-native-shell`, not something this room has.
+**1z · one logged set feels like two different things on the two phones** → ruled and built
+2026-08-27 on both phones, nothing owed. Each spends ONE vocabulary, one sensation per kind of act:
+**light on a swipe that reveals · medium on a save · a closing note on a finish**
+(`GymConfirm.swift:19-31`, `GymConfirm.kt:22-42`). A logged set **is** a save and spends the save's
+impact rather than a fourth sensation, which is what closes the divergence — a set no longer feels
+like a held gesture on one phone and a confirmation on the other. Nothing buzzes on a scroll and
+nothing buzzes twice for one act. Only the set confirmation stays gated on `confirmHaptic`, the one
+the settings screen names; the other three answer to the system's own haptics switch. The constants
+differ by platform and that is native idiom, not drift — `.light`/`.medium` impacts and a `.success`
+notification on iOS, `GestureThresholdActivate`/`Confirm`/`GestureEnd` on Android — and where an API
+level lacks one the fallback is the nearest sensation it DOES have, never a stronger one, because an
+unknown constant is silence.
 
 **2c · the iOS Session board prints `w` where the product prints a numeral** → board fix.
 `iOS · Session` (`16:120`) draws `w` in the set-number column for a warmup. `Performed.movements`
@@ -739,9 +746,9 @@ has to land in one place for all three.
 **2i · the refusal strings are the pinned ones, and each file says which band it holds** → built
 2026-08-26, nothing owed. Two screens enforce two rep bands and each module now names the other, so
 neither can be read as the other again. The **routine target's** band is 1–100 sets 1–20
-(`Routine.cpp`): `routines.js:16-19` `ENTRY_SETS_MIN/MAX`, `ENTRY_REPS_MIN/MAX`;
+(`Routine.cpp`): `routines.js:17-20` `ENTRY_SETS_MIN/MAX`, `ENTRY_REPS_MIN/MAX`;
 `TargetEntry.setsBand`/`repsBand` (`TargetEntry.swift:22-24`); `TargetEntry.setsBand`/`repsBand`
-(`domain/Program.kt:77-78`). The **live logger's** is 1–99: `LOGGER_REPS_MIN/MAX`
+(`domain/Program.kt:79-80`). The **live logger's** is 1–99: `LOGGER_REPS_MIN/MAX`
 (`logger/entry.js:14-15`), `KeypadEntry.repsBand` (`KeypadSheet.swift:36`),
 `KeypadEntry.maxLoggedReps` (`KeypadSheet.kt:48`). The pinned bytes are byte-identical across the
 three surfaces on both screens, the rack keypad's four included — *One decimal point only.* · *That
@@ -790,12 +797,18 @@ line's shape, then the three fields topmost first. `Routine.cpp` still only refu
 boundary; the interface now says which half is wrong before it gets there.
 
 **2m · the undo window is 9000 ms on every surface** → ruled 2026-08-25, built, nothing owed.
-`SetQueue.swift:48` and `SetQueue.kt:52` declare `undoWindowMs = 9_000`; `fix.js:9` declares
-`UNDO_MS = 9000` and `useTrainingLog.js:16` pins `TOAST_MS` to it — the Undo offer and the window it
-is true in are one span — with `fix.test.js:91` holding the number. `ARCHITECTURE.md:1135` states the
+`SetQueue.swift:48` and `SetQueue.kt:52` declare `undoWindowMs = 9_000`; `fix.js:66` declares
+`UNDO_MS = 9000`, with `fix.test.js:171` holding the number. `ARCHITECTURE.md:1233` states the
 invariant and it is one, so `13-gestures.md`'s gate — every swipe-to-delete waits on an undo that
 already exists — means the same span on all three surfaces. A board that draws a duration draws
 9000.
+**And it is two spans pinned equal, never one number.** `UNDO_MS` is how long a delete is still the
+lifter's; `TOAST_MS` (`useTrainingLog.js:21`) is how long a SAID sentence stands. They are equal on
+purpose so the room reads as one span to a lifter, and they are separate on purpose so neither can be
+moved by the other: a window retires its own transient when its last clock closes, and never on a
+sentence's clock. `screens.test.js:428-433` reads the two declarations separately and asserts
+`UNDO_MS` is 9000 and `TOAST_MS` equals it, which is what holds the pin without collapsing the two
+into one constant.
 
 **2n · a board's own layer name is a claim, and three of them were false** → check names against
 geometry, not against intent. Wave three shipped a reach band named *"266 pt"* that measured **317**,
@@ -836,7 +849,7 @@ exists to prevent.
 **2r · Android pitches the connected log to a lifter who has already connected it** → the surface
 needs the read, or the pitch needs a condition. iOS reads the account's connections once per seat
 and suppresses the invitation when there are any (`ConnectedLogState.invites`, `ConnectedLog.swift`;
-the two call sites in `GymRoom.swift`), and the web's settings row prints what is connected
+the one remaining call site, `GymRoom.swift:222`), and the web's settings row prints what is connected
 (`settings/GymSettingsSection.jsx`). Android has **no connections read anywhere**: its settings row
 is the surface's only connect door, and it draws the pitch, the precondition and *Connect my log*
 unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only
@@ -845,3 +858,184 @@ unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only
 live constants with no Android drawing, kept because `ConnectedLogTests` enforces that vocabulary
 across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
 deliberately state-blind and those constants are the gate's only reason to exist.
+
+**2s · what ends a withheld window early is one answer on all three surfaces** → built
+2026-08-27, nothing owed. `13-gestures.md` rules it and every surface now spends it: leaving a SCREEN
+keeps the window, and leaving the ROOM — to the background, to another product, or by the process
+dying — abandons what is held. The rows come back, nothing goes on the wire, nothing is said
+afterwards, because nothing happened; nothing is written to disk, so a process death abandons on its
+own. iOS calls `WithheldWindow.abandon` (`Withheld.swift:190-197`) on backgrounding
+(`GymRoom.swift:192`) and when the room goes away (`:207-212`). Android calls
+`TrainingStore.abandonWithheld` (`TrainingStore.kt:1333-1339`) on `ON_STOP` (`GymRoom.kt:462`) and
+again on the composition's disposal (`:469`), and takes the transient down with it, since an Undo
+left standing over an act that was let go would offer a way back to something that never happened.
+The web's room clears its clocks and its list at unmount and sends nothing
+(`useTrainingLog.js:157-167`). What still leaves the room on purpose is the QUEUE's drain — sets
+already logged, on disk, retried — and no delete rides out with it. *Swipe · switch apps · come
+back* now costs a row nothing on either phone. **Two things this did not make identical:** a set's
+delete is durable on iOS and abandoned on Android (`2y`), and the web's trigger is the room
+unmounting rather than the surface leaving the foreground (`3d`).
+
+**2t · Android draws a discard door for a past workout, so no gesture is the only path to one**
+→ built 2026-08-27, nothing owed. `13-gestures.md` Law 1: a gesture may never be the
+only way to reach an action, and `Discard session` joined the log row's long press on the strength of
+the review screen still drawing it. iOS draws it on every past session, unconditionally
+(`SessionScreen.swift:153`, the control at `:184-190`), and Android's past-session screen now draws
+it too: `SessionScreen` takes `onDiscard` (`SessionScreen.kt:172`) and draws the control under the
+share card (`:265-279`). **Three doors, one act, one constant** on that surface. The review screen,
+the finish screen's slight-session stance (`FinishScreen.kt:394-411`) and the log row's long press
+(`LogScreen.kt:279-340`, its hand-declared accessibility action at `:313-316`) all call
+`GymRoom.discard` (`GymRoom.kt:540-545`), which withholds a `Deletion.Session` like every other
+delete, and all three print `Finish.discard` (`FinishScreen.kt:56`) rather than their own spelling of
+it. The confirmation is gone from all of them: an act with an undo does not get a dialog. The web is
+not part of this entry — it draws no gesture at all, so Law 1 was never at stake there; what it does
+and does not offer is `3c`.
+
+**2u · a sheet that cannot scroll cannot be finished** → fixed on both phones 2026-08-27; recorded
+for the class, not the instance. Both fix sheets laid out content shorter than the viewport, so
+nothing scrolled — and with a long set note and the keyboard up, `Save the fix` and `Delete set` sat
+under the keyboard with no way to reach them: the two acts the sheet exists for, behind the lifter's
+own words. iOS now scrolls and pads by the measured keyboard height (`FixSheet.swift:104`,
+`:119-127`); Android scrolls and takes `imePadding` (`FixSheet.kt:90-98`). The class is what earns
+the entry: a sheet whose content is SHORTER than its own frame scrolls nowhere, so a raised keyboard
+takes the bottom of it away with no way to get it back — and the controls at the bottom of a sheet
+are the ones it exists for. **A board drawing a sheet with a text field draws it once with the
+keyboard up**, or the defect stays invisible until a device finds it.
+
+**2v · a missing `Top e1RM` draws a bare `—` on all three surfaces** → a designer's line.
+`11-bodyweight.md` rules that a missing fact draws nothing — never a dash, never a zero — but it says
+it of the bodyweight READING, where the line can simply be absent. The finish and review readout is a
+row of exactly three tiles — Duration · Working sets · Top e1RM — and a vanishing tile changes the
+row's shape, so all three surfaces print a dash instead (`FinishScreen.swift:49`,
+`FinishScreen.kt:77`, `review.js:15-20`, whose own comment states the rule as *no top e1RM is a
+dash, never a zero*). One screen away the same wave
+ruled the opposite for the same problem — an unrated set draws the words `Not rated` and never a
+dash, because a dash is read out as nothing by a screen reader. Either the honesty rule reaches a
+stat grid and the tile goes, or the tile says in words what it means.
+
+**2w · two refusals of one shape read differently in one room** → a copy owner's call, product-wide.
+The note editor repeats the server's own sentence — `a note runs to 500 bytes` (`Note.cpp:85`, pinned
+by `NoteTest.cpp:118-119` and `NotesApiTest.cpp:110`), a lowercase fragment, because the server's
+error bodies are fragments and a client never rewrites server text. The fix sheet draws its own —
+`A set note runs to 4000 bytes.` (`fix.js:58-60`, `FixSheet.swift:22`, `domain/Training.kt:555`),
+sentence-cased with a full stop, because the server's refusal there is the bare `note too long`
+(`Training.cpp:197`) and no lifter should read that. Each is right for its layer and a lifter meets
+both in one room. Worth deciding once rather than inside a build wave: either the server's set-note
+refusal becomes a sentence a client can echo, or the two shapes are recorded as deliberate and the
+rule says which layer takes which.
+
+**2x · five sentences a build minted, and no brief owns one of them** → a brief takes them, or they
+are canon by grep. The gesture wave pinned words for five states nothing written covers, byte-identical
+on every surface that has the state:
+- **over the set-note bound** — `A set note runs to 4000 bytes.` (`fix.js:60`, `FixSheet.swift:22`,
+  `domain/Training.kt:555`), the shape the notes bound already ships one screen away — see `2w`.
+- **the unrated seat** — `Not rated`, as the label itself and never a bare `—` (`fix.js:19`,
+  `FixSheet.swift:19`, `domain/Training.kt:544`). Its SHAPE diverges by platform and that is native
+  idiom: a seat among the others on the web and Android, a clearing control on iOS that appears only
+  once a rating is set, so an unrated iOS set draws nothing at all.
+- **a second walk over a pending deviation** — `{Movement} first — that question is still open.`
+  (`LiveSession.swift:81`, `domain/LiveSession.kt:80`); the phones alone, the web has no logger.
+- **the conversation delete's detail** — `a change you applied stays in the routine’s history`, said
+  at the moment of the act on both phones (`Withheld.swift:22`, `store/WithheldDelete.kt:53`) while
+  the web still draws it as a standing caption inside the conversation (`coach/threads.js:76-78`).
+- **the count** — `2 deleted.` while everything held is a delete, `2 to take back.` the moment a
+  logged set is among them (`Withheld.swift:36-40`, `store/WithheldDelete.kt:99-107`). The web says
+  only the first, because nothing appends into its window (`withheld.js:49-53`).
+`13-gestures.md` owns the transient's structure — one held thing names what left, two or more can
+only be counted — and none of these bytes. Each surface's own suite asserts its own copy, so the
+three agree by review rather than by canon, which is the shape `15-the-routine.md`'s closing rule
+exists to prevent.
+
+**2y · a set's delete survives app death on one phone and is let go on the other** → a deliberate
+divergence, and the follow-up that ends it is named. `2s` made the abandon one rule everywhere, and
+the one thing it could not make identical is where a set's delete is HELD. **iOS holds it on disk.**
+`SetQueue` is an atomic file (`SetQueue.swift`), a delete is an entry in it with its own held-until
+instant (`:280-283`, `Entry.heldUntilMs` at `:30-31`, `isHeld(at:)` at `:41`), and
+`Withheld.Kind.isHeldOnDisk` (`Withheld.swift:57`) is what excuses a set from `abandon`'s restore
+(`:196`) — the queue is not reached into, so the delete outlives the process and retries. **Android
+holds it in memory.** A set's delete is a `Deletion.Set` in the store's own list like every other
+verb (`store/WithheldDelete.kt:34-40`), the send is a direct `deleteSet` call
+(`TrainingStore.kt:1362`), and Android's `SetQueue.kt` carries appends and fixes and has no
+delete verb at all. So the exemption made it strictly WORSE off than the deletes that abandon: those
+put the row back honestly, that one fired into a backgrounded app, timed out with nobody to read the
+answer and was dropped whichever way it went. Android therefore abandons a set's delete with
+everything else — one rule for the whole window on that surface, no silent loss
+(`TrainingStore.kt:1316-1339`, called from `GymRoom.kt:462` and `:469`). Nothing in the window's own
+data carves the exception out any more: `WithheldDelete` carries a deletion, an instant and `sent`,
+and nothing else (`store/WithheldDelete.kt:68-75`); the no-argument `settleWithheld()` that served
+the exemption is gone from the store, which now exposes one settle, keyed by subject
+(`TrainingStore.kt:1345`).
+**What each phone does today, plainly:** iOS retries a set's delete across app death; Android
+abandons it, and the row comes back. Neither is wrong for its own machinery, and the divergence is
+not native idiom — it is one of them holding a fact on disk and the other not.
+**What would make them one:** Android's set delete rides `SetQueue` as iOS's does, at which point the
+on-disk exemption is true on both and both phones keep the delete. That is the follow-up this entry
+is waiting on.
+
+**2z · a per-row gesture state that outlives the row's absence replays the act nobody made** →
+fixed on Android 2026-08-27; recorded for the CLASS, not the instance.
+`rememberSwipeToDismissBoxState` is a `rememberSaveable`, and a `LazyColumn` keeps what an item held
+under that item's own key and hands it straight back when the key returns. The withheld window is
+what made that load-bearing: a deleted row LEAVES its list and comes back — put back by a log that
+refused the settle, or taken back by an Undo — and it came back already at `EndToStart`, drawn off
+its own leading edge, so the settle effect spent the act again on a stroke nobody made. A refused
+delete re-fired on its own clock every nine seconds for as long as the screen stood; an Undo
+re-deleted what it had just taken back, which is the way back the whole pattern exists to provide.
+The row could not be swiped again either — a state already sitting at `EndToStart` cannot travel
+there. Fixed by one shared builder, `rememberRowDismiss` in `ui/RowSwipe.kt:45-64`, which constructs
+the state with `remember` and never the saver: a returning row is a NEW row, settled, with its own
+anchors. Every row in the room that a stroke destroys takes its state from it — the set row
+(`SessionScreen.kt:432`), the routine row (`RoutinesScreen.kt:261`), the thread row
+(`ThreadsScreen.kt:170`), the refusal banner (`RefusalBanner.kt:54`) and the assembly sheet's row
+(`AssemblySheet.kt:230`) — and `RowDeleteGround`, the one Delete lane behind them, lives in the same
+file (`:69-81`). **The class is what earns the entry: any per-row gesture state that outlives the
+row's absence will replay its value the moment the row returns.** A row that can come back needs its
+gesture state built, not restored.
+
+**3a · a room that clears a refusal before saying it cancels its own sentence** → fixed on Android
+2026-08-27; recorded for the CLASS. The one thing the room says about a settle is a failure — the
+window closed, the log was asked and it said no — and it said nothing at all. The effect keyed on
+`store.deleteRefused` cleared the flag first and showed the snackbar second; clearing it changed the
+key the effect was running under, and an effect that changes its own key cancels itself, so the
+sentence was never said and a delete the log REFUSED looked exactly like one that worked. The order
+is now said-then-cleared (`GymRoom.kt:426-437`), which also means a room torn down mid-sentence still
+owes it. **The class: in a keyed effect, the state the key reads is cleared AFTER the work, never
+before** — and the tell is that nothing appears rather than that something crashes, so no suite
+catches it unless it asserts the sentence itself.
+
+**3b · a refusal the log answers with words names neither what was refused nor that it is still
+there** → a designer's line. When a withheld delete's clock closes and the log says no, Android says
+the log's own sentence and nothing else: `WriteFailure.line(subject)`
+(`TrainingStore.kt:1769-1772`) returns `said` for a `Refused` and reads its `subject` only in the
+`NoAnswer` branch. The subject exists and is written for exactly this — `Deletion.stillThere`
+(`store/WithheldDelete.kt:39, 45, 54, 60`) spells *that set is still on the log*, *{name} is still in
+your program*, *that conversation is still here*, *that session is still on the log* — and a refused
+delete throws all four away. So a lifter who has just watched a row vanish reads only the log's
+fragment: something did not go through, with no name and no promise that the thing is coming back.
+The rule underneath is `2w`'s and P3's — a client never rewrites server text — so this is not a
+builder's fix: it wants a shape that carries the server's sentence AND names the subject, decided
+once for the room rather than invented at the call site.
+
+**3c · the web offers no way to discard an ordinary past workout** → a product decision, not a Law 1
+breach. `2t` is about a gesture being the only path; the web has no gesture, and here it has no path
+at all. `FinishScreen` draws `ShortSession` — the only `Discard session` control on the surface —
+under `review.slight` alone (`Finish.jsx:96`, the control at `:132-141`), so a normal workout's
+review screen offers Session detail and Done and nothing else, and the log's session row carries no
+control but its own link (`Log.jsx:145`). Both phones reach the act from three doors. Either
+the web's session review gains the door the phones draw, or the ledger records that discarding is a
+phone act on purpose — which would be a defensible reading of `01-context.md`'s split, and is not
+what any brief says today.
+
+**3d · the web abandons on unmount, and a hidden tab is not an unmount** → a decision, not a defect
+found. `2s` closed the abandon on all three surfaces, and the web's trigger is narrower than the
+phones' by construction: the effect fires when the room's hook unmounts — leaving gym for another
+product, or closing the page — and the file says exactly that
+(`useTrainingLog.js:157-167`). A backgrounded browser TAB unmounts nothing, and
+`visibilitychange` is watched only for the mirror poll and the start watch
+(`:311-312`, `:337-338`), never for the window, so the clocks run on in a hidden tab, a settle fires
+and the delete goes. *Swipe · switch tab · come back* therefore still spends a row on the web, which
+is the shape `13-gestures.md`'s foreground rule exists to close on the phones. It may be the right
+answer — a hidden tab is not a backgrounded app, the page is still alive and the lifter did not leave
+the room — but nothing written says so, and the brief's rule is worded for a surface that has a
+foreground. Either the web watches `visibilitychange` for the window as well, or the rule names the
+web's trigger as the room's unmount on purpose.

@@ -1,18 +1,23 @@
 // The training log, read: the catalog, the page of sessions and the walk deeper into them, the
-// settings, the movement mint, the one toast voice. The web never starts, drives or finishes a live
-// session — an open session is MIRRORED by a poll and drawn read-only.
+// settings, the movement mint, the one toast voice and the one withheld-delete window. The web never
+// starts, drives or finishes a live session — an open session is MIRRORED by a poll and drawn
+// read-only.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { UNDO_MS } from './fix.js';
 import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
 import { mintId } from './mint.js';
 import { CREATED_PATTERN } from './logger/movements.js';
 import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js';
 import { spellWeightsIn } from './units.js';
+import { hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey } from './withheld.js';
 
 const POLL_MS = 5000;
 // The watch for a workout starting, while none is mirrored; the visibilitychange asks at once.
 const WATCH_MS = 30_000;
-// Must equal `UNDO_MS` (fix.js): the Undo offer and the window it is true in are the same span.
+// How long a SAID sentence stands. Pinned equal to `UNDO_MS` (fix.js) so the room reads as one span
+// to a lifter — but they are two: a withheld window retires its own transient when its last clock
+// closes, and never on this one.
 const TOAST_MS = 9000;
 // The handler clamps `limit` to 200, and `end` is a page coming back short of what was asked for —
 // so asking for more would be answered 200 and misread as the bottom of the log.
@@ -41,6 +46,8 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   // 'more' until a read says otherwise, so the boot page settles it.
   const [olderStatus, setOlderStatus] = useState('more');
   const [toast, setToast] = useState(null);
+  // Not read: bumping it is how the withheld window's ref reaches the screen.
+  const [, redrawWindow] = useState(0);
   // Bumping this asks the boot read again.
   const [bootAttempt, setBootAttempt] = useState(0);
   // 'signal' is a request that never got an answer, 'server' a store that answered and failed,
@@ -62,8 +69,143 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   const signedOut = useRef(onSignedOut);
   signedOut.current = onSignedOut;
 
-  // The one voice; it carries one optional move as well as a sentence.
-  const say = useCallback((text, action = null) => setToast({ text, action }), []);
+  // What the tab coming back should ask for: the mirror's read while a session is mirrored, the
+  // watch's look while none is. The two are never both running, and each clears this on its way out
+  // only if it is still the one holding it, so the order they tear down in cannot matter.
+  const wake = useRef(null);
+
+  // What was said last, and what is held last: a counter and not a clock, so the transient is chosen
+  // by what happened after what, and never by two readings of the same millisecond.
+  const spoke = useRef(0);
+
+  // The one voice. It says a sentence and nothing else — the only move a transient carries is the
+  // withheld window's Undo, which the window itself hands over.
+  const say = useCallback((text) => {
+    spoke.current += 1;
+    setToast({ text, at: spoke.current });
+  }, []);
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  // The withheld window, and a ref because a clock firing nine seconds from now must read the window
+  // as it stands THEN, not as it stood when the clock was armed. Every screen in the room draws
+  // around `withheld.current`, so it outlives every screen in it.
+  const withheld = useRef([]);
+  const clocks = useRef(new Map());
+  // What the store has CONFIRMED gone, `{ kind, id }`, for as long as this room lives. It is the
+  // room's and not a screen's: a screen rebuilt mid-window reads a store that still has the row, so
+  // the settle that lands afterwards has to reach whoever is drawing then, not whoever armed it.
+  // Nothing is ever taken out — an id the store answered for cannot come back, and a mint never
+  // reissues one.
+  const settled = useRef([]);
+  const publish = useCallback((next) => {
+    withheld.current = next;
+    redrawWindow((count) => count + 1);
+  }, []);
+
+  // The clock ran out. The delete is settling — no longer offered back — and its send goes; it stays
+  // in the window until the send has answered, so the row it hid can never flash back on screen
+  // between the two. The room owns the sequence: a send that resolves is a delete the store took and
+  // is recorded gone, a send that throws is a refusal and the entry says it in the screen's words.
+  const close = useCallback(async (key) => {
+    clocks.current.delete(key);
+    const closing = withheld.current.find((each) => each.key === key);
+    if (!closing) return;
+    publish(withheld.current.map((each) => (each.key === key ? { ...each, settling: true } : each)));
+    // `finally`: a send that throws may not wedge the window open and leave a row hidden for the
+    // life of the room.
+    try {
+      await closing.send?.();
+      // Only a verb that reached the store settles. A draft line sends nothing, so nothing about it
+      // is a fact the store confirmed.
+      if (closing.send) settled.current = [...settled.current, { kind: closing.kind, id: closing.id }];
+    } catch (error) {
+      closing.refused?.(error);
+    } finally {
+      publish(withheld.current.filter((each) => each.key !== key));
+    }
+  }, [publish]);
+
+  // A delete the lifter can still take back. Nothing is sent for the length of the window, and a
+  // second delete settles nothing: each one arrives with a clock of its own.
+  const withhold = useCallback(({ kind, id, line, send = null, refused = null, undo = null }) => {
+    const key = withheldKey(kind, id);
+    spoke.current += 1;
+    publish([...withheld.current, { key, kind, id, line, send, refused, undo, at: spoke.current, settling: false }]);
+    clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
+  }, [close, publish]);
+
+  // The newest first, and the transient re-reads for the rest. Nothing was sent, so taking one back
+  // is a local act everywhere except a draft, which is the only verb that owns an `undo`.
+  const undoWithheld = useCallback(() => {
+    const open = openHeld(withheld.current);
+    if (open.length === 0) {
+      say(WINDOW_CLOSED);
+      return;
+    }
+    const newest = open[open.length - 1];
+    clearTimeout(clocks.current.get(newest.key));
+    clocks.current.delete(newest.key);
+    publish(withheld.current.filter((each) => each.key !== newest.key));
+    newest.undo?.();
+  }, [publish, say]);
+
+  // A draft that no longer exists has nowhere to put a line back, so its window closes with it. Only
+  // the `entry` verb reaches this: it sends nothing, so closing it early sends nothing either.
+  const dropWithheld = useCallback((kind) => {
+    withheld.current.filter((each) => each.kind === kind).forEach((each) => {
+      clearTimeout(clocks.current.get(each.key));
+      clocks.current.delete(each.key);
+    });
+    publish(withheld.current.filter((each) => each.kind !== kind));
+  }, [publish]);
+
+  // The window lives only while the room is ON SCREEN. Leaving it — to another product, by closing
+  // the page, or by putting the tab behind another one — ABANDONS everything still held: every clock
+  // is cleared, the rows come back, nothing goes on the wire, and nothing is said afterwards,
+  // because nothing happened. Sending instead would commit a delete whose Undo expired where nobody
+  // could see it, reached by an ordinary pair of acts — the same hazard as swipe-then-back, moved to
+  // a different exit. A delete already SETTLING is not abandoned: its send is in the air, and a row
+  // that came back while the store was taking it would be the one lie this window may never tell.
+  const abandon = useCallback(() => {
+    const open = openHeld(withheld.current);
+    if (open.length === 0) return;
+    open.forEach((each) => {
+      clearTimeout(clocks.current.get(each.key));
+      clocks.current.delete(each.key);
+      // Only a draft line carries one: every other verb's row is hidden by the window itself, so
+      // dropping it from the list is what puts the row back.
+      each.undo?.();
+    });
+    publish(withheld.current.filter((each) => each.settling));
+  }, [publish]);
+
+  // The room's ONE watch on the tab, for everything in it that cares which side of the flip we are
+  // on. Hidden is this room leaving the foreground — the browser's spelling of the phones' `ON_STOP`
+  // — so the window abandons; a dialog or an overlay over the room is still the room, and only the
+  // document itself going hidden counts, never a blur or a focus change. Visible asks the mirror, or
+  // the watch, whichever is running, at once. One listener and not three: three would be three
+  // answers to one event, taken in whatever order they happened to be bound.
+  useEffect(() => {
+    const flipped = () => {
+      if (document.visibilityState !== 'visible') {
+        abandon();
+        return;
+      }
+      wake.current?.();
+    };
+    document.addEventListener('visibilitychange', flipped);
+    return () => document.removeEventListener('visibilitychange', flipped);
+  }, [abandon]);
+
+  // The room itself going, which no `visibilitychange` precedes when gym is left for another
+  // product. A settling send is already in the air and is left to land; nothing here waits for it,
+  // because there is no longer a room to answer to. A screen unmounting settles nothing: the window
+  // follows the lifter through the room, and only the room going ends it.
+  useEffect(() => () => {
+    clocks.current.forEach((timer) => clearTimeout(timer));
+    clocks.current.clear();
+    withheld.current = [];
+  }, []);
 
   // The only two places the held session, its sets, its tag and the id ref move together.
   const hold = useCallback((detail) => {
@@ -205,14 +347,12 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
       }
       hold(detail);
     };
-    const visible = () => document.visibilityState === 'visible';
-    const beat = setInterval(() => { if (visible()) read(); }, POLL_MS);
-    const woke = () => { if (visible()) read(); };
-    document.addEventListener('visibilitychange', woke);
+    const beat = setInterval(() => { if (document.visibilityState === 'visible') read(); }, POLL_MS);
+    wake.current = read;
     return () => {
       alive = false;
       clearInterval(beat);
-      document.removeEventListener('visibilitychange', woke);
+      if (wake.current === read) wake.current = null;
     };
   }, [api, session?.id, reloadLog, hold, release]);
 
@@ -231,14 +371,12 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
       }
       if (alive) await adopt(log);
     };
-    const visible = () => document.visibilityState === 'visible';
-    const beat = setInterval(() => { if (visible()) look(); }, WATCH_MS);
-    const woke = () => { if (visible()) look(); };
-    document.addEventListener('visibilitychange', woke);
+    const beat = setInterval(() => { if (document.visibilityState === 'visible') look(); }, WATCH_MS);
+    wake.current = look;
     return () => {
       alive = false;
       clearInterval(beat);
-      document.removeEventListener('visibilitychange', woke);
+      if (wake.current === look) wake.current = null;
     };
   }, [api, adopt, watching]);
 
@@ -282,6 +420,17 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // One transient for the room, drawn once by `GymApp`: the sentence said last, or the window, and
+  // never both. The window's own carries the Undo and refuses the dismiss.
+  const hidden = (kind) => hiddenIds(withheld.current, settled.current, kind);
+
+  const spoken = transientOf(toast, withheld.current);
+  const transient = spoken == null ? null : {
+    text: spoken.text,
+    action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : null,
+    dismiss: spoken.undoable ? null : dismissToast,
+  };
+
   return {
     phase,
     // 'signal' · 'server' · 'signed-out'. Null in every other phase.
@@ -299,7 +448,14 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     createMovement,
     renameMovement,
     say,
-    toast,
-    dismissToast: () => setToast(null),
+    transient,
+    // The withheld window, for the screens that must draw around what it is holding.
+    held: withheld.current,
+    // The one question a screen asks before it draws a row under a verb: is this id gone from the
+    // screen? True while the window holds it, and true for good once the store has answered.
+    hidden,
+    withhold,
+    undoWithheld,
+    dropWithheld,
   };
 }

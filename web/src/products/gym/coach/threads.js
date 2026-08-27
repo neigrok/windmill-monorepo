@@ -1,3 +1,4 @@
+import { failureReason } from '../gymApi.js';
 import { agoLabel, shortDayLabel } from '../log.js';
 import { changeLabel } from '../proposals.js';
 
@@ -72,11 +73,19 @@ export const NO_THREADS = 'Nothing here yet. Ask something and the conversation 
 export const NEW_THREAD_VERB = 'Ask something new';
 
 export const DELETE_VERB = 'Delete this conversation';
-export const DELETE_CONFIRM = 'Delete it — this cannot be undone';
 export const DELETE_NOTE =
   'Deleting a conversation deletes the messages. A change you applied stays in the routine’s '
   + 'history, because that is a fact about your program rather than a message.';
-export const DELETE_FAILED = 'That wasn’t deleted. Try again in a moment.';
+
+// What the room's transient says while the window holds it. The delete is not on the wire yet, so
+// the sentence is in the past tense a lifter reads it in and the Undo beside it is the truth.
+export const THREAD_DELETED = 'Conversation deleted.';
+
+// Said only after the window closed and the store refused the send — by which time the screen that
+// asked is long gone, which is why the room owns the voice and not the screen.
+export function threadDeleteFailure(error) {
+  return `That conversation is still here — ${failureReason(error)}.`;
+}
 
 export const THREAD_ABSENT = 'That conversation isn’t here any more.';
 export const THREAD_FAILED = 'The conversation didn’t load.';

@@ -102,7 +102,6 @@ fun RoutineBuilder(
     saving: Boolean,
     onDraft: (RoutineDraft) -> Unit,
     onSave: () -> Unit,
-    onDelete: (String) -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
 ) {
@@ -136,8 +135,6 @@ fun RoutineBuilder(
             onAdd = { sheet = BuilderSheet.Picker },
             onSave = onSave,
             onCancel = onClose,
-            onDuplicate = { onDraft(draft.duplicated(position = store.routines.size)) },
-            onDelete = { draft.id?.let(onDelete) },
         )
     }
 
@@ -215,8 +212,6 @@ private fun BuildStep(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    onDuplicate: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     val dropAt = with(LocalDensity.current) { 108.dp.toPx() }
     val focus = remember { FocusRequester() }
@@ -388,38 +383,6 @@ private fun BuildStep(
             }
         }
 
-        if (editing) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum)
-                        .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(role = Role.Button, onClick = onDuplicate),
-                ) {
-                    Text("Duplicate", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-                }
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum)
-                        .border(1.dp, GymSkin.alarmInk, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(role = Role.Button, onClick = onDelete),
-                ) {
-                    Text("Delete routine", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.alarmInk)
-                }
-            }
-            Text(
-                "Deleting removes the routine from your program. Every session you logged with it stays in the log.",
-                style = GymType.numeral(11).copy(lineHeight = 16.sp),
-                color = GymSkin.inkFaint,
-            )
-        }
       }
     }
 }

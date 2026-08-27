@@ -209,7 +209,7 @@ final class AskDoorTests: XCTestCase {
             XCTAssertNil(sentence.range(of: #"\bAsk\b"#, options: .regularExpression), sentence)
         }
         for sentence in named + [Ask.scope, Ask.placeholder, AskThreads.askSomethingNew, Notes.full,
-                                 Proposal.turnDownBody, Finish.Discard.body,
+                                 Proposal.turnDownBody, SetRecord.noteCaption,
                                  AskRefusal(WindmillApiError.offline).line,
                                  AskRefusal(WindmillApiError.malformed).line,
                                  NotesRefusal(WindmillApiError.offline).line,
@@ -333,7 +333,7 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(AskRefusal(refusal(409, code: "ask-thread-taken")).line, Ask.threadTaken)
 
         let spoken = [Ask.threadCeiling, Ask.threadTaken, Ask.allowance, Ask.capReached, Ask.scope,
-                      AskThreads.empty, AskThreads.deleteNote]
+                      AskThreads.empty, WithheldWords.threadDetail]
         for sentence in spoken {
             XCTAssertFalse(sentence.lowercased().contains("eight"), sentence)
             XCTAssertFalse(sentence.contains("8"), sentence)

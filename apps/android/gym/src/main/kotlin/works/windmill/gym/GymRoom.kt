@@ -43,7 +43,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -57,6 +59,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.Coach
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
@@ -68,6 +71,7 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
@@ -76,6 +80,7 @@ import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
 import works.windmill.gym.ui.AskSignedOutStance
@@ -83,6 +88,7 @@ import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
@@ -93,6 +99,7 @@ import works.windmill.gym.ui.ReviewSheet
 import works.windmill.gym.ui.RoutineBuilder
 import works.windmill.gym.ui.RoutineScreen
 import works.windmill.gym.ui.RoutinesScreen
+import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.ThreadScreen
@@ -203,12 +210,15 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 // A room's state dies when you leave it, store included: the queue is on disk after every tap and
 // leaving flushes, or a set is refused once the session closes.
 
-@OptIn(ExperimentalMaterial3Api::class)
+// The store the room runs over, on this device's own files and in a scope that dies with the room.
+// Its own factory because it is the room's one collaborator: a test stands the room over a store it
+// can reach and a log it can refuse with, which is the only way the transient's own rules — a
+// refusal is SAID, a way back is retired — can be pinned at all.
 @Composable
-fun GymRoom(account: Account) {
+internal fun rememberDeviceStore(): TrainingStore {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val store = remember {
+    return remember {
         // Read off the session store, never off `account`: this room mounts before /v1/me resolves.
         val deviceOwner = PrefsSessions(context).user()?.id
         TrainingStore(
@@ -220,6 +230,13 @@ fun GymRoom(account: Account) {
             scope,
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var finished by remember { mutableStateOf<FinishedSession?>(null) }
     // A stack, not a slot: one pushed screen can reach another. NOT saved, so no screen is drawn
@@ -267,8 +284,12 @@ fun GymRoom(account: Account) {
     // log is the one that says whether the bucket has refilled. Saved: a recreation is not a re-entry,
     // so it must not hand the composer back mid-cap.
     var capped by rememberSaveable { mutableStateOf(false) }
+    // The room's one haptic vocabulary, used for the acts the room itself owns: a finish, and a save
+    // the room performs on a screen's behalf.
+    val haptics = rememberGymHaptics()
     // The transient's host. A message with an action and a window lives here; the `note` slot below
-    // stays for what is about the screen you are on and dies when you leave it.
+    // stays for what is about the screen you are on and dies when you leave it. The two are NOT
+    // interchangeable: `note` clears on every navigation, which is exactly what a window must not do.
     val transient = remember { SnackbarHostState() }
 
     // A thread's receipts live exactly as long as that thread is on screen.
@@ -345,59 +366,111 @@ fun GymRoom(account: Account) {
         store.connect(account)
     }
 
-    // A withheld delete belongs to the screen the gesture was made on, so leaving it ends the window.
-    val standingSession = (away.lastOrNull() as? Away.Session)?.summary?.id
-    LaunchedEffect(standingSession) {
-        if (store.withheld?.sessionId == standingSession) return@LaunchedEffect
-        store.settleWithheld()?.let { note = it.line("that set is still on the log") }
-    }
-
-    // The window's own state, said for as long as the window is open and never a moment longer: the
-    // span is the queue's `undoWindowMs` and never a snackbar default. The key is the TAKEABLE row,
-    // so the instant a settle commits the delete to the wire — the effect above, or the timeout
-    // below — this effect is cancelled and the transient goes down with it. An Undo offered over a
-    // delete already sent would be a lie.
-    val takeable = store.withheld?.takeIf { it.takeable }
-    LaunchedEffect(takeable?.set?.id) {
-        val holding = takeable ?: return@LaunchedEffect
-        val left = holding.untilMs - System.currentTimeMillis()
+    // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
+    // tab change and sheet; the clock that closes a window is the store's own, one per act, so a
+    // screen going away settles nothing. Only the room unmounting for good flushes early, below.
+    //
+    // ONE transient, ONE owner. Two different things can have a way back open at the same moment — a
+    // delete being withheld, and a set just logged, which used to be a text button inside the logger's
+    // set row and moved here because an inline button scrolls out of sight and can never say that the
+    // window has CLOSED. Two effects racing one host would show the second late or not at all, so
+    // they are said together: the count is over both, and it is `to take back` rather than `deleted`
+    // the moment the append is among them.
+    //
+    // Said for as long as a way back is open and never a moment longer: the span is the queue's
+    // `undoWindowMs`, read off whichever clock closes LAST, and never a snackbar default. The key is
+    // everything that could change what is offered — so the instant a settle commits a delete to the
+    // wire, or a second act joins the window, or an older one leaves it, this effect is cancelled and
+    // the transient is redrawn for what is left. An Undo offered over a delete already sent is a lie.
+    //
+    // `store.sets` is read for its own sake and not for its value: `undoable` is computed off the
+    // queue and the queue's own clock, neither of which a composition observes, so without this read
+    // the room never hears that a set landed and the offer would never be made.
+    val takeable = store.holding
+    val landed = store.sets.lastOrNull()?.id
+    val owed = store.undoable
+    LaunchedEffect(takeable?.subjectId, store.withheld.size, owed?.id, landed) {
+        val said = Withheld.line(store.withheld, owed) ?: return@LaunchedEffect
+        val closes = maxOf(takeable?.untilMs ?: 0L, store.undoableUntilMs ?: 0L)
+        val left = closes - System.currentTimeMillis()
         if (left <= 0) return@LaunchedEffect
         val decided = withTimeoutOrNull(left) {
             transient.showSnackbar(
-                message = "Deleted ${Readout.effort(holding.set.weightKg, holding.set.reps)}",
-                actionLabel = "Undo",
+                message = said,
+                actionLabel = Withheld.undo,
+                // No dismiss while a window runs: a transient that could be swept away would be a
+                // way back that vanished without its clock closing.
+                withDismissAction = false,
                 duration = SnackbarDuration.Indefinite,
             )
         }
         if (decided == SnackbarResult.ActionPerformed) {
+            // Newest first, whichever kind it is: the one whose clock closes last is the one the
+            // lifter just did.
+            if ((store.undoableUntilMs ?: 0L) > (takeable?.untilMs ?: 0L)) {
+                store.undoLast()
+                return@LaunchedEffect
+            }
             // A tap that raced the send by a frame: the log has it, so say so rather than report a
             // keep that did not happen.
-            if (!store.keepWithheld()) note = "that delete had already gone through — the set is off the log"
+            if (store.keepWithheld() == null) {
+                transient.showSnackbar(Withheld.alreadyGone, duration = SnackbarDuration.Short)
+            }
             return@LaunchedEffect
         }
         transient.currentSnackbarData?.dismiss()
-        // The send outlives this effect: settling marks the row sent, which is this effect's own key.
-        scope.launch { store.settleWithheld()?.let { note = it.line("that set is still on the log") } }
+    }
+
+    // The one thing the room says about a settle, and it is a failure: the window closed, the log was
+    // asked and it said no. Nothing local was crossed out, so the row is back on the next read.
+    LaunchedEffect(store.deleteRefused) {
+        val refused = store.deleteRefused ?: return@LaunchedEffect
+        // It takes the transient off whatever is standing there: a way back must never hide a
+        // refusal, and another window's Undo is still offered when this one has been read.
+        transient.currentSnackbarData?.dismiss()
+        // SAID first, cleared afterwards, and the order is the whole of it: clearing it first
+        // changes the key this effect is running under, and an effect that changes its own key
+        // cancels itself — the sentence was never said, and a delete the log refused looked exactly
+        // like one that worked. Cleared only once it HAS been said, so a room torn down mid-sentence
+        // still owes it.
+        transient.showSnackbar(refused, duration = SnackbarDuration.Long)
+        store.clearDeleteRefused()
     }
 
     // ON_STOP is the second net behind ON_PAUSE. The dispose flush is launched UNSTRUCTURED: the
     // composition scope dies with the room and the drain it owes the log may not.
+    //
+    // THE WINDOW LIVES ONLY WHILE THE ROOM IS ON SCREEN. Leaving it — the app going to the
+    // background, the room going away for good, or the process dying — abandons everything the room
+    // was holding, a set's delete with the rest: the rows come back, nothing goes on the wire and
+    // nothing is said on the next open, because nothing happened. Sending instead would make
+    // `swipe · switch apps · come back` an unrecoverable delete reached by two ordinary actions,
+    // which is the exact hazard the withheld window exists to prevent. Nothing is written to disk,
+    // so a process death abandons on its own. What leaves this room unstructured is the QUEUE's
+    // drain — sets already logged, on disk, retried — and no delete rides out with it.
+    //
+    // ON_STOP and not ON_PAUSE: a dialog or a permission sheet over the room is still the room on
+    // screen, and a window that closed for those would be a way back lost to a system prompt.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                 scope.launch { store.flushPendingSets() }
             }
+            // The transient goes down with what it was offering: an Undo left standing over an act
+            // that was let go would offer a way back to something that never happened.
+            if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
+                transient.currentSnackbarData?.dismiss()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(watcher)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
-            CoroutineScope(Dispatchers.Main.immediate).launch {
-                // Owed sets first, withheld delete second: a set that never landed is refused forever
-                // once its session closes, while a delete has no deadline.
-                store.flushPendingSets(force = true)
-                store.settleWithheld()
-            }
+            store.abandonWithheld()
+            // The owed sets and nothing else: a set that never landed is refused forever once its
+            // session closes, so its drain outlives the room on purpose. The window does not — it
+            // was abandoned whole a line ago.
+            CoroutineScope(Dispatchers.Main.immediate).launch { store.flushPendingSets(force = true) }
         }
     }
 
@@ -442,6 +515,7 @@ fun GymRoom(account: Account) {
             note = null
             when (val ended = store.finish()) {
                 is FinishOutcome.Closed -> {
+                    haptics.finished()
                     keptRoutine = false
                     finished = FinishedSession(
                         session = ended.session,
@@ -458,16 +532,16 @@ fun GymRoom(account: Account) {
         }
     }
 
-    // The screen only leaves once the log says the session is gone.
+    // THE act, behind all three of its doors: the finish screen, the log row's long press and the
+    // session review screen. A withheld delete and not a dialog — Law 2 gives a destructive act an
+    // undo, never a confirmation. Nothing is told for nine seconds, so the screen leaves at once and
+    // the row is off the log while the window is open. A review screen for a session the room no
+    // longer has cannot stand, so it goes with it.
     fun discard(sessionId: String) {
-        scope.launch {
-            note = null
-            if (!store.discard(sessionId)) {
-                note = "the log didn’t answer — the session is still there"
-                return@launch
-            }
-            finished = null
-        }
+        note = null
+        store.withhold(Deletion.Session(sessionId))
+        finished = null
+        if ((away.lastOrNull() as? Away.Session)?.summary?.id == sessionId) back()
     }
 
     // Asked from the room, not from the screen that draws it, so the coroutine and the answer outlive
@@ -534,6 +608,7 @@ fun GymRoom(account: Account) {
                 when (val written = store.saveRoutine(draft)) {
                     is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
                     is GymResult.Ok -> {
+                        haptics.saved()
                         building = null
                         away = listOf(Away.Program(written.value.id))
                         tab = Tab.Routines
@@ -545,19 +620,16 @@ fun GymRoom(account: Account) {
         }
     }
 
-    // The builder and the page beneath it both leave only once the log says the routine is gone.
+    // Nothing is told for nine seconds, so the builder and the page beneath it leave at once and the
+    // row is off the program while the window is open. The name is read BEFORE the withhold, because
+    // the withhold is what takes the routine off every list this room reads.
     fun destroy(routineId: String) {
-        scope.launch {
-            note = null
-            val failed = store.dropRoutine(routineId)
-            if (failed != null) {
-                note = failed.line("that routine is still in your program")
-                return@launch
-            }
-            building = null
-            away = emptyList()
-            tab = Tab.Routines
-        }
+        val named = store.routine(routineId)?.name ?: return
+        note = null
+        store.withhold(Deletion.Routine(routineId, named))
+        building = null
+        away = emptyList()
+        tab = Tab.Routines
     }
 
     // Nothing is claimed until the log says it was.
@@ -577,6 +649,25 @@ fun GymRoom(account: Account) {
     val origin = account.api.baseUrl.toString()
     val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
     val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
+    val clipboard = LocalClipboardManager.current
+
+    // The log row's long press. The card inside the session mints the same link and says more about
+    // it; from the row there is nothing to draw, so the transient carries the whole answer.
+    fun shareWorkout(sessionId: String) {
+        scope.launch {
+            note = null
+            when (val minted = store.share(sessionId)) {
+                is GymResult.Ok -> {
+                    clipboard.setText(AnnotatedString(Coach.link(minted.value, origin)))
+                    transient.showSnackbar(
+                        "Link copied — anyone who has it can read this workout",
+                        duration = SnackbarDuration.Long,
+                    )
+                }
+                is GymResult.Failed -> note = minted.why.line("the link wasn’t made")
+            }
+        }
+    }
 
     // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
     // decides nothing: the proposal stays pending and its card reads `still waiting`.
@@ -633,7 +724,15 @@ fun GymRoom(account: Account) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = GymSkin.canvas,
-        snackbarHost = { SnackbarHost(transient) },
+        // The transient floats ABOVE the reach band rather than growing the bottom inset: the logger's
+        // primary is pressed forty times a session, and a snackbar sitting on Log set would be a
+        // nine-second lockout every time a set landed.
+        snackbarHost = {
+            SnackbarHost(
+                transient,
+                modifier = Modifier.padding(bottom = if (live) GymTap.primary + WindmillSpace.x4 else 0.dp),
+            )
+        },
         bottomBar = {
             val line = note
             // Nothing at all when there is neither: an empty bar would take the window inset away
@@ -698,7 +797,6 @@ fun GymRoom(account: Account) {
                     saving = savingRoutine,
                     onDraft = { building = it },
                     onSave = { write(building!!) },
-                    onDelete = { destroy(it) },
                     onClose = { building = null },
                     say = { note = it },
                 )
@@ -744,6 +842,7 @@ fun GymRoom(account: Account) {
                     onBack = { back() },
                     say = { note = it },
                     onOpenMovement = { look(Away.Movement(it)) },
+                    onDiscard = { discard(standing.summary.id) },
                 )
                 standing is Away.Program -> RoutineScreen(
                     routineId = standing.routineId,
@@ -794,6 +893,7 @@ fun GymRoom(account: Account) {
                     backTo = beneath,
                     onBack = { back() },
                     onOpen = { look(Away.Thread(it)) },
+                    onDelete = { store.withhold(Deletion.Thread(it)) },
                     onAskNew = { askSomethingNew() },
                 )
                 standing is Away.Thread -> ThreadScreen(
@@ -803,9 +903,6 @@ fun GymRoom(account: Account) {
                     lookedAt = lookedAtIds,
                     backTo = beneath,
                     onBack = { back() },
-                    // The list reads itself again: a deleted conversation is gone because the log says
-                    // so, never because this room crossed a row out.
-                    onDeleted = { back() },
                     onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
                     say = { note = it },
                 )
@@ -814,6 +911,8 @@ fun GymRoom(account: Account) {
                     seat = youInitial,
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenBodyweight = { look(Away.Bodyweight) },
+                    onShareSession = { shareWorkout(it) },
+                    onDiscardSession = { discard(it) },
                 )
                 // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                 // designed stance rather than a 401.
@@ -850,6 +949,7 @@ fun GymRoom(account: Account) {
                     onJustStart = { open(null) },
                     onBuild = { building = it },
                     onOpenRoutine = { look(Away.Program(it)) },
+                    onDeleteRoutine = { destroy(it) },
                     onReview = { review(it.id, it.routineId, Reviewing.routines) },
                     onOpenSettings = { look(Away.Settings) },
                     onSignIn = LocalShellActions.current.openYou,

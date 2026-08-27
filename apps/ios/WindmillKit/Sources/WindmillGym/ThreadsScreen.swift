@@ -5,8 +5,8 @@ struct ThreadDoors {
     let list: () async -> Result<[AskThread], AskRefusal>
     // A success carrying nil is a conversation that is gone, not a failure.
     let read: (String) async -> Result<AskThread?, AskRefusal>
-    // The sentence when it did not happen, nil when it did.
-    let delete: (String) async -> String?
+    // Withheld: the row leaves the list and the DELETE waits out the window on the room's transient.
+    let delete: (AskThread) -> Void
     let openThread: (String) -> Void
     let openProposal: (String) -> Void
     let askSomethingNew: () -> Void
@@ -14,10 +14,17 @@ struct ThreadDoors {
 
 struct ThreadsScreen: View {
     let doors: ThreadDoors
+    // The list is read from the server and never crossed out locally, so a row whose delete is still
+    // withheld comes out of what is DRAWN — and walks straight back in when the undo lands.
+    @ObservedObject var withheld: WithheldWindow
 
     @Environment(\.gymSkin) private var skin
-    @State private var threads: [AskThread]?
+    @State private var served: [AskThread]?
     @State private var failure: AskRefusal?
+
+    private var threads: [AskThread]? {
+        served?.filter { !withheld.hides(.thread, $0.id) }
+    }
 
     var body: some View {
         List {
@@ -60,6 +67,12 @@ struct ThreadsScreen: View {
                 ForEach(month.threads) { thread in
                     Button { doors.openThread(thread.id) } label: { row(thread) }
                         .buttonStyle(.plain)
+                        // The delete block inside the conversation came off; this is its one home.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { hold(thread) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                 }
             } header: {
                 Text(month.label)
@@ -153,9 +166,16 @@ struct ThreadsScreen: View {
     private func read() async {
         failure = nil
         switch await doors.list() {
-        case .success(let found): threads = found
+        case .success(let found): served = found
         case .failure(let why): failure = why
         }
+    }
+
+    // The row leaves the drawn list here and now; the DELETE goes only when the window closes, which
+    // is the whole reason an undo is possible — a send cannot be taken back.
+    private func hold(_ thread: AskThread) {
+        GymConfirm.revealed()
+        doors.delete(thread)
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
@@ -165,7 +185,6 @@ struct ThreadsScreen: View {
 struct ThreadScreen: View {
     let threadId: String
     let doors: ThreadDoors
-    let onDeleted: () -> Void
     // Receipt lines by proposal id, this visit's only; a reopened thread carries none.
     let receipts: [String: String]
     let undecided: Set<String>
@@ -173,7 +192,6 @@ struct ThreadScreen: View {
     @Environment(\.gymSkin) private var skin
     @State private var thread: AskThread?
     @State private var failure: String?
-    @State private var deleting = false
     @State private var gone = false
 
     var body: some View {
@@ -186,7 +204,6 @@ struct ThreadScreen: View {
                         proposal(minted)
                         if let receipt = receipts[minted.id] { self.receipt(receipt) }
                     }
-                    delete
                 } else if gone {
                     Text("that conversation is gone")
                         .font(GymType.numeral(13))
@@ -283,30 +300,6 @@ struct ThreadScreen: View {
             .background(Capsule().fill(skin.raised))
     }
 
-    private var delete: some View {
-        VStack(spacing: WindmillSpace.x2) {
-            Button { Task { await remove() } } label: {
-                Text(AskThreads.delete)
-                    .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.alarmInk)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-            }
-            .disabled(deleting)
-            Text(AskThreads.deleteNote)
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-            if let failure {
-                Text(failure)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.alarmInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.top, WindmillSpace.x4)
-    }
-
     private func silence(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Text(line)
@@ -332,19 +325,6 @@ struct ThreadScreen: View {
         case .failure(let why):
             failure = why.line
         }
-    }
-
-    // The screen only leaves once the log says it is gone.
-    private func remove() async {
-        guard !deleting else { return }
-        deleting = true
-        defer { deleting = false }
-        failure = nil
-        guard let why = await doors.delete(threadId) else {
-            onDeleted()
-            return
-        }
-        failure = why
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

@@ -83,6 +83,8 @@ class BodyweightScreenTests {
                 seat = "",
                 onOpenSession = { doors += "session" },
                 onOpenBodyweight = { doors += "bodyweight" },
+                onShareSession = { doors += "share" },
+                onDiscardSession = { doors += "discard" },
             )
         }
     }

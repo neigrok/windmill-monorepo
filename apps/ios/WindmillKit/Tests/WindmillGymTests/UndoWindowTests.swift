@@ -131,15 +131,19 @@ final class UndoWindowTests: XCTestCase {
         XCTAssertEqual(order, ["append", "finish"], "the set goes out before the close, never after")
     }
 
-    func testLeavingTheRoomEndsTheWindowAndSendsWhatIsHeld() async {
+    // Leaving keeps the window. There is no forced flush left to end one early: what is held stays
+    // held on the queue's own on-disk clock, and only that clock sends it.
+    func testLeavingTheRoomKeepsTheWindowAndSendsNothingEarly() async {
         let server = FakeTraining()
         let store = await liveStore(server)
 
         await store.logSet(weightKg: 82.5, reps: 5)
         await store.flushPendingSets()
-        XCTAssertEqual(server.appended.count, 0, "backgrounding the phone keeps the window")
+        XCTAssertEqual(server.appended.count, 0, "leaving the room keeps the window")
+        XCTAssertEqual(store.undoable?.weightKg, 82.5, "and the way back is still open")
 
-        await store.flushPendingSets(force: true)
+        clockMs += SetQueue.undoWindowMs + 1
+        await store.flushPendingSets()
         XCTAssertEqual(server.appended.map(\.weightKg), [82.5])
     }
 

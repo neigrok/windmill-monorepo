@@ -878,7 +878,7 @@ Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every p
 | `GET  /v1/gym/exercises/{id}/record` | a movement's record: two tiles, twelve weeks of bars, the record ladder, recent days, the days of the program that name it — ONE read |
 | `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent |
 | `POST /v1/gym/sessions/{id}/sets` | append — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` |
-| `PATCH /v1/gym/sessions/{id}/sets/{setId}` | fix — `{weightKg?, reps?, kind?, rpe?, note?}`; answers the stored row. `404 set-not-found` covers absent, another account's and this account's set in another workout; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`). **No MCP tool at any level** |
+| `PATCH /v1/gym/sessions/{id}/sets/{setId}` | fix — `{weightKg?, reps?, kind?, rpe?, note?}`; answers the stored row. An absent field leaves the stored value, `rpe: null` clears an rpe (band 1–10, kept to one decimal by the column) and `note: ""` clears a note (`kMaxSetNoteBytes` = 4000 BYTES). `404 set-not-found` covers absent, another account's and this account's set in another workout, is decided BEFORE any value is read, and writes nothing — a fix cannot create a set; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`) and every value the store cannot hold. **No MCP tool at any level** |
 | `DELETE /v1/gym/sessions/{id}/sets/{setId}` | delete — `204`, and `204` on retry; refuses nothing. **No MCP tool at any level** |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent |
 | `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first |

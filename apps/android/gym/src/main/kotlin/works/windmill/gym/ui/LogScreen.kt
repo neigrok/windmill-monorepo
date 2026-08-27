@@ -19,7 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -33,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,6 +128,8 @@ fun LogScreen(
     seat: String,
     onOpenSession: (SessionSummary) -> Unit,
     onOpenBodyweight: () -> Unit,
+    onShareSession: (String) -> Unit,
+    onDiscardSession: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
@@ -175,7 +183,12 @@ fun LogScreen(
                     item("week:${week.startMs}") { WeekDivider(week) }
                     items(week.rows, key = { it.summary.id }) { row ->
                         Box(Modifier.padding(bottom = WindmillSpace.x2)) {
-                            SessionRow(row, onOpen = { onOpenSession(row.summary) })
+                            SessionRow(
+                                row = row,
+                                onOpen = { onOpenSession(row.summary) },
+                                onShare = { onShareSession(row.summary.id) },
+                                onDiscard = { onDiscardSession(row.summary.id) },
+                            )
                         }
                     }
                 }
@@ -262,8 +275,21 @@ private fun WeekDivider(week: LogFold.Week) {
 
 // `record` is one bool over three rules — best e1RM, most reps at a weight, heaviest load for any
 // reps — and the wire does not say which was earned, so nothing here may colour a number gold.
+//
+// The long press draws nothing and carries BOTH acts — `Share this workout` and `Discard session`.
+// 13-gestures kept Discard out of this menu only until the withheld delete existed; it does now, so
+// discarding here withholds for nine seconds exactly as the review screen's Discard does, and the
+// review screen is the drawn door Law 1 asks for. A `⋮` on every row to carry an act the menu can
+// hold would be Law 4 backwards: a gesture earns its place by REMOVING a control.
 @Composable
-private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
+private fun SessionRow(
+    row: LogFold.Row,
+    onOpen: () -> Unit,
+    onShare: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    var menuUp by remember { mutableStateOf(false) }
+    val haptics = rememberGymHaptics()
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier
@@ -271,9 +297,47 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(role = Role.Button, onClickLabel = "open this session", onClick = onOpen)
-            .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "open this session",
+                onLongClickLabel = "what you can do with this workout",
+                onLongClick = {
+                    haptics.revealed()
+                    menuUp = true
+                },
+                onClick = onOpen,
+            )
+            // A long press is not reachable by a screen reader, so both of its acts are declared
+            // again — this row draws no button for either of them.
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("Share this workout") { onShare(); true },
+                    CustomAccessibilityAction(Finish.discard) { onDiscard(); true },
+                )
+            }
+            .padding(start = WindmillSpace.x4, end = WindmillSpace.x4, top = WindmillSpace.x3,
+                     bottom = WindmillSpace.x3),
     ) {
+        DropdownMenu(
+            expanded = menuUp,
+            onDismissRequest = { menuUp = false },
+            containerColor = GymSkin.raised,
+        ) {
+            DropdownMenuItem(
+                text = { Text("Share this workout", color = GymSkin.ink) },
+                onClick = {
+                    menuUp = false
+                    onShare()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(Finish.discard, color = GymSkin.alarmInk) },
+                onClick = {
+                    menuUp = false
+                    onDiscard()
+                },
+            )
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 
 import { NEW_ROUTINE_ID } from '../../../src/products/gym/log.js';
 import { NAME_SETS_FIRST, OPEN_LINE } from '../../../src/products/gym/routines.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from './harness.mjs';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const CATALOG = [{ id: 'back-squat', name: 'Back Squat' }];
-const LOG = { catalog: CATALOG, summaries: [], say: () => {}, createMovement: async () => null };
+const LOG = roomLog({ catalog: CATALOG });
 
 // A child component is not rendered by the harness, so the parent's tree holds it as an element and
 // its props are what the parent handed it: that is how one screen is driven through the next.

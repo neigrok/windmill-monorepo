@@ -235,8 +235,8 @@ final class ThreadListTests: XCTestCase {
                      "search", "filter", "folder", "pin", "archive", "waiting for you"]
         let spoken = [AskThreads.title, AskThreads.door, AskThreads.askSomethingNew,
                       AskThreads.meta(9), AskThreads.emptyHead, AskThreads.empty,
-                      AskThreads.delete,
-                      AskThreads.deleteNote, AskThreads.reading, AskThreads.fromTheConversation]
+                      WithheldWords.thread, WithheldWords.threadDetail,
+                      AskThreads.reading, AskThreads.fromTheConversation]
 
         for sentence in spoken {
             for word in never {
@@ -255,10 +255,12 @@ final class ThreadListTests: XCTestCase {
         XCTAssertFalse(AskThreads.empty.contains("?"))
     }
 
+    // The delete block inside the conversation came off with the swipe that replaced it; what it was
+    // honest about rides on the transient instead, at the moment of the act.
     func testTheDeleteSaysWhatItTakesAndWhatItLeaves() {
-        XCTAssertEqual(AskThreads.deleteNote,
-                       "The conversation goes for good. A change you applied stays in the routine’s "
-                       + "history — that is a fact about your program, not a message.")
+        XCTAssertEqual(WithheldWords.thread, "Conversation deleted.")
+        XCTAssertEqual(WithheldWords.threadDetail,
+                       "a change you applied stays in the routine’s history")
     }
 }
 

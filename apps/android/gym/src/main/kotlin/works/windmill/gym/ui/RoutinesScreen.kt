@@ -24,8 +24,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +73,7 @@ fun RoutinesScreen(
     onJustStart: () -> Unit,
     onBuild: (RoutineDraft) -> Unit,
     onOpenRoutine: (String) -> Unit,
+    onDeleteRoutine: (String) -> Unit,
     onReview: (Proposal) -> Unit,
     onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
@@ -135,13 +139,14 @@ fun RoutinesScreen(
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
-                        RoutineRow(
+                        SwipeableRoutineRow(
                             routine = routine,
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
                             onDuplicate = {
                                 onBuild(RoutineDraft.of(routine).duplicated(position = store.routines.size))
                             },
+                            onDelete = { onDeleteRoutine(routine.id) },
                             onReview = onReview,
                         )
                     }
@@ -234,15 +239,46 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
     }
 }
 
+// Trailing swipe, one action, and it is Delete — Duplicate stays in the overflow, because two
+// trailing actions hide the row's own name behind them and a lifter cannot see WHICH routine they
+// are deciding about while they decide.
+//
+// LAW 1 is satisfied here for free and by the overflow, not by the swipe: the same Delete is a real
+// button a screen reader can reach, so no custom action is declared twice on this row.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableRoutineRow(
+    routine: Routine,
+    nowMs: Long,
+    onOpenRoutine: (String) -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+    onReview: (Proposal) -> Unit,
+) {
+    val haptics = rememberGymHaptics()
+    // A leading swipe never settles here — and a row put back by a refusal or an Undo arrives with
+    // no act owed, which is `rememberRowDismiss`'s whole reason to exist.
+    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
+        haptics.revealed()
+        onDelete()
+    }
+    SwipeToDismissBox(
+        state = swipe,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = { RowDeleteGround() },
+    ) {
+        RoutineRow(routine, nowMs, onOpenRoutine, onDuplicate, onDelete, onReview)
+    }
+}
+
 // A routine with a proposal wears a dot and a count, and the chip is its own target onto the diff.
-// The overflow carries Duplicate alone: deleting a routine has no undo yet, so it stays inside the
-// editor where it takes a trip to reach.
 @Composable
 private fun RoutineRow(
     routine: Routine,
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val waiting = routine.pendingProposal
@@ -298,6 +334,13 @@ private fun RoutineRow(
                     onClick = {
                         menuUp = false
                         onDuplicate()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete routine", color = GymSkin.alarmInk) },
+                    onClick = {
+                        menuUp = false
+                        onDelete()
                     },
                 )
             }

@@ -225,14 +225,28 @@ final class RoomRoutineCopyUITests: XCTestCase {
         return element.exists && element.isHittable
     }
 
+    // Delete left the editor's foot — which sat three screens deep — for the routine row's own
+    // trailing swipe, so this walks back to the list and swipes there (`13-gestures.md`).
     private func deleteTheOpenRoutine(named name: String = "Open Thursday") {
-        app.navigationBars.buttons["Edit"].tap()
-        let delete = app.buttons["Delete routine"]
-        XCTAssertTrue(scrolled(to: delete), "the editor drew no way to delete the routine")
-        delete.tap()
+        for _ in 0..<3 where !app.navigationBars["Routines"].exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
         XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 20),
-                      "the delete did not unwind to the routines root")
+                      "the way back to the routines root never opened")
+        let row = card(name)
+        XCTAssertTrue(scrolled(to: row), "the routines list drew no card for the fixture")
+        row.swipeLeft()
+        let delete = app.buttons["Delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 10), "the routine row revealed no Delete")
+        delete.tap()
         XCTAssertFalse(card(name).exists, "the fixture routine is still there")
+
+        // Withheld for nine seconds, and nothing reaches the shelf until that window closes: this
+        // fixture is only really taken back once the transient has retired.
+        let undo = app.buttons["Undo"]
+        guard undo.exists else { return }
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: undo)
+        waitForExpectations(timeout: 25)
     }
 
     // A routine card's header carries the name, so the card is found — and opened — by its name.

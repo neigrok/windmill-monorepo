@@ -37,17 +37,21 @@ one you never want to hit by accident with a wet thumb.
 
 ## Finish becomes a sheet over the session it finished
 
-Today the finish screen is a **dead end** — no back, reached only from a link at the bottom of a
-session header, while owning a major offer (*keep this as a routine*) and a destructive door
-(*discard session*).
+The screen owns a major offer (*keep this as a routine*) and a destructive door (*discard session*),
+and it must not be a dead end while it does.
 
-> **It becomes a sheet presented over the session it just closed.** Dismissing it leaves you in the
+> **It is a sheet presented over the session it just closed.** Dismissing it leaves you in the
 > workout you finished, which is where you wanted to be.
 
-The offer and the destructive door keep their places inside it. **Discard keeps its confirmation** —
-on every surface it asks *Discard this session?* / *Discarding deletes the session and its sets.
-There is no undoing it.* with **Discard** (destructive) · **Keep it** — because it is not a gesture
-and it has no undo.
+Built that way on iOS (`GymRoom.swift:163-171`). Android draws it as a screen of its own with back
+claimed and inert; the web's `#/gym/finish/<id>` is a review of a past workout rather than the end of
+a live one — the web starts no sessions — and carries two drawn ways back (`Finish.jsx:29`, `:41`).
+
+The offer and the destructive door keep their places inside it. **Discard asks nothing.** It withholds
+the session for the same nine seconds every other delete in the room is held for, puts the transient's
+*Undo* beside it, and sends nothing until the clock closes — so the confirmation dialog and the
+sentence *There is no undoing it.* are gone from all three surfaces. A question in front of an act
+that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
 
 ## The rest reading counts up
 
@@ -59,21 +63,25 @@ still fires. One reading of one clock, on the room and on the lock screen alike.
 
 Warmup · working · drop · failure are columns the backend has always written. Only working sets
 count toward anything, so a lifter who cannot mark a warmup is feeding the wrong numbers into every
-stat the product shows them. The phones offer the choice today, and both make it a trip: iOS offers
-working and warmup on the logger's pill and all four only on the fix sheet; Android offers all four
-behind a bottom sheet the pill opens.
+stat the product shows them.
 
 It belongs on the set being logged, not in a sheet: the kind is a property of the rep you are about
-to do, and choosing it must not cost a trip. **The default is working**, because it always is.
+to do, and choosing it must not cost a trip. Built that way on both phones — all four kinds one tap
+away in place, on the logger's own pill (`LoggerScreen.swift:356-360`, `LoggerScreen.kt:291-296`).
+**The default is working**, because it always is, and the pill disarms itself the moment a set lands
+so a warmup toggle left on cannot file the working sets after it as ramp-ups.
 
 ## The undo lives on the transient
 
-`13-gestures.md` Law 4, drawn here for the first time on the screen that owns it: the drawn *Undo*
-comes out of the logger's set row, and a transient carries both the action and the fact that the
-window is open — and retires itself when the window closes.
+Built, on the screen that owns it: the drawn *Undo* is out of the logger's set row on every surface,
+and one transient per platform — hosted by the room, not by a screen — carries both the action and
+the fact that a window is open, and retires itself when the last clock closes. It floats above the
+reach band and grows no inset, because `Log set` is pressed five to forty times a session and may not
+jump when a window opens. `13-gestures.md` Law 4 has the whole of it.
 
-**The window is one number.** Every surface holds 9000 ms (ledger `2m`); a board that draws a
-duration draws 9000.
+**The window is 9000 ms on every surface** (ledger `2m`); a board that draws a duration draws 9000.
+It is **two constants pinned equal, not one number** — the span a delete is held, and the span a said
+sentence stands — and the transient retires on the window's clock, never on a sentence's.
 
 ## Drawn in both skins, and at three text sizes
 
@@ -93,6 +101,11 @@ that disagrees draws the pinned string and argues in its report.
 **And every refusal has a named owner.** When a control is removed or added, the refusals it carries
 are assigned to a board on a surface before drawing starts — the rule wave two learned by losing four
 of them.
+
+**Five sentences are outstanding against that rule right now** and are recorded in the ledger as `2x`
+rather than left to drift: the set note's over-the-bound refusal, the unrated seat's label, the
+refusal a second walk gets while a deviation is still pending, what deleting a conversation keeps,
+and the transient's count line. Three of the five belong to screens this brief owns.
 
 ## Open
 

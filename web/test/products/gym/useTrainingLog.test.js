@@ -352,7 +352,7 @@ test('a poll that does not come back keeps the last true read on the mirror', as
   await settle();
   assert.equal(view.log.session.id, 'ses_phone');
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0']);
-  assert.equal(view.log.toast, null);
+  assert.equal(view.log.transient, null);
 
   basement = false;
   backend.stored.push(loggedSet(1, now - 10_000, 105));
@@ -754,22 +754,25 @@ test('a second sentence replaces the first and is up for its own nine seconds', 
   const backend = deepLog(finishedRows(1, now));
   const view = await open(t, backend.api);
 
-  view.log.say('47.5 × 4 is out of the log.', { label: 'Undo', run() {} });
-  assert.equal(view.log.toast.action.label, 'Undo');
+  // The voice says a sentence and carries no move of its own: the only action a transient offers is
+  // the withheld window's Undo, and the window hands that over itself.
+  view.log.say('47.5 × 4 is out of the log.');
+  assert.equal(view.log.transient.action, null);
+  assert.notEqual(view.log.transient.dismiss, null);
 
   t.mock.timers.tick(TOAST_MS - 1);
-  assert.equal(view.log.toast.text, '47.5 × 4 is out of the log.');
+  assert.equal(view.log.transient.text, '47.5 × 4 is out of the log.');
 
   view.log.say('That set is still in the log — the log didn’t answer. Try again when you have signal.');
-  assert.equal(view.log.toast.action, null);
+  assert.equal(view.log.transient.action, null);
 
   t.mock.timers.tick(TOAST_MS - 1);
   assert.equal(
-    view.log.toast.text,
+    view.log.transient.text,
     'That set is still in the log — the log didn’t answer. Try again when you have signal.',
   );
   t.mock.timers.tick(1);
-  assert.equal(view.log.toast, null);
+  assert.equal(view.log.transient, null);
 });
 
 test('the log re-read after a correction is as deep as the walk, and carries the row that moved', async (t) => {
@@ -833,7 +836,7 @@ test('a created movement lands in the catalog, and a refusal is said in the one 
   await settle();
   assert.equal(refused, null);
   assert.equal(
-    view.log.toast.text,
+    view.log.transient.text,
     'That movement wasn’t created — the log didn’t answer. Try again when you have signal.',
   );
 });
@@ -851,7 +854,7 @@ test('a movement the store refuses as written is not blamed on the signal', asyn
   await settle();
 
   assert.equal(refused, null);
-  assert.equal(view.log.toast.text, 'That movement wasn’t created — the log wouldn’t take it as written.');
+  assert.equal(view.log.transient.text, 'That movement wasn’t created — the log wouldn’t take it as written.');
 });
 
 test('the account’s settings arrive with the log, and the unit is set before the rooms open', async (t) => {

@@ -1,11 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon, Input, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  alsoReadsLabel, cappedName, entryLabel, isUntested, movementOf, nameCountLabel, nameOfMovement,
-  NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel, ROUTINES_HREF, showsNameCount,
-  threadHref, UNTESTED,
+  alsoReadsLabel, cappedName, entryLabel, isNameOverCap, isUntested, movementOf, nameCountLabel,
+  nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel, ROUTINES_HREF,
+  showsNameCount, threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { Overflow } from './Overflow.jsx';
@@ -14,10 +14,11 @@ import { mintId } from './mint.js';
 import { PendingProposals, ProposalDot, ProposalFlag, ProposalReview } from './Proposals.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryPlaceLabel, hasOpenEntry,
-  historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER, OPEN_LINE, OPEN_PLACEHOLDER,
-  reorderEntries, routineWrite, saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal,
-  withEntryAdded, withEntryRemoved, withEntrySet, withField, withSignFlipped,
+  blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryDroppedLine,
+  entryPlaceLabel, hasOpenEntry, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
+  OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite, saysNeverLogged,
+  targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt, withEntryRemoved,
+  withEntrySet, withField, withSignFlipped,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -40,6 +41,21 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
     setCopying(false);
   };
 
+  // Withheld like every other delete in this room: nothing is on the wire for the length of the
+  // window, and the transient the room draws is the only way back.
+  const remove = (routine) => log.withhold({
+    kind: 'routine',
+    id: routine.id,
+    line: routineDeletedLine(routine.name),
+    send: () => gymApi.deleteRoutine(routine.id),
+    refused: (error) => log.say(`${routine.name} is still in your program — ${failureReason(error)}.`),
+  });
+
+  // Off the home while the window holds it, and off for good once the store has answered — one
+  // question, asked of the room, so this list is right however many times it is rebuilt mid-window.
+  const gone = log.hidden('routine');
+  const routines = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
+
   return (
     <>
       <header className="gym-head gym-log-head">
@@ -47,7 +63,9 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
         <a className="gym-door-past" href={routineHref(NEW_ROUTINE_ID)}>New</a>
       </header>
       <LiveMirror log={log} onSignIn={onSignIn} />
-      {view.phase === 'ready' && <PendingProposals routines={view.data} log={log} onChanged={view.refresh} />}
+      {/* The filtered list, not the read: a delete cascades the routine's proposals, so a routine
+          the window is holding takes its waiting card off the home for as long as it holds it. */}
+      {view.phase === 'ready' && <PendingProposals routines={routines} log={log} onChanged={view.refresh} />}
       {reviewing && (
         <ProposalReview
           key={reviewing}
@@ -65,16 +83,16 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
           <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       )}
-      {view.phase === 'ready' && view.data.length === 0 && (
+      {view.phase === 'ready' && routines.length === 0 && (
         <>
           <p className="gym-quiet">No routines yet.</p>
           <p className="gym-quiet">Finish a session and gym offers to keep it as one — or write one out now.</p>
           <Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>
         </>
       )}
-      {view.phase === 'ready' && view.data.length > 0 && (
+      {view.phase === 'ready' && routines.length > 0 && (
         <ul className="gym-routines">
-          {view.data.map((routine) => (
+          {routines.map((routine) => (
             <li className="gym-routine" key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
                 <span className="gym-routine-line">
@@ -85,7 +103,10 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
               </a>
               <Overflow
                 label={`More for ${routine.name}`}
-                items={[{ label: 'Duplicate', run: () => duplicate(routine) }]}
+                items={[
+                  { label: 'Duplicate', run: () => duplicate(routine) },
+                  { label: 'Delete', run: () => remove(routine) },
+                ]}
               />
             </li>
           ))}
@@ -112,6 +133,11 @@ export function RoutineEditor({ id, log }) {
   const [saving, setSaving] = useState(false);
   const draft = edits ?? (view.phase === 'ready' ? draftFrom(view.data) : null);
 
+  // A draft that no longer exists has nowhere to put a line back, so the editor's own withheld
+  // removals close with it. Nothing was ever on the wire for them, so nothing is sent either.
+  const { dropWithheld } = log;
+  useEffect(() => () => dropWithheld('entry'), [dropWithheld]);
+
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the routine…</p>;
   if (view.phase === 'absent') {
     return (
@@ -133,7 +159,26 @@ export function RoutineEditor({ id, log }) {
     );
   }
 
-  const editEntries = (change) => setEdits({ ...draft, entries: change(draft.entries) });
+  // Functional: a row put back nine seconds later must land on the draft as it stands then, not on
+  // the draft as it stood when the row left it.
+  const editEntries = (change) => setEdits((held) => {
+    const base = held ?? draftFrom(view.data);
+    return { ...base, entries: change(base.entries) };
+  });
+
+  // The `×` is as destructive as a swipe and takes the same undo, on the same clock — the gate is the
+  // act, not the gesture. It sends nothing: the line lives in an unsaved draft, and the only other
+  // way back is a Cancel that discards every other edit made since the editor opened.
+  const dropEntry = (index) => {
+    const entry = draft.entries[index];
+    editEntries((held) => withEntryRemoved(held, index));
+    log.withhold({
+      kind: 'entry',
+      id: mintId('drop_'),
+      line: entryDroppedLine(nameOfMovement(log.catalog, entry.exerciseId)),
+      undo: () => editEntries((held) => withEntryAt(held, index, entry)),
+    });
+  };
   // One at a time, and in this order: there is no screen before this one to have asked for a name.
   const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
   const built = builtLabel(view.data);
@@ -181,7 +226,11 @@ export function RoutineEditor({ id, log }) {
             ariaLabel="Routine name"
             autoFocus={fresh}
             onChange={(event) => setEdits({ ...draft, name: cappedName(event.target.value) })}
-            trailing={showsNameCount(draft.name) && <span className="gym-name-count">{nameCountLabel(draft.name)}</span>}
+            trailing={showsNameCount(draft.name) && (
+              <span className={isNameOverCap(draft.name) ? 'gym-name-count is-over' : 'gym-name-count'}>
+                {nameCountLabel(draft.name)}
+              </span>
+            )}
           />
         </span>
         <Button
@@ -207,7 +256,7 @@ export function RoutineEditor({ id, log }) {
         catalog={log.catalog}
         onMove={(from, to) => editEntries((held) => reorderEntries(held, from, to))}
         onTarget={(index) => setTarget(index)}
-        onRemove={(index) => editEntries((held) => withEntryRemoved(held, index))}
+        onRemove={dropEntry}
       />
 
       {/* Once, under the whole list, while a row is open and no target sheet stands over it: the

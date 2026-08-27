@@ -172,9 +172,12 @@ public struct TrainingSet: Equatable, Codable, Sendable, Identifiable {
                     reps: reps, kind: kind, rpe: rpe, note: note, completedAtMs: completedAtMs)
     }
 
+    // An omitted field is one the correction never named, so the stored value stands.
     public func corrected(by fix: SetFix) -> TrainingSet {
-        TrainingSet(id: id, exerciseId: exerciseId, setNumber: setNumber, weightKg: fix.weightKg,
-                    reps: fix.reps, kind: fix.kind, rpe: rpe, note: note, completedAtMs: completedAtMs)
+        TrainingSet(id: id, exerciseId: exerciseId, setNumber: setNumber,
+                    weightKg: fix.weightKg ?? weightKg, reps: fix.reps ?? reps,
+                    kind: fix.kind ?? kind, rpe: fix.rpeNamed ? fix.rpe : rpe,
+                    note: fix.note ?? note, completedAtMs: completedAtMs)
     }
 
     // The instant repaired into the wire's bound, so a broken local clock cannot jam the claim.
@@ -721,20 +724,77 @@ public struct SetWrite: Equatable, Codable, Sendable {
     }
 }
 
-// All three ride on every fix, changed or not; the server refuses every other key by name.
+// Only what moved rides: an omitted field leaves what the log stores, and the server refuses every
+// key not on this list by name. A note clears itself by being sent empty; an rpe clears by being
+// named null, which is why the naming and the value are two fields and not one optional.
 public struct SetFix: Equatable, Codable, Sendable {
-    public let weightKg: Double
-    public let reps: Int
-    public let kind: SetKind
+    public let weightKg: Double?
+    public let reps: Int?
+    public let kind: SetKind?
+    public let note: String?
+    public let rpeNamed: Bool
+    public let rpe: Double?
 
-    public init(weightKg: Double, reps: Int, kind: SetKind) {
+    public init(weightKg: Double? = nil, reps: Int? = nil, kind: SetKind? = nil,
+                note: String? = nil, rpeNamed: Bool = false, rpe: Double? = nil) {
         self.weightKg = weightKg
         self.reps = reps
         self.kind = kind
+        self.note = note
+        self.rpeNamed = rpeNamed
+        self.rpe = rpe
+    }
+
+    // What the lifter actually moved, against the row they opened. A value they left alone is not a
+    // correction, and sending it would overwrite whatever moved it since.
+    public init(of stored: TrainingSet, weightKg: Double, reps: Int, kind: SetKind,
+                rpe: Double?, note: String) {
+        self.weightKg = weightKg == stored.weightKg ? nil : weightKg
+        self.reps = reps == stored.reps ? nil : reps
+        self.kind = kind == stored.kind ? nil : kind
+        self.note = note == stored.note ? nil : note
+        rpeNamed = rpe != stored.rpe
+        self.rpe = rpe
+    }
+
+    // Every field named, from the row this device holds: a replayed PATCH re-asserts the whole row
+    // rather than a diff against a copy nobody kept.
+    public init(whole set: TrainingSet) {
+        weightKg = set.weightKg
+        reps = set.reps
+        kind = set.kind
+        note = set.note
+        rpeNamed = true
+        rpe = set.rpe
+    }
+
+    public var isEmpty: Bool {
+        weightKg == nil && reps == nil && kind == nil && note == nil && !rpeNamed
     }
 
     enum CodingKeys: String, CodingKey {
-        case weightKg, reps, kind
+        case weightKg, reps, kind, note, rpe
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        weightKg = try fields.decodeIfPresent(Double.self, forKey: .weightKg)
+        reps = try fields.decodeIfPresent(Int.self, forKey: .reps)
+        kind = try fields.decodeIfPresent(String.self, forKey: .kind).map(SetKind.init(parsing:))
+        note = try fields.decodeIfPresent(String.self, forKey: .note)
+        rpeNamed = fields.contains(.rpe)
+        rpe = try fields.decodeIfPresent(Double.self, forKey: .rpe)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encodeIfPresent(weightKg, forKey: .weightKg)
+        try fields.encodeIfPresent(reps, forKey: .reps)
+        try fields.encodeIfPresent(kind?.rawValue, forKey: .kind)
+        try fields.encodeIfPresent(note, forKey: .note)
+        guard rpeNamed else { return }
+        guard let rpe else { return try fields.encodeNil(forKey: .rpe) }
+        try fields.encode(rpe, forKey: .rpe)
     }
 }
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { receiptLine } from '../../../src/products/gym/proposals.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from './harness.mjs';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
 const realFetch = global.fetch;
@@ -213,7 +213,7 @@ test('the routines home owns a proposal reached by its address: settling or lear
     throw new Error(`unexpected ${method} ${path}`);
   };
   const said = [];
-  const log = { phase: 'ready', session: null, catalog: [], say: (line) => said.push(line), summaries: [] };
+  const log = roomLog({ say: (line) => said.push(line) });
   const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
   const screen = renderHook(t, () => RoutinesList({ log, onSignIn: () => {}, reviewing: 'prop_1' }));
   await settle();

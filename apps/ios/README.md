@@ -244,9 +244,11 @@ be tested without the file on the domain and a signed build.
 - **No app icon or launch asset.**
 - **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
   of three products have no phone-side state to report.
-- **Gym's drag-to-reorder and swipe-to-drop are built but never performed.** No synthetic touch
-  covers them yet; the edge-swipe home gesture, which used to sit in this list, is now driven by
-  `WindmillUITests` on a simulator.
+- **Gym's drag-to-reorder, the jump sheet's swipe-to-drop and the refusal row's swipe-to-dismiss are
+  built but never performed.** No synthetic touch covers those three yet. The gestures that ARE
+  driven on a simulator by `WindmillUITests`: the shell's edge-swipe home, the set row's
+  swipe-to-delete and its refusal of a full swipe, the logger's horizontal walk between movements,
+  and the log row's long press.
 - **Dynamic Type does nothing in gym, so the room is MIXED at accessibility sizes.** Every size the
   room paints is a literal point value and does not move; the containers the platform paints do —
   the navigation bar, the tab bar, the keyboard, and `List` section headers and footers. At

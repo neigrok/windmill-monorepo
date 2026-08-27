@@ -20,6 +20,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,7 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +61,7 @@ fun ThreadsScreen(
     backTo: String,
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onAskNew: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
@@ -72,7 +79,8 @@ fun ThreadsScreen(
         }
     }
 
-    val held = threads.orEmpty()
+    // A conversation inside its undo window is off the list and nothing has been sent.
+    val held = threads.orEmpty().filterNot { it.id in store.withheldIds }
     GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -120,7 +128,12 @@ fun ThreadsScreen(
                         }
                     }
                     items(month.threads, key = { it.id }) { thread ->
-                        ThreadRow(thread, nowMs) { onOpen(thread.id) }
+                        SwipeableThreadRow(
+                            thread = thread,
+                            nowMs = nowMs,
+                            onOpen = { onOpen(thread.id) },
+                            onDelete = { onDelete(thread.id) },
+                        )
                     }
                 }
             }
@@ -137,6 +150,36 @@ fun ThreadsScreen(
                 Text(Threads.open, style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
             }
         }
+    }
+}
+
+// Trailing swipe, one action, and it is Delete. LAW 1, the Android half: TalkBack sees a drag, and
+// this row carries no overflow to inherit a real button from, so the action is declared again BY
+// HAND beside it.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableThreadRow(
+    thread: AskThread,
+    nowMs: Long,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val haptics = rememberGymHaptics()
+    // A row put back by a refusal or an Undo arrives with no act owed: `rememberRowDismiss` spends
+    // the delete only on a value this composition watched change.
+    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
+        haptics.revealed()
+        onDelete()
+    }
+    SwipeToDismissBox(
+        state = swipe,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = { RowDeleteGround() },
+        modifier = Modifier.semantics {
+            customActions = listOf(CustomAccessibilityAction("Delete") { onDelete(); true })
+        },
+    ) {
+        ThreadRow(thread, nowMs, onOpen)
     }
 }
 
@@ -205,7 +248,6 @@ fun ThreadScreen(
     lookedAt: Set<String>,
     backTo: String,
     onBack: () -> Unit,
-    onDeleted: () -> Unit,
     onReview: (ThreadProposal) -> Unit,
     say: (String?) -> Unit,
 ) {
@@ -215,7 +257,6 @@ fun ThreadScreen(
     // The proposals' own rows, read after the thread: the card carries the model's prose, which the
     // thread's line does not. A read that missed leaves the counted fallback standing.
     var minted by remember(threadId) { mutableStateOf<Map<String, Proposal>>(emptyMap()) }
-    var deleting by remember(threadId) { mutableStateOf(false) }
 
     // Read on the way in, and again when a receipt lands: the rows' states and the outcome are the
     // server's, so a decision taken here is read back rather than crossed in by this screen.
@@ -254,38 +295,9 @@ fun ThreadScreen(
                 Minted(proposal, minted[proposal.id], nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
             }
             receipts.forEach { ReceiptLine(it) }
-            Text(Threads.deleteRule, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum)
-                    .clip(RoundedCornerShape(WindmillRadius.lg))
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = !deleting, role = Role.Button) {
-                        // The screen only leaves once the log says the conversation is gone.
-                        scope.launch {
-                            if (deleting) return@launch
-                            deleting = true
-                            try {
-                                say(null)
-                                when (val gone = store.deleteThread(held.id)) {
-                                    is GymResult.Ok -> onDeleted()
-                                    is GymResult.Failed ->
-                                        say(gone.why.line("that conversation is still here"))
-                                }
-                            } finally {
-                                deleting = false
-                            }
-                        }
-                    },
-            ) {
-                Text(
-                    Threads.deletes,
-                    style = WindmillFont.body(15, FontWeight.SemiBold),
-                    color = GymSkin.inkDim,
-                )
-            }
+            // The delete and everything said about it are off this screen: the list's own row carries
+            // the swipe and the overflow-free custom action, and what the delete keeps is said by the
+            // room's transient at the moment of the act — where somebody is actually standing.
         }
     }
 }

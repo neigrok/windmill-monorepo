@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
@@ -331,8 +333,11 @@ class DiscardConfirmationTests {
         revoke = { error("never revoked on a short session") },
     )
 
+    // A destructive act gets an UNDO, not a confirmation (13-gestures Law 2). The tap discards on the
+    // spot — nothing is on the wire for nine seconds — and the dialog that used to stand between,
+    // along with the sentence that said the discard could not be undone, is gone with it.
     @Test
-    fun aDiscardIsConfirmedAndKeepingItDecidesNothing() {
+    fun aDiscardTakesEffectOnTheTapAndNoDialogStandsBetween() {
         var discarded = 0
         var done = 0
         compose.setContent {
@@ -347,24 +352,14 @@ class DiscardConfirmationTests {
             )
         }
 
-        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
         compose.onNodeWithText("Discard session").performScrollTo().performClick()
-        compose.onNodeWithText("Discard this session?").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals("one tap, and the window it opens is the room's", 1, discarded)
+            assertEquals(0, done)
+        }
+        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
         compose.onNodeWithText("Discarding deletes the session and its sets. There is no undoing it.")
-            .assertIsDisplayed()
-
-        compose.onNode(hasText("Keep it") and hasAnyAncestor(isDialog())).performClick()
-        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
-        compose.runOnIdle {
-            assertEquals("closing the dialog decides nothing", 0, discarded)
-            assertEquals(0, done)
-        }
-
-        compose.onNodeWithText("Discard session").performScrollTo().performClick()
-        compose.onNode(hasText("Discard") and hasAnyAncestor(isDialog())).performClick()
-        compose.runOnIdle {
-            assertEquals("the confirmed tap is the one that deletes", 1, discarded)
-            assertEquals(0, done)
-        }
+            .assertDoesNotExist()
+        compose.onAllNodesWithText("Keep it").assertCountEquals(1)
     }
 }

@@ -195,12 +195,17 @@ editor's counter exactly, because a lifter should not have to learn two rules fo
 is the shape a wave gets wrong by leaving it unpinned: a cap without its counter is three surfaces
 inventing three answers.
 
-**Removing a row is as destructive as a swipe, and takes the same undo — and no surface gives it one
-yet.** The web draws an `×` (a pointer drag would otherwise be the only way to remove a line, and Law
-1 forbids a gesture being the only path); both phones remove by a trailing swipe, complete on iOS
-through `.swipeActions` and completed by hand on Android with a declared custom action. All three
-drop the line from an unsaved draft whose only other recovery is Cancel, which discards every other
-edit. All three owe it the transient undo, which lands with the rest of `13-gestures.md`.
+**Removing a row is as destructive as a swipe, and takes the same undo.** The web draws an `×` (a
+pointer drag would otherwise be the only way to remove a line, and Law 1 forbids a gesture being the
+only path) and **it has the undo**: the removed line opens a window of its own like every other
+delete in the room, and taking it back puts the line **at its own index**, never appended
+(`Routines.jsx:172-181`, `withEntryAt` in `routines.js:123-126`). Nothing is sent either way — a
+draft line is not on the wire — so the window closing simply drops the way back, and a draft that
+goes away closes its windows with it.
+
+Both phones remove by a trailing swipe, complete on iOS through `.swipeActions` and completed by hand
+on Android with a declared custom action, and **they are unchanged**: there the row leaves an unsaved
+draft whose only other recovery is Cancel, which discards every other edit.
 **The gate is the act, not the gesture.**
 
 ## What removing a control obliges you to do

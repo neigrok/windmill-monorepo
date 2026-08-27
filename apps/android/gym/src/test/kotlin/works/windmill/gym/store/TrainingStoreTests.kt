@@ -1607,19 +1607,21 @@ class TrainingStoreTests {
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
-        store.withhold("ses_1", taken)
-        assertEquals(Withheld("ses_1", taken, untilMs = clockMs + SetQueue.undoWindowMs), store.withheld)
+        store.withhold(Deletion.Set("ses_1", taken))
+        assertEquals(
+            listOf(WithheldDelete(Deletion.Set("ses_1", taken), untilMs = clockMs + SetQueue.undoWindowMs)),
+            store.withheld)
         assertTrue("nothing has been told yet", server.removed.isEmpty())
 
-        assertTrue(store.keepWithheld())
-        assertNull(store.withheld)
+        assertNotNull(store.keepWithheld())
+        assertEquals(emptyList<WithheldDelete>(), store.withheld)
         assertNull("undo sends nothing at all — it is this device changing its mind",
-            store.settleWithheld())
+            store.settleWithheld(taken.id))
         assertTrue(server.removed.isEmpty())
         assertEquals(2, server.sets.getValue("ses_1").size)
 
-        store.withhold("ses_1", taken)
-        assertNull(store.settleWithheld())
+        store.withhold(Deletion.Set("ses_1", taken))
+        assertNull(store.settleWithheld(taken.id))
         assertEquals(listOf("ses_1" to taken.id), server.removed)
         assertEquals("the set does not stand", listOf(90.0),
             server.sets.getValue("ses_1").map { it.weightKg })
@@ -1629,8 +1631,11 @@ class TrainingStoreTests {
             listOf(270.0), store.logged.map { it.tonnageKg })
     }
 
+    // The old rule REVERSED, and this is the one the gesture wave turns on: behind a swipe two rows
+    // can be gone in a second, and a second delete that settled the first would send it while its
+    // Undo was still on screen.
     @Test
-    fun testASecondDeleteInsideTheWindowSendsTheFirstRatherThanDroppingIt() = runTest {
+    fun testASecondDeleteOpensAWindowOfItsOwnAndSettlesNothing() = runTest {
         val server = FakeTraining()
         val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
         store.logSet(weightKg = 82.5, reps = 5)
@@ -1641,34 +1646,39 @@ class TrainingStoreTests {
         val first = server.sets.getValue("ses_1").first()
         val second = server.sets.getValue("ses_1").last()
 
-        assertNull(store.withhold("ses_1", first))
-        assertTrue("nothing is told while it is the one holding the window", server.removed.isEmpty())
-        assertNull(store.withhold("ses_1", second))
+        store.withhold(Deletion.Set("ses_1", first))
+        store.withhold(Deletion.Set("ses_1", second))
 
-        assertEquals("the first went out the moment the second took the slot",
-            listOf("ses_1" to first.id), server.removed)
-        assertEquals("and the screen that read the session knows not to draw it either",
-            setOf(first.id), store.deletedSets)
-        assertEquals(second, store.withheld?.set)
+        assertEquals("nothing went out — a second delete settles nothing",
+            emptyList<Pair<String, String>>(), server.removed)
+        assertEquals(setOf(first.id, second.id), store.withheldIds)
+        assertEquals("both rows are off every list that reads them",
+            emptySet<String>(), store.deletedSets)
 
-        assertTrue("the second is still the lifter's to take back", store.keepWithheld())
-        assertEquals("so exactly one set is gone — the one whose window ran out",
-            listOf(second.id), server.sets.getValue("ses_1").map { it.id })
+        assertEquals("Undo takes the NEWEST back first",
+            Deletion.Set("ses_1", second), store.keepWithheld()?.deletion)
+        assertEquals("and the transient re-reads for the one still held",
+            Deletion.Set("ses_1", first), store.holding?.deletion)
+        assertNotNull(store.keepWithheld())
+
+        assertEquals("so both sets are still on the log", listOf(first.id, second.id),
+            server.sets.getValue("ses_1").map { it.id })
+        assertEquals(emptyList<Pair<String, String>>(), server.removed)
     }
 
     @Test
     fun testADeleteTheLogCouldNotTakeIsSaidAndTheRowStands() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server)
+        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
         store.finish()
         val taken = server.sets.getValue("ses_1").single()
 
         server.refuseDelete = storageFailure
-        store.withhold("ses_1", taken)
+        store.withhold(Deletion.Set("ses_1", taken))
 
-        assertEquals(WriteFailure.Refused("internal error"), store.settleWithheld())
+        assertEquals(WriteFailure.Refused("internal error"), store.settleWithheld(taken.id))
         assertEquals(emptySet<String>(), store.deletedSets)
         assertEquals(listOf(taken.id), server.sets.getValue("ses_1").map { it.id })
     }
@@ -1676,16 +1686,18 @@ class TrainingStoreTests {
     @Test
     fun testAWithheldDeleteIsDroppedRatherThanSentAtSomebodyElsesLog() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server)
+        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
         store.finish()
-        store.withhold("ses_1", server.sets.getValue("ses_1").single())
+        val taken = server.sets.getValue("ses_1").single()
+        store.withhold(Deletion.Set("ses_1", taken))
 
         store.connect(account(signedIn = true, id = "u2"))
 
-        assertNull(store.withheld)
-        assertNull(store.settleWithheld())
+        assertEquals(emptyList<WithheldDelete>(), store.withheld)
+        assertNull("and there is nothing left for a settle over it to find",
+            store.settleWithheld(taken.id))
         assertTrue("the set survives, which is the direction this one may fail in",
             server.removed.isEmpty())
     }

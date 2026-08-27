@@ -167,13 +167,12 @@ final class FinishTests: XCTestCase {
 }
 
 final class DiscardTests: XCTestCase {
-    func testDiscardIsAskedBeforeItRunsAndTheAskingSaysWhatItDeletes() {
+    // The confirmation is gone with the thing it was defending: discarding is withheld for nine
+    // seconds and taken back on the transient, so the screen asks nothing and promises nothing.
+    func testDiscardAsksNothingAndSaysNothingItCannotUndo() {
         XCTAssertEqual(Finish.Discard.action, "Discard session")
-        XCTAssertEqual(Finish.Discard.title, "Discard this session?")
-        XCTAssertEqual(Finish.Discard.body,
-                       "Discarding deletes the session and its sets. There is no undoing it.")
-        XCTAssertEqual(Finish.Discard.confirm, "Discard")
-        XCTAssertEqual(Finish.Discard.keep, "Keep it")
+        XCTAssertEqual(WithheldWords.session, "Session deleted.")
+        XCTAssertEqual(WithheldWords.undo, "Undo")
     }
 }
 

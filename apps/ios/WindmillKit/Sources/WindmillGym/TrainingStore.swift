@@ -169,17 +169,22 @@ public final class TrainingStore: ObservableObject {
         queue.withdrawable(at: now())?.set
     }
 
-    public struct Deletion: Equatable {
-        public let set: TrainingSet
-        public let sessionId: String
-        let untilMs: Int64
+    // The instant the queue itself will let that set go. The transient runs on this clock rather than
+    // on a second one started after the walk, so it never offers an undo the queue has already spent.
+    public var undoableUntilMs: Int64? {
+        queue.withdrawable(at: now())?.heldUntilMs
     }
 
-    private var taken: Deletion?
+    // A delete whose window is still open: gone from every list published here, still on the log.
+    // `WithheldWindow` owns the clock and is what finally sends it — this store only hides the row.
+    // The routine is held by value, not by id, because the device's own cache is written from the
+    // published list and a hidden routine may not fall out of it while the delete can still be undone.
+    private var withheldRoutines: [String: Routine] = [:]
+    private var withheldSessions: Set<String> = []
 
-    public var restorable: Deletion? {
-        guard let taken, taken.untilMs > now() else { return nil }
-        return taken
+    private func standing(_ list: [Routine]) -> [Routine] {
+        guard !withheldRoutines.isEmpty else { return list }
+        return list.filter { withheldRoutines[$0.id] == nil }
     }
 
     public func connect(to account: Account) async {
@@ -229,7 +234,7 @@ public final class TrainingStore: ObservableObject {
         }
         drawFromQueue()
         accountCopy.open(under: account.user?.id)
-        routines = Routine.byLastTrained(accountCopy.routines + localLog.routines)
+        routines = Routine.byLastTrained(standing(accountCopy.routines + localLog.routines))
         proposals = []
         preferences = localLog.open(preferencesUnder: account.user?.id) ?? .defaults
         bodyweight = bodyweightStore.entries
@@ -604,15 +609,24 @@ public final class TrainingStore: ObservableObject {
 
     @discardableResult
     public func undoLast() -> Bool {
-        guard let set = undoable, queue.withdraw(set.id) else { return false }
+        guard let set = undoable else { return false }
+        return withdraw(set.id)
+    }
+
+    // The set named, and only while it is still owed as an append: past that the log has it, and no
+    // route un-logs a set. The window register calls this one, so an undo cannot take back the wrong row.
+    @discardableResult
+    public func withdraw(_ setId: String) -> Bool {
+        guard queue.withdraw(setId) else { return false }
         queue.flush()
         drawFromQueue()
         return true
     }
 
-    // Leaving a room deallocates the store, so a pending retry never fires; leaving ends the window.
-    public func flushPendingSets(force: Bool = false) async {
-        await deliver(force: force)
+    // Leaving keeps the window: what is still held stays held, and the queue's own clock — written to
+    // disk beside the row — is what sends it, on the next walk or the next launch.
+    public func flushPendingSets() async {
+        await deliver()
     }
 
     // Finishing waits for this session's sets: a session that closed before a set reached it refuses
@@ -680,7 +694,7 @@ public final class TrainingStore: ObservableObject {
             await loadLog()
             return .closed(landed[closed.id] ?? localLog.session(closed.id)?.session ?? closed)
         }
-        routines = Routine.byLastTrained(localLog.routines)
+        routines = Routine.byLastTrained(standing(localLog.routines))
         recent = mergedRecent([])
         return .closed(localLog.session(closed.id)?.session ?? closed)
     }
@@ -956,12 +970,15 @@ public final class TrainingStore: ObservableObject {
 
     private func loadRoutines(from gym: any TrainingSyncing) async {
         guard let written = try? await gym.routines() else { return }
-        routines = Routine.byLastTrained(written + localLog.routines)
+        routines = Routine.byLastTrained(standing(written + localLog.routines))
         rememberTheProgram()
     }
 
+    // What this device would draw with no answer from the log — which includes a routine whose delete
+    // is still withheld, because that delete has not happened yet.
     private func rememberTheProgram() {
-        accountCopy.hold(routines: routines.filter { localLog.routine($0.id) == nil })
+        let held = routines + withheldRoutines.values
+        accountCopy.hold(routines: held.filter { localLog.routine($0.id) == nil })
     }
 
     private func loadProposals(from gym: any TrainingSyncing) async {
@@ -1054,10 +1071,11 @@ public final class TrainingStore: ObservableObject {
         return refused ? set : corrected
     }
 
-    // The one place a set the log holds can be taken away; it keeps the logger's own undo window.
-    public func delete(_ set: TrainingSet, in sessionId: String) async {
-        let until = now() + undoWindowMs
-        taken = Deletion(set: set, sessionId: sessionId, untilMs: until)
+    // The one place a set the log holds can be taken away. The room's window register owns the clock
+    // and hands the instant in; the queue writes its own copy to disk, so a delete outlives the
+    // process that made it and no undo can arrive after the wire.
+    public func delete(_ set: TrainingSet, in sessionId: String, heldUntilMs: Int64? = nil) async {
+        let until = heldUntilMs ?? (now() + undoWindowMs)
         if localLog.holds(session: sessionId) {
             localLog.drop(set: set.id, in: sessionId)
             localLog.flush()
@@ -1076,29 +1094,59 @@ public final class TrainingStore: ObservableObject {
         await deliver()
     }
 
-    // Inside its window and never after it. The record is let go only once a repair has taken.
+    // Offered while the window register still holds the delete, and never after it: the record is
+    // let go only once a repair has taken.
     @discardableResult
-    public func restore() async -> Bool {
-        guard let taken = restorable else { return false }
-        if let local = localLog.session(taken.sessionId) {
-            localLog.keep(local.session, sets: local.sets + [taken.set])
+    public func restore(_ set: TrainingSet, in sessionId: String) async -> Bool {
+        if let local = localLog.session(sessionId) {
+            guard !local.sets.contains(where: { $0.id == set.id }) else { return false }
+            localLog.keep(local.session, sets: local.sets + [set])
             localLog.flush()
             recent = mergedRecent(served)
-            self.taken = nil
             return true
         }
-        if queue.restore(taken.set.id) {
+        if queue.restore(set.id) {
             queue.flush()
             drawFromQueue()
-            self.taken = nil
             return true
         }
-        self.taken = nil
-        queue.store(taken.set, in: taken.sessionId, needsPush: true)
+        queue.store(set, in: sessionId, needsPush: true)
         queue.flush()
         drawFromQueue()
         await deliver()
         return true
+    }
+
+    // A routine, a conversation and a finished workout have no on-disk hold to wait in, so the row
+    // leaves the list here and the send waits for the window's own clock. Nothing is on the wire yet.
+    public func withhold(routine: Routine) {
+        withheldRoutines[routine.id] = routine
+        routines = routines.filter { $0.id != routine.id }
+    }
+
+    public func restore(routine: Routine) {
+        withheldRoutines[routine.id] = nil
+        routines = Routine.byLastTrained(routines.filter { $0.id != routine.id } + [routine])
+    }
+
+    public func settleDelete(routine id: String) async -> WriteFailure? {
+        withheldRoutines[id] = nil
+        return await deleteRoutine(id)
+    }
+
+    public func withhold(session id: String) {
+        withheldSessions.insert(id)
+        recent = mergedRecent(served)
+    }
+
+    public func restore(session id: String) {
+        withheldSessions.remove(id)
+        recent = mergedRecent(served)
+    }
+
+    public func settleDelete(session id: String) async -> Bool {
+        withheldSessions.remove(id)
+        return await discard(id)
     }
 
     // A PATCH filed over an owed append destroys the only copy of that set.
@@ -1203,8 +1251,7 @@ public final class TrainingStore: ObservableObject {
                     queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
                 case .fix:
                     let stored = try await gym.fixSet(owed.set.id, in: owed.sessionId,
-                                                      SetFix(weightKg: owed.set.weightKg,
-                                                             reps: owed.set.reps, kind: owed.set.kind))
+                                                      SetFix(whole: owed.set))
                     queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
                     movedHistory = true
                 case .delete:
@@ -1687,7 +1734,9 @@ public final class TrainingStore: ObservableObject {
         let known = Set(server.map(\.id))
         let local = localLog.summaries().filter { !known.contains($0.id) }
         deviceOnly = Set(local.map(\.id))
-        return (server + local).sorted { $0.session.startedAtMs > $1.session.startedAtMs }
+        return (server + local)
+            .filter { !withheldSessions.contains($0.id) }
+            .sorted { $0.session.startedAtMs > $1.session.startedAtMs }
     }
 
     // Without the fold, a catalog read while the claim is still owed erases a movement mid-session.

@@ -63,6 +63,24 @@ public enum LiveLines {
                        plan: "plan \(sets) × \(Readout.repTarget(planEntry.reps))\(load)")
     }
 
+    // What a walk asked for right now may do. A stroke makes two-in-a-moment ordinary where a tap
+    // never did, and the deviation the last walk raised lives in ONE slot: a second walk that
+    // overwrote it would take the question about the movement you left and never ask it.
+    public enum Walk: Equatable {
+        case go
+        case wait                   // one is already on its way out of a sheet; nothing to say
+        case refuse(String)         // a question about the movement you left is still open
+    }
+
+    public static func walk(pendingMovement: String?, inFlight: Bool) -> Walk {
+        if let pendingMovement { return .refuse(oneWalkAtATime(pendingMovement)) }
+        return inFlight ? .wait : .go
+    }
+
+    public static func oneWalkAtATime(_ movement: String) -> String {
+        "\(movement) first — that question is still open."
+    }
+
     // Counted off the merged session order, never the plan alone.
     public static func movementPosition(order: [String], current: String?) -> String? {
         guard let current, let standing = order.firstIndex(of: current) else { return nil }

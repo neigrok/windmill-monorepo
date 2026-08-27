@@ -15,21 +15,19 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('Duplicate lives in an overflow and nowhere else, on the row and in the editor’s head', () => {
+test('the routine row’s overflow is Duplicate and Delete, and it is the only home either has', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes("duplicateRoutine(view.data, { id: mintId('rt_') })"), true);
   assert.equal(source.includes("duplicateRoutine(draft,"), false);
-  assert.equal(source.includes("<Overflow\n                label={`More for ${routine.name}`}\n                items={[{ label: 'Duplicate', run: () => duplicate(routine) }]}\n              />"), true);
+  assert.equal(source.includes("items={[\n                  { label: 'Duplicate', run: () => duplicate(routine) },\n                  { label: 'Delete', run: () => remove(routine) },\n                ]}"), true);
   assert.equal(source.includes("{!fresh && <Overflow label=\"More for this routine\" items={[{ label: 'Duplicate', run: copy }]} />}"), true);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false, 'the two drawn buttons are gone');
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
-  // Delete is not in the overflow, and there is still no way to delete a routine on this surface:
-  // 13-gestures.md gates it behind a withheld delete that does not exist yet.
-  assert.equal(source.includes('deleteRoutine'), false);
-  for (const file of gymFiles()) {
-    if (!/\.jsx$/.test(file)) continue;
-    assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('gymApi.deleteRoutine'), false, file);
-  }
+  // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
+  // the only thing that ever sends it.
+  assert.equal((source.match(/gymApi\.deleteRoutine/g) ?? []).length, 1);
+  assert.equal(source.includes("log.withhold({\n    kind: 'routine',"), true);
+  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf('gymApi.deleteRoutine'));
   const overflow = spoken(read('Overflow.jsx'));
   assert.equal(overflow.includes("aria-haspopup=\"menu\""), true);
   assert.equal(overflow.includes("role=\"menuitem\""), true);
@@ -251,7 +249,7 @@ test('an empty Coach contrasts the free door on scope, and walks to it', () => {
 
 test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'threads' && <ThreadsList />}"), true);
+  assert.equal(app.includes("{screen === 'threads' && <ThreadsList log={log} />}"), true);
   assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}"), true);
   const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
   assert.equal(rooms?.[1], "'routines', 'log', 'coach'");
@@ -288,11 +286,26 @@ test('Coach writes into a thread it minted, and starting again opens a new one',
   }
 });
 
-test('the delete says what it does before it is armed, and takes two taps', () => {
+test('deleting a conversation says what it does, is withheld, and is neither armed nor confirmed', () => {
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<p className="gym-thread-delete-note">{DELETE_NOTE}</p>'), true);
-  assert.equal(threads.includes('if (!confirming) {'), true);
-  assert.equal(threads.includes('await gymApi.deleteThread(id);'), true);
+  // Law 2: a gesture that destroys takes an undo, not a confirmation — so both halves of the old
+  // two-tap arm go, and the word that promised no way back with them.
+  assert.equal(threads.includes('confirming'), false);
+  assert.equal(threads.includes('is-armed'), false);
+  assert.equal(threads.includes('DELETE_CONFIRM'), false);
+  assert.equal(read('coach/threads.js').includes('DELETE_CONFIRM'), false);
+  assert.equal(speech('coach/threads.js').includes('cannot be undone'), false);
+  assert.equal(read('gym.css').includes('gym-thread-delete-verb.is-armed'), false);
+  assert.equal(
+    threads.includes('<button type="button" className="gym-thread-delete-verb" onClick={remove}>{DELETE_VERB}</button>'),
+    true,
+  );
+  // Withheld means NOT SENT: the one call the file makes sits inside the window's `send`.
+  assert.equal((threads.match(/gymApi\.deleteThread/g) ?? []).length, 1);
+  assert.equal(threads.includes("kind: 'thread',"), true);
+  assert.ok(threads.indexOf('log.withhold({') < threads.indexOf('gymApi.deleteThread'));
+  assert.equal(read('coach/threads.js').includes("export const THREAD_DELETED = 'Conversation deleted.';"), true);
 });
 
 test('a change that came from a conversation offers it, and one with none offers nothing', () => {
@@ -353,6 +366,20 @@ test('every set in a session read whole is a door onto the fix, and says so', ()
   assert.equal(/@media \(hover: none\) \{\s*\.gym-set-fix \{\s*opacity: 1;/.test(css), true);
 });
 
+test('the transient is the room’s, and the window’s own carries the Undo, no dismiss, and does not close on it', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes('{log.transient && ('), true);
+  assert.equal(app.includes('onClose={log.transient.dismiss ?? undefined}'), true, 'a window retires itself');
+  assert.equal(app.includes('onClick: log.transient.action.run,'), true, 'Undo re-reads for the rest, it does not dismiss');
+  assert.equal(app.includes('log.dismissToast'), false, 'the hook composes the transient; the room only draws it');
+  // One Toast in the room, hosted above every screen, so a withheld delete's Undo follows the lifter.
+  const hosts = gymFiles().filter((file) => /\.jsx$/.test(file) && fs.readFileSync(file, 'utf8').includes('<Toast'));
+  assert.deepEqual(hosts.map((file) => path.basename(file)), ['GymApp.jsx']);
+  const room = read('useTrainingLog.js');
+  assert.equal(room.includes('action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : null,'), true);
+  assert.equal(room.includes('dismiss: spoken.undoable ? null : dismissToast,'), true);
+});
+
 test('the session detail is keyed on the session it reads, and is handed the one voice', () => {
   const app = read('GymApp.jsx');
   assert.equal(app.includes('<SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />'), true);
@@ -376,22 +403,48 @@ test('no surface of the fix promises a set back', () => {
   }
 });
 
-test('a deleted set is withheld for the window, never sent and re-posted', () => {
+test('a deleted set is withheld for the window, never sent and re-posted, and the SCREEN owns no clock', () => {
   const source = read('Log.jsx');
-  assert.equal(source.includes('setTimeout(() => sendDelete(set.id), UNDO_MS)'), true);
   assert.equal(source.includes('appendSet'), false);
-  assert.equal(source.includes('withheld.current.forEach((held) => {\n      sendDelete(held.set.id);\n      say(deletedLine(held.set));\n    });'), true);
+  // The window is the room's: a screen that armed its own clock would settle a delete the moment the
+  // lifter walked to another screen, which is the defect 13-gestures.md names by name.
+  assert.equal(source.includes('setTimeout'), false, 'the screen arms no clock of its own');
+  assert.equal(source.includes('UNDO_MS'), false);
+  assert.equal(source.includes("kind: 'set',"), true);
+  assert.ok(source.indexOf('withhold({') < source.indexOf('gymApi.deleteSet'));
+  const room = read('useTrainingLog.js');
+  assert.equal(room.includes('clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));'), true);
+  assert.equal(room.includes("import { UNDO_MS } from './fix.js';"), true);
+});
+
+test('the window lives only while the room is on screen: leaving it commits nothing', () => {
+  const room = read('useTrainingLog.js');
+  // The room's one unmount cleanup. A send here would settle a delete past every way back, reached
+  // by an ordinary pair of acts — swipe, then leave — which is the hazard the window exists to close.
+  const teardown = /useEffect\(\(\) => \(\) => \{([\s\S]*?)\n  \}, \[\]\);/.exec(room);
+  assert.notEqual(teardown, null, 'the room lost its unmount cleanup');
+  assert.equal(/send/.test(teardown[1]), false, 'the room commits a held delete on the way out');
+  assert.equal(teardown[1].includes('clocks.current.clear();'), true, 'a clock outlives the room');
+  assert.equal(teardown[1].includes('withheld.current = [];'), true, 'what was held is abandoned');
+  // An unload handler cannot make it safe either: a request sent during teardown has no promise of
+  // arriving, so a "committed" delete might or might not have happened — worse than either answer.
+  for (const file of gymFiles()) {
+    const source = fs.readFileSync(file, 'utf8');
+    for (const exit of ['beforeunload', 'pagehide', 'sendBeacon']) {
+      assert.equal(source.includes(exit), false, `${path.basename(file)} flushes the window on ${exit}`);
+    }
+  }
 });
 
 test('every re-read of the session lets go of the corrections this screen was holding', () => {
   const source = read('Log.jsx');
-  assert.equal(source.includes('const reread = () => {\n    setMoves(movesAfterRead);\n    view.retry();\n  };'), true);
+  assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
   assert.equal(source.includes('if (error.setNotFound) reread();'), true);
   assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
 
-test('the undo window is exactly as long as the toast that offers it', () => {
+test('a said sentence stands exactly as long as a withheld delete is held', () => {
   const undo = /export const UNDO_MS = (\d+);/.exec(read('fix.js'));
   const toast = /const TOAST_MS = (\d+);/.exec(read('useTrainingLog.js'));
   assert.equal(undo?.[1], '9000');
@@ -405,7 +458,7 @@ test('the toast’s own clock clears only that toast, never the one said after i
     true,
   );
   assert.equal((source.match(/setToast\(null\)/g) ?? []).length, 1);
-  assert.equal(source.includes('dismissToast: () => setToast(null)'), true);
+  assert.equal(source.includes('const dismissToast = useCallback(() => setToast(null), []);'), true);
 });
 
 test('nothing on the fix path refuses a set because its workout is over', () => {
@@ -490,7 +543,7 @@ test('a picker row says it has no last time, only once the read behind it has an
 test('the empty routines home offers to build one, and this surface still starts nothing', () => {
   const source = read('Routines.jsx');
   assert.equal(source.includes('<Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>'), true);
-  assert.equal(source.includes("view.phase === 'ready' && view.data.length === 0"), true);
+  assert.equal(source.includes("view.phase === 'ready' && routines.length === 0"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?)$/.test(file)) continue;
     const said = spoken(fs.readFileSync(file, 'utf8'));
@@ -505,6 +558,35 @@ test('the routine editor names the revision it read and re-reads on routine-stal
   assert.equal(source.includes("if (error?.code === 'routine-stale') {"), true);
   assert.equal(source.includes("log.say('That routine changed since you opened it — here is what it says now. Your edits were not saved.');"), true);
   assert.equal(source.includes('setEdits(null);\n        view.retry();'), true);
+});
+
+test('every byte counter in this room goes alarm past its bound, in one shared state', () => {
+  // One shape, one rule: a counter that has stopped accepting keys says so in alarm ink wherever it
+  // is drawn. Each of these opens from the STORE, whose ceilings are wider than the field's, so
+  // `76/60` and `4001 of 4000 bytes` are states a lifter reaches without typing a key. The class is
+  // shared with the note editor's `.gym-note-count.is-over` — the room mints no second rule.
+  const drawn = [];
+  for (const file of gymFiles()) {
+    if (!/\.jsx$/.test(file)) continue;
+    const source = fs.readFileSync(file, 'utf8');
+    for (const line of source.split('\n')) {
+      if (line.includes('gym-name-count')) drawn.push([path.basename(file), line.trim()]);
+    }
+  }
+  assert.deepEqual(drawn.map(([where]) => where).sort(), [
+    'FixSheet.jsx', 'MovementPicker.jsx', 'Record.jsx', 'Routines.jsx',
+  ]);
+  for (const [where, line] of drawn) {
+    assert.equal(
+      line.includes("? 'gym-name-count is-over' : 'gym-name-count'"),
+      true,
+      `${where} draws a byte counter that cannot go alarm: ${line}`,
+    );
+  }
+  // And the ink is the token, never a literal: one value moves all four.
+  const css = read('gym.css');
+  assert.equal(css.includes('.gym-name-count.is-over {\n  color: var(--alarm-ink);\n}'), true);
+  assert.equal(css.includes('.gym-note-count.is-over {\n  color: var(--alarm-ink);\n}'), true);
 });
 
 const gymFiles = () => {
@@ -592,7 +674,7 @@ test('nothing settles a proposal on a render, and no toggle offers to', () => {
 });
 
 test('a pending proposal waits at the head of the routines home and on the routine it touches, as a door', () => {
-  assert.equal(read('Routines.jsx').includes('<PendingProposals routines={view.data} log={log} onChanged={view.refresh} />'), true);
+  assert.equal(read('Routines.jsx').includes('<PendingProposals routines={routines} log={log} onChanged={view.refresh} />'), true);
   assert.equal(read('Proposals.jsx').includes('export function PendingProposals({ routines, log, onChanged }) {'), true);
   assert.equal(read('Proposals.jsx').includes('useGymRead(() => gymApi.routines()'), false, 'the home reads its routines once');
   assert.equal(read('Routines.jsx').includes('{routine.pendingProposal && <ProposalFlag />}'), true);
@@ -691,22 +773,21 @@ test('every pushed screen draws its back link through one component, and none po
   assert.equal(read('Finish.jsx').includes('<Back href="#/gym/log">The log</Back>'), true);
 });
 
-test('discarding a session is confirmed, and the confirmation says what goes and that it stays gone', () => {
+test('discarding a session is withheld and undoable, so it is not confirmed and promises no permanence', () => {
   const finish = read('Finish.jsx');
-  assert.equal(finish.includes("onClick={() => setConfirming(true)}"), true);
-  assert.equal(finish.includes('<button type="button" className="gym-confirm-do" onClick={discard} aria-busy={dropping}>{DISCARD_CONFIRM.confirm}</button>'), true);
-  assert.equal(finish.includes('{DISCARD_CONFIRM.keep}'), true);
+  // Law 2: a dialog in front of an act that has an undo is ceremony. Both halves of the old one go.
+  assert.equal(finish.includes('setConfirming'), false);
+  assert.equal(finish.includes('gym-confirm'), false);
+  assert.equal(finish.includes('DISCARD_CONFIRM'), false);
   assert.equal((finish.match(/gymApi\.discardSession/g) ?? []).length, 1);
-  assert.ok(finish.indexOf('const discard = async () => {') < finish.indexOf('gymApi.discardSession'));
-  const { DISCARD_CONFIRM } = JSON.parse(JSON.stringify({ DISCARD_CONFIRM: {
-    title: 'Discard this session?',
-    body: 'Discarding deletes the session and its sets. There is no undoing it.',
-    confirm: 'Discard',
-    keep: 'Keep it',
-  } }));
-  const review = read('review.js');
-  for (const [key, value] of Object.entries(DISCARD_CONFIRM)) {
-    assert.equal(review.includes(`${key}: '${value}'`), true, key);
+  assert.equal(finish.includes("kind: 'session',"), true);
+  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf('gymApi.discardSession'));
+  assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
+  assert.equal(read('review.js').includes("export const SESSION_DELETED = 'Session deleted.';"), true);
+  // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
+  for (const file of gymFiles()) {
+    if (!/\.(jsx?|css)$/.test(file)) continue;
+    assert.equal(fs.readFileSync(file, 'utf8').includes('There is no undoing it'), false, file);
   }
 });
 
@@ -767,7 +848,14 @@ test('the name counter is gated on the last fifth wherever a name is typed, off 
     assert.equal(read(file).includes('showsNameCount('), true, file);
     assert.equal(/const NAME_COUNT_FROM = \d+/.test(read(file)), false, file);
   }
-  assert.equal(read('Routines.jsx').includes('{showsNameCount(draft.name) && <span className="gym-name-count">{nameCountLabel(draft.name)}</span>}'), true);
+  // The gate that DRAWS the counter and the state that colours it are two rules over one field: it
+  // appears in the last fifth, and turns alarm only past the bound.
+  assert.equal(read('Routines.jsx').includes('trailing={showsNameCount(draft.name) && ('), true);
+  assert.equal(
+    read('Routines.jsx').includes("<span className={isNameOverCap(draft.name) ? 'gym-name-count is-over' : 'gym-name-count'}>"),
+    true,
+  );
+  assert.equal(read('Routines.jsx').includes('{nameCountLabel(draft.name)}'), true);
   assert.equal(/export const NAME_COUNT_FROM = 48;/.test(read('log.js')), true);
 });
 

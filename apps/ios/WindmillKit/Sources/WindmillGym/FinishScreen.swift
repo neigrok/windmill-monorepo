@@ -28,13 +28,11 @@ public enum Finish {
         public let rows: [Row]
     }
 
-    // Discard is the only unrecoverable destruction of a whole workout, so it is asked before it runs.
+    // Discarding is withheld for nine seconds and taken back on the room's transient, so it asks
+    // nothing first: a confirmation on an act that has an undo is a tap that buys nothing
+    // (`13-gestures.md` Law 2). Nothing here may say it cannot be undone, because it can.
     public enum Discard {
         public static let action = "Discard session"
-        public static let title = "Discard this session?"
-        public static let body = "Discarding deletes the session and its sets. There is no undoing it."
-        public static let confirm = "Discard"
-        public static let keep = "Keep it"
     }
 
     public static func head(startedAtMs: Int64, finishedAtMs: Int64, routine: String?,
@@ -232,7 +230,6 @@ struct FinishScreen: View {
 
     @Environment(\.gymSkin) private var skin
     @State private var routineName = ""
-    @State private var confirmingDiscard = false
 
     var body: some View {
         let head = Finish.head(startedAtMs: finished.session.startedAtMs,
@@ -267,12 +264,6 @@ struct FinishScreen: View {
             .padding(.bottom, WindmillSpace.x12)
         }
         .task { routineName = Readout.weekday(finished.session.startedAtMs) }
-        .confirmationDialog(Finish.Discard.title, isPresented: $confirmingDiscard, titleVisibility: .visible) {
-            Button(Finish.Discard.confirm, role: .destructive, action: onDiscard)
-            Button(Finish.Discard.keep, role: .cancel) {}
-        } message: {
-            Text(Finish.Discard.body)
-        }
     }
 
     private var keepAsRoutine: some View {
@@ -338,7 +329,7 @@ struct FinishScreen: View {
             .strokeBorder(skin.accent, lineWidth: 1))
     }
 
-    // Deletes for good; nothing on this screen may suggest it can be got back.
+    // The session leaves the log at once and the transient carries the way back for nine seconds.
     @ViewBuilder
     private var actions: some View {
         if finished.slight {
@@ -349,7 +340,7 @@ struct FinishScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
 
-                Button(Finish.Discard.action) { confirmingDiscard = true }
+                Button(Finish.Discard.action, action: onDiscard)
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.alarmInk)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)

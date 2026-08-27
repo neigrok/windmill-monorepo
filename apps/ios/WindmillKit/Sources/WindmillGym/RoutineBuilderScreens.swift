@@ -15,9 +15,9 @@ struct RoutineEditorScreen: View {
     let onSave: (RoutineDraft) -> Void
     // The way out that is not Save. It asks first whenever the draft has moved off what was loaded.
     let onCancel: () -> Void
-    // Hands back the day as edited, not as last saved.
+    // Hands back the day as edited, not as last saved. Deleting is not here: the editor sits three
+    // screens deep, and the routine row's own trailing swipe is where Delete lives (`13-gestures.md`).
     let onDuplicate: ((RoutineDraft) -> Void)?
-    let onDelete: (() -> Void)?
     let onCreateMovement: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
 
     @Environment(\.gymSkin) private var skin
@@ -67,7 +67,6 @@ struct RoutineEditorScreen: View {
          onSave: @escaping (RoutineDraft) -> Void,
          onCancel: @escaping () -> Void,
          onDuplicate: ((RoutineDraft) -> Void)? = nil,
-         onDelete: (() -> Void)? = nil,
          onCreateMovement: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>) {
         self.catalog = catalog
         self.sessions = sessions
@@ -78,7 +77,6 @@ struct RoutineEditorScreen: View {
         self.onSave = onSave
         self.onCancel = onCancel
         self.onDuplicate = onDuplicate
-        self.onDelete = onDelete
         self.onCreateMovement = onCreateMovement
         self.opening = draft
         _draft = State(initialValue: draft)
@@ -146,20 +144,6 @@ struct RoutineEditorScreen: View {
                 .listRowBackground(Color.clear)
             }
 
-            if editing, let onDelete {
-                Section {
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete routine", systemImage: "trash")
-                            .font(WindmillFont.body(15, .semibold))
-                            .foregroundStyle(skin.alarmInk)
-                            .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(saving)
-                    .listRowBackground(skin.surface)
-                }
-            }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)

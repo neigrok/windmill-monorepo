@@ -85,18 +85,18 @@ class WithheldSendTests {
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
-        store.withhold("ses_1", taken)
-        assertNotNull("the lifter's own slot, before anything is told", store.withheld)
+        store.withhold(Deletion.Set("ses_1", taken))
+        assertNotNull("the lifter's own window, before anything is told", store.holding)
 
-        val settling = backgroundScope.launch { store.settleWithheld() }
+        val settling = backgroundScope.launch { store.settleWithheld(taken.id) }
         held.entered.await()
         runCurrent()
 
         assertFalse("the row stops being the lifter's the moment the delete is committed to",
-            store.withheld!!.takeable)
+            store.withheld.single().takeable)
         assertNull("which is the key the room's transient hangs on, so the Undo goes down with it",
-            store.withheld?.takeIf { it.takeable })
-        assertFalse("and Undo cannot report a keep the log has already lost", store.keepWithheld())
+            store.holding)
+        assertNull("and Undo cannot report a keep the log has already lost", store.keepWithheld())
 
         held.release.complete(Unit)
         settling.join()
@@ -120,20 +120,20 @@ class WithheldSendTests {
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
-        store.withhold("ses_1", taken)
-        val settling = backgroundScope.launch { store.settleWithheld() }
+        store.withhold(Deletion.Set("ses_1", taken))
+        val settling = backgroundScope.launch { store.settleWithheld(taken.id) }
         held.entered.await()
         runCurrent()
         settling.cancel()
         runCurrent()
 
-        assertTrue("the row is still owed, so the room's next settle re-sends it",
-            store.withheld != null)
-        assertFalse("and it is nobody's to take back any more", store.keepWithheld())
+        assertTrue("the row is still owed, so a settle over the same row re-sends it",
+            store.withheld.isNotEmpty())
+        assertNull("and it is nobody's to take back any more", store.keepWithheld())
 
         held.release.complete(Unit)
-        assertNull(store.settleWithheld())
-        assertNull(store.withheld)
+        assertNull(store.settleWithheld(taken.id))
+        assertEquals(emptyList<WithheldDelete>(), store.withheld)
         assertEquals("the set is gone from the log", listOf(90.0),
             server.sets.getValue("ses_1").map { it.weightKg })
     }

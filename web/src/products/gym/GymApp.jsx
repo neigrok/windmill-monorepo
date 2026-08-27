@@ -110,23 +110,26 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill log={log} />}
         {screen === 'coach' && <CoachRoom log={log} />}
-        {screen === 'threads' && <ThreadsList />}
+        {screen === 'threads' && <ThreadsList log={log} />}
         {screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}
         {screen === 'notes' && <Notes log={log} />}
         {screen === 'connect' && <ConnectLog />}
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
-      {log.toast && (
+      {/* The room's one transient, hosted here and not by a screen, so a withheld delete's Undo
+          follows the lifter wherever they go next. Undo does not close it: it re-reads for whatever
+          the window is still holding. */}
+      {log.transient && (
         <div className="gym-toast-slot" role="status">
           <Toast
             tone="neutral"
-            onClose={log.dismissToast}
-            action={log.toast.action && {
-              label: log.toast.action.label,
-              onClick: () => { log.toast.action.run(); log.dismissToast(); },
+            onClose={log.transient.dismiss ?? undefined}
+            action={log.transient.action && {
+              label: log.transient.action.label,
+              onClick: log.transient.action.run,
             }}
           >
-            {log.toast.text}
+            {log.transient.text}
           </Toast>
         </div>
       )}

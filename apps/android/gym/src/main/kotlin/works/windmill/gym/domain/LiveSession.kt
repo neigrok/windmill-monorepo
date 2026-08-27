@@ -51,6 +51,35 @@ object AutoClose {
 // account's session lapsed (401).
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
+// The logger's horizontal walk between movements, which took the two chevron buttons off the screen
+// a lifter looks at with a bar in their hands.
+//
+// Three collisions, all answered here rather than in the composable: the today column under the
+// stroke is a nested vertical scroll, so the walk claims a stroke only once it is clearly
+// HORIZONTAL; the title is a full-width tap target, so the stroke is attached above it; and a stroke
+// that begins in the strip the system takes for back is not the walk's at all — mid-workout back
+// already means STAY IN THE WORKOUT, and one stroke may not carry two meanings (Law 3).
+object LoggerWalk {
+    const val edgeDp = 24
+    const val slopDp = 36
+    const val dominance = 1.6f
+
+    fun startsInTheEdge(x: Float, width: Float, edgePx: Float): Boolean =
+        x <= edgePx || (width > 0f && x >= width - edgePx)
+
+    fun horizontal(dx: Float, dy: Float, slopPx: Float): Boolean =
+        kotlin.math.abs(dx) >= slopPx && kotlin.math.abs(dx) > kotlin.math.abs(dy) * dominance
+
+    // Left walks to the NEXT movement: the page moves the way the thumb does.
+    fun to(dx: Float, previous: String?, next: String?): String? = if (dx < 0) next else previous
+
+    // A stroke makes two-in-a-moment ordinary where a tap never did, and the deviation the last walk
+    // raised lives in ONE slot: a second walk that overwrote it would take the question about the
+    // movement you left and never ask it. So the second walk is REFUSED — and says so, naming the
+    // movement whose question is open, because a stroke that does nothing reads as a broken stroke.
+    fun oneAtATime(movement: String): String = "$movement first — that question is still open."
+}
+
 object LiveLines {
     data class Counter(
         val count: String,      // "set 3 of 5"

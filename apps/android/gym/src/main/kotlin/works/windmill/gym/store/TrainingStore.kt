@@ -100,7 +100,10 @@ class TrainingStore(
     // connect that cannot read the log draws it back.
     private var program: List<Routine> by mutableStateOf(emptyList())
     var routines: List<Routine>
-        get() = program
+        // A routine inside its undo window is off the program as far as every screen is concerned:
+        // nothing was sent, and only Undo puts it back. Writes go to `program`, which is the whole
+        // of it.
+        get() = program.filterNot { it.id in withheldIds }
         private set(value) {
             program = value
             if (gym != null) deviceCopy.holdRoutines(owner, value)
@@ -111,9 +114,11 @@ class TrainingStore(
         private set
     var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // the device's own, unclaimed
         private set
-    // Both, merged on the clock, until the claim empties the shelf.
+    // Both, merged on the clock, until the claim empties the shelf. A session inside its undo window
+    // is off the log as far as every screen is concerned; only Undo puts it back.
     val recent: List<SessionSummary>
-        get() = (logged + shelved).sortedByDescending { it.startedAtMs }
+        get() = (logged + shelved).filterNot { it.id in withheldIds }
+            .sortedByDescending { it.startedAtMs }
     var older: Older by mutableStateOf(Older.More)
         private set
     var session: Session? by mutableStateOf(null)                        // the open one, or none
@@ -146,9 +151,18 @@ class TrainingStore(
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes that never landed
         private set
-    // Nothing is told until the window closes: the log has no undelete. NOT on disk — an activity
-    // recreated inside the window has told no log, so the set survives.
-    var withheld: Withheld? by mutableStateOf(null)
+    // Nothing is told until a window closes: the log has no undelete. A LIST and not a slot — each
+    // delete carries its own clock and a second one never settles the first. NOT on disk: an
+    // activity recreated inside a window has told no log, so what it held survives.
+    var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
+        private set
+    // One clock per subject, so a window can be taken down as well as opened: leaving the room lets
+    // go of what it was holding, and a clock still running would settle a delete nobody is holding
+    // any more. Not composition state — nothing draws it.
+    private val clocks = mutableMapOf<String, Job>()
+    // A delete the log refused after its window closed, said once and cleared. Nothing local was
+    // crossed out, so the row is back on the next read.
+    var deleteRefused: String? by mutableStateOf(null)
         private set
     // One room's memory of its own writes, never a tombstone: a session read BEFORE the delete would
     // otherwise draw a row that is gone.
@@ -249,6 +263,14 @@ class TrainingStore(
 
     fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
+    // Every id the lifter has deleted and the log has not been told about. Every list that could
+    // draw one filters against it: as far as the lifter is concerned the row is gone.
+    val withheldIds: Set<String> get() = withheld.mapTo(mutableSetOf()) { it.subjectId }
+
+    // The newest window still the lifter's — what the transient offers to take back. Null the
+    // instant the newest delete is committed to the wire, which is what takes the transient down.
+    val holding: WithheldDelete? get() = withheld.lastOrNull { it.takeable }
+
     // Null the instant the row lands on the log. Scoped to `exerciseId`, the only movement the logger
     // draws sets for.
     val undoable: TrainingSet?
@@ -257,11 +279,16 @@ class TrainingStore(
             return queue.withdrawable(at = now())?.set?.takeIf { it.exerciseId == movement }
         }
 
+    // When that stops being true, so the transient offering it can retire on the same clock rather
+    // than on a snackbar default.
+    val undoableUntilMs: Long?
+        get() = queue.withdrawable(at = now())?.heldUntilMs
+
     // Nothing has ever happened in this room. It asks whether the reads that could say otherwise
     // actually LANDED, never whether their lists came back empty: `older == End` is the log page
     // answering "there is no more". The session the lifter is IN is not counted.
     val firstSession: Boolean
-        get() = recent.isEmpty() && routines.isEmpty() && !routinesFailed && older == Older.End
+        get() = recent.isEmpty() && program.isEmpty() && !routinesFailed && older == Older.End
 
     // Called on launch and on every change of who is signed in. Draws from the device first.
     suspend fun connect(account: Account) {
@@ -302,9 +329,13 @@ class TrainingStore(
         // is under a thumb, which it may only do while every row belongs to the account now asking.
         logged = emptyList()
         older = Older.More
-        // A withheld delete goes with the seat, UNSENT: settling it now would take a set off the log
-        // of the account that just arrived.
-        withheld = null
+        // A withheld delete goes with the seat, UNSENT: settling it now would take a row off the log
+        // of the account that just arrived. Its clock goes with it, or it would settle a window the
+        // next seat never opened.
+        for (clock in clocks.values) clock.cancel()
+        clocks.clear()
+        withheld = emptyList()
+        deleteRefused = null
         deletedSets = emptySet()
         // A workout both finished on the shelf and live in the queue: the shelf's copy wins, after
         // its sets merge in.
@@ -712,12 +743,12 @@ class TrainingStore(
     // carrier session exists because RoutineWrite.from reads a SessionDetail; only its sets are read.
     suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String): GymResult<Routine> {
         val carrier = SessionDetail(Session(id = "ses_kept", startedAtMs = now()), sets)
-        val write = RoutineWrite.from(asRoutineNamed, carrier, position = routines.size)
+        val write = RoutineWrite.from(asRoutineNamed, carrier, position = program.size)
             ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one working set"))
         val log = gym ?: return GymResult.Ok(keepOnDevice(write))
         return try {
             val saved = log.createRoutine(write)
-            routines = routines + saved
+            routines = program + saved
             GymResult.Ok(saved)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -733,7 +764,7 @@ class TrainingStore(
     private suspend fun keepOnDevice(write: RoutineWrite): Routine {
         val made = Routine(write)
         localLog.hold(made)
-        routines = if (gym == null) localLog.routines else routines + localLog.routine(made.id)!!
+        routines = if (gym == null) localLog.routines else program + localLog.routine(made.id)!!
         if (gym != null) {
             claimOwed = true
             deliver()
@@ -753,7 +784,7 @@ class TrainingStore(
                 ?: return WriteFailure.Refused("${mine.name} has changed since this session started")
             localLog.hold(moved)
             routines = if (gym == null) localLog.routines
-                else routines.map { if (it.id == toRoutine) localLog.routine(toRoutine)!! else it }
+                else program.map { if (it.id == toRoutine) localLog.routine(toRoutine)!! else it }
             return null
         }
         val log = gym ?: return WriteFailure.Refused("that routine is not on this device")
@@ -764,7 +795,7 @@ class TrainingStore(
             val moved = routine.retargeting(atPosition, forExercise, toWeightKg = weightKg)
                 ?: return WriteFailure.Refused("${routine.name} has changed since this session started")
             val saved = log.replaceRoutine(toRoutine, RoutineWrite(moved))
-            routines = routines.map { if (it.id == saved.id) saved else it }
+            routines = program.map { if (it.id == saved.id) saved else it }
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -788,7 +819,7 @@ class TrainingStore(
             val held = Routine(RoutineWrite(standing, name, draft.position, draft.write))
             localLog.hold(held)
             routines = if (gym == null) localLog.routines
-                else routines.map { if (it.id == standing) localLog.routine(standing)!! else it }
+                else program.map { if (it.id == standing) localLog.routine(standing)!! else it }
             return GymResult.Ok(held)
         }
         val log = gym
@@ -804,8 +835,8 @@ class TrainingStore(
         return try {
             val saved = if (standing == null) log.createRoutine(write)
                 else log.replaceRoutine(standing, write)
-            routines = if (standing == null) routines + saved
-                else routines.map { if (it.id == saved.id) saved else it }
+            routines = if (standing == null) program + saved
+                else program.map { if (it.id == saved.id) saved else it }
             GymResult.Ok(saved)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -825,20 +856,20 @@ class TrainingStore(
     suspend fun dropRoutine(id: String): WriteFailure? {
         if (localLog.routine(id) != null) {
             localLog.orphanRoutine(id)
-            routines = routines.filterNot { it.id == id }
+            routines = program.filterNot { it.id == id }
             return null
         }
         val log = gym
             ?: return WriteFailure.Refused("that routine is on your account — sign in to change it")
         return try {
             log.deleteRoutine(id)
-            routines = routines.filterNot { it.id == id }
+            routines = program.filterNot { it.id == id }
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             if (RefusalFacts(refusing).status == 404) {
-                routines = routines.filterNot { it.id == id }
+                routines = program.filterNot { it.id == id }
                 null
             } else {
                 WriteFailure(refusing)
@@ -907,10 +938,10 @@ class TrainingStore(
         val settled = decision.proposal
         val moved = decision.routine
         routines = when {
-            moved != null -> routines.map { if (it.id == moved.id) moved else it }
+            moved != null -> program.map { if (it.id == moved.id) moved else it }
             settled.state == ProposalState.Applied && settled.intent == ProposalIntent.Remove ->
-                routines.filterNot { it.id == settled.routineId }
-            else -> routines.map { held ->
+                program.filterNot { it.id == settled.routineId }
+            else -> program.map { held ->
                 if (held.id != settled.routineId) held
                 else held.copy(pendingProposal = held.pendingProposal?.takeIf { it.id != settled.id })
             }
@@ -1255,34 +1286,84 @@ class TrainingStore(
         logged = logged.map { if (it.id == sessionId) fresh else it }
     }
 
-    // ONE SLOT: a second delete SETTLES the first rather than replacing it, or a destructive gesture
-    // would do nothing at all.
-    suspend fun withhold(sessionId: String, set: TrainingSet): WriteFailure? {
-        val standing = withheld
-        withheld = Withheld(sessionId, set, untilMs = now() + undoWindowMs)
-        standing ?: return null
-        return deleteSet(standing.sessionId, standing.set.id)
+    // The row leaves the screen and NOTHING is sent — withheld means not sent, so an Undo can never
+    // arrive after the wire, for a server-only verb as much as for a set. Each delete carries its
+    // own clock and settles itself; a second one never settles the first.
+    //
+    // The clock is KEPT, keyed by the subject it was opened for, because a second window over the
+    // same row must take the first one's clock down with it: a clock left running would settle the
+    // NEW window early, with its Undo still on the screen.
+    fun withhold(deletion: Deletion) {
+        val open = WithheldDelete(deletion, untilMs = now() + undoWindowMs)
+        withheld = withheld.filterNot { it.subjectId == open.subjectId } + open
+        clocks.remove(open.subjectId)?.cancel()
+        clocks[open.subjectId] = scope.launch {
+            delay(undoWindowMs)
+            clocks.remove(open.subjectId)
+            settleWithheld(open.subjectId)?.let { deleteRefused = it.line(deletion.stillThere) }
+        }
     }
 
-    // False once the delete is on the wire: there is no undelete, so a true here would report a keep
-    // the log has already lost.
-    fun keepWithheld(): Boolean {
-        val holding = withheld ?: return false
-        if (!holding.takeable) return false
-        withheld = null
+    // The NEWEST first, and only while nothing has gone out: there is no undelete, so a keep
+    // reported over a delete already sent would be a lie. Answers with what came back, or null.
+    fun keepWithheld(): WithheldDelete? {
+        val taking = withheld.lastOrNull { it.takeable } ?: return null
+        clocks.remove(taking.subjectId)?.cancel()
+        withheld = withheld - taking
+        return taking
+    }
+
+    // Leaving the ROOM — its disposal, or the app leaving the foreground. The window lives only
+    // while the room is on screen in a live process, so everything still the lifter's is LET GO
+    // rather than sent: the rows come back, nothing reaches the wire and nothing is said afterwards,
+    // because nothing happened. Settling here instead would make `swipe · switch apps · come back`
+    // destroy a row with its way back already gone, which is the one thing this whole mechanism
+    // exists to prevent; deleting again costs one stroke, and nothing is written to disk to make the
+    // decision outlive the process.
+    //
+    // One rule for every kind, a set's delete included: nothing in this list is held anywhere but
+    // this process, so a delete left running past the room fires into a backgrounded app, times out
+    // with nobody to read the answer, and is dropped whichever way it went — strictly worse than
+    // putting the row back and saying nothing.
+    //
+    // One thing is left exactly where it is: a delete already committed to the wire is nobody's to
+    // take back, so it stays in the list until the log answers for it.
+    //
+    // Answers whether anything was let go, which is what takes the transient down with it.
+    fun abandonWithheld(): Boolean {
+        val letting = withheld.filter { it.takeable }
+        if (letting.isEmpty()) return false
+        for (going in letting) clocks.remove(going.subjectId)?.cancel()
+        withheld = withheld - letting.toSet()
         return true
     }
 
-    // The window closing, or the room being left: leaving ENDS it, because the row is off the screen
-    // the gesture belonged to. The row stops being takeable BEFORE the wire is asked and stays here
-    // until the log answers, either way: a settle cancelled mid-flight leaves the delete still owed,
-    // and the route is idempotent.
-    suspend fun settleWithheld(): WriteFailure? {
-        val holding = withheld ?: return null
-        withheld = holding.copy(sent = true)
-        val failed = deleteSet(holding.sessionId, holding.set.id)
-        withheld = null
+    // One window closing, and the room's clock is the only thing that closes one: leaving abandons
+    // instead. The row stops being takeable BEFORE the wire is asked and stays in the list until the
+    // log answers, either way — a settle cancelled mid-flight leaves the delete still owed, and a
+    // settle over the same subject re-sends it, because every one of these routes is idempotent.
+    suspend fun settleWithheld(subjectId: String): WriteFailure? {
+        val settling = withheld.firstOrNull { it.subjectId == subjectId } ?: return null
+        clocks.remove(subjectId)?.cancel()
+        withheld = withheld.map { if (it.subjectId == subjectId) it.copy(sent = true) else it }
+        val failed = send(settling.deletion)
+        withheld = withheld.filterNot { it.subjectId == subjectId }
         return failed
+    }
+
+    fun clearDeleteRefused() {
+        deleteRefused = null
+    }
+
+    // The four verbs behind one window, and they share no shape: a set leaves through the shelf or
+    // the wire, a device-held routine through `orphanRoutine`, a conversation is server-only, and a
+    // session's own discard answers with a bool.
+    private suspend fun send(deletion: Deletion): WriteFailure? = when (deletion) {
+        is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id)
+        is Deletion.Routine -> dropRoutine(deletion.routineId)
+        is Deletion.Thread -> (deleteThread(deletion.threadId) as? GymResult.Failed)?.why
+        is Deletion.Session ->
+            if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
     }
 
     // Doubles as the retry for a first page that failed: with no rows from the log the cursor is
@@ -1314,7 +1395,7 @@ class TrainingStore(
         if (log == null) {
             val movement = catalog.firstOrNull { it.id == exerciseId }
                 ?: return GymResult.Failed(WriteFailure.Refused("that movement is not on this device"))
-            return GymResult.Ok(MovementRecord.of(movement, localLog.details(), routines))
+            return GymResult.Ok(MovementRecord.of(movement, localLog.details(), program))
         }
         // The record read SETTLES a stale open session: it waits for a mid-replay claim to end and
         // drains the queue first.
@@ -1625,7 +1706,7 @@ class TrainingStore(
     // last, the order `connect` composes.
     private fun redrawShelfRoutines() {
         val mine = localLog.routines
-        routines = routines.filter { held -> mine.none { it.id == held.id } } + mine
+        routines = program.filter { held -> mine.none { it.id == held.id } } + mine
     }
 
     private fun drawFromQueue() {
@@ -1694,19 +1775,6 @@ sealed interface WriteFailure {
 fun WriteFailure(refusing: Throwable): WriteFailure {
     if (refusing !is WindmillApiException.Refused) return WriteFailure.NoAnswer
     return WriteFailure.Refused(refusing.line)
-}
-
-// A delete this device has made. The set travels whole: it is the last copy while the window is open,
-// and Undo has to put it back exactly. `sent` is the moment the window stops being the lifter's — the
-// delete is on the wire and there is no way back — while the row stays here until the log answers, so
-// a settle cancelled mid-flight is still owed and the next one re-sends it.
-data class Withheld(
-    val sessionId: String,
-    val set: TrainingSet,
-    val untilMs: Long,
-    val sent: Boolean = false,
-) {
-    val takeable: Boolean get() = !sent
 }
 
 // A row the log no longer holds is not a fix that can be tried again: the row leaves the screen,

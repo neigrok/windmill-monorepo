@@ -44,6 +44,27 @@ final class LiveOrderTests: XCTestCase {
     }
 }
 
+// The walk between movements became a stroke, which makes two-in-a-moment ordinary where a tap never
+// did — and the deviation the last walk raised has exactly one slot to wait in.
+final class WalkGuardTests: XCTestCase {
+    func testAWalkWithNothingPendingSimplyGoes() {
+        XCTAssertEqual(LiveLines.walk(pendingMovement: nil, inFlight: false), .go)
+    }
+
+    func testASecondWalkIsRefusedWhileTheQuestionAboutTheLastOneIsOpen() {
+        XCTAssertEqual(LiveLines.walk(pendingMovement: "Back Squat", inFlight: false),
+                       .refuse("Back Squat first — that question is still open."))
+        // Refused rather than overwritten, and refused whether or not the first walk has landed yet.
+        XCTAssertEqual(LiveLines.walk(pendingMovement: "Back Squat", inFlight: true),
+                       .refuse("Back Squat first — that question is still open."))
+    }
+
+    // A walk already on its way out of a sheet has nothing to say: it is the walk that was asked for.
+    func testAWalkAlreadyOnItsWayIsWaitedForRatherThanAnnounced() {
+        XCTAssertEqual(LiveLines.walk(pendingMovement: nil, inFlight: true), .wait)
+    }
+}
+
 final class LiveLinesTests: XCTestCase {
     func testTheCounterKeepsCountingPastThePlansSetCount() {
         let entry = PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)

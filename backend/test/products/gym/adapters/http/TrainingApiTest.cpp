@@ -1,5 +1,6 @@
 #include "test/products/gym/adapters/http/GymApiFixture.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -49,6 +50,17 @@ Json::Value fixBody(double weightKg, int reps) {
   body["reps"] = reps;
   return body;
 }
+
+// The fix as a sheet sends it: the one workout, the one set, and only the fields that moved.
+drogon::HttpResponsePtr sendFix(Harness& h, const Json::Value& body,
+                                const std::string& set = "set_11111111") {
+  return send(h.training, &TrainingApi::fixSet, patchSetRequest("ses_11111111", set, body, "s-live"),
+              "ses_11111111", set);
+}
+
+// A note of exactly `bytes` bytes whose LAST character is two bytes wide, so a byte ceiling and a
+// character ceiling disagree about it.
+std::string noteOf(std::size_t bytes) { return std::string(bytes - 2, 'x') + "\xC3\xA9"; }
 }
 
 TEST(gym_routes_without_a_session_are_401) {
@@ -536,6 +548,162 @@ TEST(gym_fix_carries_the_kind_the_note_and_an_rpe_that_can_be_cleared) {
   CHECK_EQ(bodyOf(retyped)["rpe"].asDouble(), 8.5);   // untouched: this fix never named it
   CHECK_FALSE(bodyOf(cleared).isMember("rpe"));
   CHECK_EQ(bodyOf(cleared)["kind"].asString(), std::string("warmup"));
+}
+
+// What the three fix sheets ship against. Absent is "leave what is stored" for EVERY field; `note: ""`
+// is the clear; `note: null` is a type error and not a clear (rpe is the only field a null empties).
+TEST(gym_a_fix_leaves_every_field_it_does_not_name_and_an_empty_note_clears_the_note) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  Json::Value logged = setBody();
+  logged["rpe"] = 8.5;
+  logged["note"] = "felt heavy";
+  send(h.training, &TrainingApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", logged, "s-live"), "ses_11111111");
+
+  Json::Value rpeOnly(Json::objectValue);
+  rpeOnly["rpe"] = 7.5;
+  Json::Value noteOnly(Json::objectValue);
+  noteOnly["note"] = "knee twinge";
+  Json::Value emptyNote(Json::objectValue);
+  emptyNote["note"] = "";
+  Json::Value nullNote(Json::objectValue);
+  nullNote["note"] = Json::Value::null;
+
+  drogon::HttpResponsePtr moved = sendFix(h, rpeOnly);
+  drogon::HttpResponsePtr written = sendFix(h, noteOnly);
+  drogon::HttpResponsePtr cleared = sendFix(h, emptyNote);
+  drogon::HttpResponsePtr refused = sendFix(h, nullNote);
+
+  // The note the fix never named is still the lifter's own word, and so is everything else.
+  CHECK_EQ(dump(bodyOf(moved)),
+           std::string(R"({"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_11111111","kind":"working","note":"felt heavy","reps":8,)"
+                       R"("rpe":7.5,"setNumber":1,"weightKg":82.5})"));
+  CHECK_EQ(dump(bodyOf(written)),
+           std::string(R"({"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_11111111","kind":"working","note":"knee twinge","reps":8,)"
+                       R"("rpe":7.5,"setNumber":1,"weightKg":82.5})"));
+  CHECK_EQ(dump(bodyOf(cleared)),
+           std::string(R"({"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("rpe":7.5,"setNumber":1,"weightKg":82.5})"));
+  CHECK_EQ(refused->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(refused)),
+           std::string(R"({"code":"fix-unreadable","error":"could not read that fix"})"));
+  CHECK_EQ(h.repo.db.sets[0].note, std::string(""));   // the refusal wrote nothing
+  CHECK_EQ(h.repo.db.sets[0].rpe, std::optional<double>(7.5));
+}
+
+// 4000 BYTES, not 4000 characters: the ceiling is `kMaxSetNoteBytes` and the store counts bytes.
+TEST(gym_a_set_note_of_four_thousand_bytes_lands_and_one_byte_more_is_refused) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.training, &TrainingApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  Json::Value atTheBound(Json::objectValue);
+  atTheBound["note"] = noteOf(4000);
+  Json::Value oneOver(Json::objectValue);
+  oneOver["note"] = noteOf(4001);            // 4000 CHARACTERS — a character ceiling would take it
+
+  drogon::HttpResponsePtr taken = sendFix(h, atTheBound);
+  drogon::HttpResponsePtr tooLong = sendFix(h, oneOver);
+
+  CHECK_EQ(taken->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(taken)["note"].asString(), noteOf(4000));
+  CHECK_EQ(bodyOf(taken)["note"].asString().size(), static_cast<std::size_t>(4000));
+  CHECK_EQ(tooLong->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(tooLong)),
+           std::string(R"({"code":"fix-unreadable","error":"could not read that fix"})"));
+  // The refusal is total: the 4000-byte note that landed is still what stands.
+  CHECK_EQ(h.repo.db.sets[0].note, noteOf(4000));
+  CHECK_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(kMaxSetNoteBytes, static_cast<std::size_t>(4000));
+}
+
+// The segmented control sends 6–10 by halves; the band the server takes is the wider 1–10, and a
+// value off it — or a number sent as a string — is one 400, with nothing written.
+TEST(gym_a_fix_takes_the_rpe_halves_the_sheet_sends_and_refuses_what_is_off_the_band) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.training, &TrainingApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  for (double rated : {6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 1.0}) {
+    Json::Value body(Json::objectValue);
+    body["rpe"] = rated;
+    drogon::HttpResponsePtr response = sendFix(h, body);
+    CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+    CHECK_EQ(bodyOf(response)["rpe"].asDouble(), rated);
+    CHECK_EQ(h.repo.db.sets[0].rpe, std::optional<double>(rated));
+  }
+
+  Json::Value belowTheBand(Json::objectValue);
+  belowTheBand["rpe"] = 0.5;
+  Json::Value aboveTheBand(Json::objectValue);
+  aboveTheBand["rpe"] = 10.5;
+  Json::Value zero(Json::objectValue);
+  zero["rpe"] = 0;
+  Json::Value asText(Json::objectValue);
+  asText["rpe"] = "8.5";
+  Json::Value asBool(Json::objectValue);
+  asBool["rpe"] = true;
+
+  for (const Json::Value& refused : {belowTheBand, aboveTheBand, zero, asText, asBool}) {
+    drogon::HttpResponsePtr response = sendFix(h, refused);
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(response)),
+             std::string(R"({"code":"fix-unreadable","error":"could not read that fix"})"));
+  }
+  CHECK_EQ(h.repo.db.sets[0].rpe, std::optional<double>(1.0));   // the last one that landed
+}
+
+// The phones warn that a fix filed over an owed append could destroy the only copy of a set. It
+// cannot: the server never upserts. An id it has never seen is a 404 that writes NOTHING and spends
+// nothing, and the append that was owed still lands afterwards carrying the lifter's own values.
+TEST(gym_a_fix_for_a_set_the_log_has_never_seen_writes_nothing_and_leaves_the_id_unspent) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.training, &TrainingApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  Json::Value everything(Json::objectValue);
+  everything["weightKg"] = 47.5;
+  everything["reps"] = 4;
+  everything["kind"] = "drop";
+  everything["rpe"] = 9.5;
+  everything["note"] = "the fix that arrived first";
+  drogon::HttpResponsePtr ahead = sendFix(h, everything, "set_22222222");
+  // Existence is decided BEFORE the values are: an unholdable note on an unseen id is still the 404.
+  Json::Value unholdable(Json::objectValue);
+  unholdable["note"] = noteOf(4001);
+  drogon::HttpResponsePtr unholdableAhead = sendFix(h, unholdable, "set_22222222");
+
+  CHECK_EQ(ahead->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(ahead)), std::string(R"({"code":"set-not-found","error":"no such set"})"));
+  CHECK_EQ(unholdableAhead->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(unholdableAhead)), dump(bodyOf(ahead)));
+  REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  CHECK(h.repo.db.kept.empty());
+
+  // The owed append arrives late and lands whole; nothing of the fix survived to meet it.
+  drogon::HttpResponsePtr owed =
+      send(h.training, &TrainingApi::appendSet,
+           postRequest("/v1/gym/sessions/ses_11111111/sets",
+                       setBody("set_22222222", "bench-press", 85.0, 1'700'000'120'000), "s-live"),
+           "ses_11111111");
+
+  CHECK_EQ(owed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(owed)),
+           std::string(R"({"completedAt":1700000120000,"exerciseId":"bench-press",)"
+                       R"("id":"set_22222222","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":2,"weightKg":85.0})"));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(2));
 }
 
 TEST(gym_a_fix_that_names_nothing_answers_the_stored_row_untouched) {

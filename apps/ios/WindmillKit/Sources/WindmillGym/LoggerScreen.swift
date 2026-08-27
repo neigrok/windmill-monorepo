@@ -5,6 +5,9 @@ import WindmillPlatform
 
 struct LoggerScreen: View {
     @ObservedObject var store: TrainingStore
+    // The logger's drawn Undo comes off the busiest screen in the product; the room's transient
+    // carries both the action and the fact that the window is open (`16-the-workout.md`).
+    @ObservedObject var withheld: WithheldWindow
     let isSignedIn: Bool
     // nil once something already reaches this log.
     let onBuildRoutine: (() -> Void)?
@@ -79,6 +82,9 @@ struct LoggerScreen: View {
         .padding(.top, WindmillSpace.x2)
         .padding(.bottom, WindmillSpace.x3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Simultaneous, and layered over the whole body: the title is a full-width tap target and
+        // the today column is a nested vertical scroll, and neither may swallow the walk.
+        .simultaneousGesture(walkStroke)
         .onChange(of: store.prefill) { _, dialled in
             weightKg = dialled.weightKg
             reps = dialled.reps
@@ -175,10 +181,12 @@ struct LoggerScreen: View {
 
     // MARK: - the movement in hand
 
-    // The chevrons step through `store.order` and stop at its ends rather than wrapping.
+    // A horizontal stroke steps through `store.order` and stops at its ends rather than wrapping; the
+    // dots under the title are the position readout that stroke needs. Two chevron buttons came off
+    // the screen a lifter looks at with a bar in their hands, and VoiceOver keeps both as named
+    // actions on the head, because a drag is not something it can perform (`13-gestures.md` Law 1).
     private var movementHead: some View {
         HStack(spacing: WindmillSpace.x2) {
-            walkButton(-1, glyph: "chevron.left", label: "Previous movement")
             Button { sheet = .jump } label: {
                 VStack(spacing: 2) {
                     Text(Readout.movement(store.exerciseId ?? "", in: store.catalog))
@@ -213,20 +221,34 @@ struct LoggerScreen: View {
                 .contentShape(Rectangle())
             }
             .accessibilityHint("This session’s movements")
-            walkButton(1, glyph: "chevron.right", label: "Next movement")
         }
+        .accessibilityAction(named: "Previous movement") { walked(-1) }
+        .accessibilityAction(named: "Next movement") { walked(1) }
     }
 
-    private func walkButton(_ direction: Int, glyph: String, label: String) -> some View {
-        let neighbour = walk(direction)
-        return Button { if let neighbour { move(to: neighbour) } } label: {
-            Image(systemName: glyph)
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(neighbour == nil ? skin.line : skin.inkFaint)
-                .frame(width: GymTap.minimum, height: GymTap.minimum)
-        }
-        .disabled(neighbour == nil)
-        .accessibilityLabel(label)
+    // Dominant-horizontal, so the today column's own vertical scroll still wins its strokes, and
+    // started away from the leading edge, which the shell's way home owns at this depth
+    // (`13-gestures.md` Law 3, D1).
+    private var walkStroke: some Gesture {
+        DragGesture(minimumDistance: Self.walkThreshold, coordinateSpace: .global)
+            .onEnded { stroke in
+                guard stroke.startLocation.x > Self.systemEdge else { return }
+                let across = stroke.translation.width
+                guard abs(across) >= Self.walkThreshold,
+                      abs(across) > abs(stroke.translation.height) * Self.dominance else { return }
+                walked(across < 0 ? 1 : -1)
+            }
+    }
+
+    // The system's own screen-edge strip: a stroke that starts inside it is never the room's.
+    private static let systemEdge: CGFloat = 20
+    private static let walkThreshold: CGFloat = 44
+    private static let dominance: CGFloat = 1.5
+
+    private func walked(_ direction: Int) {
+        guard let neighbour = walk(direction) else { return }
+        GymConfirm.revealed()
+        move(to: neighbour)
     }
 
     private func walk(_ direction: Int) -> String? {
@@ -237,18 +259,17 @@ struct LoggerScreen: View {
         return store.order[next]
     }
 
-    // Undo is offered only over the set it takes back, and only while that set is still this device's alone.
+    // The set a window is still open on is carried here under its own movement's name; taking it back
+    // is the transient's job, not this row's.
     private var todayColumn: some View {
-        // Rows and height are both read on the beat: nothing publishes the Undo window closing.
+        // Rows and height are both read on the beat: nothing publishes the window closing.
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             let undoable = store.undoable
             let rows = LiveLines.column(store.sets, of: store.exerciseId, undoable: undoable,
                                         catalog: store.catalog, stalled: store.stalled)
             ScrollView {
                 VStack(spacing: 6) {
-                    ForEach(rows) { row in
-                        done(row, undoable: row.id == undoable?.id)
-                    }
+                    ForEach(rows) { row in done(row) }
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -264,7 +285,7 @@ struct LoggerScreen: View {
     private static let rowHeight: CGFloat = 52
     private static let columnCap: CGFloat = rowHeight * 3
 
-    private func done(_ row: LiveLines.Row, undoable: Bool) -> some View {
+    private func done(_ row: LiveLines.Row) -> some View {
         HStack(spacing: WindmillSpace.x3) {
             Text(row.index)
                 .font(GymType.numeral(11.5))
@@ -277,16 +298,9 @@ struct LoggerScreen: View {
                 .font(GymType.numeral(11))
                 .foregroundStyle(row.isOnThisDevice ? skin.unsyncedInk : skin.inkFaint)
             Spacer(minLength: 0)
-            if undoable {
-                Button("Undo") { store.undoLast() }
-                    .font(WindmillFont.body(13, .semibold))
-                    .foregroundStyle(skin.accent)
-                    .frame(minWidth: 56, minHeight: GymTap.minimum)
-            } else {
-                Text("✓")
-                    .font(GymType.numeral(13))
-                    .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.setDone)
-            }
+            Text("✓")
+                .font(GymType.numeral(13))
+                .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.setDone)
         }
         .padding(.horizontal, WindmillSpace.x3)
         .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
@@ -434,10 +448,26 @@ struct LoggerScreen: View {
         Button {
             let landed = Int64(Date().timeIntervalSince1970 * 1000)
             let filedAs = kind
+            // One haptic for one act: the set confirmation, and nothing else fires here.
             GymConfirm.setLogged(under: store.preferences)
             restStartedAtMs = landed
             kind = .working
-            Task { await store.logSet(weightKg: weightKg, reps: reps, kind: filedAs) }
+            Task {
+                await store.logSet(weightKg: weightKg, reps: reps, kind: filedAs)
+                // Nil once the window is zero-length or the set has already gone: the room draws no
+                // transient over an act it cannot take back.
+                guard let held = store.undoable else { return }
+                await withheld.hold(Withheld(
+                    .loggedSet, subject: held.id,
+                    line: WithheldWords.logged(Readout.effort(weightKg: held.weightKg,
+                                                              reps: held.reps)),
+                    closesAtMs: store.undoableUntilMs,
+                    settle: {
+                    await store.flushPendingSets()
+                    return true
+                },
+                    restore: { store.withdraw(held.id) }))
+            }
         } label: {
             Text("Log set  ·  \(Readout.effort(weightKg: weightKg, reps: reps))")
                 .font(WindmillFont.body(19, .bold))
@@ -520,7 +550,24 @@ struct LoggerScreen: View {
     }
 
     // A deviation is raised only on leaving a movement, and only after the sheet that raised it has closed.
+    //
+    // The guard below is the one a swipe made load-bearing. `pendingDeviation` is a single slot, and
+    // at swipe velocity two movements can be crossed before `settleTheMove` runs — a second walk
+    // would overwrite the slot, and the question about the first movement would never be asked. It is
+    // refused with the reason said, never queued and never overwritten.
     private func move(to movement: String) {
+        switch LiveLines.walk(pendingMovement: pendingDeviation.map {
+                                  Readout.movement($0.exerciseId, in: store.catalog)
+                              },
+                              inFlight: goingTo != nil) {
+        case .refuse(let why):
+            say(why)
+            return
+        case .wait:
+            return
+        case .go:
+            break
+        }
         if let leaving = store.exerciseId, leaving != movement,
            let deviation = Deviation(leaving: leaving, session: store.session,
                                      sets: store.sets, asked: asked) {
@@ -579,12 +626,20 @@ private struct DottedRule: Shape {
     }
 }
 
+// A notice, not data: it is swiped away rather than tapped away, and the drawn `Dismiss` comes off.
+// The stroke is the room's own rather than `.swipeActions`, because these rows are drawn inside a
+// List on two screens and inside a plain stack on the logger, and one row may not behave two ways.
+// A drag is not something VoiceOver can perform, so the action is declared beside it (Law 1).
 struct RefusalRows: View {
     let refusals: [RefusedWrite]
     let catalog: [Exercise]
     let onDismiss: () -> Void
 
     @Environment(\.gymSkin) private var skin
+    @State private var pushed: CGFloat = 0
+
+    // Far enough that a scroll's sideways wobble is never one.
+    private static let dismissAt: CGFloat = 64
 
     var body: some View {
         ForEach(refusals) { refused in
@@ -598,11 +653,30 @@ struct RefusalRows: View {
                         .foregroundStyle(skin.inkDim)
                 }
                 Spacer(minLength: 0)
-                Button("Dismiss", action: onDismiss)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkFaint)
-                    .frame(minHeight: GymTap.minimum)
             }
+            .frame(minHeight: GymTap.minimum)
+            .contentShape(Rectangle())
+            .offset(x: pushed)
+            .opacity(Double(max(0, 1 - abs(pushed) / (Self.dismissAt * 2))))
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { stroke in
+                        guard abs(stroke.translation.width) > abs(stroke.translation.height) else { return }
+                        pushed = stroke.translation.width
+                    }
+                    .onEnded { stroke in
+                        guard abs(stroke.translation.width) >= Self.dismissAt,
+                              abs(stroke.translation.width) > abs(stroke.translation.height) else {
+                            withAnimation(.snappy) { pushed = 0 }
+                            return
+                        }
+                        GymConfirm.revealed()
+                        pushed = 0
+                        onDismiss()
+                    }
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityAction(named: "Dismiss", onDismiss)
         }
     }
 

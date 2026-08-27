@@ -6,7 +6,7 @@ import {
   entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref, weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
-import { comparison, DISCARD_CONFIRM, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
+import { comparison, finishHead, RECORD_TITLE, recordSentence, SESSION_DELETED, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
@@ -110,48 +110,33 @@ export function FinishScreen({ id, log }) {
   );
 }
 
-// A discard is the one unrecoverable delete of a whole workout on this surface: it is confirmed,
-// and the confirmation says what goes.
+// Discarding a workout is a withheld delete like the others: the session leaves the log at once,
+// nothing reaches the store for the length of the window, and the transient carries the way back.
+// There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
-  const [confirming, setConfirming] = useState(false);
-  const [dropping, setDropping] = useState(false);
-
-  const discard = async () => {
-    if (dropping) return;
-    setDropping(true);
-    try {
-      await gymApi.discardSession(id);
-      log.reloadLog();
-      log.say('That session is out of your log.');
-      window.location.hash = '#/gym';
-    } catch (error) {
-      setDropping(false);
-      setConfirming(false);
-      log.say(`That session wasn’t discarded — ${failureReason(error)}.`);
-    }
+  const discard = () => {
+    log.withhold({
+      kind: 'session',
+      id,
+      line: SESSION_DELETED,
+      send: async () => {
+        await gymApi.discardSession(id);
+        await log.reloadLog();
+      },
+      refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
+    });
+    window.location.hash = '#/gym';
   };
 
   return (
     <section className="gym-short">
       <p className="gym-short-line">Keep it in the log, or drop it?</p>
-      {!confirming && (
-        <div className="gym-finish-foot">
-          <a className="gym-short-keep" href="#/gym">Keep it</a>
-          <button type="button" className="gym-short-discard" onClick={() => setConfirming(true)}>
-            Discard session
-          </button>
-        </div>
-      )}
-      {confirming && (
-        <section className="gym-confirm">
-          <p className="gym-confirm-title">{DISCARD_CONFIRM.title}</p>
-          <p className="gym-confirm-body">{DISCARD_CONFIRM.body}</p>
-          <div className="gym-finish-foot">
-            <button type="button" className="gym-confirm-keep" onClick={() => setConfirming(false)}>{DISCARD_CONFIRM.keep}</button>
-            <button type="button" className="gym-confirm-do" onClick={discard} aria-busy={dropping}>{DISCARD_CONFIRM.confirm}</button>
-          </div>
-        </section>
-      )}
+      <div className="gym-finish-foot">
+        <a className="gym-short-keep" href="#/gym">Keep it</a>
+        <button type="button" className="gym-short-discard" onClick={discard}>
+          Discard session
+        </button>
+      </div>
     </section>
   );
 }

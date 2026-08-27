@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { dateLocalOf, joinsAcross } from '../../../../src/products/gym/bodyweight/bodyweight.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
@@ -32,9 +32,7 @@ function weighInsOnTheWire(entries, { putStatus = 200, putBody = null } = {}) {
   return wire;
 }
 
-const quietLog = () => ({
-  phase: 'ready', summaries: [], older: { status: 'end', load: () => {} }, session: null, catalog: [], say: () => {}, reloadLog: () => {},
-});
+const quietLog = () => roomLog();
 
 const sheetOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'WeighInSheet');
 const chipOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'WeighInChip');

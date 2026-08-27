@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { register } from 'node:module';
 import React from 'react';
+import { hiddenIds } from '../../../src/products/gym/withheld.js';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 
@@ -89,6 +90,9 @@ export function renderHook(t, run) {
   return {
     get log() { return result; },
     get tree() { return result; },
+    // A navigation is the frame's business, and nothing here listens for one: a test that moves the
+    // hash asks for the render the frame would have done.
+    redraw: render,
     unmount,
   };
 }
@@ -135,6 +139,59 @@ export function browserWith({ queue = null, live = null } = {}) {
   };
 }
 
+
+// A real room, and a screen with a life of its own inside it. The two are rendered separately so the
+// SCREEN can be torn down and built again while the room goes on holding its window — which is what
+// walking off a tab and back really does, and the case where a screen keeping its own memory of a
+// delete lets a settled delete reach nobody. `redraw` is the render the room's own publish would
+// have caused; the harness has no tree to propagate through.
+export async function roomAndScreen(t, { module, render, api }) {
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const screens = await loadScreen(module);
+  const room = renderHook(t, () => useTrainingLog({ api }));
+  await settle();
+  let screen = null;
+  const mount = async () => {
+    screen = renderHook(t, () => render(screens, room.log));
+    await settle();
+  };
+  await mount();
+  return {
+    room,
+    log: () => room.log,
+    screen: () => screen.tree,
+    redraw: () => screen.redraw(),
+    remount: async () => { screen.unmount(); await mount(); },
+  };
+}
+
+// What the room hands every screen. A screen reads the withheld window through `held` and asks
+// `hidden` before it draws a deleted row, so a fake that leaves either out is a fake of a room that
+// cannot exist; this is the one place its shape is written down for the screens tested without a
+// real `useTrainingLog`. `gone` seeds what the store has already answered for, and `hidden` is the
+// room's own function over both — a fake that answered it any other way could hide a defect the
+// real room has.
+export function roomLog({ gone = [], ...overrides } = {}) {
+  const held = overrides.held ?? [];
+  return {
+    phase: 'ready',
+    failure: null,
+    summaries: [],
+    catalog: [],
+    session: null,
+    sets: [],
+    older: { status: 'end', load: () => {} },
+    held,
+    hidden: (kind) => hiddenIds(held, gone, kind),
+    say: () => {},
+    reloadLog: () => {},
+    withhold: () => {},
+    undoWithheld: () => {},
+    dropWithheld: () => {},
+    createMovement: async () => null,
+    ...overrides,
+  };
+}
 
 let loaderRegistered = false;
 export async function loadScreen(relativeToSrc) {

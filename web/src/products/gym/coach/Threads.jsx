@@ -8,13 +8,19 @@ import { ProposalReview } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import {
-  askedLabel, conversationsLine, DELETE_CONFIRM, DELETE_FAILED, DELETE_NOTE, DELETE_VERB,
-  EXPORT_THREADS_LINE, EXPORT_THREADS_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip,
-  outcomeLine, THREAD_ABSENT, THREAD_FAILED, THREADS_FAILED, THREADS_TITLE,
+  askedLabel, conversationsLine, DELETE_NOTE, DELETE_VERB, EXPORT_THREADS_LINE,
+  EXPORT_THREADS_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
+  THREAD_ABSENT, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure, THREADS_FAILED, THREADS_TITLE,
 } from './threads.js';
 
-export function ThreadsList() {
+export function ThreadsList({ log }) {
   const view = useGymRead(() => gymApi.threads(), []);
+
+  // A conversation the window is holding is off this list for the length of its window — the room's
+  // transient is the only place it still exists, and the only way back — and off it for good once
+  // the store has answered. A refused delete needs no re-read: the read this list already holds was
+  // taken while the conversation was there, and there is where the store kept it.
+  const withheld = log.hidden('thread');
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening your conversations…</p>;
   if (view.phase === 'failed') {
@@ -29,7 +35,7 @@ export function ThreadsList() {
     );
   }
 
-  const threads = view.data ?? [];
+  const threads = (view.data ?? []).filter((thread) => !withheld.has(thread.id));
 
   return (
     <section className="gym-threads">
@@ -85,6 +91,17 @@ export function ThreadDetail({ id, log }) {
   // settled-at, so on reopening they are gone and nothing pretends otherwise.
   const [receipts, setReceipts] = useState(() => new Map());
 
+  // The window is holding this conversation's delete, so it is as gone from here as it is from the
+  // list — a back gesture may not walk into a room the room says is deleted. The transient carries
+  // the only way back, and it follows the lifter here.
+  if (log.hidden('thread').has(id)) {
+    return (
+      <>
+        <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
+        <p className="gym-quiet">{THREAD_ABSENT}</p>
+      </>
+    );
+  }
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
   if (view.phase === 'absent') {
     return (
@@ -166,7 +183,7 @@ export function ThreadDetail({ id, log }) {
         />
       )}
 
-      <DeleteThread id={thread.id} />
+      <DeleteThread id={thread.id} log={log} />
     </section>
   );
 }
@@ -186,30 +203,27 @@ function Outcome({ outcome }) {
   );
 }
 
-function DeleteThread({ id }) {
-  const [confirming, setConfirming] = useState(false);
-  const [note, setNote] = useState('');
-
-  const remove = async () => {
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
-    try {
-      await gymApi.deleteThread(id);
-      window.location.hash = THREADS_HREF;
-    } catch {
-      setNote(DELETE_FAILED);
-    }
+// Withheld like every other delete in this room, and a conversation lives only on the store — which
+// is exactly why it is HELD and not sent: an Undo offered over a send already made would be a lie.
+// The lifter is put back on the list at once, nothing reaches the store for the length of the
+// window, and the room's transient carries the only way back. Nothing is confirmed, because a
+// question in front of an act that can be undone is ceremony (13-gestures.md Law 2).
+function DeleteThread({ id, log }) {
+  const remove = () => {
+    log.withhold({
+      kind: 'thread',
+      id,
+      line: THREAD_DELETED,
+      send: () => gymApi.deleteThread(id),
+      refused: (error) => log.say(threadDeleteFailure(error)),
+    });
+    window.location.hash = THREADS_HREF;
   };
 
   return (
     <section className="gym-thread-delete">
       <p className="gym-thread-delete-note">{DELETE_NOTE}</p>
-      <button type="button" className={confirming ? 'gym-thread-delete-verb is-armed' : 'gym-thread-delete-verb'} onClick={remove}>
-        {confirming ? DELETE_CONFIRM : DELETE_VERB}
-      </button>
-      {note && <p className="gym-coach-note">{note}</p>}
+      <button type="button" className="gym-thread-delete-verb" onClick={remove}>{DELETE_VERB}</button>
     </section>
   );
 }

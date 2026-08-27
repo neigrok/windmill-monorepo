@@ -194,7 +194,7 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (weightKg < -500 || weightKg > 500) throw InvalidTraining("weight out of range");
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
   if (rpe && (*rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
-  if (this->note.size() > 4000) throw InvalidTraining("note too long");
+  if (this->note.size() > kMaxSetNoteBytes) throw InvalidTraining("note too long");
   // Refuse what storage cannot hold rather than shortening a lifter's words in silence.
   if (!storableText(this->note)) throw InvalidTraining("a note must be storable text");
   if (completedAtMs == 0 || completedAtMs > kMaxInstantMs)

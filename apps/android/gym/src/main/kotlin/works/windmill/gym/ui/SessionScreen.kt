@@ -25,11 +25,14 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,8 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,8 +58,10 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
@@ -162,6 +169,7 @@ fun SessionScreen(
     onBack: () -> Unit,
     say: (String?) -> Unit,
     onOpenMovement: (String) -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var detail by remember(summary.id) { mutableStateOf<SessionDetail?>(null) }
@@ -174,11 +182,11 @@ fun SessionScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val standing = store.recent.firstOrNull { it.id == summary.id } ?: summary
-    val withheld = store.withheld?.takeIf { it.sessionId == summary.id }
-    // Null until the read lands, which is a different silence from a session with no sets in it.
+    // Null until the read lands, which is a different silence from a session with no sets in it. A
+    // set inside its undo window is off the screen and nothing has been sent.
     val movements = detail?.let { held ->
         Performed.movements(
-            held.sets.filterNot { it.id in store.deletedSets || it.id == withheld?.set?.id },
+            held.sets.filterNot { it.id in store.deletedSets || it.id in store.withheldIds },
             store.catalog,
             held.session.plan,
         )
@@ -221,7 +229,12 @@ fun SessionScreen(
             val held = movements
             if (held != null) {
                 items(held, key = { it.id }) { movement ->
-                    MovementCard(movement, onOpenMovement, onFix = { fixing = it })
+                    MovementCard(
+                        movement = movement,
+                        onOpenMovement = onOpenMovement,
+                        onFix = { fixing = it },
+                        onDelete = { row -> store.withhold(Deletion.Set(summary.id, row)) },
+                    )
                 }
             } else if (setsFailure != null) {
                 item("failure") {
@@ -242,6 +255,27 @@ fun SessionScreen(
             item("share") {
                 Column(Modifier.padding(top = WindmillSpace.x2)) {
                     CoachShareCard(coach, summary.id)
+                }
+            }
+            // The drawn door into the act the log row's long press also reaches: a gesture may
+            // replace a control and may never be the only way to an action (13-gestures Law 1). It
+            // asks nothing first — the window and its transient ARE the way back, and a confirmation
+            // over an act that has an undo is a tap that buys nothing (Law 2). Same words, same
+            // window, same undo as every other door into it.
+            item("discard") {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = WindmillSpace.x2)
+                        .heightIn(min = GymTap.minimum + 6.dp)
+                        .clickable(role = Role.Button, onClick = onDiscard),
+                ) {
+                    Text(
+                        Finish.discard,
+                        style = WindmillFont.body(16, FontWeight.SemiBold),
+                        color = GymSkin.alarmInk,
+                    )
                 }
             }
         }
@@ -287,14 +321,11 @@ fun SessionScreen(
                     }
                 },
                 // Nothing is told yet: the row comes off the screen and the window opens, because the
-                // log has no undelete. A second delete inside the window sends the first.
+                // log has no undelete. A second delete opens a window of its own and settles nothing.
                 onDelete = {
                     close()
                     say(null)
-                    scope.launch {
-                        store.withhold(summary.id, row.set)
-                            ?.let { say(it.line("that set is still on the log")) }
-                    }
+                    store.withhold(Deletion.Set(summary.id, row.set))
                 },
             )
         }
@@ -342,6 +373,7 @@ private fun MovementCard(
     movement: Performed.Movement,
     onOpenMovement: (String) -> Unit,
     onFix: (String) -> Unit,
+    onDelete: (TrainingSet) -> Unit,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -374,7 +406,58 @@ private fun MovementCard(
                 Performed.Against.Silent -> Unit
             }
         }
-        movement.rows.forEach { performed -> SetRow(performed, onFix) }
+        // KEYED by the set: a swipe box remembered by its POSITION would hand the row that moves
+        // up into a deleted row's slot the dismissed state that belongs to the row that left.
+        movement.rows.forEach { performed ->
+            key(performed.id) { SwipeableSetRow(performed, onFix, onDelete) }
+        }
+    }
+}
+
+// Tap to fix, swipe to delete — one trailing action and nothing on the leading edge, because two
+// actions would push the set's own number and load off the row a lifter is deciding about.
+//
+// LAW 1, and on Android it is the half that is easy to forget: TalkBack sees a drag, so the same
+// action is declared again BY HAND on the row. This row carries no overflow to inherit it from.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableSetRow(
+    set: Performed.Row,
+    onFix: (String) -> Unit,
+    onDelete: (TrainingSet) -> Unit,
+) {
+    val haptics = rememberGymHaptics()
+    // A leading swipe never settles here — and a row put back by a refusal or an Undo arrives with
+    // no act owed, which is `rememberRowDismiss`'s whole reason to exist.
+    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
+        haptics.revealed()
+        onDelete(set.set)
+    }
+    SwipeToDismissBox(
+        state = swipe,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = { DeleteGround() },
+        modifier = Modifier.semantics {
+            customActions = listOf(CustomAccessibilityAction("Delete") { onDelete(set.set); true })
+        },
+    ) {
+        SetRow(set, onFix)
+    }
+}
+
+@Composable
+private fun DeleteGround() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = GymTap.minimum)
+            .clip(RoundedCornerShape(WindmillRadius.sm))
+            .background(GymSkin.alarmInk.copy(alpha = 0.18f))
+            .padding(horizontal = WindmillSpace.x3),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Delete", style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.alarmInk)
     }
 }
 
@@ -382,14 +465,12 @@ private fun MovementCard(
 private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
-            .background(if (pressed) GymSkin.raised else Color.Transparent)
+            .background(if (pressed) GymSkin.raised else GymSkin.surface)
             .clickable(
                 interactionSource = pressing,
                 indication = null,
@@ -397,6 +478,11 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
                 onClickLabel = "fix this set",
             ) { onFix(set.id) },
     ) {
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
+      ) {
         val counts = set.kind == SetKind.Working
         if (counts) {
             Icon(
@@ -435,6 +521,18 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
                 )
             }
         }
+      }
+      // What the LIFTER said about this set, under the numbers rather than beside them: it is prose
+      // and the row above is a measurement.
+      SetEffort.line(set.set.rpe, set.set.note)?.let {
+          Text(
+              it,
+              style = GymType.numeral(11),
+              color = GymSkin.inkDim,
+              maxLines = 2,
+              modifier = Modifier.padding(start = 23.dp, bottom = WindmillSpace.x1),
+          )
+      }
     }
 }
 

@@ -421,12 +421,15 @@ sealed class AskVerdict {
 
 // What is said when a write is lost for good.
 sealed interface RefusedWrite {
+    // The id of the thing that was refused, so a list can key by it: a row keyed by its POSITION
+    // hands the next row its predecessor's swipe state, and a dismissed one never comes back.
+    val id: String
     val reason: String
 }
 
 // The last copy of the set, so the movement and numbers travel with the reason.
 data class RefusedSet(
-    val id: String,
+    override val id: String,
     val exerciseId: String,
     val weightKg: Double,
     val reps: Int,
@@ -438,7 +441,7 @@ data class RefusedSet(
 
 // Let go from the shelf so the same terminal write is not re-sent on every connect. The id rides
 // unshown, so two passes refusing the same workout are one loss on the banner.
-data class RefusedClaim(val id: String, val name: String, override val reason: String) : RefusedWrite {
+data class RefusedClaim(override val id: String, val name: String, override val reason: String) : RefusedWrite {
     constructor(session: Session, reason: String) :
         this(session.id, "${session.plan?.routine ?: "workout"} · ${Readout.date(session.startedAtMs)}", reason)
 }

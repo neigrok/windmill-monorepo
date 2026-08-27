@@ -149,7 +149,9 @@ namespace wm::gym {
 
 SessionStart parseSessionStart(const Json::Value& body);   // throws InvalidTraining
 SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTraining
-// A correction carries only the fields it changes. `rpe: null` clears it; an empty body is legal.
+// A correction carries only the fields it changes: an absent field leaves the stored value alone,
+// `rpe: null` clears an rpe and `note: ""` clears a note (`note: null` is a type error, not a
+// clear), and an empty body is legal.
 SetFix parseSetFix(const Json::Value& body);               // throws InvalidTraining
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining

@@ -118,6 +118,23 @@ export function withEntryRemoved(entries, index) {
   return entries.filter((entry, at) => at !== index);
 }
 
+// The line goes back where it was. A draft that moved on since is not rewritten: the index is
+// clamped to the end rather than opening a hole in a list that is now shorter.
+export function withEntryAt(entries, index, entry) {
+  const at = Math.min(Math.max(index, 0), entries.length);
+  return [...entries.slice(0, at), entry, ...entries.slice(at)];
+}
+
+// Deleting a routine takes the proposals anchored to it with it, so the transient names WHICH
+// routine left rather than saying that one did.
+export function routineDeletedLine(name) {
+  return `${name} deleted.`;
+}
+
+export function entryDroppedLine(movement) {
+  return `${movement} is out of the routine.`;
+}
+
 // Both conditions: the routine untested — the store's `lastTrainedAt` absent — AND the row still open.
 export function saysNeverLogged(routine, entry) {
   return isUntested(routine) && entry.targetSets == null;

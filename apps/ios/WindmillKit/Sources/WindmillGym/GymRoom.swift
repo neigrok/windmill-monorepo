@@ -2,12 +2,18 @@ import SwiftUI
 import UIKit
 import WindmillPlatform
 
-// The room's state dies when you leave it, which is why the queue is on disk after every tap and why leaving flushes.
+// The room's state dies when you leave it, which is why the queue is on disk after every tap. Leaving
+// does NOT end an undo window: what is held stays held on the queue's own clock, and the one verb
+// with no home outside this process — a routine, a conversation, a finished workout — is sent on the
+// way out and said on the next open.
 
 public struct GymRoom: View {
     private let account: Account
 
     @StateObject private var store = TrainingStore()
+    // The undo window, hosted here rather than by a screen: leaving keeps it, and the transient that
+    // draws it follows the lifter from screen to screen (`13-gestures.md` Law 4).
+    @StateObject private var withheld = WithheldWindow()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellActions) private var shell
     @Environment(\.openURL) private var openURL
@@ -158,7 +164,7 @@ public struct GymRoom: View {
                 FinishScreen(finished: closed, catalog: store.catalog, kept: keptRoutine,
                              coach: doors(to: closed.session.id), failure: finishFailure,
                              onKeepRoutine: { name in Task { await keep(closed.sets, as: name) } },
-                             onDiscard: { Task { await discard(closed.session) } },
+                             onDiscard: { discard(closed.session) },
                              onDone: { finished = nil; finishFailure = nil })
                     .presentationBackground(skin.canvas)
                     .presentationDetents([.large])
@@ -179,6 +185,11 @@ public struct GymRoom: View {
             .onChange(of: scenePhase) { _, phase in
                 WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
                 if phase != .active { Task { await store.flushPendingSets() } }
+                // The window is the room's, and the room is not on screen any more — so what is held
+                // is let go rather than sent: swipe, switch apps, come back must not be a way to
+                // destroy a row with the undo already gone. The rows come back and nothing was sent.
+                // `.inactive` is a banner and keeps the window.
+                if phase == .background { Task { await withheld.abandon() } }
                 // `onChange` never fires for the value the scene launched at.
                 if phase == .active, account.isSignedIn {
                     Task { connected = await ConnectedLog.read(with: account.api) }
@@ -190,9 +201,15 @@ public struct GymRoom: View {
                 WakeLock.hold(WakeLock.wanted(sessionIsOpen: open, phase: scenePhase))
                 if open { reviewing = nil }
             }
+            // Leaving a SCREEN keeps the window; leaving the ROOM is the register dying, and a verb
+            // whose only home is the register is let go rather than sent. What is owed and ready
+            // still goes: the queue's holds are its own.
             .onDisappear {
                 WakeLock.hold(false)
-                Task { await store.flushPendingSets(force: true) }
+                Task {
+                    await withheld.abandon()
+                    await store.flushPendingSets()
+                }
             }
     }
 
@@ -201,7 +218,7 @@ public struct GymRoom: View {
     private var stage: some View {
         if store.session != nil {
             NavigationStack {
-                LoggerScreen(store: store, isSignedIn: account.isSignedIn,
+                LoggerScreen(store: store, withheld: withheld, isSignedIn: account.isSignedIn,
                              onBuildRoutine: connected.invites ? openConnect : nil,
                              say: { note = $0 })
                     .background(skin.canvas)
@@ -218,6 +235,12 @@ public struct GymRoom: View {
                         }
                         ToolbarItem(placement: .topBarTrailing) { YouSeat() }
                     }
+            }
+            .overlay(alignment: .bottom) {
+                WithheldTransient(window: withheld, say: { note = $0 })
+                    // The transient declares a transition, and a transition needs an animated
+                    // transaction to fire: without this it would pop in and out.
+                    .animation(.snappy, value: withheld.held.count)
             }
             .safeAreaInset(edge: .bottom) { noteLine }
         } else {
@@ -270,6 +293,14 @@ public struct GymRoom: View {
                     ToolbarItem(placement: .topBarTrailing) { YouSeat() }
                 }
         }
+        // The transient floats over the reach band; the room's status line sits BELOW it, so a refusal
+        // said while a window runs is never hidden by the way back.
+        .overlay(alignment: .bottom) {
+                WithheldTransient(window: withheld, say: { note = $0 })
+                    // The transient declares a transition, and a transition needs an animated
+                    // transaction to fire: without this it would pop in and out.
+                    .animation(.snappy, value: withheld.held.count)
+            }
         .safeAreaInset(edge: .bottom) { noteLine }
     }
 
@@ -295,17 +326,18 @@ public struct GymRoom: View {
     private func screen(at destination: Away) -> some View {
         switch destination {
             case .session(let summary):
-                SessionScreen(summary: summary, store: store,
+                SessionScreen(summary: summary, store: store, withheld: withheld,
                               coach: doors(to: summary.session.id),
-                              onMovement: { look(at: .movement($0)) })
+                              onMovement: { look(at: .movement($0)) },
+                              onDiscard: { discard(summary.session) })
             case .movement(let exerciseId):
                 RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
             case .bodyweight:
                 BodyweightScreen(store: store, say: { note = $0 })
             case .threads:
-                ThreadsScreen(doors: threadDoors)
+                ThreadsScreen(doors: threadDoors, withheld: withheld)
             case .thread(let threadId):
-                ThreadScreen(threadId: threadId, doors: threadDoors, onDeleted: back,
+                ThreadScreen(threadId: threadId, doors: threadDoors,
                              receipts: receipts, undecided: undecided)
             case .notes:
                 if account.isSignedIn {
@@ -340,7 +372,6 @@ public struct GymRoom: View {
                                             RoutineDraft(duplicating: copied,
                                                          position: store.routines.count)))
                                     },
-                                    onDelete: { Task { await delete(draft.id) } },
                                     onCreateMovement: { name, equipment in
                                         await store.create(name, loadedAs: equipment)
                                     })
@@ -354,16 +385,17 @@ public struct GymRoom: View {
             case .routines:
                 RoutinesScreen(store: store, isSignedIn: account.isSignedIn, undecided: undecided,
                                onOpen: { look(at: .routine($0)) },
+                               onDelete: withholdDelete(of:),
                                onNew: newRoutine,
                                onStartLogging: { Task { await open(nil) } },
                                onMovement: { look(at: .movement($0)) },
                                onProposal: review,
                                onSettings: { look(at: .settings) },
-                               onSignIn: { shell.openYou() },
-                               onConnect: connected.invites ? { look(at: .connect) } : nil)
+                               onSignIn: { shell.openYou() })
             case .log:
                 LogScreen(store: store, onOpen: { look(at: .session($0)) },
-                          onBodyweight: { look(at: .bodyweight) }, say: { note = $0 })
+                          onBodyweight: { look(at: .bodyweight) },
+                          share: { doors(to: $0) }, discard: discard(_:), say: { note = $0 })
             case .ask:
                 if !account.isSignedIn {
                     AskSignedOutStance(onSignIn: { shell.openYou() })
@@ -465,22 +497,17 @@ public struct GymRoom: View {
     private var threadDoors: ThreadDoors {
         let gym = GymApi(api: account.api)
         return ThreadDoors(
+            // The list is re-read from the server, so a delete still inside its window has to come
+            // out of the answer: nothing was sent, and the row would otherwise walk back in.
             list: {
-                do { return .success(try await gym.threads()) }
+                do { return .success(try await gym.threads().filter { !withheld.hides(.thread, $0.id) }) }
                 catch { return .failure(AskRefusal(error)) }
             },
             read: { id in
                 do { return .success(try await gym.thread(id)) }
                 catch { return .failure(AskRefusal(error)) }
             },
-            delete: { id in
-                do {
-                    try await gym.deleteThread(id)
-                    return nil
-                } catch {
-                    return AskRefusal(error).line
-                }
-            },
+            delete: { thread in withholdDelete(of: thread, through: gym) },
             openThread: { look(at: .thread($0)) },
             openProposal: review,
             askSomethingNew: {
@@ -532,6 +559,7 @@ public struct GymRoom: View {
         note = nil
         switch await store.finish() {
         case .closed(let session):
+            GymConfirm.finished()
             keptRoutine = false
             finishFailure = nil
             // The sheet stands over the session it just closed, so the room navigates there first.
@@ -551,33 +579,75 @@ public struct GymRoom: View {
         }
     }
 
-    private func discard(_ session: Session) async {
-        note = nil
-        finishFailure = nil
-        guard await store.discard(session.id) else {
-            finishFailure = "the log didn’t answer — the session is still there"
-            return
-        }
-        finished = nil
-        // The screen the sheet stood over is a session that no longer exists.
-        paths[.log] = []
-    }
-
     private func newRoutine() {
         routineFailure = nil
         look(at: .building(RoutineDraft(position: store.routines.count)))
     }
 
-    private func delete(_ routineId: String) async {
-        guard !savingRoutine else { return }
-        savingRoutine = true
-        defer { savingRoutine = false }
-        routineFailure = nil
-        if let why = await store.deleteRoutine(routineId) {
-            routineFailure = why.line("the routine wasn’t deleted")
-            return
+    // MARK: - the three withheld deletes
+
+    // Nothing reaches the wire while the window runs, because a send cannot be taken back. The row
+    // leaves the list here, the transient carries the way back, and only the window's own clock calls
+    // the verb (`13-gestures.md`, the gate the whole gesture wave stands behind).
+    private func withholdDelete(of routine: Routine) {
+        note = nil
+        Task {
+            await withheld.hold(Withheld(
+                .routine, subject: routine.id,
+                line: WithheldWords.routine(routine.name),
+                detail: WithheldWords.routineDetail,
+                take: { _ in store.withhold(routine: routine) },
+                settle: {
+                    guard let why = await store.settleDelete(routine: routine.id) else { return true }
+                    store.restore(routine: routine)
+                    note = why.line("the routine wasn’t deleted")
+                    return false
+                },
+                restore: { store.restore(routine: routine) }))
         }
-        paths[tab] = []
+    }
+
+    private func withholdDelete(of thread: AskThread, through gym: GymApi) {
+        note = nil
+        Task {
+            await withheld.hold(Withheld(
+                .thread, subject: thread.id,
+                line: WithheldWords.thread,
+                detail: WithheldWords.threadDetail,
+                settle: {
+                    do {
+                        try await gym.deleteThread(thread.id)
+                        return true
+                    } catch {
+                        note = AskRefusal(error).line
+                        return false
+                    }
+                }))
+        }
+    }
+
+    private func discard(_ session: Session) {
+        note = nil
+        finishFailure = nil
+        finished = nil
+        // Reached from the finish sheet and from the log row's menu. Either way the screen under it
+        // may be the session that is on its way out, so the log stack goes back to its root.
+        paths[.log] = []
+        Task {
+            await withheld.hold(Withheld(
+                .session, subject: session.id,
+                line: WithheldWords.session,
+                take: { _ in store.withhold(session: session.id) },
+                settle: {
+                    guard await store.settleDelete(session: session.id) else {
+                        store.restore(session: session.id)
+                        note = "the log didn’t answer — the session is still there"
+                        return false
+                    }
+                    return true
+                },
+                restore: { store.restore(session: session.id) }))
+        }
     }
 
     private func untested(_ draft: RoutineDraft) -> Bool {
@@ -594,6 +664,7 @@ public struct GymRoom: View {
             : await store.create(draft)
         switch written {
         case .success(let saved):
+            GymConfirm.saved()
             // An edit returns to the routine page underneath rather than pushing a second copy of it.
             let held = paths[tab] ?? []
             guard held.count > 1, held[held.count - 2] == .routine(saved.id) else {

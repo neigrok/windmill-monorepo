@@ -103,10 +103,16 @@ struct LogScreen: View {
     @ObservedObject var store: TrainingStore
     let onOpen: (SessionSummary) -> Void
     let onBodyweight: () -> Void
+    // Sharing lived only inside the session; the row's long press puts it on the row itself.
+    let share: (String) -> CoachDoors
+    // Withheld for nine seconds on the room's transient — the condition the menu was waiting on.
+    let discard: (Session) -> Void
     let say: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var weighingIn = false
+    @State private var sharing: SharedLink?
+    @State private var minting = false
 
     var body: some View {
         let weeks = LogWeeks.fold(store.recent, deviceOnly: store.deviceOnly,
@@ -128,7 +134,27 @@ struct LogScreen: View {
             } else {
                 ForEach(weeks) { week in
                     Section {
-                        ForEach(week.rows) { row in self.row(row) }
+                        ForEach(week.rows) { row in
+                            self.row(row)
+                                // Two items, and the second one waited for the window it needed:
+                                // `13-gestures.md` withholds Discard from this menu only "until the
+                                // withheld delete exists", and it does. Discarding here withholds
+                                // exactly as the review screen's own Discard does — same nine
+                                // seconds, same transient, same Undo — so the menu item is not the
+                                // unrecoverable tap the brief refused. No `⋮` is drawn to carry it:
+                                // adding a control for an act the menu can hold is Law 4 backwards.
+                                .contextMenu {
+                                    Button { mint(row.summary.session.id) } label: {
+                                        Label(Coach.shareTitle, systemImage: "square.and.arrow.up")
+                                    }
+                                    .disabled(minting)
+                                    Button(role: .destructive) {
+                                        discard(row.summary.session)
+                                    } label: {
+                                        Label(Finish.Discard.action, systemImage: "trash")
+                                    }
+                                }
+                        }
                     } header: {
                         divider(week)
                     }
@@ -148,6 +174,7 @@ struct LogScreen: View {
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 1)
         .safeAreaInset(edge: .bottom) { weighInChip }
+        .sheet(item: $sharing) { link in ShareSheet(link: link) }
         .sheet(isPresented: $weighingIn) {
             WeighInSheet(existing: nil, fixedDate: nil, drawsKgOnly: store.preferences.units == .lb,
                          onSave: { kg, day in
@@ -204,6 +231,26 @@ struct LogScreen: View {
         }
         .padding(.horizontal, WindmillSpace.x5)
         .padding(.vertical, WindmillSpace.x2)
+    }
+
+    // The link is minted before the share sheet can open, and a refusal is said on the room's own
+    // line: there is no sheet up to say it on.
+    private func mint(_ sessionId: String) {
+        guard !minting else { return }
+        minting = true
+        Task {
+            defer { minting = false }
+            switch await share(sessionId).mint() {
+            case .success(let minted):
+                guard let url = URL(string: Coach.link(minted, base: share(sessionId).base)) else {
+                    say("the link wasn’t made")
+                    return
+                }
+                sharing = SharedLink(url: url)
+            case .failure(let why):
+                say(why.line("the link wasn’t made"))
+            }
+        }
     }
 
     private func weighIn(_ kg: Double, on dateLocal: String) async {

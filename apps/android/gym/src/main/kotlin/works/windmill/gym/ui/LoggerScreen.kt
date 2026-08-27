@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,12 +26,9 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -37,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,10 +51,15 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,6 +72,7 @@ import works.windmill.gym.domain.DeviationOffer
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.domain.LoggerWalk
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
@@ -128,7 +134,19 @@ fun LoggerScreen(
     }
 
     // `hide()` on a sheet never shown has no anchor to animate to, so it is closed only if one stands.
+    //
+    // A swipe arrives faster than a sheet can rise, so a second walk while an offer is still pending
+    // is REFUSED rather than overwriting it: the guard below was written for taps, and overwriting
+    // would drop the first movement's deviation silently. The refusal is SAID and names the movement
+    // whose question is open — a stroke that quietly did nothing reads as a broken stroke.
     fun move(to: String) {
+        val open = pendingDeviation?.let { Readout.movement(it.exerciseId, store.catalog) }
+            ?: (sheet as? LoggerSheet.Deviation)?.movement
+        if (open != null) {
+            say(LoggerWalk.oneAtATime(open))
+            return
+        }
+        say(null)
         val leaving = store.exerciseId
         if (leaving != null && leaving != to) {
             DeviationOffer.leaving(leaving, store.session, store.sets, asked)?.let { offer ->
@@ -255,14 +273,12 @@ fun LoggerScreen(
                 ) {
                     History(
                         rows = LiveLines.rows(store.todaySets, store.stalled),
-                        undoable = remember(nowMs, store.sets, movement) { store.undoable },
                         lastTime = LiveLines.prefillCard(
                             store.lastTime, store.planEntry,
                             routine = store.session?.plan?.routine,
                             readFailed = store.lastTimeFailed,
                             now = nowMs,
                         ),
-                        onUndo = { store.undoLast() },
                     )
                 }
                 Value(
@@ -420,6 +436,13 @@ private fun RestReading(rest: Rest.Line?, onClearRest: () -> Unit) {
     }
 }
 
+// The two chevrons are gone and the walk is a horizontal stroke on the body. The stroke is attached
+// ABOVE the title, which is a full-width tap target, and it claims a gesture only once `LoggerWalk`
+// says the stroke is the walk's — the today column beneath is a vertical scroll and the strip at
+// either edge belongs to the system.
+//
+// LAW 1, and this is the row where forgetting it would cost the most: TalkBack sees a drag, so the
+// two verbs the chevrons carried are declared again BY HAND, on the node that already has a label.
 @Composable
 private fun MovementTitle(
     name: String,
@@ -432,14 +455,54 @@ private fun MovementTitle(
     onMove: (String) -> Unit,
     onOpenSession: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Arrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous movement", previous, onMove)
+    val density = LocalDensity.current
+    val slopPx = with(density) { LoggerWalk.slopDp.dp.toPx() }
+    val edgePx = with(density) { LoggerWalk.edgeDp.dp.toPx() }
+    var width by remember { mutableFloatStateOf(0f) }
+    val steps = remember(previous, next, onMove) {
+        buildList {
+            previous?.let { add(CustomAccessibilityAction("Previous movement") { onMove(it); true }) }
+            next?.let { add(CustomAccessibilityAction("Next movement") { onMove(it); true }) }
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onSizeChanged { width = it.width.toFloat() }
+            .pointerInput(previous, next, slopPx, edgePx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (LoggerWalk.startsInTheEdge(down.position.x, width, edgePx)) {
+                        return@awaitEachGesture
+                    }
+                    var dx = 0f
+                    var dy = 0f
+                    var walking = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        dx += change.positionChange().x
+                        dy += change.positionChange().y
+                        if (!walking) walking = LoggerWalk.horizontal(dx, dy, slopPx)
+                        // Claimed only once it is ours, so a vertical stroke still reaches the
+                        // scroll beneath and a tap still reaches the title.
+                        if (walking) change.consume()
+                        if (!change.pressed) break
+                    }
+                    if (walking) LoggerWalk.to(dx, previous, next)?.let(onMove)
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(
-            Modifier.weight(1f).clickable(
-                role = Role.Button,
-                onClickLabel = "open this session",
-                onClick = onOpenSession,
-            ),
+            Modifier
+                .weight(1f)
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = "open this session",
+                    onClick = onOpenSession,
+                )
+                .semantics { customActions = steps },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -475,28 +538,14 @@ private fun MovementTitle(
                 )
             }
         }
-        Arrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next movement", next, onMove)
     }
 }
 
+// No Undo is drawn here any more: the room's transient carries both the act and the fact that the
+// window is open, and it retires itself when the window closes — which an inline button could never
+// say, and which this scroll could put out of sight while the window was still running (Law 4).
 @Composable
-private fun Arrow(glyph: ImageVector, said: String, to: String?, onMove: (String) -> Unit) {
-    IconButton(onClick = { to?.let(onMove) }, enabled = to != null) {
-        Icon(
-            glyph,
-            contentDescription = said,
-            tint = if (to == null) GymSkin.line else GymSkin.inkDim,
-        )
-    }
-}
-
-@Composable
-private fun History(
-    rows: List<LiveLines.Row>,
-    undoable: TrainingSet?,
-    lastTime: LiveLines.Card,
-    onUndo: () -> Unit,
-) {
+private fun History(rows: List<LiveLines.Row>, lastTime: LiveLines.Card) {
     if (rows.isEmpty()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(lastTime.title, style = GymType.numeral(11), color = GymSkin.inkFaint)
@@ -533,17 +582,7 @@ private fun History(
                     color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.ink,
                     modifier = Modifier.weight(1f),
                 )
-                if (row.id == undoable?.id) {
-                    Box(
-                        Modifier
-                            .sizeIn(minWidth = 60.dp, minHeight = GymTap.minimum - 8.dp)
-                            .clickable(role = Role.Button, onClick = onUndo),
-                        contentAlignment = Alignment.CenterEnd,
-                    ) {
-                        Text("Undo", style = WindmillFont.body(14, FontWeight.SemiBold),
-                             color = GymSkin.accent)
-                    }
-                } else if (row.isOnThisDevice) {
+                if (row.isOnThisDevice) {
                     Text(LiveLines.onThisDevice, style = GymType.numeral(11),
                          color = GymSkin.unsyncedInk)
                 } else {

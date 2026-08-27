@@ -55,14 +55,29 @@ final class RoomPickerSixUITests: XCTestCase {
 
     // MARK: - the ways in
 
+    // The finish sheet stands OVER the session review screen, which draws a `Discard session` of its
+    // own now (Law 1) — so the sheet's is named by the one a thumb can actually reach.
+    private var theSheetsDiscard: XCUIElement? {
+        app.buttons.matching(identifier: "Discard session")
+            .allElementsBoundByIndex.first { $0.isHittable }
+    }
+
     private func throwAwayTheStandingSession() {
         guard app.navigationBars.buttons["Finish"].exists else { return }
         app.navigationBars.buttons["Finish"].tap()
-        let discard = app.buttons["Discard session"]
-        guard discard.waitForExistence(timeout: 20) else { return }
+        guard app.buttons["Discard session"].waitForExistence(timeout: 20) else { return }
+        guard let discard = theSheetsDiscard else { return }
         discard.tap()
-        let confirm = app.buttons["Discard"]
-        if confirm.waitForExistence(timeout: 10) { confirm.tap() }
+        waitOutTheWindow()
+    }
+
+    // Discarding asks nothing and is withheld for nine seconds instead, so nothing has actually left
+    // the shelf until the transient retires — and a relaunch before then brings the session back.
+    private func waitOutTheWindow() {
+        let undo = app.buttons["Undo"]
+        guard undo.waitForExistence(timeout: 10) else { return }
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: undo)
+        waitForExpectations(timeout: 25)
     }
 
     private func relaunch() {
@@ -111,21 +126,25 @@ final class RoomPickerSixUITests: XCTestCase {
             .first { $0.exists }
         XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")
         keep?.tap()
-        XCTAssertFalse(app.buttons["Discard session"].exists, "the finish sheet is still up")
+        // Named by the sheet's own head: the session review screen underneath draws a
+        // `Discard session` of its own now (Law 1), so that button no longer means "the sheet".
+        XCTAssertFalse(app.staticTexts["Session finished"].exists
+                       || app.staticTexts["Ended early"].exists,
+                       "the finish sheet is still up")
     }
 
     // The second session named nothing, so it is thrown away rather than left standing in front of
     // whatever runs next.
     private func leaveTheSessionUnstarted() {
         app.navigationBars.buttons["Finish"].tap()
-        let discard = app.buttons["Discard session"]
-        XCTAssertTrue(discard.waitForExistence(timeout: 20),
+        XCTAssertTrue(app.buttons["Discard session"].waitForExistence(timeout: 20),
                       "an empty session offered no way to throw it away")
-        discard.tap()
-        // A confirmation dialog, so the answer is a plain button on the action sheet it raises.
-        let confirm = app.buttons["Discard"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "the discard was never asked about")
-        confirm.tap()
+        let discard = theSheetsDiscard
+        XCTAssertNotNil(discard, "the finish sheet's own discard is not reachable")
+        discard?.tap()
+        XCTAssertFalse(app.staticTexts["Discard this session?"].exists,
+                       "the discard still asks a question the undo window replaced")
+        waitOutTheWindow()
         // The discard drops the room back onto its tabs — on the log's own root, since the screen the
         // sheet stood over was the session it just deleted.
         XCTAssertTrue(app.buttons["Coach"].waitForExistence(timeout: 20),

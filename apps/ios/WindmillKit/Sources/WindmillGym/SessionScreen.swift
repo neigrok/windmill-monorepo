@@ -33,6 +33,8 @@ enum Performed {
         let effort: String
         let kind: SetKind
         let note: Note?
+        // What the lifter recorded on the set itself, drawn only when there is something to draw.
+        let said: String?
     }
 
     struct Movement: Equatable, Identifiable {
@@ -65,9 +67,21 @@ enum Performed {
                         kind: set.kind,
                         note: set.kind == .working
                             ? note(for: set, against: against, opening: set.id == opening)
-                            : nil)
+                            : nil,
+                        said: said(of: set))
                 })
         }
+    }
+
+    // The set's own two records, in one line and in this order: `RPE 8 · felt heavy`. Neither is an
+    // instruction to anybody — they are what the lifter wrote down, so both are printed verbatim.
+    static func said(of set: TrainingSet) -> String? {
+        var parts: [String] = []
+        if let rpe = set.rpe { parts.append("RPE \(Readout.rpe(rpe))") }
+        let note = set.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !note.isEmpty { parts.append(note) }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " · ")
     }
 
     // `PlanEntry` carries no id, so a movement the plan names twice is annotated with nothing at all.
@@ -97,8 +111,12 @@ enum Performed {
 struct SessionScreen: View {
     let summary: SessionSummary
     @ObservedObject var store: TrainingStore
+    // The undo lives on the room's transient now: an inline row can scroll out of view while the
+    // window is still open, and it never shows the window closing (`13-gestures.md` Law 4).
+    @ObservedObject var withheld: WithheldWindow
     let coach: CoachDoors
     let onMovement: (String) -> Void
+    let onDiscard: () -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var detail: SessionDetail?
@@ -121,7 +139,6 @@ struct SessionScreen: View {
                 head
                 RefusalRows(refusals: store.refusals, catalog: store.catalog,
                             onDismiss: { store.clearRefusals() })
-                undoRow
             }
             .modifier(PlainRow())
 
@@ -132,6 +149,9 @@ struct SessionScreen: View {
                 CoachShareCard(doors: coach)
             }
             .modifier(PlainRow())
+
+            Section { discard }
+                .modifier(PlainRow())
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -146,11 +166,27 @@ struct SessionScreen: View {
                      },
                      onDelete: {
                          fixing = nil
-                         Task { await delete(open.set) }
+                         hold(open.set)
                      })
                 .presentationBackground(skin.surface)
-                .presentationDetents([.height(560)])
+                // Not a fixed height: the sheet gained two fields, and a pinned detent is what sends
+                // the visible half to zero at the largest accessibility sizes.
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
+    }
+
+    // The drawn door into the act the row's long press also reaches: a gesture may replace a control
+    // and may never be the only way to an action (`13-gestures.md` Law 1). It asks nothing first —
+    // the window and the transient are the way back, and a confirmation on an act that has an undo
+    // is a tap that buys nothing (Law 2). Same words, same window and same undo as every other door
+    // into this act.
+    private var discard: some View {
+        Button(Finish.Discard.action, action: onDiscard)
+            .font(WindmillFont.body(16, .semibold))
+            .foregroundStyle(skin.alarmInk)
+            .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+            .padding(.top, WindmillSpace.x2)
     }
 
     private var head: some View {
@@ -179,32 +215,6 @@ struct SessionScreen: View {
         }
     }
 
-    // Past the undo window the row has left the log; the store owns how long that window is and is asked rather than told.
-    @ViewBuilder
-    private var undoRow: some View {
-        if let taken = store.restorable {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                if store.restorable != nil {
-                    HStack {
-                        Text("Deleted \(Readout.effort(weightKg: taken.set.weightKg, reps: taken.set.reps))")
-                            .font(GymType.numeral(12))
-                            .foregroundStyle(skin.inkDim)
-                        Spacer(minLength: 0)
-                        Button("Undo") {
-                            Task {
-                                guard await store.restore() else { return }
-                                await restored(taken.set)
-                            }
-                        }
-                        .font(WindmillFont.body(14, .semibold))
-                        .foregroundStyle(skin.accent)
-                        .frame(minWidth: 60, minHeight: GymTap.minimum - 8)
-                    }
-                }
-            }
-        }
-    }
-
     // One section per movement, in the order the movements were first touched. The card is the
     // section's row background, not a rectangle drawn around a stack.
     @ViewBuilder
@@ -213,7 +223,18 @@ struct SessionScreen: View {
             ForEach(Performed.movements(detail.sets, catalog: store.catalog,
                                         plan: row.session.plan)) { movement in
                 Section {
-                    ForEach(movement.rows) { performed in row(performed, of: movement.movement) }
+                    ForEach(movement.rows) { performed in
+                        row(performed, of: movement.movement)
+                            // One action, on the trailing edge, and no full swipe: two actions eat
+                            // half the row and push the set's own ordinal off the leading edge, and a
+                            // full swipe makes two-deletes-in-a-second the fastest path there is.
+                            // Tap still opens the fix sheet (`13-gestures.md`).
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { hold(performed) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
                 } header: {
                     HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                         MovementDoor(exerciseId: movement.id, name: movement.movement,
@@ -255,23 +276,35 @@ struct SessionScreen: View {
 
     private func row(_ set: Performed.Row, of movement: String) -> some View {
         Button { open(set, of: movement) } label: {
-            HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                Text(set.number)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkFaint)
-                    .frame(width: 18, alignment: .trailing)
-                Text(set.effort)
-                    .font(GymType.numeral(15))
-                    .foregroundStyle(set.kind == .working ? skin.ink : skin.warmupInk)
-                Spacer(minLength: WindmillSpace.x3)
-                if set.kind != .working {
-                    Text(set.kind.rawValue)
-                        .font(GymType.numeral(11))
-                        .foregroundStyle(skin.warmupInk)
-                } else if let note = set.note {
-                    Text(note.text)
-                        .font(GymType.numeral(11))
-                        .foregroundStyle(note.emphasised ? skin.inkDim : skin.inkFaint)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
+                    Text(set.number)
+                        .font(GymType.numeral(12))
+                        .foregroundStyle(skin.inkFaint)
+                        .frame(width: 18, alignment: .trailing)
+                    Text(set.effort)
+                        .font(GymType.numeral(15))
+                        .foregroundStyle(set.kind == .working ? skin.ink : skin.warmupInk)
+                    Spacer(minLength: WindmillSpace.x3)
+                    if set.kind != .working {
+                        Text(set.kind.rawValue)
+                            .font(GymType.numeral(11))
+                            .foregroundStyle(skin.warmupInk)
+                    } else if let note = set.note {
+                        Text(note.text)
+                            .font(GymType.numeral(11))
+                            .foregroundStyle(note.emphasised ? skin.inkDim : skin.inkFaint)
+                    }
+                }
+                // What the lifter wrote on the set, under the numbers rather than beside the plan's
+                // word: the comparison is the log's arithmetic and this is their own record (I32).
+                if let said = set.said {
+                    Text(said)
+                        .font(GymType.numeral(11.5))
+                        .foregroundStyle(skin.inkDim)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 18 + WindmillSpace.x3)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
@@ -312,6 +345,8 @@ struct SessionScreen: View {
 
     // What the store answers with is what stands: a change the log refused leaves the row exactly as it was.
     private func save(_ correction: SetFix, to set: TrainingSet) async {
+        guard !correction.isEmpty else { return }
+        GymConfirm.saved()
         let stands = await store.fix(set, in: summary.session.id, by: correction)
         if let held = detail {
             detail = SessionDetail(session: held.session,
@@ -320,8 +355,33 @@ struct SessionScreen: View {
         await moved()
     }
 
-    private func delete(_ set: TrainingSet) async {
-        await store.delete(set, in: summary.session.id)
+    // The swipe's Delete and the fix sheet's are one act with one window; the register holds every
+    // one of them on its own clock, so a second delete never settles the first.
+    private func hold(_ row: Performed.Row) {
+        guard let held = detail?.sets.first(where: { $0.id == row.id }) else { return }
+        hold(held)
+    }
+
+    private func hold(_ set: TrainingSet) {
+        let sessionId = summary.session.id
+        Task {
+            await withheld.hold(Withheld(
+                .set, subject: set.id,
+                line: WithheldWords.deleted(Readout.effort(weightKg: set.weightKg, reps: set.reps)),
+                take: { until in await delete(set, heldUntilMs: until) },
+                settle: {
+                    await store.flushPendingSets()
+                    return true
+                },
+                restore: {
+                    guard await store.restore(set, in: sessionId) else { return }
+                    await restored(set)
+                }))
+        }
+    }
+
+    private func delete(_ set: TrainingSet, heldUntilMs: Int64) async {
+        await store.delete(set, in: summary.session.id, heldUntilMs: heldUntilMs)
         if let held = detail {
             detail = SessionDetail(session: held.session, sets: held.sets.filter { $0.id != set.id })
         }
@@ -329,7 +389,7 @@ struct SessionScreen: View {
     }
 
     private func restored(_ set: TrainingSet) async {
-        if let held = detail {
+        if let held = detail, !held.sets.contains(where: { $0.id == set.id }) {
             detail = SessionDetail(session: held.session,
                                    sets: (held.sets + [set]).sorted { $0.completedAtMs < $1.completedAtMs })
         }

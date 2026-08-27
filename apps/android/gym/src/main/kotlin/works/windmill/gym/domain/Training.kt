@@ -1,14 +1,22 @@
 package works.windmill.gym.domain
 
 import java.security.SecureRandom
+import kotlin.math.floor
 import kotlin.math.max
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.descriptors.element
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
@@ -452,18 +460,125 @@ data class SetWrite(
         this(set.id, set.exerciseId, set.weightKg, set.reps, set.kind, set.completedAtMs)
 }
 
-// `exerciseId`, `completedAt` and `setNumber` belong to the log, and no field here may carry a
-// default: an omitted field reads on the server as "leave what is stored".
-@Serializable
-data class SetFix(val weightKg: Double, val reps: Int, val kind: SetKind) {
-    constructor(set: TrainingSet) : this(set.weightKg, set.reps, set.kind)
+// `exerciseId`, `completedAt` and `setNumber` belong to the log, and none of them is a correction.
+// A fix names ONLY what it changes: an absent field reads on the server as "leave what is stored",
+// `note: ""` clears a note and `rpe: null` clears an rpe. Those two clears are VALUES and not
+// omissions, which is why `rpeNamed` rides beside `rpe` and why this writes its own wire object.
+@Serializable(with = SetFixWire::class)
+data class SetFix(
+    val weightKg: Double? = null,
+    val reps: Int? = null,
+    val kind: SetKind? = null,
+    val note: String? = null,
+    val rpeNamed: Boolean = false,
+    val rpe: Double? = null,
+) {
+    // What a sheet asks for, read against what the log holds: only the fields that moved travel.
+    constructor(stored: TrainingSet, weightKg: Double, reps: Int, kind: SetKind, rpe: Double?, note: String) :
+        this(
+            weightKg = weightKg.takeIf { Ladder.round(it) != Ladder.round(stored.weightKg) },
+            reps = reps.takeIf { it != stored.reps },
+            kind = kind.takeIf { it != stored.kind },
+            note = note.takeIf { it != stored.note },
+            rpeNamed = rpe != stored.rpe,
+            // Held only where it is named, so an untouched sheet is equal to an empty diff.
+            rpe = rpe.takeIf { it != stored.rpe },
+        )
 
-    fun corrected(set: TrainingSet): TrainingSet =
-        set.copy(weightKg = weightKg, reps = reps, kind = kind)
+    // The claim's replay restates the whole stored row, rpe included — an absent rpe there would
+    // leave the account's copy of a set the shelf has corrected saying something else.
+    constructor(set: TrainingSet) :
+        this(set.weightKg, set.reps, set.kind, set.note, rpeNamed = true, rpe = set.rpe)
+
+    fun corrected(set: TrainingSet): TrainingSet = set.copy(
+        weightKg = weightKg ?: set.weightKg,
+        reps = reps ?: set.reps,
+        kind = kind ?: set.kind,
+        note = note ?: set.note,
+        rpe = if (rpeNamed) rpe else set.rpe,
+    )
 
     // Read on the ladder's grid, never off raw doubles.
-    fun moves(set: TrainingSet): Boolean =
-        Ladder.round(weightKg) != Ladder.round(set.weightKg) || reps != set.reps || kind != set.kind
+    fun moves(set: TrainingSet): Boolean {
+        val after = corrected(set)
+        if (Ladder.round(after.weightKg) != Ladder.round(set.weightKg)) return true
+        return after.reps != set.reps || after.kind != set.kind ||
+            after.note != set.note || after.rpe != set.rpe
+    }
+}
+
+// The wire shape is a DIFF, so the encoder's absent-is-null rule cannot carry it: `rpe: null` is the
+// one field whose explicit null is a value, and an omitted field is the only way to say "leave it".
+object SetFixWire : KSerializer<SetFix> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("SetFix") {
+        element<Double>("weightKg", isOptional = true)
+        element<Int>("reps", isOptional = true)
+        element<String>("kind", isOptional = true)
+        element<String>("note", isOptional = true)
+        element<Double?>("rpe", isOptional = true)
+    }
+
+    override fun serialize(encoder: Encoder, value: SetFix) {
+        val json = encoder as? JsonEncoder ?: throw SerializationException("a fix is json or nothing")
+        json.encodeJsonElement(buildJsonObject {
+            value.weightKg?.let { put("weightKg", it) }
+            value.reps?.let { put("reps", it) }
+            value.kind?.let { put("kind", it.wire) }
+            value.note?.let { put("note", it) }
+            if (value.rpeNamed) put("rpe", value.rpe)
+        })
+    }
+
+    override fun deserialize(decoder: Decoder): SetFix =
+        throw SerializationException("a fix is written, never read")
+}
+
+// The two things a lifter can say about a set that are not the set. RPE is the log's 1–10 and the
+// sheet offers the half-point band a lifter actually uses; the note is theirs and nothing reads it
+// back to Coach.
+object SetEffort {
+    const val rpeLabel = "RPE"
+    val rpeBand: List<Double> = generateSequence(6.0) { it + 0.5 }.takeWhile { it <= 10.0 }.toList()
+    // The seat that means nothing was said, and it says so in words: a bare `—` is read out as
+    // nothing at all, so a lifter on TalkBack would hear an unlabelled seat where the way back is.
+    const val rpeUnrated = "Not rated"
+
+    const val noteLabel = "Set note"
+    const val noteCaption = "A record for you — not an instruction to Coach."
+    const val noteMaxBytes = 4000
+    // Chrome only in the last fifth, exactly as the note editor draws its own: one room may not
+    // draw two rules for one shape.
+    const val noteCounterFrom = 3200
+    // The log refuses an overlong note with one generic sentence about the whole fix, so this is the
+    // only reason a lifter will ever read. It is said at the field, before anything is sent, and in
+    // the shape the notes bound already ships — the rule, not the complaint.
+    const val noteTooLong = "A set note runs to 4000 bytes."
+
+    // ONE count behind both readouts, so the counter and the refusal can never flip on different
+    // bytes. Untrimmed, because what is counted is what would ride the wire.
+    fun noteBytes(note: String): Int = note.toByteArray(Charsets.UTF_8).size
+
+    // Null below the threshold: nothing is drawn.
+    fun noteCounter(note: String): String? {
+        val used = noteBytes(note)
+        if (used < noteCounterFrom) return null
+        return "$used of $noteMaxBytes bytes"
+    }
+
+    // Past the bound the counter goes alarm, wherever a byte counter is drawn in this room.
+    fun noteOverlong(note: String): Boolean = noteBytes(note) > noteMaxBytes
+
+    // `8` and `8.5`, never `8.0`.
+    fun rpeNumeral(rpe: Double): String =
+        if (rpe == floor(rpe)) rpe.toInt().toString() else rpe.toString()
+
+    fun rpeReading(rpe: Double): String = "RPE ${rpeNumeral(rpe)}"
+
+    // Printed on the session row where the log carries either: `RPE 8 · felt heavy`.
+    fun line(rpe: Double?, note: String): String? {
+        val said = listOfNotNull(rpe?.let(::rpeReading), note.trim().takeIf { it.isNotEmpty() })
+        return said.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
 }
 
 // `joinOpenSession` is stated explicitly false: an omitted flag means "join whatever is open".

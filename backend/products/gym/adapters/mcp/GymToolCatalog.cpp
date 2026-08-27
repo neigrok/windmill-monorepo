@@ -281,7 +281,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["completedAt"] = instant("When the set was completed, epoch ms.");
     p["kind"] = enumStr("Default working. Warmups, drops and failures count toward nothing.", kSetKinds);
     p["rpe"] = num("Rated exertion, 1–10. Omit if it was not rated.");
-    p["note"] = cappedStr("A free note on this set.", 4000);
+    p["note"] = cappedStr("A free note on this set, at most 4000 BYTES of UTF-8 — the log counts "
+                          "bytes, not characters.", kMaxSetNoteBytes);
     tools.push_back(tool("log_set", Access::write,
         "Log one set into an open workout. YOU mint `id` and it IS the idempotency key: resending "
         "the same id answers with the stored row and its set number, so a retry can never duplicate "

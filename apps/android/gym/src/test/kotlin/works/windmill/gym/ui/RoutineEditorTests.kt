@@ -68,7 +68,6 @@ class RoutineEditorTests {
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},
-                onDelete = {},
                 onClose = {},
                 say = {},
             )

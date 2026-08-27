@@ -125,11 +125,6 @@ object Threads {
 
     const val outOfReach = "the log didn’t answer — your conversations are out of reach"
 
-    const val deletes = "Delete this conversation"
-    const val deleteRule =
-        "Deleting the conversation keeps what it changed: an applied change stays in the routine’s " +
-            "history. There is no undoing the delete."
-
     const val past = "A conversation you had. Ask something new to start another."
 
     // Sorted by the SERVER's instants and never by arrival order.

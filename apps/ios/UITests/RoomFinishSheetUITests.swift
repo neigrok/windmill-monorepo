@@ -51,16 +51,35 @@ final class RoomFinishSheetUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20)
                       || app.staticTexts["Ended early"].exists,
                       "the finish sheet never presented")
-        XCTAssertTrue(app.buttons["Discard session"].exists, "the sheet lost its destructive door")
+        // The sheet stands OVER the session review screen, which draws a `Discard session` of its
+        // own now (Law 1) — so the sheet's is named by the one a thumb can actually reach.
+        let discard = app.buttons.matching(identifier: "Discard session")
+            .allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(discard, "the sheet lost its destructive door")
 
-        app.buttons["Discard session"].tap()
-        XCTAssertTrue(app.staticTexts["Discard this session?"].waitForExistence(timeout: 10),
-                      "discarding a whole workout was not asked about")
-        app.buttons["Discard"].tap()
+        discard?.tap()
+        // A confirmation on an act that HAS an undo is a tap that buys nothing, so the dialog is gone
+        // and the nine-second window took its place (`13-gestures.md` Law 2).
+        XCTAssertFalse(app.staticTexts["Discard this session?"].exists,
+                       "the discard still asks a question it no longer needs to")
+        XCTAssertTrue(app.staticTexts["Session deleted."].waitForExistence(timeout: 10),
+                      "the discard offered no way back")
+        XCTAssertTrue(app.buttons["Undo"].exists)
 
-        // The sheet stood over a session that no longer exists, so the room unwinds to the log's root.
+        // The sheet stood over a session on its way out, so the room unwinds to the log's root.
         XCTAssertTrue(app.navigationBars["The log"].waitForExistence(timeout: 20),
                       "the room did not land back on the log after a discard")
         XCTAssertFalse(app.buttons["Discard session"].exists, "the finish sheet is still up")
+
+        // Nothing reaches the shelf until the window closes, and this test leaves nothing standing.
+        waitOutTheWindow()
+    }
+
+    // The transient retires with the last clock, and only then has the discard actually happened.
+    private func waitOutTheWindow() {
+        let undo = app.buttons["Undo"]
+        guard undo.exists else { return }
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: undo)
+        waitForExpectations(timeout: 25)
     }
 }
