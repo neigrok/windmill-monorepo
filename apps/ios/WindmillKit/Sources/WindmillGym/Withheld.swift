@@ -142,6 +142,16 @@ public final class WithheldWindow: ObservableObject {
 
     public var closesAtMs: Int64? { newest?.untilMs }
 
+    // How much of the newest window is still to run. The register holds the instant, so the
+    // register does the subtraction, on the one clock that also closes the window: the transient
+    // draws its drain from this and reads no clock of its own. A second clock — the wall clock
+    // under a seat built on an injected one — empties the bar at a different moment than the way
+    // back actually disappears.
+    public var leftMs: Int64 {
+        guard let untilMs = newest?.untilMs else { return 0 }
+        return max(0, untilMs - now())
+    }
+
     public func holds(_ kind: Withheld.Kind, _ subject: String) -> Bool {
         held.contains { $0.kind == kind && $0.subject == subject }
     }
@@ -272,13 +282,15 @@ struct WithheldTransient: View {
             .padding(.bottom, WindmillSpace.x3)
             .accessibilityElement(children: .contain)
             .transition(.move(edge: .bottom).combined(with: .opacity))
-            .onAppear { drain(until: newest.untilMs) }
-            .onChange(of: newest.id) { _, _ in drain(until: newest.untilMs) }
+            .onAppear { drain() }
+            .onChange(of: newest.id) { _, _ in drain() }
         }
     }
 
-    private func drain(until closesAtMs: Int64) {
-        let remaining = Double(closesAtMs - Int64(Date().timeIntervalSince1970 * 1000)) / 1000
+    // Over what the WINDOW says is left, never over a clock this view read for itself: the window is
+    // what retires the transient, and a bar measured on a second clock disagrees with it.
+    private func drain() {
+        let remaining = Double(window.leftMs) / 1000
         draining = 1
         guard remaining > 0 else {
             draining = 0

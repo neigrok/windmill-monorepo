@@ -215,6 +215,64 @@ final class WithheldWindowTests: XCTestCase {
         XCTAssertEqual(WithheldWords.windowClosed, "The window closed — that delete already went.")
     }
 
+    // What is LEFT of a window is measured on the clock that closes it, and on no other. The
+    // transient's drain is the only reader, and it asks here rather than reading a clock for itself:
+    // a bar draining on the wall clock under a seat built on an injected one empties at a different
+    // moment than the way back disappears. The instants below are nowhere near wall-clock time on
+    // purpose — an ambient read answers 0 for every one of them.
+    func testWhatIsLeftIsMeasuredOnTheWindowsOwnClock() async {
+        var clockMs: Int64 = 10_000
+        let open = WithheldWindow(windowMs: 9_000, now: { clockMs })
+
+        XCTAssertEqual(open.leftMs, 0, "nothing is held, so there is nothing to draw")
+
+        await open.hold(Withheld(.routine, subject: "rt_1", line: WithheldWords.routine("Push A")))
+        XCTAssertEqual(open.leftMs, 9_000, "the whole window, on the clock that will close it")
+
+        clockMs += 3_000
+        XCTAssertEqual(open.leftMs, 6_000, "and it shrinks by exactly what that clock spent")
+
+        clockMs += 60_000
+        XCTAssertEqual(open.leftMs, 0, "never past the end, and never negative")
+    }
+
+    // A logged set carries the instant the QUEUE stamped on disk. The subtraction still happens
+    // here, against that instant, so the drain runs out with the queue's own hold rather than with a
+    // second window started when the walk back to the room finished.
+    func testAnActThatCarriesItsOwnInstantIsMeasuredFromThatInstant() async {
+        var clockMs: Int64 = 500_000
+        let open = WithheldWindow(windowMs: 9_000, now: { clockMs })
+
+        await open.hold(Withheld(.loggedSet, subject: "set_1",
+                                 line: WithheldWords.logged("100 × 5"),
+                                 closesAtMs: clockMs + 4_000))
+
+        XCTAssertEqual(open.closesAtMs, 504_000)
+        XCTAssertEqual(open.leftMs, 4_000, "what the queue has left, not nine fresh seconds")
+
+        clockMs += 1_500
+        XCTAssertEqual(open.leftMs, 2_500)
+    }
+
+    // The rule the two tests above cannot reach: the transient's own arithmetic is private to a
+    // SwiftUI view, so nothing executable here can catch it reading the wall clock again. It is
+    // pinned on the source instead — the register owns the clock, and the view that draws it owns
+    // none.
+    func testTheTransientKeepsNoClockOfItsOwn() throws {
+        let file = try XCTUnwrap(GymApostropheTests.gymSources
+            .first { $0.lastPathComponent == "Withheld.swift" })
+        let source = try String(contentsOf: file, encoding: .utf8)
+        let view = try XCTUnwrap(source.range(of: "struct WithheldTransient"),
+                                 "the transient is not in Withheld.swift any more")
+        let drawn = String(source[view.lowerBound...])
+
+        for ambient in ["Date(", "Date.now", "CACurrentMediaTime", "DispatchTime.now",
+                        "ProcessInfo", "TimelineView", "Timer"] {
+            XCTAssertFalse(drawn.contains(ambient),
+                           "\(ambient) in the transient: the window owns the clock, the view asks it")
+        }
+    }
+
     // Every window on every surface is the same nine seconds (P4, ledger `2m`).
     func testTheWindowIsTheQueuesOwnNineSeconds() {
         XCTAssertEqual(SetQueue.undoWindowMs, 9_000)
