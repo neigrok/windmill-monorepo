@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import java.io.File
 import android.os.Looper
+import android.os.SystemClock
 import java.io.IOException
 import java.time.Duration
 import kotlinx.coroutines.CoroutineScope
@@ -58,8 +59,13 @@ class RefusedSettleTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    // Nine seconds is the shipped span; a test spends a tenth of it and pins the ORDER, not the wait.
-    private val window = 400L
+    // The shipped nine seconds, whole. Every clock this test reads is the LOOPER's — the store
+    // stamps its windows off `SystemClock.uptimeMillis` and `delay` on the main dispatcher counts
+    // down the same one — so nine seconds cost nothing and `idleFor` is what spends them. A window
+    // measured against the wall clock instead would be the machine's to close: the swipe's dismiss
+    // animation and the recomposition behind it take however long this runner takes, and a shortened
+    // span turns that into whether the transient is still on screen when the next line reads it.
+    private val window = SetQueue.undoWindowMs
 
     private val account = Account(
         api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
@@ -68,12 +74,13 @@ class RefusedSettleTests {
 
     private fun program(scope: CoroutineScope, server: FakeTraining): TrainingStore {
         val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
+            queue = SetQueue(File(tmp.root, "queue.json"), clock = SystemClock::uptimeMillis),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
             localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
             scope = scope,
+            now = SystemClock::uptimeMillis,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
             undoWindowMs = window,
@@ -95,13 +102,19 @@ class RefusedSettleTests {
         compose.setContent { GymMaterial { GymRoom(account, store) } }
         compose.waitForIdle()
 
+        // The swipe's dismiss finishes, then the row goes and the transient arrives — three
+        // recompositions the gesture does not wait for, so the arrival is WAITED FOR rather than
+        // read at a chosen moment.
         compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Push Day deleted.").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Push Day deleted.").assertIsDisplayed()
         compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
 
         // The window closes, the log is asked, and it says no. The clock is the store's own and it
         // runs on the main looper, so the looper is what carries the nine seconds here.
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(window * 3))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(window + 1))
         compose.waitForIdle()
         compose.runOnIdle { assertEquals("the window closed", 0, store.withheld.size) }
 

@@ -284,6 +284,13 @@ class TrainingStore(
     val undoableUntilMs: Long?
         get() = queue.withdrawable(at = now())?.heldUntilMs
 
+    // How long the way back has left, read off whichever of the two windows closes LAST. The store
+    // STAMPED those instants, so the store is what subtracts from them: a room reaching for a clock
+    // of its own would measure a span against an instant some other clock wrote, and a seat built on
+    // a different clock draws a window that closed before it opened.
+    val wayBackLeftMs: Long
+        get() = maxOf(holding?.untilMs ?: 0L, undoableUntilMs ?: 0L) - now()
+
     // Nothing has ever happened in this room. It asks whether the reads that could say otherwise
     // actually LANDED, never whether their lists came back empty: `older == End` is the log page
     // answering "there is no more". The session the lifter is IN is not counted.

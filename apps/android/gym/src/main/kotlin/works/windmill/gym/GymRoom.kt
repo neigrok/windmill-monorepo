@@ -378,7 +378,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // the moment the append is among them.
     //
     // Said for as long as a way back is open and never a moment longer: the span is the queue's
-    // `undoWindowMs`, read off whichever clock closes LAST, and never a snackbar default. The key is
+    // `undoWindowMs` and never a snackbar default. The store stamped both windows and the store is
+    // what says how much is left of them — the room reads no clock of its own, or the span would be
+    // measured against an instant a different clock wrote. The key is
     // everything that could change what is offered — so the instant a settle commits a delete to the
     // wire, or a second act joins the window, or an older one leaves it, this effect is cancelled and
     // the transient is redrawn for what is left. An Undo offered over a delete already sent is a lie.
@@ -391,8 +393,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     val owed = store.undoable
     LaunchedEffect(takeable?.subjectId, store.withheld.size, owed?.id, landed) {
         val said = Withheld.line(store.withheld, owed) ?: return@LaunchedEffect
-        val closes = maxOf(takeable?.untilMs ?: 0L, store.undoableUntilMs ?: 0L)
-        val left = closes - System.currentTimeMillis()
+        val left = store.wayBackLeftMs
         if (left <= 0) return@LaunchedEffect
         val decided = withTimeoutOrNull(left) {
             transient.showSnackbar(
