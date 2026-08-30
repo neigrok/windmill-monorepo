@@ -320,25 +320,65 @@
   text-underline-offset: 2px;
 }
 
-.journal-input {
+/* The composer is two layers on one box: the real field, whose glyphs are transparent, and the paint
+   over it, which is the text you actually read. They share every property that decides where a
+   character lands — font, size, line-height, width, padding, wrapping — so the caret moving through
+   the field lands exactly on the letters above it. Change one, change the other. */
+.journal-composer {
+  position: relative;
+  margin-top: 8px;
+}
+
+.journal-input,
+.journal-input-paint {
   display: block;
   width: 100%;
-  margin-top: 8px;
+  margin: 0;
   padding: 0;
   border: 0;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: var(--journal-ink);
   font-family: var(--font-body);
   font-weight: 400;
   font-size: 16px;
   line-height: 28px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+
+.journal-input {
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;          /* read off the paint layer above; the caret is still the field's */
   caret-color: var(--lamp-400);
 }
 .journal-input::placeholder {
   color: color-mix(in srgb, var(--journal-ink) 38%, transparent);
+}
+
+.journal-input-paint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;        /* every press belongs to the field underneath */
+  color: var(--journal-ink);
+}
+
+/* A link is lamp, in the writing as in the chrome. Underlined at a distance you can read through. */
+.journal-link {
+  color: var(--lamp-400);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--lamp-400) 45%, transparent);
+  text-underline-offset: 2px;
+}
+a.journal-link:hover,
+a.journal-link:focus-visible {
+  text-decoration-color: var(--lamp-400);
+}
+.journal-link .journal-highlight {
+  color: var(--lamp-400);
 }
 
 .journal-privacy {

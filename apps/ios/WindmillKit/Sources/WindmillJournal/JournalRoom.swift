@@ -67,20 +67,7 @@ public struct JournalRoom: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x5) {
-            TextField(
-                "",
-                text: Binding(get: { store.body }, set: store.type),
-                prompt: store.isFirstRun
-                    ? Text("Start anywhere. Nothing here is graded.").foregroundStyle(skin.inkDim)
-                    : nil,
-                axis: .vertical
-            )
-            .font(WindmillFont.body(16))
-            .lineSpacing(9)
-            .foregroundStyle(skin.ink)
-            .tint(skin.lamp)                 // the caret is the candle
-            .textFieldStyle(.plain)
-            .focused($writing)
+            writingField
 
             scales
 
@@ -93,6 +80,43 @@ public struct JournalRoom: View {
             if showScalesCard { scalesCard }
         }
         .padding(.bottom, WindmillSpace.x8)
+    }
+
+    // Two layers on one box. The field's own glyphs are transparent and the paint over them is the text
+    // that is read — which is the only way a link can be lit while the day is still being written, since
+    // a text field paints one colour and no more. They are the same font at the same width, so the caret
+    // moving through the field lands on the letters above it: change one, change the other.
+    private var writingField: some View {
+        ZStack(alignment: .topLeading) {
+            TextField(
+                "",
+                text: Binding(get: { store.body }, set: store.type),
+                prompt: store.isFirstRun
+                    ? Text("Start anywhere. Nothing here is graded.").foregroundStyle(skin.inkDim)
+                    : nil,
+                axis: .vertical
+            )
+            .font(WindmillFont.body(16))
+            .lineSpacing(9)
+            .foregroundStyle(store.body.isEmpty ? skin.ink : .clear)
+            .tint(skin.lamp)                 // the caret is the candle
+            .textFieldStyle(.plain)
+            .focused($writing)
+
+            // Paint, not a target: the caret has to be able to land inside a URL to fix a typo in it,
+            // and a tap that opened Safari instead would make that impossible. The link is live once
+            // the day is past, one block up the canvas.
+            if !store.body.isEmpty {
+                Text(JournalLinks.attributed(store.body, tint: skin.lamp))
+                    .font(WindmillFont.body(16))
+                    .lineSpacing(9)
+                    .foregroundStyle(skin.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
+                    // The field is the element; this layer is its paint. Two would read the page twice.
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     // Two labelled rows, because a scale that has to be learned is a scale that gets skipped.
@@ -150,7 +174,7 @@ public struct JournalRoom: View {
     }
 
     private func past(_ day: PageStore.CanvasDay) -> some View {
-        Text(day.body)
+        Text(JournalLinks.attributed(day.body, tint: skin.lamp))
             .font(WindmillFont.body(16))
             .lineSpacing(9)
             .foregroundStyle(skin.ink)

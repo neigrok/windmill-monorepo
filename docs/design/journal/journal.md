@@ -59,6 +59,7 @@ to have something true to say when they look back.
 | Today | The last block; writing happens inline at the bottom, not in a composer |
 | Mood & energy | **Two labelled rows, one per scale**, each a snapping scrubber over 0–10 — never a floating bar, never drawn twice on a screen. **0 is a real value**; unset is a separate state. **On phone the strip does not exist while the keyboard is up**; it arrives above the tab bar the instant the keyboard drops, fading in, never sliding. `scales.md` is canon for the control |
 | Voice | One control, in the top bar beside search on both surfaces; no `ONE` badge on the control. Recording sheet → plain editable text, "Audio discarded" stated |
+| Links | A URL in the writing is lamp and underlined wherever it appears, today included — under the composer it is paint on a layer over the field, so a tap still places the caret; on a past day it opens in a new tab. The grammar is conservative and shared by every surface (`packages/api-contract/journal-links.json`): an explicit `http(s)://` or a `www.`, never a bare `example.com`, because a false link inside a sentence is worse than a missed one. Nothing else in the writing is formatted — there is no markdown here |
 | Saved state | Mono text, never a button or spinner |
 
 ## 5. Search — positions, not documents

@@ -1,0 +1,27 @@
+{
+  "note": "The one grammar for a link inside a page of journal writing. Web paints it in web/src/products/journal/links.js; iOS paints it in apps/ios/WindmillKit/Sources/WindmillJournal/JournalLinks.swift. Both surfaces test against these cases, so neither can drift alone. lo/hi are UTF-16 code-unit offsets into text.",
+  "cases": [
+    { "why": "a scheme is a link", "text": "read https://example.com today", "links": [{ "lo": 5, "hi": 24, "href": "https://example.com" }] },
+    { "why": "http as much as https", "text": "read http://example.com today", "links": [{ "lo": 5, "hi": 23, "href": "http://example.com" }] },
+    { "why": "a www is a link, and https is what it means", "text": "read www.example.com today", "links": [{ "lo": 5, "hi": 20, "href": "https://www.example.com" }] },
+    { "why": "a bare host in prose is not a link", "text": "bought it from example.com", "links": [] },
+    { "why": "the sentence that would be ruined by a looser grammar", "text": "felt fine.Then it did not. e.g. things.Ok", "links": [] },
+    { "why": "a scheme trusts any host, a port and all", "text": "http://localhost:8089/x", "links": [{ "lo": 0, "hi": 23, "href": "http://localhost:8089/x" }] },
+    { "why": "a www with nothing that looks like a TLD is not a link", "text": "www. and www.x", "links": [] },
+    { "why": "a www with one is", "text": "www.x.io", "links": [{ "lo": 0, "hi": 8, "href": "https://www.x.io" }] },
+    { "why": "a scheme with no host at all is not a link", "text": "https:// nothing", "links": [] },
+    { "why": "a link glued to the end of a word is not a link", "text": "nothttp://x.com and me@www.example.com", "links": [] },
+    { "why": "the sentence keeps its full stop", "text": "see https://a.io/b.", "links": [{ "lo": 4, "hi": 18, "href": "https://a.io/b" }] },
+    { "why": "and its comma", "text": "see https://a.io/b, then", "links": [{ "lo": 4, "hi": 18, "href": "https://a.io/b" }] },
+    { "why": "a query keeps its own punctuation, the sentence keeps the bang", "text": "see https://a.io/b?q=1!", "links": [{ "lo": 4, "hi": 22, "href": "https://a.io/b?q=1" }] },
+    { "why": "curly quotes are the sentence's, not the URL's", "text": "“https://a.io”", "links": [{ "lo": 1, "hi": 13, "href": "https://a.io" }] },
+    { "why": "a bracket the sentence opened is the sentence's", "text": "(see https://a.io/b)", "links": [{ "lo": 5, "hi": 19, "href": "https://a.io/b" }] },
+    { "why": "a bracket the URL opened is the URL's", "text": "https://en.wikipedia.org/wiki/Windmill_(machine)", "links": [{ "lo": 0, "hi": 48, "href": "https://en.wikipedia.org/wiki/Windmill_(machine)" }] },
+    { "why": "both at once", "text": "(https://en.wikipedia.org/wiki/Windmill_(machine))", "links": [{ "lo": 1, "hi": 49, "href": "https://en.wikipedia.org/wiki/Windmill_(machine)" }] },
+    { "why": "a page holds as many as it holds, in writing order", "text": "first www.a.io then https://b.io/x and last http://c.io", "links": [{ "lo": 6, "hi": 14, "href": "https://www.a.io" }, { "lo": 20, "hi": 34, "href": "https://b.io/x" }, { "lo": 44, "hi": 55, "href": "http://c.io" }] },
+    { "why": "an em dash opens a link like any other separator", "text": "the one — https://a.io", "links": [{ "lo": 10, "hi": 22, "href": "https://a.io" }] },
+    { "why": "a newline ends one", "text": "https://a.io\nand https://b.io", "links": [{ "lo": 0, "hi": 12, "href": "https://a.io" }, { "lo": 17, "hi": 29, "href": "https://b.io" }] },
+    { "why": "a quiet page has none", "text": "a quiet day, nothing to report", "links": [] },
+    { "why": "an empty page has none", "text": "", "links": [] }
+  ]
+}

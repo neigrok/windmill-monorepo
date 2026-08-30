@@ -6,6 +6,7 @@ import { DayMarker } from './DayMarker.jsx';
 import { ScaleStrip } from './ScaleStrip.jsx';
 import { PageEchoes } from './echoes/PageEchoes.jsx';
 import { writerTookTheScroll } from './openingGesture.js';
+import { proseRuns } from './links.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -250,16 +251,21 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             trailing={<SavedNote state={saveState} tick={saveTick} />}
           />
           <div className="journal-page">
-            <textarea
-              ref={textareaRef}
-              className="journal-input"
-              rows={1}
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
-              aria-label="Write today"
-              spellCheck
-            />
+            <div className="journal-composer">
+              <textarea
+                ref={textareaRef}
+                className="journal-input"
+                rows={1}
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
+                aria-label="Write today"
+                spellCheck
+              />
+              {/* The field's own glyphs are transparent; these are the ones you read. Same font, same
+                  box, same wrapping — so the paint sits exactly on the text the caret is moving through. */}
+              <div className="journal-input-paint" aria-hidden="true"><Prose text={body} inert /></div>
+            </div>
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
           <ScaleStrip day={today} mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
@@ -306,22 +312,28 @@ function DayBlock({ day, born, highlight = null, echoes = null, standing = false
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
       <DayMarker date={day.date} mood={day.mood} energy={day.energy} wordCount={wordCount(day.body)} />
       <div className="journal-page">
-        <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
+        <div className="journal-prose"><Prose text={day.body} highlight={highlight} /></div>
         {echoes && <PageEchoes echoes={echoes} day={day.date} standing={standing} />}
       </div>
     </article>
   );
 }
 
-// Wrap the matched [lo, hi) char range in a mark.
-function markSpan(body, { lo, hi }) {
-  return (
-    <>
-      {body.slice(0, lo)}
-      <mark className="journal-highlight">{body.slice(lo, hi)}</mark>
-      {body.slice(hi)}
-    </>
-  );
+// The writing, with its links live and the flown-to span lit. Both are ranges over the same text, so
+// one pass of runs settles them together rather than one wrapping the other.
+function Prose({ text, highlight = null, inert = false }) {
+  return proseRuns(text, { highlight }).map((run) => {
+    const painted = run.marked ? <mark className="journal-highlight">{run.text}</mark> : run.text;
+    if (!run.href) return <React.Fragment key={run.lo}>{painted}</React.Fragment>;
+    // Under the composer the anchor is paint, not a target: the caret has to be able to land in a URL
+    // to fix a typo in it, and a click that opened a tab instead would make that impossible.
+    if (inert) return <span key={run.lo} className="journal-link">{painted}</span>;
+    return (
+      <a key={run.lo} className="journal-link" href={run.href} target="_blank" rel="noreferrer noopener nofollow">
+        {painted}
+      </a>
+    );
+  });
 }
 
 // One line per write, naming where the words actually are.
