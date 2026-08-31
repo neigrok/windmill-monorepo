@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { NOTES_HREF } from '../../../../src/products/gym/log.js';
 import { FULL_LINE } from '../../../../src/products/gym/notes/notes.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
@@ -41,7 +41,7 @@ function editorWith(t, NoteEditor, note, hooks = {}) {
     note,
     onClose: () => { called.closed += 1; },
     onSaved: (stored) => called.saved.push(stored),
-    onDeleted: () => {},
+    onDelete: () => {},
     onStale: () => { called.stale += 1; },
     ...hooks,
   }));
@@ -121,7 +121,7 @@ test('the Notes screen re-reads the store when the editor says its list is stale
   browserWith();
   const wire = notesOnTheWire({ stored: Array.from({ length: 10 }, (_, i) => ({ id: `note_${i}`, position: i, title: `Note ${i}`, body: '', updatedAt: 0 })) });
   const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
-  const screen = renderHook(t, () => Notes({ log: { say: () => {} } }));
+  const screen = renderHook(t, () => Notes({ log: roomLog() }));
   await settle();
   assert.deepEqual(wire, ['GET /notes']);
   assert.equal(findByClass(screen.tree, 'gym-notes-full').length, 1);
@@ -135,6 +135,55 @@ test('the Notes screen re-reads the store when the editor says its list is stale
   await settle();
   assert.deepEqual(wire, ['GET /notes', 'GET /notes']);
   assert.notEqual(editorOf(screen.tree), undefined, 'the editor stays open');
+});
+
+test('a delete window over the last note does not empty the room: the placeholders read the store, not the drawn rows', async (t) => {
+  browserWith();
+  const only = { id: 'note_only', position: 0, title: 'How I want to be talked to', body: 'Blunt.', updatedAt: 0 };
+  notesOnTheWire({ stored: [only] });
+  const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
+  const held = [{ kind: 'note', id: 'note_only', line: 'Note deleted.' }];
+  const screen = renderHook(t, () => Notes({ log: roomLog({ held }) }));
+  await settle();
+
+  // The row is off the screen for the length of the window — that is what the window is for.
+  assert.equal(findByClass(screen.tree, 'gym-note-row').length, 0, 'the held note is off the screen');
+  // But the store still holds it, so this is not an account with nothing in it: the onboarding rows
+  // would offer to seed a room that is one Undo away from being full of its own note.
+  assert.equal(findByClass(screen.tree, 'is-placeholder').length, 0, 'and nothing offers to seed an empty room');
+  assert.equal(textOf(screen.tree).includes('What I am training for'), false);
+  // The way on is the same one the cap reads: Add, off the store's count.
+  assert.equal(textOf(findByClass(screen.tree, 'gym-notes-add')[0]), 'Add a note');
+  assert.equal(findByClass(screen.tree, 'gym-notes-full').length, 0);
+
+  // With nothing stored at all, the placeholders are exactly what the room draws.
+  notesOnTheWire({ stored: [] });
+  const empty = renderHook(t, () => Notes({ log: roomLog() }));
+  await settle();
+  assert.deepEqual(
+    findByClass(empty.tree, 'is-placeholder').map(textOf),
+    ['How I want to be talked to', 'What I am training for'],
+  );
+});
+
+test('the editor’s delete is one press and hands the whole note up: no question, and nothing sent from here', async (t) => {
+  browserWith();
+  const wire = notesOnTheWire({});
+  const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
+  const stored = { id: 'note_0123456789abcdef', title: 'Kept', body: '', fresh: false };
+  const handed = [];
+  const { screen } = editorWith(t, NoteEditor, stored, { onDelete: (note) => handed.push(note) });
+
+  assert.equal(findByClass(screen.tree, 'gym-confirm').length, 0);
+  assert.equal(textOf(findByClass(screen.tree, 'gym-note-delete')[0]), 'Delete note');
+  findByClass(screen.tree, 'gym-note-delete')[0].props.onClick();
+  await settle();
+  assert.deepEqual(handed, [stored], 'the room withholds it; the editor sends nothing');
+  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), []);
+
+  // A note that was never stored has nothing to delete.
+  const { screen: minting } = editorWith(t, NoteEditor, fresh);
+  assert.equal(findByClass(minting.tree, 'gym-note-delete').length, 0);
 });
 
 test('the editor’s back is the one Back link, pointing at the notes list, and closes the editor without leaving the hash', async (t) => {

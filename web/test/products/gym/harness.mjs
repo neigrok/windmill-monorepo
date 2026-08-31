@@ -188,6 +188,7 @@ export function roomLog({ gone = [], ...overrides } = {}) {
     withhold: () => {},
     undoWithheld: () => {},
     dropWithheld: () => {},
+    writtenAgain: () => {},
     createMovement: async () => null,
     ...overrides,
   };

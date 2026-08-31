@@ -5,8 +5,9 @@ import { GymError } from '../../../../src/products/gym/gymApi.js';
 import { BODY_COUNT_FROM as NAME_TWIN } from '../../../../src/products/gym/notes/notes.js';
 import { NAME_COUNT_FROM, NAME_MAX } from '../../../../src/products/gym/log.js';
 import {
-  ADD_VERB, BODY_BYTES, BODY_COUNT_FROM, bodyBytes, byteCountLabel, DELETE_CONFIRM, DELETE_VERB,
-  firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, isBodyOverCap, isFull, mintNoteId, NOTE_PREFIX,
+  ADD_VERB, BODY_BYTES, BODY_COUNT_FROM, bodyBytes, byteCountLabel, DELETE_VERB,
+  firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
+  NOTE_PREFIX,
   noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
   EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, isTitleOverCap, SETTINGS_LINE, showsByteCount, showsTitleCount,
   TITLE_COUNT_FROM, titleChars, titleCountLabel, TITLE_MAX,
@@ -91,9 +92,9 @@ test('the two seeds are placeholders addressed to the agent, and a body is never
   assert.equal(PLACEHOLDER_TITLES.some((title) => /body/i.test(title)), false);
 });
 
-test('deleting a note is confirmed, with a verb and a way to keep it', () => {
+test('deleting a note is one press, and the window says what left', () => {
   assert.equal(DELETE_VERB, 'Delete note');
-  assert.deepEqual(DELETE_CONFIRM, { title: 'Delete this note?', confirm: 'Delete', keep: 'Keep it' });
+  assert.equal(NOTE_DELETED, 'Note deleted.');
 });
 
 test('a row’s meta is the body’s first non-empty line, and nothing when there is none', () => {

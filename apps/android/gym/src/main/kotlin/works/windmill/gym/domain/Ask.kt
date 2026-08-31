@@ -31,6 +31,16 @@ data class AskAnswer(
     val proposals: List<String> = emptyList(),
 )
 
+// Which ceiling took the composer down. ONE state serves both, because the connect door beneath it
+// is unrationed under either; which one it is decides only what is said and which door leads. Read
+// off the CODE and never off the sentence. `wordless` is what the room says for a reply that carried
+// no words of its own — and the two may never say the same thing, or an account at its 30-day
+// ceiling is told the next question comes back in a couple of hours.
+enum class AskCap(val wordless: String) {
+    Daily(Ask.capReached),
+    Ceiling(Ask.ceilingReached),
+}
+
 // `again` marks trouble worth a second tap; a cap, a malformed thread or an open workout are not.
 @Serializable
 data class AskExchange(
@@ -57,10 +67,16 @@ object Ask {
             "change to a routine — you decide on the diff. It cannot edit or delete a set you " +
             "logged: that one is yours."
 
-    // The promise, immediately above the composer and always drawn; `capReached` is the moment the
-    // promise runs out, and it replaces the composer rather than restating the rule.
+    // The promise, immediately above the composer and always drawn; the cap-reached state is the
+    // moment the promise runs out, and it replaces the composer rather than restating the rule.
     const val allowance = "Ten questions a day, three back to back."
     const val capReached = "The next question frees up in a couple of hours."
+
+    // The account's 30-day ceiling. A different fact from the daily bucket and never the same
+    // sentence: nothing frees up in a couple of hours under this one.
+    const val ceilingReached =
+        "This account has reached its AI ceiling for the last 30 days. Coach will answer again as " +
+            "that window rolls on."
 
     // The ceiling is four questions: the server counts a question and its answer as two turns.
     const val threadFull = "This conversation holds four questions. Start a new one."

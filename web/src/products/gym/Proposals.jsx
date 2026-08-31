@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Button, Dialog } from '../../design-system/index.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
-  applyLabel, atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, diffRows, documentLine,
-  intentLine, isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, REVIEW_VERB, settledLine,
-  sourceLabel, stateChip, STILL_WAITING, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB, wroteKicker,
+  applyLabel, APPLY_HINT, atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, diffRows,
+  documentLine, intentLine, isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, REVIEW_VERB,
+  settledLine, sourceLabel, stateChip, STILL_WAITING, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB,
+  wroteKicker,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -90,6 +91,9 @@ export function ProposalDot() {
 // the proposal had moved underneath it, so the card behind it never outlives what it just learned.
 export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
+  // Minted per dialog: the routines home can hold two of these at once — one opened from a card and
+  // one from the address — and a shared id would describe Apply by the other dialog's gate.
+  const gateSlotId = useId();
   // A refused settle re-reads; the re-read replaces the first.
   const [settled, setSettled] = useState(null);
   const [deciding, setDeciding] = useState(false);
@@ -157,17 +161,29 @@ export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }
         </section>
       );
     }
+    // `aria-disabled` and a no-op click, never `disabled`: a disabled button leaves the tab order,
+    // so a keyboard reader would never land on the control whose refusal is drawn beneath it.
     return (
       <div className="gym-proposal-band">
         <button
           type="button"
           className={!seen || deciding ? 'gym-proposal-apply is-inert' : 'gym-proposal-apply'}
-          disabled={!seen || deciding}
+          aria-disabled={!seen || deciding}
+          aria-describedby={gateSlotId}
           aria-busy={deciding}
-          onClick={() => settle('apply')}
+          onClick={() => { if (!seen || deciding) return; settle('apply'); }}
         >
           {applyLabel(proposal)}
         </button>
+        {/* The gate's sentence, in a slot drawn in both states and held open by its own CSS, so
+            Apply never moves — including the return, when a kept run unfolds past the height
+            already seen and the gate shuts again.
+            `aria-hidden` so the sentence is read ONCE: a reader traversing the band would otherwise
+            meet it here and again as Apply's description. Accname §4.1 skips a hidden node only when
+            it is not the direct target of `aria-labelledby`/`aria-describedby`, so the description
+            still computes off this node, which is why hiding it is safe. */}
+        <p className="gym-proposal-gate" id={gateSlotId} aria-hidden="true">{seen ? '' : APPLY_HINT}</p>
+        <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>
         <button type="button" className="gym-proposal-turn-down" onClick={() => setTurningDown(true)}>
           {TURN_DOWN_VERB}
         </button>
@@ -240,7 +256,6 @@ export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }
               ))}
             </ul>
 
-            {pending && <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>}
             {!pending && <p className="gym-proposal-settled">{settledLine(proposal)}</p>}
           </>
         )}

@@ -103,7 +103,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {/* An external link's proposal is the home's to open: its dialog settles into the home's own read. */}
         {tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
         {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
-        {screen === 'bodyweight' && <BodyweightScreen />}
+        {screen === 'bodyweight' && <BodyweightScreen log={log} />}
         {screen === 'record' && <MovementRecord id={movementIdOf(hash)} log={log} />}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
@@ -116,7 +116,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'connect' && <ConnectLog />}
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
-      {log.transient && <Transient transient={log.transient} />}
+      <Transient transient={log.transient} />
     </>
   );
 }
@@ -125,24 +125,30 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
 // lifter wherever they go next. Undo does not close it: it re-reads for whatever the window is still
 // holding. The detail is a second field beside the sentence and never folded into it — `Toast` puts
 // its children in one bare span, where a newline would collapse to a space and run the two together.
+//
+// The slot stands whether or not there is a sentence in it: a live region injected in the same
+// commit as its content is a region a reader may never announce, and the deletes routed here close
+// the editor or the sheet they were taken in, so this is the only place their way back is drawn.
 export function Transient({ transient }) {
   return (
     <div className="gym-toast-slot" role="status">
-      <Toast
-        tone="neutral"
-        onClose={transient.dismiss ?? undefined}
-        action={transient.action && {
-          label: transient.action.label,
-          onClick: transient.action.run,
-        }}
-      >
-        <>
-          {transient.text}
-          {transient.detail && (
-            <span className="gym-transient-detail">{transient.detail}</span>
-          )}
-        </>
-      </Toast>
+      {transient && (
+        <Toast
+          tone="neutral"
+          onClose={transient.dismiss ?? undefined}
+          action={transient.action && {
+            label: transient.action.label,
+            onClick: transient.action.run,
+          }}
+        >
+          <>
+            {transient.text}
+            {transient.detail && (
+              <span className="gym-transient-detail">{transient.detail}</span>
+            )}
+          </>
+        </Toast>
+      )}
     </div>
   );
 }

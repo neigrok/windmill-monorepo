@@ -259,8 +259,9 @@ final class ThreadListTests: XCTestCase {
     // honest about rides on the transient instead, at the moment of the act.
     func testTheDeleteSaysWhatItTakesAndWhatItLeaves() {
         XCTAssertEqual(WithheldWords.thread, "Conversation deleted.")
-        XCTAssertEqual(WithheldWords.threadDetail,
-                       "a change you applied stays in the routine’s history")
+        XCTAssertEqual(WithheldWords.threadDetail, "your routine keeps what you applied")
+        XCTAssertLessThanOrEqual(WithheldWords.threadDetail.split(separator: " ").count, 6,
+                                 "the transient runs to two lines on a phone, detail included")
     }
 }
 

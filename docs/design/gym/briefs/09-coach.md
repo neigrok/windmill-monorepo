@@ -52,7 +52,7 @@ well is a copy owner's call the ledger holds (`3u`).
 **A removal reads *a removal* and never a count.** The domain forces `standing == 0` for a removal,
 so every base entry arrives as a `removed` change and a count would say *12 changes* for a proposal
 that deletes the routine. The phrase asks the intent
-first, in one function per surface: `countedLabel` (`proposals.js:105`), `Proposal.counted`
+first, in one function per surface: `countedLabel` (`proposals.js:110`), `Proposal.counted`
 (`domain/Proposal.kt:220`), and `historyLine`'s own branch (`Proposal.swift:101`) on iOS. Two places
 still count a removal and are owed the branch: iOS's two proposal cards, which draw the bare
 `changes` beside *still waiting*, and every surface's conversation rows, whose wire rows carry no
@@ -102,9 +102,31 @@ system's text size, so at the larger accessibility sizes the visible diff goes t
 stays enabled. The iOS sheet is `.large` only; Android's skips the partial state. **Apply is never
 reachable while the diff is clipped:** on every surface it stays disabled until the diff has been
 scrolled to its end, or fits without scrolling. A kept run unfolding past the height already seen
-clips the diff again, so it takes Apply away until the new end is seen — built that way on the web
-and Android; iOS keeps Apply open once seen (ledger `2p`). The web's design-system `Dialog` carries
-the gate for any dialog that asks for it.
+clips the diff again, so it takes Apply away until the new end is seen — and scrolling back up never
+re-locks it, because that end has been seen. **All three surfaces spend that rule**, each with its
+own measure of the end: `Dialog`'s `seenHeight` on the web, `seenExtent` on Android,
+`ReviewGate.seenAt` on iOS. The web's design-system `Dialog` carries the gate for any dialog that
+asks for it.
+
+**And the gate says why, on the screen and not only to a screen reader:**
+
+> **Read the changes to the end to apply them.**
+
+Nine words, byte-identical on all three, inside `../../guidelines/text-budget.md`'s refusal row
+because it names the way out rather than only refusing. It is driven off the **gate alone**, never
+off whatever else has Apply inert: while an apply request is in flight Apply is shut for a different
+reason, and a sentence bound to the disabled state would tell a lifter to read further while the
+write is already going. So it is the sentence while the diff is unseen and nothing once it has been
+seen, whatever the request is doing.
+
+**Both channels, on every surface: the pixels, and the control that is refusing.** iOS hands
+VoiceOver the button's `accessibilityHint` and hides the drawn row from the semantics tree, so the
+sentence is said once. Android puts it on the Apply box as `stateDescription` **and** leaves the
+drawn row in the tree while the gate is shut, so TalkBack meets it twice — the same fact on one
+channel twice, which is what this programme is against (ledger `4m`). The web points Apply's
+`aria-describedby` at the drawn line itself, so there is one node and one reading. The web's Apply is
+**`aria-disabled` with a no-op handler and never `disabled`**, because `disabled` drops it out of the
+tab order and a keyboard reader would never reach the control whose refusal is written beneath it.
 
 **Kept rows have one shape everywhere.** Changed rows at full weight; every run of kept rows as a
 collapsed count **in its own place** — *"and 7 lines unchanged"*, *"and 1 line unchanged"* — tappable
@@ -131,10 +153,15 @@ single primary, which is also what the reach law asks for; two full-strength but
 weight is a failure to decide. The atomic promise — *All N or none. Nothing is applied until you
 tap.* — is always drawn, never toggled, so the band's height never changes.
 
-**And it has one slot: inside the pinned band, between Apply and the turn-down row**, on all three
-surfaces — iOS's placement (`ReviewSheet.swift:278`). A promise that scrolls with the diff is not
-pinned, and a promise below turn-down puts the last word under the irreversible act. Ruled
-2026-08-30; the web and Android owe the move (`../BUILD.md` §8, ledger `3e`).
+**The band's order is four things, and it is the same four on all three surfaces: Apply · the gate's
+refusal · the atomic promise · turn down.** The promise is inside the band because a promise that
+scrolls with the diff is not pinned, and above turn-down because below it puts the last word under
+the irreversible act.
+
+**The refusal's slot is held open in both states**, empty once the diff has been seen and empty
+again while the apply request runs, so Apply never moves under a thumb already reaching for it. It
+holds in the returning direction too — a kept run unfolding past the end already seen shuts the gate
+again on every surface, and the sentence comes back into a slot that was already its size.
 
 **"Turn this down"** stays destructive and stays confirmed, and the confirmation's words are pinned
 on every surface: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
@@ -241,31 +268,61 @@ spent, so that is where the allowance belongs — the same *moment of consequenc
 ceiling on the Add row. Not in the head, which is where the room's standing facts live, and not below
 the composer, which reads as a footnote to the keyboard.
 
-**The cap-reached state says what to do next, not the rule again:**
+**And it is not drawn under the account's 30-day ceiling — that is the one exception, and it is the
+brand rule rather than a carve-out.** *"Ten questions a day, three back to back."* is a promise about
+the **daily bucket**. Printed above the sentence saying the account has spent thirty days of AI it
+reads as the rule that stopped this question, which it is not — the promise becomes the one lie in
+the room. A fact is drawn in the state where it is true, so the **daily** cap-reached state keeps the
+line above the doors and the **ceiling** variant draws the server's sentence and the doors alone. All
+three surfaces (`coach/CoachRoom.jsx`, `AskScreen.swift`, `ui/AskScreen.kt`), each conditional on the
+refusal's ceiling and not on its words.
+
+**The cap-reached state says what to do next, not the rule again**, and for the daily bucket that is:
 
 > **The next question frees up in a couple of hours.**
 
-That is true rather than approximate: the allowance is ten a day on a bucket that refills steadily, so
-a question comes back roughly every two and a half hours. It carries the same *connect your own agent*
+True rather than approximate: the allowance is ten a day on a bucket that refills steadily, so a
+question comes back roughly every two and a half hours. It carries the same *connect your own agent*
 door the empty room does, because that is the one path that is not rationed.
 
 **Two refusals reach that state, and the second one is the account's 30-day AI ceiling.** A ceiling
 with a live composer is a dead end that fails the same way on the next question, and the connect
-door is unrationed under either refusal, which is what makes it one state. What must not be shared
-is the sentence: every surface renders the server's own words where the reply carries them, and the
+door is unrationed under either refusal, which is what makes it one state. What is **not** shared is
+the sentence: every surface renders the server's own words where the reply carries them, and the
 local constant is the **wordless fallback, chosen on the refusal's code** — `ask-daily-limit` or
-`ask-out-of-budget` — so a ceiling never says the daily line's *couple of hours*. And under the
-ceiling the **connect door is the primary and *Ask something new* sits beneath it**: a new
+`ask-out-of-budget` — so a ceiling never borrows the daily line's *couple of hours*. Both fallbacks
+are one string in three files: the daily *The next question frees up in a couple of hours.* and the
+ceiling's *This account has reached its AI ceiling for the last 30 days. Coach will answer again as
+that window rolls on.*, which names the ceiling that stopped the lifter rather than echoing the
+daily line's shape (ledger `4h`, closed 2026-08-31).
+
+**Under the ceiling the connect door is the primary and *Ask something new* sits beneath it.** A new
 conversation there cannot take a question either, so it is a way out of this one rather than a way
-to an answer. Ruled 2026-08-30 and owed a build (`../BUILD.md` §8, ledger `3f`).
+to an answer. The daily variant keeps the other order, and the two are told apart on the **code**
+the refusal arrived with, never on the sentence it printed — the server's own words are what the
+state now says, so the words cannot also be what selects the layout.
+
+**Where the sentence sits is a phone question, and the phones answer it differently.** On both, the
+two doors stand where the composer stood, below the allowance line where it is drawn at all — the
+daily variant — and outside the scroller; the web
+has no unscrollable region at all and draws the whole state in the column's flow. iOS keeps the
+sentence with the doors, and a simulator run says it can afford to: the ceiling variant leaves the
+thread 585pt of 844. **Android reads it at the end of the thread, inside the scroller**, because
+pinned with the doors a 21-word refusal starves the conversation at the largest font scale — a
+refusal that eats the answer it is refusing to add to is worse than one that scrolls — and the
+arrangement it shipped keeps 283.5dp of thread at fontScale 2.0, measured with the real text engine
+on the ceiling variant, where the allowance line is not drawn at all.
+Ledger `4g` holds both halves and the question of whether the phones should agree at all.
 
 Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
 says what to do next rather than restating the rule. A room that drew neither would not have trimmed
 the cap, it would have deleted it.
 
 **There is no clock on the cap-reached state.** It replaces the composer's input and send control for
-the rest of that visit to the room, with the allowance line still drawn above it so the promise and
-the moment sit together, and it carries an *Ask something new* door: the composer returns when the
+the rest of that visit to the room, with the allowance line still drawn above the doors that take
+the composer's place **in the daily variant**, so the promise and the moment it bit stay in one band,
+and it carries an
+*Ask something new* door: the composer returns when the
 lifter opens a new conversation or re-enters the room, and a question sent while still capped meets
 the 429 again. The sentence is never on one screen twice — the exchange's own refusal card is not
 drawn while the state is.

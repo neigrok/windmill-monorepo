@@ -118,9 +118,11 @@ export const UNREADABLE_NOTE = 'Coach couldn’t read that. Start a new question
 
 // The state is decided off status and code, never off the sentence. The words are the server's
 // wherever it sent any (`detail`); the room's own sentence is the wordless fallback for a reply that
-// carried no body. `gone` retires the composer; `capped` replaces it with the cap-reached moment;
-// `full` closes the conversation; `fresh` asks for a new thread id; `refused` says the server turned
-// the question away and stored nothing, so the room takes it off the conversation.
+// carried no body — one constant per CODE, so a wordless ceiling never prints the daily cap's hours.
+// `gone` retires the composer; `capped` replaces it with the cap-reached moment; `ceiling` says
+// which ceiling was hit, because the account's has no clock and so no way back through a new
+// conversation; `full` closes the conversation; `fresh` asks for a new thread id; `refused` says the
+// server turned the question away and stored nothing, so the room takes it off the conversation.
 export function askFailure(error) {
   const said = typeof error?.detail === 'string' && error.detail !== '' ? error.detail : null;
   const note = (own) => said ?? own;
@@ -130,7 +132,7 @@ export function askFailure(error) {
   if (error?.status === 409 && error?.code === 'ask-thread-full') return { note: note(THREAD_FULL_NOTE), full: true, refused: true };
   if (error?.status === 409 && error?.code === 'ask-thread-taken') return { note: note(THREAD_TAKEN_NOTE), fresh: true, refused: true };
   if (error?.status === 429 && error?.code === 'ask-daily-limit') return { note: note(CAP_REACHED_NOTE), capped: true, refused: true };
-  if (error?.status === 429 && error?.code === 'ask-out-of-budget') return { note: note(OUT_OF_BUDGET_NOTE), refused: true };
+  if (error?.status === 429 && error?.code === 'ask-out-of-budget') return { note: note(OUT_OF_BUDGET_NOTE), capped: true, ceiling: true, refused: true };
   if (error?.status === 429) return { note: note(BRAKE_NOTE), refused: true };
   if (error?.status === 400) return { note: note(UNREADABLE_NOTE) };
   return { note: note(NO_ANSWER_NOTE) };

@@ -277,6 +277,11 @@ data class Proposal(
     companion object {
         const val review = "Review"
         const val apply = "Apply"
+
+        // Why Apply is shut, said on the screen and on the semantics channel, and it names the way
+        // out. Read off `seen` ALONE: bound to the disabled predicate it would say this while the
+        // apply request is already on the wire.
+        const val applyHint = "Read the changes to the end to apply them."
         const val stillWaiting = "still waiting"
         const val turnedDownReceipt = "Turned down · nothing changed."
 

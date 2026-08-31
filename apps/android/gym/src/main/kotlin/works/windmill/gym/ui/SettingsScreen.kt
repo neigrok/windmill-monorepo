@@ -46,6 +46,7 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Units
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -272,13 +273,17 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
 }
 
 // What this phone is holding for nobody: a shelf with no name on it, neither handed over nor deleted.
+//
+// The WHOLE row goes while a discard is held: the store keeps the shelf for the length of the window,
+// so a row left drawing would leave `These are mine` tappable over training a pending discard wipes
+// nine seconds later.
 @Composable
 private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
+    if (Deletion.Unattributed.subjectId in store.withheldIds) return
     val held = store.unattributed ?: return
     val live = store.unattributedIsLive
     if (held.sessions == 0 && held.routines == 0 && held.movements == 0 && !live) return
-    var confirmingDiscard by remember { mutableStateOf(false) }
 
     SettingCard {
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
@@ -302,7 +307,6 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .clickable(role = Role.Button) {
                         scope.launch {
                             say(null)
-                            confirmingDiscard = false
                             store.releaseUnattributed()?.let { say(it) }
                         }
                     },
@@ -317,23 +321,19 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                    // One tap, nothing sent, and nine seconds of Undo on the room's transient. The
+                    // arm-and-relabel it replaces had no cancel and no timeout: once armed, the only
+                    // resets were leaving the screen or tapping the button that CLAIMS the shelf.
                     .clickable(role = Role.Button) {
-                        if (!confirmingDiscard) {
-                            confirmingDiscard = true
-                            return@clickable
-                        }
-                        scope.launch {
-                            say(null)
-                            confirmingDiscard = false
-                            store.discardUnattributed()
-                        }
+                        say(null)
+                        store.withhold(Deletion.Unattributed)
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    if (confirmingDiscard) "Delete for good?" else "Not mine",
+                    "Not mine",
                     style = GymType.numeral(13, FontWeight.Bold),
-                    color = if (confirmingDiscard) GymSkin.alarmInk else GymSkin.inkDim,
+                    color = GymSkin.inkDim,
                 )
             }
         }

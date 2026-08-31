@@ -54,6 +54,8 @@ export function isBodyOverCap(body) {
   return bodyBytes(body) > BODY_BYTES;
 }
 
+// The STORE's count and never the drawn list: a note held for deletion is still a note the store
+// would refuse a mint over, so the cap line stands for the length of the window.
 export function isFull(notes) {
   return notes.length >= NOTES_MAX;
 }
@@ -69,7 +71,9 @@ export const FULL_LINE = '10 of 10 notes. Delete one to add another.';
 export const PLACEHOLDER_TITLES = ['How I want to be talked to', 'What I am training for'];
 
 export const DELETE_VERB = 'Delete note';
-export const DELETE_CONFIRM = { title: 'Delete this note?', confirm: 'Delete', keep: 'Keep it' };
+
+// One press, and the way back is the window's Undo rather than a question in front of the act.
+export const NOTE_DELETED = 'Note deleted.';
 
 export const NOTES_FAILED = 'Your notes didn’t load.';
 

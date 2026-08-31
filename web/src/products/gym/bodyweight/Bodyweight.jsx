@@ -7,19 +7,29 @@ import { weightUnit } from '../units.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
-  dateLocalOf, DECIMAL_HINT, DEFAULT_WINDOW, DELETE_CONFIRM, DELETE_FAILED, DELETE_VERB, entriesAfter,
-  FAILED, fieldValueOf, GAP_RULE, gapLabel, joinsAcross, latestOf, msOfDateLocal, NO_WEIGH_INS,
-  NO_WEIGH_INS_IN_WINDOW, NO_WEIGH_INS_LINE, OPENING, readingLine, SAVE_VERB, saveRefusal, WEIGH_IN_VERB,
-  weighInWrite, WINDOWS, windowOf,
+  dateLocalOf, DECIMAL_HINT, DEFAULT_WINDOW, DELETE_FAILED, DELETE_VERB, entriesAfter, FAILED,
+  fieldValueOf, GAP_RULE, gapLabel, joinsAcross, latestOf, msOfDateLocal, NO_WEIGH_INS,
+  NO_WEIGH_INS_IN_WINDOW, NO_WEIGH_INS_LINE, OPENING, readingLine, SAVE_VERB, saveRefusal,
+  WEIGH_IN_DELETED, WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
 } from './bodyweight.js';
 
 // The series, read once, with this screen's own writes folded over it until the next read.
-export function useBodyweight() {
+//
+// The withheld window is filtered HERE and not on a screen: the log's head holds a second instance
+// of this hook, and a hide done per screen would leave the head still drawing a weigh-in the chart
+// has already dropped. A weigh-in's id is its local date, which is what the window holds it by — and
+// the one id in this room a lifter can write again, so a save takes back the delete on that day.
+export function useBodyweight(log) {
   const view = useGymRead(() => gymApi.bodyweight(), []);
   const [moves, setMoves] = useState(() => new Map());
-  const entries = entriesAfter(view.data?.entries, moves);
+  const gone = log.hidden('bodyweight');
+  const entries = entriesAfter(view.data?.entries, moves).filter((entry) => !gone.has(entry.dateLocal));
 
   const save = async (write) => {
+    // The id is a local date, so this may be the day a delete is still holding or has already taken.
+    // Writing the day again takes that delete back before anything reaches the store: the number the
+    // lifter just typed is what stands, and no clock is left to destroy it.
+    log.writtenAgain('bodyweight', write.dateLocal);
     try {
       const stored = await gymApi.saveBodyweight(write.dateLocal, write);
       setMoves((current) => new Map(current).set(stored.dateLocal, stored));
@@ -29,15 +39,16 @@ export function useBodyweight() {
     }
   };
 
-  const remove = async (dateLocal) => {
-    try {
-      await gymApi.deleteBodyweight(dateLocal);
-      setMoves((current) => new Map(current).set(dateLocal, null));
-      return null;
-    } catch {
-      return DELETE_FAILED;
-    }
-  };
+  // Withheld like every other delete in this room: nothing reaches the store for the length of the
+  // window, and the transient carries the only way back. The window abandons what it holds when the
+  // room leaves the foreground, so a weigh-in abandoned on backgrounding puts its dot back.
+  const remove = (dateLocal) => log.withhold({
+    kind: 'bodyweight',
+    id: dateLocal,
+    line: WEIGH_IN_DELETED,
+    send: () => gymApi.deleteBodyweight(dateLocal),
+    refused: () => log.say(DELETE_FAILED),
+  });
 
   return {
     phase: view.phase,
@@ -73,7 +84,6 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
   const [date, setDate] = useState(() => fixedDate ?? entry?.dateLocal ?? dateLocalOf(now));
   const [refusal, setRefusal] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
 
   const save = async () => {
     if (busy) return;
@@ -84,16 +94,6 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
     }
     setBusy(true);
     const refused = await onSave(write);
-    if (refused) {
-      setRefusal(refused);
-      setBusy(false);
-    }
-  };
-
-  const remove = async () => {
-    if (busy) return;
-    setBusy(true);
-    const refused = await onDelete(fixedDate);
     if (refused) {
       setRefusal(refused);
       setBusy(false);
@@ -144,23 +144,14 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
 
         {refusal && <p className="gym-weigh-refusal">{refusal}</p>}
 
-        {!confirming && (
-          <button type="button" className={busy ? 'gym-weigh-save is-inert' : 'gym-weigh-save'} onClick={save} aria-busy={busy}>
-            {SAVE_VERB}
-          </button>
-        )}
+        <button type="button" className={busy ? 'gym-weigh-save is-inert' : 'gym-weigh-save'} onClick={save} aria-busy={busy}>
+          {SAVE_VERB}
+        </button>
 
-        {onDelete && !confirming && (
-          <button type="button" className="gym-weigh-delete" onClick={() => setConfirming(true)}>{DELETE_VERB}</button>
-        )}
-        {onDelete && confirming && (
-          <section className="gym-confirm">
-            <p className="gym-confirm-title">{DELETE_CONFIRM.title}</p>
-            <div className="gym-finish-foot">
-              <button type="button" className="gym-confirm-keep" onClick={() => setConfirming(false)}>{DELETE_CONFIRM.keep}</button>
-              <button type="button" className={busy ? 'gym-confirm-do is-inert' : 'gym-confirm-do'} onClick={remove} aria-busy={busy}>{DELETE_CONFIRM.confirm}</button>
-            </div>
-          </section>
+        {/* One press. The window holds the delete, the sheet closes in the same act, and the room's
+            transient — which a sheet would sit over — is where the way back is drawn. */}
+        {onDelete && (
+          <button type="button" className="gym-weigh-delete" onClick={() => onDelete(fixedDate)}>{DELETE_VERB}</button>
         )}
       </div>
     </div>
@@ -169,8 +160,8 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
 
 // The chart: a dot per weigh-in in a stated window, and the repair path behind each dot. No second
 // door onto a new weigh-in here; that is the chip on the log, one back away.
-export function BodyweightScreen() {
-  const weights = useBodyweight();
+export function BodyweightScreen({ log }) {
+  const weights = useBodyweight(log);
   const [windowId, setWindowId] = useState(DEFAULT_WINDOW);
   const [fixing, setFixing] = useState(null);
   const now = Date.now();
@@ -234,10 +225,9 @@ export function BodyweightScreen() {
             if (!refused) setFixing(null);
             return refused;
           }}
-          onDelete={async (dateLocal) => {
-            const refused = await weights.remove(dateLocal);
-            if (!refused) setFixing(null);
-            return refused;
+          onDelete={(dateLocal) => {
+            weights.remove(dateLocal);
+            setFixing(null);
           }}
           onClose={() => setFixing(null)}
         />

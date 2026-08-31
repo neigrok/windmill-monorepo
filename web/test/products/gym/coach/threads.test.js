@@ -120,8 +120,20 @@ test('nothing in the threads vocabulary is an unread count, a badge or a notific
 
 test('what the delete leaves behind is said at the moment of the act, in the phones’ own bytes', () => {
   assert.equal(THREAD_DELETED, 'Conversation deleted.');
-  assert.equal(THREAD_DELETE_DETAIL, 'a change you applied stays in the routine\u2019s history');
+  assert.equal(THREAD_DELETE_DETAIL, 'your routine keeps what you applied');
+  // Measured in the slot's own geometry, swept a pixel at a time from 318px: the sentence and this
+  // detail are two lines from 327px up and three at 326px and under, against text-budget's toast cap
+  // and thumb-reach's reach-band paragraph. The bytes above are the pin; a character count is not,
+  // because the rule it would stand for is a wrap and no count can see one.
   // Why the rule exists is not the transient's to carry: `settledLine` already stands permanently on
   // the routine's own history row.
   assert.equal(THREAD_DELETE_DETAIL.includes('fact about your program'), false);
+
+  // One measurement, one number. The bound lives in the stylesheet that causes the wrap and in the
+  // module a re-wording of the detail is read against; the two saying it differently is how a
+  // shortened sentence gets measured against a bound nobody took.
+  const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym');
+  const boundsIn = (file) => [...fs.readFileSync(path.join(GYM, file), 'utf8').matchAll(/(\d+)px up/g)].map((each) => each[1]);
+  assert.deepEqual(boundsIn('coach/threads.js'), ['327']);
+  assert.deepEqual(boundsIn('gym.css'), ['327']);
 });

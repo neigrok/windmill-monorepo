@@ -77,22 +77,32 @@ public struct AskAnswer: Equatable, Decodable, Sendable {
     }
 }
 
+// Two refusals take the composer down, and which one it was decides two things: the wordless fallback,
+// and which door the block leads with. Under the account's ceiling a fresh conversation cannot take a
+// question either, so the unrationed door goes first.
+public enum AskCeiling: String, Equatable, Sendable {
+    case daily
+    case account
+}
+
 public struct AskRefusal: Equatable, Error, Sendable {
     public let line: String
     public let mayRetry: Bool
     public let closesTheDoor: Bool
     // Answered by opening a new thread: the retry carries the same question into a fresh id.
     public let opensAFreshThread: Bool
-    // The daily allowance is spent: the composer gives way to the cap-reached state for this visit.
-    public let capReached: Bool
+    // An allowance is spent: the composer gives way to the cap-reached state for this visit.
+    public let ceiling: AskCeiling?
+
+    public var capReached: Bool { ceiling != nil }
 
     public init(line: String, mayRetry: Bool = false, closesTheDoor: Bool = false,
-                opensAFreshThread: Bool = false, capReached: Bool = false) {
+                opensAFreshThread: Bool = false, ceiling: AskCeiling? = nil) {
         self.line = line
         self.mayRetry = mayRetry
         self.closesTheDoor = closesTheDoor
         self.opensAFreshThread = opensAFreshThread
-        self.capReached = capReached
+        self.ceiling = ceiling
     }
 
     public init(_ error: Error) {
@@ -117,8 +127,13 @@ public struct AskRefusal: Equatable, Error, Sendable {
         case .refused(409, let refusal) where refusal.code == "ask-thread-taken":
             self = AskRefusal(line: refusal.message ?? Ask.threadTaken,
                               mayRetry: true, opensAFreshThread: true)
-        case .refused(429, let refusal) where refusal.code == "ask-daily-limit":
-            self = AskRefusal(line: refusal.message ?? Ask.capReached, capReached: true)
+        case .refused(429, let refusal) where refusal.code == "ask-daily-limit" || refusal.code == "ask-out-of-budget":
+            // One state, two ceilings: the connect door is unrationed under either, and every surface
+            // says the sentence it was SENT. The constant is the wordless fallback only, chosen on the
+            // code — a ceiling that borrowed the daily line would promise a couple of hours over a
+            // thirty-day window.
+            let ceiling: AskCeiling = refusal.code == "ask-daily-limit" ? .daily : .account
+            self = AskRefusal(line: refusal.message ?? Ask.reached(ceiling), ceiling: ceiling)
         case .refused(_, let refusal):
             self = AskRefusal(line: refusal.message ?? "That didn’t go through")
         }
@@ -157,11 +172,14 @@ public struct AskConversation: Equatable, Sendable {
         threadId = Ask.mintThreadId()
     }
 
-    // The day's allowance was spent on the last question: the cap-reached state stands until a new conversation opens.
-    public var capReached: Bool {
-        guard case .refused(let why) = exchanges.last?.outcome else { return false }
-        return why.capReached
+    // The refusal that took the composer down, if the last question met one: the cap-reached state stands
+    // until a new conversation opens, and it says the words that refusal carried.
+    public var cappedRefusal: AskRefusal? {
+        guard case .refused(let why) = exchanges.last?.outcome, why.capReached else { return nil }
+        return why
     }
+
+    public var capReached: Bool { cappedRefusal != nil }
 }
 
 public enum Ask {
@@ -223,6 +241,16 @@ public enum Ask {
     // The promise sits immediately above the composer, always; the cap-reached moment replaces the composer.
     public static let allowance = "Ten questions a day, three back to back."
     public static let capReached = "The next question frees up in a couple of hours."
+    // The account's 30-day AI ceiling, which is not the daily bucket and never says its hours. Byte-
+    // identical to the web's `OUT_OF_BUDGET_NOTE` and Android's `Ask.ceilingReached`: it is the only
+    // sentence the state draws when the 429 arrives wordless, so it has to name the ceiling itself.
+    public static let ceilingReached =
+        "This account has reached its AI ceiling for the last 30 days. Coach will answer again as "
+        + "that window rolls on."
+
+    public static func reached(_ ceiling: AskCeiling) -> String {
+        ceiling == .daily ? capReached : ceilingReached
+    }
 
     // Local fallbacks for a 409 that arrived without a sentence; the server's own words win when sent.
     public static let threadCeiling = "This conversation holds four questions. Start a new one."

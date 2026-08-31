@@ -92,7 +92,7 @@ test('diffRows — every line the routine would run, in order, with the four cha
   ]);
   assert.equal(
     documentLine(proposal()),
-    'Push A as it would read, top to bottom. The marked lines change; the rest keep their numbers.',
+    'The whole routine, top to bottom — the marked lines change.',
   );
 });
 

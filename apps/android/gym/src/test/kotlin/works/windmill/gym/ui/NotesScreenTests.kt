@@ -30,6 +30,7 @@ import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -131,6 +132,97 @@ class NotesScreenTests {
         compose.onNodeWithText(Notes.topWins).assertIsDisplayed()
         compose.onNodeWithText("10 of 10 notes. Delete one to add another.").assertIsDisplayed()
         compose.onNodeWithText(Notes.add).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // The cap counts the STORE's notes, never the drawn list: a note inside its undo window is off
+    // the list and still on the log, so ten must not read as nine and offer a mint the store refuses.
+    @Test
+    fun testTheCapCountsTheStoresNotesAndNotTheOnesStillDrawn() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        runBlocking {
+            repeat(10) { server.writeNote("note_$it", NoteWrite("note $it", "line $it")) }
+        }
+        val store = store(scope, server, signedIn = true)
+        compose.setContent {
+            NotesScreen(
+                store = store, isSignedIn = true, backTo = "Coach", onBack = {},
+                onEdit = { _, _ -> }, onSignIn = {}, say = {},
+            )
+        }
+        compose.onNodeWithText("note 3").assertIsDisplayed()
+
+        compose.runOnIdle { store.withhold(Deletion.Note("note_3")) }
+
+        compose.onNodeWithText("note 3").assertDoesNotExist()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
+        compose.onNodeWithText(Notes.full).assertIsDisplayed()
+        compose.onNodeWithText(Notes.add).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals("and nothing is on the wire while the window is open",
+                emptyList<String>(), server.calls.filter { it == "deleteNote" })
+        }
+        scope.cancel()
+    }
+
+    // And when the window closes the row STAYS gone, with the cap counting what the log now holds.
+    // The list is the store's; a screen holding a snapshot of its own drew the note back the instant
+    // the delete landed, and kept withholding `Add a note` over a notebook of nine.
+    @Test
+    fun testASettledDeleteLeavesTheRowGoneAndGivesTheAddRowBack() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        runBlocking {
+            repeat(10) { server.writeNote("note_$it", NoteWrite("note $it", "line $it")) }
+        }
+        val store = store(scope, server, signedIn = true)
+        compose.setContent {
+            NotesScreen(
+                store = store, isSignedIn = true, backTo = "Coach", onBack = {},
+                onEdit = { _, _ -> }, onSignIn = {}, say = {},
+            )
+        }
+        compose.onNodeWithText("note 3").assertIsDisplayed()
+
+        compose.runOnIdle { store.withhold(Deletion.Note("note_3")) }
+        compose.runOnIdle { runBlocking { store.settleWithheld("note_3") } }
+
+        compose.onNodeWithText("note 3").assertDoesNotExist()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.add))
+        compose.onNodeWithText(Notes.add).assertIsDisplayed()
+        compose.onNodeWithText(Notes.full).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals("the log holds nine", 9, server.notebook.size)
+            assertEquals(listOf("deleteNote"), server.calls.filter { it == "deleteNote" })
+        }
+        scope.cancel()
+    }
+
+    // The editor's delete asks nothing: it leaves at once, nothing is sent, and the way back is the
+    // room's transient — which this editor is no longer standing in front of.
+    @Test
+    fun testDeletingANoteLeavesTheEditorAtOnceAndSendsNothingWhileTheWindowRuns() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        runBlocking { server.writeNote("note_1", NoteWrite("Tone", "keep it short")) }
+        val store = store(scope, server, signedIn = true)
+        val note = Note(id = "note_1", title = "Tone", body = "keep it short")
+        var done = 0
+        compose.setContent {
+            NoteEditorScreen(
+                note = note, seedTitle = "", store = store, backTo = Notes.title,
+                onBack = {}, onDone = { done += 1 },
+            )
+        }
+
+        compose.onNodeWithText(Notes.delete).performClick()
+        compose.runOnIdle {
+            assertEquals("the editor leaves on the tap", 1, done)
+            assertEquals(listOf("note_1"), store.withheld.map { it.subjectId })
+            assertEquals(emptyList<String>(), server.calls.filter { it == "deleteNote" })
+            assertEquals("Note deleted.", works.windmill.gym.store.Withheld.line(store.withheld))
+        }
         scope.cancel()
     }
 
@@ -276,6 +368,47 @@ class NotesScreenTests {
             assertEquals("calls: ${server.calls}", listOf("note_1", "note_0", "note_2"), server.notebook.map { it.id })
         }
         assertEquals(listOf("note 1", "note 0", "note 2"), drawnOrder("note 0", "note 1", "note 2"))
+        scope.cancel()
+    }
+
+    // A drag inside an open delete window. The rows on screen are not all the notes there are, and
+    // the log refuses an order that does not name every one of them — so the withheld note keeps the
+    // place it stands in and the drawn rows fill the rest around it.
+    @Test
+    fun testADragInsideAnOpenDeleteWindowStillNamesTheWithheldNote() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        threeNotes(server)
+        val store = store(scope, server, signedIn = true)
+        val said = mutableListOf<String?>()
+
+        compose.setContent {
+            NotesScreen(
+                store = store,
+                isSignedIn = true,
+                backTo = "Coach",
+                onBack = {},
+                onEdit = { _, _ -> },
+                onSignIn = {},
+                say = { said += it },
+            )
+        }
+        compose.onNodeWithText("note 0").assertIsDisplayed()
+
+        compose.runOnIdle { store.withhold(Deletion.Note("note_1")) }
+        compose.onNodeWithText("note 1").assertDoesNotExist()
+
+        dragBelowTheNextRow("note 0")
+
+        compose.runOnIdle {
+            assertEquals("the order names all three, with note 1 where it stands",
+                listOf("note_2", "note_1", "note_0"), server.notebook.map { it.id })
+            assertEquals("nothing was refused", emptyList<String>(), said.filterNotNull())
+            assertEquals("and the window is still holding its note",
+                emptyList<String>(), server.calls.filter { it == "deleteNote" })
+        }
+        assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
+        compose.onNodeWithText("note 1").assertDoesNotExist()
         scope.cancel()
     }
 

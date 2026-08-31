@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -24,6 +25,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -36,6 +38,7 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -237,7 +240,7 @@ class BodyweightScreenTests {
     }
 
     @Test
-    fun tappingADotOpensTheSameSheetWithTheDateFixedAndADeleteRowThatIsConfirmed() {
+    fun tappingADotOpensTheSameSheetWithTheDateFixedAndADeleteThatTakesTheWindow() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
         val store = store(scope, server)
@@ -255,17 +258,48 @@ class BodyweightScreenTests {
         compose.onNodeWithText(Bodyweight.deleteRow).assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.dayLine(day, today)).assertIsDisplayed()
 
+        // The ORDER, frame by frame: the sheet is awaited all the way down BEFORE the window opens.
+        // A ModalBottomSheet renders above the room's SnackbarHost, so a withhold in the same frame
+        // as the hide puts the only Undo there is behind a sheet still animating out. Nothing at
+        // rest can tell the two apart, so the clock is driven by hand.
+        compose.mainClock.autoAdvance = false
         compose.onNodeWithText(Bodyweight.deleteRow).performClick()
-        compose.onNodeWithText(Bodyweight.deleteAsk).assertIsDisplayed()
-        compose.onNode(hasText("Keep it") and hasAnyAncestor(isDialog())).performClick()
-        compose.runOnIdle { assertEquals(2, store.bodyweight.size) }
+        var opened = false
+        repeat(120) {
+            compose.mainClock.advanceTimeByFrame()
+            val onScreen = compose.onAllNodesWithText(Bodyweight.deleteRow)
+                .fetchSemanticsNodes().any { node -> node.boundsInWindow.height > 0f }
+            if (store.withheld.isNotEmpty()) {
+                assertTrue("the Undo may not open under a sheet still on screen", !onScreen)
+                opened = true
+            }
+        }
+        compose.mainClock.autoAdvance = true
+        assertTrue("and it does open, once the sheet is off the tree", opened)
 
-        compose.onNodeWithText(Bodyweight.deleteRow).performClick()
-        compose.onNode(hasText(Bodyweight.delete) and hasAnyAncestor(isDialog())).performClick()
         compose.runOnIdle {
-            assertEquals(listOf(today.toString()), store.bodyweight.map { it.dateLocal })
-            assertEquals(listOf(today.toString()), server.weighIns.keys.toList())
-            assertEquals(listOf("deleteBodyweight"), server.calls.filter { it == "deleteBodyweight" })
+            assertEquals("nothing is asked and NOTHING is sent while the window is open",
+                emptyList<String>(), server.calls.filter { it == "deleteBodyweight" })
+            assertEquals("still on the log", listOf(day.toString(), today.toString()),
+                server.weighIns.keys.sorted())
+            assertEquals("and off the series for every reader at once — the chart and the head reading",
+                listOf(today.toString()), store.bodyweight.map { it.dateLocal })
+            assertEquals(listOf(day.toString()), store.withheld.map { it.subjectId })
+        }
+        compose.onNodeWithText(Bodyweight.deleteRow).assertDoesNotExist()
+
+        compose.runOnIdle { assertNotNull(store.keepWithheld()) }
+        compose.runOnIdle {
+            assertEquals("Undo puts the day back", listOf(day.toString(), today.toString()),
+                store.bodyweight.map { it.dateLocal })
+            assertEquals(emptyList<String>(), server.calls.filter { it == "deleteBodyweight" })
+        }
+
+        // One filter, in the store: the log's head reading reads the same series the chart does, so
+        // one screen can never keep drawing a day the other has already dropped.
+        compose.runOnIdle {
+            store.withhold(Deletion.Bodyweight(today.toString()))
+            assertEquals(day.toString(), store.latestWeighIn?.dateLocal)
         }
         scope.cancel()
     }

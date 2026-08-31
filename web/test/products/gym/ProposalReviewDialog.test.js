@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import React from 'react';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { receiptLine } from '../../../src/products/gym/proposals.js';
@@ -53,6 +54,24 @@ function proposalOnTheWire(stored, { settleStatus = 200, settleBody = null } = {
 }
 
 const dialogOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Dialog');
+// What a screen reader meets TRAVERSING the band: `textOf` with the `aria-hidden` subtrees taken
+// out, which is the one thing `aria-describedby` does not do for you. A sentence that is both drawn
+// and pointed at is read twice unless its node is out of the tree (ledger `4m`).
+const traversed = (node) => {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(traversed).join('');
+  if (!React.isValidElement(node) || typeof node.type === 'function') return '';
+  if (node.props['aria-hidden']) return '';
+  return traversed(node.props.children);
+};
+// Accname §4.1 skips a hidden node only when it is NOT the direct target of the reference, so the
+// description is computed off the referenced node whether or not it is hidden.
+const describing = (band) => {
+  const apply = findByClass(band, 'gym-proposal-apply')[0];
+  const target = elementsOf(band).find((each) => each.props.id === apply.props['aria-describedby']);
+  return textOf(target);
+};
 const band = (tree, seen) => dialogOf(tree).props.footer({ seen });
 const quiet = { catalog: [{ id: 'bench-press', name: 'Bench Press' }, { id: 'chin-up', name: 'Chin-up' }, { id: 'barbell-row', name: 'Barbell Row' }, { id: 'dip', name: 'Dip' }], session: null, say: () => {} };
 
@@ -72,15 +91,44 @@ test('the review is a scroll-gated dialog: Apply stands alone in the band and is
 
   const unseen = band(screen.tree, false);
   const applyUnseen = findByClass(unseen, 'gym-proposal-apply')[0];
-  assert.equal(applyUnseen.props.disabled, true);
+  assert.equal(applyUnseen.props['aria-disabled'], true);
+  assert.equal(applyUnseen.props.disabled, undefined, 'never out of the tab order');
+  const slotId = findByClass(unseen, 'gym-proposal-gate')[0].props.id;
+  assert.equal(applyUnseen.props['aria-describedby'], slotId, 'Apply is described by its OWN dialog’s gate');
   assert.equal(textOf(applyUnseen), 'Apply all 2');
   assert.equal(findByClass(unseen, 'gym-proposal-dismiss').length, 0, 'no pair');
   assert.equal(textOf(findByClass(unseen, 'gym-proposal-turn-down')[0]), 'Turn this down');
-  assert.equal(elementsOf(unseen).filter((each) => each.type === 'button').length, 2, 'one button and one text row');
+  assert.equal(elementsOf(unseen).filter((each) => each.type === 'button').length, 2, 'Apply and the turn-down row, and nothing else clickable');
+
+  // The gate says why it is shut and names the way out; the slot is drawn in both states, so the
+  // band's height — and Apply's place in it — never changes.
+  const gateUnseen = findByClass(unseen, 'gym-proposal-gate');
+  assert.equal(gateUnseen.length, 1);
+  assert.equal(textOf(gateUnseen[0]), 'Read the changes to the end to apply them.');
+  assert.notEqual(gateUnseen[0].props.id, '');
+  // And it is read ONCE. Drawn for the eye, out of the tree for the reader, and reached only as
+  // Apply's description — which still computes, because the description is taken off the node the
+  // reference names whether that node is hidden or not.
+  assert.equal(gateUnseen[0].props['aria-hidden'], 'true', 'the drawn sentence is out of the tree');
+  assert.equal(traversed(unseen).includes('Read the changes to the end to apply them.'), false,
+    'traversing the band a reader never meets the sentence — that reading would be the second one');
+  assert.equal(describing(unseen), 'Read the changes to the end to apply them.',
+    'and the one reading there is: Apply says why it is shut');
+  assert.equal(traversed(unseen), 'Apply all 2All two or none. Nothing is applied until you tap.Turn this down',
+    'what is left to traverse is Apply, the atomic promise and the turn-down — each said once');
+  assert.equal(textOf(findByClass(unseen, 'gym-proposal-atomic')[0]), 'All two or none. Nothing is applied until you tap.');
+  applyUnseen.props.onClick();
+  await settle();
+  assert.deepEqual(wire, ['GET /proposals/prop_1'], 'the shut gate applies nothing');
 
   const seen = band(screen.tree, true);
   const apply = findByClass(seen, 'gym-proposal-apply')[0];
-  assert.equal(apply.props.disabled, false);
+  assert.equal(apply.props['aria-disabled'], false);
+  const gateSeen = findByClass(seen, 'gym-proposal-gate');
+  assert.equal(gateSeen.length, 1, 'the slot is held open');
+  assert.equal(textOf(gateSeen[0]), '');
+  assert.equal(gateSeen[0].props['aria-hidden'], 'true', 'the held-open slot stays out of the tree');
+  assert.equal(describing(seen), '', 'and Apply, once the diff is read, has no refusal to describe');
   apply.props.onClick();
   await settle();
   assert.deepEqual(wire, ['GET /proposals/prop_1', 'POST /proposals/prop_1/apply']);
@@ -88,6 +136,29 @@ test('the review is a scroll-gated dialog: Apply stands alone in the band and is
   assert.equal(settled[0].verb, 'apply');
   assert.equal(settled[0].proposal.state, 'applied');
   assert.equal(receiptLine(settled[0]), 'Applied · Push A · 2 changes');
+});
+
+test('the gate is silent while the apply request is in flight: it reads `seen`, never the inert predicate', async (t) => {
+  browserWith();
+  let answer = null;
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    if ((options.method ?? 'GET') === 'GET') return { ok: true, status: 200, json: async () => proposal() };
+    return new Promise((resolve) => { answer = () => resolve({ ok: true, status: 200, json: async () => ({ proposal: { ...proposal(), state: 'applied', settledAt: 1 } }) }); });
+  };
+  const { ProposalReview } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => ProposalReview({ id: 'prop_1', log: quiet, onClose: () => {}, onSettled: () => {} }));
+  await settle();
+
+  findByClass(band(screen.tree, true), 'gym-proposal-apply')[0].props.onClick();
+  await settle();
+  const inFlight = band(screen.tree, true);
+  const applying = findByClass(inFlight, 'gym-proposal-apply')[0];
+  assert.equal(applying.props['aria-busy'], true, 'the write is going');
+  assert.equal(applying.props['aria-disabled'], true, 'and Apply is inert for that reason');
+  assert.equal(textOf(findByClass(inFlight, 'gym-proposal-gate')[0]), '', 'so the gate says nothing — the diff HAS been read');
+  answer();
+  await settle();
 });
 
 test('turning down is a confirmed text row, and its receipt says nothing changed', async (t) => {
@@ -138,7 +209,13 @@ test('kept rows fold to a count in their own place and unfold there; the prose s
   assert.equal(textOf(findByClass(body, 'gym-proposal-caveat')[0]), 'You are mid-workout. Applying changes next time, not this session.');
   assert.ok(elementsOf(body).findIndex((each) => each.props.className === 'gym-proposal-caveat') < elementsOf(body).findIndex((each) => each.props.className === 'gym-diff'));
   assert.equal(findByClass(band(screen.tree, true), 'gym-proposal-caveat').length, 0, 'never in the band');
-  assert.equal(textOf(findByClass(body, 'gym-proposal-atomic')[0]), 'All two or none. Nothing is applied until you tap.');
+  // The atomic promise is pinned in the band between Apply and turn-down, never in the scrolling body.
+  assert.equal(findByClass(body, 'gym-proposal-atomic').length, 0);
+  const pinned = elementsOf(band(screen.tree, true)).map((each) => each.props.className);
+  assert.deepEqual(pinned.filter((each) => typeof each === 'string' && each.startsWith('gym-proposal-')), [
+    'gym-proposal-band', 'gym-proposal-apply', 'gym-proposal-gate', 'gym-proposal-atomic', 'gym-proposal-turn-down',
+  ]);
+  assert.equal(textOf(findByClass(band(screen.tree, true), 'gym-proposal-atomic')[0]), 'All two or none. Nothing is applied until you tap.');
 });
 
 test('an empty summary draws the card’s own sentence as ours, never under the writer’s kicker', async (t) => {
@@ -436,4 +513,28 @@ test('a removal reads as a removal on the Coach card, never as a count of the li
   // phrase names nobody and reads in both intents.
   assert.deepEqual(findByClass(removal.tree, 'gym-proposal-line').map(textOf), ['A proposal to remove Push A.']);
   assert.equal(textOf(findByClass(removal.tree, 'gym-proposal-kicker')[0]), 'Proposal · Push Astill waiting');
+});
+
+// The routines home holds two of these at once — one opened from a standing card, one from the
+// address — and Apply is described by the gate in its OWN band, never the other dialog's.
+test('two review dialogs open together mint their own gate slots', async (t) => {
+  browserWith();
+  proposalOnTheWire(proposal());
+  const { ProposalReview } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => [
+    ProposalReview({ id: 'prop_1', log: quiet, onClose: () => {}, onSettled: () => {} }),
+    ProposalReview({ id: 'prop_1', log: quiet, onClose: () => {}, onSettled: () => {} }),
+  ]);
+  await settle();
+
+  const slots = screen.tree.map((one) => {
+    const drawn = elementsOf(one).find((each) => typeof each.type === 'function' && each.type.name === 'Dialog').props.footer({ seen: false });
+    return {
+      gate: findByClass(drawn, 'gym-proposal-gate')[0].props.id,
+      describedBy: findByClass(drawn, 'gym-proposal-apply')[0].props['aria-describedby'],
+    };
+  });
+  assert.equal(slots[0].describedBy, slots[0].gate);
+  assert.equal(slots[1].describedBy, slots[1].gate);
+  assert.notEqual(slots[0].gate, slots[1].gate);
 });

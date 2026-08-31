@@ -2,26 +2,37 @@ package works.windmill.gym.store
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import works.windmill.gym.domain.AskCap
 
 private fun refusal(status: Int, code: String? = null, message: String? = null) =
     RefusalFacts(status = status, code = code, sentence = message)
 
 class AskVerdictTests {
+    // BOTH 429s take the composer down, because the one unrationed way on — the connect door — is
+    // drawn in that state and nowhere else. Which ceiling it was rides along, told apart by the CODE,
+    // and the two wordless fallbacks never say the same thing.
     @Test
-    fun testTheDailyCapTakesTheComposerDownAndTheAiCeilingIsSaidAndNeitherIsRetried() {
+    fun testBothCeilingsTakeTheComposerDownWithTheirOwnSentenceAndNeitherIsRetried() {
         assertEquals(
-            AskVerdict.Capped("the next question frees up in a couple of hours"),
+            AskVerdict.Capped("the next question frees up in a couple of hours", AskCap.Daily),
             AskVerdict.refusing(refusal(429, code = "ask-daily-limit",
                 message = "the next question frees up in a couple of hours")),
         )
         assertEquals("a wordless cap still says what to do next",
-            AskVerdict.Capped("The next question frees up in a couple of hours."),
+            AskVerdict.Capped("The next question frees up in a couple of hours.", AskCap.Daily),
             AskVerdict.refusing(refusal(429, code = "ask-daily-limit")))
         assertEquals(
-            AskVerdict.Said("this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on"),
+            AskVerdict.Capped("this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on", AskCap.Ceiling),
             AskVerdict.refusing(refusal(429, code = "ask-out-of-budget",
                 message = "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on")),
         )
+        assertEquals("a wordless ceiling may never borrow the daily bucket's sentence",
+            AskVerdict.Capped(
+                "This account has reached its AI ceiling for the last 30 days. Coach will answer " +
+                    "again as that window rolls on.",
+                AskCap.Ceiling,
+            ),
+            AskVerdict.refusing(refusal(429, code = "ask-out-of-budget")))
     }
 
     @Test

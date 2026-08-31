@@ -57,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
+import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Coach
@@ -284,10 +285,11 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     var seatRead by remember { mutableStateOf(account.user != null) }
     // This deployment has no Coach: a bare 404 from the route. Not remembered past the room's life.
     var askAbsent by remember { mutableStateOf(false) }
-    // The daily allowance ran out: the composer is down until the room is entered again, and the
-    // log is the one that says whether the bucket has refilled. Saved: a recreation is not a re-entry,
-    // so it must not hand the composer back mid-cap.
-    var capped by rememberSaveable { mutableStateOf(false) }
+    // An allowance ran out — the day's ten, or the account's 30-day ceiling: the composer is down
+    // until the room is entered again, and the log is the one that says whether it is back. Which
+    // ceiling it was decides what is said and which door leads. Saved: a recreation is not a
+    // re-entry, so it must not hand the composer back mid-cap.
+    var cap by rememberSaveable { mutableStateOf<AskCap?>(null) }
     // The room's one haptic vocabulary, used for the acts the room itself owns: a finish, and a save
     // the room performs on a screen's behalf.
     val haptics = rememberGymHaptics()
@@ -586,7 +588,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                         conversation = from + AskExchange(question = asked, trouble = outcome.said)
                     is AskOutcome.Capped -> {
                         conversation = from + AskExchange(question = asked, trouble = outcome.said)
-                        capped = true
+                        cap = outcome.cap
                     }
                     is AskOutcome.Failed ->
                         conversation = from + AskExchange(
@@ -613,7 +615,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     fun askSomethingNew() {
         conversation = emptyList()
         conversationId = ""
-        capped = false
+        cap = null
         away = emptyList()
         receipts = emptyMap()
         tab = Tab.Coach
@@ -817,7 +819,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                                 note = null
                                 // Entering Coach again offers the composer; whether the allowance is
                                 // back is the log's to say.
-                                if (picked != tab) capped = false
+                                if (picked != tab) cap = null
                                 tab = picked
                             },
                         )
@@ -922,7 +924,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                     receipts = receipts[Reviewing.coach].orEmpty(),
                     lookedAt = lookedAtIds,
                     asking = asking,
-                    capped = capped,
+                    cap = cap,
                     onAsk = { asked -> ask(conversation, asked) },
                     // Only the newest question is ever asked again: a retry further up would drop
                     // everything asked since.
@@ -975,7 +977,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                     receipts = receipts[Reviewing.coach].orEmpty(),
                     lookedAt = lookedAtIds,
                     asking = asking,
-                    capped = capped,
+                    cap = cap,
                     onAsk = { asked -> ask(conversation, asked) },
                     onRetry = {
                         conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }

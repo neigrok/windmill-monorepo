@@ -276,6 +276,22 @@ struct ReviewSheet: View {
             }
             .disabled(!canApply)
             .accessibilityHint(gate.isOpen ? "" : Proposal.applyHint)
+            // Why Apply is shut, said on the screen as well as on the VoiceOver channel — and kept in
+            // its slot whether or not it is drawn, so Apply never moves under the thumb. Off the gate
+            // ALONE, never off `canApply`: a sentence bound to the disabled state would tell a lifter
+            // to read further while the apply request is already in flight.
+            //
+            // One fact, one channel each: these are the pixels, and the button's own hint is what
+            // VoiceOver reads. Exposed here as well, the eight words are announced twice in a row —
+            // once as the control's hint and once as the row beneath it. Android says it on the
+            // control too, as `stateDescription`.
+            Text(Proposal.applyHint)
+                .font(GymType.numeral(12))
+                .foregroundStyle(skin.inkDim)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .opacity(gate.isOpen ? 0 : 1)
+                .accessibilityHidden(true)
             Text(proposal.footnote)
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkFaint)

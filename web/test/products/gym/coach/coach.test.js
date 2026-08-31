@@ -181,7 +181,7 @@ test('askFailure — the words are the server’s wherever it sent a sentence; o
     [409, 'this conversation holds four questions — start a new one', 'ask-thread-full', { full: true, refused: true }],
     [409, 'finish your workout first — Coach reads a log that has stopped moving', 'ask-session-open', { refused: true }],
     [429, 'the next question frees up in a couple of hours', 'ask-daily-limit', { capped: true, refused: true }],
-    [429, 'this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on', 'ask-out-of-budget', { refused: true }],
+    [429, 'this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on', 'ask-out-of-budget', { capped: true, ceiling: true, refused: true }],
     [503, 'Coach isn’t part of this Windmill. Your log is still yours to read.', 'ask-not-configured', { gone: true }],
     [502, 'Coach didn’t answer. Try again in a moment', '', {}],
   ];
@@ -263,15 +263,22 @@ test('the allowance is the promise above the composer; the cap-reached state is 
   assert.doesNotMatch(failure.note, /ten questions|[Uu]pgrade|[Bb]uy|[Pp]lan|[Ss]ubscri|Windmill One/);
 });
 
-test('askFailure — the AI ceiling is its own 429, and it is not the daily cap', () => {
+test('askFailure — the AI ceiling takes the cap-reached state and is still its own sentence, never the daily cap’s', () => {
   const failure = askFailure({ status: 429, code: 'ask-out-of-budget' });
   assert.equal(failure.note, OUT_OF_BUDGET_NOTE);
   assert.match(failure.note, /30 days/);
   assert.match(failure.note, /rolls on/);
-  assert.doesNotMatch(failure.note, /ten questions/);
+  assert.doesNotMatch(failure.note, /ten questions|couple of hours/);
   assert.doesNotMatch(failure.note, /[Uu]pgrade|[Bb]uy|[Pp]lan|[Ss]ubscri|Windmill One/);
   assert.doesNotMatch(failure.note, /untouched/, 'the fallback claims no more than the server’s sentence does');
-  assert.equal(failure.capped, undefined);
+  // Both 429s reach the one state that draws the unrationed door; `ceiling` is what tells them
+  // apart, off the CODE and never off the sentence, because the account's ceiling has no clock.
+  assert.equal(failure.capped, true);
+  assert.equal(failure.ceiling, true);
+  const daily = askFailure({ status: 429, code: 'ask-daily-limit' });
+  assert.equal(daily.capped, true);
+  assert.equal(daily.ceiling, undefined);
+  assert.notEqual(daily.note, failure.note, 'one state, two sentences — and never the wrong one');
 });
 
 test('askFailure — an uncoded brake and an unreadable request each say what they are', () => {

@@ -94,8 +94,9 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   // What the store has CONFIRMED gone, `{ kind, id }`, for as long as this room lives. It is the
   // room's and not a screen's: a screen rebuilt mid-window reads a store that still has the row, so
   // the settle that lands afterwards has to reach whoever is drawing then, not whoever armed it.
-  // Nothing is ever taken out — an id the store answered for cannot come back, and a mint never
-  // reissues one.
+  // An id leaves it one way only, through `writtenAgain`: six of the seven verbs are keyed by a mint
+  // that never reissues, and a weigh-in is keyed by its local date, which is the lifter's to write
+  // again.
   const settled = useRef([]);
   const publish = useCallback((next) => {
     withheld.current = next;
@@ -115,9 +116,12 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     // life of the room.
     try {
       await closing.send?.();
-      // Only a verb that reached the store settles. A draft line sends nothing, so nothing about it
-      // is a fact the store confirmed.
-      if (closing.send) settled.current = [...settled.current, { kind: closing.kind, id: closing.id }];
+      // Only a verb that reached the store settles, and only while the room is still holding it. A
+      // draft line sends nothing, so nothing about it is a fact the store confirmed; and a subject
+      // written again under the same id took this delete back while the send was in the air, so its
+      // id is not gone either.
+      const stillHeld = withheld.current.some((each) => each.key === key);
+      if (closing.send && stillHeld) settled.current = [...settled.current, { kind: closing.kind, id: closing.id }];
     } catch (error) {
       closing.refused?.(error);
     } finally {
@@ -157,6 +161,25 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
       clocks.current.delete(each.key);
     });
     publish(withheld.current.filter((each) => each.kind !== kind));
+  }, [publish]);
+
+  // A subject WRITTEN AGAIN under an id it already carried. Only a verb whose id the lifter can
+  // reissue reaches this — a weigh-in is keyed by its local date — and for that verb both of the
+  // window's answers are wrong: a delete still holding would destroy the new row when its clock
+  // fires, and an id already recorded gone would hide the new row for the life of the room. Writing
+  // the subject again IS the way back, so the delete is taken back — nothing was sent — and the id
+  // stops being gone. Called BEFORE the write reaches the store, so the two never cross on the wire.
+  const writtenAgain = useCallback((kind, id) => {
+    const key = withheldKey(kind, id);
+    // A delete already settling has no clock left to clear: its send is in the air, and dropping it
+    // from the list is what keeps the row it hid on screen under the number just written.
+    const clock = clocks.current.get(key);
+    if (clock !== undefined) {
+      clearTimeout(clock);
+      clocks.current.delete(key);
+    }
+    settled.current = settled.current.filter((each) => !(each.kind === kind && each.id === id));
+    publish(withheld.current.filter((each) => each.key !== key));
   }, [publish]);
 
   // The window lives only while the room is ON SCREEN. Leaving it — to another product, by closing
@@ -458,5 +481,7 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     withhold,
     undoWithheld,
     dropWithheld,
+    // What a screen calls before it writes a subject the lifter can address by an id they choose.
+    writtenAgain,
   };
 }

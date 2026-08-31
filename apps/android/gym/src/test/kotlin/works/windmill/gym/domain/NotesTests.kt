@@ -36,7 +36,8 @@ class NotesTests {
         assertEquals(listOf("How I want to be talked to", "What I am training for"), Notes.placeholders)
         assertEquals("Notes live with your account, so they need you signed in.", Notes.signedOut)
         assertEquals("Coach reads your notes, not your settings.", Notes.settingsLine)
-        assertEquals("Delete this note?", Notes.deleteAsk)
+        // One tap and a way back on the transient: the note's delete asks nothing.
+        assertEquals("Delete note", Notes.delete)
     }
 
     // The same rule as the byte counter: the last fifth of the bound, alarm past it, code points counted.

@@ -2,13 +2,18 @@ import SwiftUI
 import WindmillPlatform
 
 // One window over every verb that can still be taken back: a set just logged, a set deleted, a
-// routine, a conversation, a finished workout. Nine seconds each (`SetQueue.undoWindowMs`), each on
-// its own clock, and a second act never settles the first.
+// routine, a conversation, a finished workout, a note, a weigh-in. Nine seconds each
+// (`SetQueue.undoWindowMs`), each on its own clock, and a second act never settles the first.
 //
-// A server-only verb — a conversation, a routine, a finished workout — is NOT sent while its window
-// runs, because a send cannot be taken back. `take` hides it here; `settle` is the only thing that
-// reaches the wire. A set is the exception only in where its hold lives: the queue carries it on
-// disk, so a delete survives the process that made it.
+// It is also the room's answer to "are you sure": no delete here asks a question first. The one
+// confirmation the room keeps is turning a proposal down, which settles for good and has no window.
+//
+// A server-only verb — a conversation, a routine, a finished workout, a note — is NOT sent while its
+// window runs, because a send cannot be taken back. `take` hides it here; `settle` is the only thing
+// that reaches the wire. Two verbs keep their hold somewhere else: a set's is written into the queue
+// on disk, so it survives the process that made it, and a weigh-in's is `TrainingStore`'s own filter
+// over the drawn series — the chart and the log's head read one list, and only the closing clock
+// writes the tombstone to disk.
 
 // The words. Pinned here so three screens cannot invent four spellings of the same fact.
 public enum WithheldWords {
@@ -18,9 +23,19 @@ public enum WithheldWords {
     public static let windowClosed = "The window closed — that delete already went."
     public static let thread = "Conversation deleted."
     // What deleting a conversation does NOT take with it, said at the moment of the act rather than
-    // three screens deep inside the conversation, where the block that used to say it lived.
-    public static let threadDetail = "a change you applied stays in the routine’s history"
+    // three screens deep inside the conversation, where the block that used to say it lived. Six
+    // words, byte-identical on all three surfaces — which is why it may not be shortened again on this
+    // one alone, and why this phone draws it over two lines under 402 points (`WithheldTransient`).
+    public static let threadDetail = "your routine keeps what you applied"
     public static let session = "Session deleted."
+    public static let note = "Note deleted."
+    public static let weighIn = "Weigh-in deleted."
+    // What a settle the log REFUSED leaves standing. Kept here rather than typed into the room's
+    // closures, in the bytes the other surfaces already say it in — `still here` on the web
+    // (`threads.js`) and on Android (`WithheldDelete.kt`). A screen is licensed its own words; two
+    // screens a word apart read as a typo instead of a decision.
+    public static let threadStands = "that conversation is still here"
+    public static let noteStands = "that note is still here"
     // A routine's proposals are `on delete cascade` on `gym_proposals.routine_id`, so they go with it.
     public static let routineDetail = "its proposals go with it"
 
@@ -47,8 +62,10 @@ public struct Withheld: Identifiable {
         case routine
         case thread
         case session
+        case note
+        case bodyweight
 
-        // Four verbs destroy and one does not; only the four may be counted as deleted.
+        // Six verbs destroy and one does not; only the six may be counted as deleted.
         public var isDelete: Bool { self != .loggedSet }
 
         // Where a set is concerned this register is not the only home: the queue writes the hold to
@@ -156,10 +173,17 @@ public final class WithheldWindow: ObservableObject {
         held.contains { $0.kind == kind && $0.subject == subject }
     }
 
+    // The delete went and the log answered for it. A list that must say what the STORE holds asks
+    // this half alone: a row inside its window is still stored, and a row whose delete has landed is
+    // not — which is how the notes cap stops naming a way out the lifter has already taken.
+    public func settled(_ kind: Withheld.Kind, _ subject: String) -> Bool {
+        gone.contains(Self.key(kind, subject))
+    }
+
     // What a list must not draw: still inside its window, or already gone. A list read back from the
     // server is the reason for the second half — the server has it, and it has not caught up yet.
     public func hides(_ kind: Withheld.Kind, _ subject: String) -> Bool {
-        holds(kind, subject) || gone.contains(Self.key(kind, subject))
+        holds(kind, subject) || settled(kind, subject)
     }
 
     public func subjects(of kind: Withheld.Kind) -> Set<String> {
@@ -187,6 +211,20 @@ public final class WithheldWindow: ObservableObject {
         held.removeLast()
         await last.act.restore()
         return last.kind
+    }
+
+    // A subject WRITTEN AGAIN under a name it already carried. Only the weigh-in reaches this: it is
+    // keyed by the local day, which is the lifter's to write again, and every other window is keyed
+    // by a minted id nothing reuses. For that one both of the window's answers are wrong — a hold
+    // still running would delete the number just saved when its clock fires, and a subject already
+    // recorded gone would hide it for the life of the room. Writing the day again IS the way back,
+    // so the row comes back and the transient retires. Called BEFORE the write reaches the store.
+    public func writtenAgain(_ kind: Withheld.Kind, _ subject: String) async {
+        gone.remove(Self.key(kind, subject))
+        guard let index = held.firstIndex(where: { $0.kind == kind && $0.subject == subject }) else { return }
+        let taking = held.remove(at: index)
+        clocks.removeValue(forKey: taking.id)?.cancel()
+        await taking.act.restore()
     }
 
     // The window lives only while the room is on screen in a live process. Leaving the foreground —
@@ -243,11 +281,18 @@ struct WithheldTransient: View {
                             .font(WindmillFont.body(14, .semibold))
                             .foregroundStyle(skin.ink)
                             .lineLimit(1)
+                        // Two lines, not one. `your routine keeps what you applied` draws 249 points
+                        // and the slot beside the Undo button holds one line only from 402 points up,
+                        // so on a 390-point phone one line is a sentence cut off mid-word. It runs on
+                        // instead: the transient is three lines under 402 and two above, which overruns
+                        // `text-budget.md`'s two on the phones the room actually ships to — the detail
+                        // is one string in three files and cannot be shortened on this one alone.
+                        // Measured by hosting, in `WithheldTransientTests`.
                         if let detail = window.detail {
                             Text(detail)
                                 .font(GymType.numeral(11.5))
                                 .foregroundStyle(skin.inkFaint)
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
                     }
                     Spacer(minLength: 0)

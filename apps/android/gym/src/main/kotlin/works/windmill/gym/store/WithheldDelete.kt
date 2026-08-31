@@ -3,17 +3,20 @@ package works.windmill.gym.store
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.TrainingSet
 
-// The four things a lifter can delete in this room, behind one window. They share no verb — a set
-// leaves through the log or through the shelf, a device-held routine leaves through `orphanRoutine`
-// and an account's through the wire, a conversation is server-only — so this is one abstraction over
-// four verbs and not a widened data class. What they DO share is the only thing that matters here:
-// nothing is sent while the window is open, so an Undo can never arrive after the wire.
+// Everything a lifter can delete in this room, behind one window. They share no verb — a set leaves
+// through the log or through the shelf, a device-held routine leaves through `orphanRoutine` and an
+// account's through the wire, a conversation and a note are server-only, a weigh-in and the
+// unclaimed shelf leave this device first — so this is one abstraction over seven verbs and not a
+// widened data class. What they DO share is the only thing that matters here: nothing is sent while
+// the window is open, so an Undo can never arrive after the wire, and none of them asks a question
+// first, because an act with a way back on screen does not get a dialog.
 //
 // And every one of them is held by the ROOM alone: this list, in this process, with nothing on disk,
-// no queue and no retry behind it. So leaving the room lets all four go the same way — a delete a
+// no queue and no retry behind it. So leaving the room lets them all go the same way — a delete a
 // backgrounded app fired has nobody to read what the log answered, and one that timed out would be
-// dropped in silence. A set's delete rides `SetQueue` on iOS and does not here; until it does, that
-// is the difference between the two phones and this file is the one place it is decided.
+// dropped in silence. That means a weigh-in delete abandoned on backgrounding puts the dot back, the
+// same as every other verb here. A set's delete rides `SetQueue` on iOS and does not here; until it
+// does, that is the difference between the two phones and this file is the one place it is decided.
 sealed interface Deletion {
     // What the window is keyed on. One window per subject, and the id every list filters against.
     val subjectId: String
@@ -27,7 +30,9 @@ sealed interface Deletion {
     val detail: String? get() = null
 
     // The tail of the sentence a refusal is said in, after the window closed and the log said no.
-    val stillThere: String
+    // Null where the verb has no terminal refusal at all: nothing is ever said afterwards, so
+    // inventing a sentence here would pin words the room can never reach.
+    val stillThere: String?
 
     // The set travels WHOLE: it is the last copy while the window is open, and Undo has to put it
     // back exactly.
@@ -50,7 +55,7 @@ sealed interface Deletion {
         override val line: String get() = "Conversation deleted."
         // What deleting a conversation does NOT take with it. It used to be a standing caption three
         // screens deep, where nobody stood at the moment they deleted anything.
-        override val detail: String get() = "a change you applied stays in the routine’s history"
+        override val detail: String get() = "your routine keeps what you applied"
         override val stillThere: String get() = "that conversation is still here"
     }
 
@@ -58,6 +63,35 @@ sealed interface Deletion {
         override val subjectId: String get() = sessionId
         override val line: String get() = "Session deleted."
         override val stillThere: String get() = "that session is still on the log"
+    }
+
+    data class Note(val noteId: String) : Deletion {
+        override val subjectId: String get() = noteId
+        override val line: String get() = "Note deleted."
+        override val stillThere: String get() = "that note is still here"
+    }
+
+    // Keyed by the day, which is what the series is keyed on. The delete lands on THIS DEVICE and
+    // the log is owed it by the claim, so there is no terminal refusal to say.
+    //
+    // The one subject here a later write can name AGAIN: every other key is a minted id nothing
+    // reuses. So `TrainingStore.weighIn` takes this window down before it records — weighing the day
+    // again is the undo — or the clock would delete the number the lifter had just saved.
+    data class Bodyweight(val dateLocal: String) : Deletion {
+        override val subjectId: String get() = dateLocal
+        override val line: String get() = "Weigh-in deleted."
+        override val stillThere: String? get() = null
+    }
+
+    // The shelf this phone holds for nobody. There is one of it, so the id is a constant — the
+    // window is keyed by subject and the shelf has no id of its own. The last-copy fact rides in the
+    // LINE and not in `detail`: it is the whole reason this delete is different from every other one
+    // here, and a caption on a screen the lifter has already left cannot carry it.
+    data object Unattributed : Deletion {
+        override val subjectId: String get() = "unattributed"
+        override val line: String get() = "Unclaimed training deleted — it was only on this phone."
+        // `discardUnattributed` answers with nothing: the device is the only place it lived.
+        override val stillThere: String? get() = null
     }
 }
 

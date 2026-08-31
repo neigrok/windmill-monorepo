@@ -9,10 +9,9 @@ import {
 import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import {
-  ALLOWANCE_LINE, answerTurn, askFailure, CAP_REACHED_NOTE, COACH_PLACEHOLDER, COACH_TERMS,
-  COACH_TITLE, FIX_IS_YOURS, FREE_DOOR_LINE, FREE_DOOR_VERB, MID_SESSION_NOTE, NO_ANSWER_NOTE,
-  NOTES_DOOR, PROPOSAL_NOTE, questionTooLong, readLine, stepsLine, THREAD_FULL_NOTE, THREAD_PREFIX,
-  threadFull, TOO_LONG_NOTE,
+  ALLOWANCE_LINE, answerTurn, askFailure, COACH_PLACEHOLDER, COACH_TERMS, COACH_TITLE, FIX_IS_YOURS,
+  FREE_DOOR_LINE, FREE_DOOR_VERB, MID_SESSION_NOTE, NO_ANSWER_NOTE, NOTES_DOOR, PROPOSAL_NOTE,
+  questionTooLong, readLine, stepsLine, THREAD_FULL_NOTE, THREAD_PREFIX, threadFull, TOO_LONG_NOTE,
 } from './coach.js';
 import { NEW_THREAD_VERB, THREADS_TITLE } from './threads.js';
 
@@ -26,7 +25,9 @@ export function CoachRoom({ log }) {
   const [note, setNote] = useState('');
   const [closed, setClosed] = useState('');
   const [refusedFull, setRefusedFull] = useState(false);
-  const [capped, setCapped] = useState(false);
+  // Null, or the cap-reached state with the sentence the server sent for it: BOTH 429s land here,
+  // and the state says whichever ceiling was hit rather than a constant of its own.
+  const [capped, setCapped] = useState(null);
 
   const ask = async () => {
     const question = draft.trim();
@@ -52,7 +53,7 @@ export function CoachRoom({ log }) {
       if (failure.refused) { setTurns((held) => held.slice(0, -1)); setDraft(question); }
       if (failure.fresh) setThreadId(mintId(THREAD_PREFIX));
       if (failure.full) setRefusedFull(true);
-      else if (failure.capped) setCapped(true);
+      else if (failure.capped) setCapped({ note: failure.note, ceiling: Boolean(failure.ceiling) });
       else if (failure.gone) setClosed(failure.note);
       else setNote(failure.note);
     }
@@ -87,7 +88,7 @@ export function CoachRoom({ log }) {
         onAsk={ask}
         refusedFull={refusedFull}
         onStartAgain={() => {
-          setTurns([]); setNote(''); setRefusedFull(false); setCapped(false); setThreadId(mintId(THREAD_PREFIX));
+          setTurns([]); setNote(''); setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));
         }}
       />
     </section>
@@ -134,8 +135,10 @@ function CoachBody({ log, turns, asking, note, closed, capped, draft, setDraft, 
 
       {closed && <p className="gym-coach-closed">{closed}</p>}
 
-      {/* The promise sits immediately above whatever holds the composer's place. */}
-      {!closed && <p className="gym-coach-allowance">{ALLOWANCE_LINE}</p>}
+      {/* The promise sits immediately above whatever holds the composer's place — except under the
+          account's 30-day ceiling, where ten a day is not the rule that stopped the question and a
+          promise standing on top of the sentence refusing it would be the one lie in the room. */}
+      {!closed && !capped?.ceiling && <p className="gym-coach-allowance">{ALLOWANCE_LINE}</p>}
 
       {!closed && full && (
         <div className="gym-coach-full">
@@ -144,7 +147,7 @@ function CoachBody({ log, turns, asking, note, closed, capped, draft, setDraft, 
         </div>
       )}
 
-      {!closed && !full && capped && <CapReached onStartAgain={onStartAgain} />}
+      {!closed && !full && capped && <CapReached capped={capped} onStartAgain={onStartAgain} />}
 
       {!closed && !full && !capped && (
         <div className="gym-coach-compose">
@@ -191,15 +194,20 @@ function FreeDoor() {
   );
 }
 
-// The moment the allowance is spent: what to do next, the one door that is not rationed, and the way
-// back — there is no clock, so a new conversation returns the composer and a question sent while
-// still capped simply meets the 429 again.
-function CapReached({ onStartAgain }) {
+// The moment an allowance is spent, whichever one it was: the sentence the server sent for it, the
+// one door that is not rationed, and the way out of the conversation. Which of the two leads is the
+// ceiling's to decide, and it is decided on the CODE the refusal arrived with, never on the sentence
+// it printed. Under the day's ten a new conversation is the way back to the composer, so it leads.
+// Under the account's 30-day ceiling a new conversation cannot take a question either, so the
+// unrationed door leads and `Ask something new` goes quiet beneath it — a way out of this
+// conversation, and not a way to an answer.
+function CapReached({ capped, onStartAgain }) {
+  const door = <a className="gym-coach-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>;
+  const again = <button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>;
   return (
-    <div className="gym-coach-capped">
-      <p className="gym-coach-closed">{CAP_REACHED_NOTE}</p>
-      <a className="gym-coach-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>
-      <button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>
+    <div className={capped.ceiling ? 'gym-coach-capped is-ceiling' : 'gym-coach-capped'} role="status">
+      <p className="gym-coach-closed">{capped.note}</p>
+      {capped.ceiling ? <>{door}{again}</> : <>{again}{door}</>}
     </div>
   );
 }

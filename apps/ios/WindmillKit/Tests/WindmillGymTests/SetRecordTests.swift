@@ -161,8 +161,7 @@ final class SetRecordTests: XCTestCase {
                        "Back Squat first — that question is still open.")
         // Said at the moment of the act, and it is the DETAIL beside `Conversation deleted.`,
         // never folded into the sentence itself.
-        XCTAssertEqual(WithheldWords.threadDetail,
-                       "a change you applied stays in the routine’s history")
+        XCTAssertEqual(WithheldWords.threadDetail, "your routine keeps what you applied")
         XCTAssertFalse(WithheldWords.thread.contains(WithheldWords.threadDetail))
     }
 }

@@ -48,7 +48,53 @@ final class ReviewSheetHostingTests: XCTestCase {
         var description: String { "accent \(accent) · raised \(raised)" }
     }
 
-    // Pixels in the bottom `strip` points of the window, by colour class.
+    // Where the Apply button STANDS, measured up from the window's bottom edge: the rows its fill runs
+    // across, which is the fact the gate's reserved line exists to hold still. Only rows the colour
+    // covers WIDELY count — the diff above draws the same two inks as text, a few pixels to a row —
+    // and only the run that starts lowest, because a diff row's own ground is as wide as the button.
+    private func applyRows(of window: UIWindow, strip: CGFloat, hex: Int) -> ClosedRange<Int>? {
+        var width: [Int: Int] = [:]
+        forEachPixel(of: window, strip: strip) { y, _, r, g, b in
+            if near(r, g, b, hex) { width[y, default: 0] += 1 }
+        }
+        let filled = Set(width.filter { $0.value > 200 }.keys)
+        guard let low = filled.min() else { return nil }
+        var high = low
+        while filled.contains(high + 1) { high += 1 }
+        return low...high
+    }
+
+    private func near(_ r: Int, _ g: Int, _ b: Int, _ hex: Int) -> Bool {
+        abs(r - (hex >> 16 & 0xFF)) < 4 && abs(g - (hex >> 8 & 0xFF)) < 4 && abs(b - (hex & 0xFF)) < 4
+    }
+
+    private func forEachPixel(of window: UIWindow, strip: CGFloat,
+                              _ read: (_ y: Int, _ x: Int, _ r: Int, _ g: Int, _ b: Int) -> Void) {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
+            window.layer.render(in: context.cgContext)
+        }
+        guard let cg = image.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else {
+            return
+        }
+        let width = cg.width, height = cg.height, perRow = cg.bytesPerRow, perPixel = cg.bitsPerPixel / 8
+        let alphaFirst = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first || cg.alphaInfo == .noneSkipFirst
+        let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
+        for y in max(0, height - Int(strip))..<height {
+            for x in 0..<width {
+                let at = y * perRow + x * perPixel
+                let r: Int, g: Int, b: Int
+                if bgr { (r, g, b) = (Int(bytes[at + 2]), Int(bytes[at + 1]), Int(bytes[at])) }
+                else if alphaFirst { (r, g, b) = (Int(bytes[at + 1]), Int(bytes[at + 2]), Int(bytes[at + 3])) }
+                else { (r, g, b) = (Int(bytes[at]), Int(bytes[at + 1]), Int(bytes[at + 2])) }
+                read(height - y, x, r, g, b)
+            }
+        }
+    }
+
+    // Pixels in the bottom `strip` points of the window, by colour class. The strip runs to 220: the band
+    // holds Apply, the gate's reserved refusal line, a two-line atomic promise and the turn-down row.
     private func bandColours(of window: UIWindow, strip: CGFloat) -> Counts {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -116,7 +162,7 @@ final class ReviewSheetHostingTests: XCTestCase {
 
     func testAShortDiffOpensApplyAtOnce() async {
         let window = await host(rows: 1, height: 800)
-        let counts = bandColours(of: window, strip: 150)
+        let counts = bandColours(of: window, strip: 220)
         XCTAssertGreaterThan(counts.accent, 4_000, "a diff that fits without scrolling has been seen: \(counts)")
         window.isHidden = true
     }
@@ -132,22 +178,29 @@ final class ReviewSheetHostingTests: XCTestCase {
         let window = await host(rows: 40, height: diff + 400)
         let scroll = try XCTUnwrap(scrollView(in: window))
         XCTAssertLessThanOrEqual(scroll.contentSize.height, scroll.bounds.height, "the whole diff fits without scrolling")
-        let counts = bandColours(of: window, strip: 150)
+        let counts = bandColours(of: window, strip: 220)
         XCTAssertGreaterThan(counts.accent, 4_000, "the whole diff fits, so it has been seen: \(counts)")
         window.isHidden = true
     }
 
     func testALongDiffKeepsApplyClosedUntilScrolledToItsEnd() async throws {
         let window = await host(rows: 40, height: 500)
-        let before = bandColours(of: window, strip: 150)
+        let before = bandColours(of: window, strip: 220)
         XCTAssertLessThan(before.accent, 500, "40 rows in a 500pt window: Apply is closed until the end is seen: \(before)")
         XCTAssertGreaterThan(before.raised, 4_000, "a closed Apply draws skin.raised: \(before)")
+
+        let shut = applyRows(of: window, strip: 220, hex: 0x2E2B32)
 
         let scroll = try XCTUnwrap(scrollView(in: window))
         scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height), animated: false)
         await pump(20)
-        let after = bandColours(of: window, strip: 150)
+        let after = bandColours(of: window, strip: 220)
         XCTAssertGreaterThan(after.accent, 4_000, "scrolled to the end, Apply opens: \(after)")
+
+        // And it opens WHERE IT STOOD. The gate's sentence is drawn in a slot the band keeps in both
+        // states, so reading the diff to its end does not move the button under the thumb.
+        XCTAssertEqual(applyRows(of: window, strip: 220, hex: 0x9A90BE), shut,
+                       "Apply occupies the same rows shut and open")
         window.isHidden = true
     }
 
@@ -155,7 +208,7 @@ final class ReviewSheetHostingTests: XCTestCase {
     // lands afterwards must not inherit a gate that the placeholder opened.
     func testALongDiffBehindANetworkHopKeepsApplyClosed() async {
         let window = await host(rows: 40, height: 500, slow: true)
-        let counts = bandColours(of: window, strip: 150)
+        let counts = bandColours(of: window, strip: 220)
         XCTAssertLessThan(counts.accent, 500, "the proposal arrived after the first layout: Apply must still be closed: \(counts)")
         XCTAssertGreaterThan(counts.raised, 4_000, "a closed Apply draws skin.raised: \(counts)")
         window.isHidden = true
@@ -163,7 +216,7 @@ final class ReviewSheetHostingTests: XCTestCase {
 
     func testAShortDiffBehindANetworkHopOpensApply() async {
         let window = await host(rows: 1, height: 800, slow: true)
-        let counts = bandColours(of: window, strip: 150)
+        let counts = bandColours(of: window, strip: 220)
         XCTAssertGreaterThan(counts.accent, 4_000, "a diff that fits opens Apply however late it lands: \(counts)")
         window.isHidden = true
     }

@@ -77,6 +77,11 @@ export function atomicLine(proposal) {
   return `All ${numberWord(proposal.changeCount)} or none. Nothing is applied until you tap.`;
 }
 
+// Why Apply is shut, and the way out of it. Said on the screen and not only to a screen reader,
+// byte-identical on all three surfaces (`Proposal.applyHint`). Driven off `seen` alone: while the
+// apply request is in flight Apply is inert for a different reason, and this sentence would lie.
+export const APPLY_HINT = 'Read the changes to the end to apply them.';
+
 // The consequence is drawn from the intent, never from what the proposal says about itself.
 export function intentLine(head, routineName) {
   if (head.intent !== 'remove') return null;
@@ -254,10 +259,13 @@ function targetsReading(side) {
   });
 }
 
-// A removal has no document left to read and draws no such line.
+// The rows are the whole routine and not a filtered changelog — the one line that asserts it, and
+// the only one, since a proposal that retargets every line folds no kept run to say it. The dialog
+// title already names the routine and every kept row already prints its numbers, so neither is
+// repeated here. A removal has no document left to read and draws no such line.
 export function documentLine(proposal) {
   if (proposal.intent === 'remove') return null;
-  return `${proposal.baseName} as it would read, top to bottom. The marked lines change; the rest keep their numbers.`;
+  return 'The whole routine, top to bottom — the marked lines change.';
 }
 
 // Every line of the document, in its order. A `kept` row is drawn unmarked; a rename is a row of its

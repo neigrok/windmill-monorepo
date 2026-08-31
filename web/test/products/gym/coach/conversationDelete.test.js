@@ -132,7 +132,7 @@ test('deleting a conversation is one press: no arm, no confirmation, and nothing
   assert.equal(room.log().transient.text, 'Conversation deleted.');
   // What the delete leaves behind is said here, on the act, and nowhere on the conversation screen.
   assert.equal(room.log().transient.detail, THREAD_DELETE_DETAIL);
-  assert.equal(room.log().transient.detail, 'a change you applied stays in the routine\u2019s history');
+  assert.equal(room.log().transient.detail, 'your routine keeps what you applied');
   assert.equal(room.log().transient.action.label, 'Undo');
   assert.equal(room.log().transient.dismiss, null, 'a way back that could be dismissed early is no way back');
   assert.equal(window.location.hash, THREADS_HREF, 'the lifter is put back on the list, and the transient comes too');
@@ -150,7 +150,7 @@ test('the transient draws the sentence and the detail as two fields, and one fie
   assert.equal(findByClass(held, 'gym-toast-slot')[0].props.role, 'status');
   assert.equal(
     textOf(toastIn(held).props.children),
-    'Conversation deleted.a change you applied stays in the routine\u2019s history',
+    'Conversation deleted.your routine keeps what you applied',
     'the sentence, then the detail under it',
   );
   assert.deepEqual(findByClass(held, 'gym-transient-detail').map(textOf), [THREAD_DELETE_DETAIL]);
@@ -159,6 +159,13 @@ test('the transient draws the sentence and the detail as two fields, and one fie
   const bare = Transient({ transient: { text: 'Push A deleted.', detail: null, action: { label: 'Undo', run: () => {} }, dismiss: null } });
   assert.equal(textOf(toastIn(bare).props.children), 'Push A deleted.');
   assert.deepEqual(findByClass(bare, 'gym-transient-detail'), []);
+
+  // The region stands with nothing in it, so the sentence arrives INTO a live region rather than
+  // with one — the deletes routed here have already closed the editor or the sheet they were
+  // taken on, and this is the only place their way back is drawn.
+  const silent = Transient({ transient: null });
+  assert.equal(findByClass(silent, 'gym-toast-slot')[0].props.role, 'status');
+  assert.equal(toastIn(silent), undefined);
 });
 
 test('the row is off the list at once, and the window runs the full nine seconds', async (t) => {

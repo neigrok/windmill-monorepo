@@ -75,9 +75,10 @@ export const NEW_THREAD_VERB = 'Ask something new';
 export const DELETE_VERB = 'Delete this conversation';
 
 // What deleting a conversation does NOT take with it, said at the moment of the act as the
-// transient's detail rather than standing on every visit to every conversation. Byte-identical to
-// iOS's `WithheldWords.threadDetail` and Android's `Deletion.Thread.detail`.
-export const THREAD_DELETE_DETAIL = 'a change you applied stays in the routine’s history';
+// transient's detail rather than standing on every visit to every conversation. Six words, so the
+// whole transient is two lines from 327px up. Byte-identical to iOS's `WithheldWords.threadDetail`
+// and Android's `Deletion.Thread.detail`.
+export const THREAD_DELETE_DETAIL = 'your routine keeps what you applied';
 
 // What the room's transient says while the window holds it. The delete is not on the wire yet, so
 // the sentence is in the past tense a lifter reads it in and the Undo beside it is the truth.

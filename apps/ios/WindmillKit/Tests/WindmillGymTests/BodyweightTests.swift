@@ -69,9 +69,7 @@ final class BodyweightReadingTests: XCTestCase {
         XCTAssertEqual(Bodyweight.gapRule, "no line is drawn across a gap longer than seven days")
         XCTAssertEqual(Bodyweight.Window.allCases.map(\.rawValue), ["90 days", "All"])
         XCTAssertEqual(Bodyweight.deleteRow, "Delete weigh-in")
-        XCTAssertEqual(Bodyweight.deleteTitle, "Delete this weigh-in?")
-        XCTAssertEqual(Bodyweight.deleteConfirm, "Delete")
-        XCTAssertEqual(Bodyweight.deleteKeep, "Keep it")
+        XCTAssertEqual(WithheldWords.weighIn, "Weigh-in deleted.")
         XCTAssertEqual(Bodyweight.drawsKg, "Not on this phone yet — this room still draws kg.")
     }
 
@@ -346,6 +344,122 @@ final class BodyweightSyncTests: XCTestCase {
         let held = BodyweightStore(url: stem.appendingPathExtension("bodyweight.json"))
         held.open(under: seat)
         return held
+    }
+
+    // A weigh-in delete takes the room's window like every other delete: no question first, nothing
+    // written to the device or told to the log while it runs, and the dot back if it is taken back.
+    // The hide is in the STORE, so the chart and the log's head — one list, two screens — cannot disagree.
+    func testAWeighInDeleteWaitsOutItsWindowAndTheDayIsOutOfTheSeriesWhileItDoes() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        _ = await store.weighIn(82.4, on: "2026-08-25")
+        _ = await store.weighIn(82.1, on: "2026-08-26")
+
+        store.withhold(weighInOn: "2026-08-26")
+
+        XCTAssertEqual(store.bodyweight.map(\.dateLocal), ["2026-08-25"], "out of the series the chart draws")
+        XCTAssertEqual(Bodyweight.reading(store.bodyweight, today: "2026-08-26"), "82.4 kg · yesterday",
+                       "and out of the log's head reading, which is the same list")
+        XCTAssertEqual(server.weighIns.keys.sorted(), ["2026-08-25", "2026-08-26"],
+                       "a send cannot be taken back, so nothing was sent")
+
+        store.restore(weighInOn: "2026-08-26")
+        XCTAssertEqual(store.bodyweight.map(\.dateLocal), ["2026-08-25", "2026-08-26"], "taken back, the dot is back")
+
+        store.withhold(weighInOn: "2026-08-26")
+        let why = await store.settleDelete(weighInOn: "2026-08-26")
+
+        XCTAssertNil(why)
+        XCTAssertEqual(server.weighIns.keys.sorted(), ["2026-08-25"], "only the window's own clock sent it")
+        XCTAssertEqual(store.bodyweight.map(\.dateLocal), ["2026-08-25"])
+    }
+
+    // Delete today's weigh-in and weigh in again before the clock fires: the second number is a correction
+    // made after the delete, so it is drawn at once and the closing window leaves it alone.
+    func testAWeighInWrittenInsideTheWindowIsACorrectionAndSurvivesTheDeleteItWasMadeAfter() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        _ = await store.weighIn(82.4, on: "2026-08-25")
+
+        store.withhold(weighInOn: "2026-08-25")
+        XCTAssertEqual(store.bodyweight, [])
+
+        _ = await store.weighIn(81.9, on: "2026-08-25")
+        XCTAssertEqual(store.bodyweight.map(\.weightKg), [81.9], "the newer number is drawn at once")
+
+        let why = await store.settleDelete(weighInOn: "2026-08-25")
+
+        XCTAssertNil(why)
+        XCTAssertEqual(store.bodyweight.map(\.weightKg), [81.9], "and the window closing does not take it")
+        XCTAssertEqual(server.weighIns["2026-08-25"]?.weightKg, 81.9)
+    }
+
+    // The confirmation is gone, and every state it carried has a named home: "are you sure" is the window
+    // and its Undo, "this row is gone" is the store's own hide, and the refusal that lands after the window
+    // is said on the room's line — from inside `settle`, because by then the sheet that raised it is closed.
+    func testTheWeighInDeleteAsksNothingAndSaysItsRefusalOnTheRoomsLine() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/BodyweightScreen.swift")
+        let screen = try String(contentsOf: file, encoding: .utf8)
+
+        XCTAssertFalse(screen.contains("confirmationDialog"), "the delete asks nothing first")
+
+        let door = try XCTUnwrap(screen.range(of: "onDelete: {"))
+        let closes = try XCTUnwrap(screen.range(of: "repairing = nil", range: door.upperBound..<screen.endIndex))
+        let holds = try XCTUnwrap(screen.range(of: "await delete(on: held.dateLocal)",
+                                               range: door.upperBound..<screen.endIndex))
+        XCTAssertLessThan(closes.lowerBound, holds.lowerBound,
+                          "the sheet closes first: it renders over the transient carrying the only Undo")
+
+        let settle = try XCTUnwrap(screen.range(of: "settle: {"))
+        XCTAssertNotNil(screen.range(of: "say(why.line(\"off this phone, and sent when you\u{2019}re back\"))",
+                                     range: settle.upperBound..<screen.endIndex),
+                        "the refusal is said when it lands, not where the sheet used to be")
+    }
+
+    // A day is the one subject a later write can name again, so the window comes DOWN before the number
+    // goes in. Left standing, its clock would delete the row just saved — and until it fired the
+    // transient would read `Weigh-in deleted.` with Undo beside a dot the chart is drawing again.
+    func testWeighingTheDayAgainTakesTheWindowDownBeforeTheNumberGoesIn() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/BodyweightScreen.swift")
+        let screen = try String(contentsOf: file, encoding: .utf8)
+
+        let save = try XCTUnwrap(screen.range(of: "private func save(_ kg: Double, on dateLocal: String) async {"))
+        let takes = try XCTUnwrap(screen.range(of: "await withheld.writtenAgain(.bodyweight, dateLocal)",
+                                               range: save.upperBound..<screen.endIndex))
+        let writes = try XCTUnwrap(screen.range(of: "await store.weighIn(kg, on: dateLocal)",
+                                                range: save.upperBound..<screen.endIndex))
+        XCTAssertLessThan(takes.lowerBound, writes.lowerBound,
+                          "the window comes down first: the two may not cross")
+    }
+
+    // And what it says is the device-first truth, proved rather than read. This delete lands on the
+    // phone whatever the log does, so a log that could not be told leaves the day gone from the chart,
+    // gone from the head reading, and owed to the claim — never "still there".
+    func testTheRefusalTheClosingWindowSaysIsTheStateTheDayIsActuallyIn() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        _ = await store.weighIn(82.4, on: "2026-08-25")
+        _ = await store.weighIn(82.1, on: "2026-08-26")
+        store.withhold(weighInOn: "2026-08-26")
+        server.online = false
+
+        let why = await store.settleDelete(weighInOn: "2026-08-26")
+
+        XCTAssertEqual(why, .noAnswer, "the only failure that renders the subject clause")
+        XCTAssertEqual(why?.line("off this phone, and sent when you\u{2019}re back"),
+                       "the log didn\u{2019}t answer — off this phone, and sent when you\u{2019}re back")
+        XCTAssertEqual(store.bodyweight.map(\.dateLocal), ["2026-08-25"], "off this phone: out of the chart")
+        XCTAssertEqual(Bodyweight.reading(store.bodyweight, today: "2026-08-26"), "82.4 kg · yesterday",
+                       "and out of the log's head reading, which is the same list")
+        XCTAssertEqual(shelf(of: "u1").owed.map { [$0.entry.dateLocal, "\($0.deleted)"] },
+                       [["2026-08-26", "true"]], "sent when you're back: the tombstone is owed to the claim")
     }
 
     func testSignedOutAWeighInLandsOnThisDeviceAndTheReadingComesFromIt() async {

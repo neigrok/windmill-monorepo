@@ -56,9 +56,8 @@ object Bodyweight {
     const val outOfRange = "Between 20 and 400 kg — check the number."
     const val notAForecast = "A weigh-in is not a forecast — today or earlier."
 
+    // One tap. The sheet comes down and the window holds the day, with Undo on the room's transient.
     const val deleteRow = "Delete weigh-in"
-    const val deleteAsk = "Delete this weigh-in?"
-    const val delete = "Delete"
 
     // Printed on the chart, because a segment is a connection and not data.
     const val gapRule = "no line is drawn across a gap longer than seven days"

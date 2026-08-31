@@ -112,11 +112,11 @@ The CSV export's `from` column is an export value, `lifter`/`coach` (`PgAskThrea
 not the JSON enum.
 
 **P4 · The undo window — ruled: 9000 ms on every surface, and it is two constants.** `fix.js:66`
-`UNDO_MS = 9000` (held by `fix.test.js:171`), `SetQueue.swift:48` and `SetQueue.kt:52`
+`UNDO_MS = 9000` (held by `fix.test.js:171`), `SetQueue.swift:48` and `SetQueue.kt:53`
 `undoWindowMs = 9_000`; `ARCHITECTURE.md:1233` states it as the invariant it is. `TOAST_MS`
 (`useTrainingLog.js:21`) is a **second** span, pinned equal and never collapsed into the first: the
 window is how long a delete is still the lifter's, the toast is how long a said sentence stands, and
-`screens.test.js:428-433` reads the two declarations apart and asserts they agree (ledger `2m`, D5).
+`screens.test.js:439-444` reads the two declarations apart and asserts they agree (ledger `2m`, D5).
 Every undo the gesture wave added — the routine delete, the thread delete, the conversation delete,
 the session discard, the editor row `×` — takes that span.
 
@@ -127,7 +127,7 @@ alias that still resolves; the routine editor stays `#/gym/routines/<id>` (`new`
 screens); notes are `#/gym/notes`; the bodyweight chart is `#/gym/bodyweight` (`log.js:62`); `log`,
 `connect`, `backfill`, `movement/…`, `stats/…`, `finish/<id>` and `shared/<token>` are unchanged,
 and `proposals/<id>` still resolves but opens the review dialog over the routines home rather than
-a screen of its own (`GymApp.jsx:26-29`); `home()` and `landingAfterSignIn()` return `#/gym`
+a screen of its own (`tabOf` in `GymApp.jsx`); `home()` and `landingAfterSignIn()` return `#/gym`
 (`log.js:28-62`, `:101-117`; `routes.js:21-27`). Today is gone as a screen and as a tab.
 
 **P6 · Three design-system pieces, authored before any gym twin died — ruled and built.**
@@ -194,13 +194,13 @@ sheet. The two bands are named constants on every surface and each names the oth
 **P11 · Whether `androidx.navigation` enters the Android build — ruled: it does not.** There is no
 navigation entry in `gradle/libs.versions.toml`, and `NavHost`/`androidx.navigation` return zero
 hits. Back is a pure function of the room's own state instead: `backMeans(live, building, away, tab)`
-(`GymRoom.kt:147-158`) returning four meanings — `StayInTheWorkout` (mid-workout the handler is
+(`GymRoom.kt:148-159`) returning four meanings — `StayInTheWorkout` (mid-workout the handler is
 CLAIMED, the logger stands, the app is never backgrounded), `LeaveTheDraft`, `PopOnePushedScreen`,
 `ReturnToTheRoutinesTab` — with
 `LeaveTheApp` at the routines home, where the handler is disabled so the platform's back exits
 (`:350`). The finish receipt is not among them: it is a sheet, and a sheet answers back by coming
 down. Two of those are not pops, which is the reason: a NavHost gives none of them for
-free, saves the back stack `GymRoom.kt:245-248` deliberately does not, and takes only string
+free, saves the back stack `GymRoom.kt:246-249` deliberately does not, and takes only string
 arguments where `Away.Session` carries a whole `SessionSummary` (`:179`) and `Away.NoteEditor` a
 whole `Note` (`:187`).
 
@@ -212,7 +212,7 @@ answer is depth.** The two gestures coexist. `Shell.swift:177` attaches the go-h
 `startLocation.x <= edge` with `edge = 20` (`:166`, `:184`, `:188`); a room writes its depth outward
 once at its root through `RoomDepthPreference` (`Platform.swift:97-123`), and gym writes the
 **visible** tab's path count — zero whenever the stacks are not what is on screen
-(`GymRoom.swift:145`, `stackDepth` at `:414-417`).
+(`GymRoom.swift:146`, `stackDepth` at `:415-418`).
 *What the proof found is not the naive outcome the brief predicted.* Over a `NavigationStack`'s own
 frame the system's screen-edge pan wins the touch outright and cancels SwiftUI's drag, so "both
 fire" never happens there. The defect is that the stack does not cover the room: the **tab bar's
@@ -233,7 +233,7 @@ owns the insets and consumes them (`.systemBarsPadding()` returns zero hits in `
 `android:windowSoftInputMode="adjustResize"` — edge-to-edge's other half, without which the keyboard
 pans the top bar off instead of resizing the window. `BackHandler` stays the API (**P11**). Still
 unproven: what a predictive-back animation does when the destination is a `when` branch inside one
-composable (`GymRoom.kt:834-1007`) rather than a NavHost entry — there is no second screen for the
+composable (`GymRoom.kt:836-1009`) rather than a NavHost entry — there is no second screen for the
 system to reveal behind the peel, and no run recorded in §7 has been on a version where predictive
 back applies. The Robolectric suite cannot see it either: twenty-two files pin
 `@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")`.
@@ -266,8 +266,8 @@ suite. Change both halves, and read the server's file for the bytes, never a tes
 **Every new tool needs its client phrase in the same change.** On every surface a tool absent from
 the phrase table prints nothing — `coach.js:22-33` (`stepsLine`), `Ask.swift:37`, `Ask.kt:15` —
 and the receipt stays, so a tool shipped without its words is a step the lifter never sees.
-`TOOL_PHRASE` (`coach.js:4-15`), `Ask.phrase` (`Ask.swift:185-196`) and `Ask.phrases`
-(`Ask.kt:96-107`) carry the same words, and the phone suites pin their tables against the web’s.
+`TOOL_PHRASE` (`coach.js:4-15`), `Ask.phrase` (`Ask.swift:203-214`) and `Ask.phrases`
+(`Ask.kt:112-123`) carry the same words, and the phone suites pin their tables against the web’s.
 
 ---
 
@@ -484,13 +484,13 @@ lay out — `rowHeight = 52`, `columnCap = rowHeight * 3` (`LoggerScreen.swift:2
 as `min(columnCap, rows.count * rowHeight)`. Under Dynamic Type the rows grow and the frame does not,
 so rows clip silently at exactly the setting whose purpose is legibility. Every hand-set fixed-width
 column breaks the same way: `SessionScreen.swift:284` (`width: 18`), `LoggerScreen.swift:290`
-(`width: 16`), `AskScreen.swift:338` (`width: 54`). These become grids. `12-native-idiom.md` is
+(`width: 16`), `AskScreen.swift:360` (`width: 54`). These become grids. `12-native-idiom.md` is
 explicit that the point values at the largest accessibility sizes are read off the simulator's
 accessibility inspector, not taken from published defaults.
 
 **I24 · [REBUILD / XL] Daylight — the room forces itself dark in three places and declares one skin.**
-`GymRoom.swift:135` is `private var skin: GymSkin { .instrument }`, a computed constant with no
-producer; `:141` writes `.environment(\.colorScheme, .dark)` into the whole room and `:142` dresses
+`GymRoom.swift:136` is `private var skin: GymSkin { .instrument }`, a computed constant with no
+producer; `:142` writes `.environment(\.colorScheme, .dark)` into the whole room and `:143` dresses
 the capsule dark. `GymSkin.swift:28-49` declares exactly one skin and `:52-53` makes it the
 environment key's default. The shell's Appearance control is real and working
 (`YouScreen.swift:53-65`, `Shell.swift:15`, `:77`) — gym is the room ignoring it.
@@ -499,7 +499,7 @@ environment key's default. The shell's Appearance control is real and working
 pins a sheet’s ground to the skin explicitly at twelve sites (`GymRoom.swift:158`, `:170`,
 `SessionScreen.swift:171`, `LoggerScreen.swift:111`, `FixSheet.swift:136`,
 `MovementPicker.swift:327`, `RoutineBuilderScreens.swift:202`, `:218`, `LogScreen.swift:185`,
-`BodyweightScreen.swift:52`, `NotesScreen.swift:47`, `RecordScreen.swift:67`). A half-conversion is
+`BodyweightScreen.swift:57`, `NotesScreen.swift:48`, `RecordScreen.swift:67`). A half-conversion is
 a light room with dark sheets. Gated on ledger `F4`.
 
 **I25 · [BLOCKED / XL] The Live Activity target does not exist.**
@@ -523,12 +523,12 @@ still unproven — no run recorded in §7 has been on a version where it applies
 because the shape is what every other Android item is read against, not because a NavHost is
 coming.)* `gradle/libs.versions.toml` has no navigation entry; `NavHost` and `androidx.navigation`
 return zero hits. Navigation is `var away by remember { mutableStateOf<List<Away>>(emptyList()) }`
-(`GymRoom.kt:248`) over `sealed interface Away` (`:178-189`), dispatched by a 174-line `when`
+(`GymRoom.kt:249`) over `sealed interface Away` (`:178-189`), dispatched by a 174-line `when`
 (`:834-1007`). The eight hand-drawn back rows are gone: back is the `TopAppBar`'s navigation icon in
 the one shared container (`ui/GymScreen.kt:77-86`), which carries *where* it leads in its
 description.
 *Careless build:* a NavHost saves and restores its back stack, which is precisely what
-`GymRoom.kt:245-248` refuses on purpose; and `Away.Session` carries a whole `SessionSummary` object
+`GymRoom.kt:246-249` refuses on purpose; and `Away.Session` carries a whole `SessionSummary` object
 (`:179`) because, per the comment at `:173`, it "carries facts no other read gives back" — a route
 argument is a string, so that screen needs a different data path before it can be a destination.
 Doing this carelessly turns a documented decision into a silent regression.
@@ -676,8 +676,8 @@ is a drawn door *elsewhere*, not on the row, and both phones draw one on the pas
 **A fixed partial detent on the review sheet.** `09-coach.md`: a half-height sheet does not grow with
 the system text size, so at the larger accessibility sizes the visible diff goes to zero while Apply
 stays enabled. Apply is never reachable while the diff is clipped. The review sheet is `.large` only
-on iOS (`GymRoom.swift:159`) and skips the partial state on Android (`GymRoom.kt:259`); the weigh-in
-sheet's `.medium` (`LogScreen.swift:186`, `BodyweightScreen.swift:53`) is proportional, not fixed,
+on iOS (`GymRoom.swift:159`) and skips the partial state on Android (`GymRoom.kt:260`); the weigh-in
+sheet's `.medium` (`LogScreen.swift:186`, `BodyweightScreen.swift:58`) is proportional, not fixed,
 and holds one field. The fix sheet gave its own fixed height up when it gained two fields — it is
 `.large` now (`SessionScreen.swift:174`), for exactly this reason. iOS pins fixed-height detents in
 **three** places, and all three hold a keypad or a switcher rather than prose:
@@ -686,8 +686,8 @@ watch.
 
 **A Dismiss/Apply button pair.** `09-coach.md`: the band holds one button and it is Apply — `Apply
 all N`, `Apply` when N is 1, `Remove <routine>` — and turning down is a text row beneath it behind
-its confirmation. Built that way on all three (`Proposals.jsx:166-181`, `ReviewSheet.swift:265-294`,
-`ReviewSheet.kt:463-530`). A pair puts the one irreversible act exactly where a hand expects Cancel,
+its confirmation. Built that way on all three (`Proposals.jsx:166-186`, `ReviewSheet.swift:265-306`,
+`ReviewSheet.kt:473-550`). A pair puts the one irreversible act exactly where a hand expects Cancel,
 and colour does not undo position.
 
 **A "Later" affordance on the proposal card.** `09-coach.md` beat one: a single affordance, Review,
@@ -695,7 +695,8 @@ and every card carries only that. "Later" is closing the sheet, after which the 
 waiting*.
 
 **A client that rewrites server text.** Where the server sends a sentence, every client — web
-included (`coach.js:124-125`) — shows those bytes; local copy is only the wordless fallback (**P3**,
+included (`askFailure`'s `note(…)` in `coach.js`) — shows those bytes; local copy is only the
+wordless fallback (**P3**,
 §2.3).
 
 **Material You / a wallpaper-derived palette on Android.** `12-native-idiom.md` refuses it: colour in
@@ -710,7 +711,7 @@ is deleted from that mode, not dimmed (`gym.css` declares `--set-done-glow` in t
 mirror's charter whole. The mirror (`Mirror.jsx`) ships none of the three, and `screens.test.js:96`
 walks every gym file for "resting"; the risk is a rewrite introducing them.
 
-**"Just start logging" as a web primary.** `screens.test.js:532` asserts the string appears in no
+**"Just start logging" as a web primary.** `screens.test.js:542` asserts the string appears in no
 web file — the web's charter defended in a test. `12-native-idiom.md`'s reach-band ruling does not
 scope itself by surface; do not carry it across (§7).
 
@@ -734,7 +735,8 @@ render deleted, and printed on both phones' session rows as well as the web's.
 
 **Opened by the gestures and closed after them:** `2s` the window's early close is one answer
 everywhere now — leaving the room, to the background or for good, abandons what is held on all three
-surfaces (`Withheld.swift:190-197`, `TrainingStore.kt:1333-1339`, `useTrainingLog.js:157-167`), so
+surfaces (`WithheldWindow.abandon`, `TrainingStore.abandonWithheld`, the room's unmount effect in
+`useTrainingLog.js`), so
 *swipe · switch apps · come back* costs a row nothing · `2t` Android's past-session screen draws
 `Discard session` (`SessionScreen.kt:172`, `:265-279`), so its three doors — review screen, finish
 receipt, long press — run through one act (`GymRoom.discard`) and one constant
@@ -762,14 +764,18 @@ room — the server's lowercase `a note runs to 500 bytes` beside the room's own
 `A set note runs to 4000 bytes.` — a copy owner's call, product-wide · `2x` five sentences the
 gesture wave minted that no brief holds · `3b` a refused delete on Android says the log's own
 fragment and names neither the subject nor that it is still there, because
-`WriteFailure.line(subject)` (`TrainingStore.kt:1769-1772`) reads its subject only when the log went
+`WriteFailure.line(subject)` (`store/TrainingStore.kt`) reads its subject only when the log went
 quiet — and every `Deletion.stillThere` sentence is written and thrown away · `3c` the web draws
 `Discard session` only for a `slight` session (`Finish.jsx:97`), so an ordinary past workout can be
 discarded from no web door at all — not a Law 1 breach, since the web draws no gesture, but a
 product call: either the review screen gains the door both phones draw, or discarding is a phone
-act on purpose and a brief says so · `3d` the web's abandon fires at the room's unmount and not on
-the surface leaving the foreground, so a window opened and then left in a hidden tab still spends its
-row — the narrower trigger may be right for a page, but nothing written says it is.
+act on purpose and a brief says so.
+
+`3d` was on this list and is off it: it said the web's abandon fires at the room's unmount and not on
+the surface leaving the foreground, so a window left in a hidden tab still spent its row. The tree
+has watched the tab for the window since `8104def` — one listener, calling the same `abandon`
+(`useTrainingLog.js:211-221`), with three cases in `withheldWindow.test.js` behind it — so the entry
+was describing a build that no longer existed. Closed at the tree by S2b's closing pass.
 
 **Recorded for the class, fixed in the instance:** `2u` both fix sheets could not reach `Save the
 fix` or `Delete set` with a long note and the keyboard up, because content shorter than the viewport
@@ -783,26 +789,32 @@ before showing the snackbar and so changed the key its own effect was running un
 cleared after (`GymRoom.kt`'s `deleteRefused` effect); the class is that a keyed effect clears the
 state its key reads only after the work is done, and the tell is silence rather than a crash.
 
-**Opened by the simplification programme (§8):** `3e` the atomic promise, ruled to one slot and owed
-on the web and Android · `3f` the AI ceiling sharing the cap-reached state, ruled and owed on all
-three · `3g` the routine's own rest outranking the dial, drawn on Android alone · `3i` iOS's editor
-Duplicate copying the draft, a deliberate divergence rather than drift · `3j` a proposal card naming
-its routine twice · `3k` the share link's window, ruled to `30 days` in numerals and owed on iOS · `3l` a removal counted where the intent is not asked, on iOS's two proposal cards and on
-every surface's conversation rows, whose wire carries no intent for any client to read · `3p` Android
-having no routine-draft reorder at all, owed as a feature · `3q` a two-fact transient standing three
-lines against the toast budget · `3r` `Start workout` pinned on iOS and scrolling on Android · `3s`
-three writers sharing one bottom band on iOS under a rule that names two · `3t` the proposal promise
-drawn after the decision it is about, on both phones · `3u` the web's routines-home card saying how
-much nowhere · `3w` a sign-out
-that does not clear this device's copy of the program on Android · `3x` a hardcoded out-of-reach literal on `domain/Thread.kt`, the last of
-the kind the routine history block shed · `3z` *tap to rename* drawn on one
-finish card of three · `4a` *Name it to save it.* drawn in the faint ink on
-the web and the alarm ink on both phones, where each skin reserves that ink for a failed write · `4c`
-the finish card's routine name bounded at 80 UTF-16 units on the web and not at all on either phone,
-against the routine editor's 60 code points · `4d` `Keep it` dismissing the receipt in place on the
-phones and navigating away from it on the web, with nothing in canon deciding which · `4e` iOS's
-guard against a double keep having no seam a pin could use · `4f` the movement picker trimming a
-search in `.whitespaces` where the create step it opens trims in `.whitespacesAndNewlines`.
+**Opened by the simplification programme (§8):** `3g` the routine's own rest outranking the dial,
+drawn on Android alone · `3i` iOS's editor Duplicate copying the draft, a deliberate divergence
+rather than drift · `3j` a proposal card naming its routine twice · `3k` the share link's window,
+ruled to `30 days` in numerals and owed on iOS · `3l` a removal counted where the intent is not
+asked, on iOS's two proposal cards and on every surface's conversation rows, whose wire carries no
+intent for any client to read · `3p` Android having no routine-draft reorder at all, owed as a
+feature · `3r` `Start workout` pinned on iOS and scrolling on Android · `3s` three writers sharing
+one bottom band on iOS under a rule that names two · `3t` the proposal promise drawn after the
+decision it is about, on both phones · `3u` the web's routines-home card saying how much nowhere ·
+`3w` a sign-out that does not clear this device's copy of the program on Android · `3x` a hardcoded
+out-of-reach literal on `domain/Thread.kt`, the last of the kind the routine history block shed ·
+`3z` *tap to rename* drawn on one finish card of three · `4a` *Name it to save it.* drawn in the
+faint ink on the web and the alarm ink on both phones, where each skin reserves that ink for a
+failed write · `4c` the finish card's routine name bounded at 80 UTF-16 units on the web and not at
+all on either phone, against the routine editor's 60 code points · `4d` `Keep it` dismissing the
+receipt in place on the phones and navigating away from it on the web, with nothing in canon
+deciding which · `4e` iOS's guard against a double keep having no seam a pin could use · `4f` the
+movement picker trimming a search in `.whitespaces` where the create step it opens trims in
+`.whitespacesAndNewlines` · `4m` the gate's own refusal said once to a screen reader on iOS and the
+web and twice on Android · `4l` the notes cap saying *delete one* over a list a delete is already
+leaving, on all three · `4g` the cap-reached sentence pinned on iOS and read inside the scroller on
+Android, both halves measured and neither shape ruled · `4j` Android's type answering the system's
+text size where iOS's fixed point sizes and the web's all-`px` stylesheet answer nothing, which is
+product-wide rather than gym's · `4k` the routine draft, asked about before it is thrown away on iOS
+and eaten silently on the web and Android — the one destructive act in the room with no window
+behind it.
 
 **Closed by it, and recorded so the next wave reads them as settled:** `3h` iOS's routine home card
 redrawing the routine screen behind it · `3m` the connect copy's claim on how your gym is set up,
@@ -811,7 +823,13 @@ undo · `3o` Android's card and its row chip drawing one proposal twice · the w
 editor handle is now a real button answering the drag, the arrows and a single pointer alike · `3y`
 the web's notes list, which took that same grip off the same hook · `4b` neither web drag reorder
 being workable by a single pointer, closed on both lists by the pick-up / place-down path (`3y` and
-`4b` are deleted entries, not open ones). `3c` is NOT among them: its wording was
+`4b` are deleted entries, not open ones) · `3e` the atomic promise, now in the pinned band between
+Apply and turn-down on all three · `3f` the AI ceiling, now sharing the cap-reached state and saying
+the sentence the server sent · `4h`, opened and closed inside S2b: iOS took the other two surfaces'
+bytes, so the wordless ceiling fallback is one string in three files · `4i`, likewise: the weigh-in
+written into an open delete window is no longer destroyed on any surface. `3q` is NOT among them —
+the detail was shortened and measured, and iOS still reads three lines at 390 points, which moves
+the entry off the copy and onto the transient's row. `3c` is NOT among them either: its wording was
 corrected where S2a made it false, and the entry stays open because the web still has no way to
 discard an ordinary past workout.
 
@@ -819,7 +837,7 @@ discard an ordinary past workout.
 
 **Documentation that goes stale in these changes:** `2g` `Routine.h:40-44` saying a client never
 sends `revision` while `TrainingJson.cpp:190-198` parses one and the web sends one ·
-`SettingsScreen.kt:121` ("nothing on this screen converts one") once units convert ·
+`SettingsScreen.kt:122` ("nothing on this screen converts one") once units convert ·
 `ARCHITECTURE.md:1233` carries the verdict-code rule that must survive every copy change.
 
 ---
@@ -880,8 +898,9 @@ backend's access log until its clock closed.
 report above and no run of any suite is recorded here for them — what follows is read from the
 working tree, not watched: web and Android joined iOS in abandoning a held delete when the room
 goes — `ON_STOP` and disposal on Android (`TrainingStore.abandonWithheld`, `GymRoom.kt`'s `ON_STOP`
-observer and its `onDispose`), the room's unmount and only that on the web
-(`useTrainingLog.js:157-167`, ledger `3d`);
+observer and its `onDispose`), and the document going hidden or the room unmounting on the web —
+one watch on the tab, calling the same `abandon` (`useTrainingLog.js:211-221`, `:227-231`;
+ledger `3d`, closed at the tree by S2b's closing pass, which found the entry stale);
 Android's set delete lost its exemption from that abandon, and with it the no-argument
 `settleWithheld()` and every trace of the exemption in the window's own data — `WithheldDelete` now
 carries a deletion, an instant and `sent`, and nothing else; Android's past-session screen gained the
@@ -950,7 +969,7 @@ not the announcement: `role="status"` is asserted to carry the sentence, and not
 spoken. The review dialog's gate at a large browser font size — the dialog was rendered and driven at
 390 px, not at a large font, and nothing in the room has been driven at a large browser font.
 Whether `12-native-idiom.md`'s reach-band ruling is meant to reach the web at all — the web starts
-no sessions and `screens.test.js:532` asserts the string appears in no web file; the brief does not
+no sessions and `screens.test.js:542` asserts the string appears in no web file; the brief does not
 scope the ruling by surface, and both phones now ship the ruling's inversion. Whether the custom
 keypad should also come off the web's fix sheet — `15-the-routine.md` removes it from the planning
 sheet and `16-the-workout.md` keeps it "at the rack"; the web has a fix sheet and no rack, and
@@ -969,8 +988,12 @@ document reports what those documents say, not what the boards show.
 ## 8 · The simplification programme
 
 One rule, and nine of the eleven cuts behind it are it applied: **draw each fact once, in the state
-where it is true, and give every enforced refusal a sentence.** S1 and S2a are in the tree. S2b — the
-three cuts that name a REFUSAL rather than redraw a screen — is owed.
+where it is true, and give every enforced refusal a sentence.** S1, S2a and S2b are in the tree, and
+with S2b closed **the board's confirmed list is finished**: all eleven of its shippable cuts have
+landed — 3, 6, 7, 9, 10 and 11 in S1, 1 and 2 in S2a, 4, 5 and 8 in S2b. **There is no next cut on
+that list.** What the programme still owes is not a cut: it is the two salvages the board kept out of
+the two candidates it killed, and the ledger entries these three waves opened and did not close. Both
+are named at the end of this section, and anything further is a new board rather than a next wave.
 
 **What S1 landed.**
 
@@ -990,9 +1013,9 @@ three cuts that name a REFUSAL rather than redraw a screen — is owed.
   band whose rule names two (ledger `3s`).
 - **The Coach card is a skim.** The web's card drops the folded document for the changed rows capped
   at three plus `+ N more`, with the counted phrase on its own line beneath the summary —
-  `countedLabel` (`proposals.js:105`), which asks the intent first so a removal reads *a removal*,
+  `countedLabel` (`proposals.js:110`), which asks the intent first so a removal reads *a removal*,
   and which `historyLabel` calls. The rows a card may draw are enumerated rather than filtered by
-  what they are not: `CARD_ROW_KINDS` is `added` · `removed` · `retargeted` (`proposals.js:171`), so
+  what they are not: `CARD_ROW_KINDS` is `added` · `removed` · `retargeted` (`proposals.js:176`), so
   the rename and the reorder pseudo-rows stay in the dialog, where the document they are claims
   about actually is. Nothing stops being counted — the phrase reads the server's `changeCount`. The
   document is drawn once, behind Review (`09-coach.md`). The conversation's rows still count a
@@ -1002,8 +1025,8 @@ three cuts that name a REFUSAL rather than redraw a screen — is owed.
   `Proposal · <routine name>` carries a lifter-typed string of up to 60 code points. On an eyebrow —
   which shares its row with a stamp — the name truncates and the stamp keeps its room:
   `.lineLimit(1)` on both iOS cards plus a hosting pin, `maxLines` + `TextOverflow.Ellipsis` +
-  `weight(1f)` on all three Android eyebrows, and `.gym-proposal-name` / `.gym-proposal-when` on the web
-  (`gym.css:3304`, `:3310`). The web's rule was measured rather than reasoned, per its builder's
+  `weight(1f)` on all three Android eyebrows, and `.gym-proposal-name` / `.gym-proposal-when` on the
+  web (`gym.css`). The web's rule was measured rather than reasoned, per its builder's
   report: headless Chrome against the real stylesheet at body widths 320 · 390 · 430 · 560 · 900,
   with a 60-character name and the full stamp — three wrapped lines before, one line at every width
   after, and a short name not clipped. **The sheet head is the exception and it is deliberate**: it
@@ -1144,28 +1167,139 @@ three cuts that name a REFUSAL rather than redraw a screen — is owed.
   `review.slight` alone, so an ordinary past workout still has no discard door on the web. Its wording
   about *Session detail and Done and nothing else* is corrected in the same change and no further.
 
-**What S2b owes — the three cuts that name a refusal.**
+**What S2b landed — the three cuts that name a refusal.**
 
-- **The review band names its gate**, and the atomic promise moves into the pinned band above
-  turn-down on the web and Android — cut 4 and **R4**, ledger `3e`. The gate's sentence is driven off
-  `!seen` alone, never off the disabled predicate, and the slot holds its height in both states.
-- **Every delete takes the window** (`13-gestures.md` Law 2), including the weigh-in — cut 5 and
-  **R1**, which `11-bodyweight.md` records as ruled and still drawn: six confirmations and Android's
-  relabelling two-tap come off, the brief's *Delete this weigh-in?* strings leave in that same
-  change, the notes cap reads the store's count rather than the drawn list, and the bodyweight hide
-  happens in `useBodyweight` rather than per screen.
-- **The AI ceiling shares the cap-reached state** and renders the server's sentence — cut 8 and
-  **R3**, ledger `3f`.
-- **The two salvages the board kept.** The settings captions, narrowed: Android cuts its second Units
-  caption and collapses its two Rest captions into one that keeps the override, iOS's lb clause is
-  gated on `units == Pounds`, the web keeps its Units clause verbatim and loses only the
-  *a haptic where the platform has one* clause, which is false of both phones. And the Android
-  connect card, narrowed to `sub`, `free` and `whereItLives` — about ninety words — with the can/cannot
-  panel kept, an `onClickLabel` on the button and `say` passed in so a failed browser launch is said.
+- **The review band names its gate** (cut 4 and **R4**). *Read the changes to the end to apply them.*
+  is drawn on all three, byte-identical, in a slot laid out in **both** states so the band's height
+  never changes — `APPLY_HINT` / `.gym-proposal-gate` with `min-height: 1.4em` on the web,
+  `.opacity(gate.isOpen ? 0 : 1)` on iOS, `.alpha(if (seen) 0f else 1f)` on Android. It is bound to
+  the gate **alone** and never to the disabled predicate, so it is silent while an apply request is
+  in flight — the defect a hint drawn "whenever Apply is disabled" would have shipped. The screen is
+  not the only channel: iOS keeps its `accessibilityHint`, Android gained a `stateDescription` on the
+  Apply box, and the web's Apply became `aria-disabled` with a no-op handler plus
+  `aria-describedby`, so a keyboard reader lands on the control instead of having it skipped.
+  **`documentLine` was trimmed, not deleted** — the board refused the deletion, because `kept`
+  requires `*before == after`, so a proposal that retargets every line folds no kept run and the
+  candidate's named re-home never renders. It now reads *The whole routine, top to bottom — the
+  marked lines change.* and the removal guard stands. **T2 rode with it:** the atomic promise moved
+  into the pinned band between Apply and turn-down on the web and Android, so the band's order is one
+  order everywhere (ledger `3e` closes). **The band was measured at fontScale 2.0, and it had to be:**
+  it stacks four text elements and two tap targets where it stacked three, and Android's band sits
+  outside a `weight(1f, fill = false)` scroller with no floor under the diff, so a band that grows
+  takes the diff's room. The ordinary Robolectric suite cannot see that — its font metrics are
+  stubbed, so nothing in it wraps — so the check lives in its own file under
+  `@GraphicsMode(NATIVE)` (`ui/LargestTypeTests.kt`): with the gate SHUT in a 700dp sheet the band
+  is 272dp and the diff keeps 317dp, still scrolling, and the case pins a 120dp floor rather than
+  the number. **iOS's band is not measured at AX5**, and nothing in that suite covers it.
+- **Every delete takes the window** (`13-gestures.md` Law 2) — cut 5 and **R1**. **Six**
+  confirmations came off, not three: web and iOS and Android Notes, web and iOS and Android
+  Bodyweight — plus Android's relabelling two-tap on the unclaimed shelf, which armed *Not mine* into
+  *Delete for good?* with no cancel and no timeout. The only confirmation left over a **delete**, on
+  any surface, is turning a proposal down; the one question still asked anywhere in the room is
+  iOS's *Discard these edits?* over an unsaved routine draft, which has no window behind it because
+  it was never on the wire, and which the web and Android answer by discarding silently (ledger
+  `4k`, opened by this wave and undecided). `WITHHELD_KINDS`, `Withheld.Kind` and `Deletion` gained
+  `note` and `bodyweight` (and `Unattributed` on Android), and `Deletion.stillThere` became nullable so a
+  verb the log cannot refuse says nothing rather than a made-up sentence. The four carried states all
+  landed: the notes cap reads the **store's** count so *10 of 10 notes.* stands through the window —
+  and follows that count the moment the delete lands, so no surface goes on refusing an eleventh note
+  over nine stored (the closing pass's fix on the third);
+  the bodyweight hide is one filter in `useBodyweight` / `TrainingStore.bodyweight` / `drawBodyweight()`
+  so the log's head cannot draw a weigh-in the chart dropped; the sheet or editor leaves with the
+  withhold, and where the thing being left renders OVER the room's transient — the weigh-in sheet on
+  both phones — it goes down first: `repairing = nil` before the task on iOS, and on Android the
+  `ModalBottomSheet`'s hide is **awaited** before the hold, because an Undo raised under a sheet
+  still animating out is an Undo nobody can reach. On the web the order does not bite:
+  `.gym-toast-slot` sits at `z-index: 55` over `.gym-sheet-catch`'s `40`; and Android's shelf row
+  goes **whole**, with the last-copy fact in the transient's own line — *Unclaimed training deleted —
+  it was only on this phone.* **T4 rode with it:** `11-bodyweight.md`'s *Delete this weigh-in?* /
+  **Delete** · **Keep it** left in the same change as the code. **Behaviour change, stated:** the
+  window abandons non-disk holds when the room leaves the foreground, so a note or weigh-in delete
+  abandoned on backgrounding puts the row — and the log's head reading — back.
+- **The AI ceiling shares the cap-reached state** and says the sentence it was sent — cut 8 and
+  **R3**, ledger `3f`. This **overruled a decision, not a bug**: `09-coach.md` tied the state to the
+  daily bucket and three test names recorded the split deliberately. It was overruled because the
+  premise under it was false — the cap-reached render preferred a local constant on all three, so an
+  account at its 30-day ceiling was told *a couple of hours* over a thirty-day window, which is the
+  copy the mission line forbids. The wordless fallback is now selected on the **code** and never on
+  the state. **T3 rode with it:** under the account ceiling the connect door is the primary and *Ask
+  something new* sits beneath it, told apart on the code rather than on the sentence. **And the
+  allowance line came off that variant** — *Ten questions a day, three back to back.* is a promise
+  about the DAILY bucket, so drawn above the sentence saying the account has spent thirty days of AI
+  it reads as the rule that stopped this question and becomes the one lie in the room. It is drawn in
+  the daily variant, where it is true, and not under the ceiling, on all three surfaces; the third
+  surface and the brief both moved in the closing pass, and until they did canon agreed with the one
+  surface still drawing it.
+- **The transient's detail was shortened, and it buys two lines on the web and not on the phones**
+  (`3q`, ruling **T1**): *your routine keeps what you applied*, six words, moved on all three at once.
+  Measured, not reasoned from a character count. On the web, headless Chrome against the real
+  stylesheet in the slot's own geometry, swept 320→430px a pixel at a time: three lines at every phone
+  width up to 390px before, **two from 327px up** after. On iOS, hosted and swept a point at a time:
+  the six words draw 249 points and the slot beside the 64-point `Undo` holds one line only **from
+  402 points up**, so a 390-point phone still reads three — the detail is clamped at two lines rather
+  than one, because a disclosure cut off mid-word is not a disclosure. Android's is unmeasured.
+  **The ruling's ≤2 lines at 390 is therefore met on the web and missed on iOS, and the words are not
+  what is stopping it** — the sentence shares its row with the Undo. `3q` stays open, on the row
+  rather than on the copy.
+- **What the closing pass landed, and it is six defects a cross-surface read found in S2b's own
+  work.** Three were blockers, each on a different surface. **The allowance line under the account
+  ceiling** came off Android, the last surface still drawing it, and `09-coach.md` gained the
+  exception in the same change (above). **iOS's notes cap now hears the settle**: the screen derives
+  a standing list — the store's notes less the ones whose delete has landed — and counts the cap, the
+  empty stance, the Add row and the edit handle off it while only the rows read the window, so nine
+  seconds after a delete at the cap it draws nine rows and offers *Add a note* again instead of
+  standing on *10 of 10 notes. Delete one to add another.* over a way out already taken.
+  **Android's note reorder names every note**: `reorderNotes` takes the DRAWN ids and rebuilds the
+  order against the standing notebook, putting a withheld note back in the place it stands in — a
+  drag inside an open window was sending an incomplete order the log refuses outright
+  (`400 notes-order-mismatch`), dead-but-green because no case opened a window before a reorder, and
+  the fix ships with the pin. Three smaller ones: **the web's empty-notes stance reads the store**, so
+  deleting your only note no longer offers the two onboarding placeholders over a store that still
+  holds it; **`threads.js`'s 340px** became the measured **327px**, the fourth time this programme has
+  caught one bound written two ways; and **iOS's weigh-in write takes the window down** (`writtenAgain`
+  before `weighIn`) rather than leaving a transient offering *Undo* beside a dot the chart is drawing
+  again. Its two new refusal clauses took Android's bytes — *that conversation is still here*,
+  *that note is still here* — which predate them, because a near-miss pair reads as a typo and not as
+  a screen's own words. `13-gestures.md` now says that as a rule.
+- **What S2b left alone.** **The two salvages the board kept did NOT land** and stay owed: the
+  settings captions (Android's second Units caption and its two Rest captions, iOS's lb clause gated
+  on `units == Pounds`, the web's *a haptic where the platform has one*) and the Android connect card
+  narrowed to `sub`, `free` and `whereItLives`. Nothing in `products/gym`'s settings copy moved this
+  wave beyond the shelf's own control.
 - **The moves the closing rulings left owed**, each with its ledger entry: iOS's `30 days` (`3k`)
-  and both phones' promise condition (`3t`). Android's `Delete` and its `30 days` landed in S1.
-- **A two-fact transient is three lines on a phone and the budget says two** (`3q`) — a copy owner's
-  call, and the bytes are one string in three files that may not split.
+  and both phones' promise condition (`3t`) — checked against the tree at the close of S2b and both
+  still open. Android's `Delete` and its `30 days` landed in S1.
+- **Two S2b opened and closed inside itself.** The wordless ceiling fallback was the server's
+  sentence on the web and Android and a parallel sentence of its own on iOS; iOS took the other two
+  surfaces' bytes, so it is one 110-byte string in three files (`4h`). And a weigh-in written into an
+  open delete window was destroyed by the settling delete on the web and Android — the one withheld
+  subject whose id a lifter can write again, since it is a calendar date — which is now taken back by
+  the write that names the day, iOS having enforced the same ruling by holding the instant (`4i`).
+- **Five S2b found; four it did not build, and the fifth it half-built in its closing pass.** Where the cap-reached sentence sits is a phone divergence,
+  and both halves are now measured — iOS's on the simulator, Android's under `@GraphicsMode(NATIVE)`
+  after its first figure turned out to come from a stubbed harness — but which shape is right is
+  undecided (`4g`). The routine draft is asked about before it is thrown away on iOS and eaten
+  silently on the web and Android: the one destructive act in the room with no window behind it, and
+  the reason the confirmation count is written for deletes (`4k`). The gate's refusal reached a screen
+  reader **once on iOS and twice on the web and Android** — `4m` had exonerated the web on a premise
+  that was never the reason for its conclusion, since `aria-describedby` does not take its target out
+  of the accessibility tree. The web's drawn sentence is `aria-hidden` in both states as of the
+  closing pass, so it is single-reading like iOS's; **Android still owes the same line**, drawing the
+  sentence on the Apply box and leaving the `Text` in the semantics tree while the gate is shut
+  (`4m`, half closed). The notes cap now reads the store's
+  count, which is the fix cut 5 owed — and for the nine seconds of the window that draws nine rows
+  under *10 of 10 notes. Delete one to add another.*, a true count over an instruction naming a way
+  out already taken (`4l`, a copy call on all three at once). And the largest-text hazard this
+  wave measured on Android is testable on Android alone: iOS's fonts are all `Font.system(size:)`,
+  fixed point sizes that do not scale with Dynamic Type, and gym's web stylesheet declares every
+  `font-size` in `px` with no `rem` anywhere, so neither answers a reader's own setting and the three
+  surfaces may not be read as equivalent on accessibility (`4j`, product-wide rather than gym's).
+- **One canon line S2b found false and corrected.** `09-coach.md` said iOS keeps Apply open once
+  seen and cited a ledger entry about the rack keypad. Both halves were wrong: `ReviewGate.isOpen`
+  is `seenAt == end.inDocument`, so an unfolding kept run re-locks it exactly as the web's
+  `seenHeight` and Android's `seenExtent` do, and `ReviewSheetTests`'s
+  `testUnfoldingAKeptRunTakesApplyAwayUntilTheNewEndIsSeen` has pinned that all along. The brief now
+  states one rule for three surfaces, which is what §3 of this file already said.
 - **Two S1 found and did not rule.** Android's inline `Start workout` against iOS's pinned
   one (`3r`) and iOS's three-writer bottom band (`3s`) are one decision about where a phone screen's
   primary sits and what may share its lane. And whether a sign-out clears this device's copy of the
@@ -1185,57 +1319,97 @@ three cuts that name a REFUSAL rather than redraw a screen — is owed.
   iOS's movement picker trims a search in `.whitespaces` where the create step it opens trims in
   `.whitespacesAndNewlines` — CR-C's shape one layer milder, on a screen this wave did not own (`4f`).
 
-**Two things this programme has not settled, and no line anywhere may claim otherwise.** §7's ruling
+**What the programme owes, in full.** The board's list is finished, so this is everything S1, S2a and
+S2b opened and did not close. **The two salvages the board kept** out of the two candidates it killed
+are the only unbuilt *cuts* left anywhere: the settings captions (Android's second Units caption and
+its two Rest captions, iOS's lb clause gated on `units == Pounds`, the web's *a haptic where the
+platform has one*) and the Android connect card narrowed to `sub`, `free` and `whereItLives`.
+Everything else is a ledger entry, and `../consistency.md` carries each one's evidence:
+
+- **A build is owed, on a named surface** — `3g` (the routine's own rest outranks the dial, and only
+  Android says so) · `3k` (iOS's `30 days`) · `3l` (iOS's two proposal cards, and the wire behind the
+  conversation rows) · `3m`'s leftover (`list_notes` is a read-level tool and iOS's consent screen
+  names notes nowhere) · `3p` (Android has never drawn a reorder for a draft — a capability it owes
+  rather than drift) · `3r` (Android's `Start workout` scrolls away) · `3t` (both phones draw the
+  proposal promise after the decision it is about) · `3x` (Android says the log went quiet for a log
+  that answered with a reason) · `4a` (the phones' ink for *Name it to save it.*) · `4c` (the finish
+  card's name bound against the editor's 60 code points) · `4e` (iOS's double-keep guard is in the tree
+  and nothing can pin it: what is owed is the seam, an injectable store on `GymRoom` or a launch
+  argument that slows the write) · `4f` (iOS's two trim units) · `4m`'s Android half,
+  `clearAndSetSemantics` on the gate's `Text` in both states · `4n` (the bodyweight screen's empty
+  stance reads the drawn series on the web and Android, so a window decides a screen's state — the
+  exception to the law `13-gestures.md:214` states in bold, and the one this wave itself created) ·
+  and `4o` (iOS's weigh-in write-again guard sits on one of two write paths; no number is lost, but
+  the guard belongs inside the write as Android's is).
+- **A ruling or a copy owner is owed** — `3b` · `3c` · `3j` · `3q` · `3s` · `3u` · `3w` ·
+  `3z` · `4d` · `4g` · `4j` · `4k` · `4l`. Two of them are not gym's to answer alone: `4j` is
+  product-wide, since two surfaces of three do not answer a reader's own text size at all, and `3w`
+  is device residue, whose direction belongs to the security work's owner.
+- **Closed, nothing owed** — `3a` · `3d` · `3e` · `3f` · `3h` · `3i` · `3n` · `3o` · `3v` · `4h` ·
+  `4i`. Named here so no later wave re-opens one of them by reading its heading alone. `3d` closed
+  in the closing pass and closed as a **stale entry**: it described the web as abandoning a held
+  delete on the room's unmount alone, and the tree has watched the tab for the window since
+  `8104def` — a hidden document calls the same `abandon`, pinned by three cases in
+  `withheldWindow.test.js`. The web's trigger is the phones' trigger, so `13-gestures.md`'s
+  foreground rule is true of all three surfaces as written.
+
+**Two of the open ones are worth stating in words, because a claim in the other direction is easy to
+make.** §7's ruling
 on whether the custom keypad comes off the web's fix sheet at all is open — all that has changed
-there is what the sheet's scrim means. And the web routine editor's `Back` is a plain anchor that
-discards the draft with no question (`Back.jsx` renders one `<a>`, and `RoutineEditor` hands it
-`ROUTINES_HREF` and no handler), so *a draft that cannot be eaten silently* is not true of the web.
+there is what the sheet's scrim means. And a routine draft is still eaten silently on two surfaces:
+the web's `Back` is a plain anchor (`Back.jsx` renders one `<a>`, and `RoutineEditor` hands it
+`ROUTINES_HREF` and no handler) and Android's is `BackMeans.LeaveTheDraft -> building = null`, while
+iOS asks *Discard these edits?* — so *a draft that cannot be eaten silently* is true of one surface
+of three. That is ledger `4k`, opened by S2b and undecided: an unsaved draft was never on the wire,
+so the window Law 2 answers every other destructive act with has nothing to hold.
 
-**The suites.** All three were run against the tree as it now stands — the S2a build, the adversarial
-fix pass and the closing pass CR-A…CR-E all included. Android needs its JDK named to run here:
-`/usr/libexec/java_home -V` lists 1.8 alone, and the toolchain Gradle actually builds on is the one it
-provisioned for itself under `~/.gradle/jdks`, so the gate runs with `JAVA_HOME` pointed at that and
-refuses without it.
+**The suites.** All three were re-run by S2b's **closing** documentation pass against the tree as it
+now stands — every S2b source edit, every fix-pass edit and every closing-pass edit included — and
+each total below is that run's, not a builder's report of one. The figures the earlier docs pass
+recorded (web 1499, iOS 829 / 699, Android 836) were taken before the closing pass touched source and
+are superseded by the ones here. The baselines they are measured against are this section's own S2a
+record: a docs pass cannot rewind the tree to take a fresh one.
+Android needs its JDK named to run here: `/usr/libexec/java_home -V` lists 1.8 alone, and the
+toolchain Gradle actually builds on is the one it provisioned for itself under `~/.gradle/jdks`, so
+the gate runs with `JAVA_HOME` pointed at that JDK's `Contents/Home` and refuses without it.
 
-- **web** — `cd web && npm test`, run at the closing state: **1483 tests, 1483 pass, 0 fail**
-  (`1576 ms`), against a baseline of **1465** measured before the wave's first edit. Eighteen new
-  cases: ten in the new `test/products/gym/entryReorder.test.js` and seven in the new
-  `test/products/gym/notes/noteReorder.test.js` — between them the handle as a named button, the
-  arrows moving the row and saying so, the ends not wrapping with an unspendable arrow falling
-  through, the pick-up and the place-down, the same handle putting a held row back down, Escape, the
-  arrows moving a row a pointer is holding, the drag left untouched, and the three latch cases a
-  browser turned up (a trailing click not read as a pick-up, a drop whose click never comes not
-  swallowing the next tap, and a keyboard activation never spent on a drop) — plus one in
-  `screens.test.js`, which pins the head back on the ready state and on the failed read, the deleted
-  foot and *tap to rename*, and the one-source empty-name sentence.
+- **web** — `cd web && npm test`: **1500 tests, 1500 pass, 0 fail** (`2.0 s`), against **1483** at
+  the S2a close — seventeen more, and S2b's own new cases are the gate's sentence drawn in both states
+  with its slot's `min-height` pinned as a declaration, the gate silent while an apply request hangs,
+  the band's pinned order, a note delete one press · taken back · cap standing through the window ·
+  the row back when the store refuses, a weigh-in delete dropping the dot and the log's head reading
+  together and a weigh-in re-entered on that day taking the delete back, and `ask-out-of-budget`
+  reaching the cap-reached state with the SERVER's sentence, the connect door first and the allowance
+  line gone. **One of the seventeen is the closing pass's**, and the case that pins its empty-notes
+  stance is *a delete window over the last note does not empty the room: the placeholders read the
+  store, not the drawn rows*. Its other two web changes ride on cases already in the band's pins — the
+  gate's `aria-hidden` is asserted in both gate states there — and on a comment, which `threads.js`'s
+  327 is.
 - **iOS package** — `xcodebuild -scheme WindmillKit-Package -destination 'platform=iOS
-  Simulator,name=iPhone 17' test` from `apps/ios/WindmillKit`, `DEVELOPER_DIR` on Xcode, run at the
-  closing state: **TEST SUCCEEDED — 818 passed, 0 failed, 6 skipped**, of which `WindmillGymTests` is
-  **688 cases**, against 815 / 685 at the S2a build. The three are the closing pass's:
-  `FinishScreenTests` now pins the keep refusal and the editor's own `isNamed` against a fixture that
-  carries `"\n"`, `"\r\n"` and `"\u{2028}"`, and pins `Finish.keptAs` against Android's bytes.
-- **iOS UITests** — the `Windmill` scheme is a separate target, and the target holds **50** cases.
-  Its last full run was the closing pass's own, started after that pass's last source edit:
-  **50 executed, 0 failures**, `TEST SUCCEEDED`, 1229 s. That run is its runner's; the closing
-  verification did not repeat it, because these walks have no fake wire — `WMApiBaseURL` is empty, so
-  they drive the real account at real speed and each one writes and then takes back a routine and a
-  session. At the S2a build the target held 48 and ran **47 passed, 1 failed**, the one failure a HOST
-  flake proven so — `RoomUndoWindowUITests.testAFullSwipeDeletesNothing`, which died inside
-  `app.navigationBars.buttons["Finish"].tap()` with *Timed out while synthesizing event* after 1002
-  seconds and passed in 36 when re-run alone with `-only-testing`. **Five are this wave's**:
-  `RoomPickerCreateUITests`'s two — cancelling the create step comes back to the picker with
-  the search still in it, and a minted movement is picked with both steps closing —
-  `RoomFinishSheetUITests`'s two, that an ordinary session's sheet carries a toolbar `Done` and
-  neither *Just keep the session* nor `Keep it`, and that emptying the routine name says why Save is
-  grey, and the closing pass's `testAKeptRoutineIsConfirmedWhereItsFormStood`. The two-tap walk that
-  pass wrote for CR-E is not among them: it was removed because it passed with the fix deleted.
+  Simulator,name=iPhone 17' test` from `apps/ios/WindmillKit`, `DEVELOPER_DIR` on Xcode:
+  **TEST SUCCEEDED — 842 executed, 836 passed, 0 failed, 6 skipped**, of which `WindmillGymTests` is
+  **706 cases**, against 829 / 699 before the closing pass and 818 / 688 at the S2a close. The seven
+  new gym cases are the closing pass's: the settled delete that gives the Add row back, a refused
+  settle that leaves the note stored and the cap where it was, a subject written again taking its
+  window down and sending nothing, that subject stopping being recorded gone, held and gone asked
+  apart, the refused-settle sentence said from the one spelling of it, and the weigh-in write ordered
+  before the number goes in.
+- **iOS UITests** — **not run by this pass, and not run since S2a's closing pass.** The `Windmill`
+  scheme is a separate target holding **50** cases, unchanged: S2b edited no file under
+  `apps/ios/UITests`. Nothing there reaches this wave's subjects either — every match for `Coach` in
+  that tree is `app.buttons["Coach"]` used to wait for the room to open, and no walk touches the
+  review band, Apply, Notes, the weigh-in sheet or the coach ceiling. Its last full run is S2a's:
+  **50 executed, 0 failures**, `TEST SUCCEEDED`, 1229 s, that run its own runner's. These walks have
+  no fake wire — `WMApiBaseURL` is empty, so they drive the real account at real speed and each one
+  writes and then takes back a routine and a session.
 - **Android** — `./gradlew build` (the CI-shaped gate, `:gym:test` plus the release variant) from
-  `apps/android` with `JAVA_HOME` on the provisioned JDK 21, run at the closing state:
-  **BUILD SUCCESSFUL, 820 tests per variant, 0 failures, 0 errors, 12 skipped**, against a baseline of
-  807 its builder measured at `4805050`. The count is the JUnit XML under
-  `apps/android/gym/build/test-results/` summed across all 88 classes per variant, read off disk
-  rather than off a console tail, and re-run from a deleted `test-results` so no result was carried
-  over.
+  `apps/android` with `JAVA_HOME` on the provisioned JDK 21: **BUILD SUCCESSFUL, 837 tests per
+  variant, 0 failures, 0 errors, 12 skipped**, against **836** before the closing pass and **820** at
+  the S2a close; the extra case is the reorder inside an open delete window. The count is the
+  JUnit XML under `apps/android/gym/build/test-results/` summed across all 89 classes per variant,
+  read off disk rather than off a console tail, and run from a deleted `test-results` so no result
+  was carried over. The 89th class is `ui/LargestTypeTests.kt`, the one file annotated
+  `@GraphicsMode(NATIVE)`, which is where both fontScale-2.0 measurements live.
 
 Everything else this section states is read off the tree at the symbols it names, in the same way as
 the rest of this document.

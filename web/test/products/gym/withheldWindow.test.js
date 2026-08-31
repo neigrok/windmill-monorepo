@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { WINDOW_CLOSED } from '../../../src/products/gym/withheld.js';
+import { dateLocalOf } from '../../../src/products/gym/bodyweight/bodyweight.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, roomLog, settle,
   textOf,
@@ -615,4 +616,354 @@ test('a session the window is holding is off the log, and on it again the moment
   assert.equal(textOf(elementsOf(alone).filter((each) => each.props?.className === 'gym-quiet')[0]), 'No sessions yet.');
 
   assert.deepEqual(rows(draw(roomLog({ summaries, held: [] }))), ['ses_1', 'ses_2']);
+});
+
+// ── The two verbs that used to ask a question ───────────────────────────────
+// A note and a weigh-in are deleted in one press now, and every state the confirmation carried is
+// re-homed here: `are you sure` is the window, `this row is gone` is `log.hidden`, and the refusal
+// after the window is said by the room.
+
+function notesOnTheWire({ count = 10, deleteStatus = 204, said = null } = {}) {
+  const wire = [];
+  const deleted = new Set();
+  const stored = () => Array.from({ length: count }, (_, at) => ({ id: `note_${at}`, position: at, title: `Note ${at}`, body: '', updatedAt: 0 }))
+    .filter((note) => !deleted.has(note.id));
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    wire.push(`${method} ${path}`);
+    if (path === '/notes' && method === 'GET') return { ok: true, status: 200, json: async () => ({ notes: stored() }) };
+    if (path.startsWith('/notes/') && method === 'DELETE') {
+      if (deleteStatus < 300) deleted.add(path.slice('/notes/'.length));
+      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => (said ? { error: said } : {}) };
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  return wire;
+}
+
+const noteList = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'NoteList');
+const noteEditor = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'NoteEditor');
+
+test('a note delete is one press, leaves the editor in the same act, and is not on the wire until the window closes', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = notesOnTheWire({ count: 3 });
+  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
+  await settle();
+
+  const held = noteList(notes.screen()).props.notes[1];
+  noteList(notes.screen()).props.onOpen(held);
+  assert.notEqual(noteEditor(notes.screen()), undefined);
+  noteEditor(notes.screen()).props.onDelete(held);
+  await settle();
+
+  assert.equal(noteEditor(notes.screen()), undefined, 'the editor is left in the same act');
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
+  assert.deepEqual(wire, ['GET /notes'], 'nothing is on the wire while the window runs');
+  assert.equal(notes.log().transient.text, 'Note deleted.');
+  assert.equal(notes.log().transient.action.label, 'Undo');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  // The store renumbers the rest, so the list re-reads — and a reorder sent afterwards carries the
+  // store's own list rather than an id the store no longer has.
+  assert.deepEqual(wire, ['GET /notes', 'DELETE /notes/note_1', 'GET /notes']);
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
+});
+
+test('the re-read after a note delete keeps the list drawn: the screen does not blank nine seconds after the act', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  notesOnTheWire({ count: 3 });
+  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
+  await settle();
+
+  const held = noteList(notes.screen()).props.notes[1];
+  noteList(notes.screen()).props.onOpen(held);
+  noteEditor(notes.screen()).props.onDelete(held);
+  await settle();
+
+  // The store's answer lands; the re-read behind it is still in the air.
+  let answerTheRead = null;
+  global.fetch = async (url, options = {}) => {
+    if ((options.method ?? 'GET') === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
+    return new Promise((resolve) => { answerTheRead = () => resolve({ ok: true, status: 200, json: async () => ({ notes: [{ id: 'note_0', position: 0, title: 'Note 0', body: '', updatedAt: 0 }, { id: 'note_2', position: 1, title: 'Note 2', body: '', updatedAt: 0 }] }) }); });
+  };
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2'], 'the rows stand');
+  assert.equal(findByClass(notes.screen(), 'gym-quiet').length, 0, 'never back to `Opening your notes…`');
+  answerTheRead();
+  await settle();
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
+});
+
+test('a note delete taken back is never sent, and the row is back on the list', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = notesOnTheWire({ count: 3 });
+  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
+  await settle();
+
+  const held = noteList(notes.screen()).props.notes[0];
+  noteList(notes.screen()).props.onOpen(held);
+  noteEditor(notes.screen()).props.onDelete(held);
+  await settle();
+  notes.log().transient.action.run();
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 1', 'Note 2']);
+
+  t.mock.timers.tick(UNDO_MS * 2);
+  await settle();
+  assert.deepEqual(wire, ['GET /notes']);
+});
+
+test('the cap is the store’s count: a tenth note held for deletion still fills the account, so the cap line stands', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  notesOnTheWire({ count: 10 });
+  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
+  await settle();
+  assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-full')[0]), '10 of 10 notes. Delete one to add another.');
+
+  const held = noteList(notes.screen()).props.notes[9];
+  noteList(notes.screen()).props.onOpen(held);
+  noteEditor(notes.screen()).props.onDelete(held);
+  await settle();
+
+  assert.equal(noteList(notes.screen()).props.notes.length, 9, 'nine rows are drawn');
+  assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-full')[0]), '10 of 10 notes. Delete one to add another.');
+  assert.equal(findByClass(notes.screen(), 'gym-notes-add').length, 0, 'and no door onto a mint the store would refuse');
+
+  // Once the store has answered, the account really has nine and the door comes back.
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.equal(findByClass(notes.screen(), 'gym-notes-full').length, 0);
+  assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-add')[0]), 'Add a note');
+});
+
+test('a note delete the store refuses is said in the room’s words, and the row is back because nothing was taken', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  // Wordless, so what is read is the room's own sentence and not the store's.
+  notesOnTheWire({ count: 3, deleteStatus: 500 });
+  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
+  await settle();
+
+  const held = noteList(notes.screen()).props.notes[1];
+  noteList(notes.screen()).props.onOpen(held);
+  noteEditor(notes.screen()).props.onDelete(held);
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+
+  assert.equal(notes.log().transient.text, 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
+  assert.equal(notes.log().transient.action, null, 'a refusal carries no way back');
+  // Only a send that RESOLVES records the id gone, so a refused delete leaves the row standing —
+  // which is the state the sentence names, and the reason it names the way out as trying again.
+  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 1', 'Note 2']);
+});
+
+// A store that really keeps the series, so a delete that lands and a weigh-in written afterwards are
+// read back off the same rows the screens are drawing from.
+function weighInsOnTheWire(entries, { deleteStatus = 204 } = {}) {
+  const wire = [];
+  let stored = [...entries];
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    wire.push(`${method} ${path}`);
+    if (path === '/bodyweight' && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ entries: stored, latest: stored[stored.length - 1] ?? null }) };
+    }
+    if (path.startsWith('/bodyweight/') && method === 'DELETE') {
+      const day = path.slice('/bodyweight/'.length);
+      if (deleteStatus < 300) stored = stored.filter((each) => each.dateLocal !== day);
+      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
+    }
+    if (path.startsWith('/bodyweight/') && method === 'PUT') {
+      const day = path.slice('/bodyweight/'.length);
+      const entry = { dateLocal: day, ...JSON.parse(options.body) };
+      stored = [...stored.filter((each) => each.dateLocal !== day), entry];
+      return { ok: true, status: 200, json: async () => ({ entry }) };
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  return { wire, onTheLog: () => stored };
+}
+
+// Both screens that read the series, in one room: the chart owns one instance of `useBodyweight` and
+// the log's head owns a second, and the hide is inside the hook precisely so the two never disagree.
+async function weighInRoom(t, entries, options = {}) {
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const held = quietApi();
+  const { wire, onTheLog } = weighInsOnTheWire(entries, options);
+  const view = renderHook(t, () => {
+    const log = useTrainingLog({ api: held });
+    return { log, chart: BodyweightScreen({ log }), logScreen: LogList({ log, onSignIn: () => {} }) };
+  });
+  await settle();
+  const named = (tree, name) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === name);
+  const reading = () => named(view.tree.logScreen, 'BodyweightReading');
+  const chart = () => named(view.tree.chart, 'DotChart');
+  const sheet = () => named(view.tree.chart, 'WeighInSheet');
+  // The chip in the log's reach band, which opens a sheet on any date — the one door that can write
+  // the day a delete is holding.
+  const chip = () => named(view.tree.logScreen, 'WeighInChip');
+  const chipSheet = () => named(view.tree.logScreen, 'WeighInSheet');
+  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, chip, chipSheet };
+}
+
+test('a weigh-in delete is one press, closes the sheet over the transient, and drops the dot AND the log’s head reading together', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [
+    { dateLocal: '2026-08-20', weightKg: 83.1, recordedAt: 1 },
+    { dateLocal: today, weightKg: 82.4, recordedAt: 2 },
+  ]);
+
+  assert.equal(room.reading().props.latest.dateLocal, today);
+  assert.equal(room.chart().props.points.length, 2);
+
+  room.chart().props.onPick(room.chart().props.points[1]);
+  const sheet = room.sheet();
+  assert.equal(sheet.props.fixedDate, today);
+  sheet.props.onDelete(today);
+  await settle();
+
+  assert.equal(room.sheet(), undefined, 'a sheet over the room would hide the only Undo there is');
+  assert.equal(room.chart().props.points.length, 1, 'the dot is gone');
+  assert.equal(room.reading().props.latest.dateLocal, '2026-08-20', 'and so is the head reading, from the same filter');
+  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), []);
+  assert.equal(room.log().transient.text, 'Weigh-in deleted.');
+  assert.equal(room.log().transient.action.label, 'Undo');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), [`DELETE /bodyweight/${today}`]);
+});
+
+test('a weigh-in delete taken back puts the dot and the reading back, and never reaches the store', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  await settle();
+  assert.equal(room.chart(), undefined, 'the only weigh-in there was: the chart draws no frame');
+  assert.equal(room.reading().props.latest, null, 'and the head has no number to read');
+
+  room.log().transient.action.run();
+  await settle();
+  assert.equal(room.chart().props.points.length, 1);
+  assert.equal(room.reading().props.latest.dateLocal, today);
+
+  t.mock.timers.tick(UNDO_MS * 2);
+  await settle();
+  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), []);
+});
+
+test('a weigh-in delete the store refuses is said in the screen’s own words', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }], { deleteStatus: 500 });
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+
+  assert.equal(room.log().transient.text, 'That weigh-in wasn’t deleted. Try again in a moment.');
+  assert.equal(room.log().transient.action, null);
+  // The same rule on the other verb: the store refused, so the dot and the head reading are back.
+  assert.equal(room.chart().props.points.length, 1);
+  assert.equal(room.reading().props.latest.dateLocal, today);
+});
+
+// The one id in this room a lifter can write again. Every other verb is keyed by a mint, so the
+// window's two answers — the delete still standing, and the id recorded gone — can only ever be
+// about the row that was there. A date can be written again, and then both answers are wrong.
+
+test('a weigh-in written again on a day whose delete is still holding takes that delete back, and nothing is sent', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  await settle();
+  assert.equal(room.log().transient.action.label, 'Undo');
+
+  room.chip().props.onOpen();
+  await settle();
+  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  await settle();
+  assert.equal(room.log().held.length, 0, 'writing the day again IS the way back');
+
+  t.mock.timers.tick(UNDO_MS * 2);
+  await settle();
+  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), [], 'the clock is gone, so the new number is never destroyed');
+  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
+  assert.equal(room.reading().props.latest.weightKg, 79.5);
+});
+
+test('a weigh-in written again on a day whose delete already settled is drawn: the dot and the head reading both come back', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(room.onTheLog(), [], 'the store took it, and the room records the date gone');
+  assert.equal(room.chart(), undefined);
+
+  room.chip().props.onOpen();
+  await settle();
+  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  await settle();
+
+  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
+  assert.equal(room.reading().props.latest.weightKg, 79.5, 'a number on the log that the room draws nowhere would be the worse lie');
+});
+
+test('a weigh-in written again while the delete’s send is still in the air is drawn: the room records nothing gone', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  await settle();
+
+  // The seam the window has always had: the clock has fired, the DELETE is on the wire, and the
+  // answer that would record the date gone has not come back yet.
+  const takenFromTheWire = global.fetch;
+  let answerTheDelete = null;
+  global.fetch = async (url, options = {}) => {
+    if ((options.method ?? 'GET') !== 'DELETE') return takenFromTheWire(url, options);
+    await new Promise((resolve) => { answerTheDelete = resolve; });
+    return takenFromTheWire(url, options);
+  };
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+
+  room.chip().props.onOpen();
+  await settle();
+  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  await settle();
+
+  answerTheDelete();
+  await settle();
+  assert.equal(room.reading().props.latest.weightKg, 79.5, 'the date was written again, so it is not a date the store answered for');
 });

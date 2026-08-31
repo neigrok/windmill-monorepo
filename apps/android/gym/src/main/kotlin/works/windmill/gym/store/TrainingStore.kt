@@ -11,6 +11,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AutoClose
@@ -90,8 +91,22 @@ class TrainingStore(
         private set
     // The device's copy of the series for the seat in hand, ascending by date; the log's answer
     // replaces it on connect except for what this phone still owes.
-    var bodyweight: List<WeighIn> by mutableStateOf(emptyList())
-        private set
+    private var series: List<WeighIn> by mutableStateOf(emptyList())
+    // A weigh-in inside its undo window is off the series for EVERY reader — the chart and the log's
+    // head reading both — so one of them can never draw a day the other has dropped. Writes go to
+    // `series`, which is the whole of it.
+    val bodyweight: List<WeighIn>
+        get() = series.filterNot { it.dateLocal in withheldIds }
+    // The account's notes as the log last answered them, in the log's order. Nothing is kept between
+    // runs — the read on the way in is the whole of it — but the ROOM holds them while it is open,
+    // because a screen keeping a snapshot of its own would draw a note back the moment its window
+    // settled. Writes go to `notebook`, which is the whole of it.
+    private var notebook: List<Note> by mutableStateOf(emptyList())
+    // A note inside its undo window is off the list; `noteCount` still counts it, because the log
+    // refuses the eleventh whether or not this screen is drawing the tenth.
+    val notes: List<Note>
+        get() = notebook.filterNot { it.id in withheldIds }
+    val noteCount: Int get() = notebook.size
     // Every proposal this room settled, as the log's reply said it: a card minted in a conversation
     // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
     var settledProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
@@ -299,6 +314,9 @@ class TrainingStore(
 
     // Called on launch and on every change of who is signed in. Draws from the device first.
     suspend fun connect(account: Account) {
+        // Whether a lifter ARRIVED, or the room is re-reading for the seat already in hand — the
+        // shelf's claim and its discard both come back through here, mid-window, for the same seat.
+        val arriving = seated != account
         gym = sync(account)
         seated = account
         // The names go with the seat: a rename is a per-account override. The shelf's own movements
@@ -314,7 +332,7 @@ class TrainingStore(
         preferences = localPreferences.document
         // Weigh-ins made with nobody signed in ride the same way, and every one of them is owed.
         localBodyweight.adopt(owner, confirmed = account.verified)
-        bodyweight = localBodyweight.entries
+        series = localBodyweight.entries
         // The six ride with every seat and fill only ids nothing else here holds, so a name this
         // account chose is never overwritten by a constant.
         val known = deviceCopy.movements(owner).let { held ->
@@ -336,14 +354,19 @@ class TrainingStore(
         // is under a thumb, which it may only do while every row belongs to the account now asking.
         logged = emptyList()
         older = Older.More
-        // A withheld delete goes with the seat, UNSENT: settling it now would take a row off the log
+        // A withheld delete goes with the SEAT, UNSENT: settling it now would take a row off the log
         // of the account that just arrived. Its clock goes with it, or it would settle a window the
-        // next seat never opened.
-        for (clock in clocks.values) clock.cancel()
-        clocks.clear()
-        withheld = emptyList()
-        deleteRefused = null
-        deletedSets = emptySet()
+        // next seat never opened. A re-read for the seat already in hand takes nothing down: the
+        // shelf's own discard runs through here while other windows are open, and dropping them
+        // would leave a lifter told `Note deleted.` over a note that is never sent and never said.
+        if (arriving) {
+            for (clock in clocks.values) clock.cancel()
+            clocks.clear()
+            withheld = emptyList()
+            deleteRefused = null
+            deletedSets = emptySet()
+            notebook = emptyList()
+        }
         // A workout both finished on the shelf and live in the queue: the shelf's copy wins, after
         // its sets merge in.
         queue.session?.let { live ->
@@ -424,7 +447,7 @@ class TrainingStore(
             launch {
                 tried { log.bodyweight() }?.let {
                     localBodyweight.readBack(it)
-                    bodyweight = localBodyweight.entries
+                    series = localBodyweight.entries
                 }
             }
         }
@@ -998,7 +1021,7 @@ class TrainingStore(
         } catch (refusing: Exception) {
             when (val verdict = AskVerdict.refusing(RefusalFacts(refusing))) {
                 is AskVerdict.Said -> AskOutcome.Refused(verdict.said)
-                is AskVerdict.Capped -> AskOutcome.Capped(verdict.said)
+                is AskVerdict.Capped -> AskOutcome.Capped(verdict.said, verdict.cap)
                 is AskVerdict.Again -> AskOutcome.Failed(verdict.said)
                 is AskVerdict.Fresh -> AskOutcome.Fresh(verdict.said)
                 AskVerdict.Absent -> AskOutcome.Absent
@@ -1049,12 +1072,16 @@ class TrainingStore(
         }
     }
 
-    // Notes are the account's and this phone holds none: every screen reads on the way in, and a
-    // refusal arrives in the log's own words — the ten cap and the two bounds are its to state.
-    suspend fun notes(): GymResult<List<Note>> {
+    // Notes are the account's and this phone keeps none between runs: every screen reads on the way
+    // in, and a refusal arrives in the log's own words — the ten cap and the two bounds are its to
+    // state. Every one of these four answers the log AND writes what it answered into `notebook`, so
+    // the drawn list is one list nobody holds a copy of.
+    suspend fun readNotes(): GymResult<List<Note>> {
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
         return try {
-            GymResult.Ok(log.notes())
+            val served = log.notes()
+            notebook = served
+            GymResult.Ok(served)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -1065,7 +1092,10 @@ class TrainingStore(
     suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> {
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
         return try {
-            GymResult.Ok(log.writeNote(id, write))
+            val written = log.writeNote(id, write)
+            notebook = if (notebook.any { it.id == id }) notebook.map { if (it.id == id) written else it }
+                else notebook + written
+            GymResult.Ok(written)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -1073,23 +1103,35 @@ class TrainingStore(
         }
     }
 
-    // A 404 answers as success: the note is gone either way.
+    // A 404 answers as success: the note is gone either way, so the row goes either way.
     suspend fun deleteNote(id: String): WriteFailure? {
         val log = gym ?: return WriteFailure.Refused(notesWantAnAccount)
         return try {
             log.deleteNote(id)
+            notebook = notebook.filterNot { it.id == id }
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
-            if (RefusalFacts(refusing).status == 404) null else WriteFailure(refusing)
+            if (RefusalFacts(refusing).status != 404) return WriteFailure(refusing)
+            notebook = notebook.filterNot { it.id == id }
+            null
         }
     }
 
-    suspend fun reorderNotes(order: List<String>): GymResult<List<Note>> {
+    // The order is the lifter's instruction and it lands on the log before it is believed here: a
+    // refusal leaves the notebook exactly as the log last said it. What arrives is the order of the
+    // rows DRAWN, and a note inside its undo window is not one of them — the log refuses an order
+    // that does not name every note, so the withheld one keeps the place it stands in and the drawn
+    // ones fill the rest.
+    suspend fun reorderNotes(drawn: List<String>): GymResult<List<Note>> {
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
+        val queue = ArrayDeque(drawn)
+        val order = notebook.map { if (it.id in withheldIds || queue.isEmpty()) it.id else queue.removeFirst() }
         return try {
-            GymResult.Ok(log.reorderNotes(order))
+            val written = log.reorderNotes(order)
+            notebook = written
+            GymResult.Ok(written)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -1163,12 +1205,17 @@ class TrainingStore(
     // went quiet leaves it owed to the claim, and only a refusal with a reason comes back as one.
     // The row that stands is the newer of the two by `recordedAt`, on this phone and on the log.
     suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
+        // A day is the ONE subject a later write can name again — every other window is keyed on a
+        // minted id nothing reuses — so weighing the day again IS the undo: the window comes down
+        // before the number goes in. Left standing, its clock would delete the row just saved, and
+        // the row would be invisible from the moment the sheet reported success.
+        dropWithheld(dateLocal)
         val recorded = localBodyweight.record(WeighIn(dateLocal, weightKg, recordedAt = now()))
-        bodyweight = localBodyweight.entries
+        series = localBodyweight.entries
         val log = gym ?: return null
         return try {
             localBodyweight.landed(log.putBodyweight(recorded.dateLocal, WeighInWrite(recorded.weightKg, recorded.recordedAt)))
-            bodyweight = localBodyweight.entries
+            series = localBodyweight.entries
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -1179,7 +1226,7 @@ class TrainingStore(
                 return null
             }
             localBodyweight.letGo(recorded.dateLocal)
-            bodyweight = localBodyweight.entries
+            series = localBodyweight.entries
             WriteFailure(refusing)
         }
     }
@@ -1188,7 +1235,7 @@ class TrainingStore(
     // the claim rather than said.
     suspend fun deleteWeighIn(dateLocal: String) {
         localBodyweight.delete(dateLocal)
-        bodyweight = localBodyweight.entries
+        series = localBodyweight.entries
         val log = gym ?: return
         val landed = tried { log.deleteBodyweight(dateLocal) }
         if (landed != null) {
@@ -1307,8 +1354,20 @@ class TrainingStore(
         clocks[open.subjectId] = scope.launch {
             delay(undoWindowMs)
             clocks.remove(open.subjectId)
-            settleWithheld(open.subjectId)?.let { deleteRefused = it.line(deletion.stillThere) }
+            val failed = settleWithheld(open.subjectId)
+            // A verb with no terminal refusal has nothing to say after the window: `stillThere` is
+            // null and the room stays quiet.
+            deletion.stillThere?.let { tail -> failed?.let { deleteRefused = it.line(tail) } }
         }
+    }
+
+    // One named window, taken back by the WRITE that names its subject again rather than by a tap.
+    // Only while nothing has gone out: a delete already on the wire is nobody's to take back, and a
+    // window that is not open at all is not an error — the day is simply free.
+    private fun dropWithheld(subjectId: String) {
+        val taking = withheld.firstOrNull { it.subjectId == subjectId && it.takeable } ?: return
+        clocks.remove(subjectId)?.cancel()
+        withheld = withheld - taking
     }
 
     // The NEWEST first, and only while nothing has gone out: there is no undelete, so a keep
@@ -1362,15 +1421,25 @@ class TrainingStore(
         deleteRefused = null
     }
 
-    // The four verbs behind one window, and they share no shape: a set leaves through the shelf or
-    // the wire, a device-held routine through `orphanRoutine`, a conversation is server-only, and a
-    // session's own discard answers with a bool.
+    // The seven verbs behind one window, and they share no shape: a set leaves through the shelf or
+    // the wire, a device-held routine through `orphanRoutine`, a conversation and a note are
+    // server-only, a session's own discard answers with a bool, and the last two land on this device
+    // and owe the log a claim rather than a refusal.
     private suspend fun send(deletion: Deletion): WriteFailure? = when (deletion) {
         is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id)
         is Deletion.Routine -> dropRoutine(deletion.routineId)
         is Deletion.Thread -> (deleteThread(deletion.threadId) as? GymResult.Failed)?.why
         is Deletion.Session ->
             if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
+        is Deletion.Note -> deleteNote(deletion.noteId)
+        is Deletion.Bodyweight -> {
+            deleteWeighIn(deletion.dateLocal)
+            null
+        }
+        Deletion.Unattributed -> {
+            discardUnattributed()
+            null
+        }
     }
 
     // Doubles as the retry for a first page that failed: with no rows from the log the cursor is
@@ -1602,7 +1671,7 @@ class TrainingStore(
                 // A landed claim answers with the STORED settings, so the room draws what the account
                 // now holds rather than what it sent.
                 preferences = localPreferences.document
-                bodyweight = localBodyweight.entries
+                series = localBodyweight.entries
                 drawFromQueue()
             }
         } finally {
@@ -1811,7 +1880,7 @@ sealed interface ProposalOutcome {
 sealed interface AskOutcome {
     data class Answered(val answer: AskAnswer) : AskOutcome
     data class Refused(val said: String) : AskOutcome
-    data class Capped(val said: String) : AskOutcome
+    data class Capped(val said: String, val cap: AskCap) : AskOutcome
     data class Failed(val said: String) : AskOutcome
     data class Fresh(val said: String) : AskOutcome
     data object Absent : AskOutcome

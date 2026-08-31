@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -464,8 +465,14 @@ private fun ChangeCard(edge: Color, content: @Composable () -> Unit) {
     }
 }
 
-// The band holds one button, Apply, and its height never changes. Turning down is a text row beneath
-// it, behind its confirmation — never the left half of a pair, where a hand expects Cancel.
+// The band holds one button, Apply, and its height never changes — the gate's sentence keeps its
+// slot open whether or not the gate is shut, because `seen` re-locks the moment a kept run unfolds
+// and Apply may not move under the finger when it does. Turning down is a text row beneath it,
+// behind its confirmation — never the left half of a pair, where a hand expects Cancel.
+//
+// It is PINNED under the diff, so what it costs is measured rather than assumed: at fontScale 2.0 it
+// stands 272dp and leaves the diff 317dp, in `LargestTypeTests`. One more row here took that to
+// 24dp, which is why the floor is pinned and not the height.
 @Composable
 private fun Foot(
     proposal: Proposal,
@@ -506,6 +513,9 @@ private fun Foot(
                 .heightIn(min = GymTap.primary - 8.dp)
                 .alpha(if (ready) 1f else 0.4f)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                // TalkBack announced `disabled` and nothing else; the reason belongs on the control
+                // that is refusing, not only in the row beneath it.
+                .semantics { if (!seen) stateDescription = Proposal.applyHint }
                 .clickable(enabled = ready, role = Role.Button) { onDecide(true) },
         ) {
             Text(
@@ -514,6 +524,24 @@ private fun Foot(
                 color = GymSkin.onAccent,
             )
         }
+        // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree
+        // once the gate is open: a row still announcing `read the changes to the end` to a lifter who
+        // has would be a sentence that is no longer true.
+        Text(
+            Proposal.applyHint,
+            style = GymType.numeral(12),
+            color = GymSkin.inkFaint,
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (seen) 0f else 1f)
+                .then(if (seen) Modifier.clearAndSetSemantics { } else Modifier),
+        )
+        Text(
+            proposal.atomicLine,
+            style = GymType.numeral(12),
+            color = GymSkin.inkFaint,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -523,12 +551,6 @@ private fun Foot(
         ) {
             Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
-        Text(
-            proposal.atomicLine,
-            style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

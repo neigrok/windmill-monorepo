@@ -23,11 +23,12 @@
 // having really gone from the store. A delete that lied is the one thing this window exists to
 // prevent.
 
-// The verbs. `set` · `routine` · `session` · `thread` are on the wire, and a server-only delete like
-// a conversation is withheld for exactly the same reason as a set: an Undo offered after the send
-// would be a lie. `entry` is a line of an unsaved routine draft, which sends nothing at all and is
-// taken back inside the draft.
-export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry'];
+// The verbs. `set` · `routine` · `session` · `thread` · `note` · `bodyweight` are on the wire, and a
+// server-only delete like a conversation is withheld for exactly the same reason as a set: an Undo
+// offered after the send would be a lie. `entry` is a line of an unsaved routine draft, which sends
+// nothing at all and is taken back inside the draft. Every verb here destroys, and every one of them
+// answers `are you sure` with this window instead of a question.
+export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight'];
 
 export function withheldKey(kind, id) {
   return `${kind}:${id}`;

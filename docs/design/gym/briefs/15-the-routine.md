@@ -119,7 +119,7 @@ rather than that (`13-gestures.md` Law 1). iOS reorders through the platform's `
 **A movement's record has a drawn door that does not cost a draft.** A routine line for a
 never-logged movement is a first-class state here, and every other route on the web to that
 movement's record needs it to have been trained or to stand in a proposal, whose diff rows are
-anchors to the movements they name (`Proposals.jsx:275`). The phones reach it from the routine's own
+anchors to the movements they name (`Proposals.jsx:286`). The phones reach it from the routine's own
 screen, whose rows are movement doors (`RoutineScreen.swift:82`, `RoutinesScreen.kt:410-418`). The
 web's editor rows are not doors, so the routines home's head draws a **Movements** door beside
 **New** (`Routines.jsx:67`) — the only drawn way there to the movement chooser, and the one door to
@@ -171,7 +171,8 @@ A routine on the routines list is a **door**, and a door does not restate what i
 
 What that tie looks like is each surface's own, and the standing card is the one that names the
 proposal (ledger `3o`): the web draws one card per waiting routine at the head of the list
-and nothing on the row itself (`Proposals.jsx:51-66`, `Routines.jsx:102-114`); both phones give the
+and nothing on the row itself (`ProposalCard` in `Proposals.jsx`, `RoutinesList` in
+`Routines.jsx`); both phones give the
 waiting routine's row the accent border (`RoutinesScreen.swift:232`, `ui/RoutinesScreen.kt:301`) and
 draw a row of their own only for a routine whose waiting proposal is not the card's
 (`RoutinesScreen.swift:226`, `ui/RoutinesScreen.kt:323`).

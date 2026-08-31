@@ -10,8 +10,8 @@ const held = (kind, id, line, at, settling = false, detail = null) => ({
   key: withheldKey(kind, id), kind, id, line, detail, at, settling,
 });
 
-test('the window is a list over five verbs, and a key is the verb and the id together', () => {
-  assert.deepEqual(WITHHELD_KINDS, ['set', 'routine', 'session', 'thread', 'entry']);
+test('the window is a list over seven verbs, and a key is the verb and the id together', () => {
+  assert.deepEqual(WITHHELD_KINDS, ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight']);
   assert.equal(withheldKey('set', 'set_3'), 'set:set_3');
   assert.equal(withheldKey('routine', 'rt_push'), 'routine:rt_push');
   assert.equal(withheldKey('thread', 'thr_1'), 'thread:thr_1');
@@ -32,21 +32,21 @@ test('one held delete says WHICH left; several say how many', () => {
 test('the count line is the only count line: nothing appends into this window, so nothing is taken back', () => {
   // The phones hold a LOGGED set in the same window, and a count over one says `2 to take back.`
   // there. Web has no such entry — every verb here destroys — so `N deleted.` is honest for every
-  // mix of the five, and the other sentence is a state this surface cannot reach.
+  // mix of the seven, and the other sentence is a state this surface cannot reach.
   const window = WITHHELD_KINDS.map((kind, at) => held(kind, `id_${at}`, `${kind} line`, at));
-  assert.equal(heldLine(window), '5 deleted.');
+  assert.equal(heldLine(window), '7 deleted.');
   for (let n = 2; n <= WITHHELD_KINDS.length; n += 1) {
     assert.equal(heldLine(window.slice(0, n)), `${n} deleted.`);
   }
   const everySentence = [heldLine([]), ...window.map((_, at) => heldLine(window.slice(0, at + 1)))];
   assert.deepEqual(everySentence, [
-    null, 'set line', '2 deleted.', '3 deleted.', '4 deleted.', '5 deleted.',
+    null, 'set line', '2 deleted.', '3 deleted.', '4 deleted.', '5 deleted.', '6 deleted.', '7 deleted.',
   ]);
 });
 
 test('the detail is said for one held delete and for no count — Law 4, in the function', () => {
-  const thread = held('thread', 'thr_1', 'Conversation deleted.', 1, false, 'a change you applied stays in the routine\u2019s history');
-  assert.equal(heldDetail([thread]), 'a change you applied stays in the routine\u2019s history');
+  const thread = held('thread', 'thr_1', 'Conversation deleted.', 1, false, 'your routine keeps what you applied');
+  assert.equal(heldDetail([thread]), 'your routine keeps what you applied');
   // Past one, the count line takes over and a count has no one detail to carry.
   assert.equal(heldDetail([thread, held('set', 'set_1', '100 \u00d7 5 is out of the log.', 2)]), null);
   assert.equal(heldDetail([]), null);

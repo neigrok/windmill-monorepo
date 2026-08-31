@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.serialization.builtins.ListSerializer
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Exercise
@@ -66,10 +67,12 @@ import works.windmill.platform.net.WindmillJson
 
 // Coach reads the log and proposes; it cannot edit or delete a logged set — the server hands the
 // model the reads plus the two propose tools, filtered at list time AND checked again at call time.
-// `capped` is the daily allowance having run out: the composer's input and send control come down,
-// and in their place stand the new-conversation door and the connect door — the one path that is not
-// rationed. The allowance line stays drawn above either, so the promise and the moment sit together.
-// The state says the cap sentence; the refusal that raised it is not drawn a second time above it.
+// `cap` is an allowance having run out — the day's ten or the account's 30-day ceiling: the
+// composer's input and send control come down, and in their place stand the new-conversation door
+// and the connect door — the one path that is not rationed under either. The moment it ran out
+// reads at the END OF THE THREAD, inside the scroller; only the two doors, and the allowance where
+// it is still true, are pinned. The state says the sentence the log sent; the refusal that raised it
+// is not drawn a second time above it.
 @Composable
 fun AskScreen(
     store: TrainingStore,
@@ -79,7 +82,7 @@ fun AskScreen(
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     asking: Boolean,
-    capped: Boolean,
+    cap: AskCap?,
     onAsk: (String) -> Unit,
     onRetry: () -> Unit,
     onAskNew: () -> Unit,
@@ -146,8 +149,9 @@ fun AskScreen(
                     Answer(answered, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview)
                 }
                 exchange.trouble?.let { said ->
-                    // The cap-reached state below says this refusal once; it is not drawn twice.
-                    if (capped && index == thread.lastIndex) return@let
+                    // The cap-reached state says this refusal once, at the end of the thread just
+                    // below; it is not drawn twice.
+                    if (cap != null && index == thread.lastIndex) return@let
                     Trouble(
                         said = said,
                         // Only the NEWEST question may be asked again.
@@ -158,9 +162,23 @@ fun AskScreen(
                 }
             }
             receipts.forEach { ReceiptLine(it) }
+            // The moment the allowance ran out, at the end of the conversation it stopped. It reads
+            // INSIDE the scroller, because the block below does not scroll and anything pinned there
+            // comes off the thread: with this sentence scrolling, the thread keeps 283.5dp at
+            // fontScale 2.0 — measured in `LargestTypeTests`, the one file in this suite with real
+            // font metrics.
+            cap?.let {
+                Text(
+                    thread.lastOrNull()?.trouble ?: it.wordless,
+                    style = WindmillFont.body(15).copy(lineHeight = 22.sp),
+                    color = GymSkin.ink,
+                )
+            }
         }
-        // The allowance sits immediately above the composer — where a question is spent — and is
-        // always drawn, cap state included; only what stands under it changes.
+        // The allowance sits immediately above the composer — where a question is spent — and it is
+        // a promise about the DAY's ten, so it stands under the daily cap too. Under the account's
+        // 30-day ceiling it is not the rule that stopped this question: drawn on top of the sentence
+        // that says so, it would read as the reason and be the one lie in the room.
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
@@ -168,9 +186,11 @@ fun AskScreen(
                 .padding(horizontal = WindmillSpace.x4)
                 .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
         ) {
-            if (!capped && thread.isEmpty()) Openers(asking, onAsk)
-            Text(Ask.allowance, style = GymType.numeral(12), color = GymSkin.inkFaint)
-            if (capped) CapReached(origin, onAskNew) else Composer(seed, asking, onAsk)
+            if (cap == null && thread.isEmpty()) Openers(asking, onAsk)
+            if (cap != AskCap.Ceiling) {
+                Text(Ask.allowance, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            }
+            if (cap == null) Composer(seed, asking, onAsk) else CapDoors(cap, origin, onAskNew)
         }
       }
     }
@@ -321,15 +341,17 @@ private fun ConnectDoor(origin: String) {
 }
 
 // Where the composer stood: what to do next, not the rule again. There is no clock — the state stands
-// for the rest of this visit, and a new conversation is the way back to the composer.
+// for the rest of this visit. The sentence itself reads at the end of the thread, above; only the
+// doors are pinned here, where a thumb is.
+//
+// Under the day's ten a new conversation is the way back to the composer, so it leads. Under the
+// 30-day ceiling it is not: the fresh conversation cannot take a question either, so the connect
+// door — the path neither ceiling rations — leads instead and the new conversation sits below it as
+// a way out of this one.
 @Composable
-private fun CapReached(origin: String, onAskNew: () -> Unit) {
+private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3), modifier = Modifier.fillMaxWidth()) {
-        Text(
-            Ask.capReached,
-            style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-            color = GymSkin.ink,
-        )
+        if (cap == AskCap.Ceiling) ConnectDoor(origin)
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -341,7 +363,7 @@ private fun CapReached(origin: String, onAskNew: () -> Unit) {
         ) {
             Text(Threads.open, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
         }
-        ConnectDoor(origin)
+        if (cap == AskCap.Daily) ConnectDoor(origin)
     }
 }
 

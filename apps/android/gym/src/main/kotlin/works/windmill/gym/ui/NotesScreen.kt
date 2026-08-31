@@ -52,6 +52,7 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Notes
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -60,7 +61,9 @@ import works.windmill.platform.design.WindmillSpace
 
 // What the lifter writes for Coach, in precedence order. The head says the one surprising thing —
 // every connected agent reads these — and nothing else. Account-only: read on the way in, nothing
-// kept on this phone, and the ceiling is said where it bites rather than in a caption.
+// on this phone's disk, and the ceiling is said where it bites rather than in a caption. The list
+// itself belongs to the STORE, so a delete inside its window drops the row and the cap together
+// when the clock fires.
 @Composable
 fun NotesScreen(
     store: TrainingStore,
@@ -72,40 +75,40 @@ fun NotesScreen(
     say: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // `notes` is what is drawn and moves under the finger; `settled` is the log's last word on the
-    // order, and a refused order falls back to it — never to whatever the drag had already drawn.
-    var notes by remember { mutableStateOf<List<Note>?>(null) }
-    var settled by remember { mutableStateOf<List<Note>>(emptyList()) }
+    // The STORE owns the notebook, so a delete that settles takes the row and the cap with it. This
+    // screen keeps one thing of its own: the order under the finger, which is nobody's until the
+    // finger lifts and the log takes it.
+    var dragOrder by remember { mutableStateOf<List<Note>?>(null) }
+    // Whether the read on the way in landed. An empty notebook is not the same fact as an unread one.
+    var read by remember { mutableStateOf(false) }
     // A list that could not be read is not an empty one: the screen says so in place, in the log's
     // words where it has them.
     var outOfReach by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isSignedIn) {
         if (!isSignedIn) return@LaunchedEffect
-        when (val read = store.notes()) {
+        when (val served = store.readNotes()) {
             is GymResult.Ok -> {
-                notes = read.value
-                settled = read.value
+                read = true
                 outOfReach = null
             }
-            is GymResult.Failed -> outOfReach = read.why.line("your notes are out of reach")
+            is GymResult.Failed -> outOfReach = served.why.line("your notes are out of reach")
         }
     }
 
-    // The order is the lifter's instruction: it lands on the log before it is believed here.
+    // The order is the lifter's instruction: it lands on the log before it is believed here, and a
+    // refusal drops back to whatever the log last said — never to what the drag had already drawn.
+    // What goes over is the DRAWN order; a note inside its window is named back into it by the
+    // store, which is where the standing list lives.
     fun reorder(order: List<Note>) {
-        notes = order
+        dragOrder = order
         scope.launch {
             say(null)
-            when (val written = store.reorderNotes(order.map { it.id })) {
-                is GymResult.Ok -> {
-                    notes = written.value
-                    settled = written.value
-                }
-                is GymResult.Failed -> {
-                    notes = settled
-                    say(written.why.line("the order stayed as it was"))
-                }
+            try {
+                val written = store.reorderNotes(order.map { it.id })
+                if (written is GymResult.Failed) say(written.why.line("the order stayed as it was"))
+            } finally {
+                dragOrder = null
             }
         }
     }
@@ -134,8 +137,11 @@ fun NotesScreen(
                 modifier = Modifier.padding(horizontal = WindmillSpace.x4),
             )
         }
-        val held = notes ?: return@Column
-        if (held.isEmpty()) {
+        if (!read) return@Column
+        // A note inside its undo window is off the list; the CAP still counts it, because the store
+        // will refuse the eleventh whether or not this screen is drawing the tenth.
+        val held = dragOrder ?: store.notes
+        if (store.noteCount == 0) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
@@ -143,14 +149,14 @@ fun NotesScreen(
                 Notes.placeholders.forEach { title ->
                     PlaceholderRow(title) { onEdit(null, title) }
                 }
-                AddRow(count = 0) { onEdit(null, "") }
+                AddRow(count = store.noteCount) { onEdit(null, "") }
             }
             return@Column
         }
         NoteList(
             notes = held,
             onOpen = { onEdit(it, "") },
-            onMove = { notes = it },
+            onMove = { dragOrder = it },
             onSettle = ::reorder,
         ) {
             Column(
@@ -159,7 +165,7 @@ fun NotesScreen(
             ) {
                 // With the second note there is an order to explain; one note has none.
                 if (held.size > 1) Text(Notes.topWins, style = GymType.numeral(12), color = GymSkin.inkFaint)
-                AddRow(count = held.size) { onEdit(null, "") }
+                AddRow(count = store.noteCount) { onEdit(null, "") }
             }
         }
       }
@@ -357,6 +363,8 @@ private fun NoteList(
 
 // A title and a body, stored verbatim. The id is minted once per editor so a save whose reply was
 // lost replays as the same note; a refusal — the ten cap, the two bounds — shows in the log's words.
+// Delete asks nothing: the editor closes and the room's window holds the note for nine seconds with
+// Undo on the transient, which is the same way back every other delete in this room takes.
 @Composable
 fun NoteEditorScreen(
     note: Note?,
@@ -372,7 +380,6 @@ fun NoteEditorScreen(
     var body by rememberSaveable { mutableStateOf(note?.body ?: "") }
     var saving by remember { mutableStateOf(false) }
     var said by remember { mutableStateOf<String?>(null) }
-    var confirmingDelete by remember { mutableStateOf(false) }
 
     fun save() {
         scope.launch {
@@ -388,39 +395,6 @@ fun NoteEditorScreen(
                 saving = false
             }
         }
-    }
-
-    fun delete() {
-        scope.launch {
-            if (saving) return@launch
-            saving = true
-            try {
-                said = null
-                val failed = store.deleteNote(id)
-                if (failed != null) {
-                    said = failed.line("the note is still here")
-                    return@launch
-                }
-                onDone()
-            } finally {
-                saving = false
-            }
-        }
-    }
-
-    if (confirmingDelete) {
-        ConfirmDialog(
-            title = Notes.deleteAsk,
-            body = null,
-            confirm = Notes.deleteConfirm,
-            keep = Notes.keep,
-            destructive = true,
-            onConfirm = {
-                confirmingDelete = false
-                delete()
-            },
-            onKeep = { confirmingDelete = false },
-        )
     }
 
     GymScreen(
@@ -494,7 +468,12 @@ fun NoteEditorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = GymTap.minimum + 6.dp)
-                        .clickable(enabled = !saving, role = Role.Button) { confirmingDelete = true },
+                        .clickable(enabled = !saving, role = Role.Button) {
+                            // Nothing is sent: the window holds it and the editor leaves at once, so
+                            // the Undo is on the room's transient rather than behind this screen.
+                            store.withhold(Deletion.Note(note.id))
+                            onDone()
+                        },
                 ) {
                     Text(Notes.delete, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
                 }

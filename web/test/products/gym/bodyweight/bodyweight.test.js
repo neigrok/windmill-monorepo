@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, dateLocalOf, DECIMAL_HINT,
-  DEFAULT_WINDOW, DELETE_CONFIRM, DELETE_VERB, entriesAfter, GAP_DAYS, GAP_RULE, gapLabel, joinsAcross,
-  latestOf, msOfDateLocal, parseWeighIn, readingLine, REFUSALS, saveRefusal, WEIGH_IN_VERB,
+  DEFAULT_WINDOW, DELETE_VERB, entriesAfter, GAP_DAYS, GAP_RULE, gapLabel, joinsAcross, latestOf,
+  msOfDateLocal, parseWeighIn, readingLine, REFUSALS, saveRefusal, WEIGH_IN_DELETED, WEIGH_IN_VERB,
   weighInWrite, weightReading, WINDOWS, windowOf, windowStartOf,
 } from '../../../../src/products/gym/bodyweight/bodyweight.js';
 import { GymError } from '../../../../src/products/gym/gymApi.js';
@@ -29,7 +29,7 @@ test('the words are the pinned ones', () => {
   assert.deepEqual(WINDOWS.map((window) => window.label), ['90 days', 'All']);
   assert.equal(DEFAULT_WINDOW, '90');
   assert.equal(DELETE_VERB, 'Delete weigh-in');
-  assert.deepEqual(DELETE_CONFIRM, { title: 'Delete this weigh-in?', confirm: 'Delete', keep: 'Keep it' });
+  assert.equal(WEIGH_IN_DELETED, 'Weigh-in deleted.');
 });
 
 test('dateLocalOf and msOfDateLocal — the lifter’s own calendar date, and only a real one', () => {

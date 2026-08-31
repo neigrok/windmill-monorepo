@@ -7,8 +7,8 @@ import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
 import { useGymRead } from '../useGymRead.js';
 import {
-  ADD_VERB, byteCountLabel, DELETE_CONFIRM, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE,
-  HONESTY_LINE, isBodyOverCap, isFull, isTitleOverCap, mintNoteId, noteRefusal, NOTES_FAILED,
+  ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
+  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED,
   orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
@@ -20,15 +20,23 @@ export function Notes({ log }) {
   const [held, setHeld] = useState(null);
   const [editing, setEditing] = useState(null);
 
+  // The store's list, and the rows that may be drawn over it: a note the window is holding is off
+  // the screen for the length of its window and off it for good once the store has answered — but
+  // the store still holds it, which is what BOTH stances about the account are read from: the cap
+  // that refuses an eleventh note, and the empty room that offers the first.
   const notes = held ?? view.data ?? [];
+  const gone = log.hidden('note');
+  const shown = notes.filter((note) => !gone.has(note.id));
 
   const settle = (list) => {
     setHeld(list);
     view.retry();
   };
 
+  // The indices are the drawn list's; the order sent is the whole store's, which a note held for
+  // deletion is still part of until its window closes.
   const move = async (from, to) => {
-    const moved = reorderNotes(notes, from, to);
+    const moved = reorderNotes(notes, notes.indexOf(shown[from]), notes.indexOf(shown[to]));
     if (moved === notes) return;
     setHeld(moved);
     try {
@@ -37,6 +45,28 @@ export function Notes({ log }) {
       log.say(noteRefusal(error, 'reordered'));
       settle(null);
     }
+  };
+
+  // Withheld like every other delete in this room: nothing reaches the store for the length of the
+  // window, the editor is left in the same act, and the room's transient carries the only way back.
+  // Nothing is confirmed — a question in front of an act that can be undone is ceremony
+  // (13-gestures.md Law 2).
+  const remove = (note) => {
+    log.withhold({
+      kind: 'note',
+      id: note.id,
+      line: NOTE_DELETED,
+      // In place, never `settle`: the store renumbers the rest, and a reorder sent afterwards must
+      // carry the store's own list — but a re-read from `loading` would blank the screen nine
+      // seconds after the act, for a row that is already off it.
+      send: async () => {
+        await gymApi.deleteNote(note.id);
+        setHeld(null);
+        view.refresh();
+      },
+      refused: (error) => log.say(noteRefusal(error, 'deleted')),
+    });
+    setEditing(null);
   };
 
   if (editing) {
@@ -50,10 +80,7 @@ export function Notes({ log }) {
             ? notes.map((each) => (each.id === stored.id ? stored : each))
             : [...notes, stored]);
         }}
-        onDeleted={(id) => {
-          setEditing(null);
-          settle(notes.filter((each) => each.id !== id).map((each, position) => ({ ...each, position })));
-        }}
+        onDelete={remove}
         onStale={() => settle(null)}
       />
     );
@@ -80,6 +107,10 @@ export function Notes({ log }) {
 
       {(view.phase === 'ready' || held !== null) && (
         <>
+          {/* Off the STORE, like the cap below it: the placeholders seed an account with nothing in
+              it, and an account holding one note the window has taken off the screen is not that
+              account — the note comes back on Undo, and a placeholder tapped meanwhile mints a
+              second. Between them the room draws no rows, which is what both phones draw here. */}
           {notes.length === 0 && (
             <ul className="gym-notes-rows">
               {PLACEHOLDER_TITLES.map((title) => (
@@ -92,8 +123,8 @@ export function Notes({ log }) {
             </ul>
           )}
 
-          {notes.length > 0 && <NoteList notes={notes} onOpen={open} onMove={move} />}
-          {notes.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
+          {shown.length > 0 && <NoteList notes={shown} onOpen={open} onMove={move} />}
+          {shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
 
           {isFull(notes)
             ? <p className="gym-notes-full">{FULL_LINE}</p>
@@ -175,12 +206,11 @@ function NoteList({ notes, onOpen, onMove }) {
 // Over the bound the store refuses, and its sentence is shown in place; nothing here rewrites it.
 // A refusal for a full account (`notes-full`) means the list behind the editor is behind the store:
 // `onStale` re-reads it while the editor stays open with the sentence.
-export function NoteEditor({ note, onClose, onSaved, onDeleted, onStale }) {
+export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState('');
-  const [confirming, setConfirming] = useState(false);
 
   const ready = title.trim() !== '' && !saving;
 
@@ -194,19 +224,6 @@ export function NoteEditor({ note, onClose, onSaved, onDeleted, onStale }) {
       setSaving(false);
       setRefused(noteRefusal(error, 'saved'));
       if (error?.code === 'notes-full') onStale();
-    }
-  };
-
-  const remove = async () => {
-    setSaving(true);
-    setRefused('');
-    try {
-      await gymApi.deleteNote(note.id);
-      onDeleted(note.id);
-    } catch (error) {
-      setSaving(false);
-      setConfirming(false);
-      setRefused(noteRefusal(error, 'deleted'));
     }
   };
 
@@ -245,17 +262,10 @@ export function NoteEditor({ note, onClose, onSaved, onDeleted, onStale }) {
       )}
       {refused && <p className="gym-editor-missing">{refused}</p>}
 
-      {!note.fresh && !confirming && (
-        <button type="button" className="gym-note-delete" onClick={() => setConfirming(true)}>{DELETE_VERB}</button>
-      )}
-      {confirming && (
-        <section className="gym-confirm">
-          <p className="gym-confirm-title">{DELETE_CONFIRM.title}</p>
-          <div className="gym-finish-foot">
-            <button type="button" className="gym-confirm-keep" onClick={() => setConfirming(false)}>{DELETE_CONFIRM.keep}</button>
-            <button type="button" className="gym-confirm-do" onClick={remove} aria-busy={saving}>{DELETE_CONFIRM.confirm}</button>
-          </div>
-        </section>
+      {/* One press. The window holds the delete, the editor is left in the same act, and the room's
+          transient is where the way back and the refusal after it are both said. */}
+      {!note.fresh && (
+        <button type="button" className="gym-note-delete" onClick={() => onDelete(note)}>{DELETE_VERB}</button>
       )}
     </section>
   );

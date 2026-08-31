@@ -67,10 +67,8 @@ public enum Notes {
     public static let titleField = "Title"
     public static let bodyField = "What Coach should know"
     public static let save = "Save"
+    // One tap, no question: the row leaves the list and the nine-second window carries the way back.
     public static let delete = "Delete note"
-    public static let deleteTitle = "Delete this note?"
-    public static let deleteConfirm = "Delete"
-    public static let keep = "Keep it"
 
     public static let needsSignIn = "Notes live with your account, so they need you signed in."
     public static let signIn = "Sign in"

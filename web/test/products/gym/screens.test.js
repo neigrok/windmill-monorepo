@@ -174,18 +174,36 @@ test('the allowance is the line above the composer, and the spent allowance repl
   const allowance = room.indexOf('<p className="gym-coach-allowance">{ALLOWANCE_LINE}</p>');
   const composer = room.indexOf('<div className="gym-coach-compose">');
   assert.ok(allowance > 0 && allowance < composer, 'the promise sits immediately above the composer');
-  assert.equal(room.includes('{!closed && !full && capped && <CapReached onStartAgain={onStartAgain} />}'), true);
+  // Except under the 30-day ceiling, where ten a day is not the rule that stopped the question.
+  assert.equal(room.includes("{!closed && !capped?.ceiling && <p className=\"gym-coach-allowance\">{ALLOWANCE_LINE}</p>}"), true);
+  assert.equal(room.includes('{!closed && !full && capped && <CapReached capped={capped} onStartAgain={onStartAgain} />}'), true);
   assert.equal(room.includes('{!closed && !full && !capped && ('), true);
   const moment = room.slice(room.indexOf('function CapReached'), room.indexOf('function Answer'));
-  assert.equal(moment.includes('{CAP_REACHED_NOTE}'), true);
+  // The state says the sentence it was GIVEN — both 429s land here and they do not say the same
+  // thing, so a constant of this room's own would be a lie under one of them.
+  assert.equal(moment.includes('{capped.note}'), true);
+  assert.equal(moment.includes('CAP_REACHED_NOTE'), false);
+  assert.equal(read('coach/CoachRoom.jsx').includes('CAP_REACHED_NOTE'), false, 'no constant left over the state');
   assert.equal(moment.includes('href={CONNECT_HREF}'), true);
+  // Which door leads is the ceiling's to decide and is decided on the code, never on the sentence.
+  // Both orders are held against a rendered room in CoachRoom.test.js; this is the branch itself.
+  assert.equal(moment.includes('{capped.ceiling ? <>{door}{again}</> : <>{again}{door}</>}'), true);
+  assert.equal(moment.includes("capped.ceiling ? 'gym-coach-capped is-ceiling' : 'gym-coach-capped'"), true);
+  // And the ink on top of the order: the unrationed door is filled under the ceiling and the way out
+  // of the conversation goes quiet, so an empty rule would leave the two reading alike.
+  const css = read('gym.css');
+  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-free-door \{[^}]*background: var\(--color-brand\);/);
+  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-again \{[^}]*color: var\(--gym-ink-dim\);/);
+  // A quiet control still answers a pointer: the three-class rules above outrank `:hover`, so the
+  // ceiling variant states its own or both tap targets go inert.
+  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-free-door:hover \{/);
+  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-again:hover \{/);
   // There is no clock: the way back is a new conversation, which returns the composer.
   assert.equal(moment.includes('<button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>'), true);
-  assert.equal(room.includes("setRefusedFull(false); setCapped(false); setThreadId(mintId(THREAD_PREFIX));"), true);
-  assert.equal(room.includes('else if (failure.capped) setCapped(true);'), true);
+  assert.equal(room.includes("setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));"), true);
+  assert.equal(room.includes('else if (failure.capped) setCapped({ note: failure.note, ceiling: Boolean(failure.ceiling) });'), true);
   // The server stored nothing of a refused question, so it is not a turn of the conversation.
   assert.equal(room.includes('if (failure.refused) { setTurns((held) => held.slice(0, -1)); setDraft(question); }'), true);
-  const css = read('gym.css');
   const allowanceRule = /\.gym-coach-allowance \{([^}]*)\}/.exec(css)?.[1] ?? '';
   assert.equal(allowanceRule.includes('font-family'), false, 'a sentence is set in the body face, never mono');
   assert.equal(allowanceRule.includes('color: var(--gym-ink-dim)'), true);
@@ -306,7 +324,7 @@ test('Coach writes into a thread it minted, and starting again opens a new one',
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));'), true);
   assert.equal(room.includes('const reply = await gymApi.ask(threadId, question);'), true);
-  assert.equal(room.includes("setRefusedFull(false); setCapped(false); setThreadId(mintId(THREAD_PREFIX));"), true);
+  assert.equal(room.includes("setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));"), true);
   for (const file of gymFiles()) {
     assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('threadFor'), false, file);
   }
@@ -409,7 +427,12 @@ test('every set in a session read whole is a door onto the fix, and says so', ()
 
 test('the transient is the room’s, and the window’s own carries the Undo, no dismiss, and does not close on it', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes('{log.transient && <Transient transient={log.transient} />}'), true);
+  // The slot is mounted whether or not there is a sentence in it: a live region that arrives with
+  // its content is a region a reader may never announce, and these deletes close the surface they
+  // were taken on, so this is the only place their way back is drawn.
+  assert.equal(app.includes('<Transient transient={log.transient} />'), true);
+  assert.equal(app.includes('{log.transient &&'), false);
+  assert.equal(app.includes('<div className="gym-toast-slot" role="status">\n      {transient && ('), true);
   assert.equal(app.includes('onClose={transient.dismiss ?? undefined}'), true, 'a window retires itself');
   assert.equal(app.includes('onClick: transient.action.run,'), true, 'Undo re-reads for the rest, it does not dismiss');
   assert.equal(app.includes('log.dismissToast'), false, 'the hook composes the transient; the room only draws it');
@@ -681,7 +704,8 @@ test('applying and dismissing live in one file, and only on the diff', () => {
     assert.equal(source.includes('dismissProposal') && !mine, false, file);
   }
   const source = read('Proposals.jsx');
-  assert.equal(source.includes("onClick={() => settle('apply')}"), true);
+  // Apply keeps its place in the tab order, so the handler is what refuses an unseen diff.
+  assert.equal(source.includes("onClick={() => { if (!seen || deciding) return; settle('apply'); }}"), true);
   assert.equal(source.includes("onClick={() => settle('dismiss')}"), true);
   assert.equal((source.match(/gymApi\.applyProposal/g) ?? []).length, 1);
   assert.equal((source.match(/gymApi\.dismissProposal/g) ?? []).length, 1);
@@ -731,6 +755,18 @@ test('the proposal eyebrow holds one line: the routine name truncates and the st
   // Rendered against this stylesheet in headless Chrome at 320px with a 60-character name: the
   // eyebrow is 13px — one line — the name ellipsises, and the stamp holds its full 145.7px.
   assert.equal(/\.gym-proposal-kicker \{[^}]*display: flex;/.test(css), true);
+});
+
+test('the reserved slot is what keeps Apply still, and its height is a declaration, not its text', () => {
+  const css = read('gym.css');
+  // Measured against this stylesheet in headless Chrome at 390px across unseen → seen →
+  // unseen-return: the slot is 16.80px in all three and Apply's top never moves. Without the
+  // declaration the slot collapses to 0 on the seen frame and Apply travels 16.8px each way, which
+  // no render assertion can see.
+  assert.match(css, /\.gym-proposal-gate \{[^}]*min-height: 1\.4em;/);
+  // Nothing else in the band reserves a line, so this one declaration is the whole reservation.
+  assert.equal(/\.gym-proposal-atomic \{[^}]*min-height/.test(css), false);
+  assert.equal(/\.gym-proposal-band \{[^}]*min-height/.test(css), false);
 });
 
 test('a pending proposal is drawn ONCE on the routines home — one card, named for the routine it touches', () => {
@@ -925,7 +961,7 @@ test('the Notes screen is its own room off #/gym/notes, headed by the honesty li
   assert.equal(notes.includes('<p className="gym-notes-sub">{HEAD_LINE}</p>'), true);
   assert.equal(notes.includes('{PLACEHOLDER_TITLES.map((title) => ('), true);
   assert.equal(notes.includes("onClick={() => fresh(title)}"), true);
-  assert.equal(notes.includes('{notes.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
+  assert.equal(notes.includes('{shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
   assert.equal((notes.match(/gym-notes-caption/g) ?? []).length, 1, 'one caption on the screen');
   assert.equal(notes.includes('<p className="gym-notes-full">{FULL_LINE}</p>'), true);
   assert.equal(notes.includes('{showsByteCount(body) && ('), true);
@@ -936,7 +972,12 @@ test('the Notes screen is its own room off #/gym/notes, headed by the honesty li
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>Notes</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'notes-full') onStale();"), true, 'a full account re-reads the list behind the editor');
   assert.equal(notes.includes('onStale={() => settle(null)}'), true);
-  assert.equal(notes.includes('{!note.fresh && !confirming && ('), true, 'delete is offered only on a stored note');
+  assert.equal(notes.includes('{!note.fresh && ('), true, 'delete is offered only on a stored note');
+  // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off
+  // the screen and still counted, so the cap line stands and `Add a note` never opens a refusal.
+  assert.equal(notes.includes('{isFull(notes)'), true);
+  assert.equal(notes.includes("const gone = log.hidden('note');"), true);
+  assert.equal(notes.includes('const shown = notes.filter((note) => !gone.has(note.id));'), true);
   assert.equal(/savePreferences|preferences\(/.test(notes), false, 'notes never ride the preferences document');
   assert.equal(/gym-sheet|Keypad/.test(notes), false);
   for (const gone of ['Drag to reorder', 'Ten notes', '500 bytes each']) {
@@ -1293,7 +1334,12 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
   assert.equal(screen.includes('<WeighInChip'), false, 'no second door on the chart screen');
   assert.equal(screen.includes('inputMode="decimal"'), true);
   assert.equal(screen.includes('type="date"'), true);
-  assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen />}"), true);
+  assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen log={log} />}"), true);
+  // One filter for both instances of the hook: the log's head holds the second, and a per-screen
+  // hide would leave it drawing a weigh-in the chart has dropped.
+  assert.equal(screen.includes("const gone = log.hidden('bodyweight');"), true);
+  assert.equal((screen.match(/hidden\('bodyweight'\)/g) ?? []).length, 1);
+  assert.equal(log.includes('useBodyweight(log)'), true);
   assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true, 'not a fourth tab');
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;

@@ -81,6 +81,8 @@ class WithheldWindowTests {
         assertEquals("Push A deleted.", Deletion.Routine("rt_1", "Push A").line)
         assertEquals("Session deleted.", Deletion.Session("ses_1").line)
         assertEquals("Conversation deleted.", Deletion.Thread("thr_1").line)
+        assertEquals("Note deleted.", Deletion.Note("nte_1").line)
+        assertEquals("Weigh-in deleted.", Deletion.Bodyweight("2026-08-30").line)
         assertEquals("The window closed — that delete already went.", Withheld.alreadyGone)
 
         val held = listOf(
@@ -98,13 +100,41 @@ class WithheldWindowTests {
     // conversation, where nobody is standing when they swipe a row on the list.
     @Test
     fun theConversationDeleteCarriesWhatItKeepsOnTheTransientItself() {
-        assertEquals("a change you applied stays in the routine’s history",
-            Deletion.Thread("thr_1").detail)
-        assertEquals("Conversation deleted.\na change you applied stays in the routine’s history",
-            Withheld.line(listOf(WithheldDelete(Deletion.Thread("thr_1"), untilMs = 10_000))))
+        assertEquals("your routine keeps what you applied", Deletion.Thread("thr_1").detail)
+        // Two lines, and the second is the shorter half: a transient in the reach band gets one line
+        // and two at most, and the detail is what moves to keep it there.
+        val said = Withheld.line(listOf(WithheldDelete(Deletion.Thread("thr_1"), untilMs = 10_000)))!!
+        assertEquals("Conversation deleted.\nyour routine keeps what you applied", said)
+        assertEquals(2, said.lines().size)
         assertNull("and no other verb invents one",
             Deletion.Session("ses_1").detail ?: Deletion.Routine("rt_1", "Push A").detail
-                ?: Deletion.Set("ses_1", loggedSet()).detail)
+                ?: Deletion.Set("ses_1", loggedSet()).detail ?: Deletion.Note("nte_1").detail
+                ?: Deletion.Bodyweight("2026-08-30").detail)
+    }
+
+    // The shelf is the one delete here with no copy anywhere else — the store says so itself — and
+    // the only place that fact used to be said was the armed label of the two-tap this cut removed.
+    // So it rides in the LINE: the lifter is no longer standing on the settings screen when it lands.
+    @Test
+    fun theShelfDiscardSaysThatThisPhoneWasTheOnlyPlaceItEverExisted() {
+        assertEquals("Unclaimed training deleted — it was only on this phone.", Deletion.Unattributed.line)
+        assertEquals("one shelf, one window: the id is a constant because the shelf has none",
+            "unattributed", Deletion.Unattributed.subjectId)
+        assertEquals("Unclaimed training deleted — it was only on this phone.",
+            Withheld.line(listOf(WithheldDelete(Deletion.Unattributed, untilMs = 10_000))))
+    }
+
+    // A verb whose delete lands on THIS DEVICE and owes the log a claim has no terminal refusal, so
+    // there is nothing to say after the window. Inventing a sentence would pin words no path reaches.
+    @Test
+    fun onlyTheVerbsTheLogCanRefuseCarryASentenceForAfterTheWindow() {
+        assertEquals("that set is still on the log", Deletion.Set("ses_1", loggedSet()).stillThere)
+        assertEquals("Push A is still in your program", Deletion.Routine("rt_1", "Push A").stillThere)
+        assertEquals("that conversation is still here", Deletion.Thread("thr_1").stillThere)
+        assertEquals("that session is still on the log", Deletion.Session("ses_1").stillThere)
+        assertEquals("that note is still here", Deletion.Note("nte_1").stillThere)
+        assertNull(Deletion.Bodyweight("2026-08-30").stillThere)
+        assertNull(Deletion.Unattributed.stillThere)
     }
 
     // `2 deleted.` is a lie the moment the window also holds a set that was ADDED. Both live in the
@@ -241,7 +271,7 @@ class WithheldWindowTests {
             Deletion.Thread("thr_2"), store.keepWithheld()?.deletion)
         assertEquals("and the one left is named again — with what its delete keeps, which a count " +
             "could not have carried",
-            "Conversation deleted.\na change you applied stays in the routine’s history",
+            "Conversation deleted.\nyour routine keeps what you applied",
             Withheld.line(store.withheld))
         assertEquals(Deletion.Thread("thr_1"), store.keepWithheld()?.deletion)
 
@@ -451,5 +481,81 @@ class WithheldWindowTests {
 
         store.clearDeleteRefused()
         assertNull("said once", store.deleteRefused)
+    }
+
+    // A day is the ONE subject a later write can name again — every other key here is a minted id
+    // nothing reuses — so weighing the day again IS the undo. Left queued behind the delete, the
+    // number the lifter had just saved was invisible from the moment the sheet reported success and
+    // gone off the log nine seconds later.
+    @Test
+    fun testAWeighInForAHeldDayTakesThatWindowBackInsteadOfQueueingBehindIt() = runTest {
+        val server = FakeTraining()
+        val store = seated(server)
+        val day = "2026-08-31"
+        store.weighIn(day, 82.0)
+
+        store.withhold(Deletion.Bodyweight(day))
+        assertEquals("the dot is off the chart and off the log's head reading",
+            emptyList<String>(), store.bodyweight.map { it.dateLocal })
+
+        assertNull("the log takes the new number", store.weighIn(day, 79.5))
+        assertEquals("and nothing is holding the day any more", emptyList<WithheldDelete>(), store.withheld)
+        assertEquals("so it is drawn the instant it is saved", listOf(day), store.bodyweight.map { it.dateLocal })
+
+        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        runCurrent()
+        assertEquals("and the clock that would have deleted it is down",
+            listOf(79.5), store.bodyweight.map { it.weightKg })
+        assertEquals(79.5, server.weighIns.getValue(day).weightKg, 0.0)
+        assertEquals(emptyList<String>(), server.calls.filter { it == "deleteBodyweight" })
+    }
+
+    // The shelf's discard re-reads the room for the seat already in hand. That re-read may not take
+    // the OTHER windows down with it: a delete dropped there is never sent, never said and its
+    // transient has already promised the lifter it happened.
+    @Test
+    fun testTheShelfsDiscardSettlesItselfAndLeavesEveryOtherWindowRunning() = runTest {
+        val server = FakeTraining()
+        val store = seated(server)
+        store.readNotes()
+        server.writeNote("note_1", works.windmill.gym.domain.NoteWrite("Tone", "blunt"))
+        store.readNotes()
+
+        store.withhold(Deletion.Note("note_1"))
+        store.withhold(Deletion.Unattributed)
+        assertEquals(listOf("note_1", "unattributed"), store.withheld.map { it.subjectId })
+
+        store.settleWithheld(Deletion.Unattributed.subjectId)
+        assertEquals("the note's own clock is still the lifter's",
+            listOf("note_1"), store.withheld.map { it.subjectId })
+
+        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        runCurrent()
+        assertEquals("and it reaches the wire on that clock", listOf("deleteNote"),
+            server.calls.filter { it == "deleteNote" })
+        assertEquals(emptyList<String>(), server.notebook.map { it.id })
+    }
+
+    // The notebook is the STORE's, so a settled delete drops the row AND the count together. A
+    // screen holding a snapshot of its own drew the note back the moment the window closed, and kept
+    // saying `10 of 10` over a log that held nine.
+    @Test
+    fun testASettledNoteDeleteTakesTheRowAndTheCapWithIt() = runTest {
+        val server = FakeTraining()
+        val store = seated(server)
+        repeat(10) { server.writeNote("note_$it", works.windmill.gym.domain.NoteWrite("note $it", "")) }
+        store.readNotes()
+        assertEquals(10, store.noteCount)
+
+        store.withhold(Deletion.Note("note_3"))
+        assertEquals("off the drawn list at once", 9, store.notes.size)
+        assertEquals("and the cap still counts it, because the log will refuse the eleventh",
+            10, store.noteCount)
+
+        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        runCurrent()
+        assertEquals("the row stays gone", 9, store.notes.size)
+        assertEquals("and the count is nine, so `Add a note` is offered again", 9, store.noteCount)
+        assertEquals(9, server.notebook.size)
     }
 }

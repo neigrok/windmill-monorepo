@@ -179,6 +179,8 @@ internal class FakeTraining : TrainingSyncing {
     var refuseBodyweightRead: Exception? = null
     var swallowReplies = 0
     var onFinish: suspend () -> Unit = {}
+    // Held open to keep an apply IN FLIGHT while the sheet is read.
+    var onApply: suspend () -> Unit = {}
     var onAppend: suspend (SetWrite) -> Unit = {}
 
     val appended = mutableListOf<SetWrite>()
@@ -420,6 +422,7 @@ internal class FakeTraining : TrainingSyncing {
 
     override suspend fun applyProposal(id: String): ProposalDecision {
         calls.add("applyProposal")
+        onApply()
         reachable()
         refuseApply?.let { throw it }
         val standing = ledger[id] ?: throw refusal(404, message = "no such proposal")

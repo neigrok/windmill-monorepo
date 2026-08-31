@@ -60,10 +60,8 @@ object Notes {
     const val titlePlaceholder = "Title"
     const val bodyPlaceholder = "What Coach should know"
     const val save = "Save"
+    // One tap. The note leaves the editor and the window holds it, with Undo on the room's transient.
     const val delete = "Delete note"
-    const val deleteAsk = "Delete this note?"
-    const val deleteConfirm = "Delete"
-    const val keep = "Keep it"
 
     fun bytes(body: String): Int = body.toByteArray(Charsets.UTF_8).size
 

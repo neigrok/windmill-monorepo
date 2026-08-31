@@ -157,11 +157,42 @@ final class NotesScreenWordsTests: XCTestCase {
         XCTAssertEqual(editing.id, "note_9")
     }
 
-    func testDeletingANoteIsAskedFirst() {
+    // No question, on any surface: the row leaves the drawn list, the editor closes in the same handler,
+    // and the nine-second window carries the way back — the room's answer for every other delete.
+    func testDeletingANoteTakesTheWindowRatherThanAskingFirst() throws {
         XCTAssertEqual(Notes.delete, "Delete note")
-        XCTAssertEqual(Notes.deleteTitle, "Delete this note?")
-        XCTAssertEqual(Notes.deleteConfirm, "Delete")
-        XCTAssertEqual(Notes.keep, "Keep it")
+        XCTAssertEqual(WithheldWords.note, "Note deleted.")
+        XCTAssertTrue(Withheld.Kind.note.isDelete)
+        XCTAssertFalse(Withheld.Kind.note.isHeldOnDisk, "a note has no hold on disk to wait in")
+
+        let screen = try source("NotesScreen.swift")
+        XCTAssertFalse(screen.contains("confirmationDialog"), "the delete asks nothing first")
+        XCTAssertTrue(screen.contains("doors.delete(draft.id)\n        dismiss()"),
+                      "withhold, then leave the editor in the same handler")
+    }
+
+    // The cap counts what the STORE holds. Read off the drawn rows, ten notes would become nine while the
+    // window held one: the cap line would stop being drawn while it is still true and `Add a note` would
+    // stand over a store that refuses.
+    func testTheNotesCapIsCountedOffTheStoreAndNotOffTheDrawnRows() throws {
+        XCTAssertTrue(Notes.canAdd(9))
+        XCTAssertFalse(Notes.canAdd(10))
+        XCTAssertEqual(Notes.full, "10 of 10 notes. Delete one to add another.")
+
+        let screen = try source("NotesScreen.swift")
+        XCTAssertTrue(screen.contains("list(standing: Self.standing(notes, outside: withheld))"),
+                      "the state is read off the store's list, and only the rows are filtered")
+        XCTAssertTrue(screen.contains("private func list(standing: [Note]) -> some View"))
+        XCTAssertTrue(screen.contains("let count = standing.count"))
+        XCTAssertTrue(screen.contains("private func foot(stored count: Int)"))
+        XCTAssertTrue(screen.contains("if Notes.canAdd(count) {"))
+    }
+
+    private func source(_ name: String) throws -> String {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/\(name)")
+        return try String(contentsOf: file, encoding: .utf8)
     }
 
     func testSignedOutTheScreenIsASignInDoorInOneSentence() {
@@ -171,5 +202,63 @@ final class NotesScreenWordsTests: XCTestCase {
 
     func testTheSettingsLineNamesWhatCoachExcludes() {
         XCTAssertEqual(Settings.coachReads, "Coach reads your notes, not your settings.")
+    }
+}
+
+// The cap counts what the STORE holds, so it has to hear the settle as well as the hold. A count read
+// off the list the server last served freezes at the pre-delete number for the rest of the visit: at
+// the cap the room goes on drawing `10 of 10 notes. Delete one to add another.` over nine rows, with
+// no Add row — a refusal naming the way out the lifter has already taken.
+@MainActor
+final class NotesCapTests: XCTestCase {
+    private func ten() -> [Note] {
+        (0..<10).map { Note(id: "note_\($0)", position: $0, title: "n\($0)", body: "") }
+    }
+
+    private func waitForWindowsToClose(_ open: WithheldWindow, timeout: TimeInterval = 4) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while open.isOpen, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func testASettledDeleteLeavesTheRowGoneAndGivesTheAddRowBack() async {
+        let open = WithheldWindow(windowMs: 80)
+        let served = ten()
+        XCTAssertFalse(Notes.canAdd(NotesScreen.standing(served, outside: open).count),
+                       "ten notes is the cap, and the cap line stands")
+
+        await open.hold(Withheld(.note, subject: "note_3", line: WithheldWords.note))
+
+        XCTAssertEqual(NotesScreen.standing(served, outside: open).count, 10,
+                       "inside its window the note is still stored, so the cap line is still true")
+        XCTAssertFalse(Notes.canAdd(NotesScreen.standing(served, outside: open).count))
+        XCTAssertTrue(open.hides(.note, "note_3"), "and the row it holds is out of the drawn list")
+
+        await waitForWindowsToClose(open)
+        XCTAssertFalse(open.isOpen, "the window closed and the delete went")
+
+        let standing = NotesScreen.standing(served, outside: open)
+        XCTAssertEqual(standing.map(\.id),
+                       ["note_0", "note_1", "note_2", "note_4", "note_5",
+                        "note_6", "note_7", "note_8", "note_9"],
+                       "nine rows, and the one the delete took is not one of them")
+        XCTAssertTrue(Notes.canAdd(standing.count), "and Add a note is offered again")
+    }
+
+    // A settle the log refused is not a delete that landed: the note is still the store's, the row is
+    // drawn again, and the cap stays exactly where it was.
+    func testADeleteTheLogRefusedLeavesTheNoteStoredAndTheCapWhereItWas() async {
+        let open = WithheldWindow(windowMs: 80)
+        let served = ten()
+
+        await open.hold(Withheld(.note, subject: "note_3", line: WithheldWords.note,
+                                 settle: { false }))
+        await waitForWindowsToClose(open)
+
+        let standing = NotesScreen.standing(served, outside: open)
+        XCTAssertEqual(standing.count, 10, "the log kept it, so the store still holds ten")
+        XCTAssertFalse(Notes.canAdd(standing.count))
+        XCTAssertFalse(open.hides(.note, "note_3"), "and the row is drawn again")
     }
 }

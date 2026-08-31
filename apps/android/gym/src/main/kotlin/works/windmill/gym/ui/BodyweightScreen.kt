@@ -74,6 +74,7 @@ import works.windmill.gym.domain.ChartWindow
 import works.windmill.gym.domain.ParsedWeight
 import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -134,7 +135,6 @@ fun WeighInSheet(
     var date by remember { mutableStateOf(fixedDate ?: initial?.date ?: today) }
     var said by remember { mutableStateOf<String?>(null) }
     var pickingDate by remember { mutableStateOf(false) }
-    var confirmingDelete by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -178,20 +178,6 @@ fun WeighInSheet(
         ) {
             DatePicker(state = picker)
         }
-    }
-
-    if (confirmingDelete && onDelete != null) {
-        ConfirmDialog(
-            title = Bodyweight.deleteAsk,
-            body = null,
-            confirm = Bodyweight.delete,
-            destructive = true,
-            onConfirm = {
-                confirmingDelete = false
-                onDelete()
-            },
-            onKeep = { confirmingDelete = false },
-        )
     }
 
     Column(
@@ -280,7 +266,7 @@ fun WeighInSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable(enabled = !saving, role = Role.Button) { confirmingDelete = true },
+                    .clickable(enabled = !saving, role = Role.Button, onClick = it),
             ) {
                 Text(Bodyweight.deleteRow, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
             }
@@ -383,11 +369,16 @@ fun BodyweightScreen(
                         }
                     }
                 },
+                // Nothing is sent. The sheet is awaited all the way DOWN before the window opens: a
+                // ModalBottomSheet renders above the room's SnackbarHost, so a withhold in the same
+                // frame puts the only Undo there is behind a sheet still animating out.
                 onDelete = {
                     scope.launch {
+                        sheetState.hide()
+                        repairing = null
+                        refused = null
                         say(null)
-                        store.deleteWeighIn(open.dateLocal)
-                        close()
+                        store.withhold(Deletion.Bodyweight(open.dateLocal))
                     }
                 },
             )

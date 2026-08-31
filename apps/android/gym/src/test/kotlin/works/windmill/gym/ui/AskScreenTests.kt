@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -18,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -26,6 +29,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.AskStep
 import works.windmill.gym.domain.ChangeKind
@@ -83,7 +87,7 @@ class AskScreenTests {
     private fun room(
         store: TrainingStore,
         thread: List<AskExchange>,
-        capped: Boolean,
+        cap: AskCap?,
         doors: MutableList<String>,
     ) {
         compose.setContent {
@@ -93,7 +97,7 @@ class AskScreenTests {
                 receipts = emptyList(),
                 lookedAt = emptySet(),
                 asking = false,
-                capped = capped,
+                cap = cap,
                 onAsk = { doors += "ask:$it" },
                 onRetry = {},
                 onAskNew = { doors += "askNew" },
@@ -111,7 +115,7 @@ class AskScreenTests {
     @Test
     fun theAllowanceIsOneLineAboveTheComposerAndTheParagraphIsGone() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        room(store(scope), thread = emptyList(), capped = false, doors = mutableListOf())
+        room(store(scope), thread = emptyList(), cap = null, doors = mutableListOf())
 
         compose.onNodeWithText(Ask.title).assertIsDisplayed()
         compose.onNodeWithText(Ask.subtitle).assertIsDisplayed()
@@ -137,7 +141,7 @@ class AskScreenTests {
                 ),
             ),
         )
-        room(store(scope), thread = listOf(answered), capped = false, doors = mutableListOf())
+        room(store(scope), thread = listOf(answered), cap = null, doors = mutableListOf())
 
         compose.onNodeWithText(Ask.allowance).assertIsDisplayed()
         val receipt = compose.onNodeWithText(Ask.receipt(read)).performScrollTo()
@@ -158,26 +162,70 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    // The state says the sentence the LOG sent, not a constant of its own — and it says it once: the
+    // exchange's own refusal card is not drawn beneath it.
     @Test
-    fun theCapReachedMomentReplacesTheComposerWithWhatToDoNextAndTheConnectDoor() {
+    fun theCapReachedMomentSaysTheLogsOwnSentenceAndReplacesTheComposerWithWhatToDoNext() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val refused = AskExchange(
             question = "is my week too light?",
             trouble = "the next question frees up in a couple of hours",
         )
         val doors = mutableListOf<String>()
-        room(store(scope), thread = listOf(refused), capped = true, doors = doors)
+        room(store(scope), thread = listOf(refused), cap = AskCap.Daily, doors = doors)
 
-        compose.onNodeWithText("The next question frees up in a couple of hours.").assertIsDisplayed()
-        // The refusal the log sent is the same sentence: it is said once, by the state, never twice.
-        compose.onNodeWithText("the next question frees up in a couple of hours").assertDoesNotExist()
+        compose.onNodeWithText("the next question frees up in a couple of hours").assertIsDisplayed()
         compose.onNodeWithText("is my week too light?").assertIsDisplayed()
         compose.onNodeWithText(Threads.open).assertIsDisplayed()
         compose.onNodeWithText(Ask.connect).assertIsDisplayed()
         compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
-        // A10: the promise stays drawn above the moment it ran out.
+        // A10: the promise is pinned with the doors, below the moment it ran out — which reads at
+        // the end of the thread and scrolls with it.
         compose.onNodeWithText(Ask.allowance).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
+
+        // T3's other direction: under the DAY's ten a new conversation is the way back to a
+        // composer, so it leads and the connect door sits beneath it.
+        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
+        val connect = compose.onNodeWithText(Ask.connect).fetchSemanticsNode()
+        assertTrue("the way back to an answer leads under the daily cap",
+            askNew.positionInRoot.y < connect.positionInRoot.y)
+
+        compose.onNodeWithText(Threads.open).performClick()
+        compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+        scope.cancel()
+    }
+
+    // The account's 30-day ceiling reaches the SAME state, because the connect door is the one way on
+    // that neither ceiling rations — and it must never borrow the daily bucket's sentence, which
+    // would promise a question back in a couple of hours over a thirty-day window.
+    //
+    // T3: under this ceiling a fresh conversation cannot take a question either, so the connect door
+    // leads and `Ask something new` sits BELOW it, as a way out of this conversation.
+    @Test
+    fun theAccountCeilingReachesTheSameStateSaysItsOwnSentenceAndLeadsWithTheConnectDoor() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
+            "answer again as that window rolls on"
+        val refused = AskExchange(question = "what's stalled?", trouble = ceiling)
+        val doors = mutableListOf<String>()
+        room(store(scope), thread = listOf(refused), cap = AskCap.Ceiling, doors = doors)
+
+        compose.onNodeWithText(ceiling).assertIsDisplayed()
+        // Inside the scroller: the doors stay pinned, the words scroll. What the thread keeps that
+        // way — 283.5dp at fontScale 2.0 — is measured in `LargestTypeTests`.
+        compose.onNodeWithText(ceiling).assert(hasAnyAncestor(hasScrollAction()))
+        compose.onNodeWithText(Ask.capReached).assertDoesNotExist()
+        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
+        // Ten a day is a promise about the DAY's bucket. Under the account's thirty days it is not
+        // the rule that stopped this question, and drawn on top of the sentence that says so it
+        // would read as that rule — so it is not drawn under this ceiling at all.
+        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
+
+        val connect = compose.onNodeWithText(Ask.connect).fetchSemanticsNode()
+        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
+        assertTrue("the unrationed door leads; the new conversation is the way out beneath it",
+            connect.positionInRoot.y < askNew.positionInRoot.y)
 
         compose.onNodeWithText(Threads.open).performClick()
         compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
@@ -209,7 +257,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(
                 store = store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
-                asking = false, capped = false, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
+                asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                 origin = "https://windmill.works", backTo = null, onBack = null,
                 onThreads = {}, onNotes = {}, onReview = {},
             )
@@ -229,7 +277,7 @@ class AskScreenTests {
     fun theNotesDoorIsARowInTheRoomAndOpensTheNotes() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
-        room(store(scope), thread = emptyList(), capped = false, doors = doors)
+        room(store(scope), thread = emptyList(), cap = null, doors = doors)
 
         compose.onNodeWithText("Notes").performClick()
         compose.onNodeWithText("Threads").performClick()

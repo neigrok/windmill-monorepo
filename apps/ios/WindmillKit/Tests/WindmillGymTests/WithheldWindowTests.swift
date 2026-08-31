@@ -163,6 +163,61 @@ final class WithheldWindowTests: XCTestCase {
         XCTAssertFalse(open.hides(.thread, "th_2"), "the log refused it, so the row is still there")
     }
 
+    // The one subject a later write can name AGAIN, because it is keyed by the local day. Weighing that
+    // day again IS the way back: the window comes down before the number goes in, the row comes back
+    // under it, and nothing ever reaches the wire. A clock left running would delete the number just
+    // saved — and until it fired, the transient would offer Undo beside a dot the chart is drawing.
+    func testWritingASubjectAgainTakesItsWindowDownAndSendsNothing() async {
+        let log = Log()
+        let open = window(150)
+
+        await open.hold(delete(.bodyweight, "2026-08-26", line: WithheldWords.weighIn, into: log))
+        XCTAssertTrue(open.isOpen)
+
+        await open.writtenAgain(.bodyweight, "2026-08-26")
+
+        XCTAssertFalse(open.isOpen, "the transient retires with it")
+        XCTAssertEqual(log.putBack, ["2026-08-26"], "and the row is standing again under the new number")
+
+        try? await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(log.sent.isEmpty, "the clock that would have deleted it is gone")
+        XCTAssertFalse(open.hides(.bodyweight, "2026-08-26"))
+    }
+
+    // And a day already recorded gone stops being gone: otherwise the number just written would be
+    // hidden for the life of the room.
+    func testASubjectWrittenAgainStopsBeingRecordedGone() async {
+        let log = Log()
+        let open = window(60)
+
+        await open.hold(delete(.bodyweight, "2026-08-26", line: WithheldWords.weighIn, into: log))
+        await waitForWindowsToClose(open)
+        XCTAssertEqual(log.sent, ["2026-08-26"])
+        XCTAssertTrue(open.hides(.bodyweight, "2026-08-26"))
+
+        await open.writtenAgain(.bodyweight, "2026-08-26")
+
+        XCTAssertFalse(open.hides(.bodyweight, "2026-08-26"))
+        XCTAssertFalse(open.settled(.bodyweight, "2026-08-26"))
+        XCTAssertTrue(log.putBack.isEmpty, "there was nothing left to put back — that delete had gone")
+    }
+
+    // The two halves of `hides`, asked apart. A list saying what the STORE holds needs the second one
+    // alone: a row inside its window is still stored, a row whose delete has landed is not.
+    func testWhatIsHeldAndWhatHasGoneAreAskedApart() async {
+        let log = Log()
+        let open = window(60)
+
+        await open.hold(delete(.note, "note_1", line: WithheldWords.note, into: log))
+        XCTAssertTrue(open.holds(.note, "note_1"))
+        XCTAssertFalse(open.settled(.note, "note_1"), "nothing has been sent, so nothing has gone")
+
+        await waitForWindowsToClose(open)
+
+        XCTAssertFalse(open.holds(.note, "note_1"))
+        XCTAssertTrue(open.settled(.note, "note_1"))
+    }
+
     func testARestoredRowStopsBeingWithheldAtOnce() async {
         let log = Log()
         let open = window(4_000)
@@ -206,8 +261,15 @@ final class WithheldWindowTests: XCTestCase {
         XCTAssertEqual(WithheldWords.undo, "Undo")
         XCTAssertEqual(WithheldWords.thread, "Conversation deleted.")
         XCTAssertEqual(WithheldWords.session, "Session deleted.")
+        XCTAssertEqual(WithheldWords.note, "Note deleted.")
+        XCTAssertEqual(WithheldWords.weighIn, "Weigh-in deleted.")
         XCTAssertEqual(WithheldWords.routine("Push A"), "Push A deleted.")
         XCTAssertEqual(WithheldWords.routineDetail, "its proposals go with it")
+        // A settle the log refused says which row is standing again, in the bytes the other surfaces
+        // already say it in: `coach/threads.js` and Android's `WithheldDelete.kt` both say `still
+        // here`, and this phone said `still there` — one word apart, which reads as a typo.
+        XCTAssertEqual(WithheldWords.threadStands, "that conversation is still here")
+        XCTAssertEqual(WithheldWords.noteStands, "that note is still here")
         XCTAssertEqual(WithheldWords.deleted("82.5 × 5"), "82.5 × 5 is out of the log.")
         XCTAssertEqual(WithheldWords.logged("82.5 × 5"), "82.5 × 5 logged.")
         XCTAssertEqual(WithheldWords.many([.set, .routine]), "2 deleted.")
@@ -220,6 +282,24 @@ final class WithheldWindowTests: XCTestCase {
     // a bar draining on the wall clock under a seat built on an injected one empties at a different
     // moment than the way back disappears. The instants below are nowhere near wall-clock time on
     // purpose — an ambient read answers 0 for every one of them.
+    // Six verbs destroy and one does not, and only the set has a hold on disk: a note and a weigh-in are
+    // let go of when the room leaves, exactly as a routine, a conversation and a finished workout are.
+    func testEveryDeleteTheRoomCanTakeBackIsCountedAsOneAndOnlyTheSetIsHeldOnDisk() {
+        let deletes: [Withheld.Kind] = [.set, .routine, .thread, .session, .note, .bodyweight]
+        for kind in deletes {
+            XCTAssertTrue(kind.isDelete, kind.rawValue)
+        }
+        XCTAssertFalse(Withheld.Kind.loggedSet.isDelete)
+        XCTAssertEqual(WithheldWords.many(deletes), "6 deleted.")
+
+        for kind in [Withheld.Kind.set, .loggedSet] {
+            XCTAssertTrue(kind.isHeldOnDisk, kind.rawValue)
+        }
+        for kind in [Withheld.Kind.routine, .thread, .session, .note, .bodyweight] {
+            XCTAssertFalse(kind.isHeldOnDisk, kind.rawValue)
+        }
+    }
+
     func testWhatIsLeftIsMeasuredOnTheWindowsOwnClock() async {
         var clockMs: Int64 = 10_000
         let open = WithheldWindow(windowMs: 9_000, now: { clockMs })
@@ -271,6 +351,18 @@ final class WithheldWindowTests: XCTestCase {
             XCTAssertFalse(drawn.contains(ambient),
                            "\(ambient) in the transient: the window owns the clock, the view asks it")
         }
+    }
+
+    // And the room says them from here rather than typing a second spelling into a closure.
+    func testTheRoomSaysARefusedSettleFromTheOneSpellingOfIt() throws {
+        let file = try XCTUnwrap(GymApostropheTests.gymSources
+            .first { $0.lastPathComponent == "GymRoom.swift" })
+        let room = try String(contentsOf: file, encoding: .utf8)
+
+        XCTAssertTrue(room.contains(".line(WithheldWords.threadStands)"))
+        XCTAssertTrue(room.contains(".line(WithheldWords.noteStands)"))
+        XCTAssertFalse(room.contains("conversation is still there"))
+        XCTAssertFalse(room.contains("note is still there"))
     }
 
     // Every window on every surface is the same nine seconds (P4, ledger `2m`).

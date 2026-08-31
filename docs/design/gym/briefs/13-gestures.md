@@ -61,7 +61,7 @@ Gym has the mechanism — one window, declared once per platform. So the shape i
 transient that names what left and offers *Undo* → really gone.
 
 **And it is one length, held in two constants.** Every surface holds a delete for **9000 ms** —
-`SetQueue.swift:48`, `SetQueue.kt:52`, `fix.js:66` (`UNDO_MS`) — and a said sentence stands for the
+`SetQueue.swift:48`, `SetQueue.kt:53`, `fix.js:66` (`UNDO_MS`) — and a said sentence stands for the
 same 9000 (`useTrainingLog.js:21`, `TOAST_MS`). They are pinned equal and they are **two spans, never
 one number**: the window is how long a delete is still the lifter's, the toast is how long a sentence
 stands, and a window retires its own transient when its last clock closes rather than on a sentence's
@@ -116,7 +116,7 @@ default (`GymRoom.kt`'s withheld-transient effect, hung on the Scaffold's own `s
 iOS's is hand-rolled, because
 SwiftUI provides none: a
 bottom transient with a draining rule, floating over the reach band and growing no inset
-(`Withheld.swift:217-289`, hung on the room at `GymRoom.swift:299-304`). The web's is the design
+(`Withheld.swift:266-346`, hung on the room at `GymRoom.swift:301-307`). The web's is the design
 system's Toast, carrying the window's line and its Undo (`useTrainingLog.js`, `withheld.js`). Every
 row-borne undo is gone with it — the logger's text button, the session's inline row, Android's
 `WithheldRow`, the web's row Undo.
@@ -154,9 +154,11 @@ unknown constant is silence, and a long press is not a light tick. Ledger `1z` c
 This is the finding that shapes the whole wave, and it is not a matter of taste. **Every row a swipe
 is ruled for clears it.** The withheld delete is one abstraction over the room's delete verbs, which
 share no shape at all — a set leaves through the log or the shelf, a device-held routine through an
-orphan write and an account's through the wire, a conversation is server-only, a session's discard
-answers with a bool, and on the web a routine draft's line is not on the wire in the first place.
-One window over all of them: `Withheld.swift`, `store/WithheldDelete.kt`, `withheld.js`.
+orphan write and an account's through the wire, a conversation and a note are server-only, a
+session's discard answers with a bool, a weigh-in writes a tombstone on the phones and goes straight
+to the wire on the web, Android's unclaimed shelf never leaves the device, and on the web a routine
+draft's line is not on the wire in the first place. One window over all of them: `Withheld.swift`,
+`store/WithheldDelete.kt`, `withheld.js`.
 
 > **Withheld means NOT SENT.** Nothing reaches the log for the length of the window, for a
 > server-only verb exactly as for a set — because an Undo offered after the send would be a lie, and
@@ -166,18 +168,62 @@ One window over all of them: `Withheld.swift`, `store/WithheldDelete.kt`, `withh
 |---|---|
 | a set in a past session | withheld 9000 ms · no confirm · Undo on the transient |
 | a routine | withheld 9000 ms · its proposals go with it · Undo on the transient |
-| a conversation | withheld 9000 ms · a change you applied stays in the routine’s history · Undo on the transient |
+| a conversation | withheld 9000 ms · your routine keeps what you applied · Undo on the transient |
 | a finished session | withheld 9000 ms · no confirm · Undo on the transient |
+| a note | withheld 9000 ms · no confirm · Undo on the transient |
+| a weigh-in | withheld 9000 ms · no confirm · Undo on the transient |
+| the unclaimed shelf, on Android | withheld 9000 ms · it was only on this phone · Undo on the transient |
 
-**The confirmation went with the gate.** A dialog in front of an act that has an undo is the ceremony
-Law 2 refuses, so the *Discard this session?* question and the sentence *There is no undoing it.* are
-deleted from all three surfaces, and the discard is the same nine seconds, the same transient and the
-same Undo as every other door into the act.
+**One statement, and it covers every delete in the room: none of them asks a question.** The window
+is the answer for every one of them, so the confirmation went with the gate everywhere — the
+*Discard this session?* question and its *There is no undoing it.*, the note's and the weigh-in's on
+all three surfaces, and Android's relabelling two-tap on the unclaimed shelf, which armed *Not mine*
+into *Delete for good?* on the same pixels with no cancel and no timeout. **The one confirmation the
+room keeps over a delete is turning a proposal down**, which settles permanently and has no way
+back — Law 2's own corollary, and on each surface it is now the only question any delete asks.
+
+**The count is written for deletes, and one act in this room is not one.** Cancelling the routine
+editor throws away an unsaved draft that was never on the wire, so there is no send to withhold and
+no window to put behind it — Law 2's mechanism has nothing to offer it. iOS asks there
+(`RoutineBuilderScreens.swift`'s `Abandon`: *Discard these edits?* · **Discard** · **Keep editing**);
+the web and Android discard on the way out with no question. That divergence is ledger `4k` and it is
+undecided; nothing above may be read as having settled it.
+
+**A verb the log cannot refuse never says the row is back.** A device-first delete — Android's
+weigh-in and its shelf discard, iOS's weigh-in — strikes the row off this phone and writes that to
+disk, then owes the log a claim rather than waiting on an answer, so *it is still there* is the one
+thing it may not say. Android says nothing at all (`stillThere` is null and the room stays quiet);
+iOS says the state that is true, *off this phone, and sent when you’re back*. Every verb that really
+reaches the log says its refusal in the screen's own words, and names the row as standing.
+
+**The screen's own words — and a near-miss is not a choice of words.** Two surfaces saying
+*still here* and *still there* about the same act read as a typo rather than a decision, so the
+clause a refusal names the row with is **one string per act** across the surfaces that draw that
+clause. The conversation's is *that conversation is still here* on all three (`coach/threads.js`,
+where it opens the sentence and so is capitalised; `WithheldWords` on iOS; `store/WithheldDelete.kt`
+on Android), and the note's is *that note is still here* on both phones — the web says a different
+sentence there, *That note wasn’t deleted*, which is a decision and not a near-miss. Different acts
+may be said differently, and so may different screens; the same clause on the same act may not be
+spelled two ways.
+
+**Deleting one of a bounded set does not unbound it.** The notes ceiling reads the **store's** count
+and not the drawn list, so *10 of 10 notes. Delete one to add another.* stands for the whole window
+and *Add a note* never opens over a store that will refuse — and the count follows the store the
+moment the delete lands, so the line never goes on refusing over a list a settled delete has already
+shortened. The same reading answers the empty room: an account holding one note the window has taken
+off the screen is not an empty account, so nothing offers to seed it. **A window decides which rows
+are drawn; it never decides what state a screen is in** (`10-notes.md`).
+
+**The shelf's row goes whole, and its one fact rides in the transient's line.** Android's unclaimed
+training is the last copy of what it holds, so hiding only the discard control would leave
+*These are mine* live over a shelf a pending discard wipes nine seconds later — and a transient
+reading *Unclaimed training deleted.* would drop the fact that nothing else has it. It reads
+*Unclaimed training deleted — it was only on this phone.* instead.
 
 **And leaving keeps the window.** A pop, a tab change, a sheet closing, a screen going away: none of
 them settles a held delete. The window is the room's and not the screen's — `WithheldWindow`
-(`Withheld.swift:98-213`), the store's own list (`TrainingStore.kt:1296-1352`), the room's ref
-(`useTrainingLog.js:87-167`) — and the transient follows the lifter. *Swipe, then press back* is an
+(`Withheld.swift`), the store's own list (`store/TrainingStore.kt`'s `withheld`), the room's ref
+(`useTrainingLog.js`) — and the transient follows the lifter. *Swipe, then press back* is an
 ordinary pair of actions again and destroys nothing.
 
 **The app leaving the foreground abandons what is still held.** The window lives only while the room
@@ -186,19 +232,21 @@ nothing, and says nothing afterwards, because nothing happened. Nothing is persi
 costs one stroke. The alternative — settling on the way out — would make *swipe, switch apps, come
 back* destroy a row with the way back already gone, which is the exact shape this whole pattern
 exists to prevent. **All three surfaces spend the rule**: iOS on `.background` and on the room going
-(`Withheld.swift:190-197`, `GymRoom.swift:193`, `:208-214`), Android on `ON_STOP` and on the
+(`WithheldWindow.abandon`, `GymRoom.swift:194`, `:210-216`), Android on `ON_STOP` and on the
 composition's disposal, taking the transient down with what it was offering
-(`TrainingStore.kt:1333-1339`, `GymRoom.kt`'s `ON_STOP` observer and its `onDispose`), the web at
-the room's unmount
-(`useTrainingLog.js:157-167`). What still leaves the room is the queue's drain — sets already logged,
-on disk, retried — and no delete rides out with it. Ledger `2s`. **The web's trigger is narrower than
-the phones' and nothing here decides whether it should be:** a hidden browser tab unmounts nothing,
-so a window opened there runs its clocks out and sends. Ledger `3d`.
+(`TrainingStore.abandonWithheld`, `GymRoom.kt`'s `ON_STOP` observer and its `onDispose`), and the web
+on the document going hidden or the room unmounting — one watch on the tab, calling the same
+`abandon` (`useTrainingLog.js:211-221`, `:227-231`). A hidden tab is the browser's spelling of
+`ON_STOP`, so the trigger is the same on all three; a blur or a focus change is not it, and a delete
+already settling is left alone because its send is in the air. What still leaves the room is the
+queue's drain — sets already logged, on disk, retried — and no delete rides out with it. Ledger `2s`,
+and `3d` closed on the web's half.
 
 **The exemption for a set holds only where the durability does.** A set's delete is excused from the
 abandon on iOS, and the reason is not that it is a set: it is that its hold lives in `SetQueue` on
 disk, with its own held-until instant, so the delete survives the app dying and retries
-(`SetQueue.swift:280-283`, `Withheld.swift:57` `isHeldOnDisk`, spent at `:196`). Android has no such
+(`SetQueue.swift:280-283`, `Withheld.Kind.isHeldOnDisk`, spent inside `WithheldWindow.abandon`).
+Android has no such
 queue for a delete — a set's delete sits in the same in-memory list as every other verb — so the same
 exemption there would leave it strictly worse off than the deletes that abandon: those put the row
 back honestly, that one would fire into a backgrounded app, time out with nobody to read the answer,
@@ -341,7 +389,7 @@ sheet's own, which is what lets a lifter reach Save and Delete with the keyboard
 reorder (the notes list, the assembly sheet), and **one** hand-rolled horizontal swipe — the routine
 editor's remove-a-movement row (`RoutineBuilder.kt:312-313`), which carries its own threshold, its
 own alpha ramp and a declared custom action beside it. iOS reorders through the platform's `.onMove`
-everywhere it reorders (`RoutineBuilderScreens.swift:117`, `NotesScreen.swift:88`,
+everywhere it reorders (`RoutineBuilderScreens.swift:117`, `NotesScreen.swift:108`,
 `JumpSheet.swift:42`).
 
 **And one parity gap:** a routine draft reorders on iOS through `.onMove`, and on the web on one grip

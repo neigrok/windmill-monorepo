@@ -6,6 +6,9 @@ import WindmillPlatform
 // printed beside the window shown. No goal line, no projection, no trend, no scrubbing: a dot is reached by a tap.
 struct BodyweightScreen: View {
     @ObservedObject var store: TrainingStore
+    // The delete takes the room's window rather than asking first, so the screen holds the act here and
+    // the dot comes back on Undo. The store is what hides the day; this is what finally sends it.
+    @ObservedObject var withheld: WithheldWindow
     let say: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -45,6 +48,8 @@ struct BodyweightScreen: View {
                              repairing = nil
                              Task { await save(kg, on: day) }
                          },
+                         // The sheet closes first: it renders above the transient, and would hide the
+                         // only Undo there is.
                          onDelete: {
                              repairing = nil
                              Task { await delete(on: held.dateLocal) }
@@ -172,14 +177,35 @@ struct BodyweightScreen: View {
         Bodyweight.date(of: dateLocal) ?? Date()
     }
 
+    // A day is the one subject a later write can name again, so weighing it again IS the undo: the
+    // window comes down before the number goes in. Left standing, its clock would delete the row just
+    // saved — and until it fired the transient would offer a way back to a dot the chart is drawing.
     private func save(_ kg: Double, on dateLocal: String) async {
+        await withheld.writtenAgain(.bodyweight, dateLocal)
         guard let why = await store.weighIn(kg, on: dateLocal) else { return }
         say(why.line("the weigh-in is saved on this device"))
     }
 
+    // Nothing reaches the device or the wire while the window runs: the day comes out of the drawn
+    // series, and only the window's own clock writes the tombstone.
+    //
+    // What the clock finds is device-first, and the sentence has to be. A log that could not be told
+    // does NOT put the dot back: the tombstone is on disk, the claim replays it, and the day is gone
+    // from the chart and from the log's head reading already — so the subject clause says where the
+    // weigh-in went and when the log hears about it. It is drawn only on `.noAnswer`, which is the
+    // only failure this call can raise while the tombstone still stands; a log that ANSWERED refused
+    // for good, let the tombstone go, and speaks in its own words.
     private func delete(on dateLocal: String) async {
-        guard let why = await store.deleteWeighIn(on: dateLocal) else { return }
-        say(why.line("the weigh-in is still there"))
+        await withheld.hold(Withheld(
+            .bodyweight, subject: dateLocal,
+            line: WithheldWords.weighIn,
+            take: { _ in store.withhold(weighInOn: dateLocal) },
+            settle: {
+                guard let why = await store.settleDelete(weighInOn: dateLocal) else { return true }
+                say(why.line("off this phone, and sent when you’re back"))
+                return false
+            },
+            restore: { store.restore(weighInOn: dateLocal) }))
     }
 }
 
@@ -196,7 +222,6 @@ struct WeighInSheet: View {
     @Environment(\.gymSkin) private var skin
     @State private var text: String
     @State private var date: Date
-    @State private var confirmingDelete = false
     @FocusState private var typing: Bool
 
     init(existing: BodyweightEntry?, fixedDate: String?, drawsKgOnly: Bool,
@@ -236,10 +261,6 @@ struct WeighInSheet: View {
         }
         .background(skin.surface)
         .onAppear { typing = true }
-        .confirmationDialog(Bodyweight.deleteTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button(Bodyweight.deleteConfirm, role: .destructive) { onDelete?() }
-            Button(Bodyweight.deleteKeep, role: .cancel) {}
-        }
     }
 
     private var head: some View {
@@ -314,7 +335,7 @@ struct WeighInSheet: View {
     }
 
     private func deleteRow(_ onDelete: @escaping () -> Void) -> some View {
-        Button { confirmingDelete = true } label: {
+        Button(action: onDelete) {
             Text(Bodyweight.deleteRow)
                 .font(WindmillFont.body(14, .bold))
                 .foregroundStyle(skin.alarmInk)

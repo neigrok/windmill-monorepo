@@ -383,6 +383,15 @@ class ProposalTests {
         assertFalse(whole.renames)
     }
 
+    // Apply is shut until the diff has been read to its end, and a refusal that only says no is a
+    // defect: the sentence names the way out. The same bytes on all three surfaces.
+    @Test
+    fun testTheShutGateSaysWhyAndNamesTheWayOut() {
+        assertEquals("Read the changes to the end to apply them.", Proposal.applyHint)
+        assertTrue("twelve words or fewer, which is the refusal row's budget",
+            Proposal.applyHint.split(" ").size <= 12)
+    }
+
     @Test
     fun testTurningDownIsConfirmedInTheSameWordsAsEverySurface() {
         assertEquals("Turn this down", Proposal.turnDownVerb)

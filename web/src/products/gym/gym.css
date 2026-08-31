@@ -582,9 +582,10 @@ button.gym-set:focus-visible .gym-set-fix,
 
 /* The second field of a transient: what the act left behind, under the sentence saying it happened.
    It wraps rather than clamps — a truncated disclosure is worse than a taller transient. Measured in
-   the slot's own geometry at default type, the detail is two lines and the whole transient three at
-   every phone width from 320px up: thumb-reach.md's two-line paragraph test is met, and
-   text-budget.md's two-line toast is not — the price of saying the fact in the phones' own bytes. */
+   the slot's own geometry at default type, sweeping 318px to 440px a pixel at a time: the whole
+   transient is two lines from 327px up, which is text-budget.md's toast cap and thumb-reach.md's
+   reach-band paragraph test. At 326px and under it takes a third line, and the detail wraps rather
+   than being cut. */
 .gym-transient-detail {
   display: block;
   margin-top: 2px;
@@ -2692,6 +2693,26 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-coach-capped .gym-coach-again {
   display: block;
 }
+/* The account's 30-day ceiling has no clock, so a new conversation cannot take a question either:
+   the unrationed door leads and the way out of the conversation goes quiet beneath it. Both rules
+   outrank the plain `:hover` on either control, so this variant states its own — quiet was the
+   ruling, and a tap target that does not answer a pointer was not. */
+.gym-coach-capped.is-ceiling .gym-coach-free-door {
+  border-color: var(--color-brand);
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+}
+.gym-coach-capped.is-ceiling .gym-coach-free-door:hover {
+  border-color: var(--color-brand-hover);
+  background: var(--color-brand-hover);
+}
+.gym-coach-capped.is-ceiling .gym-coach-again {
+  border-color: transparent;
+  color: var(--gym-ink-dim);
+}
+.gym-coach-capped.is-ceiling .gym-coach-again:hover {
+  color: var(--gym-ink);
+}
 /* The receipt stays in view; the step list opens behind it on one tap. */
 .gym-coach-trace {
   margin: 0;
@@ -2996,7 +3017,7 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: pointer;
 }
 
-/* ── A confirmation — the discard, the turn-down, the note delete ── */
+/* ── A confirmation — the turn-down, and it is the only one the room asks ── */
 .gym-confirm {
   margin-top: 14px;
   padding: 14px 15px;
@@ -3669,8 +3690,9 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* The band holds one button. Apply is inert until the diff has been scrolled to its end; the way
-   to turn the proposal down is a plain text row beneath it, never the left half of a pair. */
+/* The band holds Apply, the sentence saying why it is shut, the atomic promise, and the plain text
+   row that turns the proposal down — never a pair, and nothing else clickable. Apply is inert until
+   the diff has been scrolled to its end. */
 .gym-proposal-band {
   flex: 1;
   display: flex;
@@ -3714,10 +3736,21 @@ button.gym-set:focus-visible .gym-set-fix,
   flex: 1;
   margin-top: 0;
 }
-.gym-proposal-atomic {
-  margin: 9px 0 0;
+/* Drawn in both gate states — empty once the diff has been seen — and one line tall either way, so
+   Apply keeps its place when the gate shuts again behind an unfolded kept run. */
+.gym-proposal-gate {
+  margin: 0;
+  min-height: 1.4em;
   text-align: center;
   font-size: 12px;
+  line-height: 1.4;
+  color: var(--gym-ink-faint);
+}
+.gym-proposal-atomic {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--gym-ink-faint);
 }
 

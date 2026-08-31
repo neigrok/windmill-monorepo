@@ -143,7 +143,7 @@ test('the sheet: a plain decimal field with the hint once, a date defaulting to 
   assert.equal(typeof saved[0].recordedAt, 'number');
 });
 
-test('the same sheet from a dot: the date fixed, the number prefilled, and a confirmed delete', async (t) => {
+test('the same sheet from a dot: the date fixed, the number prefilled, and a delete that is one press', async (t) => {
   browserWith();
   const { WeighInSheet } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const deleted = [];
@@ -151,28 +151,20 @@ test('the same sheet from a dot: the date fixed, the number prefilled, and a con
     entry: { dateLocal: '2026-08-20', weightKg: 82.45, recordedAt: 1 },
     fixedDate: '2026-08-20',
     onSave: async () => null,
-    onDelete: async (dateLocal) => { deleted.push(dateLocal); return null; },
+    onDelete: (dateLocal) => { deleted.push(dateLocal); },
     onClose: () => {},
   }));
   assert.equal(findByClass(screen.tree, 'gym-weigh-input')[0].props.value, '82.45');
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input').length, 0, 'the date is fixed to that day');
   assert.equal(textOf(findByClass(screen.tree, 'gym-weigh-date-fixed')[0]), 'Thu 20 Aug');
   assert.equal(textOf(findByClass(screen.tree, 'gym-weigh-delete')[0]), 'Delete weigh-in');
-  assert.equal(findByClass(screen.tree, 'gym-confirm').length, 0);
 
+  // No question in front of an act the window can take back, and Save never leaves to make room for one.
   findByClass(screen.tree, 'gym-weigh-delete')[0].props.onClick();
-  assert.equal(textOf(findByClass(screen.tree, 'gym-confirm-title')[0]), 'Delete this weigh-in?');
-  assert.equal(textOf(findByClass(screen.tree, 'gym-confirm-keep')[0]), 'Keep it');
-  assert.equal(textOf(findByClass(screen.tree, 'gym-confirm-do')[0]), 'Delete');
-  assert.equal(findByClass(screen.tree, 'gym-weigh-save').length, 0, 'one question at a time');
-  findByClass(screen.tree, 'gym-confirm-keep')[0].props.onClick();
-  assert.equal(findByClass(screen.tree, 'gym-confirm').length, 0);
-  assert.deepEqual(deleted, []);
-
-  findByClass(screen.tree, 'gym-weigh-delete')[0].props.onClick();
-  findByClass(screen.tree, 'gym-confirm-do')[0].props.onClick();
   await settle();
   assert.deepEqual(deleted, ['2026-08-20']);
+  assert.equal(findByClass(screen.tree, 'gym-confirm').length, 0);
+  assert.equal(findByClass(screen.tree, 'gym-weigh-save').length, 1);
 });
 
 test('the chart screen: a dot per weigh-in in the stated window, the rule printed, a dot opening the repair sheet', async (t) => {
@@ -185,7 +177,7 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
     { dateLocal: daysAgo(2), weightKg: 82.4, recordedAt: 3 },
   ]);
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
-  const screen = renderHook(t, () => BodyweightScreen());
+  const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
   await settle();
   assert.equal(textOf(findByClass(screen.tree, 'gym-title')[0]), 'Bodyweight');
 
@@ -210,12 +202,14 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   assert.equal(sheet.props.entry.weightKg, 83.1);
   assert.equal(typeof sheet.props.onDelete, 'function');
 
-  const refused = await sheet.props.onDelete(daysAgo(30));
-  assert.equal(refused, null);
-  assert.deepEqual(wire[wire.length - 1], { method: 'DELETE', path: `/bodyweight/${daysAgo(30)}`, body: null });
+  // The delete goes to the room's window, so the sheet — which would sit over the only Undo there
+  // is — closes in the same act, and nothing at all is on the wire. This room's `withhold` is a
+  // no-op, so what the window then does to the dot and the head reading is proved in
+  // withheldWindow.test.js and nowhere here.
+  sheet.props.onDelete(daysAgo(30));
+  await settle();
+  assert.deepEqual(wire.filter((each) => each.method === 'DELETE'), []);
   assert.equal(sheetOf(screen.tree), undefined);
-  assert.equal(chartOf(screen.tree).props.points.length, 2);
-  assert.equal(chartOf(screen.tree).props.caption, 'the whole series · 2 weigh-ins');
 });
 
 test('a served row dated after the device’s local today is never the reading at the log’s head and never a dot', async (t) => {
@@ -229,7 +223,7 @@ test('a served row dated after the device’s local today is never the reading a
   assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, 'the wire’s `latest` is not the reading; the newest past day is');
 
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
-  const screen = renderHook(t, () => BodyweightScreen());
+  const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
   await settle();
   assert.deepEqual(chartOf(screen.tree).props.points.map((point) => point.dateLocal), [TODAY]);
   assert.equal(chartOf(screen.tree).props.caption, 'last 90 days · 1 weigh-in');
@@ -242,7 +236,7 @@ test('the chart screen with nothing to draw says so in words and draws no frame'
   browserWith();
   weighInsOnTheWire([]);
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
-  const screen = renderHook(t, () => BodyweightScreen());
+  const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
   await settle();
   assert.equal(chartOf(screen.tree), undefined);
   const quiet = findByClass(screen.tree, 'gym-quiet').map(textOf);

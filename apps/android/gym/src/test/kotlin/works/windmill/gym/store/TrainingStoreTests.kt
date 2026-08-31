@@ -19,6 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AskTurn
 import works.windmill.gym.domain.Blocker
@@ -2340,15 +2341,18 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testACeilingIsAnAnswerAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
+    fun testBothCeilingsTakeTheComposerDownAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
         server.refuseAsk = refusal(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours")
         assertEquals("the daily cap takes the composer down",
-            AskOutcome.Capped("the next question frees up in a couple of hours"), store.ask("thr_1", "what's stalled?"))
+            AskOutcome.Capped("the next question frees up in a couple of hours", AskCap.Daily),
+            store.ask("thr_1", "what's stalled?"))
         server.refuseAsk = refusal(429, code = "ask-out-of-budget", message = "this account has reached its AI ceiling")
-        assertEquals(AskOutcome.Refused("this account has reached its AI ceiling"), store.ask("thr_1", "what's stalled?"))
+        assertEquals("and so does the account's 30-day ceiling, carrying its OWN sentence",
+            AskOutcome.Capped("this account has reached its AI ceiling", AskCap.Ceiling),
+            store.ask("thr_1", "what's stalled?"))
 
         server.refuseAsk = storageFailure
         assertEquals(AskOutcome.Failed("internal error"), store.ask("thr_1", "what's stalled?"))
@@ -2442,7 +2446,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = false))
         val signIn = WriteFailure.Refused("Notes live with your account — sign in first")
 
-        assertEquals(GymResult.Failed(signIn), store.notes())
+        assertEquals(GymResult.Failed(signIn), store.readNotes())
         assertEquals(GymResult.Failed(signIn), store.saveNote("note_1", NoteWrite("Tone", "blunt")))
         assertEquals(signIn, store.deleteNote("note_1"))
         assertEquals(GymResult.Failed(signIn), store.reorderNotes(listOf("note_1")))
@@ -2474,7 +2478,7 @@ class TrainingStoreTests {
         assertNull("a note already gone is gone", store.deleteNote("note_b"))
         assertEquals(GymResult.Ok(listOf(
             Note("note_a", 0, "How I want to be talked to", "Blunt, no cheering.", 7_000),
-        )), store.notes())
+        )), store.readNotes())
     }
 
     @Test
@@ -2490,12 +2494,15 @@ class TrainingStoreTests {
             store.saveNote("note_0", NoteWrite("note 0", "x".repeat(501))))
         assertEquals(GymResult.Failed(WriteFailure.Refused("a title runs to 60 characters")),
             store.saveNote("note_0", NoteWrite("t".repeat(61), "")))
+        // A short order is the ordinary case — the drawn rows, with a note inside its undo window
+        // left out — and the store names the rest back in. What the log still refuses is an order
+        // naming a note it does not hold.
         assertEquals(GymResult.Failed(WriteFailure.Refused("that order does not name every note")),
-            store.reorderNotes(listOf("note_0")))
+            store.reorderNotes(listOf("note_gone")))
 
         server.refuseNotes = storageFailure
         assertEquals("a quiet log is not an empty notebook",
-            GymResult.Failed(WriteFailure.Refused("internal error")), store.notes())
+            GymResult.Failed(WriteFailure.Refused("internal error")), store.readNotes())
         assertEquals(WriteFailure.Refused("internal error"), store.deleteNote("note_0"))
     }
 

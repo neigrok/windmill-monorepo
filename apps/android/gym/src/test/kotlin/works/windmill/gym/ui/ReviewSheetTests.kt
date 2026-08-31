@@ -5,14 +5,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -21,6 +24,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -236,6 +241,85 @@ class ReviewSheetTests {
         compose.onNodeWithText("Claude Desktop wrote:").assertIsDisplayed()
         compose.onNodeWithText("from Claude Desktop · ", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Coach wrote:").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // The gate says WHY it is shut, on the screen and on the channel TalkBack reads, and its slot is
+    // held open in BOTH directions — including the return, when a kept run unfolding re-locks `seen`
+    // — so Apply never moves under the finger. Driven off `seen` ALONE: bound to the disabled
+    // predicate the sentence would still be standing while the apply request was on the wire.
+    @Test
+    fun theShutGateSaysWhyItIsShutAndItsSlotHoldsApplyStillWhenTheGateOpens() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, kept) = store(scope, server)
+        server.propose(proposal(kept, (1..10).map { retarget("ex-$it", it) } + (11..16).map { kept("kept-$it", it) }))
+        sheet(store, kept, mutableListOf(), heightDp = 360)
+
+        val shut = compose.onNodeWithText("Apply").getUnclippedBoundsInRoot()
+        compose.onNodeWithText(Proposal.applyHint).assertIsDisplayed()
+        compose.onNodeWithText("Apply").assert(hasStateDescription(Proposal.applyHint))
+
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.onNodeWithText("Apply").assertIsEnabled()
+        assertEquals("the slot is held: Apply does not move when the gate opens",
+            shut, compose.onNodeWithText("Apply").getUnclippedBoundsInRoot())
+        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
+        compose.onNodeWithText("Apply").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+
+        // And it comes BACK: what grew has not been seen, so the sentence returns with the gate.
+        compose.onNodeWithText("and 6 lines unchanged").performScrollTo().performClick()
+        compose.onNodeWithText("Apply").assertIsNotEnabled()
+        compose.onNodeWithText(Proposal.applyHint).assertIsDisplayed()
+        assertEquals("and the slot is held in that direction too",
+            shut, compose.onNodeWithText("Apply").getUnclippedBoundsInRoot())
+        scope.cancel()
+    }
+
+    // Read off `seen` ALONE and never off the disabled predicate: Apply is dim while the apply is on
+    // the wire too, and a sentence bound to THAT would be telling a lifter to read further while the
+    // write was already going.
+    @Test
+    fun theGateSentenceIsGoneWhileTheApplyIsInFlightThoughApplyIsStillDim() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, kept) = store(scope, server)
+        val inFlight = CompletableDeferred<Unit>()
+        server.onApply = { inFlight.await() }
+        server.propose(proposal(kept, (1..12).map { retarget("ex-$it", it) }))
+        val decided = mutableListOf<Proposal>()
+        sheet(store, kept, decided, heightDp = 360)
+
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.onNodeWithText("Apply").assertIsEnabled()
+        compose.onNodeWithText("Apply").performClick()
+
+        compose.onNodeWithText("Apply").assertIsNotEnabled()
+        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
+        compose.onNodeWithText("Apply").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+
+        inFlight.complete(Unit)
+        compose.runOnIdle { assertEquals(listOf("Applied · Push Day · 12 changes"), decided.map { it.receipt }) }
+        scope.cancel()
+    }
+
+    // The promise sits in the band between Apply and turning down, where iOS already draws it —
+    // never below the turn-down row, and never in the scrolling body where it scrolls away.
+    @Test
+    fun theAtomicPromiseStandsInTheBandBetweenApplyAndTurningDown() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, kept) = store(scope, server)
+        server.propose(proposal(kept, listOf(retarget("bench-press", 1), retarget("chin-up", 2))))
+        sheet(store, kept, mutableListOf())
+
+        val promise = "All two or none. Nothing is applied until you tap."
+        compose.onNodeWithText(promise).assertIsDisplayed()
+        val apply = compose.onNodeWithText("Apply").getUnclippedBoundsInRoot()
+        val line = compose.onNodeWithText(promise).getUnclippedBoundsInRoot()
+        val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).getUnclippedBoundsInRoot()
+        assertTrue("under Apply", apply.bottom <= line.top)
+        assertTrue("and above turning down", line.bottom <= turnDown.top)
         scope.cancel()
     }
 

@@ -91,17 +91,47 @@ do not have. A goal line is a number the lifter never gave us.
 
 Three verbs, and they belong to the lifter: a weigh-in can be **entered for any past date, corrected,
 and deleted** — from the chart, by tapping a dot. One sheet — the weigh-in sheet — reused for the
-repair with its date fixed to that day and a **Delete weigh-in** row, confirmed: *Delete this
-weigh-in?* / **Delete** · **Keep it**.
+repair with its date fixed to that day and a **Delete weigh-in** row.
 
-**That confirmation is ruled out and still drawn.** Ruled 2026-08-30: the delete takes the room's own
-window like every other delete here — the sheet closes, the dot is gone, the transient carries
-*Undo*, and nothing reaches the log until the nine seconds close, so a weigh-in delete is never sent
-while the lifter can still take it back, which is what makes the dialog ceremony `13-gestures.md`
-Law 2 refuses. The infrequency of the act is the one argument for a confirmation and it does not
-survive that mechanism: the way back is on screen, and it shows itself closing. The three strings
-above are what every surface draws today, and they leave in the same change as the code
-(`../BUILD.md` §8).
+**The delete asks nothing.** It takes the room's own window like every other delete here: one press,
+the sheet closes, the dot is gone, and the transient carries *Weigh-in deleted.* and *Undo* for nine
+seconds. Nothing reaches the log until they close, so the delete is never sent while the lifter can
+still take it back — which is what makes a dialog in front of it the ceremony `13-gestures.md` Law 2
+refuses. The infrequency of the act is the one argument for a confirmation and it does not survive
+that mechanism: the way back is on screen, and it shows itself closing.
+
+**The sheet comes down before the window opens, and on Android it comes down all the way.** A sheet
+on a phone renders over the room's transient, so a withhold raised behind a standing sheet hides the
+only Undo there is: iOS dismisses and then holds; Android **awaits** its `ModalBottomSheet`'s hide
+and holds after it, because a withhold in the same frame lands under a sheet still animating out.
+The web does both in one handler and the order does not bite there — its transient is layered
+**above** the sheet (`.gym-toast-slot` at `z-index: 55` over `.gym-sheet-catch`'s `40`).
+
+**The dot and the log's reading are dropped by one filter, never by two.** The chart and the log
+head read the same series — `useBodyweight` on the web, `TrainingStore.bodyweight` on Android,
+`drawBodyweight()` on iOS — so the head cannot go on printing a weigh-in the chart has already let
+go of.
+
+**What lands after the window is not the same fact on every surface, because the delete is not.**
+The web's delete reaches the log itself, so a refusal there means the row is standing again and says
+so: *That weigh-in wasn’t deleted. Try again in a moment.* **Both phones are device-first** — the day
+is struck off this device and written to disk before anything goes out, and the log is owed the
+delete by the claim — so neither may say the weigh-in is still there, because on a phone it is not.
+iOS says the state that is true instead: *the log didn’t answer — off this phone, and sent when
+you’re back*. Android says nothing at all: its `Deletion.Bodyweight.stillThere` is null and the room
+stays quiet, which is the same honesty with one fewer sentence. Whether a phone owes that sentence
+at all is a copy owner's call and not a build gap.
+
+**And a weigh-in written for that day while the window runs is a correction, not a race.** The later
+`recordedAt` wins, which is the rule the wire already states. A weigh-in is the one delete in this
+room whose id the lifter can write again — it is a calendar date and not a mint — and **writing the
+day again IS the undo**: on all three surfaces the write takes that day's window down before the
+number goes in (`useTrainingLog.js`'s `writtenAgain`, `WithheldWindow.writtenAgain` on iOS,
+`TrainingStore.weighIn`'s `dropWithheld` on Android). So the transient **retires** rather than
+standing there offering *Undo* beside a dot the chart is drawing again, and the clock that would have
+deleted the number just saved is gone. iOS also holds the instant of the withhold and checks it as
+the clock fires — the same ruling read from the other end, and the guard for a newer row that reaches
+the store some other way (ledger `4i`).
 
 **Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
 the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a

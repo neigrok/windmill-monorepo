@@ -18,7 +18,9 @@ export const OPENING = 'Opening your weigh-ins…';
 export const FAILED = 'Your weigh-ins didn’t load.';
 
 export const DELETE_VERB = 'Delete weigh-in';
-export const DELETE_CONFIRM = { title: 'Delete this weigh-in?', confirm: 'Delete', keep: 'Keep it' };
+
+// One press, and the way back is the window's Undo rather than a question in front of the act.
+export const WEIGH_IN_DELETED = 'Weigh-in deleted.';
 
 // Kilograms, the same numbers the store's CHECK holds.
 export const MIN_KG = 20;

@@ -88,12 +88,29 @@ bites" is not a location:
 
 Every surface draws both.
 
+**The note ceiling is counted off the ACCOUNT, and it follows the account.** The count is the notes
+the store holds and never the rows drawn, so a note inside its delete window is still one of the ten
+and the line stands for the whole window (`13-gestures.md` Law 2) — and the count **moves the moment
+the delete lands**, so the screen never goes on refusing an eleventh note over nine stored, naming a
+way out the lifter has already taken while the Add row it names stays shut. Both halves are one rule:
+the cap reads the store, and the store is what a settled delete changes.
+
 **Order is precedence.** The top note wins, and the list is dragged into the order the lifter wants.
 That answers what Coach does when two notes disagree, and it needs three words on screen because the
 drag handle carries the rest. **The handle is not only a grip**: iOS reorders through `.onMove`,
 Android declares *Move up* / *Move down* as custom actions beside its long press, and the web's rail
 is a real `<button>` answering the drag, ArrowUp / ArrowDown and a single pointer's pick-up /
 place-down alike — the routine editor's grip exactly, off the one hook (`13-gestures.md` Law 1).
+
+**An order names every note, including one the screen is not drawing.** A reorder is the whole list
+or it is nothing — the log refuses a list that does not name every note it holds, in those words:
+`400 notes-order-mismatch`, *that order does not name every note*. So a drag inside an open delete
+window sends the **drawn** order mapped back onto the **stored** one, with the withheld note keeping
+the place it stands in and the drawn rows filling the rest. What the lifter drags is what is on
+screen; what goes over the wire is the account's whole notebook. All three surfaces do that mapping
+(`notes/Notes.jsx`, `NotesScreen.swift`'s `resequenced(_:drawn:)`, `store/TrainingStore.kt`'s
+`reorderNotes(drawn)`), and on each surface it sits beside whoever owns the standing list — the
+screen on the web and iOS, the store on Android.
 
 **Never in the cached prefix.** The system prompt must stay byte-stable, because it and the tool
 catalogue are one cached prefix and a single interpolated byte moves it so the cache never reads.
@@ -138,6 +155,11 @@ empty rows**:
 
 Both are addressed *to the agent*, which is what a note is for. **Nothing is stored until the lifter
 types**, and the product never authors a note and then shows it back as theirs.
+
+**The seeds are offered to an account with nothing in it, not to a screen drawing nothing.** Like the
+ceiling above them they read the store: an account holding one note the delete window has taken off
+the screen is not an empty account — the note comes back on Undo, and a placeholder tapped meanwhile
+would mint a second. Between the two the room draws no rows and the Add row, on all three surfaces.
 
 A third candidate — *what my body is doing* — is deliberately not offered. It is a record about a
 body, and `11-bodyweight.md` is where facts about a body are recorded.

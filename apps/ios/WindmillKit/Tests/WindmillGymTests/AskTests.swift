@@ -202,7 +202,7 @@ final class AskDoorTests: XCTestCase {
     // "Ask about…" stays a verb in the scope and the placeholder; the noun that names the room is Coach.
     func testNothingALifterReadsNamesTheRoomAskOrShipsAStraightApostrophe() {
         let named = [Ask.title, Ask.subtitle, Ask.needsSignIn, Ask.absentLine, Ask.noAnswer, Ask.tooLong,
-                     Ask.allowance, Ask.capReached, Ask.threadCeiling, Ask.threadTaken,
+                     Ask.allowance, Ask.capReached, Ask.ceilingReached, Ask.threadCeiling, Ask.threadTaken,
                      Ask.freeDoor, Ask.proposalNote, Ask.waiting, Ask.connect, Ask.notesDoor,
                      Settings.coachReads, Notes.honesty, Notes.purpose, Notes.needsSignIn]
         for sentence in named {
@@ -256,21 +256,72 @@ final class AskRefusalTests: XCTestCase {
         }
     }
 
-    func testTheDailyCapIsTheOneRefusalThatReplacesTheComposer() {
-        let capped = AskRefusal(refusal(429, code: "ask-daily-limit",
-                                        message: "the next question frees up in a couple of hours"))
-        XCTAssertTrue(capped.capReached)
-        XCTAssertEqual(capped.line, "the next question frees up in a couple of hours")
-        XCTAssertFalse(capped.mayRetry)
+    // Two refusals replace the composer: the daily bucket and the account's 30-day AI ceiling. A ceiling
+    // with a live composer is a dead end that fails the same way on the next question, and the connect
+    // door is unrationed under either — which is what makes it one state. What is never shared is the
+    // sentence: the wordless fallback is chosen on the CODE, so a ceiling never promises a couple of hours.
+    func testBothCeilingsReplaceTheComposerAndTheWordlessFallbackIsChosenOnTheCode() {
+        let daily = AskRefusal(refusal(429, code: "ask-daily-limit",
+                                       message: "the next question frees up in a couple of hours"))
+        XCTAssertTrue(daily.capReached)
+        XCTAssertEqual(daily.ceiling, .daily)
+        XCTAssertEqual(daily.line, "the next question frees up in a couple of hours")
+        XCTAssertFalse(daily.mayRetry)
 
-        let silent = AskRefusal(refusal(429, code: "ask-daily-limit"))
-        XCTAssertTrue(silent.capReached)
-        XCTAssertEqual(silent.line, Ask.capReached)
+        let account = AskRefusal(refusal(429, code: "ask-out-of-budget",
+                                         message: "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on"))
+        XCTAssertTrue(account.capReached, "a dead end with a live composer is not a state this room draws")
+        XCTAssertEqual(account.ceiling, .account)
+        XCTAssertEqual(account.line,
+                       "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on",
+                       "the state says the sentence it was sent, never a constant standing in for both")
+        XCTAssertFalse(account.mayRetry)
 
-        let budget = AskRefusal(refusal(429, code: "ask-out-of-budget", message: "ceiling"))
-        XCTAssertFalse(budget.capReached)
+        XCTAssertEqual(AskRefusal(refusal(429, code: "ask-daily-limit")).line, Ask.capReached)
+        XCTAssertEqual(AskRefusal(refusal(429, code: "ask-out-of-budget")).line, Ask.ceilingReached)
+        XCTAssertNotEqual(Ask.ceilingReached, Ask.capReached)
+        XCTAssertFalse(Ask.ceilingReached.contains("couple of hours"),
+                       "a thirty-day window is not a couple of hours")
+        // The wordless fallback is the WHOLE of what the ceiling state says — the daily promise is not
+        // drawn over it — so it names the ceiling itself, in the bytes the web and Android already send.
+        XCTAssertEqual(Ask.ceilingReached,
+                       "This account has reached its AI ceiling for the last 30 days. "
+                       + "Coach will answer again as that window rolls on.")
+
+        XCTAssertNil(AskRefusal(refusal(500)).ceiling)
+        XCTAssertNil(AskRefusal(WindmillApiError.offline).ceiling)
         XCTAssertFalse(AskRefusal(refusal(500)).capReached)
         XCTAssertFalse(AskRefusal(WindmillApiError.offline).capReached)
+    }
+
+    // The state reads its words off the refusal that raised it, and the account's ceiling leads with the
+    // one unrationed path: a fresh conversation there cannot take a question either, so it is a way out of
+    // this conversation rather than a way to an answer.
+    func testTheCapReachedStateCarriesTheRefusalItWasRaisedByAndTheCeilingLeadsWithTheFreeDoor() throws {
+        var conversation = AskConversation()
+        XCTAssertNil(conversation.cappedRefusal)
+
+        let account = AskRefusal(refusal(429, code: "ask-out-of-budget", message: "the log said so"))
+        conversation.exchanges.append(AskExchange(question: "why did bench stall", outcome: .refused(account)))
+        XCTAssertEqual(conversation.cappedRefusal?.line, "the log said so")
+        XCTAssertEqual(conversation.cappedRefusal?.ceiling, .account)
+        XCTAssertTrue(conversation.capReached)
+
+        let screen = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/AskScreen.swift"), encoding: .utf8)
+        let state = try XCTUnwrap(screen.range(of: "private var capReachedState: some View"))
+        let body = screen[state.upperBound...]
+        let ends = try XCTUnwrap(body.range(of: "private var askSomethingNewDoor"))
+        let block = body[..<ends.lowerBound]
+
+        XCTAssertTrue(block.contains("Text(why.line)"), "the sentence is the one the refusal carried")
+        XCTAssertFalse(block.contains("Ask.capReached"), "never a constant in place of what was sent")
+        let ceiling = try XCTUnwrap(block.range(of: "if why.ceiling == .account {"))
+        let connect = try XCTUnwrap(block.range(of: "connectDoor", range: ceiling.upperBound..<block.endIndex))
+        let fresh = try XCTUnwrap(block.range(of: "askSomethingNewDoor", range: ceiling.upperBound..<block.endIndex))
+        XCTAssertLessThan(connect.lowerBound, fresh.lowerBound,
+                          "under the account's ceiling the unrationed door is the primary")
     }
 
     // No clock: the state stands on the conversation that met the 429, and a new conversation is the way back.
@@ -332,8 +383,8 @@ final class AskRefusalTests: XCTestCase {
                        "This conversation holds four questions. Start a new one.")
         XCTAssertEqual(AskRefusal(refusal(409, code: "ask-thread-taken")).line, Ask.threadTaken)
 
-        let spoken = [Ask.threadCeiling, Ask.threadTaken, Ask.allowance, Ask.capReached, Ask.scope,
-                      AskThreads.empty, WithheldWords.threadDetail]
+        let spoken = [Ask.threadCeiling, Ask.threadTaken, Ask.allowance, Ask.capReached, Ask.ceilingReached,
+                      Ask.scope, AskThreads.empty, WithheldWords.threadDetail]
         for sentence in spoken {
             XCTAssertFalse(sentence.lowercased().contains("eight"), sentence)
             XCTAssertFalse(sentence.contains("8"), sentence)
@@ -356,7 +407,8 @@ final class AskRefusalTests: XCTestCase {
     func testNoSurfaceOfAskEverOffersAPurchase() {
         let sold = ["upgrade", "Upgrade", "subscribe", "Subscribe", "$", "€", "£", "/month",
                     "per month", "Windmill One", "free trial", "checkout", "Checkout", "buy", "Buy"]
-        let spoken = [Ask.title, Ask.subtitle, Ask.scope, Ask.allowance, Ask.capReached, Ask.threadCeiling,
+        let spoken = [Ask.title, Ask.subtitle, Ask.scope, Ask.allowance, Ask.capReached, Ask.ceilingReached,
+                      Ask.threadCeiling,
                       Ask.freeDoor, Ask.connect, Ask.proposalNote, Ask.placeholder, Ask.waiting,
                       Ask.tooLong, Ask.notesDoor, Notes.honesty, Notes.purpose, Notes.full,
                       AskRefusal(refusal(429, code: "ask-daily-limit",
@@ -377,16 +429,19 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(Ask.capReached, "The next question frees up in a couple of hours.")
     }
 
-    // The cap-reached state replaces the input and the send control only: the allowance line is drawn above
-    // whichever half stands, so the promise and the moment sit together.
-    func testTheAllowanceLineStaysDrawnAboveTheCapReachedState() throws {
+    // The cap-reached state replaces the input and the send control only, so the allowance line is drawn
+    // above whichever half stands — EXCEPT under the account's ceiling, where ten a day is not the rule
+    // that stopped the question and the promise would sit directly on the sentence falsifying it.
+    func testTheAllowanceLineStaysAboveTheCapReachedStateAndGoesUnderTheAccountsCeiling() throws {
         let screen = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/WindmillGym/AskScreen.swift")
         let source = try String(contentsOf: screen, encoding: .utf8)
         let composer = try XCTUnwrap(source.range(of: "private var composer: some View"))
+        let ceiling = try XCTUnwrap(source.range(of: "if conversation.cappedRefusal?.ceiling != .account {",
+                                                 range: composer.upperBound..<source.endIndex))
         let allowance = try XCTUnwrap(source.range(of: "Text(Ask.allowance)",
-                                                   range: composer.upperBound..<source.endIndex))
+                                                   range: ceiling.upperBound..<source.endIndex))
         let branch = try XCTUnwrap(source.range(of: "if conversation.capReached { capReachedState } else { input }",
                                                 range: allowance.upperBound..<source.endIndex))
         let nextView = try XCTUnwrap(source.range(of: "private var ", range: composer.upperBound..<source.endIndex))

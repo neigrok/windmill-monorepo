@@ -4,14 +4,19 @@ import WindmillPlatform
 struct NotesDoors {
     let list: () async -> Result<[Note], NotesRefusal>
     let write: (_ id: String, _ write: NoteWrite) async -> Result<Note, NotesRefusal>
-    // The sentence when it did not happen, nil when it did.
-    let delete: (String) async -> String?
+    // Withheld: the row leaves the drawn list and the DELETE waits out the window on the room's transient.
+    let delete: (String) -> Void
     let reorder: ([String]) async -> Result<[Note], NotesRefusal>
 }
 
 // Nothing is stored until the lifter saves: the two placeholder rows are empty rows, never notes.
 struct NotesScreen: View {
     let doors: NotesDoors
+    // A note whose delete is still withheld comes out of what is DRAWN and walks back in when the undo
+    // lands; a note whose delete has LANDED leaves the store's list as well. `standing` is what the
+    // store holds and `drawn` is what the list shows, so `Add a note` never stands over a store that
+    // will refuse, and the cap line never goes on standing over a store that would take one.
+    @ObservedObject var withheld: WithheldWindow
 
     @Environment(\.gymSkin) private var skin
     @State private var notes: [Note]?
@@ -23,7 +28,7 @@ struct NotesScreen: View {
         VStack(spacing: 0) {
             head
             if let notes {
-                list(notes)
+                list(standing: Self.standing(notes, outside: withheld))
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: WindmillSpace.x3) {
@@ -38,10 +43,6 @@ struct NotesScreen: View {
             NoteEditor(draft: draft, doors: doors,
                        onSaved: { saved in
                            notes = upsert(saved, into: notes ?? [])
-                           editing = nil
-                       },
-                       onDeleted: { id in
-                           notes = (notes ?? []).filter { $0.id != id }
                            editing = nil
                        })
                 .presentationBackground(skin.canvas)
@@ -67,9 +68,28 @@ struct NotesScreen: View {
         .overlay(alignment: .bottom) { Rectangle().fill(skin.line).frame(height: 1) }
     }
 
-    private func list(_ notes: [Note]) -> some View {
-        List {
-            if notes.isEmpty {
+    // What the STORE holds, which is what the cap counts and what the empty stance reads. A note
+    // inside its window is still stored — `Add a note` may not stand over a store that will refuse —
+    // and one whose delete has LANDED is not: the register is the only thing that knows the
+    // difference, so the count asks it. Read off the last list the server served, ten notes stay ten
+    // for the rest of the visit, and `10 of 10 notes. Delete one to add another.` goes on standing
+    // over nine rows, naming a way out the lifter has already taken.
+    @MainActor
+    static func standing(_ notes: [Note], outside withheld: WithheldWindow) -> [Note] {
+        notes.filter { !withheld.settled(.note, $0.id) }
+    }
+
+    private func drawn(_ standing: [Note]) -> [Note] {
+        standing.filter { !withheld.hides(.note, $0.id) }
+    }
+
+    // What the STORE holds decides the state — the empty stance, the cap; the window decides only which
+    // rows are drawn.
+    private func list(standing: [Note]) -> some View {
+        let rows = drawn(standing)
+        let count = standing.count
+        return List {
+            if count == 0 {
                 ForEach(Notes.placeholders, id: \.self) { title in
                     Button { editing = NoteDraft(placeholder: title) } label: { placeholderRow(title) }
                         .buttonStyle(.plain)
@@ -78,7 +98,7 @@ struct NotesScreen: View {
                         .listRowInsets(rowInsets)
                 }
             } else {
-                ForEach(notes) { stored in
+                ForEach(rows) { stored in
                     Button { editing = NoteDraft(editing: stored) } label: { row(stored) }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
@@ -87,7 +107,7 @@ struct NotesScreen: View {
                 }
                 .onMove { from, to in Task { await move(from: from, to: to) } }
             }
-            foot(count: notes.count)
+            foot(stored: count)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(rowInsets)
@@ -96,7 +116,7 @@ struct NotesScreen: View {
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, GymTap.minimum)
         // A handle appears with the second note, beside the caption that says what dragging decides.
-        .environment(\.editMode, .constant(notes.count > 1 ? .active : .inactive))
+        .environment(\.editMode, .constant(rows.count > 1 ? .active : .inactive))
     }
 
     private var rowInsets: EdgeInsets {
@@ -135,8 +155,10 @@ struct NotesScreen: View {
             .contentShape(Rectangle())
     }
 
+    // Counted off the STORE, never the drawn rows: a note inside its undo window is still a note, and the
+    // cap line has to stand while it is true.
     @ViewBuilder
-    private func foot(count: Int) -> some View {
+    private func foot(stored count: Int) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             if Notes.canAdd(count) {
                 Button { editing = NoteDraft() } label: {
@@ -200,10 +222,14 @@ struct NotesScreen: View {
     }
 
     // Drawn in the new order at once; the server's reply is what stands, and a refusal restores the old order.
+    // The drag is over the DRAWN rows, so the order the log is told is the standing list with those rows
+    // resequenced in it: a note inside its window was not draggable and keeps the place it had.
     private func move(from: IndexSet, to: Int) async {
-        guard let standing = notes else { return }
-        var reordered = standing
-        reordered.move(fromOffsets: from, toOffset: to)
+        guard let held = notes else { return }
+        let standing = Self.standing(held, outside: withheld)
+        var moved = drawn(standing)
+        moved.move(fromOffsets: from, toOffset: to)
+        let reordered = resequenced(standing, drawn: moved)
         notes = reordered
         note = nil
         switch await doors.reorder(reordered.map(\.id)) {
@@ -212,6 +238,11 @@ struct NotesScreen: View {
             notes = standing
             note = why.line
         }
+    }
+
+    private func resequenced(_ standing: [Note], drawn moved: [Note]) -> [Note] {
+        var queue = moved
+        return standing.map { withheld.hides(.note, $0.id) || queue.isEmpty ? $0 : queue.removeFirst() }
     }
 
     private func upsert(_ saved: Note, into standing: [Note]) -> [Note] {
@@ -256,13 +287,11 @@ struct NoteEditor: View {
     @State var draft: NoteDraft
     let doors: NotesDoors
     let onSaved: (Note) -> Void
-    let onDeleted: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
     @Environment(\.dismiss) private var dismiss
     @State private var refusal: String?
     @State private var working = false
-    @State private var confirmingDelete = false
     @FocusState private var focused: Field?
 
     private enum Field { case title, body }
@@ -300,10 +329,6 @@ struct NoteEditor: View {
         }
         .task { focused = draft.title.isEmpty ? .title : .body }
         .onChange(of: draft) { refusal = nil }
-        .confirmationDialog(Notes.deleteTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button(Notes.deleteConfirm, role: .destructive) { Task { await remove() } }
-            Button(Notes.keep, role: .cancel) {}
-        }
     }
 
     private var editorHead: some View {
@@ -358,8 +383,10 @@ struct NoteEditor: View {
                               lineWidth: 1))
     }
 
+    // Withhold, then leave the editor in the same handler: the sheet renders over the room's transient and
+    // would hide the only Undo there is. A refusal after the window is said on the room's own line.
     private var deleteRow: some View {
-        Button { confirmingDelete = true } label: {
+        Button { remove() } label: {
             Text(Notes.delete)
                 .font(WindmillFont.body(15, .semibold))
                 .foregroundStyle(skin.alarmInk)
@@ -386,16 +413,10 @@ struct NoteEditor: View {
         }
     }
 
-    private func remove() async {
+    private func remove() {
         guard !working else { return }
-        working = true
-        defer { working = false }
-        refusal = nil
-        guard let why = await doors.delete(draft.id) else {
-            onDeleted(draft.id)
-            return
-        }
-        refusal = why
+        doors.delete(draft.id)
+        dismiss()
     }
 }
 

@@ -42,7 +42,7 @@ export function LogList({ log, onSignIn }) {
   const shown = summaries.filter((summary) => !discarded.has(summary.id));
   const weeks = weeksOf(shown, { complete: older.status === 'end' });
   // The reading at the head and the chip in the reach band are the two halves of one number.
-  const weights = useBodyweight();
+  const weights = useBodyweight(log);
   const [weighing, setWeighing] = useState(false);
 
   return (

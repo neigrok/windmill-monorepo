@@ -11,6 +11,9 @@ import works.windmill.platform.design.WindmillFont
 
 // The platform's confirmation, in the room's own ink: the Material scheme is the brand's gold on
 // brown, and gold in this room means a personal record. Closing the dialog decides nothing.
+//
+// The room asks this question ONCE, over turning a proposal down: that settles for good and has no
+// way back. Every destructive act that HAS one takes the withheld window and its Undo instead.
 @Composable
 fun ConfirmDialog(
     title: String,

@@ -189,10 +189,27 @@ public final class TrainingStore: ObservableObject {
     // published list and a hidden routine may not fall out of it while the delete can still be undone.
     private var withheldRoutines: [String: Routine] = [:]
     private var withheldSessions: Set<String> = []
+    // By day, which is a weigh-in's identity, with the instant the hold was taken. The hide lives here
+    // rather than on the two screens that read the series: the chart and the log's head are one list, and
+    // a chart that dropped a dot beside a head that kept it is the same fact drawn two ways. Weighing the
+    // day again takes the window down where the clock lives (`WithheldWindow.writtenAgain`); the instant
+    // is what settles a newer row for that day if one lands here anyway — the correction wins.
+    private var withheldWeighIns: [String: Int64] = [:]
 
     private func standing(_ list: [Routine]) -> [Routine] {
         guard !withheldRoutines.isEmpty else { return list }
         return list.filter { withheldRoutines[$0.id] == nil }
+    }
+
+    private func drawBodyweight() {
+        guard !withheldWeighIns.isEmpty else {
+            bodyweight = bodyweightStore.entries
+            return
+        }
+        bodyweight = bodyweightStore.entries.filter { entry in
+            guard let heldAt = withheldWeighIns[entry.dateLocal] else { return true }
+            return entry.recordedAt > heldAt
+        }
     }
 
     public func connect(to account: Account) async {
@@ -245,7 +262,7 @@ public final class TrainingStore: ObservableObject {
         routines = Routine.byLastTrained(standing(accountCopy.routines + localLog.routines))
         proposals = []
         preferences = localLog.open(preferencesUnder: account.user?.id) ?? .defaults
-        bodyweight = bodyweightStore.entries
+        drawBodyweight()
         served = []
         recent = mergedRecent([])
         isLoading = false
@@ -294,7 +311,7 @@ public final class TrainingStore: ObservableObject {
         let entry = BodyweightEntry(dateLocal: dateLocal, weightKg: weightKg, recordedAt: now())
         bodyweightStore.keep(entry, owed: true)
         bodyweightStore.flush()
-        bodyweight = bodyweightStore.entries
+        drawBodyweight()
         guard let gym else { return nil }
         // The reply lands on the seat that sent it and on the write it answered — never on the next seat's shelf,
         // never over a deletion or a newer save made while it was in flight.
@@ -309,7 +326,7 @@ public final class TrainingStore: ObservableObject {
                 scheduleDeliver(after: retryAfter)
             }
             bodyweightStore.flush()
-            bodyweight = bodyweightStore.entries
+            drawBodyweight()
             return nil
         } catch {
             guard seated == seat else { return WriteFailure(error) }
@@ -320,7 +337,7 @@ public final class TrainingStore: ObservableObject {
             }
             bodyweightStore.letGo(entry)
             bodyweightStore.flush()
-            bodyweight = bodyweightStore.entries
+            drawBodyweight()
             return .refused(said ?? "the log refused that weigh-in")
         }
     }
@@ -332,12 +349,12 @@ public final class TrainingStore: ObservableObject {
         guard let gym else {
             bodyweightStore.letGo(on: dateLocal)
             bodyweightStore.flush()
-            bodyweight = bodyweightStore.entries
+            drawBodyweight()
             return nil
         }
         guard let tombstone = bodyweightStore.markDeleted(on: dateLocal, at: now()) else { return nil }
         bodyweightStore.flush()
-        bodyweight = bodyweightStore.entries
+        drawBodyweight()
         // The reply settles the tombstone it answered, on the seat that sent it: a save made for the day while the
         // deletion was in flight stands, still owed.
         let seated = seat
@@ -367,7 +384,7 @@ public final class TrainingStore: ObservableObject {
         guard let series = try? await gym.bodyweight(), seated == seat else { return }
         bodyweightStore.served(series)
         bodyweightStore.flush()
-        bodyweight = bodyweightStore.entries
+        drawBodyweight()
     }
 
     // The claim's last slot: every owed weigh-in and deletion, ascending by day, after every session landed.
@@ -375,7 +392,7 @@ public final class TrainingStore: ObservableObject {
     // leaves what the day holds now, still owed, and the cadence comes back for it. A replayed deletion reads
     // the day first: a row the log took after the deletion was made is a newer correction, and it wins.
     private func claimBodyweight(with gym: any TrainingSyncing) async -> ClaimEnding {
-        defer { bodyweight = bodyweightStore.entries }
+        defer { drawBodyweight() }
         let seated = seat
         var movedOn = false
         for row in bodyweightStore.owed {
@@ -1162,6 +1179,30 @@ public final class TrainingStore: ObservableObject {
     public func settleDelete(session id: String) async -> Bool {
         withheldSessions.remove(id)
         return await discard(id)
+    }
+
+    // A weigh-in lands on the device first, so nothing at all happens while the window runs: the day
+    // comes out of the drawn series here, and the tombstone is written only when the clock fires.
+    public func withhold(weighInOn dateLocal: String) {
+        withheldWeighIns[dateLocal] = now()
+        drawBodyweight()
+    }
+
+    public func restore(weighInOn dateLocal: String) {
+        withheldWeighIns[dateLocal] = nil
+        drawBodyweight()
+    }
+
+    // A weigh-in written for that day while the window ran is a correction the lifter made after the
+    // delete, so the delete lets it stand rather than taking the newer number with it.
+    public func settleDelete(weighInOn dateLocal: String) async -> WriteFailure? {
+        guard let heldAt = withheldWeighIns.removeValue(forKey: dateLocal) else { return nil }
+        guard !bodyweightStore.entries.contains(where: { $0.dateLocal == dateLocal && $0.recordedAt > heldAt })
+        else {
+            drawBodyweight()
+            return nil
+        }
+        return await deleteWeighIn(on: dateLocal)
     }
 
     // A PATCH filed over an owed append destroys the only copy of that set.

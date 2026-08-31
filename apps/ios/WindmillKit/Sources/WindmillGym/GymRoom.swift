@@ -335,7 +335,7 @@ public struct GymRoom: View {
             case .movement(let exerciseId):
                 RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
             case .bodyweight:
-                BodyweightScreen(store: store, say: { note = $0 })
+                BodyweightScreen(store: store, withheld: withheld, say: { note = $0 })
             case .threads:
                 ThreadsScreen(doors: threadDoors, withheld: withheld)
             case .thread(let threadId):
@@ -343,7 +343,7 @@ public struct GymRoom: View {
                              receipts: receipts, undecided: undecided)
             case .notes:
                 if account.isSignedIn {
-                    NotesScreen(doors: notesDoors)
+                    NotesScreen(doors: notesDoors, withheld: withheld)
                 } else {
                     NotesSignedOutStance(onSignIn: { shell.openYou() })
                 }
@@ -480,14 +480,7 @@ public struct GymRoom: View {
                 do { return .success(try await gym.writeNote(id, write)) }
                 catch { return .failure(NotesRefusal(error)) }
             },
-            delete: { id in
-                do {
-                    try await gym.deleteNote(id)
-                    return nil
-                } catch {
-                    return NotesRefusal(error).line
-                }
-            },
+            delete: { id in withholdDelete(ofNote: id, through: gym) },
             reorder: { order in
                 do { return .success(try await gym.reorderNotes(order)) }
                 catch { return .failure(NotesRefusal(error)) }
@@ -585,11 +578,16 @@ public struct GymRoom: View {
         look(at: .building(RoutineDraft(position: store.routines.count)))
     }
 
-    // MARK: - the three withheld deletes
+    // MARK: - the withheld deletes
 
     // Nothing reaches the wire while the window runs, because a send cannot be taken back. The row
     // leaves the list here, the transient carries the way back, and only the window's own clock calls
     // the verb (`13-gestures.md`, the gate the whole gesture wave stands behind).
+    //
+    // A settle the log refused puts a server-only row back — the act left `held` and never reached
+    // `gone` — so each of the three says WHICH row is standing again, not only what went wrong.
+    // `WriteFailure` draws it: the log's own words where it answered, the subject clause where it did
+    // not. The weigh-in is the one that lands on the device anyway, and says that instead.
     private func withholdDelete(of routine: Routine) {
         note = nil
         Task {
@@ -620,7 +618,27 @@ public struct GymRoom: View {
                         try await gym.deleteThread(thread.id)
                         return true
                     } catch {
-                        note = AskRefusal(error).line
+                        note = TrainingStore.WriteFailure(error).line(WithheldWords.threadStands)
+                        return false
+                    }
+                }))
+        }
+    }
+
+    // Account-only, so there is nothing on the device to hide: the row leaves the drawn list because the
+    // screen filters the window, and the delete waits out the clock here.
+    private func withholdDelete(ofNote id: String, through gym: GymApi) {
+        note = nil
+        Task {
+            await withheld.hold(Withheld(
+                .note, subject: id,
+                line: WithheldWords.note,
+                settle: {
+                    do {
+                        try await gym.deleteNote(id)
+                        return true
+                    } catch {
+                        note = TrainingStore.WriteFailure(error).line(WithheldWords.noteStands)
                         return false
                     }
                 }))

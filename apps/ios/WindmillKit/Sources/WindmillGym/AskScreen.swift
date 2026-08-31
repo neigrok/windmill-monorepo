@@ -282,37 +282,59 @@ struct AskScreen: View {
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // No clock: the state stands for this visit, and the way back is a new conversation (which meets the 429 again while capped).
-    // It takes the place of the input and the send control only; the allowance line above them stays.
+    // No clock: the state stands for this visit, and which door is the way out depends on which ceiling
+    // it was. It takes the place of the input and the send control only.
+    //
+    // Two refusals reach it — the daily bucket and the account's 30-day AI ceiling — and it says the
+    // sentence THAT refusal carried, never a constant standing in for both. Under the ceiling a fresh
+    // conversation cannot take a question either, so the unrationed door leads and the fresh one sits
+    // beneath it: a way out of this conversation rather than a way to an answer.
+    @ViewBuilder
     private var capReachedState: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            Text(Ask.capReached)
-                .font(WindmillFont.body(15))
-                .foregroundStyle(skin.inkDim)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                conversation = AskConversation()
-                opened = []
-            } label: {
-                Text(AskThreads.askSomethingNew)
-                    .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                        .strokeBorder(skin.lineStrong, lineWidth: 1))
+        if let why = conversation.cappedRefusal {
+            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                Text(why.line)
+                    .font(WindmillFont.body(15))
+                    .foregroundStyle(skin.inkDim)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                if why.ceiling == .account {
+                    connectDoor
+                    askSomethingNewDoor
+                } else {
+                    askSomethingNewDoor
+                    connectDoor
+                }
             }
-            connectDoor
         }
     }
 
-    // The promise is always drawn; below it stands the input, or the cap-reached moment that replaces it.
+    private var askSomethingNewDoor: some View {
+        Button {
+            conversation = AskConversation()
+            opened = []
+        } label: {
+            Text(AskThreads.askSomethingNew)
+                .font(WindmillFont.body(15, .semibold))
+                .foregroundStyle(skin.accent)
+                .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                    .strokeBorder(skin.lineStrong, lineWidth: 1))
+        }
+    }
+
+    // Below the promise stands the input, or the cap-reached moment that replaces it. Ten a day is the
+    // standing promise while the daily bucket is what rations the room; under the account's 30-day
+    // ceiling it is not the rule that stopped this question, so it is not drawn immediately above the
+    // sentence that falsifies it. Each fact is drawn in the state where it is true.
     private var composer: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(Ask.allowance)
-                .font(GymType.numeral(11.5))
-                .foregroundStyle(skin.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
+            if conversation.cappedRefusal?.ceiling != .account {
+                Text(Ask.allowance)
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if conversation.capReached { capReachedState } else { input }
         }
         .padding(.horizontal, WindmillSpace.x4)

@@ -169,4 +169,37 @@ final class ReviewSheetTests: XCTestCase {
         XCTAssertFalse(bandBody[..<turnDown.lowerBound].contains("HStack"), "one button, never a side-by-side pair")
         XCTAssertTrue(screen.contains(".disabled(!canApply)"))
     }
+
+    // The gate is enforced, so it is said — on the screen and on the VoiceOver channel, in one sentence
+    // of eight words that names the way out. Pinned here because nothing else names these bytes: a phone
+    // could otherwise reword the refusal, drift from the other two surfaces, and stay green (ledger 2p).
+    func testTheBandSaysWhyApplyIsShutInBytesTheOtherSurfacesShare() throws {
+        XCTAssertEqual(Proposal.applyHint, "Read the changes to the end to apply them.")
+        XCTAssertLessThanOrEqual(Proposal.applyHint.split(separator: " ").count, 12,
+                                 "a refusal runs to twelve words and names the way out")
+
+        let screen = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/ReviewSheet.swift"), encoding: .utf8)
+        let band = try XCTUnwrap(screen.range(of: "private func band("))
+        let bandBody = screen[band.upperBound...]
+
+        let apply = try XCTUnwrap(bandBody.range(of: "proposal.applyLabel"))
+        let drawn = try XCTUnwrap(bandBody.range(of: "Text(Proposal.applyHint)"))
+        let promise = try XCTUnwrap(bandBody.range(of: "Text(proposal.footnote)"))
+        XCTAssertLessThan(apply.lowerBound, drawn.lowerBound, "the refusal sits under the control it explains")
+        XCTAssertLessThan(drawn.lowerBound, promise.lowerBound,
+                          "and above the atomic promise, which is drawn in both states")
+
+        XCTAssertTrue(bandBody.contains(".accessibilityHint(gate.isOpen ? \"\" : Proposal.applyHint)"),
+                      "the same bytes on the VoiceOver channel, off the gate alone")
+        XCTAssertTrue(bandBody.contains(".accessibilityHidden(true)"),
+                      "and said there ONCE: the drawn row is the pixels, the hint is the spoken channel")
+        XCTAssertTrue(bandBody.contains(".opacity(gate.isOpen ? 0 : 1)"),
+                      "the slot is held open in BOTH states, so Apply never moves")
+        XCTAssertFalse(bandBody[..<promise.lowerBound].contains("if !gate.isOpen"),
+                       "a line that comes and goes moves the button under the thumb")
+        XCTAssertFalse(bandBody[..<promise.lowerBound].contains("canApply ? \"\" : Proposal.applyHint"),
+                       "never off the disabled predicate: it would lie while the apply is in flight")
+    }
 }
