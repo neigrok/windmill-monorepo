@@ -95,10 +95,13 @@ struct RoutineEditorScreen: View {
             Section {
                 nameField
             } footer: {
+                // The faint ink, never the alarm: the alarm is for a write that failed (`GymSkin`),
+                // and a draft that is not finished has sent nothing and been refused nothing. The
+                // failure section at the foot of this screen is the one that did.
                 if let why = draft.saveRefusal {
                     Text(why)
                         .font(GymType.numeral(12.5))
-                        .foregroundStyle(skin.alarmInk)
+                        .foregroundStyle(skin.inkFaint)
                         .lineSpacing(3)
                 }
             }

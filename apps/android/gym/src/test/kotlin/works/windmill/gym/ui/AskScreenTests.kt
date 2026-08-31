@@ -273,6 +273,47 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    // `3t`: a promise about what Apply will do is spent the moment Apply is taken. The card stays —
+    // it is the door to the rows it counted — and the promise goes with the decision, which is the
+    // shape the web already ships.
+    @Test
+    fun theCardsPromiseStandsWhileTheProposalIsPendingAndGoesWithTheDecision() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        val routine = runBlocking {
+            (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value
+        }
+        server.propose(Proposal(
+            id = "prop_1", routineId = routine.id, state = ProposalState.Pending, summary = "Heavier triples.",
+            changeCount = 1, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
+            baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
+            changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
+                before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))),
+        ))
+        val answered = AskExchange(
+            question = "heavier?",
+            answer = AskAnswer(answer = "Triples.", read = read, proposals = listOf("prop_1")),
+        )
+        var receipts by mutableStateOf<List<String>>(emptyList())
+        compose.setContent {
+            AskScreen(
+                store = store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
+                asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
+                origin = "https://windmill.works", backTo = null, onBack = null,
+                onThreads = {}, onNotes = {}, onReview = {},
+            )
+        }
+        compose.onNodeWithText(Ask.promise).performScrollTo().assertIsDisplayed()
+
+        val settled = runBlocking { store.applyProposal("prop_1") as ProposalOutcome.Decided }
+        compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
+
+        compose.onNodeWithText("Applied · Push Day · 1 change").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        scope.cancel()
+    }
+
     @Test
     fun theNotesDoorIsARowInTheRoomAndOpensTheNotes() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

@@ -13,17 +13,24 @@ import {
   WEIGH_IN_DELETED, WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
 } from './bodyweight.js';
 
-// The series, read once, with this screen's own writes folded over it until the next read.
+// The series, read once, with this screen's own writes folded over it until the next read, and
+// answered TWICE: `entries` is what the ACCOUNT holds — the read, less the days the store has
+// answered a delete for — and `rows` is what the withheld window leaves to draw. A screen's stance
+// reads the account and its rows read the window: a window decides which rows are drawn and never
+// what state a screen is in (`13-gestures.md`).
 //
-// The withheld window is filtered HERE and not on a screen: the log's head holds a second instance
-// of this hook, and a hide done per screen would leave the head still drawing a weigh-in the chart
-// has already dropped. A weigh-in's id is its local date, which is what the window holds it by — and
-// the one id in this room a lifter can write again, so a save takes back the delete on that day.
+// What a delete has done is read off the ROOM's two registers and never recorded per instance,
+// because the log's head holds a second instance of this hook: a record kept here would leave the
+// head drawing a weigh-in the chart has dropped, or the chart calling an account empty that the head
+// is reading a number off. A weigh-in's id is its local date — the one id in this room a lifter can
+// write again, which takes the delete back and puts the day back in both answers at once.
 export function useBodyweight(log) {
   const view = useGymRead(() => gymApi.bodyweight(), []);
   const [moves, setMoves] = useState(() => new Map());
-  const gone = log.hidden('bodyweight');
+  const gone = log.gone('bodyweight');
+  const hidden = log.hidden('bodyweight');
   const entries = entriesAfter(view.data?.entries, moves).filter((entry) => !gone.has(entry.dateLocal));
+  const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));
 
   const save = async (write) => {
     // The id is a local date, so this may be the day a delete is still holding or has already taken.
@@ -53,7 +60,8 @@ export function useBodyweight(log) {
   return {
     phase: view.phase,
     entries,
-    latest: latestOf(entries),
+    rows,
+    latest: latestOf(rows),
     retry: () => { setMoves(new Map()); view.retry(); },
     save,
     remove,
@@ -165,8 +173,8 @@ export function BodyweightScreen({ log }) {
   const [windowId, setWindowId] = useState(DEFAULT_WINDOW);
   const [fixing, setFixing] = useState(null);
   const now = Date.now();
-  const shown = windowOf(weights.entries, windowId, now);
-  const entry = fixing ? weights.entries.find((each) => each.dateLocal === fixing) ?? null : null;
+  const shown = windowOf(weights.rows, windowId, now);
+  const entry = fixing ? weights.rows.find((each) => each.dateLocal === fixing) ?? null : null;
 
   return (
     <section className="gym-bodyweight">
@@ -188,13 +196,16 @@ export function BodyweightScreen({ log }) {
         </p>
       )}
 
+      {/* Off the ACCOUNT: an account holding one weigh-in the window has taken off the chart is not
+          an account with no weigh-ins — it comes back on Undo, and the invitation would be drawn
+          over a number that is still there. Between the two stances the room draws neither line. */}
       {weights.phase === 'ready' && weights.entries.length === 0 && (
         <>
           <p className="gym-quiet">{NO_WEIGH_INS}</p>
           <p className="gym-quiet">{NO_WEIGH_INS_LINE}</p>
         </>
       )}
-      {weights.phase === 'ready' && weights.entries.length > 0 && shown.length === 0 && (
+      {weights.phase === 'ready' && weights.rows.length > 0 && shown.length === 0 && (
         <p className="gym-quiet">{NO_WEIGH_INS_IN_WINDOW}</p>
       )}
 

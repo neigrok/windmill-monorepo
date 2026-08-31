@@ -557,6 +557,24 @@ test('the settings section promises no alarm this surface cannot keep', () => {
   assert.equal(speech('settings/GymSettingsSection.jsx').includes('never sounds an alarm of its own'), true);
 });
 
+test('the desk’s silence is said once for the whole section, and no row claims a difference the phones do not have', () => {
+  const said = speech('settings/GymSettingsSection.jsx');
+  // `text-budget.md`: a section caption is at most one per screen. It sits above the rows, so the
+  // rest row states the clock and nothing restates the silence under it.
+  assert.equal((said.match(/never sounds an alarm of its own/g) ?? []).length, 1);
+  assert.ok(said.indexOf('never sounds an alarm of its own') < said.indexOf('<Row title="Units"'));
+  // Both phones have a haptic AND a sound, and honour each switch on its own — `GymConfirm.swift`
+  // and `GymConfirm.kt` read `confirmHaptic` and `confirmSound` independently — so a clause telling
+  // the platforms apart was false on both.
+  assert.equal(said.includes('a haptic where the platform has one'), false);
+  assert.equal(said.includes('a sound where it does not'), false);
+  assert.equal(said.includes('Sets are logged on your phone, and that is where these are honoured.'), true);
+  // The lb clause enumerates because the enumeration is the disclosure: the three fields typed here
+  // stay in kilograms, and the weigh-in — the one field typed in the display unit — is not among them.
+  assert.equal(said.includes('a backfill, a correction, a routine target'), true);
+  assert.equal(said.includes('preferences.units === LB &&'), true);
+});
+
 test('the exports are rows of the section: the sets for an account with a log, the notes beside it for one with notes', () => {
   const source = read('settings/GymSettingsSection.jsx');
   assert.equal(source.includes('{hasLog && ('), true);
@@ -1299,12 +1317,18 @@ test('the rename sheet’s proof is the page’s own read, and no number on it i
 });
 
 test('every name a lifter types is capped once, in code points, and the counter counts the same field', () => {
-  for (const file of ['Routines.jsx', 'Record.jsx', 'logger/MovementPicker.jsx']) {
+  // The finish card is in this list because it is a field a lifter types a routine name into. It
+  // was the one that was not, which is how it kept a bound of its own in a unit of its own.
+  for (const file of ['Routines.jsx', 'Record.jsx', 'logger/MovementPicker.jsx', 'Finish.jsx']) {
     const source = read(file);
     assert.equal(source.includes('cappedName(event.target.value)'), true, file);
     assert.equal(source.includes('maxLength'), false, `${file}: maxLength counts UTF-16 units, not characters`);
     assert.equal(/const NAME_MAX = \d+/.test(source), false, file);
   }
+  // The counter is the editor's, not the receipt's: the finish card takes the cap and its unit and
+  // leaves the chrome behind, which is a decision rather than an oversight.
+  assert.equal(read('Finish.jsx').includes('nameCountLabel('), false);
+  assert.equal(read('Finish.jsx').includes('showsNameCount('), false);
   for (const file of ['Record.jsx', 'logger/MovementPicker.jsx']) {
     assert.equal(read(file).includes('nameCountLabel('), true, file);
     assert.equal(read(file).includes('isNameOverCap('), true, file);
@@ -1335,10 +1359,18 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
   assert.equal(screen.includes('inputMode="decimal"'), true);
   assert.equal(screen.includes('type="date"'), true);
   assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen log={log} />}"), true);
-  // One filter for both instances of the hook: the log's head holds the second, and a per-screen
-  // hide would leave it drawing a weigh-in the chart has dropped.
-  assert.equal(screen.includes("const gone = log.hidden('bodyweight');"), true);
+  // Both answers off the ROOM's registers, once each: the log's head holds the second instance of
+  // this hook, and a day recorded per instance would leave the two disagreeing about the account.
+  assert.equal(screen.includes("const gone = log.gone('bodyweight');"), true);
+  assert.equal(screen.includes("const hidden = log.hidden('bodyweight');"), true);
   assert.equal((screen.match(/hidden\('bodyweight'\)/g) ?? []).length, 1);
+  assert.equal((screen.match(/log\.gone\('bodyweight'\)/g) ?? []).length, 1);
+  // The stance reads the account, the rows read the window, and the delete's send is the store call
+  // and nothing else — a screen's own record of what the store took is the thing this replaced.
+  assert.equal(screen.includes('send: () => gymApi.deleteBodyweight(dateLocal),'), true);
+  assert.equal(screen.includes('const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));'), true);
+  assert.equal(screen.includes('weights.entries.length === 0'), true);
+  assert.equal(screen.includes('windowOf(weights.rows, windowId, now)'), true);
   assert.equal(log.includes('useBodyweight(log)'), true);
   assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true, 'not a fourth tab');
   for (const file of gymFiles()) {

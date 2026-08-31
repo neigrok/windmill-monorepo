@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { register } from 'node:module';
 import React from 'react';
-import { hiddenIds } from '../../../src/products/gym/withheld.js';
+import { goneIds, hiddenIds } from '../../../src/products/gym/withheld.js';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 
@@ -165,13 +165,13 @@ export async function roomAndScreen(t, { module, render, api }) {
   };
 }
 
-// What the room hands every screen. A screen reads the withheld window through `held` and asks
-// `hidden` before it draws a deleted row, so a fake that leaves either out is a fake of a room that
-// cannot exist; this is the one place its shape is written down for the screens tested without a
-// real `useTrainingLog`. `gone` seeds what the store has already answered for, and `hidden` is the
-// room's own function over both — a fake that answered it any other way could hide a defect the
-// real room has.
-export function roomLog({ gone = [], ...overrides } = {}) {
+// What the room hands every screen. A screen reads the withheld window through `held`, asks `hidden`
+// before it draws a deleted row and asks `gone` before it takes a stance about the account, so a
+// fake that leaves any of them out is a fake of a room that cannot exist; this is the one place its
+// shape is written down for the screens tested without a real `useTrainingLog`. `settled` seeds what
+// the store has already answered for, and both questions are the room's own functions over it — a
+// fake that answered either any other way could hide a defect the real room has.
+export function roomLog({ settled = [], ...overrides } = {}) {
   const held = overrides.held ?? [];
   return {
     phase: 'ready',
@@ -182,7 +182,8 @@ export function roomLog({ gone = [], ...overrides } = {}) {
     sets: [],
     older: { status: 'end', load: () => {} },
     held,
-    hidden: (kind) => hiddenIds(held, gone, kind),
+    hidden: (kind) => hiddenIds(held, settled, kind),
+    gone: (kind) => goneIds(settled, kind),
     say: () => {},
     reloadLog: () => {},
     withhold: () => {},

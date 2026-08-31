@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
@@ -449,6 +450,30 @@ class KeepAsRoutineTests {
         compose.onNodeWithText("Routine name").performTextReplacement("Push A")
         compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
     }
+
+    // `4c`: a routine minted on the receipt is bounded by the ROOM's cap, counted the way the editor
+    // counts it — code points, not UTF-16 units — so which surface a lifter is holding stops deciding
+    // how long a name may be. The counter does NOT come with it: this field mints a name in passing.
+    @Test
+    fun theNameFieldTakesTheRoomsCapCountedInCodePoints() {
+        card()
+        val field = compose.onNodeWithText("Routine name").performScrollTo()
+
+        field.performTextReplacement("\uD83D\uDE00".repeat(61))
+        assertEquals("sixty code points, not eighty UTF-16 units",
+                     "\uD83D\uDE00".repeat(Program.maxNameLength), typedName())
+        assertEquals(Program.maxNameLength, Program.length(typedName()))
+        // Asserted while the field still HOLDS the capped name: that is the only state a counter
+        // would be drawn in, so a shorter name here would pass whether or not one is drawn.
+        compose.onNodeWithText(Program.counter(typedName())!!).assertDoesNotExist()
+
+        field.performTextReplacement("Push A")
+        assertEquals("and a short name is left alone", "Push A", typedName())
+    }
+
+    private fun typedName(): String =
+        compose.onNodeWithText("Routine name").fetchSemanticsNode()
+            .config[SemanticsProperties.EditableText].text
 
     // One grey button, one sentence. A blank name is what holds Save NOW, so it outranks what the
     // log said about an earlier attempt — nothing clears `failure` while Save cannot be pressed.

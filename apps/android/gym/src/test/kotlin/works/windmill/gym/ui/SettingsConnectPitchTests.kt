@@ -18,7 +18,9 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
+import works.windmill.gym.domain.Units
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -61,6 +63,36 @@ class SettingsConnectPitchTests {
             )
         }
         return store
+    }
+
+    // A caption is drawn only in the state it describes: on kg the pounds clause is a sentence about
+    // nothing. Tapping `lb` writes the answer and the clause arrives with it.
+    @Test
+    fun testThePoundsClauseIsDrawnUnderPoundsAndNowhereElse() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = settings(scope)
+
+        assertEquals(Units.Kilograms, store.preferences.units)
+        compose.onNodeWithText(Bodyweight.kilogramsOnly).assertDoesNotExist()
+
+        compose.onNodeWithText(Units.Pounds.wire).performScrollTo().performClick()
+        compose.onNodeWithText(Bodyweight.kilogramsOnly).performScrollTo().assertIsDisplayed()
+        scope.cancel()
+    }
+
+    // The Rest card carries ONE caption and it is the override, because this screen is the only place
+    // on the phone that a routine's own rest beating this dial is said — `Rest.target` prefers the
+    // routine's line, and nothing else on Android tells a lifter so.
+    @Test
+    fun testTheRestOverrideIsSaidOnTheOnlyScreenThatSaysIt() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        settings(scope)
+
+        compose.onNodeWithText(
+            "A routine can carry its own rest for a movement. That one wins over this dial, " +
+                "off included — and only a change to that routine can move it."
+        ).performScrollTo().assertIsDisplayed()
+        scope.cancel()
     }
 
     @Test

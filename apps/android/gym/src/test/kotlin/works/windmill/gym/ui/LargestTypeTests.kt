@@ -165,15 +165,21 @@ class LargestTypeTests {
         assertTrue("the diff is $left at fontScale 2.0", left >= floor)
 
         val apply = compose.onNodeWithText(Proposal.apply).fetchSemanticsNode()
-        val hint = compose.onNodeWithText(Proposal.applyHint).fetchSemanticsNode()
+        val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
+            .fetchSemanticsNode()
         val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
         assertTrue("the whole band stands under the diff and none of it is cut off",
             apply.positionInRoot.y >= scroller.positionInRoot.y + scroller.size.height &&
                 turnDown.positionInRoot.y + turnDown.size.height <=
                 with(compose.density) { 700.dp.toPx() })
-        assertTrue("the refusal keeps its slot between Apply and the atomic promise",
-            hint.positionInRoot.y > apply.positionInRoot.y &&
-                hint.positionInRoot.y < turnDown.positionInRoot.y)
+        // The refusal is off the semantics tree in BOTH states (`4m`), so its slot is measured as the
+        // gap it holds open between Apply and the atomic promise rather than fetched by its text:
+        // 73dp here, the row's own 57 between the band's two 8dp gaps. Delete the row and this is 8.
+        val slot = with(compose.density) {
+            (atomic.positionInRoot.y - (apply.positionInRoot.y + apply.size.height)).toDp()
+        }
+        assertTrue("the refusal keeps its slot between Apply and the atomic promise, and it is $slot",
+            slot >= 57.dp)
         scope.cancel()
     }
 }

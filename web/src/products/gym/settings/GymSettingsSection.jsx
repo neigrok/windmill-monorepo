@@ -76,6 +76,10 @@ export function GymSettingsSection({ api = gymApi } = {}) {
 
   return (
     <Section title="Your training log">
+      {/* The section's one caption, said once for every row under it: the dials are recorded here
+          and honoured on the phone that logs the sets. */}
+      <p style={{ ...styles.calmLine, marginBottom: 10 }}>This page never sounds an alarm of its own.</p>
+
       <Row title="Units" aside={<Choices options={UNITS} value={preferences.units} onPick={(units) => change({ units })} />}>
         Display only — nothing stored changes.
         {preferences.units === LB && (
@@ -100,8 +104,7 @@ export function GymSettingsSection({ api = gymApi } = {}) {
           />
         </div>
         {preferences.restSeconds == null && 'Off, and off is the default. '}
-        Whichever target you set, your phone runs the clock between sets and sounds it. This page
-        never sounds an alarm of its own.
+        Whichever target you set, your phone runs the clock between sets and sounds it.
       </Row>
 
       <Row title="Set confirmation">
@@ -111,9 +114,9 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         <div style={look.switchRow}>
           <Switch checked={preferences.confirmSound} onChange={(confirmSound) => change({ confirmSound })} label="Sound" />
         </div>
-        Sets are logged on your phone, and that is where these are honoured — a haptic where the
-        platform has one, a sound where it does not. No set is logged at this desk, so nothing here
-        buzzes or beeps either way; the switch records what you want, it does not act here.
+        Sets are logged on your phone, and that is where these are honoured.
+        No set is logged at this desk, so nothing here buzzes or beeps either way; the switch
+        records what you want, it does not act here.
       </Row>
 
       {/* The line names what Coach does not read, so it is true wherever it sits on the page. */}

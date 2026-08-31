@@ -10,9 +10,9 @@ import XCTest
 // that position: discarding empties the sheet before the nine-second window even starts, so by the
 // time the log answers the room's own line is uncovered and that is where it lands.
 //
-// Proved the way `ReviewSheetHostingTests` proves its gate: host the real screen and read the pixels.
-// `skin.alarmInk` (#D08268) is painted nowhere else on this screen, so counting it answers whether
-// the sentence reached the glass rather than whether a property was set.
+// Proved the way `ReviewSheetHostingTests` proves its gate: host the real screen and read the pixels
+// (`alarmPixels`). `skin.alarmInk` is painted nowhere else on this screen, so counting it answers
+// whether the sentence reached the glass rather than whether a property was set.
 @MainActor
 final class FinishSheetRefusalHostingTests: XCTestCase {
     private let keepRefused = "the log didn’t answer — the routine wasn’t kept"
@@ -51,34 +51,6 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return window
-    }
-
-    // Pixels of the alarm ink anywhere in the window. Rendered at device scale rather than at 1:
-    // a 12.5pt line drawn at 1x is all antialiasing and hits its own colour exactly nowhere.
-    private func alarmPixels(of window: UIWindow) -> Int {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 3
-        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
-            window.layer.render(in: context.cgContext)
-        }
-        guard let cg = image.cgImage, let data = cg.dataProvider?.data,
-              let bytes = CFDataGetBytePtr(data) else { return 0 }
-        let width = cg.width, height = cg.height, perRow = cg.bytesPerRow, perPixel = cg.bitsPerPixel / 8
-        let alphaFirst = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first
-            || cg.alphaInfo == .noneSkipFirst
-        let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
-        var lit = 0
-        for y in 0..<height {
-            for x in 0..<width {
-                let at = y * perRow + x * perPixel
-                let r: Int, g: Int, b: Int
-                if bgr { (r, g, b) = (Int(bytes[at + 2]), Int(bytes[at + 1]), Int(bytes[at])) }
-                else if alphaFirst { (r, g, b) = (Int(bytes[at + 1]), Int(bytes[at + 2]), Int(bytes[at + 3])) }
-                else { (r, g, b) = (Int(bytes[at]), Int(bytes[at + 1]), Int(bytes[at + 2])) }
-                if abs(r - 0xD0) < 10 && abs(g - 0x82) < 10 && abs(b - 0x68) < 10 { lit += 1 }
-            }
-        }
-        return lit
     }
 
     // `Save routine` is offered on a session with no routine and a working set; its refusal belongs

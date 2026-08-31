@@ -349,6 +349,15 @@ struct FinishScreen: View {
                     // The section head is the only thing naming this field, and a head is not a
                     // label: without this VoiceOver reads the weekday and nothing else.
                     .accessibilityLabel("Routine name")
+                    // The room's cap, counted the room's way — sixty CODE POINTS, the editor's own
+                    // rule, so a name is bounded the same wherever it is minted. The editor's counter
+                    // does not come with it: it earns its place on the surface a lifter works a name
+                    // on, and a receipt mints one in passing.
+                    .onChange(of: routineName) { _, typed in
+                        let kept = RoutineDraft.capped(typed)
+                        guard kept != typed else { return }
+                        routineName = kept
+                    }
                 Text("tap to rename")
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
@@ -385,7 +394,11 @@ struct FinishScreen: View {
             }
             .disabled(unnamed)
 
-            refusal(Finish.keepRefusal(name: routineName, failure: failure))
+            // Which of the two the slot is carrying decides the ink, on the same predicate that
+            // decides the sentence: the empty name takes the faint ink because nothing was sent and
+            // nothing was refused, and only the log's own refusal takes the alarm (`GymSkin`).
+            refusal(Finish.keepRefusal(name: routineName, failure: failure),
+                    ink: unnamed ? skin.inkFaint : skin.alarmInk)
         }
         .padding(WindmillSpace.x4)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
@@ -417,11 +430,11 @@ struct FinishScreen: View {
     private var unnamed: Bool { !RoutineDraft.isNamed(routineName) }
 
     @ViewBuilder
-    private func refusal(_ line: String?) -> some View {
+    private func refusal(_ line: String?, ink: Color) -> some View {
         if let line {
             Text(line)
                 .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.alarmInk)
+                .foregroundStyle(ink)
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

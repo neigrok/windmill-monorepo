@@ -177,11 +177,9 @@ struct BodyweightScreen: View {
         Bodyweight.date(of: dateLocal) ?? Date()
     }
 
-    // A day is the one subject a later write can name again, so weighing it again IS the undo: the
-    // window comes down before the number goes in. Left standing, its clock would delete the row just
-    // saved — and until it fired the transient would offer a way back to a dot the chart is drawing.
+    // Taking the window over that day down is the WRITE's, not this screen's: the log writes weigh-ins
+    // too, and a guard on one of two call sites is a guard the other one walks past (`TrainingStore.weighIn`).
     private func save(_ kg: Double, on dateLocal: String) async {
-        await withheld.writtenAgain(.bodyweight, dateLocal)
         guard let why = await store.weighIn(kg, on: dateLocal) else { return }
         say(why.line("the weigh-in is saved on this device"))
     }

@@ -524,9 +524,10 @@ private fun Foot(
                 color = GymSkin.onAccent,
             )
         }
-        // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree
-        // once the gate is open: a row still announcing `read the changes to the end` to a lifter who
-        // has would be a sentence that is no longer true.
+        // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
+        // BOTH: the reason Apply is refusing belongs to Apply, which says it above, and a reader
+        // walking the shut band would otherwise meet one fact twice in a row. The pixels carry the
+        // sighted reader; `ReviewSheetTests` counts the nodes that carry the screen reader.
         Text(
             Proposal.applyHint,
             style = GymType.numeral(12),
@@ -534,7 +535,7 @@ private fun Foot(
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(if (seen) 0f else 1f)
-                .then(if (seen) Modifier.clearAndSetSemantics { } else Modifier),
+                .clearAndSetSemantics { },
         )
         Text(
             proposal.atomicLine,

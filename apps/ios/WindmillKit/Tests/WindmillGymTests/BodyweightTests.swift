@@ -420,22 +420,64 @@ final class BodyweightSyncTests: XCTestCase {
                         "the refusal is said when it lands, not where the sheet used to be")
     }
 
-    // A day is the one subject a later write can name again, so the window comes DOWN before the number
-    // goes in. Left standing, its clock would delete the row just saved — and until it fired the
-    // transient would read `Weigh-in deleted.` with Undo beside a dot the chart is drawing again.
-    func testWeighingTheDayAgainTakesTheWindowDownBeforeTheNumberGoesIn() throws {
-        let file = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/WindmillGym/BodyweightScreen.swift")
-        let screen = try String(contentsOf: file, encoding: .utf8)
+    // A day is the one subject a later write can name again, so weighing it again IS the way back and
+    // the window comes DOWN before the number goes in. The guard lives inside the WRITE and not on a
+    // screen, which is what makes it true of the log's weigh-in sheet as well — that sheet reaches the
+    // store directly, and it opens on `fixedDate: nil`, so every day is reachable from it. Left
+    // standing, the clock would delete the number just saved; until it fired, the transient would read
+    // `Weigh-in deleted.` with Undo beside a dot the chart is drawing again.
+    func testAWeighInWrittenFromAnywhereTakesDownTheWindowOverThatDay() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        _ = await store.weighIn(82.1, on: "2026-08-26")
 
-        let save = try XCTUnwrap(screen.range(of: "private func save(_ kg: Double, on dateLocal: String) async {"))
-        let takes = try XCTUnwrap(screen.range(of: "await withheld.writtenAgain(.bodyweight, dateLocal)",
-                                               range: save.upperBound..<screen.endIndex))
-        let writes = try XCTUnwrap(screen.range(of: "await store.weighIn(kg, on: dateLocal)",
-                                                range: save.upperBound..<screen.endIndex))
-        XCTAssertLessThan(takes.lowerBound, writes.lowerBound,
+        let withheld = WithheldWindow(windowMs: 120)
+        store.dayWrittenAgain = { [weak withheld] day in await withheld?.writtenAgain(.bodyweight, day) }
+        await withheld.hold(Withheld(.bodyweight, subject: "2026-08-26", line: WithheldWords.weighIn,
+                                     take: { _ in store.withhold(weighInOn: "2026-08-26") },
+                                     settle: { await store.settleDelete(weighInOn: "2026-08-26") == nil },
+                                     restore: { store.restore(weighInOn: "2026-08-26") }))
+        XCTAssertTrue(withheld.isOpen)
+        XCTAssertEqual(store.bodyweight.map(\.dateLocal), [], "the day is out of the drawn series")
+
+        // The log's own path: `LogScreen` holds no register and never called a guard of its own.
+        _ = await store.weighIn(81.9, on: "2026-08-26")
+
+        XCTAssertFalse(withheld.isOpen, "the transient retires: there is nothing left to take back")
+        XCTAssertFalse(withheld.hides(.bodyweight, "2026-08-26"))
+        XCTAssertEqual(store.bodyweight.map(\.weightKg), [81.9])
+
+        try? await Task.sleep(for: .milliseconds(400))
+
+        XCTAssertEqual(store.bodyweight.map(\.weightKg), [81.9],
+                       "the clock that would have deleted the number just saved is gone with the window")
+        XCTAssertFalse(server.calls.contains("deleteBodyweight"), "and nothing reached the wire")
+    }
+
+    // The guard is on ONE path because there is one path: no screen may call it beside the write, or
+    // the next screen to weigh a day in is the one that forgets to.
+    func testNoScreenTakesTheWindowDownBesideTheWriteThatOwnsIt() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym")
+        for screen in ["BodyweightScreen.swift", "LogScreen.swift"] {
+            let text = try String(contentsOf: sources.appendingPathComponent(screen), encoding: .utf8)
+            XCTAssertFalse(text.contains("writtenAgain"), "\(screen) guards a write the store guards")
+        }
+
+        let store = try String(contentsOf: sources.appendingPathComponent("TrainingStore.swift"), encoding: .utf8)
+        let write = try XCTUnwrap(store.range(of: "public func weighIn(_ weightKg: Double, on dateLocal: String)"))
+        let takes = try XCTUnwrap(store.range(of: "await dayWrittenAgain(dateLocal)",
+                                              range: write.upperBound..<store.endIndex))
+        let keeps = try XCTUnwrap(store.range(of: "bodyweightStore.keep(entry, owed: true)",
+                                              range: write.upperBound..<store.endIndex))
+        XCTAssertLessThan(takes.lowerBound, keeps.lowerBound,
                           "the window comes down first: the two may not cross")
+
+        let room = try String(contentsOf: sources.appendingPathComponent("GymRoom.swift"), encoding: .utf8)
+        XCTAssertTrue(room.contains("store.dayWrittenAgain = "),
+                      "the room hands the store its register, or the guard is wired to nothing")
     }
 
     // And what it says is the device-first truth, proved rather than read. This delete lands on the

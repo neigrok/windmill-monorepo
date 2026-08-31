@@ -1127,16 +1127,14 @@ and once in the
 summary's fallback. Either the eyebrow stops naming the routine or the line does, and the counted
 phrase may not restate the summary it sits under.
 
-**3k · the share link's window is written two ways on two consent screens** → ruled 2026-08-31:
-**`30 days`, in numerals**, everywhere; iOS owes the move. `share_session` states both
-facts (`GymToolCatalog.cpp:373-381`): anyone holding the link reads that workout without signing in,
-and *it expires (30 days)*. The web and Android both say it that way —
-*for 30 days unless you end it sooner* (`connect.js:40`, `domain/ConnectedLog.kt:50`, pinned by
-`ConnectedLogTests.kt`). iOS says only *until it expires or you end it*
-(`ConnectedLog.swift:160`, and the same shape in `Level.write.reach`), which is the one fact a lifter
-needs a number for on a consent screen. The sentences around it are each surface's own and byte
-identity was never the rule here — the **numeral** is, because a consent screen states a duration the
-way a reader can check it against a calendar.
+**3k · the share link's window is written `30 days`, in numerals, on every consent screen** →
+built 2026-08-31, nothing owed. The backend states the duration itself (*it expires (30 days)*,
+`GymToolCatalog.cpp:373-381`), and all three surfaces now carry the numeral where a lifter grants the
+level: `connect/connect.js:40` on the web, `domain/ConnectedLog.kt:50` on Android, and
+`ConnectedLog.swift`'s `LogReach.Level.write.reach` and `canLines` on iOS, which took the move last.
+The sentences around it are each surface's own and byte identity was never the rule here — the
+numeral is, because a consent screen states a duration the way a reader can check it against a
+calendar. The pre-mint share OFFER is a separate question and is open as `4r`.
 
 **3l · a removal is counted where the intent is not asked** → fix flows to iOS's two proposal cards
 now, and to the wire before the conversation rows can follow. A removal carries every base entry as
@@ -1251,19 +1249,19 @@ the refusal is not readable below the button; that measurement is theirs, not th
 Seating the note per screen fixes the collision and puts the transient over the note instead, so
 the two rules are decided together for the room or not at all (`gym/BUILD.md` §8).
 
-**3t · the proposal promise is drawn after the decision it is about on both phones** → ruled
-2026-08-31: **drawn while the proposal is pending, dropped once it is decided** — the web's shape;
-both phones owe the move. All three ship the sentence byte-identical — *Nothing changes until you tap
-Apply on the diff. Your logged sets are never part of a proposal.* (`coach/coach.js:77-78`
-`PROPOSAL_NOTE`, `Ask.swift:238` `proposalNote`, `domain/Ask.kt:94-95` `promise`). The web draws it
-under the Coach card only while the proposal waits (`CoachProposal`'s `{pending && …}` in
-`coach/CoachRoom.jsx`) and
-pins the drop (`ProposalReviewDialog.test.js`); iOS (`Text(Ask.proposalNote)` in `AskScreen.swift`)
-and Android (`Ask.promise` in `ui/AskScreen.kt`) still draw it unconditionally, so a card that reads
-*applied* still promises
-that nothing has been applied.
-A promise about what Apply will do is spent the moment Apply is taken or turned down, and what
-survives the decision is the door to the rows the card counted, which every surface already keeps.
+**3t · the proposal promise is drawn while the proposal is pending and dropped once it is decided**
+→ ruled and built 2026-08-31 on all three, nothing owed. *Nothing changes until you tap Apply on the
+diff. Your logged sets are never part of a proposal.* is byte-identical on every surface
+(`coach/coach.js` `PROPOSAL_NOTE`, `Ask.swift` `proposalNote`, `domain/Ask.kt` `promise`) and every
+surface now gates it on the state: `{pending && …}` in `CoachRoom.jsx`, `(found?.state ?? .pending)
+== .pending` in `AskScreen.swift`, `if (proposal.isPending)` in `ui/AskScreen.kt`. A promise about
+what Apply will do is spent by the DECISION and by nothing else, and what survives the decision is
+the door to the rows the card counted, which every surface keeps. **An unread proposal is not a
+decision**, and the surfaces reach that the two available ways: the web and Android draw no card
+until the log's own copy is in hand — `view.phase !== 'ready'` returns the bare door, `mapNotNull {
+minted[it] }` leaves the row out — while iOS draws the card from the id alone, so the promise stands
+on it wherever `minted[id]` is unset. That covers a failed read as well as one in flight, which is
+the rest of the visit and not a frame.
 
 **3u · the web's routines-home proposal card says how much nowhere** → a copy owner's call.
 `gym/briefs/09-coach.md` gives the counted phrase a slot — its own line under the summary, never the
@@ -1325,37 +1323,28 @@ landed and now has no job. It came off the web deliberately — a 44px bordered 
 on the surface with a keyboard, where *tap* is the wrong verb — and Android never drew it. Either it
 comes off iOS too or a brief says why one phone hints at a field the other does not.
 
-**4a · one sentence, three surfaces, two inks — and both skins say the ink is for something else** →
-fix flows to the phones. *Name it to save it.* is now drawn on the routine editor and on the finish
-card on every surface. The web draws it in the faint ink at 12.5 in both places
-(`.gym-editor-missing`, `.gym-keep-missing` in `gym.css`); both phones draw it in the alarm ink
-(`FinishScreen.swift`'s `refusal(_:)` and `RoutineBuilderScreens.swift`'s `saveRefusal` footer;
-`ui/FinishScreen.kt`'s `Program.nameItToSaveIt` line and `ui/RoutineBuilder.kt`'s `missing`). The
-rule each skin states is the web's: `gym.css` — *the alarm ink is for a failed read or write, the
-destructive and the invalid, and nothing else* — and `GymSkin.swift:25` — *a write that failed*. An
-empty name is neither: nothing was sent and nothing was refused, the form is simply not finished.
-**The ink is the whole of what is open here**, because the two phones already agree on everything
-else: each draws exactly ONE line under Save and the empty name outranks the log's refusal on both
-— Android through an elvis with the empty name first (`Program.nameItToSaveIt.takeIf { !named } ?:
-failure` in `ui/FinishScreen.kt`), iOS through the same precedence in `Finish.keepRefusal`
-(`guard RoutineDraft.isNamed(name) else { return RoutineDraft.nameItToSaveIt }`). So a reader never
-sees the two causes at once; what they cannot tell apart is a form that is not ready from a log that
-would not take it, because one ink says both.
+**4a · *Name it to save it.* is drawn in the faint ink on every surface** → ruled and built
+2026-08-31, nothing owed. Each skin reserves the alarm ink for the same thing — `gym.css`'s *a failed
+read or write, the destructive and the invalid, and nothing else* and `GymSkin.swift:25`'s *a write
+that failed* — and an empty name is neither: nothing was sent and nothing was refused, the form is
+simply not finished. The web already drew it faint (`.gym-editor-missing`, `.gym-keep-missing`); both
+phones moved to `skin.inkFaint` / `GymSkin.inkFaint` on the routine editor's Save refusals and on the
+finish card's unnamed branch. **The log's own refusal keeps the alarm on both phones**, chosen on the
+same predicate that chooses the sentence — `unnamed ? skin.inkFaint : skin.alarmInk` beside
+`Finish.keepRefusal` on iOS, `if (missing != null)` beside `Program.nameItToSaveIt.takeIf { !named }
+?: failure` on Android — and the target sheet's invalid-field refusals keep it too.
 
-**4c · the finish card's routine name is bounded three ways, and none of them is the room's cap** →
-fix flows to the routine editor's rule. The **editor** caps a name at 60 code points on every surface
-and counts in code points everywhere — `cappedName` over `[...str]`, `RoutineDraft.capped` over
-`unicodeScalars`, `Program.capped` over `offsetByCodePoints` — with the counter appearing in the last
-fifth (`gym/briefs/15-the-routine.md`). The **finish card** mints a routine from a field of its own
-and applies none of that: the web bounds it at `maxLength={80}`, a different number in a different
-unit — 80 UTF-16 code units (`Finish.jsx`) — and both phones bound it not at all
-(`TextField("", text: $routineName)` in `FinishScreen.swift`, `onValueChange = onName` in
-`ui/FinishScreen.kt`). S2a redrew that exact field on all three surfaces and left this as it found
-it. Nothing is silently lost — the log's over-length refusal has a drawn home on every surface now —
-but
-a routine born on the receipt is bounded by which surface the lifter is holding, and one born in the
-editor is not. It is the shape 15-the-routine already names for the counter: a bound without one unit
-is three surfaces inventing three answers.
+**4c · the finish card's routine name takes the routine editor's cap, in the editor's unit, and not
+its counter** → ruled and built 2026-08-31 on all three, nothing owed. The bound is **60 code
+points** wherever a routine is named, through the same call on each surface: `cappedName` over
+`[...str]` on the web (which replaced `maxLength={80}`, a different number in a different unit),
+`RoutineDraft.capped` over `unicodeScalars` on iOS, `Program.capped` over `offsetByCodePoints` on
+Android. The unit is the point as much as the number: `🏋️‍♀️` is one thing on screen and five code
+points, so 80 UTF-16 units cut a name somewhere else entirely. **The counter did not come with it,
+and that is a decision**: it earns its pixels in the last fifth on the surface a lifter works a name
+on, and the finish card mints one in passing on a receipt, so drawing it there would add chrome to a
+programme whose subject is removing it. Recorded in `gym/briefs/15-the-routine.md` and in a comment
+beside each of the three fields, so a later wave does not read the gap as drift.
 
 **4d · `Keep it` is one act with two destinations** → a ruling owed, not a defect found. On the slight
 branch both phones draw it as the affirmative half of a decided Keep/Discard pair and it **dismisses
@@ -1492,51 +1481,129 @@ sentence is. Either the held state gets its own line of twelve words or fewer �
 delete lands in a moment.* — or the cap line drops its second clause while a note of that kind is
 held. One string, three files, whichever is chosen.
 
-**4m · the gate's refusal was said once to a screen reader on ONE surface and twice on two** →
-**half closed 2026-08-31 in S2b's closing pass — the web moved with it; Android still owes the same
-line.** Cut 4 gave the review band *Read the changes to the end to apply them.* on both channels —
-drawn, and on the control that is refusing — and the three surfaces resolved "both channels"
-differently. **iOS**: `.accessibilityHint` on Apply, and the drawn row is `.accessibilityHidden(true)`
-in both states, so VoiceOver hears it once and the pixels carry the sighted reader
-(`ReviewSheet.swift:294`). **The web**: this entry first exonerated it because Apply's
-`aria-describedby` points at the drawn `<p>` — and **that premise was never the reason for the
-conclusion.** `aria-describedby` does not take its target out of the accessibility tree, so a reader
-met the sentence once traversing the band and again as Apply's description: the same two readings
-this entry charges Android with. The `<p>` now carries `aria-hidden` in both states
-(`Proposals.jsx:185`), which is safe because accname §4.1 skips a hidden node only when it is **not**
-the direct target of a `labelledby`/`describedby`, so the description still computes off that node;
-the band's pins assert the attribute in both gate states (`ProposalReviewDialog.test.js`), and the
-suite's own traversal helper strips `aria-hidden` subtrees the way a reader walking the band does.
-**Android**: `stateDescription = Proposal.applyHint` on the Apply box, *and* the drawn `Text` is left
-in the semantics tree while the gate is shut — `clearAndSetSemantics` is applied only once `seen`
-(`ReviewSheet.kt:537`) — so TalkBack navigating the band meets the sentence twice in a row. Drawing
-one fact twice is the thing the whole simplification programme is against, and here it is on the
-accessibility channel where it is hardest to see. Android's `Text` wants `clearAndSetSemantics` in
-**both** states, the way iOS's and the web's are hidden in both; the pin should assert the shut band
-exposes the sentence on exactly one node. **Read off the source and the ARIA spec on all three; no
-screen reader was driven for any of it.**
+**4m · the gate's refusal reaches a screen reader once on all three surfaces** → built 2026-08-31,
+nothing owed. *Read the changes to the end to apply them.* is on both channels — drawn, and on the
+control that is refusing — and each surface keeps the drawn copy out of the accessibility tree in
+**both** gate states so a reader traversing the shut band meets it once. iOS:
+`.accessibilityHint` on Apply, the row `.accessibilityHidden(true)`. The web: `aria-describedby` on
+Apply pointing at a `<p>` that carries `aria-hidden` in both states, which is safe because accname
+§4.1 skips a hidden node only when it is not the direct target of a `labelledby`/`describedby`, so
+the description still computes off it. Android: `stateDescription = Proposal.applyHint` on the Apply
+box and `clearAndSetSemantics { }` on the drawn `Text` in both states — the last surface to move.
+The two pins take it from opposite ends: `ProposalReviewDialog.test.js` asserts the `aria-hidden`
+attribute in both gate states and walks the band through a helper that strips hidden subtrees the way
+a reader does, and `ReviewSheetTests`'s `theShutBandExposesTheGatesRefusalOnExactlyOneNode` counts
+the nodes carrying the sentence instead of asserting the modifier. **Read off the
+source and the ARIA spec on all three; no screen reader was driven for any of it.**
 
-**4n · a window decides which rows are drawn, and on the bodyweight screen it decides the screen's
-state too** → fix flows to the code, on the web and Android. `13-gestures.md:214-215` states the law
-in bold — *"A window decides which rows are drawn; it never decides what state a screen is in"* — and
-`bodyweight` is the kind that broke it the day it joined `WITHHELD_KINDS`. The web thins `entries` by
-`log.hidden('bodyweight')` (`bodyweight/Bodyweight.jsx:26`) and then reads the thinned list for the
-empty stance (`:191`), so deleting your only weigh-in draws *No weigh-ins yet. Weigh in from the log
-and the number lands here.* over a store that still holds it, for the whole nine seconds, with Undo
-on screen. Android does the same off `store.bodyweight`, thinned in `TrainingStore.kt`. iOS's is the
-softer chart caption (`Bodyweight.swift` `emptyWindow`) and is the least wrong of the three. The fix
-is the one the notes screen already took in this wave: the stance reads the STORE, the rows read the
-window. Until it lands, the law above has an exception nothing else names.
+**4n · the bodyweight screen's stance reads the store and only its rows read the window** → ruled
+and built 2026-08-31, nothing owed. `13-gestures.md:214-215` states the law in bold — *"A window
+decides which rows are drawn; it never decides what state a screen is in"* — and `bodyweight` broke
+it the day it joined `WITHHELD_KINDS`. Both surfaces that broke it now answer the two questions from
+two lists: `useBodyweight` returns `entries` (the store's series less what the store has answered
+for) beside `rows` (what `log.hidden('bodyweight')` leaves), and `TrainingStore` returns
+`allWeighIns` beside the thinned `bodyweight`. The empty stance reads the store; the dots, the fix
+sheet, `latest` and the windowed sentence read the window — the shape `notes/Notes.jsx` and
+`NotesScreen` already took. **The web needed a second half for the first to be honest**, and it is
+the ROOM's and not a screen's: `useTrainingLog`'s `settled` register — filled when a send resolves
+while the window still holds the row, cleared by `writtenAgain` — is now exposed as `log.gone(kind)`
+beside `log.hidden(kind)`, and `entries` drops what it names. The day leaves the READ and not only
+the drawn rows, so the invitation becomes true when the store takes the delete rather than never; and
+because the register is the room's, the chart and the log's head — two instances of one hook — cannot
+disagree about which days the account holds, and a day written again is a day back in both answers.
+What the nine seconds between the two stances should draw is open as `4q`, and
+the same law on four more web screens is open as `4p`.
 
-**4o · the weigh-in window's write-again guard sits on one of two write paths on iOS** → fix flows to
-iOS, and it is placement rather than harm. Web (`useTrainingLog.js` `writtenAgain`) and Android
-(`dropWithheld`, inside `store.weighIn`) take a held delete DOWN when its day is written again, so the
-transient retires with it. On iOS the guard is called from `BodyweightScreen`, while `LogScreen`'s
-`weighIn(_:on:)` reaches the store directly and the log's sheet opens with `fixedDate: nil`, so any
-day is reachable from it. Delete a weigh-in on the chart, weigh that day in from the log inside nine
-seconds, and the transient still reads *Weigh-in deleted.* with Undo beside a dot the chart is drawing
-again. **No number is lost** — `settleDelete(weighInOn:)` guards on the newer `recordedAt` and lets the
-row stand — and `11-bodyweight.md` hedges the case correctly, so no canon line is false. Android is
-immune by construction because its guard lives inside the write; the honest fix is to move iOS's there
-too rather than to add a second call site.
+**4o · the weigh-in window's write-again guard lives inside the write on every surface** → built
+2026-08-31, nothing owed. Writing a day again IS the undo for that day's delete, so the window comes
+down before the number goes in, at one seam per surface rather than at each screen that weighs in:
+`useBodyweight`'s own `save` on the web (the hook behind the room's single weigh-in door),
+`TrainingStore.weighIn`'s `dropWithheld` on Android, and — the move this closed —
+`TrainingStore.weighIn`'s `dayWrittenAgain` on iOS, wired once from `GymRoom`'s seat and called from
+`BodyweightScreen` no longer, so the log's own weigh-in sheet takes the window down too. On iOS it
+sits after `Bodyweight.dateRefusal`, so a day the store would refuse anyway costs no window. Pinned
+on placement as well as behaviour: `testNoScreenTakesTheWindowDownBesideTheWriteThatOwnsIt` asserts
+`writtenAgain` appears in neither screen file and that the guard precedes `bodyweightStore.keep`.
+
+**4p · the same window decides four more of the web's screen states** → fix flows to the code, on the
+web. `13-gestures.md:214-215` states it in bold — *"A window decides which rows are drawn; it never
+decides what state a screen is in"* — and the bodyweight screen was only the case a wave happened to
+look at. Four web surfaces read a window-thinned list for a claim about the ACCOUNT.
+**`Log.jsx`'s `LogList`**: `shown` is `summaries` less `log.hidden('session')`, and `shown.length ===
+0` draws *No sessions yet.* / *The first one you log lands here, newest first.* — so deleting your
+only session invites you to log your first one with *Undo* on screen.
+**`Routines.jsx`**: `routines` is the read less `log.hidden('routine')`, and `routines.length === 0`
+draws *No routines yet.* / *Finish a session and gym offers to keep it as one — or write one out
+now.* **plus the `Build a routine` primary** — the sharpest of the four, because its stance carries a
+drawn control over a store that still holds a routine.
+**`coach/Threads.jsx`'s `ThreadsList`**: `threads` is thinned, `threads.length === 0` draws
+`NO_THREADS`, and the `Export threads` door is gated on `threads.length > 0`, so a door to everything
+the account holds disappears for the length of one delete's window.
+**`Log.jsx`'s `SessionDetail`**: `sets` is thinned by `log.hidden('set')` and `sets.length === 0`
+draws *No sets in this session.*; `sessionDetailMeta(session, sets)` and `closedOnItsOwn(session,
+sets)` derive off the thinned list too — the count is arguably the drawn rows' business, the
+*closed on its own* claim is not. The fix on each is the two-line one `bodyweight/Bodyweight.jsx` and
+`notes/Notes.jsx` now share: the stance reads the store, the rows read the window; and on the first
+three the settled delete has to leave the READ as well as the drawn rows, or the stance never becomes
+true. **The phones were not swept for the same shape**, so this entry names the web only.
+
+**4q · a held delete of the only weigh-in leaves one state and three surfaces answer it three ways**
+→ a copy owner's call, and one line of it is still the closed law's residue. With the stance reading
+the store (`useBodyweight`'s `entries`, `TrainingStore.allWeighIns`) and the rows reading the window,
+there are nine seconds where neither the invitation nor a chart is true. The web draws **nothing at
+all** — `entries.length === 0` is false and `rows.length > 0` is false, so both stances are skipped.
+**Both phones open on the ninety days** — `var window by remember { mutableStateOf(ChartWindow.Ninety)
+}` and `@State private var window: Bodyweight.Window = .ninetyDays` — so the sentence the gap
+actually gets on a phone is *no weigh-in in the last 90 days*, said while the store holds a weigh-in
+dated today. Android draws it under the window control and the count line *last 90 days · 0
+weigh-ins*, gated on `window == ChartWindow.Ninety` so the 90-day sentence is never said of the whole
+series; iOS draws it from `Bodyweight.emptyWindow`'s `.ninetyDays` branch. It is `emptyWindow`'s
+other branch that carries the residue: **iOS is the one still reading the drawn list for an account
+claim**, answering *no weigh-in yet* under `.all` off the thinned `store.bodyweight` — the softer
+wording of the law the web and Android just left, where Android's *the whole series · 0 weigh-ins*
+claims only the window. Three lines to weigh, then: a blank page and a count line over an empty chart
+are both defensible; a 90-day sentence over a store holding today's weigh-in is the one both phones
+actually draw; and *no weigh-in yet* over a series that holds one is not defensible at all.
+
+**4r · the share window is written without its numeral on the sheet that offers the link** → the
+numeral rule's scope, on iOS. `3k` ruled **`30 days`, in numerals** and scoped itself to the two
+consent screens; `ConnectedLog.swift` now says it in both. `CoachShare.swift`'s `Coach.offer` — the
+sheet a lifter reads BEFORE minting the link — still ends *It expires, and you can revoke it whenever
+you like*, a duration with no number on the screen where the decision is actually taken. The same
+file's live card is the better half and needs nothing: it prints the real expiry date off
+`share.expiresAtMs`, which beats a duration outright. What is owed is a decision on whether the
+numeral rule reaches the pre-mint offer or stops at the consent screens.
+
+**4s · two true facts about Android's room are now said nowhere on it** → a copy owner's call, opened
+by the settings-caption salvage that cut them. (1) **Windmill holds the screen awake for an open
+session** — `GymRoom.kt` adds `FLAG_KEEP_SCREEN_ON` while one is running and clears it on the way out
+— and the rest chime is scheduled inside the app, so closing the app takes it. iOS says its half of
+that fact (*The sound needs the app awake: a rest that ends while the phone is locked ends quietly.*,
+`SettingsScreen.swift`); Android now says none of it. (2) **The dials are kept with the account and
+follow a sign-in.** All five dials are one `GymPreferences` document written by one
+`store.savePreferences` (`Preferences.kt:32-37`), and the room already says the opposite state out
+loud when the write is refused — *that setting stayed on this device*. The only sentence that said
+the syncing half was attached to Units alone, which was itself the drift the salvage cut, since it
+read as a fact about one row.
+Neither is a build gap: the wake lock and the sync are both real. The question is whether a fact
+about the whole screen gets a line of its own, the way the web's *This page never sounds an alarm of
+its own.* now does, or goes unsaid.
+
+**4t · a hosted-layout test that asserts a point value pins the toolchain, not the product** →
+**built 2026-08-31**, and it cost a red `main` to find. `AskScreenHostingTests` hosts the real Coach
+room in a fixed 390×844 window and reads the thread scroller back. It asserted the scroller clears
+**400 pt**. That held on Xcode 26.3 and failed on 26.6 — the CI runner's — where the same harness on
+the same device leaves the thread **329 pt** against **585** locally: the cap-reached block is nearly
+twice as tall under the newer SwiftUI. The workflow resolves its simulator **by capability, never by
+name** (`.github/workflows/ios-ci.yml`), so the device is not pinned either, and neither is the
+Xcode. **A hosted measurement may assert a RELATIVE claim — two heights read in the same run — or a
+bound stated as a fraction of the harness window. It may not assert a point value read off one
+machine.** The two thresholds now read `HARNESS_HEIGHT / 3` (a product bound: the block may take two
+thirds of the phone and no more) and `waiting / 2` (a claim that a decision takes a line off the card
+and not the card). Same class as the four unit confusions this programme has already closed — a
+number standing in for something environment-dependent.
+**Still open, same class, and green only so far**: `ReviewSheetHostingTests`'s `diff > 500` and
+`RoutineScreensHostingTests`'s `atTheTop.last > 460` are point values in hosted layouts. They have
+survived every runner image to date. Neither is worth churning while green; both are the next to go
+red on a toolchain bump, and this entry is where to look when one does.
 

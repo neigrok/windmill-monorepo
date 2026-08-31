@@ -175,6 +175,12 @@ public struct GymRoom: View {
             // `connect` drains what the device holds BEFORE it reads the log: reading settles a stale open session at its last
             // activity, and past four hours from that close an owed set is refused for good.
             .task(id: account.seat) {
+                // The one place the store is handed the register: a weigh-in takes down the window
+                // over its own day from inside the write, whichever screen wrote the number. Weakly,
+                // because the room owns both and a held act already reaches back at the store.
+                store.dayWrittenAgain = { [weak withheld] day in
+                    await withheld?.writtenAgain(.bodyweight, day)
+                }
                 await store.connect(to: account)
                 guard store.exerciseId == nil,
                       let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }

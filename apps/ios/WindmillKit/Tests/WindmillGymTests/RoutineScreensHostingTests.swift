@@ -231,6 +231,45 @@ final class RoutineScreensHostingTests: XCTestCase {
         XCTAssertEqual(atTheEnd.last, atTheTop.last)
     }
 
+    // ── which ink a refusal takes ─────────────────────────────────────────────────────────────
+
+    // The alarm ink is for a write that failed and for nothing else (`GymSkin`). A draft that is not
+    // finished is not one — nothing was sent and nothing was refused — so `Name it to save it.` takes
+    // the faint ink, and the editor paints no alarm at all until the log actually turns a save down.
+    // Three windows, because zero alarm pixels alone would also be true of a footer nobody draws: the
+    // named draft is the height the unnamed one has to beat for the sentence to be on the glass.
+    func testAnUnfinishedDraftPaintsNoAlarmInkAndASaveTheLogRefusedStillDoes() async throws {
+        let unnamed = await hosted(editor(name: "", failure: nil), height: 900)
+        let quiet = alarmPixels(of: unnamed)
+        let refusing = try contentHeight(of: unnamed)
+        unnamed.isHidden = true
+
+        let named = await hosted(editor(name: "Push A", failure: nil), height: 900)
+        let silent = try contentHeight(of: named)
+        named.isHidden = true
+
+        let failed = await hosted(editor(name: "", failure: "the log didn\u{2019}t answer — the routine wasn\u{2019}t saved"),
+                                  height: 900)
+        let alarmed = alarmPixels(of: failed)
+        failed.isHidden = true
+
+        XCTAssertGreaterThan(refusing, silent + 10,
+                             "the unnamed draft draws no refusal at all (\(refusing) vs \(silent))")
+        XCTAssertEqual(quiet, 0, "a draft that is not finished is not a write that failed")
+        XCTAssertGreaterThan(alarmed, 100, "and a save the log refused is still drawn in the alarm ink")
+    }
+
+    private func editor(name: String, failure: String?) -> some View {
+        RoutineEditorScreen(draft: RoutineDraft(name: name,
+                                                entries: [RoutineWrite.Entry(exerciseId: "movement-1")],
+                                                position: 0),
+                            catalog: [Exercise(id: "movement-1", name: "Back Squat")],
+                            sessions: [], editing: false, untested: false, saving: false,
+                            failure: failure,
+                            onSave: { _ in }, onCancel: {}, onDuplicate: nil,
+                            onCreateMovement: { _, _ in .failure(.noAnswer) })
+    }
+
     // The first and last rows of the window holding a pixel of the colour, or nil.
     private func band(of hex: Int, in window: UIWindow) -> (first: Int, last: Int)? {
         let format = UIGraphicsImageRendererFormat()

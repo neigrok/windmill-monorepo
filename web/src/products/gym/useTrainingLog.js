@@ -10,7 +10,7 @@ import { mintId } from './mint.js';
 import { CREATED_PATTERN } from './logger/movements.js';
 import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js';
 import { spellWeightsIn } from './units.js';
-import { hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey } from './withheld.js';
+import { goneIds, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey } from './withheld.js';
 
 const POLL_MS = 5000;
 // The watch for a workout starting, while none is mirrored; the visibilitychange asks at once.
@@ -446,6 +446,7 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   // One transient for the room, drawn once by `GymApp`: the sentence said last, or the window, and
   // never both. The window's own carries the Undo and refuses the dismiss.
   const hidden = (kind) => hiddenIds(withheld.current, settled.current, kind);
+  const gone = (kind) => goneIds(settled.current, kind);
 
   const spoken = transientOf(toast, withheld.current);
   const transient = spoken == null ? null : {
@@ -478,6 +479,10 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     // The one question a screen asks before it draws a row under a verb: is this id gone from the
     // screen? True while the window holds it, and true for good once the store has answered.
     hidden,
+    // The other question, which only a screen with a stance about the ACCOUNT asks: is this id gone
+    // from the STORE? False for everything the window is still holding, because that is a row a
+    // lifter can still have back.
+    gone,
     withhold,
     undoWithheld,
     dropWithheld,

@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
   cappedName, isNameOverCap, NAME_MAX, nameChars, nameCountLabel, showsNameCount,
 } from '../../../src/products/gym/log.js';
@@ -14,6 +15,10 @@ import { duplicateRoutine } from '../../../src/products/gym/routines.js';
 import {
   isTitleOverCap, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../src/products/gym/notes/notes.js';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle } from './harness.mjs';
+
+const realFetch = global.fetch;
+test.afterEach(() => { global.fetch = realFetch; });
 
 const SIXTY = '😀'.repeat(30) + 'ü'.repeat(30);
 const SIXTY_ONE = `${SIXTY}ü`;
@@ -83,4 +88,48 @@ test('a note’s title counts the same fixture the same way, against the column�
   assert.equal(titleChars(SIXTY_ONE), 61);
   assert.equal(isTitleOverCap(SIXTY_ONE), true);
   assert.equal(TITLE_MAX, NAME_MAX);
+});
+
+// The finish card mints a routine in passing, so it takes the editor's CAP and its UNIT — and NOT
+// its counter. A counter is drawn where a name is worked on (`15-the-routine.md`); adding one to a
+// receipt would be chrome, so its absence here is a decision and not an omission.
+test('the finish card cuts a typed routine name at sixty code points, and draws no counter', async (t) => {
+  browserWith();
+  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000 };
+  const sets = [{ id: 'st_1', exerciseId: 'squat', kind: 'working', weightKg: 100, reps: 5 }];
+  global.fetch = async (url) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [{ id: 'squat', name: 'Squat' }] }) };
+    if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
+    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets }) };
+    if (path === '/sessions/ses_1/review') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ slight: false, stats: { durationMs: 3_600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
+      };
+    }
+    throw new Error(`unexpected GET ${path}`);
+  };
+
+  const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
+  // The card is a child component, so the harness does not render it: it is rendered here, inside
+  // the same pass, which is what gives its own hooks a dispatcher.
+  const view = renderHook(t, () => {
+    const screen = FinishScreen({ id: 'ses_1', log: roomLog() });
+    const card = elementsOf(screen).find((each) => typeof each.type === 'function' && each.type.name === 'KeepAsRoutine');
+    return card ? card.type(card.props) : null;
+  });
+  await settle();
+
+  const field = () => findByClass(view.tree, 'gym-keep-input')[0];
+  assert.equal(field().props.maxLength, undefined, 'UTF-16 units are not this room’s unit');
+  field().props.onChange({ target: { value: SIXTY_ONE } });
+  assert.equal(field().props.value, SIXTY);
+  assert.equal(nameChars(field().props.value), NAME_MAX);
+  assert.equal(/\p{Surrogate}/u.test(field().props.value), false, 'no half of a character survives the cut');
+
+  field().props.onChange({ target: { value: LIFTER.repeat(13) } });
+  assert.equal(field().props.value, LIFTER.repeat(12), 'twelve of these are the sixty characters');
+  assert.equal(findByClass(view.tree, 'gym-name-count').length, 0, 'the cap comes to the receipt; the counter does not');
 });

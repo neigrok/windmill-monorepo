@@ -214,6 +214,15 @@ shortened. The same reading answers the empty room: an account holding one note 
 off the screen is not an empty account, so nothing offers to seed it. **A window decides which rows
 are drawn; it never decides what state a screen is in** (`10-notes.md`).
 
+**The rule is the room's and not the notes screen's.** Every kind with a drawn empty stance owes it:
+the bodyweight screen answers the two questions from two lists on the web and on Android —
+`useBodyweight`'s `entries` beside `rows`, `TrainingStore.allWeighIns` beside `bodyweight` — so
+deleting your only weigh-in draws no *No weigh-ins yet* over a series still holding one
+(`11-bodyweight.md`). And the delete has to leave the READ and not only the drawn rows the moment the
+store takes it, or a stance suppressed for nine seconds is a stance suppressed forever. **Four web
+screens have not taken it yet** — the log's sessions and its sets, the routines home, the coach's
+conversations — and are ledger `4p`; iOS's own bodyweight caption is ledger `4q`.
+
 **The shelf's row goes whole, and its one fact rides in the transient's line.** Android's unclaimed
 training is the last copy of what it holds, so hiding only the discard control would leave
 *These are mine* live over a shelf a pending discard wipes nine seconds later — and a transient

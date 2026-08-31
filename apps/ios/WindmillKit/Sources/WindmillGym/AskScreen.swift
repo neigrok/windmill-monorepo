@@ -233,11 +233,17 @@ struct AskScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.accent))
             }
-            Text(Ask.proposalNote)
-                .font(GymType.numeral(11.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            // A promise about what Apply will do is spent by the DECISION and by nothing else: taken
+            // or turned down, it goes; unread — the read has not landed, or failed, or the row has
+            // left the log — the card still offers Review, so the promise stands. What survives the
+            // decision is the door to the rows the card counted, which is above.
+            if (found?.state ?? .pending) == .pending {
+                Text(Ask.proposalNote)
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.inkFaint)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, alignment: .leading)

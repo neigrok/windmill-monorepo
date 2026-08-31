@@ -92,11 +92,14 @@ class TrainingStore(
     // The device's copy of the series for the seat in hand, ascending by date; the log's answer
     // replaces it on connect except for what this phone still owes.
     private var series: List<WeighIn> by mutableStateOf(emptyList())
-    // A weigh-in inside its undo window is off the series for EVERY reader — the chart and the log's
-    // head reading both — so one of them can never draw a day the other has dropped. Writes go to
-    // `series`, which is the whole of it.
+    // A weigh-in inside its undo window is off the DRAWN series for every reader — the chart's dots
+    // and the log's head reading both — so one of them can never draw a day the other has dropped.
+    // Writes go to `series`, which is the whole of it.
     val bodyweight: List<WeighIn>
         get() = series.filterNot { it.dateLocal in withheldIds }
+    // The whole series, a withheld weigh-in included. A window decides which ROWS are drawn and
+    // never what state a screen is in, so the chart's empty stance is read from here.
+    val allWeighIns: List<WeighIn> get() = series
     // The account's notes as the log last answered them, in the log's order. Nothing is kept between
     // runs — the read on the way in is the whole of it — but the ROOM holds them while it is open,
     // because a screen keeping a snapshot of its own would draw a note back the moment its window

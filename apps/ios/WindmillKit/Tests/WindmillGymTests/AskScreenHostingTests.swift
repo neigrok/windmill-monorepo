@@ -9,6 +9,14 @@ import XCTest
 // twenty-one, above two tap targets, is a claim about layout — so it is measured, at the largest text
 // size, by hosting the real screen and reading the scroller back. (The daily variant carries the
 // allowance line above all of it; the ceiling does not, so the ceiling's own block is the shorter one.)
+// The harness phone, and the floor the thread keeps on it. The floor is a PRODUCT BOUND, not a
+// measurement: the cap-reached block may take up to two thirds of the phone and no more. It is
+// written as a fraction of the window for a reason — the block's own height moves a long way
+// between toolchains (585 pt of thread on Xcode 26.3, 329 on 26.6, same device, same harness), so
+// any point value read off one machine pins that machine. Only a bound survives.
+private let HARNESS_HEIGHT: CGFloat = 844
+private let THREAD_KEEPS_AT_LEAST = HARNESS_HEIGHT / 3
+
 @MainActor
 final class AskScreenHostingTests: XCTestCase {
     private var stem: URL!
@@ -23,14 +31,14 @@ final class AskScreenHostingTests: XCTestCase {
         }
     }
 
-    private func makeStore() -> TrainingStore {
+    private func makeStore(sync: FakeTraining = FakeTraining()) -> TrainingStore {
         TrainingStore(queue: SetQueue(url: stem.appendingPathExtension("queue.json"), deviceHolds: nil),
                       deviceCatalog: DeviceCatalog(url: stem.appendingPathExtension("catalog.json")),
                       accountCopy: AccountCopy(url: stem.appendingPathExtension("account.json")),
                       localLog: LocalLog(url: stem.appendingPathExtension("local.json"), deviceHolds: nil),
                       bodyweightStore: BodyweightStore(url: stem.appendingPathExtension("bodyweight.json")),
                       undoWindowMs: 0,
-                      sync: { _ in FakeTraining() })
+                      sync: { _ in sync })
     }
 
     private let doors = AskDoors(send: { _, _ in .failure(AskRefusal(line: "no")) },
@@ -41,8 +49,9 @@ final class AskScreenHostingTests: XCTestCase {
                         exchanges: [AskExchange(question: "why did bench stall", outcome: .refused(refused))])
     }
 
-    private func host(_ conversation: AskConversation, size: DynamicTypeSize) async -> UIWindow {
-        let store = makeStore()
+    private func host(_ conversation: AskConversation, size: DynamicTypeSize,
+                      sync: FakeTraining = FakeTraining()) async -> UIWindow {
+        let store = makeStore(sync: sync)
         await store.connect(to: Account(api: WindmillApi(baseURL: URL(string: "https://windmill.works")!,
                                                          credential: { nil }),
                                         user: User(id: "u1", email: "u1@example.com", name: "Sam")))
@@ -89,12 +98,64 @@ final class AskScreenHostingTests: XCTestCase {
         let underDaily = try await threadHeight(conversation(refused: daily), size: .accessibility5)
         let plain = try await threadHeight(conversation(refused: ceiling), size: .large)
 
-        XCTAssertGreaterThan(underCeiling, 400,
-                             "the thread keeps most of the phone under the ceiling: \(underCeiling) of 844")
-        XCTAssertGreaterThan(plain, 400,
-                             "and at the default text size too: \(plain) of 844")
+        XCTAssertGreaterThan(underCeiling, THREAD_KEEPS_AT_LEAST,
+                             "the ceiling leaves the thread \(underCeiling) of \(HARNESS_HEIGHT)")
+        XCTAssertGreaterThan(plain, THREAD_KEEPS_AT_LEAST,
+                             "and at the default text size \(plain) of \(HARNESS_HEIGHT)")
         XCTAssertLessThan(underDaily - underCeiling, 60,
                           "the longer sentence costs the thread \(underDaily - underCeiling) points, not the thread")
+    }
+
+    // A promise about what Apply will do is spent the moment Apply is taken or turned down, so the
+    // card draws it while the proposal waits and drops it once it is decided — the web's shape. Both
+    // cards are otherwise the same card, one line of eyebrow apart, so what the pending one is taller
+    // BY is the promise itself.
+    func testTheProposalPromiseIsDrawnWhileItWaitsAndGoesWithTheDecision() async throws {
+        let waiting = try await proposalCardHeight([minted(.pending)])
+        let decided = try await proposalCardHeight([minted(.applied)])
+
+        XCTAssertGreaterThan(decided, waiting / 2,
+                             "the decided card is still drawn — the door and the count stay, so the "
+                             + "decision took a line off the card and not the card (\(decided) of \(waiting))")
+        XCTAssertGreaterThan(waiting, decided + 20,
+                             "the pending card carries the promise and the decided one does not "
+                             + "(\(waiting) vs \(decided))")
+    }
+
+    // The DECISION is what spends it, and an unread proposal is not one: with the read failed — a row
+    // gone from the log, or a phone with no signal — the card is still drawn and still offers Review,
+    // so the promise it makes about Apply still stands. What the failed read costs the card is the
+    // summary, so the control is the decided card with no summary of its own: between those two
+    // stands the promise and nothing else.
+    func testAProposalTheRoomCouldNotReadKeepsThePromise() async throws {
+        let unread = try await proposalCardHeight([])
+        let decided = try await proposalCardHeight([minted(.applied, summary: "")])
+
+        XCTAssertGreaterThan(unread, decided + 40,
+                             "the unread card keeps the promise the decided one has spent "
+                             + "(\(unread) vs \(decided))")
+    }
+
+    private func minted(_ state: ProposalState, summary: String = "Heavier triples.") -> Proposal {
+        Proposal(head: ProposalHead(id: "prop_1", routineId: "rt_1", state: state,
+                                    summary: summary, changeCount: 1,
+                                    createdAtMs: 5_000, settledAtMs: state == .pending ? nil : 6_000,
+                                    source: ProposalSource(door: "ask", agent: "Claude")),
+                 baseRevision: 1, baseName: "Push A", name: "Push A", changes: [])
+    }
+
+    private func proposalCardHeight(_ ledger: [Proposal]) async throws -> CGFloat {
+        let server = FakeTraining()
+        server.ledger = ledger
+        let answered = AskConversation(
+            threadId: "thr_abcdefgh",
+            exchanges: [AskExchange(question: "why did bench stall",
+                                    outcome: .answered(AskAnswer(answer: "Your triples stalled at 100.",
+                                                                 read: ReadTally(sets: 4, sessions: 2, weeks: 3),
+                                                                 proposals: ["prop_1"])))])
+        let window = await host(answered, size: .large, sync: server)
+        defer { window.isHidden = true }
+        return try XCTUnwrap(scrollView(in: window)).contentSize.height
     }
 }
 

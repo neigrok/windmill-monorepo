@@ -218,7 +218,8 @@ public final class WithheldWindow: ObservableObject {
     // by a minted id nothing reuses. For that one both of the window's answers are wrong — a hold
     // still running would delete the number just saved when its clock fires, and a subject already
     // recorded gone would hide it for the life of the room. Writing the day again IS the way back,
-    // so the row comes back and the transient retires. Called BEFORE the write reaches the store.
+    // so the row comes back and the transient retires. Called from inside `TrainingStore.weighIn` and
+    // from nowhere else, so no screen can write a day past it.
     public func writtenAgain(_ kind: Withheld.Kind, _ subject: String) async {
         gone.remove(Self.key(kind, subject))
         guard let index = held.firstIndex(where: { $0.kind == kind && $0.subject == subject }) else { return }

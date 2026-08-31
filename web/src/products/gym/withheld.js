@@ -48,6 +48,14 @@ export function hiddenIds(held, settled, kind) {
   return new Set([...held, ...settled].filter((each) => each.kind === kind).map((each) => each.id));
 }
 
+// What the STORE has answered for, under one verb — the settled half of `hiddenIds` alone. A screen's
+// stance about the ACCOUNT reads this and its rows read `hiddenIds`: a window decides which rows are
+// drawn, never what state a screen is in (`13-gestures.md`). An id leaves it only by being written
+// again, so a day written back is a day the account holds.
+export function goneIds(settled, kind) {
+  return new Set(settled.filter((each) => each.kind === kind).map((each) => each.id));
+}
+
 export function heldLine(open) {
   if (open.length === 0) return null;
   if (open.length === 1) return open[0].line;

@@ -64,6 +64,23 @@ final class ConnectedLogTests: XCTestCase {
         XCTAssertTrue(ConnectedLog.canLines.contains { $0.contains("Share one workout by link") })
     }
 
+    // A consent screen states a duration the way a reader can check it against a calendar, so the
+    // share window is a NUMERAL on both lines that carry it — the way `share_session` states it in
+    // the tool catalogue and the way the web and Android already write it.
+    func testTheShareWindowIsSaidInNumeralsOnBothLinesThatCarryIt() {
+        let shared = ConnectedLog.canLines.filter { $0.contains("Share one workout by link") }
+        XCTAssertEqual(shared.count, 1, "one line names the share")
+
+        for line in [LogReach.Level.write.reach] + shared {
+            XCTAssertTrue(line.contains("for 30 days unless you end it sooner"), line)
+            XCTAssertFalse(line.lowercased().contains("thirty"), line)
+        }
+        for line in Self.everyLine {
+            XCTAssertFalse(line.contains("until it expires"),
+                           "a window without its number, on: \(line)")
+        }
+    }
+
     func testOnlyTheGrantsThatReachTheLogBecomeRows() {
         let state = ConnectedLog.state(grants: [
             ConnectedLog.Grant(clientId: "c1", name: "Claude", grantedMs: 1_000, scope: "gym:read gym:write"),

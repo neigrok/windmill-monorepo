@@ -813,7 +813,10 @@ async function weighInRoom(t, entries, options = {}) {
   // the day a delete is holding.
   const chip = () => named(view.tree.logScreen, 'WeighInChip');
   const chipSheet = () => named(view.tree.logScreen, 'WeighInSheet');
-  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, chip, chipSheet };
+  // Every quiet line the chart screen is drawing: its stance about the account, and its line about
+  // the window it is showing.
+  const quiet = () => findByClass(view.tree.chart, 'gym-quiet').map(textOf);
+  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, chip, chipSheet, quiet };
 }
 
 test('a weigh-in delete is one press, closes the sheet over the transient, and drops the dot AND the log’s head reading together', async (t) => {
@@ -866,6 +869,29 @@ test('a weigh-in delete taken back puts the dot and the reading back, and never 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
   assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), []);
+});
+
+// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// The stance about the account reads the STORE, so the invitation to weigh in for the first time is
+// never drawn over a number the transient is still offering back.
+test('the chart’s empty stance reads the store, so a held delete of the only weigh-in draws no invitation and the settled one does', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const today = dateLocalOf(Date.now());
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+  assert.deepEqual(room.quiet(), []);
+
+  room.chart().props.onPick(room.chart().props.points[0]);
+  room.sheet().props.onDelete(today);
+  await settle();
+  assert.equal(room.chart(), undefined, 'the dot is off the chart, which is the window’s whole business');
+  assert.deepEqual(room.quiet(), [], 'and nothing offers to seed an account the store has not stopped holding');
+  assert.equal(room.log().transient.action.label, 'Undo');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(room.onTheLog(), [], 'the store took it, and only now is the account empty');
+  assert.deepEqual(room.quiet(), ['No weigh-ins yet.', 'Weigh in from the log and the number lands here.']);
 });
 
 test('a weigh-in delete the store refuses is said in the screen’s own words', async (t) => {
@@ -934,6 +960,10 @@ test('a weigh-in written again on a day whose delete already settled is drawn: t
 
   assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
   assert.equal(room.reading().props.latest.weightKg, 79.5, 'a number on the log that the room draws nowhere would be the worse lie');
+  // The dot the title names, and the stance beside it: the day is back in the account, so the chart
+  // may not go on offering to seed an account that holds a number the head is reading out.
+  assert.equal(room.chart().props.points.length, 1);
+  assert.deepEqual(room.quiet(), []);
 });
 
 test('a weigh-in written again while the delete’s send is still in the air is drawn: the room records nothing gone', async (t) => {
@@ -966,4 +996,7 @@ test('a weigh-in written again while the delete’s send is still in the air is 
   answerTheDelete();
   await settle();
   assert.equal(room.reading().props.latest.weightKg, 79.5, 'the date was written again, so it is not a date the store answered for');
+  // And the chart is reading the same account the head is: the day is a day the account holds.
+  assert.equal(room.chart().props.points.length, 1);
+  assert.deepEqual(room.quiet(), []);
 });

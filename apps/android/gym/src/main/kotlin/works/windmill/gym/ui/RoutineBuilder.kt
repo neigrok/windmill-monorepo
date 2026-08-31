@@ -273,9 +273,10 @@ private fun BuildStep(
         }
 
         // Why Save is grey, one refusal at a time and never concatenated. Naming it comes first
-        // because no screen before this one asked for a name.
+        // because no screen before this one asked for a name. The FAINT ink: the alarm ink is for a
+        // write that failed, and a draft that is not finished has sent nothing to fail.
         missing?.let {
-            Text(it, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
+            Text(it, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

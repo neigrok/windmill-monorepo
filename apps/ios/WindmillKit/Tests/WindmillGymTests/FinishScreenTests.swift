@@ -197,6 +197,47 @@ final class FinishTests: XCTestCase {
         XCTAssertEqual(Finish.keepRefusal(name: "Tuesday", failure: refused), refused)
         XCTAssertEqual(Finish.keepRefusal(name: "", failure: refused), RoutineDraft.nameItToSaveIt)
     }
+
+    // A name minted on the receipt is bounded the way a name minted in the editor is: sixty CODE
+    // POINTS, `RoutineDraft.capped`'s own rule. The fixture is what tells the three units apart —
+    // one thing on screen, five code points, six UTF-16 units — so a field capped at sixty graphemes
+    // would take all thirteen of them and one capped at sixty UTF-16 units would have cut at ten.
+    func testTheReceiptsRoutineNameTakesTheRoomsCapCountedInCodePoints() throws {
+        let twelve = String(repeating: "\u{1F3CB}\u{FE0F}\u{200D}\u{2640}\u{FE0F}", count: 12)
+        let thirteen = String(repeating: "\u{1F3CB}\u{FE0F}\u{200D}\u{2640}\u{FE0F}", count: 13)
+        XCTAssertEqual(thirteen.count, 13, "thirteen graphemes, which a grapheme cap would keep whole")
+        XCTAssertEqual(thirteen.unicodeScalars.count, 65)
+        XCTAssertEqual(twelve.utf16.count, 72, "seventy-two UTF-16 units: that cap would cut at ten")
+        XCTAssertEqual(RoutineDraft.capped(thirteen), twelve, "sixty code points is the room's cap")
+
+        let screen = try Self.source
+        let field = try XCTUnwrap(screen.range(of: "TextField(\"\", text: $routineName)"),
+                                  "the receipt's name field moved")
+        XCTAssertNotNil(screen.range(of: "let kept = RoutineDraft.capped(typed)",
+                                     range: field.upperBound..<screen.endIndex),
+                        "the receipt's field caps by the editor's rule and not by a number of its own")
+        XCTAssertFalse(screen.contains("RoutineDraft.counter"),
+                       "and takes no counter with it: the counter earns its place on the surface a "
+                       + "lifter works a name on, and a receipt mints one in passing")
+    }
+
+    // The alarm ink is for a write that failed and for nothing else (`GymSkin`). This one slot carries
+    // both refusals, so the ink follows the same predicate the sentence does: the empty name is faint,
+    // and only the log's own refusal is the alarm.
+    func testTheEmptyNameIsFaintAndOnlyTheLogsRefusalIsTheAlarm() throws {
+        let screen = try Self.source
+        XCTAssertNotNil(screen.range(of: "ink: unnamed ? skin.inkFaint : skin.alarmInk"),
+                        "a form that is not finished has sent nothing and been refused nothing")
+    }
+
+    private static var source: String {
+        get throws {
+            let file = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/WindmillGym/FinishScreen.swift")
+            return try String(contentsOf: file, encoding: .utf8)
+        }
+    }
 }
 
 final class DiscardTests: XCTestCase {

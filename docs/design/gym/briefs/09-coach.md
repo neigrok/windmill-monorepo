@@ -74,7 +74,12 @@ the decision.
 *Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.* is
 a claim about what Apply will do, and it is spent the moment Apply has been taken or turned down.
 What survives the decision is the door to the rows the card counted, which every surface keeps.
-Ruled 2026-08-31; both phones draw the promise unconditionally and owe the move (ledger `3t`).
+Built on all three: the web's `{pending && …}` in `CoachProposal`, `(found?.state ?? .pending) ==
+.pending` around `Text(Ask.proposalNote)` in `AskScreen.swift`, and `if (proposal.isPending)` around
+`Ask.promise` in `ui/AskScreen.kt`. **A decision is the only thing that spends it, and an unread
+proposal is not one.** Where the room cannot yet name the state — the read in flight, or failed, or
+the row gone from the log — the web and Android draw no card to promise on, and iOS, whose card is
+built from the id alone, keeps the promise standing over the Review door it is offering.
 
 **One proposal per turn.** An answer *can* mint several, and two on the same routine kill each other:
 the supersede runs before the second lands, so the first is dead while both ids come back. A second

@@ -3,7 +3,8 @@ import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref, weekdayName,
+  cappedName, entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
+  weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, SESSION_DELETED, statTiles } from './review.js';
@@ -148,12 +149,15 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
   return (
     <section className="gym-keep">
       <h2 className="gym-keep-title">Keep this as a routine</h2>
+      {/* The room's cap, counted the room's way: 60 CODE POINTS through `cappedName`, and never in
+          the UTF-16 units a length attribute counts, which would cut an emoji in half. No counter
+          beside it, and that is deliberate — the editor draws one because the editor is the surface
+          a name is worked on, and this card mints one in passing (`15-the-routine.md`). */}
       <input
         className="gym-keep-input"
         value={name}
-        maxLength={80}
         aria-label="Routine name"
-        onChange={(event) => setName(event.target.value)}
+        onChange={(event) => setName(cappedName(event.target.value))}
       />
       <ul className="gym-keep-entries">
         {composed.entries.map((entry) => (

@@ -51,6 +51,12 @@ public final class TrainingStore: ObservableObject {
     private let mintSet: () -> String
     private let sync: (Account) -> (any TrainingSyncing)?
     private var gym: (any TrainingSyncing)?
+    // The room's undo window, reached for the one subject a later write can name again: a local day.
+    // Handed over by the room rather than taken in the initializer, because the register and this
+    // store are two objects the room builds side by side and neither can be built out of the other;
+    // the no-op default is what lets the store stand alone in a test. Every weigh-in goes through
+    // `weighIn`, so this is the whole of the coupling and there is one place to look for it.
+    public var dayWrittenAgain: (String) async -> Void = { _ in }
     private var lastTimes: [String: LastTime] = [:]
     private var retryTask: Task<Void, Never>?
     // While the shelf replays, an ordinary start composes on the device: the server would join instead.
@@ -308,6 +314,12 @@ public final class TrainingStore: ObservableObject {
         if let refusal = Bodyweight.dateRefusal(dateLocal, today: Bodyweight.dateLocal(Date())) {
             return .refused(refusal)
         }
+        // Weighing a day again IS the way back from deleting it, so the window over that day comes
+        // down before the number goes in — here, where every screen's weigh-in passes, rather than at
+        // a call site the next screen to write one would have to remember. Left standing, its clock
+        // would delete the row just saved, and until it fired the transient would offer Undo beside a
+        // dot the chart is drawing again.
+        await dayWrittenAgain(dateLocal)
         let entry = BodyweightEntry(dateLocal: dateLocal, weightKg: weightKg, recordedAt: now())
         bodyweightStore.keep(entry, owed: true)
         bodyweightStore.flush()

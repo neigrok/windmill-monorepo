@@ -532,7 +532,11 @@ private fun Minted(
         ) {
             Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
         }
-        Text(Ask.promise, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
+        // A promise about what Apply will do is spent the moment Apply is taken or turned down: a
+        // card that reads `applied` may not still say nothing has been.
+        if (proposal.isPending) {
+            Text(Ask.promise, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
+        }
     }
 }
 

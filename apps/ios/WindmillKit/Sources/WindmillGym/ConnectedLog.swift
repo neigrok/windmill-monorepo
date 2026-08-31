@@ -18,7 +18,7 @@ struct LogReach: Equatable, Sendable {
                 return """
                     Records what you lift · adds a movement, or a day the program does not have yet · \
                     proposes a change to a day that already stands · shares one workout by link, \
-                    readable by anyone holding it until it expires.
+                    readable by anyone holding it for 30 days unless you end it sooner.
                     """
             case .delete:
                 return """
@@ -153,11 +153,13 @@ enum ConnectedLog {
 
     static let canTitle = "What a connection can do"
 
+    // The share's window is a NUMERAL here and on every other surface: a consent screen states a
+    // duration the way a reader can check it against a calendar (`share_session` in the tool catalog).
     static let canLines = [
         "Read what you have logged — sets, sessions, routines, and records.",
         "Record what you lift, and add a movement or a day the program does not have yet.",
         "Propose a change to a day that already stands, or propose taking one out.",
-        "Share one workout by link — a page anyone holding that link can read without signing in, until it expires or you end it.",
+        "Share one workout by link — a page anyone holding that link can read without signing in, for 30 days unless you end it sooner.",
         "Discard a whole workout — only if it asks for that and you allow it, and you see what it asked for before you do.",
     ]
 

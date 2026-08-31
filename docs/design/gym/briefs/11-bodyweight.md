@@ -108,9 +108,30 @@ The web does both in one handler and the order does not bite there — its trans
 **above** the sheet (`.gym-toast-slot` at `z-index: 55` over `.gym-sheet-catch`'s `40`).
 
 **The dot and the log's reading are dropped by one filter, never by two.** The chart and the log
-head read the same series — `useBodyweight` on the web, `TrainingStore.bodyweight` on Android,
-`drawBodyweight()` on iOS — so the head cannot go on printing a weigh-in the chart has already let
-go of.
+head read the same drawn series — `useBodyweight`'s `rows` on the web, `TrainingStore.bodyweight` on
+Android, `drawBodyweight()` on iOS — so the head cannot go on printing a weigh-in the chart has
+already let go of.
+
+**The screen's stance reads the STORE; only its rows read the window** — `13-gestures.md`'s law,
+which this screen is the reason for. *No weigh-ins yet. Weigh in from the log and the number lands
+here.* is a claim about the account, so deleting your only weigh-in may not draw it over a series
+that still holds one and offers *Undo* beside it. **Two surfaces of three answer the two questions
+from two lists**: `useBodyweight` answers `entries` (what the store holds) beside `rows` (what the
+window leaves), and Android's `TrainingStore` answers `allWeighIns` beside the thinned `bodyweight`.
+On both, the delete leaves the read as well as the drawn rows the moment the store takes it, so the
+invitation becomes true then rather than at the next re-read. **iOS has neither list** — its chart
+and the caption over it are both built from the thinned `store.bodyweight` — so its caption still
+answers for the account off the drawn series, which is ledger `4q`.
+
+**Between the two stances there is no one answer yet, and the default window decides which one a
+lifter meets.** For the nine seconds of a held delete of the only weigh-in there is no invitation —
+the store still holds a number — and no chart, because the window is holding its one dot. Both phones
+open on the ninety days, so both fill the gap with a sentence about them: Android draws the window
+control, the count line *last 90 days · 0 weigh-ins* and *no weigh-in in the last 90 days*, and iOS's
+caption draws that same sentence — said, on both, over a store that holds a weigh-in inside those
+ninety days. The web draws nothing at all. Switched to the whole series, Android's count line reads
+*the whole series · 0 weigh-ins* and it says nothing further, while iOS's caption becomes *no weigh-in
+yet*, a claim about the account read off the drawn list (ledger `4q`).
 
 **What lands after the window is not the same fact on every surface, because the delete is not.**
 The web's delete reaches the log itself, so a refusal there means the row is standing again and says
@@ -125,10 +146,13 @@ at all is a copy owner's call and not a build gap.
 **And a weigh-in written for that day while the window runs is a correction, not a race.** The later
 `recordedAt` wins, which is the rule the wire already states. A weigh-in is the one delete in this
 room whose id the lifter can write again — it is a calendar date and not a mint — and **writing the
-day again IS the undo**: on all three surfaces the write takes that day's window down before the
-number goes in (`useTrainingLog.js`'s `writtenAgain`, `WithheldWindow.writtenAgain` on iOS,
-`TrainingStore.weighIn`'s `dropWithheld` on Android). So the transient **retires** rather than
-standing there offering *Undo* beside a dot the chart is drawing again, and the clock that would have
+day again IS the undo**: on all three surfaces the window comes down before the number goes in, and
+on each it is ONE seam every weigh-in passes rather than a call each screen has to remember —
+`useBodyweight`'s own `save` on the web (the hook behind the room's one weigh-in door),
+`TrainingStore.weighIn`'s `dayWrittenAgain` on iOS, `TrainingStore.weighIn`'s `dropWithheld` on
+Android. On iOS it sits after the date refusal, so a day the store would refuse anyway costs no
+window. So the transient **retires** rather than standing there offering *Undo* beside a dot the
+chart is drawing again, and the clock that would have
 deleted the number just saved is gone. iOS also holds the instant of the withhold and checks it as
 the clock fires — the same ruling read from the other end, and the guard for a newer row that reaches
 the store some other way (ledger `4i`).

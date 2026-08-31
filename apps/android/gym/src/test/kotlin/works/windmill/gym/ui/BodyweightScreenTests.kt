@@ -34,6 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.ChartWindow
 import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.WriteFailure
@@ -420,6 +421,35 @@ class BodyweightScreenTests {
 
         compose.onNodeWithText("82.4 kg · 3 days ago").assertIsDisplayed()
         compose.onNodeWithText("90 kg", substring = true).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // `4n`: a window decides which ROWS are drawn; it never decides what state a screen is in. The
+    // nine seconds of an open delete had this screen standing on `No weigh-ins yet` — the stance for
+    // a lifter who has never weighed in — over a series that still held the number, with Undo up.
+    @Test
+    fun aHeldDeleteOfTheOnlyWeighInNeverDrawsTheNeverWeighedInStance() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        runBlocking { store.weighIn(today.toString(), 82.4) }
+        compose.setContent {
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+        }
+
+        compose.runOnIdle { store.withhold(Deletion.Bodyweight(today.toString())) }
+        compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals("the store still holds it, which is what Undo puts back",
+                listOf(today.toString()), store.allWeighIns.map { it.dateLocal })
+            assertEquals(emptyList<String>(), store.bodyweight.map { it.dateLocal })
+        }
+        // The rows keep reading the window: the dot is off the chart and the count says so.
+        compose.onNodeWithText(Bodyweight.windowLine(ChartWindow.Ninety, 0)).assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.noneInWindow).assertIsDisplayed()
+
+        compose.runOnIdle { assertNotNull(store.keepWithheld()) }
+        compose.onNodeWithText(Bodyweight.windowLine(ChartWindow.Ninety, 1)).assertIsDisplayed()
         scope.cancel()
     }
 

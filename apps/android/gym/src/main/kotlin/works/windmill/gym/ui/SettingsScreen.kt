@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Notes
@@ -119,7 +120,8 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
             onPick = onPick,
         )
         Caption("Display only — nothing stored changes.")
-        Caption("This phone still draws every weight in kilograms — nothing on this screen converts one. The choice is kept with your gym settings and goes with you when you sign in.")
+        // Drawn only under the answer it is about: on kg it would be a sentence about nothing.
+        if (units == Units.Pounds) Caption(Bodyweight.kilogramsOnly)
     }
 }
 
@@ -138,10 +140,9 @@ private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggl
             onPick = onPick,
         )
         ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
-        // A routine's own rest against a movement outranks this dial, `off` included.
+        // ONE caption, and it is the override: this is the only place on the phone that a routine's
+        // own rest beating this dial is said, and it is the one fact here with a dial behind it.
         Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only a change to that routine can move it.")
-        // The chime is a sleep inside the app: no AlarmManager, no notification, no wake lock.
-        Caption("Windmill holds the screen awake while you train, and the chime is scheduled inside the app. It is not a system alarm — close Windmill and it goes with it.")
     }
 }
 
@@ -155,7 +156,9 @@ private fun ConfirmRow(
         Text("Set confirmation", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
         ToggleLine("Haptic", preferences.confirmHaptic, onToggleHaptic)
         ToggleLine("Sound", preferences.confirmSound, onToggleSound)
-        Caption("This phone has a haptic and follows Android’s own touch-feedback setting — turn that off in system settings and this row goes quiet with it.")
+        // The switch can be on and the phone still silent: Compose's haptics go through Android's
+        // own touch-feedback setting.
+        Caption("Android’s touch-feedback setting can silence the haptic with this still on.")
     }
 }
 

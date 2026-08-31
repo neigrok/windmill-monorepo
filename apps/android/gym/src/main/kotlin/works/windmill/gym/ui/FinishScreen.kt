@@ -361,7 +361,10 @@ private fun KeepAsRoutine(
         ) {
             OutlinedTextField(
                 value = name,
-                onValueChange = onName,
+                // The room's one cap, counted the way the editor counts it: a routine minted on the
+                // receipt is bounded exactly like a routine built in the editor. No counter — the
+                // editor is where a lifter works a name, and this field mints one in passing.
+                onValueChange = { onName(Program.capped(it)) },
                 singleLine = true,
                 label = { Text("Routine name") },
                 textStyle = WindmillFont.body(17, FontWeight.SemiBold),
@@ -400,11 +403,14 @@ private fun KeepAsRoutine(
         // ONE sentence under one grey button, drawn here because a sheet covers the room's bottom
         // bar, where every other refusal lands. An empty name is what holds the button NOW, so it
         // outranks what the log said about a keep the lifter has already read and moved on from.
-        (Program.nameItToSaveIt.takeIf { !named } ?: failure)?.let {
+        val missing = Program.nameItToSaveIt.takeIf { !named }
+        (missing ?: failure)?.let {
             Text(
                 it,
                 style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.alarmInk,
+                // The alarm ink is for a write that failed. An empty name is neither destructive nor
+                // invalid — nothing was sent — so the unfinished form takes the faint ink.
+                color = if (missing != null) GymSkin.inkFaint else GymSkin.alarmInk,
             )
         }
     }

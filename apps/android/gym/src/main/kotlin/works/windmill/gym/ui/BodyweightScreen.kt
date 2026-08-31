@@ -316,7 +316,10 @@ fun BodyweightScreen(
             .padding(bottom = WindmillSpace.x8),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
       ) {
-        if (Bodyweight.windowed(store.bodyweight, ChartWindow.All, today).isEmpty()) {
+        // The STORE decides whether there is anything to draw; the window decides only which dots
+        // are. Deleting your only weigh-in leaves nine seconds of Undo, and this screen may not
+        // stand on `No weigh-ins yet` over a series that still holds one.
+        if (Bodyweight.windowed(store.allWeighIns, ChartWindow.All, today).isEmpty()) {
             Text(Bodyweight.nothingYet, style = WindmillFont.body(15), color = GymSkin.inkDim)
             return@Column
         }
@@ -325,7 +328,12 @@ fun BodyweightScreen(
         Text(Bodyweight.windowLine(window, shown.size), style = GymType.numeral(12), color = GymSkin.inkFaint)
 
         if (shown.isEmpty()) {
-            Text(Bodyweight.noneInWindow, style = WindmillFont.body(15), color = GymSkin.inkDim)
+            // The sentence names the ninety days, so it is drawn only under that window. Over the
+            // whole series the count line above is the whole of what there is to say — which is the
+            // state a held delete of the only weigh-in leaves this screen in.
+            if (window == ChartWindow.Ninety) {
+                Text(Bodyweight.noneInWindow, style = WindmillFont.body(15), color = GymSkin.inkDim)
+            }
         } else {
             DotChart(shown, runs, window, today, onDot = { repairing = it })
             // The rule is the chart's disclosure about its own segments, so it is drawn only where

@@ -293,8 +293,17 @@ yet.
 **And the counter beside it is `53/60`, appearing in the last fifth** — from 48 characters, silent
 before that, and counting **characters** on every surface. The form and the threshold match the note
 editor's counter exactly, because a lifter should not have to learn two rules for the same idea. It
-is the shape a wave gets wrong by leaving it unpinned: a cap without its counter is three surfaces
-inventing three answers.
+is the shape a wave gets wrong by leaving it unpinned: on the surface a name is worked on, a cap
+without its counter is three surfaces inventing three answers.
+
+**The finish card takes the cap and its unit, and deliberately NOT the counter.** A routine minted
+from the receipt is a routine, so its field bounds at the same 60 code points through the same call
+the editor makes — `cappedName` on the web, `RoutineDraft.capped` on iOS, `Program.capped` on
+Android. The counter does not come with it, and that is a decision rather than an omission: the
+counter earns its pixels on the surface a lifter works a name on, where the last fifth is a warning
+worth having, and the finish card mints one in passing on a receipt. Drawing it there would add
+chrome to a room whose rule is to draw each fact once, in the state where it is true. Each surface
+says so in a comment beside the field, so a later reader does not read the gap as drift.
 
 **And the same rule governs the other end of the field: what counts as NO name is measured in one
 unit per surface, and it is the routine editor's.** A cap is a count in a unit and a blank check is a

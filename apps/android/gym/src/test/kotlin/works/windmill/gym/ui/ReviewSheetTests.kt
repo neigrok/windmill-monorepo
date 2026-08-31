@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -19,9 +20,11 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -110,6 +113,15 @@ class ReviewSheetTests {
         source = source, baseRevision = routine.revision,
         baseName = "Push Day", name = "Push Day", changes = changes,
     )
+
+    // Every property the bridge turns into speech: a node's own text, its description, and the state
+    // it announces with it.
+    private fun saying(sentence: String) = SemanticsMatcher("says “$sentence”") { node ->
+        val said = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
+            listOfNotNull(node.config.getOrNull(SemanticsProperties.StateDescription))
+        sentence in said
+    }
 
     private fun sheet(store: TrainingStore, routine: Routine, decided: MutableList<Proposal>, heightDp: Int = 900) {
         compose.setContent {
@@ -244,10 +256,12 @@ class ReviewSheetTests {
         scope.cancel()
     }
 
-    // The gate says WHY it is shut, on the screen and on the channel TalkBack reads, and its slot is
-    // held open in BOTH directions — including the return, when a kept run unfolding re-locks `seen`
-    // — so Apply never moves under the finger. Driven off `seen` ALONE: bound to the disabled
-    // predicate the sentence would still be standing while the apply request was on the wire.
+    // The gate says WHY it is shut on the control that is refusing — the channel TalkBack reads —
+    // and its slot is held open in BOTH directions, including the return, when a kept run unfolding
+    // re-locks `seen`, so Apply never moves under the finger. Driven off `seen` ALONE: bound to the
+    // disabled predicate the sentence would still be standing while the apply request was on the
+    // wire. What the eye reads is the drawn row, which is off the semantics tree in both states and
+    // measured by the slot it holds (`LargestTypeTests`).
     @Test
     fun theShutGateSaysWhyItIsShutAndItsSlotHoldsApplyStillWhenTheGateOpens() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -257,22 +271,46 @@ class ReviewSheetTests {
         sheet(store, kept, mutableListOf(), heightDp = 360)
 
         val shut = compose.onNodeWithText("Apply").getUnclippedBoundsInRoot()
-        compose.onNodeWithText(Proposal.applyHint).assertIsDisplayed()
         compose.onNodeWithText("Apply").assert(hasStateDescription(Proposal.applyHint))
 
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNodeWithText("Apply").assertIsEnabled()
         assertEquals("the slot is held: Apply does not move when the gate opens",
             shut, compose.onNodeWithText("Apply").getUnclippedBoundsInRoot())
-        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
         compose.onNodeWithText("Apply").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
 
-        // And it comes BACK: what grew has not been seen, so the sentence returns with the gate.
+        // And it comes BACK: what grew has not been seen, so the reason returns with the gate.
         compose.onNodeWithText("and 6 lines unchanged").performScrollTo().performClick()
         compose.onNodeWithText("Apply").assertIsNotEnabled()
-        compose.onNodeWithText(Proposal.applyHint).assertIsDisplayed()
+        compose.onNodeWithText("Apply").assert(hasStateDescription(Proposal.applyHint))
         assertEquals("and the slot is held in that direction too",
             shut, compose.onNodeWithText("Apply").getUnclippedBoundsInRoot())
+        scope.cancel()
+    }
+
+    // `4m`: ONE fact, ONE node. A reader walking the shut band met the refusal twice in a row on this
+    // phone — on Apply's state and again on the drawn row beneath it — where iOS hides its row with
+    // `.accessibilityHidden` and the web with `aria-hidden`. The count is taken over every property a
+    // screen reader speaks, on the MERGED tree, which is the tree the accessibility bridge walks.
+    @Test
+    fun theShutBandExposesTheGatesRefusalOnExactlyOneNode() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, kept) = store(scope, server)
+        server.propose(proposal(kept, (1..10).map { retarget("ex-$it", it) }))
+        sheet(store, kept, mutableListOf(), heightDp = 360)
+
+        compose.onNodeWithText("Apply").assertIsNotEnabled()
+        val saying = compose.onAllNodes(saying(Proposal.applyHint)).fetchSemanticsNodes()
+        assertEquals("the shut band's merged tree:\n${compose.onRoot().printToString()}",
+            1, saying.size)
+        assertEquals("and the one node is the control that is refusing",
+            listOf("Apply"), saying.single().config[SemanticsProperties.Text].map { it.text })
+
+        // Open, nothing says it at all: the reason is gone from the state as well as from the row.
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.onNodeWithText("Apply").assertIsEnabled()
+        assertEquals(0, compose.onAllNodes(saying(Proposal.applyHint)).fetchSemanticsNodes().size)
         scope.cancel()
     }
 
@@ -295,7 +333,6 @@ class ReviewSheetTests {
         compose.onNodeWithText("Apply").performClick()
 
         compose.onNodeWithText("Apply").assertIsNotEnabled()
-        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
         compose.onNodeWithText("Apply").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
 
         inFlight.complete(Unit)
