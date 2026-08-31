@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../../src/products/gym/fix.js';
 import { THREADS_HREF } from '../../../../src/products/gym/log.js';
-import { THREAD_ABSENT, THREAD_DELETED } from '../../../../src/products/gym/coach/threads.js';
+import { THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED } from '../../../../src/products/gym/coach/threads.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf,
 } from '../harness.mjs';
@@ -104,6 +104,13 @@ const deleteVerb = (tree) => {
   return findByClass(block.type(block.props), 'gym-thread-delete-verb')[0];
 };
 
+// Nothing stands over the button: what the delete leaves behind rides the window instead.
+const deleteNote = (tree) => {
+  const block = componentIn(tree, 'DeleteThread')[0];
+  if (!block) return undefined;
+  return findByClass(block.type(block.props), 'gym-thread-delete-note')[0];
+};
+
 const deletes = (wire) => wire.filter((line) => line.startsWith('DELETE'));
 
 test('deleting a conversation is one press: no arm, no confirmation, and nothing on the wire', async (t) => {
@@ -116,16 +123,42 @@ test('deleting a conversation is one press: no arm, no confirmation, and nothing
   // sentence that promised no way back.
   const verb = deleteVerb(room.detail());
   assert.equal(textOf(verb), 'Delete this conversation');
+  assert.equal(deleteNote(room.detail()), undefined, 'and no caption stands over it saying what the delete leaves behind');
   verb.props.onClick();
   await settle();
 
   assert.deepEqual(deletes(wire), [], 'withheld means NOT SENT');
   assert.equal(room.log().transient.text, THREAD_DELETED);
   assert.equal(room.log().transient.text, 'Conversation deleted.');
+  // What the delete leaves behind is said here, on the act, and nowhere on the conversation screen.
+  assert.equal(room.log().transient.detail, THREAD_DELETE_DETAIL);
+  assert.equal(room.log().transient.detail, 'a change you applied stays in the routine\u2019s history');
   assert.equal(room.log().transient.action.label, 'Undo');
   assert.equal(room.log().transient.dismiss, null, 'a way back that could be dismissed early is no way back');
   assert.equal(window.location.hash, THREADS_HREF, 'the lifter is put back on the list, and the transient comes too');
   await room.drain();
+});
+
+// The destination of the move: what the window carries is drawn, and not only stored. `Transient` is
+// the room's own host — `Toast` is the shell's and knows nothing about a detail.
+test('the transient draws the sentence and the detail as two fields, and one field when the act leaves nothing behind', async () => {
+  browserWith();
+  const { Transient } = await loadScreen('products/gym/GymApp.jsx');
+  const toastIn = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Toast');
+
+  const held = Transient({ transient: { text: THREAD_DELETED, detail: THREAD_DELETE_DETAIL, action: { label: 'Undo', run: () => {} }, dismiss: null } });
+  assert.equal(findByClass(held, 'gym-toast-slot')[0].props.role, 'status');
+  assert.equal(
+    textOf(toastIn(held).props.children),
+    'Conversation deleted.a change you applied stays in the routine\u2019s history',
+    'the sentence, then the detail under it',
+  );
+  assert.deepEqual(findByClass(held, 'gym-transient-detail').map(textOf), [THREAD_DELETE_DETAIL]);
+  assert.equal(toastIn(held).props.action.label, 'Undo');
+
+  const bare = Transient({ transient: { text: 'Push A deleted.', detail: null, action: { label: 'Undo', run: () => {} }, dismiss: null } });
+  assert.equal(textOf(toastIn(bare).props.children), 'Push A deleted.');
+  assert.deepEqual(findByClass(bare, 'gym-transient-detail'), []);
 });
 
 test('the row is off the list at once, and the window runs the full nine seconds', async (t) => {
@@ -184,6 +217,7 @@ test('two conversations deleted in one second are held together, and both come b
   await settle();
 
   assert.equal(room.log().transient.text, '2 deleted.');
+  assert.equal(room.log().transient.detail, null, 'a count has no one detail to carry');
   assert.deepEqual(titles(room.list()), ['Deload week?'], 'both rows are off the list');
   assert.deepEqual(deletes(wire), []);
 
@@ -191,6 +225,7 @@ test('two conversations deleted in one second are held together, and both come b
   await settle();
   assert.deepEqual(titles(room.list()), ['Deload week?', 'More rows?'], 'the newest delete comes back first');
   assert.equal(room.log().transient.text, THREAD_DELETED, 'and the transient re-reads for the one still held');
+  assert.equal(room.log().transient.detail, THREAD_DELETE_DETAIL, 'detail and all');
 
   room.log().transient.action.run();
   await settle();

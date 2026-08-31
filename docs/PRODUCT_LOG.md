@@ -259,7 +259,9 @@ decisions behind it.
 - Prefill order: plan snapshot → last time → 20 kg, and last time is never hidden.
 - Comparison is top-set e1RM (Epley, `weight × (1 + reps/30)`), never volume.
 - Errors are user-visible. No silent no-op, no failure that only reaches a log line.
-- No destructive gesture without a confirm and an undo.
+- A destructive act takes an undo, not a confirmation: it is withheld for 9000 ms with the way back
+  on screen and nothing on the wire until the window closes. Turning a proposal down is the one
+  exception the rule allows a confirmation, because it settles permanently and has no way back.
 - Invalidate client caches on a data version, never on a collection length.
 - Never truncate model context by message count: it can split a `tool_use` from its `tool_result`.
 

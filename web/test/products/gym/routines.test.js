@@ -132,21 +132,24 @@ test('duplicateRoutine — a new id over the same entries, and a copy has never 
     position: 3,
     entries: [{ exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
   });
-  assert.deepEqual(duplicateRoutine(stored, { id: 'rt_push_b', name: 'Push B' }), {
+  assert.deepEqual(duplicateRoutine(stored, { id: 'rt_push_b', name: 'Push B', position: 4 }), {
     id: 'rt_push_b',
     name: 'Push B',
-    position: 0,
+    position: 4,
     entries: [{ exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
   });
+  // The position is the caller's to state. A copy that fell back on the original's would land on top
+  // of it, so there is no fallback to fall back on.
+  assert.equal(duplicateRoutine(stored, { id: 'rt_push_b' }).position, undefined);
 });
 
 test('duplicateRoutine — the default name fits the store, and the suffix is what survives', () => {
   const long = 'P'.repeat(NAME_MAX);
-  const copy = duplicateRoutine({ id: 'rt_1', name: long, position: 0, entries: [] }, { id: 'rt_2' });
+  const copy = duplicateRoutine({ id: 'rt_1', name: long, position: 0, entries: [] }, { id: 'rt_2', position: 1 });
   assert.equal(copy.name, `${'P'.repeat(NAME_MAX - 5)} copy`);
   assert.equal(copy.name.length, NAME_MAX);
 
-  const typed = duplicateRoutine({ id: 'rt_1', name: 'Push A', position: 0, entries: [] }, { id: 'rt_2', name: 'Q'.repeat(NAME_MAX + 20) });
+  const typed = duplicateRoutine({ id: 'rt_1', name: 'Push A', position: 0, entries: [] }, { id: 'rt_2', name: 'Q'.repeat(NAME_MAX + 20), position: 1 });
   assert.equal(typed.name.length, NAME_MAX);
 });
 

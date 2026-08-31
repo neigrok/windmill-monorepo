@@ -87,8 +87,10 @@ that list, the SHEET owns the sentence and the list's copy steps aside, so one s
 once. The word `open` in a row's target column is what says which rows they are. In the sheet the
 sentence sits ABOVE the three fields,
 beside `Never logged — these are your numbers.`: everything drawn under a field is that field's own
-note. A list OF ROUTINES carries neither — it names movements and no targets, and the numbers are
-read on the routine's own screen.
+note. A list OF ROUTINES carries neither, because it is a list of routines: a card names the routine,
+whether it is `untested`, how many movements it holds, when it was last trained, and what is waiting
+on it. The movements, their targets and that routine's settled history — its newest twenty proposals,
+not every one it ever had — are read one tap deeper, on the routine's own screen.
 
 The movement picker opens on six and then hands over the whole catalogue. The six are this log's own
 — the movements the most of its newest fifty sessions named (`PickerOptions.mostTrained`, counted off

@@ -73,12 +73,25 @@ test('connectedLabel says when a tool was connected, and claims no read it canno
   }
 });
 
-test('the level lines name the writes that land, not only the ones that wait', () => {
-  assert.equal(LEVEL_LINES.read, 'Read your log — sets, workouts, routines, records, notes and how your gym is set up');
+test('the level lines name the writes that land, not only the ones that wait — and claim no reach the tools do not have', () => {
+  assert.equal(LEVEL_LINES.read, 'Read your log — sets, workouts, routines, records and notes');
+  // `get_preferences` does not exist at any level: the rest target and the reading unit are the
+  // lifter's own dials. A consent screen that says otherwise over-claims.
+  for (const overclaimed of ['how your gym is set up', 'preferences', 'rest', 'unit']) {
+    assert.equal(LEVEL_LINES.read.includes(overclaimed), false, overclaimed);
+  }
   for (const lands of ['Record what happened', 'add a new day or a new movement', 'share one workout by link']) {
     assert.equal(LEVEL_LINES.write.includes(lands), true, lands);
   }
   assert.equal(LEVEL_LINES.write.includes('propose changes to the days you have'), true);
+  // A share link is readable by anyone holding it and outlives the session that minted it, so the
+  // level that mints one says both — as its own `·` item, because a row of facts does not grow a
+  // paragraph.
+  assert.equal(
+    LEVEL_LINES.write,
+    'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link · anybody holding that link reads it without signing in, for 30 days unless you end it sooner',
+  );
+  assert.equal(LEVEL_LINES.write.includes(' — '), false, 'no clause welded onto the list');
   assert.equal(LEVEL_LINES.delete, 'Discard a workout · end a share link · propose a removal');
 });
 

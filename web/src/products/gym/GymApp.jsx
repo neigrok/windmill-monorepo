@@ -116,24 +116,34 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'connect' && <ConnectLog />}
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
-      {/* The room's one transient, hosted here and not by a screen, so a withheld delete's Undo
-          follows the lifter wherever they go next. Undo does not close it: it re-reads for whatever
-          the window is still holding. */}
-      {log.transient && (
-        <div className="gym-toast-slot" role="status">
-          <Toast
-            tone="neutral"
-            onClose={log.transient.dismiss ?? undefined}
-            action={log.transient.action && {
-              label: log.transient.action.label,
-              onClick: log.transient.action.run,
-            }}
-          >
-            {log.transient.text}
-          </Toast>
-        </div>
-      )}
+      {log.transient && <Transient transient={log.transient} />}
     </>
+  );
+}
+
+// The room's one transient, hosted here and not by a screen, so a withheld delete's Undo follows the
+// lifter wherever they go next. Undo does not close it: it re-reads for whatever the window is still
+// holding. The detail is a second field beside the sentence and never folded into it — `Toast` puts
+// its children in one bare span, where a newline would collapse to a space and run the two together.
+export function Transient({ transient }) {
+  return (
+    <div className="gym-toast-slot" role="status">
+      <Toast
+        tone="neutral"
+        onClose={transient.dismiss ?? undefined}
+        action={transient.action && {
+          label: transient.action.label,
+          onClick: transient.action.run,
+        }}
+      >
+        <>
+          {transient.text}
+          {transient.detail && (
+            <span className="gym-transient-detail">{transient.detail}</span>
+          )}
+        </>
+      </Toast>
+    </div>
   );
 }
 

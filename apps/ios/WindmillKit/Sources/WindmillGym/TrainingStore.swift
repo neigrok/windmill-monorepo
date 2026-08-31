@@ -150,6 +150,14 @@ public final class TrainingStore: ObservableObject {
         case failed
     }
 
+    // `remembered` is this device's copy of the account's program: it names the movements and carries
+    // no history, which is a different fact from a routine that has none.
+    public enum RoutineRead: Equatable {
+        case read(Routine)
+        case remembered(Routine)
+        case failed(WriteFailure)
+    }
+
     public var todaySets: [TrainingSet] {
         guard let exerciseId else { return [] }
         return sets.filter { $0.exerciseId == exerciseId }
@@ -739,20 +747,26 @@ public final class TrainingStore: ObservableObject {
         return saved
     }
 
-    // History rides only on this read; the list read carries none.
-    public func routine(_ id: String) async -> Result<Routine, WriteFailure> {
-        if let local = localLog.routine(id) { return .success(local) }
-        guard let gym else { return .failure(.refused("that routine is on your account — sign in to read it")) }
+    // History rides only on this read; the list read carries none. A read the log never ANSWERS falls back
+    // on the device's copy of the program, so a basement still names a routine's movements; a read the log
+    // refuses is said in the log's own words, because the copy has no way to draw them.
+    public func routine(_ id: String) async -> RoutineRead {
+        if let local = localLog.routine(id) { return .read(local) }
+        guard let gym else { return .failed(.refused("that routine is on your account — sign in to read it")) }
         do {
             guard let found = try await gym.routine(id) else {
                 forget(routine: id)
-                return .failure(.refused("that routine is no longer on the log"))
+                return .failed(.refused("that routine is no longer on the log"))
             }
             routines = Routine.byLastTrained(routines.map { $0.id == found.id ? found : $0 })
             rememberTheProgram()
-            return .success(found)
+            return .read(found)
         } catch {
-            return .failure(WriteFailure(error))
+            let why = WriteFailure(error)
+            guard why == .noAnswer, let held = accountCopy.routines.first(where: { $0.id == id }) else {
+                return .failed(why)
+            }
+            return .remembered(held)
         }
     }
 
@@ -857,15 +871,16 @@ public final class TrainingStore: ObservableObject {
         proposals.filter { $0.routineId == routineId && $0.isPending }
     }
 
-    // Ordered by the day each row is about; ties fall back to the log's newest-minted order.
-    public func history(of routineId: String) -> [ProposalHead] {
-        proposals
-            .filter { $0.routineId == routineId && !$0.isPending }
-            .sorted {
-                guard $0.recordedAtMs == $1.recordedAtMs else { return $0.recordedAtMs > $1.recordedAtMs }
-                guard $0.createdAtMs == $1.createdAtMs else { return $0.createdAtMs > $1.createdAtMs }
-                return $0.id > $1.id
-            }
+    // The waiting proposal a routine's ROW draws. One proposal has one rendering: the newest waiting one on
+    // the account already stands as the card at the head of the home, so a routine holding that one alone
+    // draws no row of its own. A routine holding more keeps its row — the card names one proposal and no
+    // count, and the count is the row's to say.
+    public func waitingOnTheRow(of routineId: String) -> ProposalHead? {
+        let waiting = pending(of: routineId)
+        guard waiting.count == 1, waiting[0].id == proposals.first(where: \.isPending)?.id else {
+            return waiting.first
+        }
+        return nil
     }
 
     public func proposal(_ id: String) async -> Result<Proposal, WriteFailure> {

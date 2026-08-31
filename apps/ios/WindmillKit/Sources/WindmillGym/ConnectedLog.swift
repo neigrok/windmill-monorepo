@@ -13,7 +13,7 @@ struct LogReach: Equatable, Sendable {
         var reach: String {
             switch self {
             case .read:
-                return "Reads your log — sets, workouts, routines, records, and how your gym is set up."
+                return "Reads your log — sets, workouts, routines, and records."
             case .write:
                 return """
                     Records what you lift · adds a movement, or a day the program does not have yet · \
@@ -154,7 +154,7 @@ enum ConnectedLog {
     static let canTitle = "What a connection can do"
 
     static let canLines = [
-        "Read what you have logged — sets, sessions, routines, records, and how your gym is set up.",
+        "Read what you have logged — sets, sessions, routines, and records.",
         "Record what you lift, and add a movement or a day the program does not have yet.",
         "Propose a change to a day that already stands, or propose taking one out.",
         "Share one workout by link — a page anyone holding that link can read without signing in, until it expires or you end it.",

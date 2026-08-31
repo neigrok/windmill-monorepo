@@ -47,7 +47,7 @@ object ConnectedLog {
         "Read your sets, sessions, routines, records and notes. Record what happened — open a workout, log " +
             "sets, add a movement, write a day of the program that did not exist. Propose a change " +
             "to a day that already stands. Mint a share link to one workout — anybody holding that " +
-            "link reads that one workout without signing in, for thirty days unless you end it " +
+            "link reads that one workout without signing in, for 30 days unless you end it " +
             "sooner."
 
     const val cannotDoHead = "What it cannot do"

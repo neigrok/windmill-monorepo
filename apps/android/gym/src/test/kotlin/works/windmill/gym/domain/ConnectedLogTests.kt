@@ -74,6 +74,10 @@ class ConnectedLogTests {
             ConnectedLog.canDo.contains("link") && ConnectedLog.canDo.contains("without signing in"),
         )
         assertTrue(
+            "and its window in numerals, the way the web and the tool catalogue write it",
+            ConnectedLog.canDo.contains("for 30 days") && !ConnectedLog.canDo.contains("thirty"),
+        )
+        assertTrue(
             "and the delete level says it can end one",
             ConnectedLog.deleteLevel.contains("end a share link"),
         )

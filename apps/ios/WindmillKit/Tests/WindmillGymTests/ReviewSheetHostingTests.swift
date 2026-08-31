@@ -167,6 +167,29 @@ final class ReviewSheetHostingTests: XCTestCase {
         XCTAssertGreaterThan(counts.accent, 4_000, "a diff that fits opens Apply however late it lands: \(counts)")
         window.isHidden = true
     }
+
+    // The card the routines home stands on, measured as it is laid out. The summary is written, so the only
+    // thing on the card either name can reach is the eyebrow.
+    private func fitted(routine: String, agent: String, width: CGFloat) -> CGSize {
+        let head = ProposalHead(id: "prop_1", routineId: "rt_1", summary: "Heavier triples.", changeCount: 2,
+                                createdAtMs: 1_754_312_040_000, source: ProposalSource(door: "mcp", agent: agent))
+        let card = ProposalCard(head: head, routineName: routine, undecided: true, onReview: {})
+            .environment(\.gymSkin, GymSkin.instrument)
+        return UIHostingController(rootView: card).sizeThatFits(in: CGSize(width: width, height: CGFloat.infinity))
+    }
+
+    func testTheStandingCardNamesTheRoutineInItsEyebrowAndHoldsItToOneLine() {
+        let sixty = String(repeating: "N", count: 60)
+        let plain = fitted(routine: "Push A", agent: "Claude", width: .infinity)
+
+        XCTAssertGreaterThan(fitted(routine: sixty, agent: "Claude", width: .infinity).width, plain.width + 100,
+                             "the eyebrow names the routine, so a longer name asks for more room")
+        XCTAssertEqual(fitted(routine: "Push A", agent: sixty, width: .infinity).width, plain.width,
+                       "and it names the agent nowhere: the review sheet's header is that fact's home")
+        XCTAssertEqual(fitted(routine: sixty, agent: "Claude", width: 393).height,
+                       fitted(routine: "Push A", agent: "Claude", width: 393).height,
+                       "a name typed to its cap truncates rather than growing the card by a line")
+    }
 }
 
 // The proposal read answers 300 ms later, as it does over a network.

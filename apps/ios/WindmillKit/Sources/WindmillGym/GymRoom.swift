@@ -388,7 +388,6 @@ public struct GymRoom: View {
                                onDelete: withholdDelete(of:),
                                onNew: newRoutine,
                                onStartLogging: { Task { await open(nil) } },
-                               onMovement: { look(at: .movement($0)) },
                                onProposal: review,
                                onSettings: { look(at: .settings) },
                                onSignIn: { shell.openYou() })

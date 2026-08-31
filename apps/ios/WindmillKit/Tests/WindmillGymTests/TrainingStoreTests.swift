@@ -66,10 +66,14 @@ final class TrainingStoreTests: XCTestCase {
         return held
     }
 
-    private func account(signedIn: Bool, id: String = "u1") -> Account {
+    // `verified: false` is the seat a launch with no signal stands on: the device's last-known user, whom
+    // `/v1/me` could not confirm. A signed-out account is also the seat nobody has named YET, because the
+    // room mounts before `/v1/me` answers.
+    private func account(signedIn: Bool, id: String = "u1", verified: Bool = true) -> Account {
         Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
-            user: signedIn ? User(id: id, email: "\(id)@example.com", name: "Sam") : nil
+            user: signedIn ? User(id: id, email: "\(id)@example.com", name: "Sam") : nil,
+            verified: verified
         )
     }
 
@@ -508,6 +512,65 @@ final class TrainingStoreTests: XCTestCase {
         await stranger.loadLastSets()
         XCTAssertNil(stranger.lastSets)
         XCTAssertEqual(stranger.preferences, .defaults)
+    }
+
+    func testARoutineReadWithNoSignalComesOffTheDeviceCopyAndItsHistoryIsSaidToBeOutOfReach() async {
+        let server = FakeTraining()
+        server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 82.5),
+        ])
+        let online = makeStore(sync: server)
+        await online.connect(to: account(signedIn: true))
+        guard case .read(let served) = await online.routine("rt_push_a") else {
+            return XCTFail("the log answers for a routine it holds")
+        }
+        XCTAssertEqual(served.entries.map(\.exerciseId), ["bench-press"])
+
+        server.online = false
+        let basement = makeStore(sync: server)
+        // The launch the shell performs, both seats of it: the room mounts before `/v1/me` answers, so the
+        // first connect is under a seat nobody has named yet, and offline the second stands unverified on
+        // the device's last-known user. A copy thrown away on the first is not there for the second.
+        await basement.connect(to: account(signedIn: false))
+        await basement.connect(to: account(signedIn: true, verified: false))
+        guard case .remembered(let held) = await basement.routine("rt_push_a") else {
+            return XCTFail("a read with no answer falls back on the copy rather than on a dead end")
+        }
+        XCTAssertEqual(held.entries.map(\.exerciseId), ["bench-press"],
+                       "the movements are named in a basement, which is where the routine is read")
+        XCTAssertTrue(held.history.isEmpty, "the copy is written out without a history")
+
+        guard case .failed(let why) = await basement.routine("rt_nobody") else {
+            return XCTFail("a routine on neither the log nor the copy is out of reach")
+        }
+        XCTAssertEqual(why, .noAnswer)
+        XCTAssertEqual(why.line("this routine isn\u{2019}t drawn"),
+                       "the log didn\u{2019}t answer — this routine isn\u{2019}t drawn")
+    }
+
+    // Only silence falls back on the copy. `the log didn’t answer` is a claim about the log, so a log that
+    // DID answer keeps its own sentence rather than being drawn as a remembered routine with no history.
+    func testARoutineReadTheLogRefusesIsSaidInTheLogsOwnWordsAndNotRememberedQuietly() async {
+        let server = FakeTraining()
+        server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 82.5),
+        ])
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        guard case .read = await store.routine("rt_push_a") else {
+            return XCTFail("the log answers for a routine it holds, so the copy is written")
+        }
+
+        server.refuseRoutine = refusal(403, message: "your grant no longer covers this routine")
+
+        guard case .failed(let why) = await store.routine("rt_push_a") else {
+            return XCTFail("an answered refusal is not a routine this device remembered")
+        }
+        XCTAssertEqual(why, .refused("your grant no longer covers this routine"))
+        XCTAssertEqual(why.line("this routine isn\u{2019}t drawn"), "your grant no longer covers this routine",
+                       "the screen draws the log's own sentence")
     }
 
     func testAWriteBackThatDidNotLandSaysWhatDidNotHappen() async {
@@ -1068,7 +1131,8 @@ final class TrainingStoreTests: XCTestCase {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.preferences, .defaults)
-        XCTAssertNil(LocalLog(url: localURL, deviceHolds: nil).preferences, "and the shelf let go of it on disk too")
+        XCTAssertNil(LocalLog(url: localURL, deviceHolds: nil).open(preferencesUnder: nil),
+                     "the shelf hands her document to no seat but hers")
 
         let his = FakeTraining()
         his.online = false
@@ -1076,12 +1140,32 @@ final class TrainingStoreTests: XCTestCase {
         let hisRoom = makeStore(sync: his)
         await hisRoom.connect(to: account(signedIn: true, id: "u2"))
         XCTAssertEqual(hisRoom.preferences, .defaults)
+        XCTAssertNil(LocalLog(url: localURL, deviceHolds: nil).preferences,
+                     "and another account ARRIVING is what lets go of it, on disk as well as in memory")
 
         his.online = true
         await hisRoom.save(hisRoom.preferences.with(confirmSound: true))
         XCTAssertEqual(his.settingsWrites.map(\.units), [.kg])
         XCTAssertEqual(his.settingsWrites.map(\.restSeconds), [nil])
         XCTAssertTrue(his.settings?.confirmSound == true)
+    }
+
+    // The room mounts and connects before `/v1/me` answers, so a seat nobody has named YET is not a
+    // seat that left. Her document waits for her own seat rather than being dropped before the first read.
+    func testTheLaunchBeforeTheSeatIsNamedKeepsTheLiftersOwnSettings() async {
+        let hers = makeStore(sync: nil)
+        await hers.connect(to: account(signedIn: true))
+        await hers.save(GymPreferences.defaults.resting(180).with(units: .lb))
+
+        let launching = makeStore(sync: nil)
+        await launching.connect(to: account(signedIn: false))
+        XCTAssertEqual(launching.preferences, .defaults, "an unnamed seat is served nobody's document")
+        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).preferences?.restSeconds, 180,
+                       "and the launch did not drop it from disk on its way past")
+
+        await launching.connect(to: account(signedIn: true))
+        XCTAssertEqual(launching.preferences, GymPreferences.defaults.resting(180).with(units: .lb),
+                       "the seat the document was written for gets it back")
     }
 
     func testTheAnonymousDocumentCrossesIntoTheAccountAndNotBackOut() async {
@@ -1361,6 +1445,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
     var refuseRoutines: WindmillApiError?
+    var refuseRoutine: WindmillApiError?
     var refuseProposals: WindmillApiError?
     var refuseApply: WindmillApiError?
     var refuseShare: WindmillApiError?
@@ -1593,6 +1678,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     func routine(_ id: String) async throws -> Routine? {
         calls.append("routine")
         guard online else { throw WindmillApiError.offline }
+        if let refuseRoutine { throw refuseRoutine }
         return written[id]
     }
 

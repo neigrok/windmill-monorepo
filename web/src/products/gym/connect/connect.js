@@ -32,9 +32,12 @@ export const FREE_LINE =
 
 export const GRANT_LINE = 'Windmill speaks MCP, and one URL is the whole of it.';
 
+// One row per level, and each row is a `·` list of facts rather than a sentence. The rest target and
+// the reading unit are dials, not context: no tool at any level fetches them, so read does not name
+// them. A share link is public for its whole life, so write says so, in its own item.
 export const LEVEL_LINES = {
-  read: 'Read your log — sets, workouts, routines, records, notes and how your gym is set up',
-  write: 'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link',
+  read: 'Read your log — sets, workouts, routines, records and notes',
+  write: 'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link · anybody holding that link reads it without signing in, for 30 days unless you end it sooner',
   delete: 'Discard a workout · end a share link · propose a removal',
 };
 

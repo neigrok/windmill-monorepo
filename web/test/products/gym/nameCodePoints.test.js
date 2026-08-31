@@ -51,7 +51,7 @@ test('the sixty-first code point is the only one refused, and the cut never halv
 });
 
 test('a duplicate’s name is cut in code points too, so no copy carries half a character', () => {
-  const copy = duplicateRoutine({ id: 'rt_1', name: '😀'.repeat(60), position: 0, entries: [] }, { id: 'rt_2' });
+  const copy = duplicateRoutine({ id: 'rt_1', name: '😀'.repeat(60), position: 0, entries: [] }, { id: 'rt_2', position: 1 });
   assert.equal(copy.name, `${'😀'.repeat(55)} copy`);
   assert.equal(nameChars(copy.name), NAME_MAX);
   assert.equal(/\p{Surrogate}/u.test(copy.name), false);

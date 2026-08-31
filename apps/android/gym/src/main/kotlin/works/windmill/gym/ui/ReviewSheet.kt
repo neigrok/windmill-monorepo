@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -212,7 +213,10 @@ private fun Head(proposal: Proposal?, nowMs: Long) {
                 proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
                 style = WindmillFont.display(19),
                 color = GymSkin.ink,
-                maxLines = 1,
+                // The head may take a second line where the eyebrow may not: this is the screen the
+                // routine is decided on, and clipping its name hides the subject of the decision.
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             proposal?.let {
                 Text(it.byline(nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint, maxLines = 1)
@@ -549,12 +553,16 @@ fun ProposalCard(
             Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
             Spacer(Modifier.size(WindmillSpace.x2))
             Text(
-                "Proposal · ${proposal.source.name}",
+                "Proposal · $routineName",
                 style = GymType.numeral(11, FontWeight.Bold),
                 color = GymSkin.accent,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // The name is the lifter's own, so the eyebrow takes what is left of the row rather
+                // than measuring it out from under the stamp.
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.size(WindmillSpace.x2))
             Text(
                 Readout.whenLogged(proposal.createdAtMs, nowMs),
                 style = GymType.numeral(11),

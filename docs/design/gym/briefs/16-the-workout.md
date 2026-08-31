@@ -45,7 +45,11 @@ and it must not be a dead end while it does.
 
 Built that way on iOS (`GymRoom.swift:163-171`). Android draws it as a screen of its own with back
 claimed and inert; the web's `#/gym/finish/<id>` is a review of a past workout rather than the end of
-a live one — the web starts no sessions — and carries two drawn ways back (`Finish.jsx:29`, `:41`).
+a live one — the web starts no sessions. The web's ready state draws **no back at all**: an ordinary
+workout ends in a footer holding *Session detail* and *Done* (`Finish.jsx:103-108`) and a slight one
+in *Keep it* and *Discard session* (`:134-139`), and neither foot is a way back. The two `<Back>`
+doors in that file are the absent (`:29`) and failed (`:41`) branches, which a lifter reaching a
+finished workout never sees.
 
 The offer and the destructive door keep their places inside it. **Discard asks nothing.** It withholds
 the session for the same nine seconds every other delete in the room is held for, puts the transient's

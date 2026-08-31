@@ -17,6 +17,12 @@ field, a share sheet, a progress indicator and a confirmation dialog are the **p
 weight numeral, a plate ladder, a set row, a proposal diff, a read receipt and a routine card are
 **ours**, and they look the same everywhere.
 
+**A sheet is the platform's, and so is what leaving one means: a tap outside dismisses it and
+commits nothing.** Every scrim in the room answers the same way — the six on the web, iOS's
+interactive dismiss, Android's `onDismissRequest` — and so does the rack keypad wherever it is
+raised behind one, which its own copy already promises: *cancel to keep* the number standing. A
+scrim that writes is the one stroke a lifter cannot see coming.
+
 The line is not aesthetic. A lifter has spent years learning what a back gesture does, what a
 long-press offers, what a swipe on a row means, and where the account lives. Re-teaching them costs
 them something and buys us nothing. A weight ladder, on the other hand, is ours to invent, because

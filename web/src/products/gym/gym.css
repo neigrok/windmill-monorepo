@@ -580,6 +580,20 @@ button.gym-set:focus-visible .gym-set-fix,
   width: min(374px, calc(100vw - 28px));
 }
 
+/* The second field of a transient: what the act left behind, under the sentence saying it happened.
+   It wraps rather than clamps — a truncated disclosure is worse than a taller transient. Measured in
+   the slot's own geometry at default type, the detail is two lines and the whole transient three at
+   every phone width from 320px up: thumb-reach.md's two-line paragraph test is met, and
+   text-budget.md's two-line toast is not — the price of saying the fact in the phones' own bytes. */
+.gym-transient-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--gym-ink-dim);
+}
+
 /* The mark of a session running somewhere else, never beside a control that could drive it. */
 .gym-live-dot {
   width: 7px;
@@ -1102,6 +1116,12 @@ button.gym-set:focus-visible .gym-set-fix,
   justify-content: space-between;
   align-items: baseline;
 }
+.gym-head-doors {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .gym-door-past {
   min-height: 36px;
   padding: 0 12px;
@@ -1368,9 +1388,28 @@ button.gym-set:focus-visible .gym-set-fix,
   pointer-events: auto;
   cursor: grabbing;
 }
+/* One control over the row body: the movement it names and the target it reads, in one tap target. */
+.gym-entry-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* A LINE BOX and not a flex box: `text-overflow: ellipsis` reads a block box's own inline content,
+   and a flex container has none, so `display: flex` here hard-clips a long name mid-word. */
 .gym-entry-name {
   flex: 1;
   min-width: 0;
+  line-height: 40px;
   font-size: 14.5px;
   font-weight: 600;
   overflow: hidden;
@@ -1386,8 +1425,12 @@ button.gym-set:focus-visible .gym-set-fix,
   text-transform: uppercase;
   color: var(--color-brand);
 }
+/* A span inside the row's one button, so it centres its own line: a flex item has no button's
+   built-in centring to borrow. */
 .gym-entry-target {
   flex: none;
+  display: inline-flex;
+  align-items: center;
   height: 34px;
   padding: 0 11px;
   border: 1px solid var(--gym-line);
@@ -1399,7 +1442,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
-.gym-entry-target:hover {
+.gym-entry-body:hover .gym-entry-target {
   border-color: var(--color-brand);
   color: var(--color-brand);
 }
@@ -1418,8 +1461,9 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-entry-drop:hover {
   color: var(--alarm-ink);
 }
-/* One overflow, drawn twice: on a routine row and in the editor's head. It holds what a lifter does
-   to a routine rather than in it, and nothing destructive lives here until a withheld delete does. */
+/* One overflow, on the routine row and nowhere else. It holds what a lifter does to a routine rather
+   than in it — Duplicate and Delete — and nothing destructive lives here until a withheld delete
+   does. */
 .gym-overflow {
   position: relative;
   flex: none;
@@ -2325,13 +2369,6 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-movement-door:hover {
   color: var(--color-brand);
 }
-/* The door takes the row's full 40px inner height. That height is a LINE BOX and not a flex box:
-   `text-overflow: ellipsis` reads a block box's own inline content, and a flex container has none, so
-   `display: flex` here hard-clips a long name mid-word. */
-.gym-entry .gym-movement-door {
-  align-self: stretch;
-  line-height: 40px;
-}
 
 /* ── The workout share ──────────────────────────────────────── */
 .gym-share {
@@ -3161,12 +3198,6 @@ button.gym-set:focus-visible .gym-set-fix,
   padding-top: 16px;
   border-top: 1px solid var(--gym-line);
 }
-.gym-thread-delete-note {
-  margin: 0 0 10px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--gym-ink-faint);
-}
 .gym-thread-delete-verb {
   min-height: 44px;
   padding: 0 16px;
@@ -3256,13 +3287,23 @@ button.gym-set:focus-visible .gym-set-fix,
   text-transform: uppercase;
   color: var(--color-brand);
 }
+/* The routine's own name, up to 60 code points a lifter typed: it truncates so the eyebrow stays
+   one line and the stamp beside it keeps its room. */
+.gym-proposal-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .gym-proposal-when {
+  flex: none;
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0;
   text-transform: none;
   font-weight: 500;
+  white-space: nowrap;
   color: var(--gym-ink-faint);
 }
 /* One mark for "something is waiting", shared by the card, the routine's row and its history. */
@@ -3278,6 +3319,13 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 14px;
   line-height: 1.45;
   color: var(--gym-ink);
+}
+/* How much the proposal is, in one phrase, off the kicker and on a line of its own. */
+.gym-proposal-counted {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--gym-ink-faint);
 }
 /* What a removal would do, said by us rather than by the agent's own summary. */
 .gym-proposal-intent {
@@ -3302,26 +3350,6 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 .gym-proposal-review:hover {
   background: var(--color-brand-hover);
-}
-
-/* The name keeps its ellipsis and is the only thing in this line allowed to shrink. */
-.gym-routine-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.gym-routine-line .gym-routine-name {
-  min-width: 0;
-}
-.gym-routine-flag {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-brand);
 }
 
 /* The routine's history. A pending row wears the dot and is a door onto the diff. */
@@ -3466,14 +3494,24 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.45;
   color: var(--alarm-ink);
 }
-/* A run of unchanged lines, folded to a count in its own place and unfolded there. */
-.gym-diff-row.is-kept-run {
+/* A run of unchanged lines folded to a count in the dialog, and on the card the rest of what moved
+   counted rather than drawn. Neither is a line of the routine, so neither wears a line's frame. */
+.gym-diff-row.is-kept-run,
+.gym-diff-row.is-more {
   padding: 0 13px;
   border-color: transparent;
   background: none;
 }
-.gym-diff-unfold,
-.gym-diff-unfolded {
+/* The card is a skim; the dialog is the document. */
+.gym-diff-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--gym-ink-faint);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.gym-diff-unfold {
   min-height: 36px;
   padding: 0;
   border: none;
@@ -3483,8 +3521,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 12.5px;
   font-weight: 600;
   text-align: left;
-}
-.gym-diff-unfold {
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: var(--gym-line-strong);
@@ -3492,10 +3528,6 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 .gym-diff-unfold:hover {
   color: var(--gym-ink-dim);
-}
-.gym-diff-unfolded {
-  display: inline-flex;
-  align-items: center;
 }
 /* Derived from the server's reply, held for this visit only. */
 .gym-coach-receipt {

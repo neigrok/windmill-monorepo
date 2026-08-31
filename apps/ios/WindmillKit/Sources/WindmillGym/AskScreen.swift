@@ -209,6 +209,7 @@ struct AskScreen: View {
                     .textCase(.uppercase)
                     .kerning(0.9)
                     .foregroundStyle(skin.accent)
+                    .lineLimit(1)
                 Spacer(minLength: WindmillSpace.x2)
                 if let found {
                     Text(found.state == .pending

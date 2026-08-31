@@ -284,6 +284,12 @@ final class ProposalStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: queueURL.appendingPathExtension("local"))
     }
 
+    // The decided half of the ledger for one routine. The routine's own screen draws its history from
+    // the wire's `Routine.history`, so this is what a decision leaves behind in the room's own state.
+    private func decided(_ store: TrainingStore, of routineId: String = "rt_1") -> [ProposalHead] {
+        store.proposals.filter { $0.routineId == routineId && !$0.isPending }
+    }
+
     private func store(_ server: FakeTraining) -> TrainingStore {
         var ms: Int64 = 1_000
         return TrainingStore(queue: SetQueue(url: queueURL, deviceHolds: nil),
@@ -336,7 +342,6 @@ final class ProposalStoreTests: XCTestCase {
 
         XCTAssertEqual(store.proposals, [])
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(store.history(of: "rt_1"), [])
         XCTAssertEqual(server.calls, [])
 
         await store.connect(to: account(signedIn: true))
@@ -355,7 +360,7 @@ final class ProposalStoreTests: XCTestCase {
 
         XCTAssertEqual(store.proposals.map(\.id), ["prop_1", "prop_0"])
         XCTAssertEqual(store.pending(of: "rt_1").map(\.id), ["prop_1"])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.id), ["prop_0"])
+        XCTAssertEqual(decided(store).map(\.id), ["prop_0"])
     }
 
     func testApplyingLandsTheRoutineTheLogAnswersWithAndKeepsTheRecord() async {
@@ -370,7 +375,7 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 87.5)
         XCTAssertEqual(store.routines.first?.entries.first?.targetReps, 3)
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.state), [.applied])
+        XCTAssertEqual(decided(store).map(\.state), [.applied])
     }
 
     func testApplyingOverARoutineThatMovedIsRefusedAndTheProgramIsUntouched() async {
@@ -387,7 +392,7 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertEqual(server.written["rt_1"]?.entries.first?.targetWeightKg, 90)
         XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 90)
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.state), [.superseded])
+        XCTAssertEqual(decided(store).map(\.state), [.superseded])
     }
 
     func testTheLiftersOwnSaveTakesTheWaitingCardWithIt() async {
@@ -400,7 +405,7 @@ final class ProposalStoreTests: XCTestCase {
 
         XCTAssertNil(failed)
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.state), [.superseded])
+        XCTAssertEqual(decided(store).map(\.state), [.superseded])
     }
 
     func testDismissingChangesNothingAndIsStillWrittenDown() async {
@@ -413,7 +418,7 @@ final class ProposalStoreTests: XCTestCase {
         guard case .settled(let settled, _) = outcome else { return XCTFail("dismissed: \(outcome)") }
         XCTAssertEqual(settled.state, .dismissed)
         XCTAssertEqual(store.routines.first, pushA())
-        XCTAssertEqual(store.history(of: "rt_1").map(\.state), [.dismissed])
+        XCTAssertEqual(decided(store).map(\.state), [.dismissed])
     }
 
     func testADecisionAlreadyTakenComesBackTheWayItWasTaken() async {
@@ -524,7 +529,7 @@ final class ProposalStoreTests: XCTestCase {
         guard case .settled(let settled, _) = outcome else { return XCTFail("apply landed: \(outcome)") }
         XCTAssertEqual(settled.id, "prop_2")
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(Dictionary(uniqueKeysWithValues: store.history(of: "rt_1").map { ($0.id, $0.state) }),
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: decided(store).map { ($0.id, $0.state) }),
                        ["prop_2": .applied, "prop_1": .superseded])
         XCTAssertEqual(server.ledger.map(\.state), [.applied, .superseded])
     }
@@ -539,6 +544,35 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertEqual(store.pending(of: "rt_1").map(\.id), ["prop_2", "prop_1"])
         XCTAssertEqual(ProposalHead.waitingLine(store.pending(of: "rt_1").count), "2 proposals")
         XCTAssertEqual(store.pending(of: "rt_1").first?.source.agentName, "Ask")
+        XCTAssertEqual(store.proposals.first(where: \.isPending)?.id, "prop_2",
+                       "and it is the standing card at the head of the home")
+        XCTAssertEqual(store.waitingOnTheRow(of: "rt_1")?.id, "prop_2",
+                       "the row stands with it: `2 proposals` is a fact the card names nowhere")
+    }
+
+    // One proposal, one rendering: the newest waiting one on the account is the standing card at the
+    // head of the home, so the routine it belongs to draws no waiting row of its own beneath it.
+    func testTheRoutineHoldingTheStandingCardDrawsNoWaitingRowOfItsOwn() async {
+        let server = seeded()
+        server.written["rt_2"] = Routine(id: "rt_2", name: "Legs", position: 1,
+                                         entries: [RoutineEntry(position: 1, exerciseId: "back-squat")])
+        server.revisions["rt_2"] = 1
+        server.ledger.append(Proposal(head: ProposalHead(id: "prop_legs", routineId: "rt_2",
+                                                         summary: "Lighter squats.", changeCount: 1,
+                                                         createdAtMs: 4_000,
+                                                         source: ProposalSource(door: "mcp", agent: "Claude")),
+                                      baseRevision: 1, baseName: "Legs", name: "Legs", changes: []))
+        let store = store(server)
+
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.proposals.first(where: \.isPending)?.id, "prop_1",
+                       "the newest waiting proposal on the account, which is the one the card is for")
+        XCTAssertNil(store.waitingOnTheRow(of: "rt_1"), "the card above is already that proposal")
+        XCTAssertEqual(store.waitingOnTheRow(of: "rt_2")?.id, "prop_legs",
+                       "a routine that does not own the card keeps its own row")
+        XCTAssertEqual(store.pending(of: "rt_1").map(\.id), ["prop_1"],
+                       "and the accent border still reads the routine's own waiting list")
     }
 
     func testATapOnARowTheLogNoLongerHoldsTakesTheCardWithIt() async {
@@ -584,19 +618,6 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertNotNil(server.written["rt_1"])
     }
 
-    func testTheRoutinesHistoryIsOrderedByTheDayEachRowPrints() async {
-        let server = seeded()
-        server.ledger = [heavier("prop_new", state: .dismissed, createdAtMs: 7_000, settledAtMs: 8_000),
-                         heavier("prop_old", state: .applied, createdAtMs: 5_000, settledAtMs: 20_000)]
-        let store = store(server)
-
-        await store.connect(to: account(signedIn: true))
-
-        XCTAssertEqual(store.proposals.map(\.id), ["prop_new", "prop_old"])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.id), ["prop_old", "prop_new"])
-        XCTAssertEqual(store.history(of: "rt_1").map(\.recordedAtMs), [20_000, 8_000])
-    }
-
     func testAProposalsReadThatMissedDrawsNothingRatherThanAStaleCard() async {
         let server = seeded()
         let store = store(server)
@@ -607,6 +628,6 @@ final class ProposalStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
 
         XCTAssertEqual(store.pending(of: "rt_1"), [])
-        XCTAssertEqual(store.history(of: "rt_1"), [])
+        XCTAssertEqual(decided(store), [], "and nothing stale is left standing in the decided half")
     }
 }

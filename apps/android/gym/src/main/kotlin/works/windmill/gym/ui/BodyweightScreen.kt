@@ -342,8 +342,10 @@ fun BodyweightScreen(
             Text(Bodyweight.noneInWindow, style = WindmillFont.body(15), color = GymSkin.inkDim)
         } else {
             DotChart(shown, runs, window, today, onDot = { repairing = it })
+            // The rule is the chart's disclosure about its own segments, so it is drawn only where
+            // there are segments to read.
+            Text(Bodyweight.gapRule, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }
-        Text(Bodyweight.gapRule, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         if (store.preferences.units == Units.Pounds) {
             Text(Bodyweight.kilogramsOnly, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }

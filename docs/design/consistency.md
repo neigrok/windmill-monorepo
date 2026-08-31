@@ -604,7 +604,8 @@ schemes · never the scheme itself."
 **1o · the proposal's kept rows are drawn on one surface and dropped on two** → built 2026-08-26,
 nothing owed. One shape on all three: changed rows at full weight, and every run of consecutive kept
 rows folded **in place** to *and N lines unchanged* (*and 1 line unchanged*), tappable to unfold where
-it stands so the document keeps its order — `proposals.js:150-156` (`keptRunLabel`, `collapseKept`),
+it stands so the document keeps its order — `proposals.js:158` (`keptRunLabel`) and `:179`
+(`collapseKept`), read by the review dialog and by nothing else,
 `Proposal.swift:300-319` (`blocks`, `unchangedLabel`), `Proposal.kt:161` and `:329` (`document`). The
 wire still carries every kept row, and the system prompt still tells the model "a line you leave out
 is a line you are proposing to remove".
@@ -621,6 +622,21 @@ export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadReposit
 the JSON enum. The human share is "Share this workout" on every surface (`share/share.js:12`,
 `CoachShare.swift:27`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
 not on the room (`connect.js:5-7`, `ConnectedLog.swift:111`).
+
+**3f · the account's AI ceiling is a dead end with a live composer, and it says the daily cap's
+words** → ruled 2026-08-30: it shares the cap-reached state, owed a build on all three.
+`ask-out-of-budget` and `ask-daily-limit` are two refusals and one state — the room is finished for
+this visit either way, and the connect door is unrationed under both — but only the daily one has a
+screen. At the 30-day ceiling every surface leaves the composer live and fails the next question
+identically, and the cap-reached block renders a local constant: `CAP_REACHED_NOTE`
+(`coach.js:69`, drawn at `CoachRoom.jsx:147`), `Ask.capReached` (`AskScreen.swift:288`,
+`AskScreen.kt:329`). Nothing else says it either — the web drops the failure's own note unread
+(`CoachRoom.jsx:55`) and both phones suppress the exchange's card while the state stands
+(`AskScreen.swift:139-141`, `AskScreen.kt:148-150`). **The fix flows to all three clients:** route
+the second code into the cap-reached state, render the server's sentence where the reply carries one,
+and choose the wordless fallback on the **code** so a ceiling never borrows *a couple of hours*.
+Under the ceiling the connect door is the primary and *Ask something new* sits beneath it. Canon is
+`gym/briefs/09-coach.md`; this entry closes when the build lands (`gym/BUILD.md` §8).
 
 **1s · `set.rpe` is drawn on the web and enterable on no surface** → ruled and built 2026-08-27 on
 all three, nothing owed. **The control was given, not the render deleted.** Every fix sheet now edits
@@ -735,7 +751,7 @@ editor sends one — which is how a stale-write 409 is possible at all. The head
 half, and it is the half a reader trusts, because it sits on the type.
 
 **2h · `That is not a number yet.` is the one pinned refusal that does not name a way out** → fix the
-brief. `../guidelines/text-budget.md` budgets a refusal at *"≤ 12 words, **and it names the way out**"*.
+brief. `guidelines/text-budget.md` budgets a refusal at *"≤ 12 words, **and it names the way out**"*.
 Five of the six refusals pinned in `gym/briefs/15-the-routine.md` do: *One decimal point only.*,
 *Over 500 kg — check the number.*, *Whole reps, 1 to 100.*, *Sets, 1 to 20.* and *A zero target is no
 target — clear the field instead.* The sixth states the fault and stops. It is drawn as pinned on
@@ -772,7 +788,8 @@ August` (nodes `125:276`, `126:55`) and `Sat 16 August · 71 min`, `Thu 14 Augus
 shape: `web/src/products/gym/log.js:116-119` gives `Sat 16 Aug` and `:122-125` gives `16 Aug`, both
 with an abbreviated month, and the only full month names live in `coach/threads.js:4-7`, used alone
 as a thread heading (`:64`) and never beside a day. `last run` is a string no surface ships either —
-the routine row meta is `routineMetaLabel` (`log.js:313-318`), which reads `{n} movements · trained {ago}` and
+the routine row meta is `routineMetaLabel` (`log.js:317-322`), which reads
+`{n} movements · trained {ago}` and
 `agoLabel` produces only `today`, `yesterday` and `{n} days ago`. The same three-date defect was
 carried into the wave-two `R2` board and has been corrected there to `built 16 Aug · 5 movements`,
 `18 Aug · applied 2 changes from Ask` and `16 Aug · created by you · 5 movements`; the Coach boards
@@ -936,11 +953,14 @@ on every surface that has the state:
 - **a second walk over a pending deviation** — `{Movement} first — that question is still open.`
   (`LiveSession.swift:81`, `domain/LiveSession.kt:80`); the phones alone, the web has no logger.
 - **the conversation delete's detail** — `a change you applied stays in the routine’s history`, said
-  at the moment of the act on both phones (`Withheld.swift:22`, `store/WithheldDelete.kt:53`) while
-  the web still draws it as a standing caption inside the conversation (`coach/threads.js:76-78`).
+  at the moment of the act on all three (`Withheld.swift:22`, `store/WithheldDelete.kt:53`,
+  `coach/threads.js:80` `THREAD_DELETE_DETAIL`) and standing on no screen. The web carries it as a
+  sibling field on the window rather than folded into the line (`withheld.js:59-62` `heldDetail`),
+  and past one held delete the count takes over and no detail is said — the rule is inside the
+  function on every surface, never at a call site.
 - **the count** — `2 deleted.` while everything held is a delete, `2 to take back.` the moment a
   logged set is among them (`Withheld.swift:36-40`, `store/WithheldDelete.kt:99-107`). The web says
-  only the first, because nothing appends into its window (`withheld.js:49-53`).
+  only the first, because nothing appends into its window (`withheld.js:50-54`).
 `13-gestures.md` owns the transient's structure — one held thing names what left, two or more can
 only be counted — and none of these bytes. Each surface's own suite asserts its own copy, so the
 three agree by review rather than by canon, which is the shape `15-the-routine.md`'s closing rule
@@ -1006,7 +1026,7 @@ catches it unless it asserts the sentence itself.
 **3b · a refusal the log answers with words names neither what was refused nor that it is still
 there** → a designer's line. When a withheld delete's clock closes and the log says no, Android says
 the log's own sentence and nothing else: `WriteFailure.line(subject)`
-(`TrainingStore.kt:1769-1772`) returns `said` for a `Refused` and reads its `subject` only in the
+(`TrainingStore.kt:1776-1780`) returns `said` for a `Refused` and reads its `subject` only in the
 `NoAnswer` branch. The subject exists and is written for exactly this — `Deletion.stillThere`
 (`store/WithheldDelete.kt:39, 45, 54, 60`) spells *that set is still on the log*, *{name} is still in
 your program*, *that conversation is still here*, *that session is still on the log* — and a refused
@@ -1039,3 +1059,211 @@ answer — a hidden tab is not a backgrounded app, the page is still alive and t
 the room — but nothing written says so, and the brief's rule is worded for a surface that has a
 foreground. Either the web watches `visibilitychange` for the window as well, or the rule names the
 web's trigger as the room's unmount on purpose.
+
+**3e · the atomic promise has three slots** → ruled 2026-08-30: the pinned band, between Apply and
+turn-down, on all three; the web and Android owe the move. `09-coach.md` requires an always-drawn,
+never-toggled promise so the band's height never changes, and only iOS honours the slot that follows
+from it (`ReviewSheet.swift:278`, inside the band between the Apply button and the turn-down row).
+The web draws it in the dialog **body**, after the diff (`Proposals.jsx:243`,
+`.gym-proposal-atomic`), so the promise scrolls away from the button it is about while the band
+above it holds Apply and the turn-down row alone (`:161-174`). Android draws it **below** the
+turn-down row (`ReviewSheet.kt:524-529`), which puts the last word under the irreversible act. **The
+fix flows to the web and Android**, and it lands before anything else joins that band.
+
+**3g · the routine's own rest outranks the dial, and one surface says so** → fix flows to iOS and
+the web, or to the timer label on all three. Android's Rest caption is the only drawn statement
+anywhere in the product that a routine's own rest target beats the settings dial
+(`SettingsScreen.kt:141`). The override is
+real on every surface that runs a timer — `Rest.target` reads the plan entry's seconds before the
+preference (`RestTimer.kt:10`, `RestTimer.swift:7-9`) — and it arrives over the wire and on coach
+proposals, so a lifter whose timer disagrees with their dial has one surface that explains it and
+two that do not. iOS says it only in a source comment on the settings rest row
+(`SettingsScreen.swift:71`), and the web's settings section does not say it at all. Nor does the
+timer: the label is *resting · target 2:00* (`RestTimer.kt:27`) and names no provenance, which is
+probably the better home for the fact than a third caption.
+
+**3h · iOS's routine home card draws the routine screen behind it** → closed 2026-08-31. The card is
+the routine's name, `untested`, one meta line — `{n} movements · trained {ago}`, iOS's
+`meta(routine)` (`RoutinesScreen.swift:262`, drawn at `:213`) and the same shape as the web's
+`routineMetaLabel` — a waiting row for a routine whose pending proposal is not the standing card's
+(`:226`), and the accent border (`:232`). The per-entry `MovementDoor` and the whole History block
+are gone from it, `TrainingStore.history(of:)` went with its last caller, and the movements, their
+targets, the `· yours` suffix and the settled history with a conversation door per proposal are read
+one tap deeper on the routine's own screen (`RoutineScreen.swift:82`, `:119`). The precondition
+landed with the cut: a routine read the log never **answers** falls back on this device's copy of the
+account's program (`TrainingStore.RoutineRead`, `TrainingStore.swift:155-159`, gated on `.noAnswer`
+at `:766`), while a read it refuses is still said in the log's own words — so the movements are named
+offline once the card stops naming them. The copy is opened under the seat the room resolves to and a
+launch that has not resolved one yet leaves it standing (`AccountCopy.open(under:)`).
+**The bound is stated and no surface writes *all*:** that settled history is the newest **twenty**
+proposals (`kRoutineHistoryProposals`, `backend/products/gym/ports/ProgramRepository.h:48`). The one
+thing the cut left open is a phone split — `3r`.
+
+**3i · Duplicate copies the saved routine on two surfaces and the unsaved draft on the third** → a
+deliberate divergence, recorded so the next wave does not read it as drift. Duplicate's one home is
+the routine **row's** overflow, the menu that also carries Delete (`Routines.jsx:107-113`,
+`RoutinesScreen.kt:340-353`). iOS's routine row draws no overflow — `.swipeActions` and the rotor
+are the whole of it — and its editor head keeps a Duplicate that passes the **draft**
+(`RoutineBuilderScreens.swift:163-172`), so it copies what is on screen including unsaved edits.
+That is a different act from copying the row, not a second home for the same one, and it is why
+`13-gestures.md`'s per-row test names only two surfaces.
+
+**3j · a proposal card names its routine twice, and sometimes says the same sentence twice** → a
+copy owner's call, before anything else is drawn on that card. The eyebrow is `Proposal · <routine
+name>` on all three, and the line beneath it names the routine again: Android's `cardLine` always
+does — `<routine> · <counted> · waiting` (`domain/Proposal.kt:229-232`, drawn at
+`ReviewSheet.kt:577` and `AskScreen.kt:498`) — while the web and iOS do it whenever the model wrote
+no summary, because the fallback is `<count> to <routine>.` (`proposals.js:87-92`,
+`Proposal.swift:85-89`). The web's Coach card is the one that does not: its counted line is the
+phrase alone (`coach/CoachRoom.jsx:256`), so the name is said once in the eyebrow and once in the
+summary's fallback. Either the eyebrow stops naming the routine or the line does, and the counted
+phrase may not restate the summary it sits under.
+
+**3k · the share link's window is written two ways on two consent screens** → ruled 2026-08-31:
+**`30 days`, in numerals**, everywhere; iOS owes the move. `share_session` states both
+facts (`GymToolCatalog.cpp:373-381`): anyone holding the link reads that workout without signing in,
+and *it expires (30 days)*. The web and Android both say it that way —
+*for 30 days unless you end it sooner* (`connect.js:40`, `domain/ConnectedLog.kt:50`, pinned by
+`ConnectedLogTests.kt`). iOS says only *until it expires or you end it*
+(`ConnectedLog.swift:160`, and the same shape in `Level.write.reach`), which is the one fact a lifter
+needs a number for on a consent screen. The sentences around it are each surface's own and byte
+identity was never the rule here — the **numeral** is, because a consent screen states a duration the
+way a reader can check it against a calendar.
+
+**3l · a removal is counted where the intent is not asked** → fix flows to iOS's two proposal cards
+now, and to the wire before the conversation rows can follow. A removal carries every base entry as
+a `removed` change, so a count is positive for a proposal that deletes the routine, which is why the
+counted phrase asks the intent first — `countedLabel` (`proposals.js:105`), `Proposal.counted`
+(`domain/Proposal.kt:220`), `historyLine`'s branch (`Proposal.swift:101`). Two places do not ask.
+**iOS's proposal cards** draw the bare count beside *still waiting* (`ReviewSheet.swift:421`,
+`AskScreen.swift:215`) from a `Proposal` that carries the intent, so that one is a client fix — and
+on the Ask card that pair sits in the eyebrow row rather than on its own line under the summary,
+which the routines-home card and both other surfaces keep.
+**Every surface's conversation rows** — `coach/Threads.jsx:161`, `AskThreads.swift:124`,
+`domain/Thread.kt:27` — read a thread payload that carries no intent at all
+(`adapters/json/TrainingJson.cpp:481-489` writes id, state, changeCount, routineId, routine and
+createdAt), so those read *12 changes to Push A* for a proposal that removes Push A. **No client can
+close this half**: the branch has nothing to branch on, and a row that guessed the intent from a
+count would be inventing it. The wire carries `intent` on the thread's proposal rows, or the rows
+keep saying it wrong. Canon is `gym/briefs/09-coach.md`.
+
+**3m · a connection reads how your gym is set up — claimed on two surfaces, refused by the backend**
+→ closed 2026-08-30, one omission left behind. `get_preferences` does not exist and nothing replaced
+it: the rest target and the reading unit are dials, not context a tool fetches
+(`GymToolCatalog.cpp:448-451`), and Android's `cannotDo` says so on screen
+(`domain/ConnectedLog.kt:55-58`). The web's `LEVEL_LINES.read` and iOS's `Level.read.reach` /
+`canLines[0]` no longer claim the reach (`connect.js:39`, `ConnectedLog.swift:16`, `:157`). What is
+left is smaller and the other way round: `list_notes` is a read-level tool
+(`GymToolCatalog.cpp:232`), the web and Android name notes in what a connection reads and iOS names
+them nowhere on its consent screen.
+
+**3n · the product invariants asked for a confirm as well as an undo** → closed 2026-08-30 by ruling
+R2. `PRODUCT_LOG.md`'s destructive-act invariant is `13-gestures.md` Law 2's shape now: the act is
+withheld 9000 ms with the way back on screen and nothing on the wire, and turning a proposal down is
+the one exception the rule allows a confirmation. Six weigh-in and note confirmations and Android's
+relabelling two-tap still stand against it and are owed by S2 (`gym/BUILD.md` §8).
+
+**3o · Android's proposal card contradicted its own comment** → closed 2026-08-30. The comment above
+the routines list states the rule — the newest waiting card, one at a time, and the others keep the
+dot on their routine's row — and the routine the card is about now draws no chip of its own
+(`ui/RoutinesScreen.kt:323`, `waiting?.takeIf { it.id != standingProposalId }`). The accent border is
+the tie between the card and its row, on the routines that keep a chip as much as on the one that
+does not.
+
+**3p · a routine draft reorders by drag alone on the web** → fix flows to the web, and the same fix
+gives Android the reorder it has never had. `gym/briefs/13-gestures.md` Law 1 is that a gesture
+may never be the only way to reach an action, and the editor's reorder is exactly that: the handle is
+a `<span aria-hidden="true">` carrying the pointer handlers (`Routines.jsx:440-457`) and `onMove` has
+no other caller, so a lifter on a keyboard or a screen reader cannot move a movement at all. The
+row's other acts are drawn — `×` removes, the row body opens the target sheet — so the row is one
+control short of clean rather than unreachable. A *Move up* / *Move down* pair in a row menu closes
+it on both surfaces at once; the brief's own parity note (Android cannot reorder a draft) is the
+other half of the same gap.
+
+**3q · a transient with a detail is three lines on a phone, and the budget says two** → a copy
+owner's call. `guidelines/text-budget.md` gives a snackbar one line and two at most on a phone. The conversation delete's transient says two facts — *Conversation deleted.* and *a change you
+applied stays in the routine’s history* — on all three surfaces: Android folds them with a newline
+(`store/WithheldDelete.kt:106`), iOS draws a second `Text` (`Withheld.swift:246-247`), the web a
+sibling span (`GymApp.jsx:141-143`), and `gym.css`'s own note records the web measured at three lines
+at every phone width from 320px. Either the budget row says what a two-fact transient costs, or the
+detail is shortened on all three at once — the bytes are one string in three files and may not split.
+
+**3r · `Start workout` is pinned on one phone and scrolls away on the other** → fix flows to Android.
+`guidelines/thumb-reach.md` §3.1 puts a screen's one primary directly above the safe-bottom inset and
+§3.6 requires a scroll body to keep its bottom band pinned at every scroll position. iOS's routine
+screen draws it in a bottom `safeAreaInset` (`RoutineScreen.swift:191-203`, applied at `:44`), so the
+verb the screen exists for is under the thumb whatever the lifter has scrolled to. Android draws it
+inline in the `verticalScroll` body (`ui/RoutinesScreen.kt:530-544`, the scroll at `:486`), between
+the movement list and History, so a routine with a long history scrolls its own start button off. The
+split is what cut 3 left behind: iOS moved with the cut and Android is the half still to move.
+
+**3s · three writers share one bottom band on iOS, and the room's rule names only two of them** → a
+room-level decision, not a screen's. `GymRoom` puts the withheld transient in a bottom `overlay` and
+the room's status line in a bottom `safeAreaInset` on the same composite (`GymRoom.swift:298-304`),
+and its comment states the order for exactly that pair: the transient floats over the reach band and
+the status line sits below it, so a refusal said while a window runs is never hidden by the way back
+(`:296-297`). `RoutineScreen` now writes that band too (`RoutineScreen.swift:44`), and the sentence
+`noteLine` prints there is the **start refusal** — `why.line("a session starts there")`
+(`GymRoom.swift:535`), the answer to the button now sitting in the same lane. Nothing in canon and
+no pin blesses the resulting geometry. The S1 iOS builder measured it on a simulator and reported
+the refusal is not readable below the button; that measurement is theirs, not this ledger's.
+Seating the note per screen fixes the collision and puts the transient over the note instead, so
+the two rules are decided together for the room or not at all (`gym/BUILD.md` §8).
+
+**3t · the proposal promise is drawn after the decision it is about on both phones** → ruled
+2026-08-31: **drawn while the proposal is pending, dropped once it is decided** — the web's shape;
+both phones owe the move. All three ship the sentence byte-identical — *Nothing changes until you tap
+Apply on the diff. Your logged sets are never part of a proposal.* (`coach/coach.js:77-78`,
+`Ask.swift:220`, `domain/Ask.kt:79`). The web draws it under the Coach card only while the proposal
+waits (`coach/CoachRoom.jsx:271`, `{pending && …}`) and pins the drop
+(`ProposalReviewDialog.test.js`); iOS (`AskScreen.swift:235`) and Android (`ui/AskScreen.kt:513`)
+draw it unconditionally, so a card that reads *applied* still promises that nothing has been applied.
+A promise about what Apply will do is spent the moment Apply is taken or turned down, and what
+survives the decision is the door to the rows the card counted, which every surface already keeps.
+
+**3u · the web's routines-home proposal card says how much nowhere** → a copy owner's call.
+`gym/briefs/09-coach.md` gives the counted phrase a slot — its own line under the summary, never the
+eyebrow — and both phones' standing cards fill it (`ReviewSheet.swift:421`, `ReviewSheet.kt:577`).
+The web's `ProposalCard` draws the eyebrow, the summary, the consequence (`intentLine`) and Review,
+and no count at all (`Proposals.jsx:51-66`). It is the one card in the product standing beside the
+routine it is about, which is the argument for the consequence and against the number — but the
+brief now says the slot rather than requiring it of every card, so the question is whether this card
+owes the phrase as well, not whether it is in breach.
+
+**3v · the routine row's overflow spells its one act two ways** → ruled 2026-08-31: **`Delete`**,
+everywhere, and built the same day. The web (`Routines.jsx:111`), iOS's swipe and Android's overflow
+item (`ui/RoutinesScreen.kt:349`) all draw `Delete`. The row names the routine already — the menu's
+own label is *More for {name}* on the web and Android both — so a second word restated what the
+reader was standing in. On Android the swipe's lane and the overflow now spend ONE word for one act,
+which is what makes 13-gestures Law 1's per-row test true of that row rather than merely claimed;
+`RoutinesScreenTests` pins both nodes saying it. Delete this entry.
+
+**3w · a sign-out clears this device's copy of the program on one phone and not on the other** →
+**named, not ruled.** This is device residue, and the last wave to work that area was a security
+audit, so which way it flows is that owner's call and not a builder's: whether Android takes iOS's
+clear, or the read gate is recorded as sufficient and iOS's wipe as belt and braces. iOS's
+`AccountCopy.open(under:)` clears and flushes when a seat **leaves** — a sign-out
+under a room already open — and holds the copy through the nil seat of a launch that has not
+resolved one yet (`AccountCopy.swift:32-43`); reads are answered only for the seat the copy was
+written for (`:46`). Android's `DeviceCopy` never clears: it is read-gated by owner equality alone
+(`store/DeviceCopy.kt:29-36`), and a sign-out writes nothing, so the previous account's routines,
+movements and last sets stay on disk under their owner id until some other account's read overwrites
+the file. The gate means they are not served — but they are still there, which is a different fact
+from being gone, and it is the difference a device-residue finding is about.
+
+**3x · Android says the log went quiet for a log that answered with a reason** → fix flows to
+Android. Its own store already draws the distinction and says why: `WriteFailure.Refused` carries the
+log's sentence and `NoAnswer` does not, over the comment *a log that answered with a REASON is not a
+log that went quiet* (`store/TrainingStore.kt:1769-1780`), and `NotesScreen.kt:91` uses it correctly
+— `read.why.line("your notes are out of reach")`. The routine screen does not: `unread` is a bare
+`Boolean` set on every `GymResult.Failed` (`ui/RoutinesScreen.kt:468`) and the History block prints
+the `NoAnswer` sentence as a hardcoded literal (`:572`), so a 403 on the history read makes the
+screen assert the log was silent. **Built 2026-08-31**: `unread` carries the `WriteFailure` and the
+block draws `why.line("this routine's history is out of reach")`, so a refusal keeps the log's own
+sentence and only silence composes the prefix — `RoutineHistoryReadTests.kt` drives both branches
+through a fake wire. iOS already gated the same claim on the failure's kind (`TrainingStore.swift`,
+`guard why == .noAnswer`). **The two phones are now tied by the SUBJECT, not the sentence**: iOS's
+`RoutineReadout.historySubject` is the bytes both hold, `historyOutOfReach` composes the prefix
+through `WriteFailure.noAnswer.line`, and `RoutineBuilderTests` reads Android's source for the
+subject. Still open, same class: `domain/Thread.kt:126`'s `outOfReach` is a hardcoded literal of the
+same shape.

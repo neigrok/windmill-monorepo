@@ -12,7 +12,10 @@ import { useGymRead } from './useGymRead.js';
 // The standing surface for a proposal with no conversation to appear in — one minted over MCP —
 // drawn at the head of the routines home off the list's own read. Review opens the dialog over the
 // home; settling says its receipt in the one voice, and `onChanged` re-reads the list whenever the
-// dialog settled the proposal or learned it had moved.
+// dialog settled the proposal or learned it had moved. ONE card per waiting routine on this screen
+// and no mark on the row repeating it: the card names the routine it touches, which is what a mark
+// was for. The routine's own screen draws the proposal again as a dated history row, which is a
+// different fact.
 export function PendingProposals({ routines, log, onChanged }) {
   const [reviewing, setReviewing] = useState(null);
   const waiting = (routines ?? []).filter((routine) => routine.pendingProposal);
@@ -52,7 +55,7 @@ function ProposalCard({ routine, onReview }) {
     <article className="gym-proposal-card">
       <p className="gym-proposal-kicker">
         <ProposalDot />
-        <span>{`Proposal · ${sourceLabel(head.source)}`}</span>
+        <span className="gym-proposal-name">{`Proposal · ${routine.name}`}</span>
         <span className="gym-proposal-when">{`${STILL_WAITING} · ${arrivedLabel(head.createdAt)}`}</span>
       </p>
       <p className="gym-proposal-line">{summaryLine(head, routine.name)}</p>
@@ -78,15 +81,6 @@ export function ReviewDoor({ head, onReview }) {
 
 export function ProposalDot() {
   return <span className="gym-proposal-dot" aria-hidden="true" />;
-}
-
-export function ProposalFlag() {
-  return (
-    <span className="gym-routine-flag">
-      <ProposalDot />
-      proposal pending
-    </span>
-  );
 }
 
 // The review: a dialog over whatever opened it. Closing it decides nothing. The band holds Apply,

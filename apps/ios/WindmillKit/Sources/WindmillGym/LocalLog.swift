@@ -42,6 +42,9 @@ public final class LocalLog {
     private let url: URL
     private var held: Held
     private var key = LocalLog.anonymousShelf
+    // The seat the preferences document is open under, which is not the same as the seat it was
+    // written for: nil until one has been named this launch.
+    private var preferencesRoom: String?
 
     static let anonymousShelf = "anon"
     // The one key `open(under:)` can never name — a seat is `anon` or `u.<id>`.
@@ -121,8 +124,14 @@ public final class LocalLog {
     public var preferences: GymPreferences? { held.preferences }
 
     // Every write is the whole document, so one this seat did not write is let go of, on disk as well
-    // as in memory. An anonymous document still owed crosses at sign-in; nothing crosses back.
+    // as in memory. An anonymous document still owed crosses at sign-in; nothing crosses back. A nil
+    // seat that follows no seat is the launch before `/v1/me` answers rather than a sign-out: an
+    // account's document waits for its own seat, served to nobody meanwhile, instead of being dropped
+    // before the first read.
     public func open(preferencesUnder seat: String?) -> GymPreferences? {
+        let departing = preferencesRoom != nil && seat == nil
+        preferencesRoom = seat
+        if !departing, seat == nil, held.preferencesSeat != nil { return nil }
         let carriedByTheClaim = held.preferencesSeat == nil && preferencesOwed
         let sameSeat = held.preferencesSeat == seat
         held.preferencesSeat = seat

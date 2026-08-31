@@ -24,9 +24,9 @@ Every Android board drawing a swipe says so on the board.
 **And the law is a per-row test, not a blanket cost.** A row that already carries an overflow control
 has a real, screen-reader-reachable button, and a swipe on that row satisfies this law for free by
 putting the same actions in the overflow. The **routine row** is in that position on the web and on
-Android — one overflow holding Duplicate and Delete (`Routines.jsx:104-110`,
-`RoutinesScreen.kt:327-346`) — so neither declares its swipe's action twice. iOS's routine row draws
-no overflow and needs none: `.swipeActions` is the whole of it (`RoutinesScreen.swift:45-52`) and the
+Android — one overflow holding Duplicate and Delete (`Routines.jsx:107-113`,
+`RoutinesScreen.kt:327-355`) — so neither declares its swipe's action twice. iOS's routine row draws
+no overflow and needs none: `.swipeActions` is the whole of it (`RoutinesScreen.swift:44-52`) and the
 rotor carries it. The **set row** carries no overflow on either phone, so Android declares `Delete`
 by hand (`SessionScreen.kt:441`) and iOS declares nothing. The **log's session row** carries no
 drawn control at all — both its acts live in a long press, which is why Android declares both of them
@@ -145,7 +145,7 @@ One window over all of them: `Withheld.swift`, `store/WithheldDelete.kt`, `withh
 |---|---|
 | a set in a past session | withheld 9000 ms · no confirm · Undo on the transient |
 | a routine | withheld 9000 ms · its proposals go with it · Undo on the transient |
-| a conversation | withheld 9000 ms · Undo on the transient |
+| a conversation | withheld 9000 ms · a change you applied stays in the routine’s history · Undo on the transient |
 | a finished session | withheld 9000 ms · no confirm · Undo on the transient |
 
 **The confirmation went with the gate.** A dialog in front of an act that has an undo is the ceremony
@@ -233,13 +233,18 @@ and settles at its own threshold, which is the shape one dismissing action is fo
 stroke *is* the act, and what is pinned instead is that a stroke carried the whole way across
 deletes exactly once.
 
-**The routine row** — **trailing swipe gives *Delete*** (`RoutinesScreen.swift:45-52`,
+**The routine row** — **trailing swipe gives *Delete*** (`RoutinesScreen.swift:44-52`,
 `RoutinesScreen.kt:258-269`). **Duplicate stays in the overflow, not the swipe** — for the same
 reason Fix left the set row's: two trailing actions hide the row's own name behind them, and a lifter
 cannot see *which* routine they are deciding about while they decide. Between them the two empty the
 editor's foot, which sat **three screens deep**: Routines → the routine → Edit → scroll to the
-bottom. It draws neither on any surface now — Duplicate sits in the routine row's overflow on
-Android and in the editor's own head on the web and iOS, and Delete has left the editor entirely.
+bottom. It draws neither on any surface now, and **Duplicate's one home is the routine row's
+overflow** — the menu that also carries Delete, which is the only drawn, screen-reader-reachable
+delete on a surface with no swipe (`Routines.jsx:107-113`, `RoutinesScreen.kt:340-353`). iOS's
+routine row draws no overflow and needs none; its editor head carries a Duplicate of its own
+(`RoutineBuilderScreens.swift:163-172`) that copies the unsaved **draft** rather than the saved
+routine — a different act, and a deliberate divergence (ledger `3i`). Delete has left the editor
+entirely.
 
 **The thread row** — trailing swipe gives *Delete* (`ThreadsScreen.swift:71`, `ThreadsScreen.kt:170-177`).
 The constraint it trades against is real and is handled by the window rather than by a round trip:
@@ -327,7 +332,7 @@ action is its own tap (`LogScreen.swift:146-156`, `LogScreen.kt:279-340`). It ca
 workout* and *Discard session*, and it draws nothing: no `⋮` is added to a log row, because adding a
 control to carry an act a menu can already hold is Law 4 backwards. Every other long press in the
 room still starts a reorder drag (the notes list, the assembly sheet), and every other menu is
-tapped: the routine row's overflow, the editor's, the logger's set-kind picker.
+tapped: the routine row's overflow, iOS's editor head, the logger's set-kind picker.
 
 **Discard belongs in it because the gate is met.** It waited only until the withheld delete existed;
 it does, so the menu item withholds the same nine seconds with the same transient and the same Undo,

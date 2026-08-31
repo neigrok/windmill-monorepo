@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
@@ -39,6 +40,7 @@ import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalSource
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.ProposalTargets
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.net.FakeTraining
@@ -305,10 +307,36 @@ class ReviewSheetTests {
         }
 
         compose.onNodeWithText("Later").assertDoesNotExist()
+        // The card is addressed by the routine it is about; who wrote it is the sheet's byline.
+        compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
+        compose.onNodeWithText("Proposal · Coach").assertDoesNotExist()
         compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
         compose.onNodeWithText("Push Day · 2 changes · still waiting").assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
         compose.runOnIdle { assertEquals(listOf("review"), doors) }
+        scope.cancel()
+    }
+
+    // The eyebrow carries a name the lifter typed, so it takes what is left of the row and ellipses
+    // — it never measures the row out from under the stamp beside it. The card is drawn in a narrow
+    // frame because the test font gives every glyph the same tiny advance: on a phone the row runs
+    // out of room to a long name, here it runs out of room to a short frame, and the measurement is
+    // the same one either way.
+    @Test
+    fun aNameTooLongForTheRowEllipsesTheEyebrowAndLeavesTheStampItsRoom() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (_, kept) = store(scope, server)
+        val waiting = proposal(kept, listOf(retarget("bench-press", 1)))
+        val long = "Push day, heavy singles, then the long accessory block"
+        compose.setContent {
+            Box(Modifier.width(64.dp)) {
+                ProposalCard(waiting, long, nowMs = 2_000, stillWaiting = true, onReview = {})
+            }
+        }
+
+        compose.onNodeWithText(Readout.whenLogged(1_000, 2_000)).assertIsDisplayed()
+        compose.onNodeWithText("Proposal · $long").assertIsDisplayed()
         scope.cancel()
     }
 }

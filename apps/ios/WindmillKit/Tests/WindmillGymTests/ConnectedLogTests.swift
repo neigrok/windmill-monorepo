@@ -199,6 +199,15 @@ final class ConnectedLogTests: XCTestCase {
         }
     }
 
+    // `get_preferences` does not exist at any grant level and nothing replaced it: the rest target and
+    // the reading unit are the lifter's own dials, not context a connection can fetch.
+    func testNoLineOnTheConsentSurfaceClaimsAConnectionReadsHowTheGymIsSetUp() {
+        for line in Self.everyLine {
+            XCTAssertFalse(line.contains("how your gym is set up"), line)
+            XCTAssertFalse(line.contains("preferences"), line)
+        }
+    }
+
     func testTheNeverPanelPromisesTheThreeThingsTheToolCatalogActuallyRefuses() {
         XCTAssertEqual(ConnectedLog.neverLines.count, 3)
         XCTAssertTrue(ConnectedLog.neverLines[0].contains("no apply tool at any grant level"))

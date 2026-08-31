@@ -330,6 +330,30 @@ final class RoutineReadoutTests: XCTestCase {
         XCTAssertEqual(RoutineReadout.meta(shelved, now: now), "1 movement")
     }
 
+    // Read off the other phone's source rather than off a copy of the sentence, so the two cannot
+    // drift: no canon file holds these bytes for either surface to be checked against alone.
+    func testTheUnreadHistoryLineIsTheOneTheOtherPhoneDraws() throws {
+        XCTAssertEqual(RoutineReadout.historyOutOfReach,
+                       "the log didn\u{2019}t answer — this routine\u{2019}s history is out of reach")
+        XCTAssertEqual(TrainingStore.WriteFailure.refused("that routine is not yours to read")
+                        .line(RoutineReadout.historySubject),
+                       "that routine is not yours to read",
+                       "a log that answered keeps its own sentence on both phones")
+        let relative = "apps/android/gym/src/main/kotlin/works/windmill/gym/ui/RoutinesScreen.kt"
+        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var android = directory.appendingPathComponent(relative)
+        while directory.path != "/", !FileManager.default.fileExists(atPath: android.path) {
+            directory = directory.deletingLastPathComponent()
+            android = directory.appendingPathComponent(relative)
+        }
+        guard FileManager.default.fileExists(atPath: android.path) else {
+            return XCTFail("this suite reads the repo's \(relative); the whole monorepo has to be checked out")
+        }
+        let source = try String(contentsOf: android, encoding: .utf8)
+        XCTAssertTrue(source.contains(RoutineReadout.historySubject),
+                      "the other phone names the subject in different bytes")
+    }
+
     func testTheCreatedRowReadsTheAbsenceOfADoorAsTheLiftersOwnHand() {
         let at: Int64 = 1_754_697_600_000       // 9 Aug 2025
         XCTAssertEqual(RoutineReadout.created(RoutineEvent(kind: .created, atMs: at, movements: 4)),
@@ -514,13 +538,13 @@ final class RoutineWritingTests: XCTestCase {
         draft.add("back-squat")
         guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
 
-        guard case .success(let read) = await store.routine(made.id) else {
+        guard case .read(let read) = await store.routine(made.id) else {
             return XCTFail("the device answers for a routine it is the only home of")
         }
         XCTAssertEqual(read.id, made.id)
         XCTAssertTrue(read.history.isEmpty)
 
-        guard case .failure(let why) = await store.routine("rt_nobody") else {
+        guard case .failed(let why) = await store.routine("rt_nobody") else {
             return XCTFail("a routine on neither is a routine that is gone")
         }
         XCTAssertEqual(why, .refused("that routine is on your account — sign in to read it"))

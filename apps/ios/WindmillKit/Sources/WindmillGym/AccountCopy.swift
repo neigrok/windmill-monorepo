@@ -10,6 +10,8 @@ public final class AccountCopy {
 
     private let url: URL
     private var held: Held
+    // The seat this room is open under, which is not the same as the seat the copy was written for.
+    private var seat: String?
 
     public init(url: URL = AccountCopy.defaultURL()) {
         self.url = url
@@ -24,26 +26,38 @@ public final class AccountCopy {
         return base.appendingPathComponent("windmill-gym-account.json")
     }
 
-// nil seat is signed out.
+    // A nil seat is not a seat: it is the launch before `/v1/me` answers, and the copy waits for its own
+    // seat to arrive rather than being thrown away before the first read. A seat that LEAVES — a sign-out
+    // under a room already open — takes the copy with it, and another account's arrival replaces it.
     public func open(under seat: String?) {
-        guard held.seat != seat else { return }
+        let departing = self.seat != nil && seat == nil
+        self.seat = seat
+        if departing {
+            held = Held()
+            flush()
+            return
+        }
+        guard let seat, held.seat != seat else { return }
         held = Held(seat: seat)
         flush()
     }
 
-    public var routines: [Routine] { held.routines ?? [] }
+    // Answered for the seat the copy was written for and for nobody else.
+    private var mine: Bool { seat != nil && seat == held.seat }
 
-// nil until a read has landed.
-    public var lastSets: [LastSet]? { held.lastSets }
+    public var routines: [Routine] { mine ? (held.routines ?? []) : [] }
+
+    // nil until a read has landed.
+    public var lastSets: [LastSet]? { mine ? held.lastSets : nil }
 
     public func hold(routines: [Routine]) {
-        guard held.seat != nil, held.routines != routines else { return }
+        guard mine, held.routines != routines else { return }
         held.routines = routines
         flush()
     }
 
     public func hold(lastSets: [LastSet]) {
-        guard held.seat != nil, held.lastSets != lastSets else { return }
+        guard mine, held.lastSets != lastSets else { return }
         held.lastSets = lastSets
         flush()
     }

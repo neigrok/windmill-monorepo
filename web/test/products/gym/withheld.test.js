@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  heldLine, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, WITHHELD_KINDS, withheldKey,
+  heldDetail, heldLine, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, WITHHELD_KINDS,
+  withheldKey,
 } from '../../../src/products/gym/withheld.js';
 
-const held = (kind, id, line, at, settling = false) => ({
-  key: withheldKey(kind, id), kind, id, line, at, settling,
+const held = (kind, id, line, at, settling = false, detail = null) => ({
+  key: withheldKey(kind, id), kind, id, line, detail, at, settling,
 });
 
 test('the window is a list over five verbs, and a key is the verb and the id together', () => {
@@ -41,6 +42,16 @@ test('the count line is the only count line: nothing appends into this window, s
   assert.deepEqual(everySentence, [
     null, 'set line', '2 deleted.', '3 deleted.', '4 deleted.', '5 deleted.',
   ]);
+});
+
+test('the detail is said for one held delete and for no count — Law 4, in the function', () => {
+  const thread = held('thread', 'thr_1', 'Conversation deleted.', 1, false, 'a change you applied stays in the routine\u2019s history');
+  assert.equal(heldDetail([thread]), 'a change you applied stays in the routine\u2019s history');
+  // Past one, the count line takes over and a count has no one detail to carry.
+  assert.equal(heldDetail([thread, held('set', 'set_1', '100 \u00d7 5 is out of the log.', 2)]), null);
+  assert.equal(heldDetail([]), null);
+  // A verb that leaves nothing behind carries nothing.
+  assert.equal(heldDetail([held('set', 'set_1', '100 \u00d7 5 is out of the log.', 1)]), null);
 });
 
 test('a settling delete is no longer offered back, but its row stays hidden', () => {
@@ -79,12 +90,19 @@ test('the transient is whichever spoke last, and the window’s own carries the 
 
   // The window spoke last: its line, its Undo, and no `at` older than the newest held.
   const open = transientOf({ text: 'older', at: 2 }, window);
-  assert.deepEqual(open, { text: '100 × 5 is out of the log.', at: 4, undoable: true });
+  assert.deepEqual(open, { text: '100 × 5 is out of the log.', detail: null, at: 4, undoable: true });
   assert.equal(transientOf(null, window).undoable, true);
 
   // Two held, and the newest stamp is the window's.
-  const two = [held('set', 'set_1', 'one', 4), held('routine', 'rt_1', 'Push A deleted.', 6)];
-  assert.deepEqual(transientOf(said, two), { text: '2 deleted.', at: 6, undoable: true });
+  // A count carries no detail, even when one of the two held deletes has one of its own.
+  const twoWithDetail = [held('thread', 'thr_1', 'Conversation deleted.', 4, false, 'a change you applied stays in the routine\u2019s history'), held('routine', 'rt_1', 'Push A deleted.', 6)];
+  assert.deepEqual(transientOf(said, twoWithDetail), { text: '2 deleted.', detail: null, at: 6, undoable: true });
+
+  // One held delete that leaves something behind rides the window with it.
+  assert.deepEqual(
+    transientOf(null, [held('thread', 'thr_1', 'Conversation deleted.', 8, false, 'a change you applied stays in the routine\u2019s history')]),
+    { text: 'Conversation deleted.', detail: 'a change you applied stays in the routine\u2019s history', at: 8, undoable: true },
+  );
 
   // Every entry settling is a window that has closed: the sentence stands and the Undo is gone.
   assert.equal(transientOf(said, [held('set', 'set_1', 'one', 7, true)]), said);

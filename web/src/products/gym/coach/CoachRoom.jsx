@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { gymApi } from '../gymApi.js';
 import { CONNECT_HREF, NOTES_HREF, proposalHref, THREADS_HREF } from '../log.js';
 import { mintId } from '../mint.js';
-import { collapseKept, diffRows, isPending, keptRunLabel, receiptLine, stateChip, STILL_WAITING, summaryLine } from '../proposals.js';
+import {
+  CARD_ROW_CAP, CARD_ROW_KINDS, countedLabel, diffRows, isPending, moreRowsLabel, receiptLine,
+  stateChip, STILL_WAITING, summaryLine,
+} from '../proposals.js';
 import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import {
@@ -220,8 +223,11 @@ function Answer({ turn, log }) {
   );
 }
 
-// The card: the summary it wrote, the counted rows with kept runs folded, one affordance, and after
-// a decision the receipt beneath it — derived from the server's reply, held only for this visit to the room.
+// The card: the summary it wrote, how much it is, a skim of what moved, one affordance, and after a
+// decision the receipt beneath it — derived from the server's reply, held only for this visit to the
+// room. The document is drawn once, in the dialog behind Review — and the door to it stands in every
+// state, because a card that counts rows it will not draw has to reach them. The counted phrase names
+// no routine: the kicker and the summary above it both do.
 function CoachProposal({ id, log }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
   const [reviewing, setReviewing] = useState(false);
@@ -235,29 +241,37 @@ function CoachProposal({ id, log }) {
 
   const proposal = view.data;
   const pending = isPending(proposal);
+  // What MOVED, and only what a card can draw: standing still is not news, and a rename or a reorder
+  // is a claim about the document behind Review.
+  const changed = diffRows(proposal).filter((row) => CARD_ROW_KINDS.includes(row.kind));
   return (
     <>
       <article className="gym-coach-proposal">
         <p className="gym-proposal-kicker">
           <span className="gym-proposal-dot" aria-hidden="true" />
-          <span>{`Proposal · ${proposal.baseName}`}</span>
+          <span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>
           <span className="gym-proposal-when">{pending ? STILL_WAITING : stateChip(proposal)?.toLowerCase()}</span>
         </p>
         <p className="gym-proposal-line">{summaryLine(proposal, proposal.baseName)}</p>
-        <ul className="gym-diff">
-          {collapseKept(diffRows(proposal)).map((row, index) => (
-            row.kind === 'kept-run' ? (
-              <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}>
-                <span className="gym-diff-unfolded">{keptRunLabel(row.rows.length)}</span>
-              </li>
-            ) : (
+        <p className="gym-proposal-counted">{countedLabel(proposal)}</p>
+        {/* A rename and a reorder are claims about the whole document, so they stay in the dialog;
+            the count above has already said them. A proposal that only moves lines draws no rows. */}
+        {changed.length > 0 && (
+          <ul className="gym-diff">
+            {changed.slice(0, CARD_ROW_CAP).map((row, index) => (
               <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
                 <DiffRow row={row} catalog={log.catalog} />
               </li>
-            )
-          ))}
-        </ul>
-        {pending && <ReviewDoor head={proposal} onReview={() => setReviewing(true)} />}
+            ))}
+            {changed.length > CARD_ROW_CAP && (
+              <li className="gym-diff-row is-more">
+                <span className="gym-diff-more">{moreRowsLabel(changed.length - CARD_ROW_CAP)}</span>
+              </li>
+            )}
+          </ul>
+        )}
+        <ReviewDoor head={proposal} onReview={() => setReviewing(true)} />
+        {/* A promise about what Apply will do is spent once Apply has been taken or turned down. */}
         {pending && <p className="gym-coach-proposal-note">{PROPOSAL_NOTE}</p>}
       </article>
       {receipt && <p className="gym-coach-receipt" role="status">{receipt}</p>}

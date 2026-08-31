@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Program
@@ -53,6 +54,7 @@ import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -80,6 +82,7 @@ fun RoutinesScreen(
 ) {
     val nowMs = System.currentTimeMillis()
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
+    val standing = store.pendingProposals.firstOrNull()
 
     GymScreen(
         title = "Routines",
@@ -103,7 +106,7 @@ fun RoutinesScreen(
                 if (routines.isNotEmpty()) {
                     item("count") {
                         Text(
-                            "${Readout.routineCount(routines.size)} · nothing running",
+                            Readout.routineCount(routines.size),
                             style = GymType.numeral(13),
                             color = GymSkin.inkFaint,
                         )
@@ -115,8 +118,8 @@ fun RoutinesScreen(
                 }
 
                 // The newest waiting card, one at a time; the others keep their dot on their
-                // routine's row.
-                store.pendingProposals.firstOrNull()?.let { waiting ->
+                // routine's row, and the routine this card is about draws no dot of its own.
+                standing?.let { waiting ->
                     item("proposal") {
                         ProposalCard(
                             proposal = waiting,
@@ -141,6 +144,7 @@ fun RoutinesScreen(
                     items(routines, key = { it.id }) { routine ->
                         SwipeableRoutineRow(
                             routine = routine,
+                            standingProposalId = standing?.id,
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
                             onDuplicate = {
@@ -249,6 +253,7 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
 @Composable
 private fun SwipeableRoutineRow(
     routine: Routine,
+    standingProposalId: String?,
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDuplicate: () -> Unit,
@@ -267,14 +272,17 @@ private fun SwipeableRoutineRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = { RowDeleteGround() },
     ) {
-        RoutineRow(routine, nowMs, onOpenRoutine, onDuplicate, onDelete, onReview)
+        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDuplicate, onDelete, onReview)
     }
 }
 
-// A routine with a proposal wears a dot and a count, and the chip is its own target onto the diff.
+// A routine with a proposal wears the accent border. The chip — a dot, a count and its own target
+// onto the diff — is drawn on the routines the standing card is NOT about, so no proposal is
+// rendered twice.
 @Composable
 private fun RoutineRow(
     routine: Routine,
+    standingProposalId: String?,
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDuplicate: () -> Unit,
@@ -309,10 +317,11 @@ private fun RoutineRow(
                     style = WindmillFont.body(17, FontWeight.Bold),
                     color = GymSkin.ink,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (routine.untested) UntestedChip()
-                waiting?.let { ProposalChip { onReview(it) } }
+                waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
             }
             Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
         }
@@ -337,7 +346,7 @@ private fun RoutineRow(
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete routine", color = GymSkin.alarmInk) },
+                    text = { Text("Delete", color = GymSkin.alarmInk) },
                     onClick = {
                         menuUp = false
                         onDelete()
@@ -449,15 +458,15 @@ fun RoutineScreen(
     val nowMs = System.currentTimeMillis()
     val routine = store.routine(routineId)
     var history by remember(routineId) { mutableStateOf<List<RoutineEvent>>(emptyList()) }
-    var unread by remember(routineId) { mutableStateOf(false) }
+    var unread by remember(routineId) { mutableStateOf<WriteFailure?>(null) }
 
     LaunchedEffect(routineId, isSignedIn, routine?.revision, routine?.pendingProposal?.id) {
         when (val read = store.routineHistory(routineId)) {
             is GymResult.Ok -> {
                 history = read.value
-                unread = false
+                unread = null
             }
-            is GymResult.Failed -> unread = true
+            is GymResult.Failed -> unread = read.why
         }
     }
 
@@ -545,7 +554,7 @@ fun RoutineScreen(
 @Composable
 private fun History(
     events: List<RoutineEvent>,
-    unread: Boolean,
+    unread: WriteFailure?,
     nowMs: Long,
     onReview: (Proposal) -> Unit,
     onOpenThread: (String) -> Unit,
@@ -553,15 +562,15 @@ private fun History(
     val drawn = events.filterNot { it.isPending }.mapNotNull { event ->
         event.line(nowMs)?.let { event to it }
     }
-    if (drawn.isEmpty() && !unread) return
+    if (drawn.isEmpty() && unread == null) return
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
     ) {
         Text("History", style = GymType.numeral(11), color = GymSkin.inkFaint)
-        if (unread) {
+        if (unread != null) {
             Text(
-                "the log didn’t answer — this routine’s history is out of reach",
+                unread.line("this routine’s history is out of reach"),
                 style = GymType.numeral(12),
                 color = GymSkin.inkDim,
             )

@@ -8,9 +8,10 @@ import { ProposalReview } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import {
-  askedLabel, conversationsLine, DELETE_NOTE, DELETE_VERB, EXPORT_THREADS_LINE,
+  askedLabel, conversationsLine, DELETE_VERB, EXPORT_THREADS_LINE,
   EXPORT_THREADS_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
-  THREAD_ABSENT, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure, THREADS_FAILED, THREADS_TITLE,
+  THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure,
+  THREADS_FAILED, THREADS_TITLE,
 } from './threads.js';
 
 export function ThreadsList({ log }) {
@@ -208,12 +209,16 @@ function Outcome({ outcome }) {
 // The lifter is put back on the list at once, nothing reaches the store for the length of the
 // window, and the room's transient carries the only way back. Nothing is confirmed, because a
 // question in front of an act that can be undone is ceremony (13-gestures.md Law 2).
+//
+// What the delete leaves behind rides the window as its `detail`, so it is read at the moment of the
+// act rather than standing over the button on every visit.
 function DeleteThread({ id, log }) {
   const remove = () => {
     log.withhold({
       kind: 'thread',
       id,
       line: THREAD_DELETED,
+      detail: THREAD_DELETE_DETAIL,
       send: () => gymApi.deleteThread(id),
       refused: (error) => log.say(threadDeleteFailure(error)),
     });
@@ -222,7 +227,6 @@ function DeleteThread({ id, log }) {
 
   return (
     <section className="gym-thread-delete">
-      <p className="gym-thread-delete-note">{DELETE_NOTE}</p>
       <button type="button" className="gym-thread-delete-verb" onClick={remove}>{DELETE_VERB}</button>
     </section>
   );

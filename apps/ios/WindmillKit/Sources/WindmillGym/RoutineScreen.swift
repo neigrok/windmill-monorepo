@@ -15,6 +15,9 @@ struct RoutineScreen: View {
 
     @Environment(\.gymSkin) private var skin
     @State private var routine: Routine?
+    // The routine came off the device's copy, which carries no history: the block says so rather than
+    // drawing an unread history as an empty one.
+    @State private var historyOutOfReach = false
     @State private var failure: TrainingStore.WriteFailure?
 
     var body: some View {
@@ -23,7 +26,6 @@ struct RoutineScreen: View {
                 if let routine {
                     head(routine)
                     rows(routine)
-                    start
                     history(routine)
                 } else if let failure {
                     silence(failure.line("this routine isn’t drawn"))
@@ -39,6 +41,7 @@ struct RoutineScreen: View {
             .padding(.top, WindmillSpace.x10)
             .padding(.bottom, WindmillSpace.x8)
         }
+        .safeAreaInset(edge: .bottom) { reachBand }
         .task { await read() }
         .toolbar {
             if let routine {
@@ -109,17 +112,24 @@ struct RoutineScreen: View {
         return "\(named) · yours"
     }
 
-    // Newest first, creation row last. A row this build cannot classify is dropped rather than guessed at.
+    // Newest first, creation row last, and the newest twenty proposals rather than every one the routine
+    // ever had (`ProgramRepository.h`, `kRoutineHistoryProposals`). A row this build cannot classify is
+    // dropped rather than guessed at, and a history that could not be read is not an empty one.
     @ViewBuilder
     private func history(_ routine: Routine) -> some View {
         let events = routine.history.filter { $0.kind != .unknown }
-        if !events.isEmpty {
+        if !events.isEmpty || historyOutOfReach {
             Text("History")
                 .font(GymType.numeral(10.5, .bold))
                 .textCase(.uppercase)
                 .kerning(0.9)
                 .foregroundStyle(skin.inkFaint)
                 .padding(.top, WindmillSpace.x2)
+            if historyOutOfReach {
+                Text(RoutineReadout.historyOutOfReach)
+                    .font(GymType.numeral(13))
+                    .foregroundStyle(skin.inkFaint)
+            }
             // The place in the list is the `ForEach` identity: two events can share an instant.
             ForEach(Array(events.enumerated()), id: \.offset) { _, event in
                 if let head = event.proposal {
@@ -174,17 +184,26 @@ struct RoutineScreen: View {
             .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    private var start: some View {
-        Button(action: onStart) {
-            Text("Start workout")
-                .font(WindmillFont.body(16.5, .bold))
-                .foregroundStyle(skin.onAccent)
-                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+    // Pinned, so the one thing a lifter does with a bar in their hands is reachable at every scroll
+    // position (`thumb-reach.md` §3.1, §3.6). It is also this screen's ONLY primary, which is why the
+    // unread-history line inside the History block is a line and not a second full-width control.
+    @ViewBuilder
+    private var reachBand: some View {
+        if routine != nil {
+            Button(action: onStart) {
+                Text("Start workout")
+                    .font(WindmillFont.body(16.5, .bold))
+                    .foregroundStyle(skin.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+            }
+            .padding(.horizontal, WindmillSpace.x5)
+            .padding(.bottom, WindmillSpace.x2)
         }
-        .padding(.top, WindmillSpace.x2)
     }
 
+    // The whole-screen failure says so and draws the way back to asking again: `.task` fires once per
+    // appearance, so signal returning is not a redraw.
     private func silence(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Text(line)
@@ -204,8 +223,14 @@ struct RoutineScreen: View {
     private func read() async {
         failure = nil
         switch await store.routine(routineId) {
-        case .success(let found): routine = found
-        case .failure(let why): failure = why
+        case .read(let found):
+            routine = found
+            historyOutOfReach = false
+        case .remembered(let held):
+            routine = held
+            historyOutOfReach = true
+        case .failed(let why):
+            failure = why
         }
     }
 

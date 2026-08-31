@@ -34,9 +34,47 @@ Coach answers in prose. If it minted something, **one** proposal card follows, c
 it wrote, the counted changes, and a single affordance: **Review**.
 
 The card carries no Apply button — `../../guidelines/thumb-reach.md` forbids a committing button
-inside a card in a scroll, and that rule is why the routines home is wrong today. On the web the card
-may show its inline diff when the column is wide enough, and Review is a link rather than a filled
-button.
+inside a card in a scroll — and Review is a link rather than a filled button.
+
+**The card is a skim; the document is drawn once, behind Review.** Where a card draws diff rows at
+all it draws the **changed** ones, at most three, with one *+ N more* line beneath them: the web's
+and Android's do, iOS's draws none. Kept rows, kept runs and the whole run the routine takes on
+belong to the review sheet, which is the screen that asks for a decision.
+
+**How much a proposal is, is one phrase, and a removal is not a count.** The rule is a **slot**, not
+a requirement on every card: where a card says how much, it says it on its own line under the
+summary and never in the eyebrow. The Coach card says it, because the proposal has just been minted
+and nothing else on that turn measures it. On the routines home the phones' standing cards say it
+too, and the web's says the **consequence** instead — `intentLine`, what applying would do to the
+routine the card is sitting beside — and says how much nowhere; whether that card owes the phrase as
+well is a copy owner's call the ledger holds (`3u`).
+
+**A removal reads *a removal* and never a count.** The domain forces `standing == 0` for a removal,
+so every base entry arrives as a `removed` change and a count would say *12 changes* for a proposal
+that deletes the routine. The phrase asks the intent
+first, in one function per surface: `countedLabel` (`proposals.js:105`), `Proposal.counted`
+(`domain/Proposal.kt:220`), and `historyLine`'s own branch (`Proposal.swift:101`) on iOS. Two places
+still count a removal and are owed the branch: iOS's two proposal cards, which draw the bare
+`changes` beside *still waiting*, and every surface's conversation rows, whose wire rows carry no
+intent to ask (ledger `3l`, which also records the one card that keeps the phrase in its eyebrow
+row). Whether that line names the routine a second time is a copy owner's call the ledger holds
+(`3j`): the web's card draws the phrase alone, Android's draws *`<routine>` · `<counted>` ·
+waiting*, and the eyebrow above both has already said the name.
+
+**The eyebrow names the routine — `Proposal · <routine name>` — on the card and on the review sheet,
+on all three surfaces**, and on Android in the thread as well. Who wrote it is a different fact with
+its own home: the review sheet's header, and the routine's history row. The name is a lifter-typed
+string of up to 60 code points, so the eyebrow **holds one line**: the name truncates and the stamp
+beside it keeps its room. **The review sheet's head is the one place it may take two.** An eyebrow
+shares its row with a stamp and a clipped name there costs a reader nothing they cannot get one tap
+away; the head is the screen the routine is decided on, and clipping the name hides the subject of
+the decision.
+
+**The promise under the card is drawn while the proposal waits, and dropped once it is decided.**
+*Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.* is
+a claim about what Apply will do, and it is spent the moment Apply has been taken or turned down.
+What survives the decision is the door to the rows the card counted, which every surface keeps.
+Ruled 2026-08-31; both phones draw the promise unconditionally and owe the move (ledger `3t`).
 
 **One proposal per turn.** An answer *can* mint several, and two on the same routine kill each other:
 the supersede runs before the second lands, so the first is dead while both ids come back. A second
@@ -92,6 +130,11 @@ permanently. "Not now" already exists and costs nothing: close the sheet. So the
 single primary, which is also what the reach law asks for; two full-strength buttons of the same
 weight is a failure to decide. The atomic promise — *All N or none. Nothing is applied until you
 tap.* — is always drawn, never toggled, so the band's height never changes.
+
+**And it has one slot: inside the pinned band, between Apply and the turn-down row**, on all three
+surfaces — iOS's placement (`ReviewSheet.swift:278`). A promise that scrolls with the diff is not
+pinned, and a promise below turn-down puts the last word under the irreversible act. Ruled
+2026-08-30; the web and Android owe the move (`../BUILD.md` §8, ledger `3e`).
 
 **"Turn this down"** stays destructive and stays confirmed, and the confirmation's words are pinned
 on every surface: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
@@ -205,6 +248,16 @@ the composer, which reads as a footnote to the keyboard.
 That is true rather than approximate: the allowance is ten a day on a bucket that refills steadily, so
 a question comes back roughly every two and a half hours. It carries the same *connect your own agent*
 door the empty room does, because that is the one path that is not rationed.
+
+**Two refusals reach that state, and the second one is the account's 30-day AI ceiling.** A ceiling
+with a live composer is a dead end that fails the same way on the next question, and the connect
+door is unrationed under either refusal, which is what makes it one state. What must not be shared
+is the sentence: every surface renders the server's own words where the reply carries them, and the
+local constant is the **wordless fallback, chosen on the refusal's code** — `ask-daily-limit` or
+`ask-out-of-budget` — so a ceiling never says the daily line's *couple of hours*. And under the
+ceiling the **connect door is the primary and *Ask something new* sits beneath it**: a new
+conversation there cannot take a question either, so it is a way out of this one rather than a way
+to an answer. Ruled 2026-08-30 and owed a build (`../BUILD.md` §8, ledger `3f`).
 
 Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
 says what to do next rather than restating the rule. A room that drew neither would not have trimmed

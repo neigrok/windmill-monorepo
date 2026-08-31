@@ -6,8 +6,9 @@
 // nothing, and the transient reads the whole list: one held delete says which, several say how many.
 // Undo takes the newest and the transient re-reads for the rest.
 //
-// An entry is `{ kind, id, line, send, refused, undo }`: the id is what the screen hides its row by,
-// and `undo` puts a row back where the row lives in a draft rather than on the wire.
+// An entry is `{ kind, id, line, detail, send, refused, undo }`: the id is what the screen hides its
+// row by, `detail` is the one fact the act leaves behind, and `undo` puts a row back where the row
+// lives in a draft rather than on the wire.
 //
 // `send` is what the closing window does — the store call, and any re-read that must follow it. It
 // THROWS when the store refuses; the room catches and hands the error to `refused`, which states the
@@ -52,6 +53,14 @@ export function heldLine(open) {
   return `${open.length} deleted.`;
 }
 
+// What the act does NOT take with it, said at the moment of the act rather than standing on the
+// screen the act is reached from. 13-gestures Law 4 is enforced here and not at the call site: past
+// one held delete the count line takes over, and a count has no one detail to carry.
+export function heldDetail(open) {
+  if (open.length !== 1) return null;
+  return open[0].detail ?? null;
+}
+
 // The one voice. A said sentence and an open window both want the transient, and whichever spoke
 // last has it — so a refused delete is read even while another window runs. The window's transient
 // carries the Undo and no dismiss: it retires when its last clock closes, which is the only honest
@@ -59,7 +68,7 @@ export function heldLine(open) {
 export function transientOf(said, held) {
   const open = openHeld(held);
   if (open.length === 0) return said;
-  const window = { text: heldLine(open), at: open[open.length - 1].at, undoable: true };
+  const window = { text: heldLine(open), detail: heldDetail(open), at: open[open.length - 1].at, undoable: true };
   if (said && said.at > window.at) return said;
   return window;
 }

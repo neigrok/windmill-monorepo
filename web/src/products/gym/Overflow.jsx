@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// The overflow a routine carries, drawn on its row and in its editor's head: what a lifter does TO a
-// routine rather than in it. The row's holds Duplicate and Delete, the editor's head Duplicate
-// alone — a routine is not deleted from inside itself. Delete is here because the gate
-// 13-gestures.md put in front of it is met: it is withheld, and the room's window is the only thing
-// that ever sends it.
+// The overflow a routine carries, drawn on its row and nowhere else: what a lifter does TO a routine
+// rather than in it. It holds Duplicate and Delete — one home each, and this is it. Delete is here
+// because the gate 13-gestures.md put in front of it is met: it is withheld, and the room's window
+// is the only thing that ever sends it.
 //
 // It closes on the act, on Escape, and on a pointer landing anywhere outside it, so a menu can never
 // be left open behind the screen that opened it.

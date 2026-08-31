@@ -137,6 +137,12 @@ public struct RoutineDraft: Equatable {
 }
 
 public enum RoutineReadout {
+    // Drawn under the History heading when the routine came off the device's copy, which holds no
+    // history: an unread history is not an empty one. The phones share the SUBJECT and each composes
+    // the prefix through its own `WriteFailure.line`, so a log that answered keeps its own sentence.
+    public static let historySubject = "this routine’s history is out of reach"
+    public static let historyOutOfReach = TrainingStore.WriteFailure.noAnswer.line(historySubject)
+
     // The count is today's; the history row's is the one it was created with.
     public static func meta(_ routine: Routine, now: Int64) -> String {
         let movements = routine.entries.count == 1 ? "1 movement" : "\(routine.entries.count) movements"

@@ -1,9 +1,8 @@
 # The routine — building it, changing it, starting it
 
-The Coach wave redrew the rooms a lifter reads. This one redraws the screen they *work* on, which is
-the heaviest in the product: the routine editor runs 472 lines, draws 21 buttons and two inputs, and
-stacks three overlay layers. Five of the ten cuts in `../../../PRODUCT_LOG.md`'s simplification list
-live on it or beside it.
+This brief redraws the screen a lifter *works* on, which is the heaviest in the product: the routine
+editor and the home it opens from share `Routines.jsx`, and the editor still stacks the target sheet
+and the movement picker over a draft nothing has saved.
 
 Everything here obeys three documents already written: `12-native-idiom.md`,
 `../../guidelines/text-budget.md`, and `13-gestures.md`.
@@ -76,16 +75,29 @@ planning sheet inherited from it is the refusals, pinned below.
 
 ## The editor after the cuts
 
-- **Nav bar** carries *Cancel*, *Save* and the overflow. Nothing else is a header button.
+- **Nav bar** carries the way back and *Save*. Nothing else is a header button — except on iOS,
+  where an overflow beside Save holds Duplicate, which copies the draft.
 - **The name** is the first field.
-- **The movements** are a list: drag to reorder, swipe to remove, tap to set targets.
+- **The movements** are a list: drag to reorder, swipe or `×` to remove, and one control over the
+  row body — the movement's name, its *yours* tag and its numbers together — opening the target
+  sheet. **A row is not a door out of the editor:** a link from here discards the unsaved draft with
+  no question, so the name is part of the sheet's own control rather than an anchor.
 - **Add movement** is the last row of that list, not a floating button.
-- **Duplicate** lives in the overflow, and it also has a home on the row's own menu in
-  `13-gestures.md` — one of the two, never both. **Delete routine** stays a row of its own until the
-  withheld delete exists (`13-gestures.md`'s gate), and then it joins the overflow.
+- **Duplicate** has one home and it is the routine **row's** overflow, the menu that also carries
+  **Delete** (`13-gestures.md` Law 1). The editor draws neither, save iOS's copy of the draft above.
 - **History** is a section, not an inline aside.
 
-That is roughly twenty-one buttons down to *Cancel*, *Save*, *Add movement* and an overflow.
+**A movement's record has a drawn door that does not cost a draft.** A routine line for a
+never-logged movement is a first-class state here, and every other route on the web to that
+movement's record needs it to have been trained or to stand in a proposal, whose diff rows are
+anchors to the movements they name (`Proposals.jsx:275`). The phones reach it from the routine's own
+screen, whose rows are movement doors (`RoutineScreen.swift:82`, `RoutinesScreen.kt:410-418`). The
+web's editor rows are not doors, so the routines home's head draws a **Movements** door beside
+**New** (`Routines.jsx:67`) — the only drawn way there to the movement chooser, and the one door to
+a never-trained movement's record, and to Rename on it, that no proposal has to be standing for.
+
+That is roughly twenty-one buttons down to the way back, *Save*, *Add movement* — and, on iOS, an
+overflow.
 
 ## The movement picker
 
@@ -109,11 +121,56 @@ It currently appears on the routines list, on the proposal screen, as a settings
 page. The first two are interruptions in the middle of doing something else. **The settings row and
 the page stay.**
 
+## The routine on the list, and the routine on its own screen
+
+A routine on the routines list is a **door**, and a door does not restate what is behind it.
+
+> **The list card draws the routine's name, whether it is untested, one meta line — `{n} movements ·
+> trained {ago}` — and its tie to whatever is waiting on it. Nothing else.** The movements, their
+> targets and the settled history are read one tap deeper, on the routine's own screen, which is the
+> only screen that draws them.
+
+What that tie looks like is each surface's own, and the standing card is the one that names the
+proposal (ledger `3o`): the web draws one card per waiting routine at the head of the list
+and nothing on the row itself (`Proposals.jsx:51-66`, `Routines.jsx:102-114`); both phones give the
+waiting routine's row the accent border (`RoutinesScreen.swift:232`, `ui/RoutinesScreen.kt:301`) and
+draw a row of their own only for a routine whose waiting proposal is not the card's
+(`RoutinesScreen.swift:226`, `ui/RoutinesScreen.kt:323`).
+
+**The routine's own screen names every movement with its target column and the `· yours` suffix**,
+and each row is that movement's record door (`RoutineScreen.swift:82`, `RoutinesScreen.kt:410-418`).
+On the web that screen is the editor, and its rows are not doors — see the editor's own rule above.
+
+**Its settled history is the newest twenty proposals, not all of them**
+(`kRoutineHistoryProposals`, `backend/products/gym/ports/ProgramRepository.h:48`). No surface writes
+*all*: a routine a connected agent has worked on for a year has more, and this screen is a recent
+record rather than the ledger of every change.
+
+**A history the log could not read is not an empty one, and it says so in one line** —
+*the log didn’t answer — this routine’s history is out of reach*. **The phones share the subject and
+each composes the prefix**, because that sentence is a claim about the log: a read the log REFUSED
+keeps the log's own words, and only silence earns the composed line. iOS holds the bytes as
+`RoutineReadout.historySubject` and builds the rest through `WriteFailure.noAnswer.line`; Android's
+history block draws `why.line(…)` off the failure it was handed. The web needs no such state: its
+history arrives inside the routine read it already has, so a read that fails has no half to report.
+
+> **Inside a block, that line stands alone.** The *Try again* button belongs to the whole-screen
+> failure — the state where nothing rendered — and never to one block of a screen that drew fine.
+
+`../../guidelines/thumb-reach.md` §3.1 gives a screen one primary and §3.2 refuses two full-strength
+controls of the same weight, so a full-width bordered button inside the History block would compete
+with `Start workout` for the decision the screen exists to take.
+
 ## Starting a workout
 
 `Start workout` lives on the routine's own screen, and `13-gestures.md` puts it on the row's
 long-press menu as well — the only place it exists twice on purpose, because it is the verb this whole
 screen is for.
+
+**On a phone it is pinned in the reach band**, not inline in the scroll, so the one thing a lifter
+does with a bar in their hands is reachable at every scroll position
+(`../../guidelines/thumb-reach.md` §3.1, §3.6). iOS draws it that way
+(`RoutineScreen.swift:191-203`); Android still draws it inline and owes the move (ledger `3r`).
 
 ## The strings, pinned
 

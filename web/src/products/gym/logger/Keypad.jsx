@@ -37,7 +37,7 @@ export function Keypad({ mode, current, editing = false, onCommit, onCancel }) {
     <div
       className="gym-sheet-catch"
       role="presentation"
-      onClick={() => { if (entry.valid) onCommit(entry.value); }}
+      onClick={onCancel}
     >
       <div className="gym-keypad" role="dialog" aria-label={mode === 'weight' ? 'Weight' : 'Reps'} onClick={(event) => event.stopPropagation()}>
         <p className="gym-keypad-title">

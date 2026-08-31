@@ -129,3 +129,40 @@ test('the rack keypad names both its glyphs — ± `Flip the sign`, ⌫ `Delete`
     'Delete',
   );
 });
+
+test('the rack keypad’s scrim cancels — on the fix sheet and on the backfill form, valid buffer or not', async (t) => {
+  browserWith();
+  const { Keypad } = await loadScreen('products/gym/logger/Keypad.jsx');
+  // 12-native-idiom's vocabulary rule: an outside tap is one word in this room, and every other
+  // scrim in it — and both phones — spends that word on dismissal.
+  const scrim = (drawn) => elementsOf(drawn.tree).find((each) => each.props?.className === 'gym-sheet-catch');
+
+  const said = [];
+  const edited = renderHook(t, () => Keypad({
+    mode: 'weight', current: 100, onCommit: (value) => said.push(['commit', value]), onCancel: () => said.push(['cancel']),
+  }));
+  typeInto(edited, ['1', '2', '5']);
+  assert.equal(inert(edited), false, 'a valid buffer — the state the scrim used to write');
+  scrim(edited).props.onClick();
+  assert.deepEqual(said, [['cancel']], 'the scrim keeps the typed number out of the draft');
+
+  const refused = [];
+  const invalid = renderHook(t, () => Keypad({
+    mode: 'reps', current: 5, onCommit: (value) => refused.push(['commit', value]), onCancel: () => refused.push(['cancel']),
+  }));
+  typeInto(invalid, ['1', '0', '0']);
+  assert.equal(inert(invalid), true);
+  scrim(invalid).props.onClick();
+  assert.deepEqual(refused, [['cancel']], 'the refused buffer gets the exit it had none of');
+
+  // One handler, so the two screens the pad serves — the fix sheet and the backfill form — cannot
+  // read the outside tap differently.
+  const away = () => {};
+  const wired = renderHook(t, () => Keypad({ mode: 'weight', current: 100, onCommit: () => {}, onCancel: away }));
+  assert.equal(scrim(wired).props.onClick, away);
+  assert.equal(
+    elementsOf(wired.tree).find((each) => each.props?.className === 'gym-keypad-cancel').props.onClick,
+    away,
+    'the scrim and the Cancel button are the same act',
+  );
+});

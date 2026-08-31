@@ -98,9 +98,17 @@ const STATE_VERBS = {
   superseded: 'superseded',
 };
 
+// How much a proposal is, in one phrase, for the Coach card and the routine's history row. A removal
+// carries every base entry as a `removed` change, so the count is positive and would read
+// `12 changes` for a proposal that DELETES the routine — which is why the intent is asked first,
+// here and on both phones (`Proposal.counted`, `line(about:)`).
+export function countedLabel(head) {
+  if (head.intent === 'remove') return 'a removal';
+  return changeLabel(head.changeCount);
+}
+
 export function historyLabel(head) {
-  const what = head.intent === 'remove' ? 'a removal' : changeLabel(head.changeCount);
-  const from = `${what} from ${sourceLabel(head.source)}`;
+  const from = `${countedLabel(head)} from ${sourceLabel(head.source)}`;
   if (isPending(head)) return `${shortDayLabel(head.createdAt)} · ${from} · waiting for you`;
   return `${shortDayLabel(head.settledAt ?? head.createdAt)} · ${STATE_VERBS[head.state]} ${from}`;
 }
@@ -149,6 +157,21 @@ export function wroteKicker(source) {
 
 export function keptRunLabel(count) {
   return count === 1 ? 'and 1 line unchanged' : `and ${count} lines unchanged`;
+}
+
+// The card outside the dialog is a SKIM, not the document: what moved, three lines of it, and the
+// rest counted. The rows that are the document as well as the diff are behind Review, where the
+// scroll gate makes reading them the price of applying them.
+export const CARD_ROW_CAP = 3;
+
+// The rows a card may draw. A kept line is the routine standing still; the rename and the order are
+// claims about the whole document, and the document is only in the dialog — `the lines run in the
+// order below` has no lines below it on a card. `countedLabel` reads the store's own `changeCount`,
+// which counts a rename and a reorder, so nothing a card stops drawing stops being counted.
+export const CARD_ROW_KINDS = ['added', 'removed', 'retargeted'];
+
+export function moreRowsLabel(count) {
+  return `+ ${count} more`;
 }
 
 // Runs of kept rows fold to one `kept-run` item holding the rows it stands for, at the run's own

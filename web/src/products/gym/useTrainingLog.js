@@ -127,10 +127,10 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
 
   // A delete the lifter can still take back. Nothing is sent for the length of the window, and a
   // second delete settles nothing: each one arrives with a clock of its own.
-  const withhold = useCallback(({ kind, id, line, send = null, refused = null, undo = null }) => {
+  const withhold = useCallback(({ kind, id, line, detail = null, send = null, refused = null, undo = null }) => {
     const key = withheldKey(kind, id);
     spoke.current += 1;
-    publish([...withheld.current, { key, kind, id, line, send, refused, undo, at: spoke.current, settling: false }]);
+    publish([...withheld.current, { key, kind, id, line, detail, send, refused, undo, at: spoke.current, settling: false }]);
     clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
   }, [close, publish]);
 
@@ -427,6 +427,7 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   const spoken = transientOf(toast, withheld.current);
   const transient = spoken == null ? null : {
     text: spoken.text,
+    detail: spoken.detail ?? null,
     action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : null,
     dismiss: spoken.undoable ? null : dismissToast,
   };

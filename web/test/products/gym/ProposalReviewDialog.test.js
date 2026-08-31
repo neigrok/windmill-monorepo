@@ -279,7 +279,7 @@ test('closing the dialog decides nothing, and a settled proposal offers no band'
   assert.deepEqual(wire, ['GET /proposals/prop_1']);
 });
 
-test('the review never pushes: no hash moves from a card, and nothing in it runs on a clock', () => {
+test('the review never pushes: no hash moves from a card, the card is a skim, and nothing in it runs on a clock', () => {
   const source = fs.readFileSync(path.join(GYM, 'Proposals.jsx'), 'utf8');
   assert.equal(source.includes('window.location.hash'), false);
   assert.equal(source.includes('useEffect'), false);
@@ -291,7 +291,23 @@ test('the review never pushes: no hash moves from a card, and nothing in it runs
   assert.equal(room.includes('onChanged={view.refresh}'), true, 'the card re-reads in place when the dialog learns the proposal moved');
   assert.equal(room.includes('view.retry()'), false, 'a re-read from loading would unmount the dialog and the receipt');
   assert.equal(room.includes('<p className="gym-proposal-line">{summaryLine(proposal, proposal.baseName)}</p>'), true, 'the card carries the summary it wrote');
-  assert.ok(room.indexOf('<p className="gym-proposal-line">') < room.indexOf('<ul className="gym-diff">'), 'the summary sits above the counted rows');
+  // The document is drawn once, in this dialog. The card outside it is a skim: how much it is on its
+  // own line under the summary, then what MOVED, three rows at most, then the rest counted.
+  assert.equal(room.includes('<p className="gym-proposal-counted">{countedLabel(proposal)}</p>'), true);
+  assert.ok(room.indexOf('gym-proposal-line') < room.indexOf('gym-proposal-counted'));
+  assert.equal(room.includes('const changed = diffRows(proposal).filter((row) => CARD_ROW_KINDS.includes(row.kind));'), true);
+  assert.equal(room.includes('changed.slice(0, CARD_ROW_CAP)'), true);
+  assert.equal(room.includes('{moreRowsLabel(changed.length - CARD_ROW_CAP)}'), true);
+  // No kept row, no fold, and no count in the kicker — the kicker names the routine and nothing else.
+  for (const gone of ['collapseKept', 'keptRunLabel', 'gym-diff-unfolded']) {
+    assert.equal(room.includes(gone), false, gone);
+  }
+  assert.equal(fs.readFileSync(path.join(GYM, 'gym.css'), 'utf8').includes('gym-diff-unfolded'), false);
+  assert.equal(room.includes('<span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>'), true);
+  const kicker = room.slice(room.indexOf('<p className="gym-proposal-kicker">'), room.indexOf('<p className="gym-proposal-line">'));
+  for (const gone of ['countedLabel', 'changeLabel', 'changeCount']) {
+    assert.equal(kicker.includes(gone), false, `the count is off the kicker — ${gone}`);
+  }
   assert.equal(room.includes('setReceipt(receiptLine(settled));'), true);
   assert.equal(room.includes('{receipt && <p className="gym-coach-receipt" role="status">{receipt}</p>}'), true);
   const threads = fs.readFileSync(path.join(GYM, 'coach', 'Threads.jsx'), 'utf8');
@@ -304,4 +320,120 @@ test('the review never pushes: no hash moves from a card, and nothing in it runs
     const said = fs.readFileSync(path.join(GYM, file), 'utf8');
     assert.equal(/localStorage|sessionStorage|receiptAt|settledLine\(receipt/.test(said), false, file);
   }
+});
+
+// The Coach card as the room composes it: `CoachRoom` → `CoachBody` → `Answer` → `CoachProposal`.
+// None of those inner pieces is an export, so the card is reached through the tree that draws it and
+// then rendered on its own — how many rows a lifter sees is not a string in a file.
+async function coachCard(t, stored) {
+  browserWith();
+  global.fetch = async (url, options = {}) => {
+    const at = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    if (at === '/ask' && method === 'POST') {
+      return { ok: true, status: 200, json: async () => ({ answer: 'Here it is.', proposals: [stored.id], read: { sets: 40, sessions: 8, weeks: 3 } }) };
+    }
+    if (at === `/proposals/${stored.id}` && method === 'GET') return { ok: true, status: 200, json: async () => stored };
+    throw new Error(`unexpected ${method} ${at}`);
+  };
+  const { CoachRoom } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const room = renderHook(t, () => CoachRoom({ log: quiet }));
+  const bodyOf = () => elementsOf(room.tree).find((each) => typeof each.type === 'function' && each.type.name === 'CoachBody');
+  bodyOf().props.setDraft('What should I change?');
+  bodyOf().props.onAsk();
+  await settle();
+  const shown = bodyOf();
+  const answer = elementsOf(shown.type(shown.props)).find((each) => typeof each.type === 'function' && each.type.name === 'Answer');
+  const drawn = elementsOf(answer.type(answer.props)).find((each) => typeof each.type === 'function' && each.type.name === 'CoachProposal');
+  const card = renderHook(t, () => drawn.type(drawn.props));
+  await settle();
+  return card;
+}
+
+const retargets = (count, from = 1) => Array.from({ length: count }, (_, at) => ({
+  position: from + at,
+  kind: 'retargeted',
+  exerciseId: `mv-${from + at}`,
+  before: { sets: 3, reps: 8, weightKg: 60 },
+  after: { sets: 3, reps: 8, weightKg: 62.5 },
+}));
+const lines = (tree) => findByClass(tree, 'gym-diff-row').filter((row) => !row.props.className.includes('is-more'));
+const doorsIn = (tree) => elementsOf(tree).filter((each) => typeof each.type === 'function' && each.type.name === 'ReviewDoor');
+
+test('the Coach card draws three rows of what moved and counts the rest, and never a line that stood still', async (t) => {
+  const many = await coachCard(t, proposal({ changeCount: 5, changes: retargets(5) }));
+  assert.equal(lines(many.tree).length, 3);
+  assert.deepEqual(findByClass(many.tree, 'gym-diff-more').map(textOf), ['+ 2 more']);
+  assert.deepEqual(findByClass(many.tree, 'gym-proposal-counted').map(textOf), ['5 changes']);
+
+  // Two changes inside twenty kept lines: two rows, and nothing counted — the kept run is the routine
+  // standing still, which the dialog draws and the card does not.
+  const wide = await coachCard(t, proposal({
+    changeCount: 2,
+    changes: [
+      ...retargets(1),
+      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } })),
+      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: 3, reps: 10 } },
+    ],
+  }));
+  assert.deepEqual(lines(wide.tree).map((row) => row.props.className), ['gym-diff-row is-retargeted', 'gym-diff-row is-added']);
+  assert.deepEqual(findByClass(wide.tree, 'gym-diff-more'), []);
+});
+
+test('the rename and the reorder are claims about the document, so only the dialog draws them — the card counts them and draws neither', async (t) => {
+  // Nothing marked, and a count above it: `diffRows` reads the gap as the order moving. On the card
+  // `Order · the lines run in the order below` would be the only row, with no lines below it.
+  const kept = Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } }));
+  const shuffled = await coachCard(t, proposal({ changeCount: 3, changes: kept }));
+  assert.deepEqual(findByClass(shuffled.tree, 'gym-diff-row'), []);
+  assert.deepEqual(findByClass(shuffled.tree, 'gym-proposal-counted').map(textOf), ['3 changes']);
+  assert.deepEqual(findByClass(shuffled.tree, 'gym-diff-more'), []);
+
+  // A rename spends no card row either; the kicker and the summary above it already name the routine.
+  const renamed = await coachCard(t, proposal({
+    name: 'Push A · heavy',
+    changeCount: 2,
+    changes: [...retargets(1), { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: 3 }, after: { sets: 3 } }],
+  }));
+  assert.deepEqual(lines(renamed.tree).map((row) => row.props.className), ['gym-diff-row is-retargeted']);
+  assert.deepEqual(findByClass(renamed.tree, 'gym-proposal-counted').map(textOf), ['2 changes']);
+
+  // Behind Review the document is there, so both rows are drawn and both sentences are true.
+  browserWith();
+  proposalOnTheWire(proposal({ name: 'Push A · heavy', changeCount: 3, changes: kept }));
+  const { DiffRow, ProposalReview } = await loadScreen('products/gym/Proposals.jsx');
+  const dialog = renderHook(t, () => ProposalReview({ id: 'prop_1', log: quiet, onClose: () => {}, onSettled: () => {} }));
+  await settle();
+  const kinds = findByClass(dialogOf(dialog.tree).props.children, 'gym-diff-row').map((row) => row.props.className);
+  assert.deepEqual(kinds, ['gym-diff-row is-renamed', 'gym-diff-row is-reordered', 'gym-diff-row is-kept-run']);
+  // The sentence the card cannot say, said where the lines it points at are.
+  assert.equal(textOf(DiffRow({ row: { kind: 'reordered' }, catalog: quiet.catalog })), 'Orderthe lines run in the order below');
+});
+
+test('ruled — a promise about Apply is spent once Apply has been taken or turned down: the settled Coach card keeps the door to the rows it counted and drops the promise', async (t) => {
+  const settled = await coachCard(t, proposal({ state: 'applied', settledAt: 1_755_100_000_000, changeCount: 8, changes: retargets(8) }));
+  assert.equal(lines(settled.tree).length, 3);
+  assert.deepEqual(findByClass(settled.tree, 'gym-diff-more').map(textOf), ['+ 5 more']);
+  // The card counts five rows it does not draw, so the way to them stands in every state — as it does
+  // on both phones. The dialog behind it draws a settled proposal with no band.
+  assert.equal(doorsIn(settled.tree).length, 1);
+  assert.deepEqual(findByClass(settled.tree, 'gym-coach-proposal-note'), [], 'nothing to promise once it is decided');
+
+  const pending = await coachCard(t, proposal({ changeCount: 8, changes: retargets(8) }));
+  assert.equal(doorsIn(pending.tree).length, 1);
+  assert.equal(findByClass(pending.tree, 'gym-coach-proposal-note').length, 1);
+});
+
+test('a removal reads as a removal on the Coach card, never as a count of the lines it takes', async (t) => {
+  const removal = await coachCard(t, proposal({
+    intent: 'remove',
+    summary: '',
+    changeCount: 4,
+    changes: Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'removed', exerciseId: `mv-${at}`, before: { sets: 3, reps: 8, weightKg: 60 } })),
+  }));
+  assert.deepEqual(findByClass(removal.tree, 'gym-proposal-counted').map(textOf), ['a removal']);
+  // The routine is named twice above it already — in the kicker and in the summary — so the counted
+  // phrase names nobody and reads in both intents.
+  assert.deepEqual(findByClass(removal.tree, 'gym-proposal-line').map(textOf), ['A proposal to remove Push A.']);
+  assert.equal(textOf(findByClass(removal.tree, 'gym-proposal-kicker')[0]), 'Proposal · Push Astill waiting');
 });

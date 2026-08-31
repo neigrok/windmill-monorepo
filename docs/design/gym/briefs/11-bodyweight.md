@@ -67,6 +67,12 @@ line is drawn across a gap longer than seven days"*, beside the window it is sho
 knows the rule can read the line correctly; a reader who does not would be misled by it, which is
 why the sentence is part of the chart rather than part of a spec.
 
+**It is drawn where a chart is, and only there.** The sentence is the chart's disclosure about its
+own segments, so a window holding no weigh-in says that it is empty and nothing else — there are no
+segments to read, and a rule about lines under a screen with no line is chrome. Not gated on whether
+a gap is present: a dense series drawn as one unbroken line is exactly where over-reading it is
+likeliest.
+
 The rule about lines is honoured by refusing to connect across a gap, not by pretending bars fit. And
 the window the chart shows is **stated**, not silent: a two-value control, **90 days** · **All**,
 default 90 days, and the chart prints the window it shows with what it holds — *last 90 days · 12
@@ -87,6 +93,15 @@ Three verbs, and they belong to the lifter: a weigh-in can be **entered for any 
 and deleted** — from the chart, by tapping a dot. One sheet — the weigh-in sheet — reused for the
 repair with its date fixed to that day and a **Delete weigh-in** row, confirmed: *Delete this
 weigh-in?* / **Delete** · **Keep it**.
+
+**That confirmation is ruled out and still drawn.** Ruled 2026-08-30: the delete takes the room's own
+window like every other delete here — the sheet closes, the dot is gone, the transient carries
+*Undo*, and nothing reaches the log until the nine seconds close, so a weigh-in delete is never sent
+while the lifter can still take it back, which is what makes the dialog ceremony `13-gestures.md`
+Law 2 refuses. The infrequency of the act is the one argument for a confirmation and it does not
+survive that mechanism: the way back is on screen, and it shows itself closing. The three strings
+above are what every surface draws today, and they leave in the same change as the code
+(`../BUILD.md` §8).
 
 **Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
 the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a

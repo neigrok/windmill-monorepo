@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  askedLabel, conversationsLine, DELETE_NOTE, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
-  THREAD_LIST_CEILING, THREADS_TITLE,
+  askedLabel, conversationsLine, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
+  THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_LIST_CEILING, THREADS_TITLE,
 } from '../../../../src/products/gym/coach/threads.js';
 
 const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
@@ -118,8 +118,10 @@ test('nothing in the threads vocabulary is an unread count, a badge or a notific
   assert.equal(NO_THREADS, 'Nothing here yet. Ask something and the conversation stays.');
 });
 
-test('the delete says the messages go and the change does not', () => {
-  assert.match(DELETE_NOTE, /deletes the messages/);
-  assert.match(DELETE_NOTE, /stays in the routine’s history/);
-  assert.match(DELETE_NOTE, /fact about your program rather than a message/);
+test('what the delete leaves behind is said at the moment of the act, in the phones’ own bytes', () => {
+  assert.equal(THREAD_DELETED, 'Conversation deleted.');
+  assert.equal(THREAD_DELETE_DETAIL, 'a change you applied stays in the routine\u2019s history');
+  // Why the rule exists is not the transient's to carry: `settledLine` already stands permanently on
+  // the routine's own history row.
+  assert.equal(THREAD_DELETE_DETAIL.includes('fact about your program'), false);
 });

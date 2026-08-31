@@ -210,6 +210,32 @@ class BodyweightScreenTests {
         scope.cancel()
     }
 
+    // The gap rule is the chart's disclosure about its own segments, so it is on screen exactly when
+    // a chart is — never under `no weigh-in in the last 90 days`, which draws no line to read.
+    @Test
+    fun theGapRuleIsDrawnWithTheChartAndNotOverAnEmptyWindow() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        runBlocking {
+            store.weighIn(today.minusDays(200).toString(), 84.0)
+            store.weighIn(today.minusDays(150).toString(), 83.0)
+        }
+        compose.setContent {
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+        }
+
+        compose.onNodeWithText("last 90 days · 0 weigh-ins").assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.noneInWindow).assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.gapRule).assertDoesNotExist()
+
+        compose.onNodeWithText("All").performScrollTo().performClick()
+        compose.onNodeWithText("the whole series · 2 weigh-ins").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.noneInWindow).assertDoesNotExist()
+        compose.onNodeWithText(Bodyweight.gapRule).performScrollTo().assertIsDisplayed()
+        scope.cancel()
+    }
+
     @Test
     fun tappingADotOpensTheSameSheetWithTheDateFixedAndADeleteRowThatIsConfirmed() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

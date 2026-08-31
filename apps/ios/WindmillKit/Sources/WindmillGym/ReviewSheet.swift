@@ -86,6 +86,7 @@ struct ReviewSheet: View {
                 Text("Proposal · \(proposal.baseName)")
                     .font(WindmillFont.display(22))
                     .foregroundStyle(skin.ink)
+                    .lineLimit(2)
                 Spacer(minLength: 0)
                 chip(proposal.state)
                 Button { dismiss() } label: {
@@ -398,15 +399,20 @@ struct ProposalCard: View {
                 Circle()
                     .fill(skin.accent)
                     .frame(width: 6, height: 6)
-                Text("Proposal · \(head.source.agentName)")
+                // A routine's name is as long as a lifter types it: the eyebrow truncates and the stamp,
+                // which is the same handful of characters however old the proposal, is measured first.
+                Text("Proposal · \(routineName)")
                     .font(GymType.numeral(10.5, .bold))
                     .textCase(.uppercase)
                     .kerning(0.9)
                     .foregroundStyle(skin.accent)
+                    .lineLimit(1)
                 Spacer(minLength: WindmillSpace.x2)
                 Text("\(Readout.when(head.createdAtMs, now: nowMs)) · \(Readout.time(head.createdAtMs))")
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
+                    .lineLimit(1)
+                    .layoutPriority(1)
             }
             Text(head.line(about: routineName))
                 .font(WindmillFont.body(14))

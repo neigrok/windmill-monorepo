@@ -1,9 +1,10 @@
 import XCTest
 
-// What the routine editor, its target sheet and a saved routine's own screen SAY once they are drawn:
-// which sentence a lifter is shown, where it sits, how many times it is drawn (C1, C19, C16), the two
-// Save refusals under the name field (C4), the single refusal a broken target sheet shows (C5), and
-// the number a refused clear keeps and selects (C6).
+// What the routines list, the routine editor, its target sheet and a saved routine's own screen SAY
+// once they are drawn: which sentence a lifter is shown, where it sits, how many times it is drawn
+// (C1, C19), what the list names and what it leaves to the screen behind it, the two Save refusals
+// under the name field (C4), the single refusal a broken target sheet shows (C5), and the number a
+// refused clear keeps and selects (C6).
 //
 // None of it can be asserted from a unit test — a footer, a selection and a sheet over a sheet only
 // exist once a screen has been laid out — so it is asserted with real touches on a simulator.
@@ -118,10 +119,11 @@ final class RoomRoutineCopyUITests: XCTestCase {
         deleteTheOpenRoutine()
     }
 
-    // C16 · a LIST of routines names movements and no targets — the numbers are read on the routine's
-    // own screen. It was also the one place a bare `open` was drawn with nothing anywhere near it to
-    // say what the word meant, since the sentence that explains it belongs to a list OF MOVEMENTS.
-    func testTheRoutinesListNamesMovementsAndDrawsNoTargetColumn() {
+    // A card is a door and a door does not restate what is behind it: the list names the ROUTINE, and
+    // its movements, their targets and the word `open` are read one tap deeper, on the routine's own
+    // screen. The list is also where a bare `open` used to be drawn with nothing near it to say what
+    // the word meant, since the sentence that explains it belongs to a list OF MOVEMENTS.
+    func testTheRoutinesListNamesTheRoutineAndItsMovementsAreNamedOneTapDeeper() {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
         app.typeText("Listed Thursday")
@@ -141,17 +143,30 @@ final class RoomRoutineCopyUITests: XCTestCase {
                       "the saved routine is not on the list")
 
         for movement in ["Back Squat", "Bench Press"] {
-            XCTAssertTrue(card(movement).exists, "the card does not name the movements it holds")
+            XCTAssertFalse(card(movement).exists, "the card redraws the movements of the screen it opens")
         }
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 0,
-                       "the list still draws a target column, and a bare `open` inside it")
+                       "the list draws a target column, and a bare `open` inside it")
         XCTAssertEqual(sentences(openLine), 0,
                        "the list explains a word it does not say")
+        // The head counts the program and claims nothing about a session it cannot see: the Routines
+        // tab is not even mounted while one is open (the twin of Android's `RoutinesScreenTests`).
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",
+                                                            "nothing running")).count, 0,
+                       "the head asserts something about a session it cannot read")
+        XCTAssertGreaterThan(app.staticTexts.matching(NSPredicate(format: "label MATCHES %@",
+                                                                  "^[0-9]+ routines?$")).count, 0,
+                             "the head does not count the program")
 
-        // The same two rows, read where the targets belong.
+        // The same two movements, read where they and their targets belong.
         card("Listed Thursday").tap()
         XCTAssertTrue(app.buttons["Start workout"].waitForExistence(timeout: 20),
                       "the card is not a door to the routine")
+        for movement in ["Back Squat", "Bench Press"] {
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", movement))
+                            .firstMatch.exists,
+                          "the routine's own screen does not name the movements the card gave up")
+        }
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 2,
                        "the routine screen lost the target column the list gave up")
         XCTAssertEqual(sentences(openLine), 1, "and the sentence that says what `open` means")

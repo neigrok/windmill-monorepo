@@ -17,10 +17,20 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
 
 test('the routine row’s overflow is Duplicate and Delete, and it is the only home either has', () => {
   const source = spoken(read('Routines.jsx'));
-  assert.equal(source.includes("duplicateRoutine(view.data, { id: mintId('rt_') })"), true);
+  // The survivor: a re-entrancy guard, and a position past the end of the list rather than the
+  // original's own.
+  assert.equal(source.includes("duplicateRoutine(routine, { id: mintId('rt_'), position: view.data.length })"), true);
+  assert.equal(source.includes('if (copying) return;'), true);
+  assert.equal(source.includes("duplicateRoutine(view.data,"), false);
   assert.equal(source.includes("duplicateRoutine(draft,"), false);
   assert.equal(source.includes("items={[\n                  { label: 'Duplicate', run: () => duplicate(routine) },\n                  { label: 'Delete', run: () => remove(routine) },\n                ]}"), true);
-  assert.equal(source.includes("{!fresh && <Overflow label=\"More for this routine\" items={[{ label: 'Duplicate', run: copy }]} />}"), true);
+  // The editor's head keeps no menu of its own. Its Duplicate copied the SAVED routine, took the
+  // draft's unsaved edits with it, collided on the original's position and had no re-entrancy guard;
+  // the row's — with `copying` and a position past the end of the list — is the one that survives.
+  assert.equal((source.match(/<Overflow/g) ?? []).length, 1, 'one overflow, on the row');
+  assert.equal(source.includes('More for this routine'), false);
+  assert.equal(source.includes('const copy = async ()'), false);
+  assert.equal(spoken(read('Overflow.jsx')).includes("editor's head"), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false, 'the two drawn buttons are gone');
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
   // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
@@ -32,13 +42,6 @@ test('the routine row’s overflow is Duplicate and Delete, and it is the only h
   assert.equal(overflow.includes("aria-haspopup=\"menu\""), true);
   assert.equal(overflow.includes("role=\"menuitem\""), true);
   assert.equal(overflow.includes("if (event.key === 'Escape') setOpen(false);"), true);
-});
-
-test('the routine row’s proposal flag counts nothing', () => {
-  const source = spoken(read('Proposals.jsx'));
-  const flag = source.slice(source.indexOf('export function ProposalFlag'), source.indexOf('export function ProposalDiff'));
-  assert.equal(flag.includes('proposal pending'), true);
-  assert.equal(/\d proposal/.test(flag), false);
 });
 
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
@@ -95,14 +98,37 @@ test('the live mirror heads the routines home and keeps its charter: no Finish, 
   }
 });
 
-test('every exercise name a lifter can see is a link to that movement’s record', () => {
+test('every exercise name a lifter can see is a link to that movement’s record — except on a screen holding an unsaved draft, where the movements door on the home reaches it instead', () => {
   assert.equal(read('Log.jsx').includes('<a className="gym-movement-door" href={recordHref(exerciseId)}>'), true);
-  assert.equal(read('Routines.jsx').includes('<a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>'), true);
   assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   assert.equal(read('Mirror.jsx').includes('<a className="gym-movement-door" href={recordHref(newest.exerciseId)}>'), true);
   assert.equal(read('Proposals.jsx').includes('<a className="gym-diff-name gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   assert.equal(read('gym.css').includes('.gym-movement-door {'), true);
-  assert.equal(/\.gym-entry \.gym-movement-door \{[^}]*display:/.test(read('gym.css')), false);
+
+  // The routine editor is the exception, and it is the draft that makes it one: an anchor out of an
+  // unsaved routine eats the draft with no question. The row's name is folded into the control that
+  // opens the target sheet, so the name is still a focusable control carrying the movement's
+  // identity — and `gym-entry-target`'s accessible name was the numbers alone before it.
+  const editor = read('Routines.jsx');
+  assert.equal(editor.includes('recordHref'), false);
+  assert.equal(editor.includes('<button type="button" className="gym-entry-body" onClick={() => onTarget(index)}>'), true);
+  assert.equal(editor.includes('<span className="gym-entry-name">'), true);
+  assert.equal(editor.includes('<span className="gym-entry-target">{entryLabel(entry)}</span>'), true);
+  assert.equal(/onClick=\{[^}]*\}\s*>\s*\{nameOfMovement/.test(editor), false, 'never a span with onClick');
+
+  // The record page and Rename keep a drawn door: `MOVEMENTS_HREF` beside `New` on the routines
+  // home. It is the only route to the record of a movement that sits in a routine and has never
+  // been logged, and before this it was reachable by typing a URL.
+  assert.equal(editor.includes('<a className="gym-door-past" href={MOVEMENTS_HREF}>Movements</a>'), true);
+  assert.equal(read('Record.jsx').includes('return <MovementChooser log={log} />;'), true);
+
+  // The name still ellipsises: the box the deleted door scoped that rule onto is now the name's own.
+  assert.equal(/\.gym-entry \.gym-movement-door/.test(read('gym.css')), false);
+  assert.equal(/\.gym-entry-name \{[^}]*text-overflow: ellipsis;/.test(read('gym.css')), true);
+  assert.equal(/\.gym-entry-name \{[^}]*display: flex/.test(read('gym.css')), false);
+  // The target reads as a pill beside it, and a span in a flex row has no button's built-in centring
+  // to borrow, so it states its own.
+  assert.equal(/\.gym-entry-target \{[^}]*align-items: center;/.test(read('gym.css')), true);
 });
 
 test('the record page’s block heads do not take the finish screen’s gold class', () => {
@@ -286,9 +312,24 @@ test('Coach writes into a thread it minted, and starting again opens a new one',
   }
 });
 
-test('deleting a conversation says what it does, is withheld, and is neither armed nor confirmed', () => {
+test('deleting a conversation says what it leaves behind on the act, is withheld, and is neither armed nor confirmed', () => {
   const threads = read('coach/Threads.jsx');
-  assert.equal(threads.includes('<p className="gym-thread-delete-note">{DELETE_NOTE}</p>'), true);
+  // The conversation screen states nothing about the delete standing still: what the act leaves
+  // behind rides the window as its `detail` and is read at the moment of the act.
+  assert.equal(threads.includes('gym-thread-delete-note'), false);
+  assert.equal(threads.includes('detail: THREAD_DELETE_DETAIL,'), true);
+  assert.equal(read('gym.css').includes('gym-thread-delete-note'), false);
+  // A SIBLING FIELD and never a fold: `Toast` puts its children in one bare span, where a newline
+  // collapses to a space and runs the two sentences together. `Toast` is the shell's and grows no
+  // gym-shaped prop for this.
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes('<span className="gym-transient-detail">{transient.detail}</span>'), true);
+  assert.equal(/\\n/.test(app.slice(app.indexOf('{transient.text}'), app.indexOf('</Toast>'))), false);
+  const toast = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Toast.jsx'), 'utf8');
+  assert.equal(/detail|gym-/.test(toast), false, 'the shared transient knows nothing about gym');
+  assert.equal(read('gym.css').includes('.gym-transient-detail {'), true);
+  // It wraps rather than clamps: a truncated disclosure is worse than a taller transient.
+  assert.equal(/\.gym-transient-detail \{[^}]*(line-clamp|white-space: nowrap|text-overflow)/.test(read('gym.css')), false);
   // Law 2: a gesture that destroys takes an undo, not a confirmation — so both halves of the old
   // two-tap arm go, and the word that promised no way back with them.
   assert.equal(threads.includes('confirming'), false);
@@ -368,9 +409,9 @@ test('every set in a session read whole is a door onto the fix, and says so', ()
 
 test('the transient is the room’s, and the window’s own carries the Undo, no dismiss, and does not close on it', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes('{log.transient && ('), true);
-  assert.equal(app.includes('onClose={log.transient.dismiss ?? undefined}'), true, 'a window retires itself');
-  assert.equal(app.includes('onClick: log.transient.action.run,'), true, 'Undo re-reads for the rest, it does not dismiss');
+  assert.equal(app.includes('{log.transient && <Transient transient={log.transient} />}'), true);
+  assert.equal(app.includes('onClose={transient.dismiss ?? undefined}'), true, 'a window retires itself');
+  assert.equal(app.includes('onClick: transient.action.run,'), true, 'Undo re-reads for the rest, it does not dismiss');
   assert.equal(app.includes('log.dismissToast'), false, 'the hook composes the transient; the room only draws it');
   // One Toast in the room, hosted above every screen, so a withheld delete's Undo follows the lifter.
   const hosts = gymFiles().filter((file) => /\.jsx$/.test(file) && fs.readFileSync(file, 'utf8').includes('<Toast'));
@@ -673,11 +714,44 @@ test('nothing settles a proposal on a render, and no toggle offers to', () => {
   }
 });
 
-test('a pending proposal waits at the head of the routines home and on the routine it touches, as a door', () => {
+test('the proposal eyebrow holds one line: the routine name truncates and the stamp keeps its room', () => {
+  // The eyebrow carries a name a lifter typed, up to `NAME_MAX` code points, on both cards.
+  assert.equal(read('Proposals.jsx').includes('<span className="gym-proposal-name">{`Proposal · ${routine.name}`}</span>'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('<span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>'), true);
+  assert.equal(/export const NAME_MAX = 60;/.test(read('log.js')), true);
+  const css = read('gym.css');
+  const name = /\.gym-proposal-name \{([^}]*)\}/.exec(css)[1];
+  for (const rule of ['min-width: 0;', 'overflow: hidden;', 'white-space: nowrap;', 'text-overflow: ellipsis;']) {
+    assert.equal(name.includes(rule), true, rule);
+  }
+  // The stamp is the shorter half and never the half that gives way, so it neither shrinks nor wraps.
+  const when = /\.gym-proposal-when \{([^}]*)\}/.exec(css)[1];
+  assert.equal(when.includes('flex: none;'), true);
+  assert.equal(when.includes('white-space: nowrap;'), true);
+  // Rendered against this stylesheet in headless Chrome at 320px with a 60-character name: the
+  // eyebrow is 13px — one line — the name ellipsises, and the stamp holds its full 145.7px.
+  assert.equal(/\.gym-proposal-kicker \{[^}]*display: flex;/.test(css), true);
+});
+
+test('a pending proposal is drawn ONCE on the routines home — one card, named for the routine it touches', () => {
   assert.equal(read('Routines.jsx').includes('<PendingProposals routines={routines} log={log} onChanged={view.refresh} />'), true);
   assert.equal(read('Proposals.jsx').includes('export function PendingProposals({ routines, log, onChanged }) {'), true);
   assert.equal(read('Proposals.jsx').includes('useGymRead(() => gymApi.routines()'), false, 'the home reads its routines once');
-  assert.equal(read('Routines.jsx').includes('{routine.pendingProposal && <ProposalFlag />}'), true);
+  // The home already draws one card per waiting routine, so a mark on the row is the same fact
+  // twice. The card's kicker names the routine, which is what the mark was for.
+  assert.equal(read('Proposals.jsx').includes('<span className="gym-proposal-name">{`Proposal · ${routine.name}`}</span>'), true);
+  for (const gone of ['ProposalFlag', 'gym-routine-flag', 'gym-routine-line', 'proposal pending']) {
+    assert.equal(read('Routines.jsx').includes(gone), false, gone);
+    assert.equal(read('Proposals.jsx').includes(gone), false, gone);
+  }
+  // The wrapper that laid the name beside the mark goes with it: the name is the row's own line now.
+  assert.equal(read('gym.css').includes('gym-routine-flag'), false);
+  assert.equal(read('gym.css').includes('gym-routine-line'), false);
+  assert.equal(read('Routines.jsx').includes('<span className="gym-routine-name">{routine.name}</span>'), true);
+  // The agent that wrote it keeps two permanent homes: the sheet header and the routine's own
+  // history row.
+  assert.equal(read('Proposals.jsx').includes('{`from ${sourceLabel(proposal.source)}  ·  ${arrivedLabel(proposal.createdAt)}`}'), true);
+  assert.equal(speech('proposals.js').includes('${countedLabel(head)} from ${sourceLabel(head.source)}'), true);
   const source = read('Proposals.jsx');
   // One affordance, a link that keeps its routable address and opens the dialog in place on a tap.
   assert.equal(source.includes('href={proposalHref(head.id)}'), true);

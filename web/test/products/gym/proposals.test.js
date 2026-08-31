@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  applyLabel, atomicLine, changeLabel, collapseKept, diffRows, documentLine, historyLabel, intentLine, isPending,
+  applyLabel, atomicLine, CARD_ROW_CAP, changeLabel, collapseKept, countedLabel, diffRows, documentLine,
+  historyLabel, intentLine, isPending, moreRowsLabel,
   agentNameOf, conversationOf, CONVERSATION_VERB, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, STILL_WAITING,
   logKeptLabel, REVIEW_VERB, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB,
   UNNAMED_AGENT, wroteKicker,
@@ -355,6 +356,50 @@ test('a removal names itself on the card, whatever its summary says', () => {
     atomicLine(removal),
     'The routine goes and your logged sets stay. Nothing is applied until you tap.',
   );
+});
+
+test('countedLabel — a removal is never a count, and every line that says how much goes through it', () => {
+  // The domain forces `standing == 0` for a removal, so every base entry arrives as a `removed`
+  // change and the count is positive. Reading it out would say `4 changes to Push A` for a proposal
+  // that DELETES Push A — which is why the intent is asked first.
+  assert.equal(countedLabel(proposal({ intent: 'remove', changeCount: 4 })), 'a removal');
+  assert.equal(countedLabel(proposal({ intent: 'remove', changeCount: 1 })), 'a removal');
+  assert.equal(countedLabel(proposal({ changeCount: 4 })), '4 changes');
+  assert.equal(countedLabel(proposal({ changeCount: 1 })), '1 change');
+  assert.equal(countedLabel(proposal({ changeCount: 1 })), changeLabel(1));
+  // One source, so the card's line and the history row cannot drift apart.
+  for (const head of [proposal(), proposal({ intent: 'remove', changeCount: 4 }), proposal({ changeCount: 1 })]) {
+    assert.equal(historyLabel(head).includes(countedLabel(head)), true);
+  }
+});
+
+test('CARD_ROW_CAP and moreRowsLabel — the card’s vocabulary for a skim, and what a wide routine leaves it to count', () => {
+  assert.equal(CARD_ROW_CAP, 3);
+  assert.equal(moreRowsLabel(1), '+ 1 more');
+  assert.equal(moreRowsLabel(9), '+ 9 more');
+  // The card draws what moved and never what stood still, so a fifty-line routine with two changes
+  // is two rows and no `+ N more` at all.
+  const wide = proposal({
+    changeCount: 2,
+    changes: [
+      { position: 1, kind: 'retargeted', exerciseId: 'bench-press', before: { sets: 5, reps: 5, weightKg: 80 }, after: { sets: 5, reps: 3, weightKg: 90 } },
+      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } })),
+      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: 3, reps: 10 } },
+    ],
+  });
+  const changed = diffRows(wide).filter((row) => row.kind !== 'kept');
+  assert.deepEqual(changed.map((row) => row.kind), ['retargeted', 'added']);
+  assert.equal(changed.length > CARD_ROW_CAP, false, 'nothing to count');
+  // Five changed lines: three drawn, two counted.
+  const many = proposal({
+    changeCount: 5,
+    changes: Array.from({ length: 5 }, (_, at) => ({
+      position: at + 1, kind: 'retargeted', exerciseId: `mv-${at}`, before: { sets: 3, reps: 8, weightKg: 60 }, after: { sets: 3, reps: 8, weightKg: 62.5 },
+    })),
+  });
+  const drawn = diffRows(many).filter((row) => row.kind !== 'kept');
+  assert.equal(drawn.length, 5);
+  assert.equal(moreRowsLabel(drawn.length - CARD_ROW_CAP), '+ 2 more');
 });
 
 test('historyLabel — one dated row per proposal, whatever became of it', () => {

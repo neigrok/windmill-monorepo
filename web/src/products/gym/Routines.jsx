@@ -3,15 +3,15 @@ import { Button, Icon, Input, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  alsoReadsLabel, cappedName, entryLabel, isNameOverCap, isUntested, movementOf, nameCountLabel,
-  nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel, ROUTINES_HREF,
+  alsoReadsLabel, cappedName, entryLabel, isNameOverCap, isUntested, MOVEMENTS_HREF, movementOf,
+  nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref, routineMetaLabel, ROUTINES_HREF,
   showsNameCount, threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { Overflow } from './Overflow.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
 import { mintId } from './mint.js';
-import { PendingProposals, ProposalDot, ProposalFlag, ProposalReview } from './Proposals.jsx';
+import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
   blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryDroppedLine,
@@ -60,7 +60,13 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
     <>
       <header className="gym-head gym-log-head">
         <h1 className="gym-title">Routines</h1>
-        <a className="gym-door-past" href={routineHref(NEW_ROUTINE_ID)}>New</a>
+        {/* The one door to a movement's own record, and to Rename, that asks nothing of the movement
+            first: every other route needs it to have been trained or to sit in an open proposal's
+            diff. A movement that sits in a routine and has never been logged is reached from here. */}
+        <span className="gym-head-doors">
+          <a className="gym-door-past" href={MOVEMENTS_HREF}>Movements</a>
+          <a className="gym-door-past" href={routineHref(NEW_ROUTINE_ID)}>New</a>
+        </span>
       </header>
       <LiveMirror log={log} onSignIn={onSignIn} />
       {/* The filtered list, not the read: a delete cascades the routine's proposals, so a routine
@@ -95,10 +101,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
           {routines.map((routine) => (
             <li className="gym-routine" key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-line">
-                  <span className="gym-routine-name">{routine.name}</span>
-                  {routine.pendingProposal && <ProposalFlag />}
-                </span>
+                <span className="gym-routine-name">{routine.name}</span>
                 <span className="gym-routine-meta">{routineMetaLabel(routine)}</span>
               </a>
               <Overflow
@@ -182,15 +185,6 @@ export function RoutineEditor({ id, log }) {
   // One at a time, and in this order: there is no screen before this one to have asked for a name.
   const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
   const built = builtLabel(view.data);
-  const copy = async () => {
-    try {
-      const made = duplicateRoutine(view.data, { id: mintId('rt_') });
-      await gymApi.createRoutine(made);
-      window.location.hash = routineHref(made.id);
-    } catch (error) {
-      log.say(`That copy wasn’t made — ${failureReason(error)}.`);
-    }
-  };
 
   const commit = async () => {
     if (missing || saving) return false;
@@ -240,7 +234,6 @@ export function RoutineEditor({ id, log }) {
         >
           Save
         </Button>
-        {!fresh && <Overflow label="More for this routine" items={[{ label: 'Duplicate', run: copy }]} />}
       </header>
       {missing && <p className="gym-editor-missing">{missing}</p>}
 
@@ -463,12 +456,15 @@ function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
           >
             ⠿
           </span>
-          <a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>
-            {nameOfMovement(catalog, entry.exerciseId)}
-            {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
-          </a>
-          <button type="button" className="gym-entry-target" onClick={() => onTarget(index)}>
-            {entryLabel(entry)}
+          {/* One control over the row body, and it opens the target sheet rather than leaving the
+              screen: a link out of here discards the draft with no question. The movement's name is
+              inside it, so the sheet's own control is named for the line it edits. */}
+          <button type="button" className="gym-entry-body" onClick={() => onTarget(index)}>
+            <span className="gym-entry-name">
+              {nameOfMovement(catalog, entry.exerciseId)}
+              {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
+            </span>
+            <span className="gym-entry-target">{entryLabel(entry)}</span>
           </button>
           <button
             type="button"
