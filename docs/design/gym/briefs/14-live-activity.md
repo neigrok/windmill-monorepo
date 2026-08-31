@@ -70,7 +70,7 @@ and gym has one sentence about rest instead of two.
 **Log set, at the number already shown.** That is gym's craft claim — the number is right before you
 touch it — made physical, and the only thing worth doing without opening anything.
 
-**Finishing is not here.** The finish screen carries an offer and a destructive door, and a workout
+**Finishing is not here.** The finish carries an offer and a destructive door, and a workout
 ended by accident on a lock screen is one somebody has to repair.
 
 **Undo is not here either**, and the reason is a capability rather than a preference: a Live Activity

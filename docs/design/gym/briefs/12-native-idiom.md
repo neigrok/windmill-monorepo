@@ -23,6 +23,18 @@ interactive dismiss, Android's `onDismissRequest` — and so does the rack keypa
 raised behind one, which its own copy already promises: *cancel to keep* the number standing. A
 scrim that writes is the one stroke a lifter cannot see coming.
 
+**The finish is a sheet on both phones** — iOS's `.sheet`, Android's `ModalBottomSheet` — raised over
+the session it just closed, and it is one statement about two surfaces rather than two conventions
+(`16-the-workout.md`). Because back, the scrim and the handle already dismiss a sheet, the only
+dismissal drawn for it is iOS's toolbar `Done`; Android draws none of its own, and on a session that
+ended early `Keep it` is the affirmative half of a decided pair rather than a way out, so neither
+phone draws a dismissal beside it. And because a sheet covers the room's bottom bar, a refusal raised
+by a control **on** a standing sheet — the receipt's keep-as-routine — is drawn inside it, under that
+control, not in the band every other refusal in the room lands in. That is the rule for a sheet that
+stays up to hear the answer. A sheet that is not there when the answer comes hands its refusal back to
+the room's own band, because a sentence drawn nowhere is not drawn — whether it closed first on
+purpose, as Android's create step does (`15-the-routine.md`), or the lifter dismissed it mid-write.
+
 The line is not aesthetic. A lifter has spent years learning what a back gesture does, what a
 long-press offers, what a swipe on a row means, and where the account lives. Re-teaching them costs
 them something and buys us nothing. A weight ladder, on the other hand, is ours to invent, because
@@ -36,8 +48,8 @@ the system puts them and no drawn heading repeating the bar's. `List` with secti
 that is a list, the card frame kept through row backgrounds. `.searchable` in the pickers. The
 system's segmented picker, toggle, menu, alert, share sheet and progress view;
 `ContentUnavailableView` where one action fits. SF Symbols on every affordance that has one. Sheets
-keep their detents, and the finish is a sheet over the session it closed. **No `Stepper`:** the
-room's only choice-shaped settings are fixed lists, and a Stepper needs a value you increment.
+keep their detents. **No `Stepper`:** the room's only choice-shaped settings are fixed lists, and a
+Stepper needs a value you increment.
 
 **Android.** A real `Scaffold` with a real top app bar per screen and a real navigation bar drawn
 only while the three tabs are what is on screen. Material's list item, switch, segmented button,

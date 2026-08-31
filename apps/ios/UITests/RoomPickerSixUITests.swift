@@ -121,7 +121,7 @@ final class RoomPickerSixUITests: XCTestCase {
             .matching(NSPredicate(format: "label IN %@", ["Session finished", "Ended early"]))
             .firstMatch
         XCTAssertTrue(head.waitForExistence(timeout: 20), "the finish sheet never presented")
-        let keep = ["Keep it", "Just keep the session", "Done"]
+        let keep = ["Keep it", "Done"]
             .map { app.buttons[$0] }
             .first { $0.exists }
         XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")

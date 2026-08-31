@@ -1371,6 +1371,19 @@ button.gym-set:focus-visible .gym-set-fix,
   box-shadow: var(--shadow-md);
   pointer-events: none;
 }
+/* Read, not drawn: the reorder is said on a channel a lifter who cannot see the rows still has.
+   One line for both drag lists — the routine's entries and the notes — because it is one rail. */
+.gym-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 .gym-entry-rail {
   flex: none;
   width: 28px;
@@ -1378,7 +1391,11 @@ button.gym-set:focus-visible .gym-set-fix,
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--gym-ink-faint);
+  font: inherit;
   font-size: 15px;
   cursor: grab;
   /* The browser must not take the drag for a scroll. */
@@ -1583,6 +1600,10 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 6px;
 }
+/* The column stretches what it holds; the back is a link, and a link is as wide as its words. */
+.gym-finish-screen > .gym-back {
+  align-self: flex-start;
+}
 .gym-finish-subtitle {
   margin: 2px 0 0;
   font-size: 16px;
@@ -1706,7 +1727,6 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 10px;
   margin-top: 22px;
 }
-.gym-finish-detail,
 .gym-short-keep,
 .gym-keep-decline,
 .gym-overlap-fix,
@@ -1725,7 +1745,6 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: none;
   cursor: pointer;
 }
-.gym-finish-done,
 .gym-keep-save,
 .gym-save-do {
   flex: 1;
@@ -1789,15 +1808,9 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 16px;
   font-weight: 700;
 }
-.gym-keep-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
 .gym-keep-input {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
+  margin-top: 12px;
   height: 44px;
   padding: 0 12px;
   border: 1px solid var(--gym-line);
@@ -1812,10 +1825,10 @@ button.gym-set:focus-visible .gym-set-fix,
   outline: none;
   border-color: var(--color-brand);
 }
-.gym-keep-hint {
-  font-size: 11.5px;
+.gym-keep-missing {
+  margin: 10px 0 0;
+  font-size: 12.5px;
   color: var(--gym-ink-faint);
-  white-space: nowrap;
 }
 .gym-keep-entries {
   list-style: none;
@@ -2822,7 +2835,11 @@ button.gym-set:focus-visible .gym-set-fix,
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--gym-ink-faint);
+  font: inherit;
   font-size: 15px;
   cursor: grab;
   /* The browser must not take the drag for a scroll. */

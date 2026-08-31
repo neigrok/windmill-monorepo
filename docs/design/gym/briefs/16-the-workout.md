@@ -43,13 +43,65 @@ and it must not be a dead end while it does.
 > **It is a sheet presented over the session it just closed.** Dismissing it leaves you in the
 > workout you finished, which is where you wanted to be.
 
-Built that way on iOS (`GymRoom.swift:163-171`). Android draws it as a screen of its own with back
-claimed and inert; the web's `#/gym/finish/<id>` is a review of a past workout rather than the end of
-a live one — the web starts no sessions. The web's ready state draws **no back at all**: an ordinary
-workout ends in a footer holding *Session detail* and *Done* (`Finish.jsx:103-108`) and a slight one
-in *Keep it* and *Discard session* (`:134-139`), and neither foot is a way back. The two `<Back>`
-doors in that file are the absent (`:29`) and failed (`:41`) branches, which a lifter reaching a
-finished workout never sees.
+Built that way on **both phones**, and they earn the second sentence the same way: the room pushes
+the closed session **before** the receipt rises, so what the sheet comes down onto is that workout's
+own detail page. iOS presents it from `.sheet(item: $finished)` on the room and sets
+`paths[.log] = [.session(…)]` inside `close()`; Android presents the same `finished` slot as the
+room's `ModalBottomSheet` and sets `away = listOf(Away.Session(…))` in its own `close()`. Back is no
+longer claimed for it on Android: `backMeans` returns four meanings besides `LeaveTheApp`, and the
+receipt is not among them, because a sheet answers back by coming down (`GymRoom.kt`).
+
+The web's `#/gym/finish/<id>` is a review of a past workout rather than the end of a live one — the
+web starts no sessions — so it is a screen, and **three of its four branches open with the room's one
+back**: `<Back href={sessionHref(id)}>Session detail</Back>` above the title on the ready state,
+slight and ordinary alike, and above the retry line on a failed read;
+`<Back href="#/gym/log">The log</Back>` where the session is not in the log. The fourth is the read
+still running, which draws its one quiet line and no back, because it is not yet a place to be sent
+back from.
+
+**Exactly one dismissal per state, in the platform's own words.** On iOS it is a toolbar `Done` in
+`.confirmationAction`, beside the drag indicator the sheet already declares — nothing here writes, so
+it is a toolbar action rather than a second commitment in the reach band (`12-native-idiom.md`). A
+top corner is where `../../guidelines/thumb-reach.md` §2 forbids an action, and this is the exception
+that section names itself: dismissing a receipt is a door taken sitting down after the workout, never
+one needed mid-set, and the sheet keeps its swipe in the reach band besides. On Android nothing is
+drawn for it: the sheet comes down by back, the scrim or the handle. **iOS suppresses its `Done` on
+the slight branch**, where `Keep it` is the affirmative half of a decided Keep/Discard pair rather
+than a way out — Android's `Keep it` is the same act and neither phone draws a dismissal beside it,
+because a second full-strength button there is the failure §3.2 names. **The web's ordinary state
+draws none — the head back is the way out — and its slight branch keeps `Keep it`**
+(`.gym-short-keep` in `Finish.jsx`), which is why the head back had to serve both branches: that
+foot leaves for the routines home, so without a back the state reviewing a session had no route to
+the session. Its *Just keep the session* is not a dismissal either — it declines the routine offer
+in place, without leaving — which is why that spelling stays on the one surface whose finish is not
+a sheet. **`Keep it` is therefore one act with two destinations** — dismissed in place on the phones,
+navigated away from on the web — which nothing here decides yet (ledger `4d`).
+
+**A sheet covers the room's bottom bar, so the receipt says its own refusals while it stands.**
+`FinishScreen` takes a `failure` on both phones and draws it under the control that raised it — the
+keep that the log would not take — rather than in the bottom band every other refusal in the room
+lands in. The write outlives the sheet, though, so a keep refused after the receipt has been
+dismissed falls back to that band on both phones rather than being drawn nowhere. And **why
+`Save routine` is grey is said where it is grey**: *Name it to save it.*, the routine editor's own
+words, drawn on the finish card on all three surfaces and **on the empty name only**, never while the
+write is in flight, where it would name a cause that is not the one holding the button. **One
+sentence at a time, the empty field first**, on both phones: a field just cleared is why the button is
+dead now, and a refusal the log raised before it cannot be raised again while Save cannot be pressed.
+
+**And a keep that succeeds is answered too, on every surface.** The keep is the one thing the receipt
+does that writes, so it owes an answer either way. Both phones draw *Kept as {name}.* where the form
+stood, in the same words to the byte (`Finish.keptAs` on each), because the form is gone by then and
+the room's own note line is behind the sheet. The web has no sheet over that band, so it says it
+there, in the transient's own words — *{name} is in your routines.* (`Finish.jsx`). **A drawn line
+where a sheet covers the room, the room's transient where it does not**: that is the split, and it is
+the only reason two sentences exist for one fact.
+
+**Two taps on `Save routine` keep one routine, on all three surfaces.** The log mints no id for a
+routine, so a second tap is a second routine and not a replay of the first — which is why the button
+cannot be left live across the write. Both phones hold an in-flight flag beside the one the routine
+editor's Save already had — `keepingRoutine` next to `savingRoutine` in each room — and the web
+returns early while `saving` and holds one minted id in a ref for the whole card, so its second press
+is a replay even if it lands.
 
 The offer and the destructive door keep their places inside it. **Discard asks nothing.** It withholds
 the session for the same nine seconds every other delete in the room is held for, puts the transient's
@@ -71,7 +123,7 @@ stat the product shows them.
 
 It belongs on the set being logged, not in a sheet: the kind is a property of the rep you are about
 to do, and choosing it must not cost a trip. Built that way on both phones — all four kinds one tap
-away in place, on the logger's own pill (`LoggerScreen.swift:356-360`, `LoggerScreen.kt:291-296`).
+away in place, on the logger's own pill (`LoggerScreen.swift:353-357`, `LoggerScreen.kt:290-295`).
 **The default is working**, because it always is, and the pill disarms itself the moment a set lands
 so a warmup toggle left on cannot file the working sets after it as ramp-ups.
 

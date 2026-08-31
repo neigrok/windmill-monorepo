@@ -73,7 +73,12 @@ is that tab's, and a session opening or closing unwinds all three rather than le
 standing behind a live logger. Every root seats the capsule leading and the You seat trailing in its
 own toolbar; the logger does too, with Finish beside the seat, because a live session replaces the
 tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
-that the session is closed, so dismissing it leaves the lifter in the workout they finished. The
+that the session is closed, so dismissing it leaves the lifter in the workout they finished.
+Dismissing writes nothing — the session was saved before the sheet appeared — so the one way out is a
+toolbar `Done`, drawn in every state but the session that ended early, where `Keep it` is already the
+affirmative half of a decided pair. The card's two writes are its own: `Save routine`, whose refusal is
+drawn under it because the sheet covers the room's line, and `Discard session`, which empties the sheet
+before its nine-second window starts and so is refused on that line rather than on this one. The
 rack's keypad and ladder stay where they are, and the fix sheet raises that same keypad off its
 weight numeral and its rep count, because a correction at the rack is one-handed too; the routine
 target sheet is three typed fields (`TargetEntry`), whose bands are the routine's — sets 1–20,
@@ -100,7 +105,10 @@ the life of the picker (`PickerOptions.window`, held in `@State`), so a claim or
 underneath cannot reshuffle the six under a thumb already reaching for one of them. The cut is made
 on the first read that HELD something rather than on the first render: a picker opened in the moment
 before the log answers has frozen nothing, and takes the answer that lands under it. The section is headed
-`The six`; the catalogue under the gap needs no head of its own.
+`The six`; the catalogue under the gap needs no head of its own. Minting a movement the catalogue
+does not hold is drawn OVER this picker rather than in place of it, and the picker owns that step —
+so cancelling comes back to the rows with the typed query still in the field, and a mint that lands
+picks what it made.
 
 Rules that hold across the rooms:
 

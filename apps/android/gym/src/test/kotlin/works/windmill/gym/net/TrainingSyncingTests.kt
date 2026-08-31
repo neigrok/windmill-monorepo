@@ -150,7 +150,8 @@ internal class FakeTraining : TrainingSyncing {
     var refuse: (SetWrite) -> Exception? = { null }
     var refuseStart: (SessionStart) -> Exception? = { null }
     var refuseCreate: Exception? = null
-    var refuseRoutine: (RoutineWrite) -> Exception? = { null }
+    // Suspending, so a test can hold a routine write open and drive the room while it is in flight.
+    var refuseRoutine: suspend (RoutineWrite) -> Exception? = { null }
     var refuseRoutinesRead: Exception? = null
     var refuseShare: Exception? = null
     var refuseRevoke: Exception? = null

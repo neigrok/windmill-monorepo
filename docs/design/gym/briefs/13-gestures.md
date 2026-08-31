@@ -32,6 +32,26 @@ by hand (`SessionScreen.kt:441`) and iOS declares nothing. The **log's session r
 drawn control at all — both its acts live in a long press, which is why Android declares both of them
 by hand (`LogScreen.kt:313-316`). Check the row, not the platform.
 
+**A keyboard path does not discharge this law for a DRAG, and a wave that thinks it does has read the
+wrong criterion.** Making a drag handle focusable and giving it ArrowUp / ArrowDown answers WCAG 2.2
+SC 2.1.1, Keyboard. A drag is also SC 2.5.7, Dragging Movements, which asks that the same
+functionality be reachable **by a single pointer without dragging** — and 2.5.7 exists as a separate
+criterion precisely because 2.1.1 does not cover it. `01-context.md` says *Design the phone*, and a
+phone browser has no arrow keys at all: a lifter on TalkBack or VoiceOver reaches the handle,
+double-taps it, and if activation moves nothing they are exactly where this law's own opening
+sentence puts them. **So the test is the pointer, and the keyboard is the free half that comes with
+having built a real control.**
+
+> **A drag is answered when ACTIVATING the thing you would have dragged does the job.**
+
+The shape that answers it costs no drawn chrome, and both web lists now ship it: an activation picks
+the row up and the handle's own name says so — *Move Back Squat, 2 of 3 — picked up* — every other
+handle then reads as the place it would put the held row, a second activation puts it there, the same
+handle again puts it down where it stands, and Escape puts it back. A real `<button>` turns click,
+tap, Enter, Space and a screen reader's double tap into the one activation, so the keyboard is bought
+in the same stroke (`rail.js`'s `useRail`, drawn by `EntryList` in `Routines.jsx` and `NoteList` in
+`notes/Notes.jsx`). No per-row *Move up* / *Move down* menu was bought for any of it.
+
 ### 2 · A gesture that destroys needs an undo, not a confirmation.
 
 A confirmation on a swipe defeats the swipe: you swiped to be quick, and a dialog puts back the tap
@@ -92,10 +112,11 @@ becomes visible for the first time.
 
 **It is built, one transient per platform, hosted by the room and not by a screen.** Android's is the
 `SnackbarHost` in the room's own Scaffold, run for the queue's own window and never a snackbar
-default (`GymRoom.kt:392-421`, hung on the Scaffold at `:730-735`). iOS's is hand-rolled, because
+default (`GymRoom.kt`'s withheld-transient effect, hung on the Scaffold's own `snackbarHost` slot).
+iOS's is hand-rolled, because
 SwiftUI provides none: a
 bottom transient with a draining rule, floating over the reach band and growing no inset
-(`Withheld.swift:217-289`, hung on the room at `GymRoom.swift:298-303`). The web's is the design
+(`Withheld.swift:217-289`, hung on the room at `GymRoom.swift:299-304`). The web's is the design
 system's Toast, carrying the window's line and its Undo (`useTrainingLog.js`, `withheld.js`). Every
 row-borne undo is gone with it — the logger's text button, the session's inline row, Android's
 `WithheldRow`, the web's row Undo.
@@ -165,9 +186,10 @@ nothing, and says nothing afterwards, because nothing happened. Nothing is persi
 costs one stroke. The alternative — settling on the way out — would make *swipe, switch apps, come
 back* destroy a row with the way back already gone, which is the exact shape this whole pattern
 exists to prevent. **All three surfaces spend the rule**: iOS on `.background` and on the room going
-(`Withheld.swift:190-197`, `GymRoom.swift:192`, `:207-212`), Android on `ON_STOP` and on the
+(`Withheld.swift:190-197`, `GymRoom.swift:193`, `:208-214`), Android on `ON_STOP` and on the
 composition's disposal, taking the transient down with what it was offering
-(`TrainingStore.kt:1333-1339`, `GymRoom.kt:462`, `:469`), the web at the room's unmount
+(`TrainingStore.kt:1333-1339`, `GymRoom.kt`'s `ON_STOP` observer and its `onDispose`), the web at
+the room's unmount
 (`useTrainingLog.js:157-167`). What still leaves the room is the queue's drain — sets already logged,
 on disk, retried — and no delete rides out with it. Ledger `2s`. **The web's trigger is narrower than
 the phones' and nothing here decides whether it should be:** a hidden browser tab unmounts nothing,
@@ -242,7 +264,7 @@ bottom. It draws neither on any surface now, and **Duplicate's one home is the r
 overflow** — the menu that also carries Delete, which is the only drawn, screen-reader-reachable
 delete on a surface with no swipe (`Routines.jsx:107-113`, `RoutinesScreen.kt:340-353`). iOS's
 routine row draws no overflow and needs none; its editor head carries a Duplicate of its own
-(`RoutineBuilderScreens.swift:163-172`) that copies the unsaved **draft** rather than the saved
+(`RoutineBuilderScreens.swift:162-171`) that copies the unsaved **draft** rather than the saved
 routine — a different act, and a deliberate divergence (ledger `3i`). Delete has left the editor
 entirely.
 
@@ -261,10 +283,10 @@ TalkBack (`RefusalBanner.kt:54-66`). Removes its "Dismiss" button. Safe: it disc
 data.
 
 **Walking between movements in the logger** — a horizontal swipe on the body
-(`LoggerScreen.swift:87`, `:232-246`; `LoggerScreen.kt:472-494`). Removes **two chevron buttons**
+(`LoggerScreen.swift:84`, `:229-243`; `LoggerScreen.kt:466-488`). Removes **two chevron buttons**
 from the screen a lifter looks at with a bar in their hands. The progress dots stay: they are the
 position readout the swipe needs, and on Android each step is declared again as a custom action on
-the title (`LoggerScreen.kt:462-467`).
+the title (`LoggerScreen.kt:456-461`).
 
 Three collisions, all three answered in the build: the today-column is a nested vertical scroll, so
 the stroke claims the pointer only once horizontal dominance is proven and a vertical one still
@@ -281,8 +303,8 @@ genuinely clear of is the *shell's* claim: it has no shell
 chrome, so there is no go-home swipe layered underneath as a simultaneous gesture. That is the iOS
 risk, and it does not exist here — where, at the logger, the room reports depth zero and the shell's
 edge still means home. Law 3's question is answered the same way on both: a stroke that starts inside
-the system's edge strip is never the room's (`LoggerScreen.swift:235`, `:244`;
-`LoggerWalk.startsInTheEdge`, `LoggerScreen.kt:475-477`).
+the system's edge strip is never the room's (`LoggerScreen.swift:232`, `:241`;
+`LoggerWalk.startsInTheEdge`, `LoggerScreen.kt:469-471`).
 
 ## What does not ship, and why
 
@@ -319,11 +341,19 @@ sheet's own, which is what lets a lifter reach Save and Delete with the keyboard
 reorder (the notes list, the assembly sheet), and **one** hand-rolled horizontal swipe — the routine
 editor's remove-a-movement row (`RoutineBuilder.kt:312-313`), which carries its own threshold, its
 own alpha ramp and a declared custom action beside it. iOS reorders through the platform's `.onMove`
-everywhere it reorders (`RoutineBuilderScreens.swift:119`, `NotesScreen.swift:88`,
+everywhere it reorders (`RoutineBuilderScreens.swift:117`, `NotesScreen.swift:88`,
 `JumpSheet.swift:42`).
 
-**And one parity gap:** a routine draft can be reordered by dragging on the web and on iOS, and
-cannot on Android at all.
+**And one parity gap:** a routine draft reorders on iOS through `.onMove`, and on the web on one grip
+answering three paths — the drag, ArrowUp / ArrowDown, and the pick-up / place-down a single pointer
+takes — with the move said on a `role="status"` line whichever path took it (`15-the-routine.md`).
+**Android cannot reorder a draft at all** (ledger `3p`).
+
+**The web's two author-built drags are the same grip now.** `Routines.jsx` and `notes/Notes.jsx` are
+the only files in `products/gym` declaring `onPointerDown`, and both read one hook (`rail.js`), so the
+notes list gained the drag's alternatives in the same shape rather than a second answer to the same
+question. That closes Law 1 and SC 2.5.7 on both of them. What remains for Android is a capability it
+never drew, not a control disagreeing with canon.
 
 ## Where a long-press earns its place
 
@@ -338,15 +368,15 @@ tapped: the routine row's overflow, iOS's editor head, the logger's set-kind pic
 it does, so the menu item withholds the same nine seconds with the same transient and the same Undo,
 and it is not the unrecoverable tap the gate refused.
 
-**Law 1 then asks for a drawn door beside it, and both phones have one.** iOS draws
-`Discard session` on the past-session screen, unconditionally (`SessionScreen.swift:153`, the control
-at `:184-190`), and Android now does the same (`SessionScreen.kt:172`, `:265-279`). On Android the
-three doors — that screen, the finish screen's slight-session stance (`FinishScreen.kt:394-411`) and
-this long press — run through one act (`GymRoom.kt:540-545`) and print one constant
-(`FinishScreen.kt:56`), so three spellings of the act cannot drift apart. The web is outside this
-law, having no gesture at all; what it has instead is a gap — its `Discard session` is drawn for a
-`slight` session alone (`Finish.jsx:96`), so an ordinary past workout can be discarded from no web
-door. Ledger `3c`.
+**Law 1 then asks for a drawn door beside it, and both phones have one.** iOS draws `Discard
+session` on the past-session screen, unconditionally (`SessionScreen.swift:153`, the control at
+`:184-190`), and Android now does the same (`SessionScreen.kt:172`, `:265-279`). On Android the
+three doors — that screen, the finish receipt's slight-session stance (`Actions` in
+`ui/FinishScreen.kt`) and this long press — run through one act (`GymRoom.discard`) and print one
+constant (`FinishScreen.kt:56`), so three spellings of the act cannot drift apart. The web is
+outside this law, having no gesture at all; what it has instead is a gap — its `Discard session` is
+drawn for a `slight` session alone (`Finish.jsx:97`), so an ordinary past workout can be discarded
+from no web door. Ledger `3c`.
 
 Still unbuilt: a long press on the routine row (*Start · Duplicate · Delete*), which would put
 **Start** on the row where it does not exist today; and one on the set row, as the discoverable twin

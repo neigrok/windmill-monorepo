@@ -90,7 +90,10 @@ Every surface draws both.
 
 **Order is precedence.** The top note wins, and the list is dragged into the order the lifter wants.
 That answers what Coach does when two notes disagree, and it needs three words on screen because the
-drag handle carries the rest.
+drag handle carries the rest. **The handle is not only a grip**: iOS reorders through `.onMove`,
+Android declares *Move up* / *Move down* as custom actions beside its long press, and the web's rail
+is a real `<button>` answering the drag, ArrowUp / ArrowDown and a single pointer's pick-up /
+place-down alike — the routine editor's grip exactly, off the one hook (`13-gestures.md` Law 1).
 
 **Never in the cached prefix.** The system prompt must stay byte-stable, because it and the tool
 catalogue are one cached prefix and a single interpolated byte moves it so the cache never reads.

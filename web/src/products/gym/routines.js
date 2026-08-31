@@ -158,6 +158,10 @@ export function withEntrySet(entries, index, entry) {
   return entries.map((each, at) => (at === index ? entry : each));
 }
 
+// Save is inert until the routine has a name, in the editor and on the finish card's offer alike,
+// and this is the sentence that says why. Two sites, one string; each phone holds its own copy.
+export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';
+
 // The open row names itself `open` in its own target column — that word says WHICH row. The sentence
 // says what the word means, so it is drawn ONCE beneath a list of movements that holds an open row,
 // and once in the target sheet while the line being edited is the open one. Never per row: six open

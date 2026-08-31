@@ -129,11 +129,10 @@ internal enum class Tab(val title: String) {
     Coach("Coach"),
 }
 
-// Back has five meanings on this surface and three of them are not pops, which is why the room
-// decides them itself rather than handing the stack to a navigator.
+// Back has four meanings on this surface and two of them are not pops, which is why the room
+// decides them itself rather than handing the stack to a navigator. The finish receipt is not among
+// them: it is a sheet, and a sheet answers back by coming down.
 internal enum class BackMeans {
-    // The finish screen: the session is closed and this screen is the receipt for it.
-    Nothing,
     // Mid-workout: the logger stays standing. A stroke from the edge with a bar in your hands must
     // never put the app in the background.
     StayInTheWorkout,
@@ -146,13 +145,11 @@ internal enum class BackMeans {
 }
 
 internal fun backMeans(
-    finished: Boolean,
     live: Boolean,
     building: Boolean,
     away: Int,
     tab: Tab,
 ): BackMeans = when {
-    finished -> BackMeans.Nothing
     live -> BackMeans.StayInTheWorkout
     building -> BackMeans.LeaveTheDraft
     away > 0 -> BackMeans.PopOnePushedScreen
@@ -160,10 +157,11 @@ internal fun backMeans(
     else -> BackMeans.LeaveTheApp
 }
 
-// The rail belongs to the three tabs and to nothing else: a live session, a finish, a draft and any
-// pushed screen each take the whole frame, and a bar drawn empty would reserve height for nothing.
-internal fun railStands(finished: Boolean, live: Boolean, building: Boolean, away: Int): Boolean =
-    !finished && !live && !building && away == 0
+// The rail belongs to the three tabs and to nothing else: a live session, a draft and any pushed
+// screen each take the whole frame, and a bar drawn empty would reserve height for nothing. A finish
+// needs no say here — the receipt is a sheet over the closed session, which is a pushed screen.
+internal fun railStands(live: Boolean, building: Boolean, away: Int): Boolean =
+    !live && !building && away == 0
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
 // crash the restore.
@@ -201,9 +199,9 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
     }
 }
 
-// The three tabs, the live session, the finish screen, and the screens a tab can push. The shell
-// owns the theme control and billing; its account seat rides the trailing slot of each root's own
-// top bar, because a native rail has no fourth seat.
+// The three tabs, the live session, and the screens a tab can push — the finish receipt is a sheet
+// over one of those, not an arm of this. The shell owns the theme control and billing; its account
+// seat rides the trailing slot of each root's own top bar, because a native rail has no fourth seat.
 //
 // A live session takes the whole screen, rail included; a pushed screen covers the rail too.
 //
@@ -238,7 +236,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // The receipt for the session just closed, raised as a sheet over that session. NOT saved: it
+    // carries the sets the queue has already let go of. Its refusal rides beside it, because a sheet
+    // covers the room's bottom bar.
     var finished by remember { mutableStateOf<FinishedSession?>(null) }
+    var finishFailure by remember { mutableStateOf<String?>(null) }
+    val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // A stack, not a slot: one pushed screen can reach another. NOT saved, so no screen is drawn
     // over a store that has not read the disk yet. The activity handles rotation itself
     // (`configChanges` in the manifest), so a recreation here means the process was reclaimed.
@@ -246,6 +249,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     var keptRoutine by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
+    var keepingRoutine by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
@@ -320,6 +324,17 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         scope.launch { reviewSheet.hide() }.invokeOnCompletion { reviewing = null }
     }
 
+    // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
+    // Whatever the door does next waits for the sheet to be off, or the room's own chrome redraws
+    // itself under a sheet that is still coming down.
+    fun closeFinish(then: () -> Unit = {}) {
+        scope.launch { finishSheet.hide() }.invokeOnCompletion {
+            finished = null
+            finishFailure = null
+            then()
+        }
+    }
+
     // The server's reply, never the model's prose. From the routines home there is no thread to land
     // in, so the room's own line carries it until the next move.
     fun landReceipt(door: String, line: String) {
@@ -331,10 +346,10 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
 
     val live = store.session != null
-    val means = backMeans(finished != null, live, building != null, away.size, tab)
+    val means = backMeans(live, building != null, away.size, tab)
     BackHandler(enabled = means != BackMeans.LeaveTheApp) {
         when (means) {
-            BackMeans.Nothing, BackMeans.StayInTheWorkout, BackMeans.LeaveTheApp -> Unit
+            BackMeans.StayInTheWorkout, BackMeans.LeaveTheApp -> Unit
             BackMeans.LeaveTheDraft -> building = null
             BackMeans.PopOnePushedScreen -> back()
             BackMeans.ReturnToTheRoutinesTab -> {
@@ -509,6 +524,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // Take the sets BEFORE the close: the queue lets go of a delivered row the moment its session
     // ends.
+    //
+    // The workout it closed is PUSHED before the receipt is raised, so dismissing the receipt leaves
+    // the lifter in the workout they finished (16-the-workout) rather than back on the routines home.
     fun close() {
         scope.launch {
             val live = store.session ?: return@launch
@@ -518,6 +536,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 is FinishOutcome.Closed -> {
                     haptics.finished()
                     keptRoutine = false
+                    finishFailure = null
+                    away = listOf(Away.Session(SessionSummary(ended.session, performed)))
+                    pruneReceipts()
                     finished = FinishedSession(
                         session = ended.session,
                         sets = performed,
@@ -533,15 +554,15 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         }
     }
 
-    // THE act, behind all three of its doors: the finish screen, the log row's long press and the
+    // THE act, behind all three of its doors: the finish receipt, the log row's long press and the
     // session review screen. A withheld delete and not a dialog — Law 2 gives a destructive act an
     // undo, never a confirmation. Nothing is told for nine seconds, so the screen leaves at once and
     // the row is off the log while the window is open. A review screen for a session the room no
-    // longer has cannot stand, so it goes with it.
+    // longer has cannot stand, so it goes with it; the receipt is taken down by the door that
+    // raised this, because a sheet comes down on its own animation.
     fun discard(sessionId: String) {
         note = null
         store.withhold(Deletion.Session(sessionId))
-        finished = null
         if ((away.lastOrNull() as? Away.Session)?.summary?.id == sessionId) back()
     }
 
@@ -633,16 +654,27 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         tab = Tab.Routines
     }
 
-    // Nothing is claimed until the log says it was.
+    // Nothing is claimed until the log says it was, and the door closes while one is in flight, or
+    // two taps are two routines. The refusal is the RECEIPT's while the receipt still stands, drawn
+    // under the Save that raised it because the sheet covers the bottom bar every other refusal in
+    // the room lands in; once the receipt is gone that bar is the only place left to say it.
     fun keep(sets: List<TrainingSet>, name: String) {
         scope.launch {
-            note = null
-            val kept = store.keep(sets, name)
-            if (kept is GymResult.Failed) {
-                note = kept.why.line("the routine wasn’t kept")
-                return@launch
+            if (keepingRoutine) return@launch
+            keepingRoutine = true
+            try {
+                finishFailure = null
+                val kept = store.keep(sets, name)
+                if (kept is GymResult.Failed) {
+                    val why = kept.why.line("the routine wasn’t kept")
+                    if (finished != null) finishFailure = why else note = why
+                    return@launch
+                }
+                haptics.saved()
+                keptRoutine = true
+            } finally {
+                keepingRoutine = false
             }
-            keptRoutine = true
         }
     }
 
@@ -702,7 +734,33 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         }
     }
 
-    val ended = finished
+    // The receipt for the workout just closed, over the workout itself. Dismissing it — back, the
+    // scrim, the handle — decides nothing and writes nothing: the session was closed and saved
+    // before this rose, and what is underneath is its own detail page.
+    finished?.let { ended ->
+        ModalBottomSheet(
+            onDismissRequest = {
+                finished = null
+                finishFailure = null
+            },
+            sheetState = finishSheet,
+            containerColor = GymSkin.surface,
+        ) {
+            FinishScreen(
+                finished = ended,
+                catalog = store.catalog,
+                kept = keptRoutine,
+                coach = coach,
+                onKeepRoutine = { name -> keep(ended.sets, name) },
+                // Behind the sheet's own exit: the pop this runs takes the workout out from under
+                // the receipt, and the rail would come back up through a sheet still descending.
+                onDiscard = { closeFinish { discard(ended.session.id) } },
+                onDone = { closeFinish() },
+                failure = finishFailure,
+            )
+        }
+    }
+
     val standing = away.lastOrNull()
     // What the way back leads to. Names are read off the store, so a rename moves this row too.
     val beneath = when (val under = away.getOrNull(away.size - 2)) {
@@ -719,7 +777,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         Away.Bodyweight -> Bodyweight.title
         null -> tab.title
     }
-    val railUp = railStands(ended != null, live, building != null, away.size)
+    val railUp = railStands(live, building != null, away.size)
     val youInitial = account.user?.email?.take(1) ?: ""
 
     Scaffold(
@@ -774,15 +832,6 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         // otherwise count the navigation bar twice and leave a gap above the keys.
         Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
             when {
-                ended != null -> FinishScreen(
-                    finished = ended,
-                    catalog = store.catalog,
-                    kept = keptRoutine,
-                    coach = coach,
-                    onKeepRoutine = { name -> keep(ended.sets, name) },
-                    onDiscard = { discard(ended.session.id) },
-                    onDone = { finished = null },
-                )
                 live -> LoggerScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,

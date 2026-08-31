@@ -86,12 +86,12 @@ val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
     },
 )
 
-// Two layers, not three: the target sheet's three fields take the platform's own keyboard, so
-// nothing opens a pad over a sheet over a screen.
+// No pad over a sheet over a screen: the target sheet's three fields take the platform's own
+// keyboard. The picker's create step is drawn by the picker itself, so minting stacks a sheet
+// rather than swapping one out from under a typed search.
 private sealed interface BuilderSheet {
     data class Target(val exerciseId: String) : BuilderSheet
     data object Picker : BuilderSheet
-    data class Create(val name: String) : BuilderSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -173,16 +173,6 @@ fun RoutineBuilder(
                         onDraft(draft.adding(it))
                         close()
                     },
-                    onCreate = { sheet = BuilderSheet.Create(it) },
-                    modifier = Modifier
-                        .heightIn(max = pickerMaxHeight())
-                        .background(GymSkin.surface)
-                        .padding(WindmillSpace.x5),
-                    onClose = { close() },
-                )
-                is BuilderSheet.Create -> CreateMovementSheet(
-                    name = open.name,
-                    onCancel = { sheet = BuilderSheet.Picker },
                     onCreate = { name, equipment ->
                         say(null)
                         close()
@@ -193,6 +183,11 @@ fun RoutineBuilder(
                             }
                         }
                     },
+                    modifier = Modifier
+                        .heightIn(max = pickerMaxHeight())
+                        .background(GymSkin.surface)
+                        .padding(WindmillSpace.x5),
+                    onClose = { close() },
                 )
             }
         }

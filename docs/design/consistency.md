@@ -579,7 +579,7 @@ touches on iOS 26.3 in `apps/ios/UITests/RoomEdgeGestureUITests.swift`
 **1l · the You seat has no slot in a native tab bar** → built 2026-08-26, nothing owed. Both shell
 doors sit in the room's own **top** chrome on both phones: on iOS `CapsuleButton()` at
 `.topBarLeading` and `YouSeat()` at `.topBarTrailing` in every stack root's toolbar and in the
-logger's (`GymRoom.swift:211-219`, `:260-270`), with the shell laying no capsule over a room that
+logger's (`GymRoom.swift:229-237`, `:284-294`), with the shell laying no capsule over a room that
 declares `hostsTopChrome` (`GymModule.swift:11`, `Shell.swift:175`); on Android the avatar is the
 top app bar's trailing action, past its own hairline (`ui/GymScreen.kt:194`), and the room has no
 shell chrome besides it. A native `TabView` has no non-tab trailing slot and an M3 `NavigationBar`
@@ -655,8 +655,8 @@ left is one token question for the surfaces that still honour a tint.
 **Android is closed, measured.** The rail carries selection on four channels, not one:
 `GymSkin.ink` `#EDEBF0` selected against `GymSkin.inkFaint` `#8D8896` (**2.91:1**, up from iris's
 1.17:1), a filled glyph against an outlined one per seat, a bold label against a normal one, and the
-indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `GymRoom.kt:973-998`,
-`railIcon` at `:1000-1004`.
+indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `TabRail` in `GymRoom.kt`,
+and `railIcon` beneath it.
 **On iOS the question is not answerable by a token.** Sampled on the shipped build (iPhone 17, iOS
 26.3), the system tab bar paints both labels itself — `#FFFFFF` selected against `#F6F3FA`
 unselected, **1.10:1** — draws its own selection capsule (`#47444A` on `#262328`, 1.62:1), and
@@ -808,7 +808,7 @@ line names neither.*
 **The mirror state takes the opposite sentence, because its way out is the opposite act.** A number
 typed onto a line whose sets are already **empty** does land — refusing it would drop what the
 lifter just asked for — and the commit is refused instead, with *Name the sets first — an open line
-names neither.* (`routines.js:177`, `TargetEntry.swift:79`, `domain/Program.kt:91`). Both are one
+names neither.* (`routines.js:200`, `TargetEntry.swift:79`, `domain/Program.kt:93`). Both are one
 refusal per sheet, drawn under the field they belong to, fail-fast: the refused keystroke, then the
 line's shape, then the three fields topmost first. `Routine.cpp` still only refuses the shape at the
 boundary; the interface now says which half is wrong before it gets there.
@@ -866,7 +866,7 @@ exists to prevent.
 **2r · Android pitches the connected log to a lifter who has already connected it** → the surface
 needs the read, or the pitch needs a condition. iOS reads the account's connections once per seat
 and suppresses the invitation when there are any (`ConnectedLogState.invites`, `ConnectedLog.swift`;
-the one remaining call site, `GymRoom.swift:222`), and the web's settings row prints what is connected
+the one remaining call site, `GymRoom.swift:223`), and the web's settings row prints what is connected
 (`settings/GymSettingsSection.jsx`). Android has **no connections read anywhere**: its settings row
 is the surface's only connect door, and it draws the pitch, the precondition and *Connect my log*
 unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only
@@ -876,17 +876,17 @@ live constants with no Android drawing, kept because `ConnectedLogTests` enforce
 across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
 deliberately state-blind and those constants are the gate's only reason to exist.
 
-**2s · what ends a withheld window early is one answer on all three surfaces** → built
-2026-08-27, nothing owed. `13-gestures.md` rules it and every surface now spends it: leaving a SCREEN
-keeps the window, and leaving the ROOM — to the background, to another product, or by the process
-dying — abandons what is held. The rows come back, nothing goes on the wire, nothing is said
-afterwards, because nothing happened; nothing is written to disk, so a process death abandons on its
-own. iOS calls `WithheldWindow.abandon` (`Withheld.swift:190-197`) on backgrounding
-(`GymRoom.swift:192`) and when the room goes away (`:207-212`). Android calls
-`TrainingStore.abandonWithheld` (`TrainingStore.kt:1333-1339`) on `ON_STOP` (`GymRoom.kt:462`) and
-again on the composition's disposal (`:469`), and takes the transient down with it, since an Undo
-left standing over an act that was let go would offer a way back to something that never happened.
-The web's room clears its clocks and its list at unmount and sends nothing
+**2s · what ends a withheld window early is one answer on all three surfaces** → built 2026-08-27,
+nothing owed. `13-gestures.md` rules it and every surface now spends it: leaving a SCREEN keeps the
+window, and leaving the ROOM — to the background, to another product, or by the process dying —
+abandons what is held. The rows come back, nothing goes on the wire, nothing is said afterwards,
+because nothing happened; nothing is written to disk, so a process death abandons on its own. iOS
+calls `WithheldWindow.abandon` (`Withheld.swift:190-197`) on backgrounding (`GymRoom.swift:193`) and
+when the room goes away (`:208-214`). Android calls `TrainingStore.abandonWithheld`
+(`TrainingStore.kt:1333-1339`) on `ON_STOP` and again on the composition's disposal (`GymRoom.kt`'s
+lifecycle observer and its `onDispose`), and takes the transient down with it, since an Undo left
+standing over an act that was let go would offer a way back to something that never happened. The
+web's room clears its clocks and its list at unmount and sends nothing
 (`useTrainingLog.js:157-167`). What still leaves the room on purpose is the QUEUE's drain — sets
 already logged, on disk, retried — and no delete rides out with it. *Swipe · switch apps · come
 back* now costs a row nothing on either phone. **Two things this did not make identical:** a set's
@@ -900,9 +900,9 @@ the review screen still drawing it. iOS draws it on every past session, uncondit
 (`SessionScreen.swift:153`, the control at `:184-190`), and Android's past-session screen now draws
 it too: `SessionScreen` takes `onDiscard` (`SessionScreen.kt:172`) and draws the control under the
 share card (`:265-279`). **Three doors, one act, one constant** on that surface. The review screen,
-the finish screen's slight-session stance (`FinishScreen.kt:394-411`) and the log row's long press
-(`LogScreen.kt:279-340`, its hand-declared accessibility action at `:313-316`) all call
-`GymRoom.discard` (`GymRoom.kt:540-545`), which withholds a `Deletion.Session` like every other
+the finish receipt's slight-session stance (`Actions` in `ui/FinishScreen.kt`) and the log row's
+long press (`LogScreen.kt:279-340`, its hand-declared accessibility action at `:313-316`) all call
+`GymRoom.discard` (`GymRoom.kt`), which withholds a `Deletion.Session` like every other
 delete, and all three print `Finish.discard` (`FinishScreen.kt:56`) rather than their own spelling of
 it. The confirmation is gone from all of them: an act with an undo does not get a dialog. The web is
 not part of this entry — it draws no gesture at all, so Law 1 was never at stake there; what it does
@@ -924,8 +924,8 @@ keyboard up**, or the defect stays invisible until a device finds it.
 it of the bodyweight READING, where the line can simply be absent. The finish and review readout is a
 row of exactly three tiles — Duration · Working sets · Top e1RM — and a vanishing tile changes the
 row's shape, so all three surfaces print a dash instead (`FinishScreen.swift:49`,
-`FinishScreen.kt:77`, `review.js:15-20`, whose own comment states the rule as *no top e1RM is a
-dash, never a zero*). One screen away the same wave
+`Finish.tiles` in `FinishScreen.kt`, `review.js:15-20`, whose own comment states the rule as *no top
+e1RM is a dash, never a zero*). One screen away the same wave
 ruled the opposite for the same problem — an unrated set draws the words `Not rated` and never a
 dash, because a dash is read out as nothing by a screen reader. Either the honesty rule reaches a
 stat grid and the tile goes, or the tile says in words what it means.
@@ -975,22 +975,21 @@ instant (`:280-283`, `Entry.heldUntilMs` at `:30-31`, `isHeld(at:)` at `:41`), a
 (`:196`) — the queue is not reached into, so the delete outlives the process and retries. **Android
 holds it in memory.** A set's delete is a `Deletion.Set` in the store's own list like every other
 verb (`store/WithheldDelete.kt:34-40`), the send is a direct `deleteSet` call
-(`TrainingStore.kt:1362`), and Android's `SetQueue.kt` carries appends and fixes and has no
-delete verb at all. So the exemption made it strictly WORSE off than the deletes that abandon: those
-put the row back honestly, that one fired into a backgrounded app, timed out with nobody to read the
+(`TrainingStore.kt:1362`), and Android's `SetQueue.kt` carries appends and fixes and has no delete
+verb at all. So the exemption made it strictly WORSE off than the deletes that abandon: those put
+the row back honestly, that one fired into a backgrounded app, timed out with nobody to read the
 answer and was dropped whichever way it went. Android therefore abandons a set's delete with
 everything else — one rule for the whole window on that surface, no silent loss
-(`TrainingStore.kt:1316-1339`, called from `GymRoom.kt:462` and `:469`). Nothing in the window's own
-data carves the exception out any more: `WithheldDelete` carries a deletion, an instant and `sent`,
-and nothing else (`store/WithheldDelete.kt:68-75`); the no-argument `settleWithheld()` that served
-the exemption is gone from the store, which now exposes one settle, keyed by subject
-(`TrainingStore.kt:1345`).
-**What each phone does today, plainly:** iOS retries a set's delete across app death; Android
-abandons it, and the row comes back. Neither is wrong for its own machinery, and the divergence is
-not native idiom — it is one of them holding a fact on disk and the other not.
-**What would make them one:** Android's set delete rides `SetQueue` as iOS's does, at which point the
-on-disk exemption is true on both and both phones keep the delete. That is the follow-up this entry
-is waiting on.
+(`TrainingStore.kt:1316-1339`, called from `GymRoom.kt`'s `ON_STOP` observer and its `onDispose`).
+Nothing in the window's own data carves the exception out any more: `WithheldDelete` carries a
+deletion, an instant and `sent`, and nothing else (`store/WithheldDelete.kt:68-75`); the no-argument
+`settleWithheld()` that served the exemption is gone from the store, which now exposes one settle,
+keyed by subject (`TrainingStore.kt:1345`). **What each phone does today, plainly:** iOS retries a
+set's delete across app death; Android abandons it, and the row comes back. Neither is wrong for its
+own machinery, and the divergence is not native idiom — it is one of them holding a fact on disk and
+the other not. **What would make them one:** Android's set delete rides `SetQueue` as iOS's does, at
+which point the on-disk exemption is true on both and both phones keep the delete. That is the
+follow-up this entry is waiting on.
 
 **2z · a per-row gesture state that outlives the row's absence replays the act nobody made** →
 fixed on Android 2026-08-27; recorded for the CLASS, not the instance.
@@ -1018,10 +1017,10 @@ window closed, the log was asked and it said no — and it said nothing at all. 
 `store.deleteRefused` cleared the flag first and showed the snackbar second; clearing it changed the
 key the effect was running under, and an effect that changes its own key cancels itself, so the
 sentence was never said and a delete the log REFUSED looked exactly like one that worked. The order
-is now said-then-cleared (`GymRoom.kt:426-437`), which also means a room torn down mid-sentence still
-owes it. **The class: in a keyed effect, the state the key reads is cleared AFTER the work, never
-before** — and the tell is that nothing appears rather than that something crashes, so no suite
-catches it unless it asserts the sentence itself.
+is now said-then-cleared (`GymRoom.kt`'s `deleteRefused` effect), which also means a room torn down
+mid-sentence still owes it. **The class: in a keyed effect, the state the key reads is cleared AFTER
+the work, never before** — and the tell is that nothing appears rather than that something crashes,
+so no suite catches it unless it asserts the sentence itself.
 
 **3b · a refusal the log answers with words names neither what was refused nor that it is still
 there** → a designer's line. When a withheld delete's clock closes and the log says no, Android says
@@ -1039,12 +1038,13 @@ once for the room rather than invented at the call site.
 **3c · the web offers no way to discard an ordinary past workout** → a product decision, not a Law 1
 breach. `2t` is about a gesture being the only path; the web has no gesture, and here it has no path
 at all. `FinishScreen` draws `ShortSession` — the only `Discard session` control on the surface —
-under `review.slight` alone (`Finish.jsx:96`, the control at `:132-141`), so a normal workout's
-review screen offers Session detail and Done and nothing else, and the log's session row carries no
-control but its own link (`Log.jsx:145`). Both phones reach the act from three doors. Either
-the web's session review gains the door the phones draw, or the ledger records that discarding is a
-phone act on purpose — which would be a defensible reading of `01-context.md`'s split, and is not
-what any brief says today.
+under `review.slight` alone (`Finish.jsx:97`, the control at `:130-132`), so a normal workout's
+review screen offers the head's *Session detail* back, the share card, and — where the workout was
+not run from a routine — the keep-as-routine offer, and no discard at all; and the log's session row
+carries no control but its own link (`Log.jsx:146`). Both phones reach the act from three doors.
+Either the web's session review gains the door the phones draw, or the ledger records that
+discarding is a phone act on purpose — which would be a defensible reading of `01-context.md`'s
+split, and is not what any brief says today.
 
 **3d · the web abandons on unmount, and a hidden tab is not an unmount** → a decision, not a defect
 found. `2s` closed the abandon on all three surfaces, and the web's trigger is narrower than the
@@ -1104,7 +1104,7 @@ deliberate divergence, recorded so the next wave does not read it as drift. Dupl
 the routine **row's** overflow, the menu that also carries Delete (`Routines.jsx:107-113`,
 `RoutinesScreen.kt:340-353`). iOS's routine row draws no overflow — `.swipeActions` and the rotor
 are the whole of it — and its editor head keeps a Duplicate that passes the **draft**
-(`RoutineBuilderScreens.swift:163-172`), so it copies what is on screen including unsaved edits.
+(`RoutineBuilderScreens.swift:162-171`), so it copies what is on screen including unsaved edits.
 That is a different act from copying the row, not a second home for the same one, and it is why
 `13-gestures.md`'s per-row test names only two surfaces.
 
@@ -1170,15 +1170,18 @@ dot on their routine's row — and the routine the card is about now draws no ch
 the tie between the card and its row, on the routines that keep a chip as much as on the one that
 does not.
 
-**3p · a routine draft reorders by drag alone on the web** → fix flows to the web, and the same fix
-gives Android the reorder it has never had. `gym/briefs/13-gestures.md` Law 1 is that a gesture
-may never be the only way to reach an action, and the editor's reorder is exactly that: the handle is
-a `<span aria-hidden="true">` carrying the pointer handlers (`Routines.jsx:440-457`) and `onMove` has
-no other caller, so a lifter on a keyboard or a screen reader cannot move a movement at all. The
-row's other acts are drawn — `×` removes, the row body opens the target sheet — so the row is one
-control short of clean rather than unreachable. A *Move up* / *Move down* pair in a row menu closes
-it on both surfaces at once; the brief's own parity note (Android cannot reorder a draft) is the
-other half of the same gap.
+**3p · Android cannot reorder a routine draft at all** → **owed as a feature, not carried as
+drift.** The web half closed 2026-08-31 and closed completely: the editor's handle is a real
+`<button>` answering three paths — the drag it always had, ArrowUp / ArrowDown, and a single pointer
+picking the row up and placing it at another handle — with the move said once on a `role="status"`
+line whichever path took it, and no *Move up* / *Move down* row menu bought to get there
+(`EntryList` in `Routines.jsx` over `rail.js`'s `useRail`, pinned by `entryReorder.test.js`). So
+`gym/briefs/13-gestures.md` Law 1 and WCAG 2.2 SC 2.5.7 are both answered there, on the grip itself.
+iOS reorders through `.onMove` (`RoutineBuilderScreens.swift:117`), which declares its own
+alternative. **What is left is Android, which has never drawn a reorder for a draft** — no control
+disagrees with canon there, so this is a capability the surface owes rather than a conformance
+failure, and ruling S1 of the simplification programme keeps it out of a wave whose subject is
+removing controls. Delete this entry when Android draws one.
 
 **3q · a transient with a detail is three lines on a phone, and the budget says two** → a copy
 owner's call. `guidelines/text-budget.md` gives a snackbar one line and two at most on a phone. The conversation delete's transient says two facts — *Conversation deleted.* and *a change you
@@ -1199,12 +1202,12 @@ split is what cut 3 left behind: iOS moved with the cut and Android is the half 
 
 **3s · three writers share one bottom band on iOS, and the room's rule names only two of them** → a
 room-level decision, not a screen's. `GymRoom` puts the withheld transient in a bottom `overlay` and
-the room's status line in a bottom `safeAreaInset` on the same composite (`GymRoom.swift:298-304`),
+the room's status line in a bottom `safeAreaInset` on the same composite (`GymRoom.swift:299-305`),
 and its comment states the order for exactly that pair: the transient floats over the reach band and
 the status line sits below it, so a refusal said while a window runs is never hidden by the way back
-(`:296-297`). `RoutineScreen` now writes that band too (`RoutineScreen.swift:44`), and the sentence
+(`:297-298`). `RoutineScreen` now writes that band too (`RoutineScreen.swift:44`), and the sentence
 `noteLine` prints there is the **start refusal** — `why.line("a session starts there")`
-(`GymRoom.swift:535`), the answer to the button now sitting in the same lane. Nothing in canon and
+(`GymRoom.swift:536`), the answer to the button now sitting in the same lane. Nothing in canon and
 no pin blesses the resulting geometry. The S1 iOS builder measured it on a simulator and reported
 the refusal is not readable below the button; that measurement is theirs, not this ledger's.
 Seating the note per screen fixes the collision and puts the transient over the note instead, so
@@ -1267,3 +1270,81 @@ through a fake wire. iOS already gated the same claim on the failure's kind (`Tr
 through `WriteFailure.noAnswer.line`, and `RoutineBuilderTests` reads Android's source for the
 subject. Still open, same class: `domain/Thread.kt:126`'s `outOfReach` is a hardcoded literal of the
 same shape.
+
+**3z · *tap to rename* is drawn on one finish card of three** → a copy call, and the accessibility
+half of it is closed. All three name the field now: the web's carries `aria-label="Routine name"`
+(`Finish.jsx`), Android's is a Material `OutlinedTextField` with a visible `label = "Routine name"`
+(`ui/FinishScreen.kt`), and iOS's hand-drawn `TextField("", text: $routineName)` now carries
+`.accessibilityLabel("Routine name")` of its own (`FinishScreen.swift`). What is left is the sibling
+`Text("tap to rename")` beneath the iOS field, which was the only thing naming it before the label
+landed and now has no job. It came off the web deliberately — a 44px bordered field with a focus edge
+on the surface with a keyboard, where *tap* is the wrong verb — and Android never drew it. Either it
+comes off iOS too or a brief says why one phone hints at a field the other does not.
+
+**4a · one sentence, three surfaces, two inks — and both skins say the ink is for something else** →
+fix flows to the phones. *Name it to save it.* is now drawn on the routine editor and on the finish
+card on every surface. The web draws it in the faint ink at 12.5 in both places
+(`.gym-editor-missing`, `.gym-keep-missing` in `gym.css`); both phones draw it in the alarm ink
+(`FinishScreen.swift`'s `refusal(_:)` and `RoutineBuilderScreens.swift`'s `saveRefusal` footer;
+`ui/FinishScreen.kt`'s `Program.nameItToSaveIt` line and `ui/RoutineBuilder.kt`'s `missing`). The
+rule each skin states is the web's: `gym.css` — *the alarm ink is for a failed read or write, the
+destructive and the invalid, and nothing else* — and `GymSkin.swift:25` — *a write that failed*. An
+empty name is neither: nothing was sent and nothing was refused, the form is simply not finished.
+**The ink is the whole of what is open here**, because the two phones already agree on everything
+else: each draws exactly ONE line under Save and the empty name outranks the log's refusal on both
+— Android through an elvis with the empty name first (`Program.nameItToSaveIt.takeIf { !named } ?:
+failure` in `ui/FinishScreen.kt`), iOS through the same precedence in `Finish.keepRefusal`
+(`guard RoutineDraft.isNamed(name) else { return RoutineDraft.nameItToSaveIt }`). So a reader never
+sees the two causes at once; what they cannot tell apart is a form that is not ready from a log that
+would not take it, because one ink says both.
+
+**4c · the finish card's routine name is bounded three ways, and none of them is the room's cap** →
+fix flows to the routine editor's rule. The **editor** caps a name at 60 code points on every surface
+and counts in code points everywhere — `cappedName` over `[...str]`, `RoutineDraft.capped` over
+`unicodeScalars`, `Program.capped` over `offsetByCodePoints` — with the counter appearing in the last
+fifth (`gym/briefs/15-the-routine.md`). The **finish card** mints a routine from a field of its own
+and applies none of that: the web bounds it at `maxLength={80}`, a different number in a different
+unit — 80 UTF-16 code units (`Finish.jsx`) — and both phones bound it not at all
+(`TextField("", text: $routineName)` in `FinishScreen.swift`, `onValueChange = onName` in
+`ui/FinishScreen.kt`). S2a redrew that exact field on all three surfaces and left this as it found
+it. Nothing is silently lost — the log's over-length refusal has a drawn home on every surface now —
+but
+a routine born on the receipt is bounded by which surface the lifter is holding, and one born in the
+editor is not. It is the shape 15-the-routine already names for the counter: a bound without one unit
+is three surfaces inventing three answers.
+
+**4d · `Keep it` is one act with two destinations** → a ruling owed, not a defect found. On the slight
+branch both phones draw it as the affirmative half of a decided Keep/Discard pair and it **dismisses
+the receipt in place**, leaving the lifter on the session they just finished (`Finish.keepIt` →
+`onDone` in `ui/FinishScreen.kt`; `Button("Keep it", action: onDone)` in `FinishScreen.swift`). The
+web draws the same two words as an anchor — `<a className="gym-short-keep" href="#/gym">` in
+`Finish.jsx` — so keeping a workout **leaves** the receipt for the routines home. That foot is why
+the web's head back had to serve both branches, so the difference is load-bearing rather than
+cosmetic, and nothing in `gym/briefs/16-the-workout.md` decides it. Either the web's `Keep it` stops
+navigating, or canon says a receipt is a place the affirmative leaves and the phones are the odd ones.
+
+**4e · iOS's guard against a double keep is in the tree and nothing pins it** → a seam owed before a
+pin can exist. `GymRoom.swift`'s `keep(_:as:)` now opens with `guard !keepingRoutine`, the same shape
+`save(_:)` already had, because the log mints no id for a routine —
+`RoutineWrite(named:from:position:)` defaults `id:` to `Ids.routine()`, so a second tap is a second
+routine and not a replay. Android
+pins exactly that (`FinishSheetTests.kt`, `testTwoTapsOnSaveRoutineKeepOneRoutine`) and iOS cannot:
+the flag is `@State` on a view whose `TrainingStore` is a `@StateObject` built inside it, so no
+package test can hold a keep in flight, and a `UIHostingController` exposes no accessibility elements
+for a hosting test to activate. The UITests are the only driver and they run against the real host at
+real speed, so a two-tap walk written there passed **with the guard deleted** and was removed rather
+than kept green and dead. What is owed is the seam — an injectable store on `GymRoom`, or a launch
+argument that slows the write — not another attempt at the same pin.
+
+**4f · the movement picker trims a search in one unit and the create step it opens trims in another**
+→ fix flows to `.whitespacesAndNewlines`, which is the house rule everywhere else in `WindmillGym`.
+`MovementPicker.swift:89` reads `query.trimmingCharacters(in: .whitespaces)` for the search term and
+`:158` seeds the create door with the same expression; `CreateMovement.swift:131` then re-trims in
+`.whitespacesAndNewlines` one screen away. `CharacterSet.whitespaces` is Unicode `Zs` plus tab and
+**excludes** U+000A–U+000D, so a pasted `"\n"` is a search term to the picker and not a name to the
+step it opens: the six-most-trained list is replaced by zero matches, the create door appears, and
+`Create and add` stays disabled until something is typed. Nothing is minted blank, which is why this
+is milder than the finish card's version of it was — but it is the same word measured in two units on
+one surface, and it wants closing by the wave that owns the picker. Checked and clean, so this is the
+only site: `KeypadSheet.swift:102` builds its buffer key by key from a digit pad, and every other name
+predicate in the module already reads `.whitespacesAndNewlines`.

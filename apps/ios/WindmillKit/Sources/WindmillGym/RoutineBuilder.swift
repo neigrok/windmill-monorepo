@@ -59,9 +59,16 @@ public struct RoutineDraft: Equatable {
 
     public var entries: [RoutineWrite.Entry] { lines.map(\.entry) }
 
-    public var trimmedName: String {
+    // What a name is, said once for the whole room: the editor's Save, the editor's refusal and the
+    // finish sheet's keep all read this, so a blank cannot mean two things on one surface. Newlines
+    // are blank too — `.whitespaces` is `Zs` plus tab and would call a pasted "\n" a name.
+    public static func trimmed(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    public static func isNamed(_ name: String) -> Bool { !trimmed(name).isEmpty }
+
+    public var trimmedName: String { Self.trimmed(name) }
 
     // nil below the threshold: nothing is drawn.
     public static func counter(_ name: String) -> String? {
@@ -76,7 +83,7 @@ public struct RoutineDraft: Equatable {
     }
 
     // The log refuses a blank name; everything else may be left open.
-    public var isNamed: Bool { !trimmedName.isEmpty }
+    public var isNamed: Bool { Self.isNamed(name) }
 
     public var isSavable: Bool { isNamed && !lines.isEmpty }
 

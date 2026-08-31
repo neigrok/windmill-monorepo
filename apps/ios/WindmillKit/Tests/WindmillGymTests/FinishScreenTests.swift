@@ -164,6 +164,39 @@ final class FinishTests: XCTestCase {
     func testAnAdHocSessionHasNothingToCompareAgainst() {
         XCTAssertNil(Finish.comparison(nil, catalog: catalog))
     }
+
+    // Emptying the name makes `Save routine` grey, and the sheet says why in the routine editor's
+    // own sentence rather than in a fourth spelling of it — and by the editor's own predicate, in the
+    // editor's own unit. The fixture carries newlines because spaces cannot tell the two units apart:
+    // `.whitespaces` is `Zs` plus tab, so it calls a pasted "\n" a name where the editor does not.
+    func testAnEmptyRoutineNameIsRefusedInTheEditorsOwnWords() {
+        for blank in ["", "   ", "\t", "\n", "\r\n", "\u{2028}"] {
+            XCTAssertEqual(Finish.keepRefusal(name: blank, failure: nil), RoutineDraft.nameItToSaveIt,
+                           "the keep took \(blank.debugDescription) for a name")
+            XCTAssertFalse(RoutineDraft(name: blank, position: 0).isNamed,
+                           "the editor took \(blank.debugDescription) for a name")
+        }
+        XCTAssertNil(Finish.keepRefusal(name: "Tuesday", failure: nil),
+                     "a named routine is refused nothing")
+    }
+
+    // The keep is the one thing the receipt does that writes, so it is the one thing the receipt owes
+    // an answer for — the same answer on both phones, since the room's own line is behind the sheet
+    // on each of them. Android's `Finish.keptAs` to the byte, stop included.
+    func testAKeptRoutineIsConfirmedInTheWordsBothPhonesUse() {
+        XCTAssertEqual(Finish.keptAs("Tuesday"), "Kept as Tuesday.")
+        XCTAssertEqual(Finish.keptAs("  Tuesday\n"), "Kept as Tuesday.",
+                       "the confirmation reads back the padding the log never stored")
+    }
+
+    // The card never says two things at once, and the empty field wins: it is why the button is
+    // dead right now, where a refusal the log raised is about a name that has since been cleared —
+    // and Save being dead is what makes that older one unrepeatable.
+    func testTheEmptyFieldBeatsARefusalTheLogRaisedBeforeItWasCleared() {
+        let refused = "the log didn’t answer — the routine wasn’t kept"
+        XCTAssertEqual(Finish.keepRefusal(name: "Tuesday", failure: refused), refused)
+        XCTAssertEqual(Finish.keepRefusal(name: "", failure: refused), RoutineDraft.nameItToSaveIt)
+    }
 }
 
 final class DiscardTests: XCTestCase {

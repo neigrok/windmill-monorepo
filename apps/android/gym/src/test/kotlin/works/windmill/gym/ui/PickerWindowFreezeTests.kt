@@ -77,7 +77,7 @@ class PickerWindowFreezeTests {
                     sessions = sessions(),
                     title = "Add movement",
                     onPick = {},
-                    onCreate = {},
+                    onCreate = { _, _ -> },
                 )
             }
         }

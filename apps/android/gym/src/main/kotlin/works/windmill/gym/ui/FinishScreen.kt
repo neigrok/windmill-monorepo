@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -35,6 +34,7 @@ import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PersonalRecord
+import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
@@ -54,6 +54,15 @@ object Finish {
     // session, the log row's long press, and the session review screen. Read from here by each of
     // them so three spellings of one act cannot drift apart.
     const val discard = "Discard session"
+
+    // And its answer, on the one state that asks the question. The receipt is a sheet, so being
+    // finished with it is the sheet coming down and needs no button of its own — the only
+    // affirmative left on this screen is the half of a decided pair that `discard` is the other of.
+    const val keepIt = "Keep it"
+
+    // What the receipt says once the log has taken the routine. The form is gone by then, so this is
+    // the whole of the answer.
+    fun keptAs(name: String) = "Kept as ${name.trim()}."
 
     data class Head(val title: String, val subtitle: String, val at: String)
 
@@ -257,6 +266,10 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     }
 }
 
+// The body of the sheet the room presents over the session it just closed (16-the-workout). It owns
+// its own scroll, because a sheet that cannot scroll cannot be finished, and its own refusal line,
+// because a sheet covers the room's bottom bar. `failure` defaults to nothing so a caller that has
+// no refusal to draw names none.
 @Composable
 fun FinishScreen(
     finished: FinishedSession,
@@ -266,6 +279,7 @@ fun FinishScreen(
     onKeepRoutine: (String) -> Unit,
     onDiscard: () -> Unit,
     onDone: () -> Unit,
+    failure: String? = null,
 ) {
     val head = Finish.head(
         startedAtMs = finished.session.startedAtMs,
@@ -278,33 +292,44 @@ fun FinishScreen(
         mutableStateOf(Readout.weekday(finished.session.startedAtMs))
     }
 
-    // Back is claimed and inert here: the session is closed and this screen is the receipt for it.
-    GymScreen(title = head.title) {
-      Column(
+    Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x12),
-      ) {
+            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
+    ) {
+        // The title lives in the content and not in a bar above it: `Ended early` is the whole of
+        // what a slight session has to say, and a sheet has no top bar to say it from.
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+            Text(head.title, style = WindmillFont.display(24), color = GymSkin.ink)
             Text(head.subtitle, style = WindmillFont.body(17), color = GymSkin.inkDim)
             Text(head.at, style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
 
         ReviewReadout(finished.review, catalog)
 
-        if (finished.offersRoutine && !kept) {
-            KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, onDone)
+        if (finished.offersRoutine) {
+            // The keep is the one thing this receipt does that writes, so it is the one thing the
+            // receipt owes an answer for. The form it stood in is gone by then and the room's own
+            // line is behind the sheet, which leaves one sentence where the form was.
+            if (kept) {
+                Text(
+                    Finish.keptAs(routineName),
+                    style = WindmillFont.body(16),
+                    color = GymSkin.inkDim,
+                )
+            } else {
+                KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, failure)
+            }
         }
 
         if (!finished.slight) {
             CoachShareCard(coach, finished.session.id)
         }
 
-        Actions(finished, kept, onDiscard, onDone)
-      }
+        Actions(finished, onDiscard, onDone)
     }
 }
 
@@ -315,7 +340,7 @@ private fun KeepAsRoutine(
     name: String,
     onName: (String) -> Unit,
     onKeepRoutine: (String) -> Unit,
-    onDone: () -> Unit,
+    failure: String?,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -369,53 +394,50 @@ private fun KeepAsRoutine(
             color = GymSkin.inkFaint,
         )
 
-        PrimaryButton("Save routine", enabled = name.trim().isNotEmpty()) { onKeepRoutine(name) }
+        val named = Program.named(name) != null
+        PrimaryButton("Save routine", enabled = named) { onKeepRoutine(name) }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(role = Role.Button, onClick = onDone),
-        ) {
+        // ONE sentence under one grey button, drawn here because a sheet covers the room's bottom
+        // bar, where every other refusal lands. An empty name is what holds the button NOW, so it
+        // outranks what the log said about a keep the lifter has already read and moved on from.
+        (Program.nameItToSaveIt.takeIf { !named } ?: failure)?.let {
             Text(
-                "Just keep the session",
-                style = WindmillFont.body(16, FontWeight.SemiBold),
-                color = GymSkin.inkDim,
+                it,
+                style = GymType.numeral(12).copy(lineHeight = 18.sp),
+                color = GymSkin.alarmInk,
             )
         }
     }
 }
 
-// The confirmation is gone and so is the sentence it carried: a destructive act gets an UNDO, not a
-// dialog (13-gestures Law 2), and the session is withheld for nine seconds with nothing sent. The
-// screen leaves at once, because the delete has already happened as far as the lifter is concerned.
+// The slight session is the only state that asks a question, so it is the only one that draws an
+// answer: every other way out of the receipt is the sheet coming down — back, the scrim, or the
+// handle — and a `Done` under it would be a second dismissal beside one the platform already draws.
+//
+// Discard asks nothing. A destructive act gets an UNDO, not a dialog (13-gestures Law 2): the
+// session is withheld for nine seconds with nothing sent, and the sheet leaves at once because the
+// delete has already happened as far as the lifter is concerned.
 @Composable
-private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
-    if (finished.slight) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            modifier = Modifier.fillMaxWidth(),
+private fun Actions(finished: FinishedSession, onDiscard: () -> Unit, onDone: () -> Unit) {
+    if (!finished.slight) return
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        PrimaryButton(Finish.keepIt, onClick = onDone)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum + 6.dp)
+                .clickable(role = Role.Button, onClick = onDiscard),
         ) {
-            PrimaryButton("Keep it", onClick = onDone)
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable(role = Role.Button, onClick = onDiscard),
-            ) {
-                Text(
-                    Finish.discard,
-                    style = WindmillFont.body(16, FontWeight.SemiBold),
-                    color = GymSkin.alarmInk,
-                )
-            }
+            Text(
+                Finish.discard,
+                style = WindmillFont.body(16, FontWeight.SemiBold),
+                color = GymSkin.alarmInk,
+            )
         }
-        return
-    }
-    if (!finished.offersRoutine || kept) {
-        PrimaryButton("Done", onClick = onDone)
     }
 }
 

@@ -847,6 +847,34 @@ test('every pushed screen draws its back link through one component, and none po
   assert.equal(read('Finish.jsx').includes('<Back href="#/gym/log">The log</Back>'), true);
 });
 
+test('the finish screen has one way out, at the head of the ready state and of the failed read, and its offer says why Save is inert', () => {
+  const source = read('Finish.jsx');
+  // The foot that held a second door to the session and a Done that finished nothing is gone: the
+  // way back is the room's own, through the component, above the title. Its POSITION is the pin —
+  // the failed read carried these same bytes before this screen had a head back at all, so the
+  // substring alone proves nothing about the state that lost its foot.
+  const back = '<Back href={sessionHref(id)}>Session detail</Back>';
+  assert.equal((source.match(new RegExp(back.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length, 2);
+  const ready = source.slice(source.indexOf('<section className="gym-finish-screen">'));
+  assert.equal(ready.startsWith(`<section className="gym-finish-screen">\n      ${back}\n      <h1`), true, 'the ready state');
+  const failed = source.slice(source.indexOf("if (view.phase === 'failed')"));
+  assert.equal(failed.includes(`<>\n        ${back}\n        <p className="gym-read-failed">`), true, 'the failed read');
+  assert.equal((source.match(/gym-finish-foot/g) ?? []).length, 2, 'the slight pair and the keep card, and no third');
+  for (const gone of ['gym-finish-detail', 'gym-finish-done', 'tap to rename', 'gym-keep-hint', 'gym-keep-name']) {
+    assert.equal(source.includes(gone), false, gone);
+    assert.equal(read('gym.css').includes(gone), false, gone);
+  }
+  // The field is named by its label, and says it is a field with its border, ground and focus edge.
+  assert.equal(source.includes('aria-label="Routine name"'), true);
+  // One source for the sentence, read by the editor's gate and by the offer, and drawn on the empty
+  // name alone — Save is inert while the write is in flight too, where the sentence would be a lie.
+  assert.equal(speech('routines.js').includes("export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';"), true);
+  assert.equal(source.includes('{name.trim() === \'\' && <p className="gym-keep-missing">{NAME_IT_TO_SAVE_IT}</p>}'), true);
+  for (const file of ['Finish.jsx', 'Routines.jsx']) {
+    assert.equal(read(file).includes("'Name it to save it.'"), false, `${file} keeps a copy of the sentence`);
+  }
+});
+
 test('discarding a session is withheld and undoable, so it is not confirmed and promises no permanence', () => {
   const finish = read('Finish.jsx');
   // Law 2: a dialog in front of an act that has an undo is ceremony. Both halves of the old one go.
@@ -1084,7 +1112,7 @@ test('the naming interstitial is gone: the name is the editor’s first field, a
   assert.equal(source.includes('autoFocus={fresh}'), true);
   assert.equal(source.includes('placeholder="Name this routine"'), true);
   // The Save gate survives the screen, and prints one refusal at a time.
-  assert.equal(source.includes("const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);"), true);
+  assert.equal(source.includes("const missing = draft.name.trim() === '' ? NAME_IT_TO_SAVE_IT : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);"), true);
   assert.equal(source.includes('disabled={Boolean(missing) || saving}'), true);
   assert.equal(source.includes('{missing && <p className="gym-editor-missing">{missing}</p>}'), true);
 });

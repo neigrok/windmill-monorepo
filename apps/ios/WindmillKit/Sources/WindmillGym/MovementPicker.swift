@@ -232,11 +232,14 @@ struct MovementPicker: View {
     // window below has been cut from it; after that the cut is what the six are ranked from.
     let sessions: [SessionSummary]
     let onPick: (String) -> Void
-    let onCreate: (String) -> Void
+    // The write itself. What is done with the movement it made is `onPick`'s, so minting one and
+    // picking one are the same act on the screen behind.
+    let onCreate: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
     let onClose: () -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var query = ""
+    @State private var minting: MintStep?
     // Newest first. What the six are ranked from; an empty log still answers with the openers. Frozen
     // on the first read that HELD anything and never re-read after that while the picker is up (C18,
     // C20) — `@State` keeps that value however often the screen behind hands this view a longer log.
@@ -245,7 +248,7 @@ struct MovementPicker: View {
     init(catalog: [Exercise], taken: [String], lastSets: [String: LastSet]?,
          sessions: [SessionSummary],
          onPick: @escaping (String) -> Void,
-         onCreate: @escaping (String) -> Void,
+         onCreate: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>,
          onClose: @escaping () -> Void) {
         self.catalog = catalog
         self.taken = taken
@@ -262,7 +265,8 @@ struct MovementPicker: View {
             MovementList(options: PickerOptions.matching(query: query, catalog: catalog, taken: taken,
                                                          lastSets: lastSets, now: nowMs,
                                                          sessions: opened),
-                         query: query, onPick: onPick, onCreate: onCreate)
+                         query: query, onPick: onPick,
+                         onCreate: { minting = MintStep(opening: $0) })
                 .background(skin.canvas)
                 .navigationTitle("Add movement")
                 .navigationBarTitleDisplayMode(.inline)
@@ -276,6 +280,7 @@ struct MovementPicker: View {
                     prompt: Text("Search \(catalog.count) movements"))
         .autocorrectionDisabled()
         .seeding($opened, from: sessions)
+        .minting($minting, onCreate: onCreate, onPick: onPick)
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
@@ -294,6 +299,61 @@ private extension View {
     }
 }
 
+// The create step is drawn OVER the picker that opened it and never in place of it: the picker stays
+// mounted, so Cancel returns the rows under the finger with the typed query still in the field
+// (`15-the-routine.md`). The step stays up until the log answers and the refusal is said on it, so
+// the in-flight and refusal states live here with it — and a movement that was minted is picked, which
+// is what `Create and add` says.
+private struct MintStep: Identifiable {
+    let opening: String
+
+    var id: String { opening }
+}
+
+private struct Minting: ViewModifier {
+    @Binding var step: MintStep?
+    let onCreate: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
+    let onPick: (String) -> Void
+
+    @Environment(\.gymSkin) private var skin
+    @State private var creating = false
+    @State private var failure: String?
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $step, onDismiss: { creating = false; failure = nil }) { open in
+            CreateMovementSheet(opening: open.opening, creating: creating, failure: failure,
+                                onCreate: { said, equipment in mint(said, loadedAs: equipment) },
+                                onCancel: { step = nil })
+                .presentationBackground(skin.canvas)
+                .presentationDetents([.large])
+        }
+    }
+
+    private func mint(_ name: String, loadedAs equipment: String) {
+        creating = true
+        failure = nil
+        Task {
+            switch await onCreate(name, equipment) {
+            case .success(let made):
+                creating = false
+                step = nil
+                onPick(made.id)
+            case .failure(let why):
+                creating = false
+                failure = why.line("“\(name)” wasn’t created")
+            }
+        }
+    }
+}
+
+private extension View {
+    func minting(_ step: Binding<MintStep?>,
+                 onCreate: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>,
+                 onPick: @escaping (String) -> Void) -> some View {
+        modifier(Minting(step: step, onCreate: onCreate, onPick: onPick))
+    }
+}
+
 struct OpeningPicker: View {
     let catalog: [Exercise]
     let taken: [String]
@@ -302,11 +362,12 @@ struct OpeningPicker: View {
     let sessions: [SessionSummary]
     let isSignedIn: Bool
     let onPick: (String) -> Void
-    let onCreate: (String) -> Void
+    let onCreate: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
     let onBuildRoutine: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
     @State private var query = ""
+    @State private var minting: MintStep?
     // The same freeze the sheet picker makes (C18, C20), and the one that needs it most: this picker
     // stands for the whole opening of a session, with the log polling behind it the entire time — and
     // it is the first screen a signed-in lifter reaches, often before the first read has landed.
@@ -315,7 +376,7 @@ struct OpeningPicker: View {
     init(catalog: [Exercise], taken: [String], lastSets: [String: LastSet]?,
          sessions: [SessionSummary], isSignedIn: Bool,
          onPick: @escaping (String) -> Void,
-         onCreate: @escaping (String) -> Void,
+         onCreate: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>,
          onBuildRoutine: (() -> Void)?) {
         self.catalog = catalog
         self.taken = taken
@@ -342,7 +403,8 @@ struct OpeningPicker: View {
             MovementList(options: PickerOptions.matching(query: query, catalog: catalog, taken: taken,
                                                          lastSets: lastSets, now: nowMs,
                                                          sessions: opened),
-                         query: query, onPick: onPick, onCreate: onCreate)
+                         query: query, onPick: onPick,
+                         onCreate: { minting = MintStep(opening: $0) })
 
             agent
         }
@@ -350,6 +412,7 @@ struct OpeningPicker: View {
                     prompt: Text("Search \(catalog.count) movements"))
         .autocorrectionDisabled()
         .seeding($opened, from: sessions)
+        .minting($minting, onCreate: onCreate, onPick: onPick)
     }
 
     // The room hands `onBuildRoutine` over only while nothing already reaches this log; nil withdraws the card.

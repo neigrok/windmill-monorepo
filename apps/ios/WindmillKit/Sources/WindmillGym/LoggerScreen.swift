@@ -22,16 +22,14 @@ struct LoggerScreen: View {
     @State private var goingTo: String?
     @State private var pendingDeviation: Deviation?
     @State private var asked: Set<String> = []
-    @State private var minting = false
-    @State private var mintFailure: String?
 
+    // Creating a movement is not here: it is drawn over the picker that opened it, by the picker
+    // (`15-the-routine.md`), so the search a lifter typed is still there when they cancel.
     private enum Sheet: Identifiable {
         case weight
         case reps
         case jump
         case picker
-        // Replaces the picker rather than stacking over it.
-        case creating(String)
         case deviation(Deviation, movement: String)
 
         var id: String {
@@ -40,7 +38,6 @@ struct LoggerScreen: View {
             case .reps: return "reps"
             case .jump: return "jump"
             case .picker: return "picker"
-            case .creating(let name): return "creating-\(name)"
             case .deviation(let deviation, _): return "deviation-\(deviation.exerciseId)"
             }
         }
@@ -48,7 +45,7 @@ struct LoggerScreen: View {
         var detents: Set<PresentationDetent> {
             switch self {
             case .weight, .reps: return [.height(520)]
-            case .picker, .jump, .creating: return [.large]
+            case .picker, .jump: return [.large]
             case .deviation: return [.medium, .large]
             }
         }
@@ -174,7 +171,7 @@ struct LoggerScreen: View {
         OpeningPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
                       sessions: store.recent, isSignedIn: isSignedIn,
                       onPick: { move(to: $0) },
-                      onCreate: { sheet = .creating($0) },
+                      onCreate: { name, equipment in await mint(name, loadedAs: equipment) },
                       onBuildRoutine: onBuildRoutine)
             .task { await store.loadLastSets() }
     }
@@ -507,13 +504,9 @@ struct LoggerScreen: View {
             MovementPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
                            sessions: store.recent,
                            onPick: { move(to: $0) },
-                           onCreate: { self.sheet = .creating($0) },
+                           onCreate: { name, equipment in await mint(name, loadedAs: equipment) },
                            onClose: { self.sheet = nil })
                 .task { await store.loadLastSets() }
-        case .creating(let name):
-            CreateMovementSheet(opening: name, creating: minting, failure: mintFailure,
-                                onCreate: { said, equipment in mint(said, loadedAs: equipment) },
-                                onCancel: { self.sheet = nil })
         case .deviation(let deviation, let movement):
             DeviationSheet(deviation: deviation, movement: movement,
                            onSave: {
@@ -531,22 +524,12 @@ struct LoggerScreen: View {
         }
     }
 
-    // The sheet stays up until the log answers, and the refusal is said on it.
-    private func mint(_ name: String, loadedAs equipment: String) {
-        minting = true
-        mintFailure = nil
+    // The room's own note goes first: the create step draws the refusal this write raises, and nothing
+    // older than it stands behind the picker while it does.
+    private func mint(_ name: String,
+                      loadedAs equipment: String) async -> Result<Exercise, TrainingStore.WriteFailure> {
         say(nil)
-        Task {
-            switch await store.create(name, loadedAs: equipment) {
-            case .success(let made):
-                minting = false
-                sheet = nil
-                await store.choose(made.id)
-            case .failure(let why):
-                minting = false
-                mintFailure = why.line("“\(name)” wasn’t created")
-            }
-        }
+        return await store.create(name, loadedAs: equipment)
     }
 
     // A deviation is raised only on leaving a movement, and only after the sheet that raised it has closed.

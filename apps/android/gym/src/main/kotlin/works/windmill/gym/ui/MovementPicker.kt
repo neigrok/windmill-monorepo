@@ -21,13 +21,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Program
@@ -171,6 +176,12 @@ object PickerOptions {
 fun pickerMaxHeight(): Dp = (LocalConfiguration.current.screenHeightDp.dp * 0.92f) - 44.dp
 
 // `onClose` is nullable because the FIRST movement has nothing behind it to cancel back to.
+//
+// Creating a movement stays INSIDE the picker: the create step is a sheet of the picker's own over a
+// picker that stays mounted, so Cancel hands back the query that was typed and the six that were
+// frozen. `onCreate` is the mint itself and not a door to somewhere else — there is no second picker
+// to come back to.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MovementPicker(
     catalog: List<Exercise>,
@@ -179,7 +190,7 @@ fun MovementPicker(
     nowMs: Long,
     title: String,
     onPick: (String) -> Unit,
-    onCreate: (String) -> Unit,
+    onCreate: (name: String, equipment: String) -> Unit,
     modifier: Modifier = Modifier,
     // Newest first. What the six are ranked from, read once — on the first non-empty read; an empty
     // list still answers with the openers.
@@ -191,7 +202,14 @@ fun MovementPicker(
     onClose: (() -> Unit)? = null,
     onBuildRoutine: () -> Unit = {},
 ) {
-    var query by remember { mutableStateOf("") }
+    // The search, and the two answers the create step collects — saved, and all three HERE: state
+    // written inside a `ModalBottomSheet` does not come back from a process reclaim, so the step's
+    // own slots are held by the picker that raises it. `minting` is the name being typed, null when
+    // the step is down; both it and the loading are seeded fresh each time the door is taken.
+    var query by rememberSaveable { mutableStateOf("") }
+    var minting by rememberSaveable { mutableStateOf<String?>(null) }
+    var equipment by rememberSaveable { mutableStateOf(Exercise.loadings.first()) }
+    val createSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // The window is read ONCE, on the first NON-EMPTY read: the log behind an open picker keeps
     // moving — a poll lands a finished session, a claim replays the shelf — and the six may not
     // reshuffle under a thumb already reaching for one of them. Freezing on the first FRAME instead
@@ -202,6 +220,12 @@ fun MovementPicker(
     val opened = held.value
     val options = PickerOptions.matching(query, catalog, taken, lastSets, nowMs,
                                          sessions = opened, catalogUnread = catalogUnread)
+    val scope = rememberCoroutineScope()
+
+    // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
+    fun closeCreate() {
+        scope.launch { createSheet.hide() }.invokeOnCompletion { minting = null }
+    }
 
     Column(
         modifier
@@ -275,7 +299,10 @@ fun MovementPicker(
                         .heightIn(min = GymTap.minimum + 6.dp)
                         .clip(RoundedCornerShape(WindmillRadius.md))
                         .background(GymSkin.accent)
-                        .clickable(role = Role.Button) { onCreate(query.trim()) },
+                        .clickable(role = Role.Button) {
+                            minting = Program.capped(query.trim())
+                            equipment = Exercise.loadings.first()
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(create, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.onAccent)
@@ -285,13 +312,44 @@ fun MovementPicker(
             if (firstSession && !signedIn) BuildMyRoutine(onBuildRoutine)
         }
     }
+
+    // Its own sheet and so its own frame: the create step's keyboard padding is measured against the
+    // window and never against `pickerMaxHeight`, and the picker underneath keeps its query.
+    minting?.let { typed ->
+        ModalBottomSheet(
+            onDismissRequest = { minting = null },
+            sheetState = createSheet,
+            containerColor = GymSkin.surface,
+        ) {
+            CreateMovementSheet(
+                name = typed,
+                onName = { minting = Program.capped(it) },
+                equipment = equipment,
+                onEquipment = { equipment = it },
+                onCancel = { closeCreate() },
+                // The step comes down before the mint is asked for: the caller closes the picker
+                // and says any refusal on the surface it lands back on.
+                onCreate = {
+                    minting = null
+                    onCreate(typed.trim(), equipment)
+                },
+            )
+        }
+    }
 }
 
+// Drawn state only: the two answers it collects are held by the picker above it, which survives a
+// process reclaim where a sheet's own slots do not.
 @Composable
-fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, String) -> Unit) {
-    var typed by rememberSaveable(name) { mutableStateOf(Program.capped(name)) }
-    var equipment by rememberSaveable(name) { mutableStateOf(Exercise.loadings.first()) }
-    val named = Program.named(typed) != null
+private fun CreateMovementSheet(
+    name: String,
+    onName: (String) -> Unit,
+    equipment: String,
+    onEquipment: (String) -> Unit,
+    onCancel: () -> Unit,
+    onCreate: () -> Unit,
+) {
+    val named = Program.named(name) != null
 
     Column(
         Modifier
@@ -320,8 +378,8 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
             Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
-                    value = typed,
-                    onValueChange = { typed = Program.capped(it) },
+                    value = name,
+                    onValueChange = { onName(it) },
                     singleLine = true,
                     textStyle = WindmillFont.body(19),
                     keyboardOptions = KeyboardOptions(
@@ -332,7 +390,7 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
                     colors = gymFieldColours(),
                     modifier = Modifier.weight(1f).heightIn(min = GymTap.minimum),
                 )
-                Program.counter(typed)?.let { counted ->
+                Program.counter(name)?.let { counted ->
                     Text(
                         counted,
                         style = GymType.numeral(12),
@@ -359,7 +417,7 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
                             .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
                             .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
                                     RoundedCornerShape(WindmillRadius.md))
-                            .selectable(selected = picked, role = Role.RadioButton) { equipment = loading },
+                            .selectable(selected = picked, role = Role.RadioButton) { onEquipment(loading) },
                     ) {
                         Text(
                             loading.replaceFirstChar { it.uppercase() },
@@ -379,7 +437,7 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(if (named) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = named, role = Role.Button) { onCreate(typed.trim(), equipment) },
+                .clickable(enabled = named, role = Role.Button, onClick = onCreate),
         ) {
             Text(
                 "Create and add",

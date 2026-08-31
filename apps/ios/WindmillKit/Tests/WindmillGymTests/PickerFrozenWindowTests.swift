@@ -64,7 +64,7 @@ final class PickerFrozenWindowTests: XCTestCase {
 
         var body: some View {
             MovementPicker(catalog: catalog, taken: [], lastSets: nil, sessions: log.sessions,
-                           onPick: { _ in }, onCreate: { _ in }, onClose: {})
+                           onPick: { _ in }, onCreate: { _, _ in .failure(.noAnswer) }, onClose: {})
                 .environment(\.gymSkin, GymSkin.instrument)
                 .environment(\.colorScheme, .dark)
         }

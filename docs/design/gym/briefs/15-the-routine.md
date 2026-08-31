@@ -78,14 +78,43 @@ planning sheet inherited from it is the refusals, pinned below.
 - **Nav bar** carries the way back and *Save*. Nothing else is a header button — except on iOS,
   where an overflow beside Save holds Duplicate, which copies the draft.
 - **The name** is the first field.
-- **The movements** are a list: drag to reorder, swipe or `×` to remove, and one control over the
-  row body — the movement's name, its *yours* tag and its numbers together — opening the target
-  sheet. **A row is not a door out of the editor:** a link from here discards the unsaved draft with
-  no question, so the name is part of the sheet's own control rather than an anchor.
+- **The movements** are a list: reorder by dragging the handle, **by pressing ArrowUp / ArrowDown on
+  it, or by tapping it once to pick the row up and once more where it goes**, swipe or `×` to
+  remove, and one control over the row body — the movement's name, its *yours* tag and its numbers
+  together — opening the target sheet. **A row is not a door out of the editor:** a link from here
+  discards the unsaved draft with no question, so the name is part of the sheet's own control rather
+  than an anchor.
 - **Add movement** is the last row of that list, not a floating button.
 - **Duplicate** has one home and it is the routine **row's** overflow, the menu that also carries
   **Delete** (`13-gestures.md` Law 1). The editor draws neither, save iOS's copy of the draft above.
 - **History** is a section, not an inline aside.
+
+**The reorder handle is a control, not only a grip, and it answers three paths.** On the web it is a
+real `<button>` whose accessible name says the row *and* its place — `Move Back Squat, 2 of 3`. The
+**drag** is unchanged. **ArrowUp / ArrowDown** move the row; the ends do not wrap, and an arrow the
+handle cannot spend falls through to the page like every other key it does not take. And **an
+activation with nothing held picks the row up** — the name becomes `Move Back Squat, 1 of 3 — picked
+up`, every other handle stops reading as a move and reads as the place it would put the held row
+(`Place Back Squat at 3 of 3`), a second activation there puts it down at that index, the same handle
+again puts it back where it stands, and Escape cancels. **The move is said once, on a `role="status"`
+line under the list, whichever path took it**: a drag says nothing on its own, and a name changing
+under a focus that has just jumped is not an announcement either. Focus follows the row that moved on
+every path, because the list is keyed by index and the row it left is a new node. The state machine
+behind all three is `rail.js`'s `useRail`, shared with the notes list; what stays in the editor is
+what only the editor knows — `entryPlaceLabel` from `routines.js`, which the target sheet also reads,
+and the focus-follow the index keying needs (`EntryList` in `Routines.jsx`).
+
+No per-row *Move up* / *Move down* menu was bought for any of that — a drawn menu on every row is
+chrome traded for a grip that already works — and **that closes `13-gestures.md` Law 1 and WCAG 2.2
+SC 2.5.7 together.** The pointer half is the one that matters on the surface this room designs for: a
+phone browser has no arrow keys, so a lifter on TalkBack or VoiceOver reaching the handle and
+double-tapping it is who the single-pointer criterion is about, and a keyboard path answers 2.1.1
+rather than that (`13-gestures.md` Law 1). iOS reorders through the platform's `.onMove`
+(`RoutineBuilderScreens.swift:117`), which declares its own alternative.
+
+> **Android cannot reorder a draft at all, and that is a feature this programme does not build.**
+> It is a missing capability rather than a control disagreeing with canon, so it is owed as work and
+> not carried as drift (ledger `3p`).
 
 **A movement's record has a drawn door that does not cost a draft.** A routine line for a
 never-logged movement is a first-class state here, and every other route on the web to that
@@ -114,6 +143,16 @@ six**; that is a genuine shortcut and not chrome.
 
 **Creating a movement stays inside the picker.** It is the one place a lifter discovers the movement
 they want does not exist yet, and sending them elsewhere to make it loses the search they just typed.
+
+**The create step is drawn OVER the picker, never in place of it, and the picker owns it** — a
+`.sheet` the picker itself presents on iOS, a nested `ModalBottomSheet` from the picker's own
+`rememberSaveable` slot on Android, `.gym-sheet-catch` over the rows on the web. So Cancel comes back
+to the rows with the typed query still in the field and the frozen six unshuffled, and on the phones
+the create step gets its own frame with its own keyboard inset rather than competing with the
+picker's height cap (ledger `2u`). It keeps the **two questions** it has always asked on every
+surface — the name, with the cap and counter below it, and *How is it loaded?* Where the refusal is said still splits by
+surface and is meant to: iOS holds the step up until the log answers and says it there, Android
+closes the picker first and says it on the room's transient.
 
 ## The connect pitch loses two of its four homes
 
@@ -212,7 +251,11 @@ then the three fields topmost first.
 > have just typed.
 
 **Save with no name** keeps the two strings the product already ships, shown one at a time, not
-concatenated: *Name it to save it.* then *A routine is at least one movement.*
+concatenated: *Name it to save it.* then *A routine is at least one movement.* The first of them is
+**one constant per surface and no fourth copy** — `NAME_IT_TO_SAVE_IT` (`routines.js`),
+`RoutineDraft.nameItToSaveIt` (`RoutineBuilder.swift`), `Program.nameItToSaveIt` (`Program.kt`) —
+because the finish card's keep-as-routine form draws the same sentence under the same inert Save
+(`16-the-workout.md`).
 
 **The open line** keeps its sentence on every surface, not just one:
 *You decide the numbers at the rack.* It has **one placement rule**: in the target sheet while the
@@ -251,6 +294,20 @@ before that, and counting **characters** on every surface. The form and the thre
 editor's counter exactly, because a lifter should not have to learn two rules for the same idea. It
 is the shape a wave gets wrong by leaving it unpinned: a cap without its counter is three surfaces
 inventing three answers.
+
+**And the same rule governs the other end of the field: what counts as NO name is measured in one
+unit per surface, and it is the routine editor's.** A cap is a count in a unit and a blank check is a
+trim in a unit — the same trap one step down, and the cheaper one to get wrong, because every
+surface's obvious fixture is `""` and `"   "` and those two agree under every unit there is. They do
+not discriminate.
+`"\n"` does: on iOS `CharacterSet.whitespaces` is Unicode `Zs` plus tab and **excludes**
+U+000A–U+000D, so a predicate built on it calls a pasted newline a name where JS `trim`,
+Kotlin `trim` and `.whitespacesAndNewlines` all call it blank. **Where the unit is a choice, the
+editor states it once and everything else reads that** — `RoutineDraft.trimmed` /
+`RoutineDraft.isNamed` on iOS, which the finish card's `Finish.keepRefusal` and its grey `Save
+routine` both go through, and `Program.named` on Android; on the web the language leaves no choice to
+make, since `String.prototype.trim` is the only trim there is. **And a fixture that cannot tell two
+units apart has not pinned the unit**: the pin carries a newline, or it is green either way.
 
 **Removing a row is as destructive as a swipe, and takes the same undo.** The web draws an `×` (a
 pointer drag would otherwise be the only way to remove a line, and Law 1 forbids a gesture being the

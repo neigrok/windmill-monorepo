@@ -5,8 +5,10 @@ import XCTest
 @testable import WindmillPlatform
 
 // The finish is a `.sheet` at `.large`, so it covers the room's note line — the one place the room
-// draws a sentence. A refusal from `Save routine` or `Discard session` therefore has to be drawn
-// INSIDE the sheet or it is not drawn at all, which is the "nothing is silently dead" rule.
+// draws a sentence. A refusal from `Save routine` therefore has to be drawn INSIDE the sheet or it
+// is not drawn at all, which is the "nothing is silently dead" rule. A discard's refusal is not in
+// that position: discarding empties the sheet before the nine-second window even starts, so by the
+// time the log answers the room's own line is uncovered and that is where it lands.
 //
 // Proved the way `ReviewSheetHostingTests` proves its gate: host the real screen and read the pixels.
 // `skin.alarmInk` (#D08268) is painted nowhere else on this screen, so counting it answers whether
@@ -14,7 +16,6 @@ import XCTest
 @MainActor
 final class FinishSheetRefusalHostingTests: XCTestCase {
     private let keepRefused = "the log didn’t answer — the routine wasn’t kept"
-    private let discardRefused = "the log didn’t answer — the session is still there"
 
     private func session(finishedAtMs: Int64? = 1_754_312_040_000) -> Session {
         Session(id: "ses_1", startedAtMs: 1_754_308_320_000, finishedAtMs: finishedAtMs)
@@ -31,7 +32,8 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
                    revoke: { nil })
     }
 
-    private func host(_ finished: FinishedSession, failure: String?) async -> UIWindow {
+    private func host(_ finished: FinishedSession, failure: String?,
+                      settling: Bool = true) async -> UIWindow {
         let screen = FinishScreen(finished: finished,
                                   catalog: [Exercise(id: "back-squat", name: "Back Squat")],
                                   kept: false, coach: doors(), failure: failure,
@@ -43,6 +45,7 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
         window.rootViewController = controller
         window.makeKeyAndVisible()
         controller.view.layoutIfNeeded()
+        guard settling else { return window }
         for _ in 0..<30 {
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(50))
@@ -79,7 +82,8 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
     }
 
     // `Save routine` is offered on a session with no routine and a working set; its refusal belongs
-    // under that button.
+    // under that button. The silent count is zero because the name is seeded where the view is
+    // built, so the field is never empty for a frame — which the test below is the pin for.
     func testAKeepRefusalIsDrawnInsideTheSheetThatRaisedIt() async {
         let closed = FinishedSession(session: session(), sets: working(), review: nil, isFirst: true)
         XCTAssertTrue(closed.offersRoutine, "this fixture is not the keep-as-routine state")
@@ -93,19 +97,15 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
                              + "(silent \(silent) · refused \(refused))")
     }
 
-    // `Discard session` is offered only on a slight session, and its refusal belongs under it.
-    func testADiscardRefusalIsDrawnInsideTheSheetThatRaisedIt() async {
-        let slight = Review(stats: Review.Stats(durationMs: 240_000, workingSets: 1), slight: true)
-        let closed = FinishedSession(session: session(), sets: working(), review: slight, isFirst: true)
-        XCTAssertTrue(closed.slight, "this fixture is not the ended-early state")
-        XCTAssertFalse(closed.offersRoutine, "a slight session is never offered as a routine")
+    // The sheet animates in over about a third of a second. A name seeded after the view appears
+    // would spend that whole animation refusing the lifter for a field they have not touched, so it
+    // is seeded where the view is built and the first frame is already silent.
+    func testTheKeepCardRefusesNothingOnTheFrameItAppearsOn() async {
+        let closed = FinishedSession(session: session(), sets: working(), review: nil, isFirst: true)
+        XCTAssertTrue(closed.offersRoutine, "this fixture is not the keep-as-routine state")
 
-        // `Discard session` is itself drawn in the alarm ink, so the count is a DELTA, never a floor.
-        let silent = alarmPixels(of: await host(closed, failure: nil))
-        let refused = alarmPixels(of: await host(closed, failure: discardRefused))
+        let first = alarmPixels(of: await host(closed, failure: nil, settling: false))
 
-        XCTAssertGreaterThan(refused, silent + 100,
-                             "a refused discard says nothing anywhere the lifter can read it "
-                             + "(silent \(silent) · refused \(refused))")
+        XCTAssertEqual(first, 0, "the sheet refuses the empty name before its own name has landed")
     }
 }

@@ -12,13 +12,14 @@ import { Overflow } from './Overflow.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
 import { mintId } from './mint.js';
 import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
+import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
   blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryDroppedLine,
   entryPlaceLabel, hasOpenEntry, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
-  OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite, saysNeverLogged,
-  targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt, withEntryRemoved,
-  withEntrySet, withField, withSignFlipped,
+  NAME_IT_TO_SAVE_IT, OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite,
+  saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt,
+  withEntryRemoved, withEntrySet, withField, withSignFlipped,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -183,7 +184,7 @@ export function RoutineEditor({ id, log }) {
     });
   };
   // One at a time, and in this order: there is no screen before this one to have asked for a name.
-  const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
+  const missing = draft.name.trim() === '' ? NAME_IT_TO_SAVE_IT : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
   const built = builtLabel(view.data);
 
   const commit = async () => {
@@ -423,59 +424,91 @@ function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
 }
 
 // Pointer events, not drag events, which do not fire on touch; rows are one height, so travel is rows crossed.
+// The rail is a button as well as a drag handle, and `useRail` is the three paths it answers on —
+// the drag, the arrows, and the single-pointer pick up and place down. Focus follows the row it
+// moved — the list is keyed by index, so the row it left is a new node — and the move is SAID on the
+// line under the list, which is the announcement for every path: a drag says nothing on its own, and
+// a name changing under a focus that jumped is not an announcement either.
 function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
   const [drag, setDrag] = useState(null);
   const rowHeight = useRef(0);
+  const rails = useRef([]);
+  const follows = useRef(null);
+
+  useEffect(() => {
+    if (follows.current === null) return;
+    rails.current[follows.current]?.focus();
+    follows.current = null;
+  });
+
+  const rail = useRail({
+    count: entries.length,
+    nameOf: (index) => nameOfMovement(catalog, entries[index].exerciseId),
+    placeOf: (index) => entryPlaceLabel(index, entries.length),
+    move: (from, to) => { follows.current = to; onMove(from, to); },
+  });
 
   const shift = (event) => Math.round((event.clientY - drag.from) / (rowHeight.current || 1));
 
   return (
-    <ul className="gym-entries">
-      {entries.map((entry, index) => (
-        <li
-          className={drag?.index === index ? 'gym-entry is-dragging' : 'gym-entry'}
-          key={`${entry.exerciseId}-${index}`}
-          style={drag?.index === index ? { transform: `translateY(${drag.by}px)` } : undefined}
-        >
-          <span
-            className="gym-entry-rail"
-            aria-hidden="true"
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              rowHeight.current = event.currentTarget.closest('.gym-entry').getBoundingClientRect().height;
-              setDrag({ index, from: event.clientY, by: 0 });
-            }}
-            onPointerMove={(event) => { if (drag) setDrag({ ...drag, by: event.clientY - drag.from }); }}
-            onPointerUp={(event) => {
-              if (!drag) return;
-              const moved = shift(event);
-              setDrag(null);
-              if (moved !== 0) onMove(drag.index, drag.index + moved);
-            }}
-            onPointerCancel={() => setDrag(null)}
+    <>
+      <ul className="gym-entries">
+        {entries.map((entry, index) => (
+          <li
+            className={drag?.index === index ? 'gym-entry is-dragging' : 'gym-entry'}
+            key={`${entry.exerciseId}-${index}`}
+            style={drag?.index === index ? { transform: `translateY(${drag.by}px)` } : undefined}
           >
-            ⠿
-          </span>
-          {/* One control over the row body, and it opens the target sheet rather than leaving the
-              screen: a link out of here discards the draft with no question. The movement's name is
-              inside it, so the sheet's own control is named for the line it edits. */}
-          <button type="button" className="gym-entry-body" onClick={() => onTarget(index)}>
-            <span className="gym-entry-name">
-              {nameOfMovement(catalog, entry.exerciseId)}
-              {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
-            </span>
-            <span className="gym-entry-target">{entryLabel(entry)}</span>
-          </button>
-          <button
-            type="button"
-            className="gym-entry-drop"
-            onClick={() => onRemove(index)}
-            aria-label={`Remove ${nameOfMovement(catalog, entry.exerciseId)}`}
-          >
-            <Icon name="x" size={15} />
-          </button>
-        </li>
-      ))}
-    </ul>
+            <button
+              type="button"
+              className="gym-entry-rail"
+              ref={(node) => { rails.current[index] = node; }}
+              aria-label={rail.nameFor(index)}
+              aria-pressed={rail.picked === index}
+              onClick={(event) => rail.activate(index, event)}
+              onKeyDown={(event) => rail.keyDown(index, event)}
+              onPointerDown={(event) => {
+                rail.grabbed();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                rowHeight.current = event.currentTarget.closest('.gym-entry').getBoundingClientRect().height;
+                setDrag({ index, from: event.clientY, by: 0 });
+              }}
+              onPointerMove={(event) => { if (drag) setDrag({ ...drag, by: event.clientY - drag.from }); }}
+              onPointerUp={(event) => {
+                if (!drag) return;
+                const moved = shift(event);
+                setDrag(null);
+                // A drop past the last row travels further than there are rows: it lands on the end.
+                rail.dropped(drag.index, Math.min(Math.max(drag.index + moved, 0), entries.length - 1));
+              }}
+              onPointerCancel={() => setDrag(null)}
+            >
+              ⠿
+            </button>
+            {/* One control over the row body, and it opens the target sheet rather than leaving the
+                screen: a link out of here discards the draft with no question. The movement's name is
+                inside it, so the sheet's own control is named for the line it edits. */}
+            <button type="button" className="gym-entry-body" onClick={() => onTarget(index)}>
+              <span className="gym-entry-name">
+                {nameOfMovement(catalog, entry.exerciseId)}
+                {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
+              </span>
+              <span className="gym-entry-target">{entryLabel(entry)}</span>
+            </button>
+            <button
+              type="button"
+              className="gym-entry-drop"
+              onClick={() => onRemove(index)}
+              aria-label={`Remove ${nameOfMovement(catalog, entry.exerciseId)}`}
+            >
+              <Icon name="x" size={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {/* The move is said here, once, for every path alike, and the line is read rather than drawn:
+          the row itself already carries its place, and what the handle would do next, in its name. */}
+      <p className="gym-said" role="status">{rail.said}</p>
+    </>
   );
 }

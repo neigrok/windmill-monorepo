@@ -3,13 +3,11 @@ package works.windmill.gym.ui
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,6 +23,7 @@ import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PersonalRecord
+import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
@@ -360,6 +359,118 @@ class DiscardConfirmationTests {
         compose.onNodeWithText("Discard this session?").assertDoesNotExist()
         compose.onNodeWithText("Discarding deletes the session and its sets. There is no undoing it.")
             .assertDoesNotExist()
-        compose.onAllNodesWithText("Keep it").assertCountEquals(1)
+    }
+
+    // One act, one spelling. `Keep it` is read from `Finish` beside the `Discard session` it is the
+    // other half of, and it is the only affirmative anywhere on the receipt — the ordinary way out is
+    // the sheet coming down.
+    @Test
+    fun theSlightSessionsAffirmativeIsSaidOnceAndFromTheSameShelfAsItsRefusal() {
+        compose.setContent {
+            FinishScreen(
+                finished = short,
+                catalog = catalog,
+                kept = false,
+                coach = doors,
+                onKeepRoutine = {},
+                onDiscard = {},
+                onDone = {},
+            )
+        }
+
+        assertEquals("Keep it", Finish.keepIt)
+        compose.onAllNodesWithText(Finish.keepIt).assertCountEquals(1)
+        compose.onAllNodesWithText(Finish.discard).assertCountEquals(1)
+        compose.onNodeWithText("Done").assertDoesNotExist()
+        compose.onNodeWithText("Just keep the session").assertDoesNotExist()
+    }
+}
+
+// The keep-as-routine card is the receipt's one form, so it says why Save is grey, what the log said
+// when it refused, and that the routine was taken — one line at a time, and only ever one. The room
+// cannot say any of it for the card: a sheet covers the bottom bar the room says everything else in.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+class KeepAsRoutineTests {
+    @get:Rule
+    val compose = createComposeRule()
+
+    private val ordinary = FinishedSession(
+        session = Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 3_600_000),
+        sets = listOf(
+            TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
+                        completedAtMs = 2_000),
+        ),
+        review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
+        isFirst = false,
+    )
+
+    private val doors = CoachDoors(
+        origin = "https://windmill.works",
+        mint = { error("no link is minted here") },
+        revoke = { error("no link is revoked here") },
+    )
+
+    private fun card(failure: String? = null, kept: Boolean = false) {
+        compose.setContent {
+            FinishScreen(
+                finished = ordinary,
+                catalog = catalog,
+                kept = kept,
+                coach = doors,
+                onKeepRoutine = {},
+                onDiscard = {},
+                onDone = {},
+                failure = failure,
+            )
+        }
+    }
+
+    // The form goes when the log takes the routine, and a sentence stands where it was: the receipt
+    // draws no control after a keep, and the room's own line is behind this sheet.
+    @Test
+    fun aKeptRoutineIsSaidWhereTheFormStood() {
+        card(kept = true)
+        compose.onNodeWithText("Save routine").assertDoesNotExist()
+        compose.onNodeWithText("Routine name").assertDoesNotExist()
+        compose.onNodeWithText(Finish.keptAs(Readout.weekday(ordinary.session.startedAtMs)))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun anEmptyNameSaysWhySaveIsGreyAndAFilledOneSaysNothing() {
+        card()
+        compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
+
+        compose.onNodeWithText("Routine name").performScrollTo().performTextReplacement("   ")
+        compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
+
+        compose.onNodeWithText("Routine name").performTextReplacement("Push A")
+        compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
+    }
+
+    // One grey button, one sentence. A blank name is what holds Save NOW, so it outranks what the
+    // log said about an earlier attempt — nothing clears `failure` while Save cannot be pressed.
+    @Test
+    fun anEmptyNameOutranksALogRefusalSoOnlyOneSentenceStands() {
+        card(failure = "that document is unclaimable")
+        compose.onNodeWithText("that document is unclaimable").assertIsDisplayed()
+
+        compose.onNodeWithText("Routine name").performScrollTo().performTextReplacement("   ")
+        compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
+        compose.onNodeWithText("that document is unclaimable").assertDoesNotExist()
+    }
+
+    @Test
+    fun theLogsRefusalIsDrawnUnderTheSaveThatRaisedIt() {
+        card(failure = "that document is unclaimable")
+        val refusal = compose.onNodeWithText("that document is unclaimable")
+        refusal.assertIsDisplayed()
+        assertTrue(
+            "it sits under Save routine, which is the control that asked",
+            refusal.fetchSemanticsNode().positionInRoot.y >
+                compose.onNodeWithText("Save routine").fetchSemanticsNode().positionInRoot.y,
+        )
     }
 }

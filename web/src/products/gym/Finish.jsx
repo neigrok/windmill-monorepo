@@ -7,7 +7,7 @@ import {
 } from './log.js';
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, SESSION_DELETED, statTiles } from './review.js';
-import { routineFromSession } from './routines.js';
+import { NAME_IT_TO_SAVE_IT, routineFromSession } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -34,11 +34,11 @@ export function FinishScreen({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
+        <Back href={sessionHref(id)}>Session detail</Back>
         <p className="gym-read-failed">
           The session is saved, but this didn’t load.
           <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
-        <Back href={sessionHref(id)}>Session detail</Back>
       </>
     );
   }
@@ -57,6 +57,7 @@ export function FinishScreen({ id, log }) {
 
   return (
     <section className="gym-finish-screen">
+      <Back href={sessionHref(id)}>Session detail</Back>
       <h1 className="gym-title">{head.title}</h1>
       <p className="gym-finish-subtitle">{head.subtitle}</p>
       <p className="gym-finish-when">{head.when}</p>
@@ -99,13 +100,6 @@ export function FinishScreen({ id, log }) {
       )}
 
       {!review.slight && <ShareWorkout sessionId={id} />}
-
-      {!review.slight && (
-        <div className="gym-finish-foot">
-          <a className="gym-finish-detail" href={sessionHref(id)}>Session detail</a>
-          <a className="gym-finish-done" href="#/gym">Done</a>
-        </div>
-      )}
     </section>
   );
 }
@@ -154,16 +148,13 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
   return (
     <section className="gym-keep">
       <h2 className="gym-keep-title">Keep this as a routine</h2>
-      <div className="gym-keep-name">
-        <input
-          className="gym-keep-input"
-          value={name}
-          maxLength={80}
-          aria-label="Routine name"
-          onChange={(event) => setName(event.target.value)}
-        />
-        <span className="gym-keep-hint">tap to rename</span>
-      </div>
+      <input
+        className="gym-keep-input"
+        value={name}
+        maxLength={80}
+        aria-label="Routine name"
+        onChange={(event) => setName(event.target.value)}
+      />
       <ul className="gym-keep-entries">
         {composed.entries.map((entry) => (
           <li className="gym-keep-entry" key={entry.exerciseId}>
@@ -196,6 +187,9 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
           Just keep the session
         </button>
       </div>
+      {/* The empty name only. Save is inert while the write is in flight too, and there the sentence
+          would be a lie: the name is not what is holding it. */}
+      {name.trim() === '' && <p className="gym-keep-missing">{NAME_IT_TO_SAVE_IT}</p>}
     </section>
   );
 }

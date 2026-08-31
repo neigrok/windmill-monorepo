@@ -4,6 +4,7 @@ import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF } from '../log.js';
 import { COACH_TITLE } from '../coach/coach.js';
+import { useRail } from '../rail.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_CONFIRM, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE,
@@ -104,49 +105,70 @@ export function Notes({ log }) {
 }
 
 // Pointer events, not drag events, which do not fire on touch; rows are one height, so travel is rows crossed.
+// The rail is the routine editor's rail (`useRail`): the same drag, the same arrows, the same pick up
+// and place down. No focus is followed here — these rows are keyed by `note.id`, so the row a move
+// lifts is the same node when it lands.
 function NoteList({ notes, onOpen, onMove }) {
   const [drag, setDrag] = useState(null);
   const rowHeight = useRef(0);
 
+  const rail = useRail({
+    count: notes.length,
+    nameOf: (index) => notes[index].title,
+    placeOf: (index) => `${index + 1} of ${notes.length}`,
+    move: onMove,
+  });
+
   const shift = (event) => Math.round((event.clientY - drag.from) / (rowHeight.current || 1));
 
   return (
-    <ul className="gym-notes-rows">
-      {notes.map((note, index) => {
-        const meta = firstLineOf(note.body);
-        return (
-          <li
-            className={drag?.index === index ? 'gym-note is-dragging' : 'gym-note'}
-            key={note.id}
-            style={drag?.index === index ? { transform: `translateY(${drag.by}px)` } : undefined}
-          >
-            <span
-              className="gym-note-rail"
-              aria-hidden="true"
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
-                rowHeight.current = event.currentTarget.closest('.gym-note').getBoundingClientRect().height;
-                setDrag({ index, from: event.clientY, by: 0 });
-              }}
-              onPointerMove={(event) => { if (drag) setDrag({ ...drag, by: event.clientY - drag.from }); }}
-              onPointerUp={(event) => {
-                if (!drag) return;
-                const moved = shift(event);
-                setDrag(null);
-                if (moved !== 0) onMove(drag.index, drag.index + moved);
-              }}
-              onPointerCancel={() => setDrag(null)}
+    <>
+      <ul className="gym-notes-rows">
+        {notes.map((note, index) => {
+          const meta = firstLineOf(note.body);
+          return (
+            <li
+              className={drag?.index === index ? 'gym-note is-dragging' : 'gym-note'}
+              key={note.id}
+              style={drag?.index === index ? { transform: `translateY(${drag.by}px)` } : undefined}
             >
-              ⠿
-            </span>
-            <button type="button" className="gym-note-row" onClick={() => onOpen(note)}>
-              <span className="gym-note-title">{note.title}</span>
-              {meta && <span className="gym-note-meta">{meta}</span>}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+              <button
+                type="button"
+                className="gym-note-rail"
+                aria-label={rail.nameFor(index)}
+                aria-pressed={rail.picked === index}
+                onClick={(event) => rail.activate(index, event)}
+                onKeyDown={(event) => rail.keyDown(index, event)}
+                onPointerDown={(event) => {
+                  rail.grabbed();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  rowHeight.current = event.currentTarget.closest('.gym-note').getBoundingClientRect().height;
+                  setDrag({ index, from: event.clientY, by: 0 });
+                }}
+                onPointerMove={(event) => { if (drag) setDrag({ ...drag, by: event.clientY - drag.from }); }}
+                onPointerUp={(event) => {
+                  if (!drag) return;
+                  const moved = shift(event);
+                  setDrag(null);
+                  // A drop past the last row travels further than there are rows: it lands on the end.
+                  rail.dropped(drag.index, Math.min(Math.max(drag.index + moved, 0), notes.length - 1));
+                }}
+                onPointerCancel={() => setDrag(null)}
+              >
+                ⠿
+              </button>
+              <button type="button" className="gym-note-row" onClick={() => onOpen(note)}>
+                <span className="gym-note-title">{note.title}</span>
+                {meta && <span className="gym-note-meta">{meta}</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {/* The move is said here, once, for every path alike, and the line is read rather than drawn:
+          the row itself already carries its place, and what the handle would do next, in its name. */}
+      <p className="gym-said" role="status">{rail.said}</p>
+    </>
   );
 }
 

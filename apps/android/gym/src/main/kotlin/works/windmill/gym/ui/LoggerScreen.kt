@@ -90,7 +90,6 @@ private sealed class LoggerSheet {
     data object Reps : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
-    data class Create(val name: String) : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
 }
 
@@ -244,7 +243,7 @@ fun LoggerScreen(
                 signedIn = isSignedIn,
                 catalogUnread = store.catalogUnread,
                 onPick = { picked -> scope.launch { store.choose(picked) } },
-                onCreate = { name -> sheet = LoggerSheet.Create(name) },
+                onCreate = { name, equipment -> mint(name, equipment) },
                 onBuildRoutine = onSignIn,
                 modifier = Modifier.weight(1f),
             )
@@ -354,20 +353,15 @@ fun LoggerScreen(
                     title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
-                    onCreate = { name -> sheet = LoggerSheet.Create(name) },
+                    onCreate = { name, equipment ->
+                        close()
+                        mint(name, equipment)
+                    },
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
                         .padding(WindmillSpace.x5),
                     onClose = { close() },
-                )
-                is LoggerSheet.Create -> CreateMovementSheet(
-                    name = open.name,
-                    onCancel = { sheet = LoggerSheet.Picker },
-                    onCreate = { name, equipment ->
-                        close()
-                        mint(name, equipment)
-                    },
                 )
                 is LoggerSheet.Deviation -> DeviationSheet(
                     deviation = open.offer,

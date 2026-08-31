@@ -129,8 +129,9 @@ final class RoomFixSheetUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20)
                       || app.staticTexts["Ended early"].exists,
                       "the finish sheet never presented")
-        // Which way out the sheet offers depends on how much was logged; every one of them is `onDone`.
-        let keep = ["Keep it", "Just keep the session", "Done"]
+        // A slight session is kept by `Keep it` and every other one by the sheet's toolbar `Done`;
+        // both are `onDone`.
+        let keep = ["Keep it", "Done"]
             .map { app.buttons[$0] }
             .first { $0.exists }
         XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")

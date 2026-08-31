@@ -25,8 +25,6 @@ struct RoutineEditorScreen: View {
     // Kept for edit mode's changed-rule: the comparison is over the write, since line ids are this screen's own.
     private let opening: RoutineDraft
     @State private var sheet: Sheet?
-    @State private var minting = false
-    @State private var mintFailure: String?
     @State private var abandoning = false
     @FocusState private var namingIt: Bool
 
@@ -38,16 +36,16 @@ struct RoutineEditorScreen: View {
         static let keep = "Keep editing"
     }
 
+    // Creating a movement is not here: it is drawn over the picker that opened it, by the picker
+    // (`15-the-routine.md`), so the search a lifter typed is still there when they cancel.
     private enum Sheet: Identifiable {
         case picking
-        case creating(String)
         // The line and never its place: a drag moves places.
         case targeting(String)
 
         var id: String {
             switch self {
             case .picking: return "picking"
-            case .creating(let name): return "creating:\(name)"
             case .targeting(let lineId): return "targeting:\(lineId)"
             }
         }
@@ -199,13 +197,8 @@ struct RoutineEditorScreen: View {
                 MovementPicker(catalog: catalog, taken: draft.entries.map(\.exerciseId),
                                lastSets: nil, sessions: sessions,
                                onPick: { pick($0) },
-                               onCreate: { sheet = .creating($0) },
+                               onCreate: onCreateMovement,
                                onClose: { sheet = nil })
-                    .presentationBackground(skin.canvas)
-            case .creating(let name):
-                CreateMovementSheet(opening: name, creating: minting, failure: mintFailure,
-                                    onCreate: { said, equipment in mint(said, loadedAs: equipment) },
-                                    onCancel: { sheet = nil })
                     .presentationBackground(skin.canvas)
             case .targeting(let lineId):
                 if let line = draft.line(lineId) {
@@ -289,22 +282,6 @@ struct RoutineEditorScreen: View {
 
     private func pick(_ exerciseId: String) {
         sheet = .targeting(draft.add(exerciseId).id)
-    }
-
-    // The sheet stays up until the log answers.
-    private func mint(_ name: String, loadedAs equipment: String) {
-        minting = true
-        mintFailure = nil
-        Task {
-            switch await onCreateMovement(name, equipment) {
-            case .success(let made):
-                minting = false
-                pick(made.id)
-            case .failure(let why):
-                minting = false
-                mintFailure = why.line("“\(name)” wasn’t created")
-            }
-        }
     }
 }
 

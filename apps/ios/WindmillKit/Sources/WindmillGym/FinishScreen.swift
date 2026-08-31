@@ -49,6 +49,22 @@ public enum Finish {
          Tile(value: stats.topE1rm.map(Readout.weight) ?? "—", label: "Top e1RM")]
     }
 
+    // What the receipt says once the log has taken the routine. The form is gone by then, so this is
+    // the whole of the answer, and the room's own note line is behind this sheet. Android's words
+    // exactly (`ui/FinishScreen.kt` `keptAs`).
+    public static func keptAs(_ name: String) -> String {
+        "Kept as \(RoutineDraft.trimmed(name))."
+    }
+
+    // Why `Save routine` is grey, in the routine editor's own words — and by the routine editor's own
+    // predicate, so a name means one thing on this surface. The empty field is the reason the button
+    // is dead RIGHT NOW, so it comes first: a refusal the log raised is older than the name that has
+    // since been cleared, and it cannot be raised again while Save cannot be pressed.
+    public static func keepRefusal(name: String, failure: String?) -> String? {
+        guard RoutineDraft.isNamed(name) else { return RoutineDraft.nameItToSaveIt }
+        return failure
+    }
+
     // A kind this build has never heard of draws nothing; the slot is allowed to be empty.
     public static func recordSentence(_ record: PersonalRecord?, catalog: [Exercise]) -> String? {
         guard let record else { return nil }
@@ -220,16 +236,34 @@ struct FinishScreen: View {
     // Answered by the room after the log said so, never on the tap.
     let kept: Bool
     let coach: CoachDoors
-    // A refusal from `keep` or `discard`. It is drawn HERE, under the control that raised it, because
-    // this sheet covers the room's own note line; the two sites below are mutually exclusive (a
-    // discard is offered only for a slight session, a keep only for one that offers a routine).
+    // A refusal from `keep`, drawn HERE under the button that raised it, because this sheet covers
+    // the room's own note line. A discard never reaches this slot: it empties the sheet before the
+    // nine-second window even starts, so its refusal lands on the room's line, where the sheet is
+    // no longer in the way.
     let failure: String?
     let onKeepRoutine: (String) -> Void
     let onDiscard: () -> Void
     let onDone: () -> Void
 
     @Environment(\.gymSkin) private var skin
-    @State private var routineName = ""
+    // Seeded here rather than in a `.task`, which runs only after the first frame: the sheet would
+    // animate in with an empty field, a grey Save and the empty-name refusal under it, refusing a
+    // lifter for something they have not touched.
+    @State private var routineName: String
+
+    init(finished: FinishedSession, catalog: [Exercise], kept: Bool, coach: CoachDoors,
+         failure: String?, onKeepRoutine: @escaping (String) -> Void,
+         onDiscard: @escaping () -> Void, onDone: @escaping () -> Void) {
+        self.finished = finished
+        self.catalog = catalog
+        self.kept = kept
+        self.coach = coach
+        self.failure = failure
+        self.onKeepRoutine = onKeepRoutine
+        self.onDiscard = onDiscard
+        self.onDone = onDone
+        _routineName = State(initialValue: Readout.weekday(finished.session.startedAtMs))
+    }
 
     var body: some View {
         let head = Finish.head(startedAtMs: finished.session.startedAtMs,
@@ -237,33 +271,65 @@ struct FinishScreen: View {
                                routine: finished.routine,
                                slight: finished.slight,
                                first: finished.isFirst)
-        return ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x5) {
-                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-                    Text(head.title)
-                        .font(WindmillFont.display(30))
-                        .foregroundStyle(skin.ink)
-                    Text(head.subtitle)
-                        .font(WindmillFont.body(17))
-                        .foregroundStyle(skin.inkDim)
-                    Text(head.when)
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
+        return NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+                    // The title stays in the content and never becomes the bar's: it is the largest
+                    // thing on the screen, and `Ended early` is the whole salience of a slight session.
+                    VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+                        Text(head.title)
+                            .font(WindmillFont.display(30))
+                            .foregroundStyle(skin.ink)
+                        Text(head.subtitle)
+                            .font(WindmillFont.body(17))
+                            .foregroundStyle(skin.inkDim)
+                        Text(head.when)
+                            .font(GymType.numeral(12))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+
+                    ReviewReadout(review: finished.review, catalog: catalog)
+
+                    if finished.offersRoutine {
+                        // The keep is the one thing this receipt does that writes, so it is the one
+                        // thing the receipt owes an answer for. The form it stood in is gone by then
+                        // and the room's own line is behind this sheet, which leaves one sentence
+                        // where the form was.
+                        if kept {
+                            Text(Finish.keptAs(routineName))
+                                .font(WindmillFont.body(16))
+                                .foregroundStyle(skin.inkDim)
+                        } else {
+                            keepAsRoutine
+                        }
+                    }
+
+                    if !finished.slight { CoachShareCard(doors: coach) }
+
+                    actions
                 }
-
-                ReviewReadout(review: finished.review, catalog: catalog)
-
-                if finished.offersRoutine && !kept { keepAsRoutine }
-
-                if !finished.slight { CoachShareCard(doors: coach) }
-
-                actions
+                .padding(.horizontal, WindmillSpace.x5)
+                .padding(.top, WindmillSpace.x4)
+                .padding(.bottom, WindmillSpace.x12)
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x12)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Exactly one dismissal per state. Dismissing writes nothing — the session was closed
+                // and saved before the sheet appeared, and the two controls that DO write are the
+                // card's — so it is a toolbar action beside the drag indicator rather than a
+                // full-strength button in the reach band (`12-native-idiom.md`). A receipt is read
+                // sitting down after the workout and never reached for mid-set, which is the
+                // destination `thumb-reach.md` §2 exempts from its top-corner rule, and the swipe
+                // stays in the thumb band besides. The slight branch draws none: `Keep it` is
+                // already the affirmative half of a decided pair, and a second one beside it is the
+                // two-buttons failure `thumb-reach.md` §3.2 names.
+                if !finished.slight {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done", action: onDone)
+                    }
+                }
+            }
         }
-        .task { routineName = Readout.weekday(finished.session.startedAtMs) }
     }
 
     private var keepAsRoutine: some View {
@@ -280,6 +346,9 @@ struct FinishScreen: View {
                     .foregroundStyle(skin.ink)
                     .textFieldStyle(.plain)
                     .frame(minHeight: GymTap.minimum)
+                    // The section head is the only thing naming this field, and a head is not a
+                    // label: without this VoiceOver reads the weekday and nothing else.
+                    .accessibilityLabel("Routine name")
                 Text("tap to rename")
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
@@ -314,14 +383,9 @@ struct FinishScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
-            .disabled(routineName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(unnamed)
 
-            failureLine
-
-            Button("Just keep the session", action: onDone)
-                .font(WindmillFont.body(16, .semibold))
-                .foregroundStyle(skin.inkDim)
-                .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+            refusal(Finish.keepRefusal(name: routineName, failure: failure))
         }
         .padding(WindmillSpace.x4)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
@@ -329,7 +393,9 @@ struct FinishScreen: View {
             .strokeBorder(skin.accent, lineWidth: 1))
     }
 
-    // The session leaves the log at once and the transient carries the way back for nine seconds.
+    // The slight session's decided pair, and the only actions the content draws: dismissing is the
+    // toolbar's. The session leaves the log at once and the transient carries the way back for nine
+    // seconds.
     @ViewBuilder
     private var actions: some View {
         if finished.slight {
@@ -344,22 +410,16 @@ struct FinishScreen: View {
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.alarmInk)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-
-                failureLine
             }
-        } else if !finished.offersRoutine || kept {
-            Button("Done", action: onDone)
-                .font(WindmillFont.body(17, .bold))
-                .foregroundStyle(skin.onAccent)
-                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
     }
 
+    private var unnamed: Bool { !RoutineDraft.isNamed(routineName) }
+
     @ViewBuilder
-    private var failureLine: some View {
-        if let failure {
-            Text(failure)
+    private func refusal(_ line: String?) -> some View {
+        if let line {
+            Text(line)
                 .font(GymType.numeral(12.5))
                 .foregroundStyle(skin.alarmInk)
                 .lineSpacing(3)

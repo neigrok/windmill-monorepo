@@ -29,6 +29,7 @@ public struct GymRoom: View {
     @State private var keptRoutine = false
     @State private var starting = false
     @State private var savingRoutine = false
+    @State private var keepingRoutine = false
     @State private var routineFailure: String?
     @State private var note: String?
     // The review sheet, over whatever is beneath it; a session starting takes it down.
@@ -159,13 +160,14 @@ public struct GymRoom: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
-            // Over the session it closed. Dismissing it leaves the lifter in the workout they finished.
-            .sheet(item: $finished) { closed in
+            // Over the session it closed. Dismissing it leaves the lifter in the workout they finished
+            // — and takes the refusal with it, however the sheet went, an interactive swipe included.
+            .sheet(item: $finished, onDismiss: { finishFailure = nil }) { closed in
                 FinishScreen(finished: closed, catalog: store.catalog, kept: keptRoutine,
                              coach: doors(to: closed.session.id), failure: finishFailure,
                              onKeepRoutine: { name in Task { await keep(closed.sets, as: name) } },
                              onDiscard: { discard(closed.session) },
-                             onDone: { finished = nil; finishFailure = nil })
+                             onDone: { finished = nil })
                     .presentationBackground(skin.canvas)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
@@ -676,11 +678,19 @@ public struct GymRoom: View {
         }
     }
 
+    // The door closes while one is in flight, as it does on every other write this room owns: the log
+    // mints no id for a routine, so a second tap is a second routine and not a replay.
     private func keep(_ sets: [TrainingSet], as name: String) async {
+        guard !keepingRoutine else { return }
+        keepingRoutine = true
+        defer { keepingRoutine = false }
         note = nil
         finishFailure = nil
         guard await store.keep(sets, asRoutineNamed: name) != nil else {
-            finishFailure = "the log didn’t answer — the routine wasn’t kept"
+            // The write outlives the sheet, so a lifter who swipes it away while the log thinks is
+            // told on the room's own line instead of on a screen that is no longer presented.
+            let said = "the log didn’t answer — the routine wasn’t kept"
+            if finished == nil { note = said } else { finishFailure = said }
             return
         }
         keptRoutine = true
