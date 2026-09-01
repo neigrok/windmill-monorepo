@@ -35,11 +35,18 @@ export function LogNotOpen({ log, onSignIn }) {
 export function LogList({ log, onSignIn }) {
   const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
-  // A session withheld for deletion is off the log for the length of its window — the transient is
-  // the only place it still exists, and the only way back — and off it for good once the store has
-  // answered for it.
+  // The page, answered TWICE: `sessions` is what the ACCOUNT holds — the page less what the store
+  // has answered a delete for — and `shown` is what the withheld window leaves to draw. A session
+  // withheld for deletion is off the log for the length of its window, the transient being the only
+  // place it still exists and the only way back, and off it for good once the store has answered.
+  // The stance reads the account and the rows read the window: a window decides which rows are drawn
+  // and never what state a screen is in (`13-gestures.md`). The settled delete leaves the read here
+  // too — a re-read that never answers may not turn the last session's delete into a log with no
+  // rows and no words on it.
+  const settled = log.gone('session');
   const discarded = log.hidden('session');
-  const shown = summaries.filter((summary) => !discarded.has(summary.id));
+  const sessions = summaries.filter((summary) => !settled.has(summary.id));
+  const shown = sessions.filter((summary) => !discarded.has(summary.id));
   const weeks = weeksOf(shown, { complete: older.status === 'end' });
   // The reading at the head and the chip in the reach band are the two halves of one number.
   const weights = useBodyweight(log);
@@ -75,7 +82,10 @@ export function LogList({ log, onSignIn }) {
       )}
       {phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
       {phase === 'failed' && <LogNotOpen log={log} onSignIn={onSignIn} />}
-      {phase !== 'loading' && phase !== 'failed' && shown.length === 0 && (
+      {/* Off the ACCOUNT: an account holding one session the window has taken off the log is not an
+          account with none, so nothing invites the lifter to log their first one while Undo stands.
+          Between the two stances the log draws neither line. */}
+      {phase !== 'loading' && phase !== 'failed' && sessions.length === 0 && (
         <>
           <p className="gym-quiet">No sessions yet.</p>
           <p className="gym-quiet">The first one you log lands here, newest first.</p>
@@ -95,7 +105,9 @@ export function LogList({ log, onSignIn }) {
               </ul>
             </section>
           ))}
-          {phase !== 'failed' && <LogFoot older={older} oldest={shown[shown.length - 1]} />}
+          {/* The oldest the ACCOUNT holds: `first session · …` names the day training started, and a
+              window holding the bottom row may not move that day up to the row above it. */}
+          {phase !== 'failed' && <LogFoot older={older} oldest={sessions[sessions.length - 1]} />}
         </>
       )}
       <div className="gym-reach-spacer" aria-hidden="true" />
@@ -233,10 +245,16 @@ export function SessionDetail({ id, log }) {
   }
 
   const { session } = view.data.detail;
-  // Fold the moves in, then take out what the window is holding, before anything is derived off the
-  // sets: a withheld delete is as gone from this screen as a settled one, and comes back on Undo.
-  const goneSets = log.hidden('set');
-  const sets = setsAfter(view.data.detail.sets, moves).filter((set) => !goneSets.has(set.id));
+  // Fold the moves in, then answer TWICE: `logged` is the session as the ACCOUNT holds it — the read
+  // less what the store has answered a delete for — and `sets` is what the withheld window leaves to
+  // draw. A withheld delete is as gone from the drawn rows as a settled one and comes back on Undo;
+  // the settled one leaves the read too, because nothing in the delete's own path takes this read
+  // again — the send re-reads the log's page, not this session — and without it the last set's
+  // delete would leave a session with no rows and no words on it for ever.
+  const settledSets = log.gone('set');
+  const hiddenSets = log.hidden('set');
+  const logged = setsAfter(view.data.detail.sets, moves).filter((set) => !settledSets.has(set.id));
+  const sets = logged.filter((set) => !hiddenSets.has(set.id));
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
   const frozen = planFrozenLabel(session);
   return (
@@ -251,10 +269,19 @@ export function SessionDetail({ id, log }) {
             {frozen}
           </p>
         )}
-        {closedOnItsOwn(session, sets) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
+        {/* Off the ACCOUNT: how the session ENDED is a fact about the log and not about the rows on
+            screen, so a window that has taken the last set off the screen may neither raise the
+            claim nor drop it. The detail carries no `closedItself` — only the log's own page does —
+            so the claim is inferred here from the last set's instant, and a SETTLED delete of that
+            set takes the instant with it and the line goes quiet while the log row, reading the
+            store's own flag, keeps it. A silence is what this screen may spend to stay honest. */}
+        {closedOnItsOwn(session, logged) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
         {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>Session review ›</a>}
       </header>
-      {sets.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
+      {/* Off the ACCOUNT, and the meta line above it off the ROWS: a session holding one set the
+          window has taken off the screen is not an empty session, while `3 working sets · 1.2 t`
+          counts what is drawn under it. Between the two stances the screen draws neither. */}
+      {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
         const reading = planReadingOf(session, exerciseId);
         // The note lands on the first WORKING set; a warmup never carries it.

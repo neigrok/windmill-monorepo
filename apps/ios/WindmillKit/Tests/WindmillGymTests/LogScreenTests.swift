@@ -1,5 +1,8 @@
+import SwiftUI
+import UIKit
 import XCTest
 @testable import WindmillGym
+@testable import WindmillPlatform
 
 final class LogWeeksTests: XCTestCase {
     private func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12) -> Int64 {
@@ -159,5 +162,117 @@ final class LogWeeksTests: XCTestCase {
 
     func testAnEmptyLogFoldsIntoNoWeeksAtAll() {
         XCTAssertEqual(LogWeeks.fold([], deviceOnly: [], reach: .whole, now: at(2026, 8, 10)), [])
+    }
+}
+
+// The empty stance is a claim about the log the ACCOUNT holds, and only a screen that has been laid
+// out can be asked whether it drew one. Text cannot be read back out of a hosted SwiftUI view (no
+// accessibility client runs under `xcodebuild test`), so this is the instrument
+// `RoutineScreensHostingTests` uses: `No sessions yet.` is a block with a height, and a log that
+// draws it is taller than the same log without it.
+@MainActor
+final class LogScreenHostingTests: XCTestCase {
+    private var stem: URL!
+    // A second shelf: the device's own log is written to disk, so two stores over one stem are one
+    // device and the empty one would open on the other's session.
+    private var spare: URL!
+
+    override func setUp() async throws {
+        stem = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("log-host-\(UUID().uuidString)")
+        spare = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("log-host-\(UUID().uuidString)")
+    }
+
+    override func tearDown() async throws {
+        for shelf in [stem, spare] {
+            for ext in ["queue.json", "catalog.json", "local.json", "account.json", "bodyweight.json"] {
+                try? FileManager.default.removeItem(at: shelf!.appendingPathExtension(ext))
+            }
+        }
+    }
+
+    // Signed out on purpose: it is the seat gym opens on, and the one where a discard never asks the
+    // log, so the settle has only the store's own line to leave the read by.
+    private func makeStore(on shelf: URL) -> TrainingStore {
+        TrainingStore(queue: SetQueue(url: shelf.appendingPathExtension("queue.json"), deviceHolds: nil),
+                      deviceCatalog: DeviceCatalog(url: shelf.appendingPathExtension("catalog.json")),
+                      accountCopy: AccountCopy(url: shelf.appendingPathExtension("account.json")),
+                      localLog: LocalLog(url: shelf.appendingPathExtension("local.json"), deviceHolds: nil),
+                      bodyweightStore: BodyweightStore(url: shelf.appendingPathExtension("bodyweight.json")),
+                      undoWindowMs: 0,
+                      sync: { _ in nil })
+    }
+
+    private let seat = Account(api: WindmillApi(baseURL: URL(string: "https://windmill.works")!,
+                                                credential: { nil }), user: nil)
+
+    private func logged(on shelf: URL) async throws -> (TrainingStore, String) {
+        let store = makeStore(on: shelf)
+        await store.connect(to: seat)
+        guard case .success(let opened) = await store.start() else {
+            throw XCTSkip("the session never opened on this device")
+        }
+        await store.choose("bench-press")
+        await store.logSet(weightKg: 82.5, reps: 5)
+        guard case .closed = await store.finish() else {
+            throw XCTSkip("the session never closed")
+        }
+        return (store, opened.id)
+    }
+
+    private func screen(_ store: TrainingStore) -> some View {
+        LogScreen(store: store, onOpen: { _ in }, onBodyweight: {},
+                  share: { _ in CoachDoors(base: URL(string: "https://windmill.works")!,
+                                           mint: { .failure(.noAnswer) }, revoke: { nil }) },
+                  discard: { _ in }, say: { _ in })
+    }
+
+    private func height(of store: TrainingStore) async throws -> CGFloat {
+        let controller = UIHostingController(rootView: screen(store).environment(\.gymSkin, GymSkin.instrument)
+                                                                    .environment(\.colorScheme, .dark))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.layoutIfNeeded()
+        for _ in 0..<30 {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        defer { window.isHidden = true }
+        return try XCTUnwrap(scrollView(in: window)).contentSize.height
+    }
+
+    private func scrollView(in view: UIView) -> UIScrollView? {
+        if let found = view as? UIScrollView { return found }
+        for child in view.subviews {
+            if let found = scrollView(in: child) { return found }
+        }
+        return nil
+    }
+
+    // Both directions of the one law, measured rather than read: the window takes the row and leaves
+    // the stance alone, and the settle brings the stance on. A log drawing neither its rows nor its
+    // words is the failure this pins — `No sessions yet.` over a session one Undo away is the other.
+    func testTheEmptyStanceFollowsTheLogTheAccountHoldsAndNotTheDrawnRows() async throws {
+        let (held, sessionId) = try await logged(on: stem)
+        held.withhold(session: sessionId)
+        XCTAssertTrue(held.recent.isEmpty, "the row is out of the drawn log")
+        XCTAssertEqual(held.allSessions.count, 1, "and the account still holds the session")
+        let whileHeld = try await height(of: held)
+
+        let none = makeStore(on: spare)
+        await none.connect(to: seat)
+        XCTAssertTrue(none.allSessions.isEmpty, "the empty log is not empty")
+        let whenEmpty = try await height(of: none)
+
+        XCTAssertGreaterThan(whileHeld, 0, "the log laid nothing out")
+        XCTAssertGreaterThan(whenEmpty, whileHeld + 60,
+                             "`No sessions yet.` is drawn over a log the account still holds one for")
+
+        let went = await held.settleDelete(session: sessionId)
+        XCTAssertTrue(went)
+        let whenSettled = try await height(of: held)
+
+        XCTAssertEqual(whenSettled, whenEmpty,
+                       "the delete landed, so the words arrive — a log with no rows and no stance is a blank page")
     }
 }

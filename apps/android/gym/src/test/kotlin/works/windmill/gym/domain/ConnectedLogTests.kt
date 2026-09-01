@@ -8,7 +8,6 @@ class ConnectedLogTests {
     private val everySentence = listOf(
         ConnectedLog.title,
         ConnectedLog.head,
-        ConnectedLog.sub,
         ConnectedLog.sundayLabel,
         ConnectedLog.sundayLine,
         ConnectedLog.mondayLabel,
@@ -16,13 +15,11 @@ class ConnectedLogTests {
         ConnectedLog.precondition,
         ConnectedLog.connect,
         ConnectedLog.onTheWeb,
-        ConnectedLog.free,
         ConnectedLog.canDoHead,
         ConnectedLog.canDo,
         ConnectedLog.cannotDoHead,
         ConnectedLog.cannotDo,
         ConnectedLog.deleteLevel,
-        ConnectedLog.whereItLives,
         ConnectedLog.notNamedHere,
         ConnectedLog.deviceOnly,
     ) + ConnectedLog.truths
@@ -40,8 +37,8 @@ class ConnectedLogTests {
 
         assertEquals(emptyList<String>(), offenders)
         assertTrue(
-            "where the price stood, the card says connecting is free",
-            ConnectedLog.free.startsWith("Connecting your log is free."),
+            "the card still says the price, once, in the line that says who it is for",
+            ConnectedLog.precondition.endsWith("the log stays free either way."),
         )
     }
 
@@ -88,12 +85,18 @@ class ConnectedLogTests {
         )
     }
 
+    // Every fact is said once, and the ones that are not this card's are pointed at rather than
+    // restated: the price rides in the precondition, the connections list and its Disconnect are the
+    // web's, behind the row at the head of this card.
     @Test
-    fun thePitchIsTheSameSentenceTheWebAndIosConnectPagesDraw() {
+    fun theCardSaysThePriceOnceAndRestatesNothingTheWebOwns() {
         assertEquals(
-            "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the " +
-                "assistant you already use.",
-            ConnectedLog.sub,
+            listOf(ConnectedLog.precondition),
+            everySentence.filter { it.contains("free", ignoreCase = true) },
+        )
+        assertEquals(
+            emptyList<String>(),
+            everySentence.filter { it.contains("disconnect", ignoreCase = true) },
         )
     }
 
@@ -110,7 +113,7 @@ class ConnectedLogTests {
             emptyList<String>(),
             everySentence.filter { it.contains(" ago") || it.lowercase().contains("last read") },
         )
-        assertTrue(ConnectedLog.notNamedHere.contains("does not read that list"))
+        assertTrue(ConnectedLog.notNamedHere.contains("does not read your connections"))
     }
 
     @Test

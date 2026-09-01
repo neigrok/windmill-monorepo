@@ -111,6 +111,20 @@ object LogFold {
         }
     }
 
+    // The head over the weeks. Both halves count what is IN HAND: the wire answers pages and there
+    // is no total to ask for. `logHolds` is whether the ACCOUNT has a finished session, which is a
+    // different question from whether any row is drawn — a log whose rows a window is holding is not
+    // one still opening, and one read to its end has nothing left to count.
+    fun head(weeks: List<Week>, older: Older, logHolds: Boolean): String? {
+        if (weeks.isEmpty()) {
+            if (logHolds || older == Older.End || older == Older.Failed) return null
+            return "opening the log…"
+        }
+        val sessions = Readout.sessionCount(weeks.sumOf { it.rows.size })
+        if (weeks.size == 1) return "$sessions · 1 week loaded"
+        return "$sessions · ${weeks.size} weeks loaded"
+    }
+
     private fun monday(ms: Long): Long {
         val zone = ZoneId.systemDefault()
         val date = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
@@ -135,6 +149,10 @@ fun LogScreen(
     val nowMs = System.currentTimeMillis()
     val onThisDevice = store.shelved.map { it.id }.toSet()
     val weeks = LogFold.weeks(store.recent, onThisDevice, complete = store.older == Older.End, nowMs = nowMs)
+    // The rows are the window's and the STANCE is the log's: an account holding one session the window
+    // has taken off the screen is not an empty log — the row comes back on Undo, and both the
+    // invitation and `opening the log…` would be drawn over training that is still there.
+    val logHolds = store.allSessions.any { !it.session.isOpen }
     val load: () -> Unit = { scope.launch { store.loadOlder() } }
     var weighingIn by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
@@ -160,7 +178,7 @@ fun LogScreen(
             ) {
                 item("head") {
                     Column {
-                        headLine(weeks, store.older)?.let {
+                        LogFold.head(weeks, store.older, logHolds)?.let {
                             Text(it, style = GymType.numeral(13), color = GymSkin.inkFaint)
                         }
                         BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
@@ -169,12 +187,13 @@ fun LogScreen(
 
                 // Three silences: the log said so · the read failed · the log has not answered yet.
                 if (weeks.isEmpty()) {
-                    when (store.older) {
-                        Older.End -> item("empty") { Empty() }
-                        Older.Failed -> item("failed") {
+                    // Between the two stances — every row held by a window, over a log that still
+                    // holds them — the room draws neither line.
+                    when {
+                        store.older == Older.End && !logHolds -> item("empty") { Empty() }
+                        store.older == Older.Failed -> item("failed") {
                             LogFoot(Older.Failed, first = null, onLoad = load)
                         }
-                        else -> Unit
                     }
                     return@LazyColumn
                 }
@@ -196,7 +215,10 @@ fun LogScreen(
                 item("foot") {
                     LogFoot(
                         older = store.older,
-                        first = weeks.lastOrNull()?.rows?.lastOrNull()?.summary,
+                        // The day training started is a claim about the ACCOUNT, not a caption on
+                        // the rows: a window holding the oldest row may not move it. `allSessions`
+                        // is newest first, so the last finished one is the first ever logged.
+                        first = store.allSessions.lastOrNull { !it.session.isOpen },
                         onLoad = load,
                     )
                 }
@@ -447,15 +469,4 @@ private fun Empty() {
             color = GymSkin.inkFaint,
         )
     }
-}
-
-// Both halves count what is IN HAND: the wire answers pages and there is no total to ask for.
-private fun headLine(weeks: List<LogFold.Week>, older: Older): String? {
-    if (weeks.isEmpty()) {
-        if (older == Older.End || older == Older.Failed) return null
-        return "opening the log…"
-    }
-    val sessions = Readout.sessionCount(weeks.sumOf { it.rows.size })
-    if (weeks.size == 1) return "$sessions · 1 week loaded"
-    return "$sessions · ${weeks.size} weeks loaded"
 }

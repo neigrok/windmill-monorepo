@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { WINDOW_CLOSED } from '../../../src/products/gym/withheld.js';
+import { firstSessionLabel, loadedLine } from '../../../src/products/gym/log.js';
 import { dateLocalOf } from '../../../src/products/gym/bodyweight/bodyweight.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, roomLog, settle,
@@ -248,6 +249,97 @@ test('a routine delete taken back is never sent, and the row is back on the home
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
   assert.deepEqual(wire, ['GET /routines']);
+});
+
+// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// The sharpest instance in the room, because this stance carries an ACT: every other one only says
+// something that is wrong.
+test('the home’s empty stance and its Build a routine read the store: a held delete of the only routine offers no act, and the settled one does', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = routinesOnTheWire();
+  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
+  await settle();
+  const quiet = () => findByClass(home.screen(), 'gym-quiet').map(textOf);
+  const build = () => elementsOf(home.screen())
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'Button' && textOf(each.props.children) === 'Build a routine');
+  assert.deepEqual(quiet(), []);
+  assert.deepEqual(build(), []);
+
+  overflowOf(home.screen()).props.items[1].run();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home, which is all the window decides');
+  assert.deepEqual(quiet(), [], 'the account still holds a routine, so nothing on this home says it holds none');
+  assert.deepEqual(build(), [], 'least of all an act offered over a program that has one');
+  assert.equal(home.log().transient.action.label, 'Undo');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  // The read this home holds was taken while the routine was there and is never taken again, so the
+  // stance becomes true only because the settled delete leaves the READ as well as the drawn rows.
+  assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
+  assert.deepEqual(quiet(), ['No routines yet.', 'Finish a session and gym offers to keep it as one — or write one out now.']);
+  assert.equal(build().length, 1, 'the store answered, and only now is the offer honest');
+});
+
+// The other thing this home reads a list for, and it is a WRITE: a copy is filed past the end of the
+// program. Nothing re-reads the home behind a settled delete, so the raw read is one long for the
+// life of the room and every copy after it would be filed one place high.
+test('a routine copy is filed past the end of the account’s program, and a settled delete moves that end', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = [];
+  const filed = [];
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    wire.push(`${method} ${path}`);
+    if (path === '/routines' && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          routines: [
+            { id: 'rt_push', name: 'Push A', position: 0, revision: 1, entries: [] },
+            { id: 'rt_pull', name: 'Pull A', position: 1, revision: 1, entries: [] },
+          ],
+        }),
+      };
+    }
+    if (path === '/routines' && method === 'POST') {
+      filed.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => JSON.parse(options.body) };
+    }
+    if (path === '/routines/rt_push' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
+  await settle();
+  const overflow = () => elementsOf(home.screen())
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'Overflow');
+
+  overflow()[1].props.items[0].run();
+  await settle();
+  assert.equal(filed.length, 1);
+  assert.equal(filed[0].position, 2, 'two routines in the program, so the copy is filed third');
+
+  // The first routine deleted, held: the account still holds two, so the end of the program has not
+  // moved and neither has the place the next copy is filed at.
+  overflow()[0].props.items[1].run();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Pull A'], 'the row is off the home');
+  overflow()[0].props.items[0].run();
+  await settle();
+  assert.equal(filed.length, 2);
+  assert.equal(filed[1].position, 2, 'a window decides which rows are drawn, and never where a write is filed');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /routines/rt_push']);
+  // The read this home holds is never taken again — the delete's own send does not re-read it — so
+  // the copy lands in the right place only because the settled delete leaves the READ as well.
+  overflow()[0].props.items[0].run();
+  await settle();
+  assert.equal(filed.length, 3);
+  assert.equal(filed[2].position, 1, 'the store answered, and the program is one routine long');
 });
 
 test('leaving the room abandons a held routine delete: the row is back, and nothing ever went', async (t) => {
@@ -608,14 +700,164 @@ test('a session the window is holding is off the log, and on it again the moment
     .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow')
     .map((each) => each.props.summary.id);
 
-  assert.deepEqual(rows(draw(roomLog({ summaries, held }))), ['ses_2']);
+  const one = draw(roomLog({ summaries, held }));
+  assert.deepEqual(rows(one), ['ses_2']);
+  // The count captions the rows a reader can see, so it follows the window down with them: `N
+  // sessions · N weeks loaded` is a reading of the list under it and never a claim about the account.
+  assert.deepEqual(findByClass(one, 'gym-log-count').map(textOf), [loadedLine(1, 1)]);
+  assert.deepEqual(findByClass(draw(roomLog({ summaries, held: [] })), 'gym-log-count').map(textOf), [loadedLine(2, 1)]);
 
-  // The only session there is, withheld: the log reads as the log of an account with none.
+  // The only session there is, withheld: the row is off the log, and the log says nothing about the
+  // account — which still holds it, and hands it back on Undo. The stance is proved both ways in
+  // `the log's empty stance reads the store…` below.
   const alone = draw(roomLog({ summaries: [summaries[0]], held }));
   assert.deepEqual(rows(alone), []);
-  assert.equal(textOf(elementsOf(alone).filter((each) => each.props?.className === 'gym-quiet')[0]), 'No sessions yet.');
+  assert.deepEqual(findByClass(alone, 'gym-quiet').map(textOf), []);
 
   assert.deepEqual(rows(draw(roomLog({ summaries, held: [] }))), ['ses_1', 'ses_2']);
+
+  // `first session · …` names the day training started, which is the account's and not the drawn
+  // list's: a window holding the bottom row may not promote the row above it to the first one.
+  const bottom = [{ key: 'session:ses_2', kind: 'session', id: 'ses_2', line: 'Session deleted.', at: 1, settling: false }];
+  const held2 = draw(roomLog({ summaries, held: bottom }));
+  assert.deepEqual(rows(held2), ['ses_1']);
+  // The foot is its own component, so the list's tree holds it as an element: drawing it is calling it.
+  const foot = elementsOf(held2).find((each) => typeof each.type === 'function' && each.type.name === 'LogFoot');
+  assert.equal(foot.props.oldest.id, 'ses_2');
+  assert.equal(textOf(findByClass(foot.type(foot.props), 'gym-log-bottom')[0]), firstSessionLabel(summaries[1].startedAt));
+  assert.notEqual(firstSessionLabel(summaries[1].startedAt), firstSessionLabel(summaries[0].startedAt));
+});
+
+// The log's own instance of the law, and the half without which the fix is worse than the defect:
+// the settled delete has to leave the READ. `reloadLog` is what usually does it here — so this
+// answers the re-read with a store that still has the session, which is what a failed or stale read
+// looks like, and the stance is honest anyway.
+test('the log’s empty stance reads the store: a held delete of the only session invites nothing, and the settled one does even when the re-read is stale', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_000_600_000 };
+  const wire = [];
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    wire.push(`${method} ${path}`);
+    if (path === '/bodyweight') return { ok: true, status: 200, json: async () => ({ entries: [], latest: null }) };
+    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
+    if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
+    if (path === '/sessions/ses_1' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
+    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [] }) };
+    if (path === '/sessions/ses_1/review') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ slight: true, stats: { durationMs: 600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
+      };
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
+  // The store the ROOM reads, and it never loses the session: the re-read behind the delete answers
+  // the same page it answered on the way in.
+  const api = quietApi({ sessions: async () => [session] });
+  const view = renderHook(t, () => {
+    const log = useTrainingLog({ api });
+    return { log, logScreen: LogList({ log, onSignIn: () => {} }), finish: FinishScreen({ id: 'ses_1', log }) };
+  });
+  await settle();
+  const quiet = () => findByClass(view.tree.logScreen, 'gym-quiet').map(textOf);
+  const rows = () => elementsOf(view.tree.logScreen)
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow').length;
+  const short = () => {
+    const element = elementsOf(view.tree.finish).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
+    return element.type(element.props);
+  };
+  assert.equal(rows(), 1);
+  assert.deepEqual(quiet(), []);
+
+  findByClass(short(), 'gym-short-discard')[0].props.onClick();
+  await settle();
+  assert.equal(rows(), 0, 'the row is off the log, which is all the window decides');
+  assert.deepEqual(quiet(), [], 'and the account still holds the session, so nothing offers to log the first one');
+  assert.equal(view.tree.log.transient.action.label, 'Undo');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.deepEqual(quiet(), ['No sessions yet.', 'The first one you log lands here, newest first.']);
+});
+
+// The other screen that reads the log's page for a decision, and the decision is a REFUSAL with a
+// door in it. `withhold` is the room's own verb, the one `ShortSession` calls; this drives it
+// directly so the test stays on the screen whose read is under test.
+test('the past workout’s overlap refusal reads the account: it stands while the window holds the session it names, and falls away once the store has answered', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const { startedAtOf } = await loadScreen('products/gym/backfill.js');
+  const startedAt = startedAtOf({ days: 1, hour: 17, minute: 30 });
+  const ghost = { id: 'ses_1', startedAt, finishedAt: startedAt + 60 * 60_000 };
+  const wire = [];
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const method = options.method ?? 'GET';
+    wire.push(`${method} ${path}`);
+    if (path === '/sessions/ses_1' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
+    if (path === '/sessions' && method === 'POST') return { ok: true, status: 200, json: async () => JSON.parse(options.body) };
+    if (/^\/sessions\/ses_[^/]+\/(sets|finish)$/.test(path)) return { ok: true, status: 200, json: async () => ({}) };
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  // The re-read behind the delete answers the page it answered on the way in — a `reloadLog` that
+  // did not land, which is the state `useTrainingLog`'s own catch leaves behind for the room's life.
+  const api = { exercises: async () => [{ id: 'ex_1', name: 'Bench' }], sessions: async () => [ghost], preferences: async () => ({}) };
+  const past = await roomWith(t, 'products/gym/Backfill.jsx', ({ Backfill }, log) => Backfill({ log }), api);
+  await settle();
+  const addMovement = async () => {
+    elementsOf(past.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'Button').props.onClick();
+    past.view.redraw();
+    await settle();
+    elementsOf(past.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'MovementPicker').props.onPick('ex_1');
+    past.view.redraw();
+    await settle();
+  };
+  // Every attempt starts from a cleared refusal — the same duration, pressed again — so what is on
+  // screen afterwards is this attempt's answer and never the last one's.
+  const save = async () => {
+    findByClass(past.screen(), 'gym-chip').find((chip) => textOf(chip) === '1 h').props.onClick();
+    past.view.redraw();
+    findByClass(past.screen(), 'gym-save-do')[0].props.onClick();
+    await settle();
+    past.view.redraw();
+  };
+  const refusal = () => findByClass(past.screen(), 'gym-overlap-body').map(textOf);
+  const door = () => findByClass(past.screen(), 'gym-overlap-open').map((each) => each.props.href);
+
+  await addMovement();
+  await save();
+  assert.equal(refusal().length, 1, 'the account holds that session, so the workout that crosses it is refused');
+  assert.deepEqual(door(), ['#/gym/session/ses_1']);
+  assert.deepEqual(wire, [], 'and nothing was filed');
+
+  past.log().withhold({
+    kind: 'session',
+    id: 'ses_1',
+    line: 'Session deleted.',
+    send: async () => { await fetch(`${API_BASE}/v1/gym/sessions/ses_1`, { method: 'DELETE' }); await past.log().reloadLog(); },
+  });
+  past.view.redraw();
+  await save();
+  assert.equal(refusal().length, 1, 'a window decides which rows are drawn, and never whether a workout may be filed');
+  assert.deepEqual(door(), ['#/gym/session/ses_1'], 'and the door it offers still opens on a session that is there');
+  assert.deepEqual(wire, [], 'still nothing filed');
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  past.view.redraw();
+  assert.deepEqual(wire, ['DELETE /sessions/ses_1']);
+  await save();
+  assert.deepEqual(refusal(), [], 'the store answered, so nothing is left to cross');
+  assert.deepEqual(door(), [], 'and no door onto `This session isn’t in your log.`');
+  assert.equal(wire.filter((line) => line === 'POST /sessions').length, 1, 'and the workout is filed');
 });
 
 // ── The two verbs that used to ask a question ───────────────────────────────

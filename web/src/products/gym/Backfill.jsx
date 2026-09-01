@@ -43,7 +43,12 @@ export function Backfill({ log }) {
       setRefused(true);
       return;
     }
-    const crossed = overlapWith({ startedAt, durationMs }, log.summaries);
+    // Against what the ACCOUNT holds: the page less the sessions the store has answered a delete
+    // for. Nothing re-reads the page behind a settled session delete that the log's own reload
+    // missed, so the raw page would refuse this workout in the name of a session that is not there
+    // and offer a door onto `This session isn’t in your log.`
+    const held = log.gone('session');
+    const crossed = overlapWith({ startedAt, durationMs }, log.summaries.filter((summary) => !held.has(summary.id)));
     if (crossed) {
       setOverlap(crossed);
       return;

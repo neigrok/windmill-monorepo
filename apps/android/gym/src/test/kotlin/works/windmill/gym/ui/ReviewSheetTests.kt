@@ -52,6 +52,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
@@ -460,4 +461,37 @@ class ReviewSheetTests {
         compose.onNodeWithText("Proposal · $long").assertIsDisplayed()
         scope.cancel()
     }
+
+
+    // A VERDICT, not a row: `superseded` is decided against the routine as the ACCOUNT holds it, so a
+    // window taking the row off the routines home may not make a proposal decidable again. Reached by
+    // deleting a routine and opening the same proposal from the Coach tab inside the nine seconds.
+    @Test
+    fun aSupersededProposalStaysSupersededWhileAWindowHoldsItsRoutine() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, kept) = store(scope, server)
+        server.propose(proposal(kept, listOf(retarget("bench-press", 1)))
+            .copy(baseRevision = kept.revision - 1))
+        sheet(store, kept, mutableListOf())
+
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.onNodeWithText(supersededSentence).assertIsDisplayed()
+        compose.onNodeWithText("Apply").assertDoesNotExist()
+
+        compose.runOnIdle { store.withhold(Deletion.Routine(kept.id, kept.name)) }
+
+        compose.runOnIdle {
+            assertEquals("the row is off the routines home", emptyList<String>(),
+                         store.routines.map { it.id })
+            assertEquals("and the program still holds the revision this is judged against",
+                         listOf(kept.id), store.allRoutines.map { it.id })
+        }
+        compose.onNodeWithText(supersededSentence).assertIsDisplayed()
+        compose.onNodeWithText("Apply").assertDoesNotExist()
+        scope.cancel()
+    }
 }
+
+private const val supersededSentence =
+    "This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands."

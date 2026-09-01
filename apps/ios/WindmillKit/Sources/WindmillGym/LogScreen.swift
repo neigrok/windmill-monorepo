@@ -115,17 +115,20 @@ struct LogScreen: View {
     @State private var minting = false
 
     var body: some View {
-        let weeks = LogWeeks.fold(store.recent, deviceOnly: store.deviceOnly,
-                                  reach: store.logFoot == .bottom
-                                      ? .whole : .served(oldest: store.servedOldestMs),
-                                  now: Int64(Date().timeIntervalSince1970 * 1000))
+        let reach: LogWeeks.Reach = store.logFoot == .bottom
+            ? .whole : .served(oldest: store.servedOldestMs)
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        // The empty stance and the day the log began are claims about the log the ACCOUNT holds and
+        // read `allSessions`; the week sections and the `N sessions · N weeks loaded` that captions
+        // them are what the window leaves, so one fold is all this body needs (`13-gestures.md`).
+        let weeks = LogWeeks.fold(store.recent, deviceOnly: store.deviceOnly, reach: reach, now: now)
         return List {
             Section { head(weeks.count) }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x5,
                                           bottom: WindmillSpace.x2, trailing: WindmillSpace.x5))
-            if store.recent.isEmpty, store.logFoot == .bottom {
+            if store.allSessions.isEmpty, store.logFoot == .bottom {
                 Section { nothingYet }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -346,7 +349,9 @@ struct LogScreen: View {
                 .tint(skin.inkFaint)
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
         case .bottom:
-            if let first = store.recent.last {
+            // The oldest the ACCOUNT holds: a withheld delete takes a row off the screen, never the
+            // day the log began.
+            if let first = store.allSessions.last {
                 Text("first session · \(Readout.dateWithYear(first.session.startedAtMs))")
                     .font(GymType.numeral(12.5))
                     .foregroundStyle(skin.inkFaint)

@@ -452,6 +452,28 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertNil(server.written["rt_1"])
     }
 
+    // The replay reads `removed` off a routine that is really gone. A delete still inside its window
+    // is not gone — nothing has been sent — so the question is what the ACCOUNT holds and not what the
+    // list is drawing; read off the drawn list, one swipe and one stale card would report the routine
+    // and its ledger destroyed while an Undo still reaches both.
+    func testAReplayedRemovalAsksWhatTheAccountHoldsAndNotWhatTheListDraws() async {
+        let server = seeded()
+        server.ledger = []
+        let store = store(server)
+        await store.connect(to: account(signedIn: true))
+        store.withhold(routine: pushA())
+        XCTAssertEqual(store.routines, [], "the row is out of the drawn list")
+        XCTAssertEqual(store.allRoutines, [pushA()], "and the account still holds the routine")
+
+        let outcome = await store.apply(heavier(intent: .remove))
+
+        XCTAssertEqual(outcome, .gone, "the proposal is gone; the routine is not")
+        XCTAssertEqual(server.written["rt_1"], pushA(), "and nothing was sent to remove it")
+
+        store.restore(routine: pushA())
+        XCTAssertEqual(store.routines, [pushA()], "the Undo still reaches it")
+    }
+
     func testATapTheLogNeverAnsweredLeavesTheCardWhereItWas() async {
         let server = seeded()
         let store = store(server)

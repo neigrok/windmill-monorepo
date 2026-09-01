@@ -113,8 +113,10 @@ fun ReviewSheet(
     }
 
     // A routine that has moved PAST the revision this diff was written against has superseded it, and
-    // the log will refuse the tap.
-    val held = store.routine(routineId)
+    // the log will refuse the tap. Read off the PROGRAM and never the drawn list: a window taking the
+    // row off the routines home would answer `not superseded` for want of a routine to compare, and
+    // this sheet would offer an Apply the log is about to refuse.
+    val held = store.allRoutines.firstOrNull { it.id == routineId }
     val standing = proposal
     val superseded = standing?.supersededBy(held) == true
     val decidable = standing != null && standing.isPending && !superseded && !overtaken

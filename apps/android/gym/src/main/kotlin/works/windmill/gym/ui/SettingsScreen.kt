@@ -200,16 +200,9 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             Text("your connections", style = GymType.numeral(13), color = GymSkin.accent)
             Chevron()
         }
-        // The routines list no longer pitches this, so the door and the sentence that explains it
-        // both live here.
-        Text(
-            ConnectedLog.sub,
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkDim,
-        )
-        // The offer says who it is for BEFORE it is made. This is the pitch's own honesty line — it
-        // rules a lifter out rather than in — and it came off the surface with the routines-list card
-        // that used to carry it, leaving a door that asked for nothing and promised no precondition.
+        // The offer says who it is for BEFORE it is made: the one line on this card that rules a
+        // lifter OUT rather than in, and the only precondition the door states. It also carries the
+        // price, which is none.
         Text(
             ConnectedLog.precondition,
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
@@ -234,11 +227,6 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             Text(ConnectedLog.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
         }
         Caption(ConnectedLog.onTheWeb)
-        Text(
-            ConnectedLog.free,
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkDim,
-        )
         if (!isSignedIn) Caption(ConnectedLog.deviceOnly)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -270,7 +258,6 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             )
         }
         Caption(ConnectedLog.deleteLevel)
-        Caption(ConnectedLog.whereItLives)
         Caption(ConnectedLog.notNamedHere)
     }
 }

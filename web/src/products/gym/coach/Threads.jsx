@@ -20,7 +20,10 @@ export function ThreadsList({ log }) {
   // A conversation the window is holding is off this list for the length of its window — the room's
   // transient is the only place it still exists, and the only way back — and off it for good once
   // the store has answered. A refused delete needs no re-read: the read this list already holds was
-  // taken while the conversation was there, and there is where the store kept it.
+  // taken while the conversation was there, and there is where the store kept it. The other question
+  // is what the ACCOUNT holds, which is the stance's and the export door's, and the settled delete
+  // leaves that read as well as the rows: this list is never read again inside one visit.
+  const settled = log.gone('thread');
   const withheld = log.hidden('thread');
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening your conversations…</p>;
@@ -36,17 +39,22 @@ export function ThreadsList({ log }) {
     );
   }
 
-  const threads = (view.data ?? []).filter((thread) => !withheld.has(thread.id));
+  // The read, answered TWICE: the account's conversations, and the rows the window leaves.
+  const conversations = (view.data ?? []).filter((thread) => !settled.has(thread.id));
+  const threads = conversations.filter((thread) => !withheld.has(thread.id));
 
   return (
     <section className="gym-threads">
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-threads-head">
         <h1 className="gym-title">{THREADS_TITLE}</h1>
+        {/* The rows', not the account's: it counts the list under it, and gates nothing. */}
         {threads.length > 0 && <p className="gym-threads-count">{conversationsLine(threads.length)}</p>}
       </header>
 
-      {threads.length === 0 && <p className="gym-quiet">{NO_THREADS}</p>}
+      {/* Off the ACCOUNT: an account holding one conversation the window has taken off the list is
+          not an account with nothing in it. Between the two stances the list draws neither. */}
+      {conversations.length === 0 && <p className="gym-quiet">{NO_THREADS}</p>}
 
       {monthsOf(threads).map((month) => (
         <section className="gym-threads-month" key={month.key}>
@@ -59,7 +67,9 @@ export function ThreadsList({ log }) {
 
       <a className="gym-threads-new" href={COACH_HREF}>{NEW_THREAD_VERB}</a>
 
-      {threads.length > 0 && (
+      {/* The door reads the ACCOUNT: the export carries every message the store holds, which one
+          held delete has not changed, and a door to all of it may not disappear for nine seconds. */}
+      {conversations.length > 0 && (
         <a className="gym-threads-export" href={EXPORT_THREADS_HREF}>
           <span className="gym-threads-export-verb">{EXPORT_THREADS_VERB}</span>
           <span className="gym-threads-export-line">{EXPORT_THREADS_LINE}</span>

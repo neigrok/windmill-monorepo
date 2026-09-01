@@ -1,7 +1,9 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -95,13 +97,19 @@ class SettingsConnectPitchTests {
         scope.cancel()
     }
 
+    // The offer, its precondition beside it, and nothing on the card said twice: the price rides in
+    // the precondition — the one line that rules a lifter OUT rather than in — and the connections
+    // list with its Disconnect is the web's, reached through the row at the head of this card.
     @Test
-    fun testTheOfferIsMadeWithItsPreconditionBesideIt() {
+    fun testTheOfferIsMadeWithItsPreconditionBesideItAndSaysNothingTwice() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         settings(scope)
 
         compose.onNodeWithText(ConnectedLog.connect).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.precondition).performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("free", substring = true, ignoreCase = true).assertCountEquals(1)
+        compose.onAllNodesWithText("disconnect", substring = true, ignoreCase = true)
+            .assertCountEquals(0)
         scope.cancel()
     }
 

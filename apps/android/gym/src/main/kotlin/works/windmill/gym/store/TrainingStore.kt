@@ -110,6 +110,15 @@ class TrainingStore(
     val notes: List<Note>
         get() = notebook.filterNot { it.id in withheldIds }
     val noteCount: Int get() = notebook.size
+    // The account's conversations as the log last answered them, newest first. Held by the ROOM for
+    // exactly the reason the notes are: a screen keeping a snapshot of its own would draw a
+    // conversation back the moment its window settled. Writes go to `conversations`.
+    private var conversations: List<AskThread> by mutableStateOf(emptyList())
+    // A conversation inside its undo window is off the list; `allThreads` still holds it, because the
+    // account does. A window decides which ROWS are drawn and never what state a screen is in, so the
+    // threads room reads its empty stance from `allThreads`.
+    val threads: List<AskThread> get() = conversations.filterNot { it.id in withheldIds }
+    val allThreads: List<AskThread> get() = conversations
     // Every proposal this room settled, as the log's reply said it: a card minted in a conversation
     // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
     var settledProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
@@ -117,6 +126,10 @@ class TrainingStore(
     // Every write to the program is also written to the device copy for the seat holding it, so a
     // connect that cannot read the log draws it back.
     private var program: List<Routine> by mutableStateOf(emptyList())
+    // The whole program, a withheld routine included. The routines home reads its empty stance and
+    // the position it writes a new routine at from here: a window decides which ROWS are drawn and
+    // never what state a screen is in.
+    val allRoutines: List<Routine> get() = program
     var routines: List<Routine>
         // A routine inside its undo window is off the program as far as every screen is concerned:
         // nothing was sent, and only Undo puts it back. Writes go to `program`, which is the whole
@@ -132,11 +145,15 @@ class TrainingStore(
         private set
     var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // the device's own, unclaimed
         private set
-    // Both, merged on the clock, until the claim empties the shelf. A session inside its undo window
-    // is off the log as far as every screen is concerned; only Undo puts it back.
+    // Both, merged on the clock, until the claim empties the shelf: everything the account and this
+    // device hold between them, which is what the log's empty stance and the first-session line are
+    // read from.
+    val allSessions: List<SessionSummary>
+        get() = (logged + shelved).sortedByDescending { it.startedAtMs }
+    // A session inside its undo window is off the log as far as every screen is concerned; only Undo
+    // puts it back.
     val recent: List<SessionSummary>
-        get() = (logged + shelved).filterNot { it.id in withheldIds }
-            .sortedByDescending { it.startedAtMs }
+        get() = allSessions.filterNot { it.id in withheldIds }
     var older: Older by mutableStateOf(Older.More)
         private set
     var session: Session? by mutableStateOf(null)                        // the open one, or none
@@ -312,8 +329,12 @@ class TrainingStore(
     // Nothing has ever happened in this room. It asks whether the reads that could say otherwise
     // actually LANDED, never whether their lists came back empty: `older == End` is the log page
     // answering "there is no more". The session the lifter is IN is not counted.
+    //
+    // Both halves read what the ACCOUNT holds and neither reads a drawn list: a window decides which
+    // rows are drawn and never what state a screen is in, and this state opens the picker with a
+    // first-session title and a drawn `Build my routine`.
     val firstSession: Boolean
-        get() = recent.isEmpty() && program.isEmpty() && !routinesFailed && older == Older.End
+        get() = allSessions.isEmpty() && program.isEmpty() && !routinesFailed && older == Older.End
 
     // Called on launch and on every change of who is signed in. Draws from the device first.
     suspend fun connect(account: Account) {
@@ -369,6 +390,7 @@ class TrainingStore(
             deleteRefused = null
             deletedSets = emptySet()
             notebook = emptyList()
+            conversations = emptyList()
         }
         // A workout both finished on the shelf and live in the queue: the shelf's copy wins, after
         // its sets merge in.
@@ -765,6 +787,11 @@ class TrainingStore(
         }
         val log = gym ?: return false
         tried { log.discardSession(sessionId) } ?: return false
+        // The settled delete leaves the READ and not only the drawn rows, and the re-read below is
+        // not enough on its own: `loadLog` keeps every row DEEPER than the page it answers with, so
+        // a session older than the log's head would be folded straight back in and drawn again the
+        // moment the window that was hiding it closed.
+        logged = logged.filterNot { it.id == sessionId }
         queue.forget(sessionId)
         queue.flush()
         drawFromQueue()
@@ -1032,12 +1059,17 @@ class TrainingStore(
         }
     }
 
-    // Nothing is held between the three thread reads: the outcome is DERIVED by the server from the
-    // proposals, so a cached list would draw a thread as `waiting` days after it was decided.
-    suspend fun threads(): GymResult<List<AskThread>> {
+    // The list is the ROOM's, exactly as the notes are: a screen holding a copy of its own would draw
+    // a conversation back the moment its window settled. It is re-read on the way into the screen and
+    // written into `conversations` here, because the outcome is DERIVED by the server from the
+    // proposals and a list nobody re-read would say `waiting` days after somebody decided. The single
+    // thread below is still held nowhere at all.
+    suspend fun readThreads(): GymResult<List<AskThread>> {
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(askWantsAnAccount))
         return try {
-            GymResult.Ok(log.threads())
+            val served = log.threads()
+            conversations = served
+            GymResult.Ok(served)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -1062,16 +1094,22 @@ class TrainingStore(
 
     // The routines are NOT re-read: deleting a conversation leaves every change it applied standing
     // in the routine's history. A 404 answers as success.
+    //
+    // The settled delete leaves the READ and not only the drawn rows: a list still holding it once
+    // the window closed would put the row back on screen, and the room would go on calling an emptied
+    // account full.
     suspend fun deleteThread(id: String): GymResult<Unit> {
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(askWantsAnAccount))
         return try {
             log.deleteThread(id)
+            conversations = conversations.filterNot { it.id == id }
             GymResult.Ok(Unit)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
-            if (RefusalFacts(refusing).status == 404) GymResult.Ok(Unit)
-            else GymResult.Failed(WriteFailure(refusing))
+            if (RefusalFacts(refusing).status != 404) return GymResult.Failed(WriteFailure(refusing))
+            conversations = conversations.filterNot { it.id == id }
+            GymResult.Ok(Unit)
         }
     }
 

@@ -284,7 +284,9 @@ public struct GymRoom: View {
                 .navigationDestination(for: Away.self) { pushed in
                     screen(at: pushed)
                         .background(skin.canvas)
-                        .navigationTitle(pushed.label(in: store.catalog, routines: store.routines))
+                        // A pushed screen's own name, which is state and not a row: it reads the
+                        // program the account holds, so no window can rename a screen mid-visit.
+                        .navigationTitle(pushed.label(in: store.catalog, routines: store.allRoutines))
                         .navigationBarTitleDisplayMode(.inline)
                 }
                 .toolbar {
@@ -368,8 +370,11 @@ public struct GymRoom: View {
                               onProposal: review,
                               onThread: { look(at: .thread($0)) })
             case .building(let draft):
+                // Off the program the ACCOUNT holds: whether this draft is an edit or a new routine
+                // is a decision about the routine's own id, and a delete still inside its window has
+                // taken nothing away from the log yet.
                 RoutineEditorScreen(draft: draft, catalog: store.catalog, sessions: store.recent,
-                                    editing: store.routines.contains { $0.id == draft.id },
+                                    editing: store.allRoutines.contains { $0.id == draft.id },
                                     untested: untested(draft), saving: savingRoutine,
                                     failure: routineFailure,
                                     onSave: { written in Task { await save(written) } },
@@ -378,7 +383,7 @@ public struct GymRoom: View {
                                     onDuplicate: { copied in
                                         replaceTop(with: .building(
                                             RoutineDraft(duplicating: copied,
-                                                         position: store.routines.count)))
+                                                         position: store.allRoutines.count)))
                                     },
                                     onCreateMovement: { name, equipment in
                                         await store.create(name, loadedAs: equipment)
@@ -497,10 +502,11 @@ public struct GymRoom: View {
     private var threadDoors: ThreadDoors {
         let gym = GymApi(api: account.api)
         return ThreadDoors(
-            // The list is re-read from the server, so a delete still inside its window has to come
-            // out of the answer: nothing was sent, and the row would otherwise walk back in.
+            // Served whole. The screen is what answers twice — the count and the empty stance off
+            // what the account holds, the rows off what the window leaves — and a door that thinned
+            // the read would take that second answer away from it.
             list: {
-                do { return .success(try await gym.threads().filter { !withheld.hides(.thread, $0.id) }) }
+                do { return .success(try await gym.threads()) }
                 catch { return .failure(AskRefusal(error)) }
             },
             read: { id in
@@ -571,7 +577,10 @@ public struct GymRoom: View {
             finished = FinishedSession(session: session,
                                        sets: performed,
                                        review: await store.review(of: session.id),
-                                       isFirst: store.recent.count <= 1)
+                                       // Off the log the ACCOUNT holds: a session withheld this
+                                       // minute is still one, and *your first session* is a claim
+                                       // about the account, not about the rows on screen.
+                                       isFirst: store.allSessions.count <= 1)
         case .stranded(let count):
             note = "\(Readout.setCount(count)) still on this device — the session stays open until they land"
         case .failed(let why):
@@ -581,7 +590,7 @@ public struct GymRoom: View {
 
     private func newRoutine() {
         routineFailure = nil
-        look(at: .building(RoutineDraft(position: store.routines.count)))
+        look(at: .building(RoutineDraft(position: store.allRoutines.count)))
     }
 
     // MARK: - the withheld deletes
@@ -676,7 +685,7 @@ public struct GymRoom: View {
     }
 
     private func untested(_ draft: RoutineDraft) -> Bool {
-        store.routines.first { $0.id == draft.id }?.isUntested ?? true
+        store.allRoutines.first { $0.id == draft.id }?.isUntested ?? true
     }
 
     private func save(_ draft: RoutineDraft) async {
@@ -684,7 +693,9 @@ public struct GymRoom: View {
         savingRoutine = true
         defer { savingRoutine = false }
         routineFailure = nil
-        let written = store.routines.contains { $0.id == draft.id }
+        // A WRITE branch, so it reads the account: a routine the window is holding is still the log's,
+        // and creating it again under its own id is a write the log would take twice.
+        let written = store.allRoutines.contains { $0.id == draft.id }
             ? await store.replace(draft)
             : await store.create(draft)
         switch written {

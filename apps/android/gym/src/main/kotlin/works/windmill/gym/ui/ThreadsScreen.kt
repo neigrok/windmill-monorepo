@@ -66,22 +66,30 @@ fun ThreadsScreen(
     onAskNew: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
-    var threads by remember { mutableStateOf<List<AskThread>?>(null) }
+    var read by remember { mutableStateOf(false) }
     var outOfReach by remember { mutableStateOf(false) }
 
-    // Read on the way in and held only while the screen stands: an outcome moves when a proposal is.
+    // Read on the way in, into the STORE: an outcome moves when a proposal does, and a list this
+    // screen held itself would draw a deleted conversation back the moment its window settled.
     LaunchedEffect(Unit) {
-        when (val read = store.threads()) {
+        when (store.readThreads()) {
             is GymResult.Ok -> {
-                threads = read.value
+                read = true
                 outOfReach = false
             }
             is GymResult.Failed -> outOfReach = true
         }
     }
 
-    // A conversation inside its undo window is off the list and nothing has been sent.
-    val held = threads.orEmpty().filterNot { it.id in store.withheldIds }
+    // A conversation inside its undo window is off the list and nothing has been sent. The STANCE
+    // below reads the account and these rows read the window: an account holding one conversation the
+    // window has taken off the screen is not an account with none.
+    //
+    // Drawn only off a read THIS entry landed, because an outcome the server derives goes stale the
+    // moment a proposal is decided elsewhere — a list nobody re-read would say `waiting` days after
+    // somebody applied it, and saying that under `out of reach` claims more than a failed read
+    // allows. `read` is the read's own status and not a window, so the stance is untouched.
+    val held = if (read) store.threads else emptyList()
     GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -93,7 +101,10 @@ fun ThreadsScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
             ) {
-                if (threads != null) {
+                // The count captions the rows below it, so it is drawn where there are rows. Between
+                // the two stances — rows held by a window over an account that still has them — the
+                // room draws neither line.
+                if (held.isNotEmpty()) {
                     item("counted") {
                         Text(
                             Threads.counted(held.size),
@@ -108,7 +119,7 @@ fun ThreadsScreen(
                         Text(Threads.outOfReach, style = GymType.numeral(12), color = GymSkin.inkDim)
                     }
                 }
-                if (threads != null && held.isEmpty() && !outOfReach) {
+                if (read && store.allThreads.isEmpty() && !outOfReach) {
                     item("none") {
                         Text(
                             Threads.none,

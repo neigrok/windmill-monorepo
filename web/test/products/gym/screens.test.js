@@ -17,9 +17,9 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
 
 test('the routine row’s overflow is Duplicate and Delete, and it is the only home either has', () => {
   const source = spoken(read('Routines.jsx'));
-  // The survivor: a re-entrancy guard, and a position past the end of the list rather than the
-  // original's own.
-  assert.equal(source.includes("duplicateRoutine(routine, { id: mintId('rt_'), position: view.data.length })"), true);
+  // The survivor: a re-entrancy guard, and a position past the end of the ACCOUNT's program rather
+  // than the original's own or the raw read's, which a settled delete leaves one high for ever.
+  assert.equal(source.includes("duplicateRoutine(routine, { id: mintId('rt_'), position: program.length })"), true);
   assert.equal(source.includes('if (copying) return;'), true);
   assert.equal(source.includes("duplicateRoutine(view.data,"), false);
   assert.equal(source.includes("duplicateRoutine(draft,"), false);
@@ -625,7 +625,9 @@ test('a picker row says it has no last time, only once the read behind it has an
 test('the empty routines home offers to build one, and this surface still starts nothing', () => {
   const source = read('Routines.jsx');
   assert.equal(source.includes('<Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>'), true);
-  assert.equal(source.includes("view.phase === 'ready' && routines.length === 0"), true);
+  // Over the ACCOUNT's program and never the drawn rows: the offer is an act, and an act may not be
+  // offered over a store the window has only taken a routine off the screen of (13-gestures.md).
+  assert.equal(source.includes("view.phase === 'ready' && program.length === 0"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?)$/.test(file)) continue;
     const said = spoken(fs.readFileSync(file, 'utf8'));
@@ -994,8 +996,8 @@ test('the Notes screen is its own room off #/gym/notes, headed by the honesty li
   // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off
   // the screen and still counted, so the cap line stands and `Add a note` never opens a refusal.
   assert.equal(notes.includes('{isFull(notes)'), true);
-  assert.equal(notes.includes("const gone = log.hidden('note');"), true);
-  assert.equal(notes.includes('const shown = notes.filter((note) => !gone.has(note.id));'), true);
+  assert.equal(notes.includes("const hidden = log.hidden('note');"), true);
+  assert.equal(notes.includes('const shown = notes.filter((note) => !hidden.has(note.id));'), true);
   assert.equal(/savePreferences|preferences\(/.test(notes), false, 'notes never ride the preferences document');
   assert.equal(/gym-sheet|Keypad/.test(notes), false);
   for (const gone of ['Drag to reorder', 'Ten notes', '500 bytes each']) {

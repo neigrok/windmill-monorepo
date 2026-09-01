@@ -545,7 +545,10 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                         session = ended.session,
                         sets = performed,
                         review = store.review(live.id),
-                        isFirst = store.recent.size <= 1,
+                        // The account's own count and never the drawn one: a session deleted a
+                        // moment ago is still on the log while its window runs, and the workout just
+                        // finished is not the first.
+                        isFirst = store.allSessions.size <= 1,
                     )
                 }
                 is FinishOutcome.Stranded ->

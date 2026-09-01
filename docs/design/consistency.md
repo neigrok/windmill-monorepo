@@ -871,9 +871,9 @@ needs the read, or the pitch needs a condition. iOS reads the account's connecti
 and suppresses the invitation when there are any (`ConnectedLogState.invites`, `ConnectedLog.swift`;
 the one remaining call site, `GymRoom.swift:223`), and the web's settings row prints what is connected
 (`settings/GymSettingsSection.jsx`). Android has **no connections read anywhere**: its settings row
-is the surface's only connect door, and it draws the pitch, the precondition and *Connect my log*
-unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only
-`isSignedIn` gates anything there). A second half of the same gap: `ConnectedLog.head`,
+is the surface's only connect door, and it draws the precondition and *Connect my log*
+unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only `isSignedIn` gates anything there;
+the pitch above them went with S4's narrowing). A second half of the same gap: `ConnectedLog.head`,
 `sundayLabel`, `sundayLine`, `mondayLabel`, `mondayLine` and `truths` (`domain/ConnectedLog.kt`) are
 live constants with no Android drawing, kept because `ConnectedLogTests` enforces that vocabulary
 across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
@@ -1501,18 +1501,19 @@ and built 2026-08-31, nothing owed. `13-gestures.md:214-215` states the law in b
 decides which rows are drawn; it never decides what state a screen is in"* — and `bodyweight` broke
 it the day it joined `WITHHELD_KINDS`. Both surfaces that broke it now answer the two questions from
 two lists: `useBodyweight` returns `entries` (the store's series less what the store has answered
-for) beside `rows` (what `log.hidden('bodyweight')` leaves), and `TrainingStore` returns
-`allWeighIns` beside the thinned `bodyweight`. The empty stance reads the store; the dots, the fix
-sheet, `latest` and the windowed sentence read the window — the shape `notes/Notes.jsx` and
-`NotesScreen` already took. **The web needed a second half for the first to be honest**, and it is
-the ROOM's and not a screen's: `useTrainingLog`'s `settled` register — filled when a send resolves
-while the window still holds the row, cleared by `writtenAgain` — is now exposed as `log.gone(kind)`
-beside `log.hidden(kind)`, and `entries` drops what it names. The day leaves the READ and not only
-the drawn rows, so the invitation becomes true when the store takes the delete rather than never; and
-because the register is the room's, the chart and the log's head — two instances of one hook — cannot
-disagree about which days the account holds, and a day written again is a day back in both answers.
-What the nine seconds between the two stances should draw is open as `4q`, and
-the same law on four more web screens is open as `4p`.
+for) beside `rows` (what `log.hidden('bodyweight')` leaves), and Android's `TrainingStore` returns
+`allWeighIns` beside the thinned `bodyweight` — iOS's own half of that screen came with `4p`'s
+sweep. The empty stance reads the store; the dots, the fix sheet, `latest` and the windowed sentence
+read the window — the shape `notes/Notes.jsx` and `NotesScreen` already took. **The web needed a
+second half for the first to be honest**, and it is the ROOM's and not a screen's:
+`useTrainingLog`'s `settled` register — filled when a send resolves while the window still holds the
+row, cleared by `writtenAgain` — is now exposed as `log.gone(kind)` beside `log.hidden(kind)`, and
+`entries` drops what it names. The day leaves the READ and not only the drawn rows, so the
+invitation becomes true when the store takes the delete rather than never; and because the register
+is the room's, the chart and the log's head — two instances of one hook — cannot disagree about
+which days the account holds, and a day written again is a day back in both answers. What the nine
+seconds between the two stances should draw is open as `4q`; the same law on four more web screens
+and on both phones was closed by `4p`.
 
 **4o · the weigh-in window's write-again guard lives inside the write on every surface** → built
 2026-08-31, nothing owed. Writing a day again IS the undo for that day's delete, so the window comes
@@ -1525,45 +1526,104 @@ sits after `Bodyweight.dateRefusal`, so a day the store would refuse anyway cost
 on placement as well as behaviour: `testNoScreenTakesTheWindowDownBesideTheWriteThatOwnsIt` asserts
 `writtenAgain` appears in neither screen file and that the guard precedes `bodyweightStore.keep`.
 
-**4p · the same window decides four more of the web's screen states** → fix flows to the code, on the
-web. `13-gestures.md:214-215` states it in bold — *"A window decides which rows are drawn; it never
-decides what state a screen is in"* — and the bodyweight screen was only the case a wave happened to
-look at. Four web surfaces read a window-thinned list for a claim about the ACCOUNT.
-**`Log.jsx`'s `LogList`**: `shown` is `summaries` less `log.hidden('session')`, and `shown.length ===
-0` draws *No sessions yet.* / *The first one you log lands here, newest first.* — so deleting your
-only session invites you to log your first one with *Undo* on screen.
-**`Routines.jsx`**: `routines` is the read less `log.hidden('routine')`, and `routines.length === 0`
-draws *No routines yet.* / *Finish a session and gym offers to keep it as one — or write one out
-now.* **plus the `Build a routine` primary** — the sharpest of the four, because its stance carries a
-drawn control over a store that still holds a routine.
-**`coach/Threads.jsx`'s `ThreadsList`**: `threads` is thinned, `threads.length === 0` draws
-`NO_THREADS`, and the `Export threads` door is gated on `threads.length > 0`, so a door to everything
-the account holds disappears for the length of one delete's window.
-**`Log.jsx`'s `SessionDetail`**: `sets` is thinned by `log.hidden('set')` and `sets.length === 0`
-draws *No sets in this session.*; `sessionDetailMeta(session, sets)` and `closedOnItsOwn(session,
-sets)` derive off the thinned list too — the count is arguably the drawn rows' business, the
-*closed on its own* claim is not. The fix on each is the two-line one `bodyweight/Bodyweight.jsx` and
-`notes/Notes.jsx` now share: the stance reads the store, the rows read the window; and on the first
-three the settled delete has to leave the READ as well as the drawn rows, or the stance never becomes
-true. **The phones were not swept for the same shape**, so this entry names the web only.
+**4p · a window was deciding what state a screen is in, on four web screens and on both phones** →
+**built 2026-09-01**, nothing owed. `13-gestures.md:214-215` states it in bold — *"A window decides
+which rows are drawn; it never decides what state a screen is in"* — and the bodyweight screen
+(`4n`) was only the case a wave happened to look at first. Every screen below now answers its read
+TWICE: one list is what the ACCOUNT holds — the read less the rows the store has answered a delete
+for — and the other is what the withheld window leaves. The stance reads the first; the rows read
+the second. **Web.** `Routines.jsx`: `program` beside `routines`, with the empty stance AND its
+`Build a routine` primary reading `program` — so no act is offered over a program that still holds a
+routine — and the position a duplicate is filed at reading it too, which is the write and not a
+stance. `Log.jsx`'s `LogList`: `sessions` beside `shown`, the stance and `LogFoot`'s `oldest`
+reading `sessions` — *first session · …* names the day training started, which is the account's —
+while `loadedLine` and the weeks read `shown`. `Log.jsx`'s `SessionDetail`: `logged` beside `sets`,
+the stance and `closedOnItsOwn` reading `logged`, `sessionDetailMeta` deliberately reading `sets`.
+`coach/Threads.jsx`'s `ThreadsList`: `conversations` beside `threads`, with `NO_THREADS` and the
+`Export threads` door reading `conversations` — so a door to everything the account holds no longer
+disappears for the length of one window — and `conversationsLine` reading `threads`. **iOS.**
+`TrainingStore` answers `allSessions` beside `recent`, `allRoutines` beside `routines` and
+`allWeighIns` beside `bodyweight`; `RoutinesScreen`, `LogScreen`, `BodyweightScreen` and
+`ThreadsScreen` — whose `standing(_:outside:)` beside its private `drawn` takes `NotesScreen`'s
+shape — read them for their stances. Two room-level claims went with the four screens: `GymRoom`'s
+`isFirst` (*your first session*) and the position a new or kept routine is minted at
+(`store.allRoutines.count`, in `GymRoom` and in `TrainingStore.keep(_:asRoutineNamed:)`), which was
+a collision and not only words. **Android.** `TrainingStore` answers `allSessions`, `allRoutines`
+and `allThreads` beside `recent`, `routines` and `threads`. `LogScreen`'s two silences hang off
+`logHolds = store.allSessions.any { !it.session.isOpen }`, and its foot's *first session · …* names
+the oldest session the ACCOUNT holds rather than the oldest week the window leaves drawn, because
+that line is a claim about the day training started; `RoutinesScreen`'s stance, its primary and the
+position a new or duplicated routine is written at read `allRoutines`; `ThreadsScreen`'s stance
+reads `allThreads`, and its screen-local `var threads by remember` is gone, because a screen holding
+its own snapshot of a list is the same defect in different clothes — the rows it draws are the
+store's, drawn only when this entry's read landed, since a read that FAILED is not a shorter list
+any more than a window is, and `Threads.counted` is drawn only where there are rows, so an account
+with none reads *Nothing here yet …* under no count and the nine seconds between the two stances
+draw neither line; `GymRoom`'s `isFirst` reads `allSessions`; and `TrainingStore.firstSession` — the
+store-level *nothing has ever happened in this room* that opens the movement picker with *What are
+you starting with?* and a drawn `Build my routine` — reads it too.
+
+**The settled delete has to leave the READ on all four web screens and not three, and `SessionDetail`
+needs it most rather than least.** The room's `log.gone(kind)` register (`4n`) is folded out of each
+account list, and without that half a screen whose last row is deleted draws neither the rows nor the
+stance: a blank page with no words on it. `dropSet`'s send calls `reloadLog()`, which re-reads the
+log's page and never this session's own `gymApi.session(id)` read, so without the fold *No sets in
+this session.* would never be drawn at all — not late, never. `deleteRoutine` sends with no re-read
+either, and `ThreadsList`'s read is never taken again once ready. The phones spend their own half:
+Android's `deleteThread` drops the row from `conversations` on the 200 and the 404 alike — `threads()`
+is `readThreads()` now, because it writes what it read — while its routine and session verbs already
+had theirs; on iOS a set's hold is written into the queue on disk (`Withheld.Kind.isHeldOnDisk`), so
+the store's read and the drawn rows move together and no stance can go stale, which is why the web's
+fourth screen has no iOS twin at all.
+
+**A window can decide a WRITE and a VERDICT too, and a count is neither.** `TrainingStore.apply`'s
+404 branch on a remove-proposal answered `.removed` — *the routine and its ledger are gone* — off
+iOS's drawn list, over a routine an Undo still reached; it asks `allRoutines` now. The web's second
+verdict is `Backfill.jsx`'s overlap refusal, which read the room's un-thinned `summaries` alone and
+so could refuse a span as *already in the log* over a session the store had answered a delete for,
+with a door into a session the log no longer draws; it folds `log.gone('session')` out first now.
+The two new-routine positions are the write. The boundary that stays: **a count captioning rows a
+reader can see follows the window; a claim about what the ACCOUNT holds does not** — the web's
+`sessionDetailMeta`, `conversationsLine` and `loadedLine`, iOS's `Readout.routineCount`,
+`LogWeeks.loaded` and the conversations `meta`, and Android's `LogFold` session counts and
+`Threads.counted` caption the rows drawn beneath them and follow the window, while *first session ·
+…* names the day training started and reads the account on every surface.
+
+**The phones were swept, and they carried it** — this entry named the web only because nobody had
+looked. iOS held four screens plus the two positions, the verdict and an editor seam no navigation
+reaches; Android held seven instances, one of which (`firstSession`) no ledger entry, board report or
+contract had ever named. The whole sweep, including every screen checked and found clean, is written
+down beside the law in `gym/briefs/13-gestures.md`, so a later wave does not pay for it twice.
+Pinned on all three: the web's four screen cases (one per screen, each driving the held window and
+the settled delete), iOS's in `WithheldRowsTests` (the *is still the … the account holds* cases, the
+two conversation cases proving V2's half in both directions, and the source-text pin
+`testEveryGymScreenReadsTheStoreForItsStateAndTheWindowForItsRows`), `ProposalTests`'
+`testAReplayedRemovalAsksWhatTheAccountHoldsAndNotWhatTheListDraws` and the hosted
+`testAWithheldRoutineDoesNotDrawTheEmptyProgramsPrimary`, and Android's in
+`ui/StanceReadsTheAccountTests.kt`.
 
 **4q · a held delete of the only weigh-in leaves one state and three surfaces answer it three ways**
-→ a copy owner's call, and one line of it is still the closed law's residue. With the stance reading
-the store (`useBodyweight`'s `entries`, `TrainingStore.allWeighIns`) and the rows reading the window,
-there are nine seconds where neither the invitation nor a chart is true. The web draws **nothing at
-all** — `entries.length === 0` is false and `rows.length > 0` is false, so both stances are skipped.
-**Both phones open on the ninety days** — `var window by remember { mutableStateOf(ChartWindow.Ninety)
-}` and `@State private var window: Bodyweight.Window = .ninetyDays` — so the sentence the gap
-actually gets on a phone is *no weigh-in in the last 90 days*, said while the store holds a weigh-in
-dated today. Android draws it under the window control and the count line *last 90 days · 0
-weigh-ins*, gated on `window == ChartWindow.Ninety` so the 90-day sentence is never said of the whole
-series; iOS draws it from `Bodyweight.emptyWindow`'s `.ninetyDays` branch. It is `emptyWindow`'s
-other branch that carries the residue: **iOS is the one still reading the drawn list for an account
-claim**, answering *no weigh-in yet* under `.all` off the thinned `store.bodyweight` — the softer
-wording of the law the web and Android just left, where Android's *the whole series · 0 weigh-ins*
-claims only the window. Three lines to weigh, then: a blank page and a count line over an empty chart
-are both defensible; a 90-day sentence over a store holding today's weigh-in is the one both phones
-actually draw; and *no weigh-in yet* over a series that holds one is not defensible at all.
+→ a copy owner's call, and only that now: the law's residue closed 2026-09-01. With every stance
+reading the store (`useBodyweight`'s `entries`, `TrainingStore.allWeighIns` on both phones) and the
+rows reading the window, there are nine seconds where neither the invitation nor a chart is true,
+and each surface fills them differently. The web draws **nothing at all** — `entries.length === 0`
+is false and `rows.length > 0` is false, so both stances are skipped. **Android** draws the window
+control, the count line *last 90 days · 0 weigh-ins*, and *no weigh-in in the last 90 days* gated on
+`window == ChartWindow.Ninety`, so the 90-day sentence is never said of the whole series and the
+count line is the whole of what is said under **All**. **iOS** draws the card over an empty dot
+field in both windows: `Bodyweight.emptyWindow` is charted off `store.allWeighIns` now, so it
+answers `nil` while the account holds a weigh-in and `Chart.label` — *last 90 days · 0 weigh-ins*,
+or *the whole series · 0 weigh-ins* — is what stands there. That closes the residue this entry used
+to carry: *no weigh-in yet* over a series that still holds one is drawn on no surface, and iOS gives
+Android's answer under both windows rather than a sentence about ninety days it reads off the drawn
+list. Two lines are left to weigh, then. A blank page and a count line over an empty chart are both
+defensible; the one claim a lifter actually meets that goes further than the window is Android's *no
+weigh-in in the last 90 days*, said while the store holds a weigh-in dated today. And the gap itself
+is no longer the bodyweight screen's alone — `4p` put the same nine seconds on the empty log, the
+empty routines home, an emptied session and an emptied conversations list, each of which draws
+neither a stance nor a row (the head, the doors and the log's weigh-in chip stay), and on both
+phones' twins of those screens. One sentence for the gap would have five instances on the web alone,
+not one.
 
 **4r · the share window is written without its numeral on the sheet that offers the link** → the
 numeral rule's scope, on iOS. `3k` ruled **`30 days`, in numerals** and scoped itself to the two
@@ -1607,3 +1667,31 @@ number standing in for something environment-dependent.
 survived every runner image to date. Neither is worth churning while green; both are the next to go
 red on a toolchain bump, and this entry is where to look when one does.
 
+
+**4u · how far a delete's window reaches beyond the screen the act was taken on is undecided, and the
+three surfaces do not agree** → a ruling, inside gym. `13-gestures.md` settles that the window is the
+ROOM's and not a screen's — it survives a pop, a tab change and a sheet closing — and `4p` has just
+settled which of a screen's two questions it may answer. Neither says which OTHER lists in the room a
+held delete thins. The web's room hands `summaries` out un-thinned (`useTrainingLog.js` returns it
+beside `hidden` and `gone`), so the movement picker's `mostTrained` ranking counts a session a window
+is holding wherever it is opened — `Record.jsx`, `Backfill.jsx` and `Routines.jsx` all pass
+`log.summaries` into it — and `Finish.jsx` reads `recent` off its own server read, which is the
+account by construction. Both phones hand their pickers the thinned list instead: `sessions:
+store.recent` on iOS's `LoggerScreen` and `RoutineEditorScreen`, `sessions = store.recent` on
+Android's `LoggerScreen` and `RoutineBuilder`. **Nothing on any surface says anything false about the
+account here** — a ranking input is not a stance, and the web's picker freezes its six on the first
+non-empty read (`held.current` in `logger/MovementPicker.jsx`), so the divergence is invisible unless
+a lifter deletes a session and opens a picker inside the same nine seconds. It is drift rather than a
+defect, and the question is the general one: does a window reach only the screen the act was taken
+on, or every list in the room?
+
+**4v · a door that hands the lifter to a browser says nothing when no browser comes** → a ruling,
+on both phones. Android's connect row and its `Connect my log` button both fire
+`runCatching { web.openUri(…) }` (`ui/SettingsScreen.kt:195`, `:224`) with no failure branch and no
+`say` passed into the row; iOS's `GymRoom.swift:532` calls `openURL(…)` with no completion handler.
+On a device with no browser able to take the URL, the tap does nothing and the room says nothing —
+the one shape the programme's own rule (*give every enforced refusal a sentence*) exists to prevent,
+on a door rather than on a verb. The web has no half of this: the setup page is one of its own pages
+(`connect/ConnectLog.jsx`), reached by an anchor rather than by launching anything. What is owed is a
+decision on whether a launch that does not land is worth a sentence, and if it is, the same sentence
+on both phones.

@@ -17,12 +17,17 @@ struct BodyweightScreen: View {
 
     var body: some View {
         let today = Bodyweight.dateLocal(Date())
+        // Charted twice. The sentence in place of the chart is a claim about the series the ACCOUNT
+        // holds, so it reads `allWeighIns`; the dots are what the window leaves. Deleting the only
+        // weigh-in draws an empty card for nine seconds — never *no weigh-in yet* over a series still
+        // holding one, and never a 90-day sentence over a weigh-in dated today (`13-gestures.md`).
+        let standing = Bodyweight.chart(store.allWeighIns, window: window, today: today)
         let chart = Bodyweight.chart(store.bodyweight, window: window, today: today)
         return ScrollView {
             VStack(alignment: .leading, spacing: WindmillSpace.x4) {
                 head(today: today)
                 windows
-                if let empty = Bodyweight.emptyWindow(chart) {
+                if let empty = Bodyweight.emptyWindow(standing) {
                     Text(empty)
                         .font(GymType.numeral(13))
                         .foregroundStyle(skin.inkFaint)

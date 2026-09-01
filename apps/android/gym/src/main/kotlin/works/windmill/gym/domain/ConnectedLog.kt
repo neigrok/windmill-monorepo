@@ -5,9 +5,6 @@ object ConnectedLog {
     const val title = "Connected log"
 
     const val head = "Your training log, inside your own Claude."
-    const val sub =
-        "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the " +
-            "assistant you already use."
 
     const val sundayLabel = "Sunday, in your own Claude"
     const val sundayLine =
@@ -39,8 +36,6 @@ object ConnectedLog {
         "Opens the setup page in your browser — which line to paste where. Your tool’s first call " +
             "opens the approval screen itself."
 
-    const val free = "Connecting your log is free. So is everything else in gym — there is nothing to buy here."
-
     const val canDoHead = "What it can do"
 
     const val canDo =
@@ -63,12 +58,10 @@ object ConnectedLog {
             "end a share link you have already handed out, and propose taking a day out of your " +
             "program."
 
-    const val whereItLives =
-        "Every tool you have connected is listed in your Windmill account settings on the web — what " +
-            "each may do, and the Disconnect beside it. Disconnecting stops that tool’s reads at " +
-            "once and keeps every proposal it already made."
-
-    const val notNamedHere = "This phone does not read that list, so it names no tool of its own."
+    // The list itself, and the Disconnect beside each row, are the web's — the row above is the door
+    // to them. This says the one thing the door cannot: the phone never reads what is on the other
+    // side of it.
+    const val notNamedHere = "This phone does not read your connections, so it names no tool of its own."
 
     const val deviceOnly =
         "This log is on this device. An agent reads the log on your account, so signing in comes first."

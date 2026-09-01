@@ -13,6 +13,7 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.Older
 
 class LogScreenTests {
     private val zone: ZoneId = ZoneId.systemDefault()
@@ -173,5 +174,32 @@ class LogScreenTests {
     @Test
     fun aLogWithNothingInItFoldsIntoNoWeeks() {
         assertTrue(weeks(emptyList()).isEmpty())
+    }
+
+    // The head over the weeks counts what is IN HAND, and its silence is not a stance: `opening the
+    // log…` says the read has not answered yet, so it may not be drawn over an account whose rows a
+    // window is merely holding. A window decides which rows are drawn, never what state a screen is
+    // in (`13-gestures.md`).
+    @Test
+    fun theHeadCountsTheRowsInHandAndSaysNothingIsOpeningOverALogTheAccountHolds() {
+        val log = listOf(
+            session("s1", "2026-08-07", "Pull A", listOf(set(60.0, 10, at("2026-08-07")))),
+            session("s2", "2026-07-30", "Legs", listOf(set(60.0, 10, at("2026-07-30")))),
+        )
+
+        assertEquals("2 sessions · 2 weeks loaded",
+                     LogFold.head(weeks(log), Older.End, logHolds = true))
+        assertEquals("1 session · 1 week loaded",
+                     LogFold.head(weeks(log.take(1)), Older.More, logHolds = true))
+
+        // Every row withheld, and the account still holding them: neither the count nor the wait.
+        assertNull("the read landed — nothing about this log is still opening",
+                   LogFold.head(emptyList(), Older.More, logHolds = true))
+        assertEquals("and with nothing in the account it IS the read still in flight",
+                     "opening the log…", LogFold.head(emptyList(), Older.More, logHolds = false))
+        assertNull("a log read to its bottom has nothing left to count",
+                   LogFold.head(emptyList(), Older.End, logHolds = false))
+        assertNull("and a read that failed says so at the foot, not here",
+                   LogFold.head(emptyList(), Older.Failed, logHolds = false))
     }
 }

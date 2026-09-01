@@ -82,12 +82,16 @@ fun RoutinesScreen(
 ) {
     val nowMs = System.currentTimeMillis()
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
+    // The ROWS are the window's and the STANCE is the program's: an account holding one routine the
+    // window has taken off the screen is not an account with no routines, and `Build a routine` is an
+    // ACT offered over a program that still has one. Between the two the room draws neither.
+    val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
 
     GymScreen(
         title = "Routines",
         actions = {
-            IconButton(onClick = { onBuild(RoutineDraft(position = store.routines.size)) }) {
+            IconButton(onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) }) {
                 Icon(Icons.Filled.Add, contentDescription = "New routine")
             }
             YouSeat(seat)
@@ -133,7 +137,7 @@ fun RoutinesScreen(
 
                 if (!isSignedIn) item("claim") { ClaimCard(onSignIn) }
 
-                if (routines.isEmpty()) {
+                if (empty) {
                     item("empty") {
                         EmptyRoutines(
                             onBuild = { onBuild(RoutineDraft(position = 0)) },
@@ -148,7 +152,7 @@ fun RoutinesScreen(
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
                             onDuplicate = {
-                                onBuild(RoutineDraft.of(routine).duplicated(position = store.routines.size))
+                                onBuild(RoutineDraft.of(routine).duplicated(position = store.allRoutines.size))
                             },
                             onDelete = { onDeleteRoutine(routine.id) },
                             onReview = onReview,
@@ -161,7 +165,7 @@ fun RoutinesScreen(
 
             // The reach band. The empty state above keeps its own two-button answer, so this one is
             // drawn only where there is already a program to start from.
-            if (routines.isNotEmpty()) {
+            if (!empty) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier

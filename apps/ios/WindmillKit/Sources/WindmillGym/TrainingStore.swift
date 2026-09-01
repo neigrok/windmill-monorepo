@@ -10,6 +10,10 @@ public final class TrainingStore: ObservableObject {
     @Published public private(set) var routines: [Routine] = []
     @Published public private(set) var proposals: [ProposalHead] = []
     @Published public private(set) var recent: [SessionSummary] = []      // the log, newest first
+    // The log the ACCOUNT holds, `recent` before the withheld window takes rows out of it. A screen's
+    // state reads this — the empty stance, the day the log began, *your first session*; the rows and
+    // the count captioning them read `recent` (`13-gestures.md`).
+    @Published public private(set) var allSessions: [SessionSummary] = []
     @Published public private(set) var deviceOnly: Set<String> = []
     @Published public private(set) var logFoot: LogFoot = .loading
     @Published public private(set) var session: Session?
@@ -25,6 +29,9 @@ public final class TrainingStore: ObservableObject {
     @Published public private(set) var prefill: Prefill = .emptyBar
     @Published public private(set) var preferences: GymPreferences = .defaults
     @Published public private(set) var bodyweight: [BodyweightEntry] = []        // ascending by day
+    // The series the ACCOUNT holds, same two answers and the same rule: the stance reads this, the
+    // dots read `bodyweight`.
+    @Published public private(set) var allWeighIns: [BodyweightEntry] = []
     @Published public private(set) var refusals: [RefusedWrite] = []      // writes that never landed
     @Published public private(set) var saveState: SaveState = .idle
     @Published public private(set) var saveTick = 0                       // bumps once per write
@@ -207,12 +214,22 @@ public final class TrainingStore: ObservableObject {
         return list.filter { withheldRoutines[$0.id] == nil }
     }
 
+    // The program the ACCOUNT holds: `routines` is already the drawn list, and a withheld routine is
+    // held here for the length of its window rather than published anywhere. Same rule as
+    // `allSessions` — the state, a write's position and a replace-or-create branch read this; the
+    // rows and their count read `routines`.
+    public var allRoutines: [Routine] {
+        guard !withheldRoutines.isEmpty else { return routines }
+        return Routine.byLastTrained(routines + Array(withheldRoutines.values))
+    }
+
     private func drawBodyweight() {
+        allWeighIns = bodyweightStore.entries
         guard !withheldWeighIns.isEmpty else {
-            bodyweight = bodyweightStore.entries
+            bodyweight = allWeighIns
             return
         }
-        bodyweight = bodyweightStore.entries.filter { entry in
+        bodyweight = allWeighIns.filter { entry in
             guard let heldAt = withheldWeighIns[entry.dateLocal] else { return true }
             return entry.recordedAt > heldAt
         }
@@ -270,7 +287,7 @@ public final class TrainingStore: ObservableObject {
         preferences = localLog.open(preferencesUnder: account.user?.id) ?? .defaults
         drawBodyweight()
         served = []
-        recent = mergedRecent([])
+        drawRecent([])
         isLoading = false
 
         guard let gym else {
@@ -732,7 +749,7 @@ public final class TrainingStore: ObservableObject {
             return .closed(landed[closed.id] ?? localLog.session(closed.id)?.session ?? closed)
         }
         routines = Routine.byLastTrained(standing(localLog.routines))
-        recent = mergedRecent([])
+        drawRecent([])
         return .closed(localLog.session(closed.id)?.session ?? closed)
     }
 
@@ -744,6 +761,10 @@ public final class TrainingStore: ObservableObject {
             queue.forget(sessionId)
             queue.flush()
             drawFromQueue()
+            // The read as well as the drawn rows, and this branch is the only place it happens on the
+            // seat gym opens on: a log still holding a session nothing draws would never say
+            // `No sessions yet.` again.
+            allSessions = allSessions.filter { $0.id != sessionId }
             recent = recent.filter { $0.id != sessionId }
             deviceOnly.remove(sessionId)
             return true
@@ -762,7 +783,7 @@ public final class TrainingStore: ObservableObject {
     }
 
     public func keep(_ sets: [TrainingSet], asRoutineNamed name: String) async -> Routine? {
-        guard let write = RoutineWrite(named: name, from: sets, position: routines.count) else { return nil }
+        guard let write = RoutineWrite(named: name, from: sets, position: allRoutines.count) else { return nil }
         guard let gym else {
             let made = write.made
             localLog.keep(made)
@@ -948,9 +969,12 @@ public final class TrainingStore: ObservableObject {
             await loadProposals(from: gym)
             return .settled(landed.proposal, said: nil)
         } catch let error as WindmillApiError {
+            // Off the program the ACCOUNT holds: a routine whose delete is still withheld is out of
+            // `routines` and has not been sent, so reading the drawn list here would answer `removed`
+            // — the routine and its ledger are gone — over a routine one Undo still reaches.
             if proposal.intent == .remove, case .refused(404, _) = error {
                 await loadRoutines(from: gym)
-                if !routines.contains(where: { $0.id == proposal.routineId }) {
+                if !allRoutines.contains(where: { $0.id == proposal.routineId }) {
                     forget(routine: proposal.routineId)
                     return .removed
                 }
@@ -1093,7 +1117,7 @@ public final class TrainingStore: ObservableObject {
         if localLog.holds(session: sessionId) {
             localLog.fix(set: set.id, in: sessionId, by: correction)
             localLog.flush()
-            recent = mergedRecent(served)
+            drawRecent(served)
             return corrected
         }
         if logHasNeverSeen(set.id, in: sessionId) {
@@ -1123,7 +1147,7 @@ public final class TrainingStore: ObservableObject {
         if localLog.holds(session: sessionId) {
             localLog.drop(set: set.id, in: sessionId)
             localLog.flush()
-            recent = mergedRecent(served)
+            drawRecent(served)
             return
         }
         // A row the log has never been told about: letting the queue's row go is the whole deletion.
@@ -1146,7 +1170,7 @@ public final class TrainingStore: ObservableObject {
             guard !local.sets.contains(where: { $0.id == set.id }) else { return false }
             localLog.keep(local.session, sets: local.sets + [set])
             localLog.flush()
-            recent = mergedRecent(served)
+            drawRecent(served)
             return true
         }
         if queue.restore(set.id) {
@@ -1180,12 +1204,12 @@ public final class TrainingStore: ObservableObject {
 
     public func withhold(session id: String) {
         withheldSessions.insert(id)
-        recent = mergedRecent(served)
+        drawRecent(served)
     }
 
     public func restore(session id: String) {
         withheldSessions.remove(id)
-        recent = mergedRecent(served)
+        drawRecent(served)
     }
 
     public func settleDelete(session id: String) async -> Bool {
@@ -1763,7 +1787,7 @@ public final class TrainingStore: ObservableObject {
         }
         served = read
         logFoot = more ? .more : .bottom
-        recent = mergedRecent(read)
+        drawRecent(read)
 
         // A claim begun while the pages were on the wire may hold a replayed session open.
         guard !claiming else { return }
@@ -1795,16 +1819,21 @@ public final class TrainingStore: ObservableObject {
         }
         served += page
         logFoot = page.count < Self.logPage ? .bottom : .more
-        recent = mergedRecent(served)
+        drawRecent(served)
     }
 
-    private func mergedRecent(_ server: [SessionSummary]) -> [SessionSummary] {
+    // Two answers off one merge, because the log's screens need both: what the account holds and what
+    // the window leaves drawn.
+    private func drawRecent(_ server: [SessionSummary]) {
         let known = Set(server.map(\.id))
         let local = localLog.summaries().filter { !known.contains($0.id) }
         deviceOnly = Set(local.map(\.id))
-        return (server + local)
-            .filter { !withheldSessions.contains($0.id) }
-            .sorted { $0.session.startedAtMs > $1.session.startedAtMs }
+        allSessions = (server + local).sorted { $0.session.startedAtMs > $1.session.startedAtMs }
+        guard !withheldSessions.isEmpty else {
+            recent = allSessions
+            return
+        }
+        recent = allSessions.filter { !withheldSessions.contains($0.id) }
     }
 
     // Without the fold, a catalog read while the claim is still owed erases a movement mid-session.

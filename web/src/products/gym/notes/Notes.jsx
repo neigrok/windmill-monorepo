@@ -25,8 +25,8 @@ export function Notes({ log }) {
   // the store still holds it, which is what BOTH stances about the account are read from: the cap
   // that refuses an eleventh note, and the empty room that offers the first.
   const notes = held ?? view.data ?? [];
-  const gone = log.hidden('note');
-  const shown = notes.filter((note) => !gone.has(note.id));
+  const hidden = log.hidden('note');
+  const shown = notes.filter((note) => !hidden.has(note.id));
 
   const settle = (list) => {
     setHeld(list);

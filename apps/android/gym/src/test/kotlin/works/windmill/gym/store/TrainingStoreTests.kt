@@ -2377,13 +2377,13 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        val listed = store.threads()
+        val listed = store.readThreads()
 
         assertEquals(listOf("thr_2", "thr_1"), (listed as GymResult.Ok).value.map { it.id })
         assertEquals("no turns on the list read", listOf(0, 0), listed.value.map { it.turns.size })
         assertEquals("4 changes → Push A", listed.value[1].outcome.detail)
 
-        store.threads()
+        store.readThreads()
         assertEquals(2, server.calls.count { it == "threads" })
     }
 
@@ -2513,7 +2513,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = false))
         val signIn = WriteFailure.Refused("Coach reads your log — sign in first")
 
-        assertEquals(GymResult.Failed(signIn), store.threads())
+        assertEquals(GymResult.Failed(signIn), store.readThreads())
         assertEquals(GymResult.Failed(signIn), store.thread("thr_1"))
         assertEquals(GymResult.Failed(signIn), store.deleteThread("thr_1"))
         assertTrue(server.calls.none { it in listOf("threads", "thread", "deleteThread") })

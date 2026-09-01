@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
+import { CLOSED_ITSELF_NOTE, sessionDetailMeta } from '../../../src/products/gym/log.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, settle, textOf,
 } from './harness.mjs';
@@ -196,6 +197,55 @@ test('a set delete settles into a session screen that never armed it, and the ro
 
   await detail.remount();
   assert.equal(setsOn(), 0);
+});
+
+// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// Two of this screen's three derived lines are the ACCOUNT's — whether the session holds sets at
+// all, and how it ended — while the meta counts the rows under it. The store here never stops
+// serving the set: this screen's own read is taken once and the delete's send re-reads the log's
+// page, not this session, so the stance can only become true because the settled delete leaves the
+// room's own read of what the account holds.
+function closedItselfOnTheWire() {
+  const wire = [];
+  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_000_600_000 };
+  const set = { id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 100, reps: 5, kind: 'working', completedAt: 1_755_000_600_000 };
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    wire.push(`${options.method ?? 'GET'} ${path}`);
+    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [{ id: 'back-squat', name: 'Back Squat' }] }) };
+    if (path === '/sessions/ses_1/sets/set_1' && options.method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
+    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [set] }) };
+    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
+  };
+  return { wire, session, set };
+}
+
+test('the session’s stance and its closed-on-its-own note read the store, and the meta counts the rows', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const { wire, session, set } = closedItselfOnTheWire();
+  const room = await sessionInARoom(t);
+  const quiet = () => findByClass(room.screen(), 'gym-quiet').map(textOf);
+  const closed = () => findByClass(room.screen(), 'gym-detail-closed').map(textOf);
+  const meta = () => textOf(findByClass(room.screen(), 'gym-detail-when')[0]);
+
+  assert.deepEqual(quiet(), []);
+  assert.deepEqual(closed(), [CLOSED_ITSELF_NOTE], 'the session ended on its last set’s instant');
+  assert.equal(meta(), sessionDetailMeta(session, [set]));
+
+  deleteTheFirstSet(room);
+  assert.equal(findByClass(room.screen(), 'gym-set').length, 0, 'the row is off the screen, which is all the window decides');
+  assert.deepEqual(quiet(), [], 'a session holding one set the window has taken off the screen is not an empty session');
+  assert.deepEqual(closed(), [CLOSED_ITSELF_NOTE], 'and how it ended is a fact about the log, which no window has changed');
+  assert.equal(meta(), sessionDetailMeta(session, []), 'the meta counts what is drawn under it');
+  assert.notEqual(sessionDetailMeta(session, []), sessionDetailMeta(session, [set]));
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 1);
+  assert.equal(wire.filter((line) => line === 'GET /sessions/ses_1').length, 1, 'this screen never read the session again');
+  assert.deepEqual(quiet(), ['No sets in this session.'], 'the store answered, and only now is the session empty');
+  assert.deepEqual(closed(), [], 'and the instant the claim was inferred from is gone with it');
 });
 
 test('the log that did not open names its reason, and offers the repair for it', async () => {

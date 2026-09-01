@@ -27,10 +27,14 @@ struct RoutinesScreen: View {
     private let rowInsets = EdgeInsets(top: 4, leading: WindmillSpace.x5,
                                        bottom: 4, trailing: WindmillSpace.x5)
 
+    // What the ACCOUNT holds decides the state — the empty stance and the two acts it offers, the
+    // reach band; the window decides which rows are drawn, and the count captioning them is one of
+    // them. Deleting the only routine may not put `Build a routine` over a store that still holds one
+    // (`13-gestures.md`).
     var body: some View {
         List {
-            standing
-            if store.routines.isEmpty {
+            head
+            if store.allRoutines.isEmpty {
                 Section { empty }
                     .listRowBackground(Color.clear)
                     .listRowInsets(rowInsets)
@@ -52,9 +56,14 @@ struct RoutinesScreen: View {
                             }
                     }
                 } header: {
-                    Text(Readout.routineCount(store.routines.count))
-                        .font(GymType.numeral(11.5))
-                        .foregroundStyle(skin.inkFaint)
+                    // The rows', not the account's: a count captioning rows a reader can count for
+                    // themselves follows the window, and gates nothing. With no rows under it there
+                    // is nothing to caption, so it says nothing rather than a zero.
+                    if !store.routines.isEmpty {
+                        Text(Readout.routineCount(store.routines.count))
+                            .font(GymType.numeral(11.5))
+                            .foregroundStyle(skin.inkFaint)
+                    }
                 }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -72,7 +81,7 @@ struct RoutinesScreen: View {
     // the empty state is not already offering it as one of its two.
     @ViewBuilder
     private var reachBand: some View {
-        if !store.routines.isEmpty {
+        if !store.allRoutines.isEmpty {
             Button(action: onStartLogging) {
                 Text("Just start logging")
                     .font(WindmillFont.body(17, .bold))
@@ -86,7 +95,7 @@ struct RoutinesScreen: View {
     }
 
     @ViewBuilder
-    private var standing: some View {
+    private var head: some View {
         Section {
             RefusalRows(refusals: store.refusals, catalog: store.catalog,
                         onDismiss: { store.clearRefusals() })

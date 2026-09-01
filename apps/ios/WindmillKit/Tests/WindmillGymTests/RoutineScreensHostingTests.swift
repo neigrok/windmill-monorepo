@@ -12,25 +12,32 @@ import XCTest
 @MainActor
 final class RoutineScreensHostingTests: XCTestCase {
     private var stem: URL!
+    // A second shelf, because the device's own copy is written to disk: two stores over one stem are
+    // one device, and the second would open on the first's program.
+    private var spare: URL!
 
     override func setUp() async throws {
         stem = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("routine-host-\(UUID().uuidString)")
+        spare = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("routine-host-\(UUID().uuidString)")
     }
 
     override func tearDown() async throws {
-        for ext in ["queue.json", "catalog.json", "local.json", "account.json", "bodyweight.json"] {
-            try? FileManager.default.removeItem(at: stem.appendingPathExtension(ext))
+        for shelf in [stem, spare] {
+            for ext in ["queue.json", "catalog.json", "local.json", "account.json", "bodyweight.json"] {
+                try? FileManager.default.removeItem(at: shelf!.appendingPathExtension(ext))
+            }
         }
     }
 
-    private func makeStore(sync: any TrainingSyncing) -> TrainingStore {
-        TrainingStore(queue: SetQueue(url: stem.appendingPathExtension("queue.json"), deviceHolds: nil),
-                      deviceCatalog: DeviceCatalog(url: stem.appendingPathExtension("catalog.json")),
-                      accountCopy: AccountCopy(url: stem.appendingPathExtension("account.json")),
-                      localLog: LocalLog(url: stem.appendingPathExtension("local.json"), deviceHolds: nil),
-                      bodyweightStore: BodyweightStore(url: stem.appendingPathExtension("bodyweight.json")),
-                      undoWindowMs: 0,
-                      sync: { _ in sync })
+    private func makeStore(sync: any TrainingSyncing, on shelf: URL? = nil) -> TrainingStore {
+        let stem = shelf ?? self.stem!
+        return TrainingStore(queue: SetQueue(url: stem.appendingPathExtension("queue.json"), deviceHolds: nil),
+                             deviceCatalog: DeviceCatalog(url: stem.appendingPathExtension("catalog.json")),
+                             accountCopy: AccountCopy(url: stem.appendingPathExtension("account.json")),
+                             localLog: LocalLog(url: stem.appendingPathExtension("local.json"), deviceHolds: nil),
+                             bodyweightStore: BodyweightStore(url: stem.appendingPathExtension("bodyweight.json")),
+                             undoWindowMs: 0,
+                             sync: { _ in sync })
     }
 
     private let seat = Account(api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
@@ -202,6 +209,33 @@ final class RoutineScreensHostingTests: XCTestCase {
 
         XCTAssertEqual(painted, 0,
                        "the History block draws accent ink of its own — a `Try again` beside `Start workout`")
+    }
+
+    // ── the empty stance is a claim about the program, not about the rows ─────────────────────
+
+    // The sharpest instance of the law on this surface, and the only one that offers an ACT:
+    // `Build a routine` is an accent-filled primary the empty stance draws INSIDE the scroll body,
+    // and a delete still inside its window may not put it over a program that holds a routine. The
+    // reach band's own primary is accent too and sits in the bottom inset, so it is measured out; the
+    // two windows are read in one run rather than a pixel count off one machine (ledger `4t`).
+    func testAWithheldRoutineDoesNotDrawTheEmptyProgramsPrimary() async throws {
+        let (held, _) = await served(movements: 1, settled: 0)
+        held.withhold(routine: try XCTUnwrap(held.routines.first, "the program was never served"))
+        XCTAssertEqual(held.allRoutines.count, 1, "the account still holds the routine")
+        let window = await hosted(home(held), height: 900)
+        let paintedWhileHeld = accentPixels(of: window, above: 120)
+        window.isHidden = true
+
+        let none = makeStore(sync: FakeTraining(), on: spare)
+        await none.connect(to: seat)
+        XCTAssertTrue(none.allRoutines.isEmpty, "the empty program is not empty")
+        let bare = await hosted(home(none), height: 900)
+        let paintedWhenEmpty = accentPixels(of: bare, above: 120)
+        bare.isHidden = true
+
+        XCTAssertGreaterThan(paintedWhenEmpty, 0, "an empty program draws no `Build a routine`")
+        XCTAssertEqual(paintedWhileHeld, 0,
+                       "a routine one Undo away is offered `Build a routine` over a program that holds it")
     }
 
     // ── the primary is pinned, not scrolled ───────────────────────────────────────────────────

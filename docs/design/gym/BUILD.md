@@ -808,12 +808,14 @@ Android, both halves measured and neither shape ruled · `4j` Android's type ans
 text size where iOS's fixed point sizes and the web's all-`px` stylesheet answer nothing, which is
 product-wide rather than gym's · `4k` the routine draft, asked about before it is thrown away on iOS
 and eaten silently on the web and Android — the one destructive act in the room with no window
-behind it · `4p` four more web screens reading a window-thinned list for a claim about the account,
-the same law `4n` closed on the bodyweight screen · `4q` the state a held delete of the only weigh-in
-leaves, answered three ways, iOS's still off the drawn series · `4r` iOS's pre-mint share offer
-saying the window without its numeral, where `3k` ruled numerals for the consent screens · `4s` two
-true facts about Android's room — the wake lock and the syncing dials — that its settings screen now
-states nowhere.
+behind it · `4q` the state a held delete of the only weigh-in leaves, answered three ways — the web
+nothing at all, Android a count line plus *no weigh-in in the last 90 days*, iOS a count line over an
+empty chart in either window — and the same gap now on four more screens · `4r` iOS's pre-mint share
+offer saying the window without its numeral, where `3k` ruled numerals for the consent screens ·
+`4s` two true facts about Android's room — the wake lock and the syncing dials — that its settings
+screen now states nowhere · `4u` how far a delete's window reaches beyond the screen the act was
+taken on, undecided and answered differently by the web and the phones · `4v` a door that hands the
+lifter to a browser and says nothing when no browser comes, on both phones.
 
 **Closed by it, and recorded so the next wave reads them as settled:** `3h` iOS's routine home card
 redrawing the routine screen behind it · `3m` the connect copy's claim on how your gym is set up,
@@ -833,7 +835,9 @@ proposal promise gated on pending on both phones · `4a` the faint ink for a for
 on both phones · `4c` the finish card's name capped at the room's 60 code points on all three ·
 `4m` Android's gate `Text` off the semantics tree in both states, which makes all three
 single-reading · `4n` the bodyweight stance reading the store on the web and Android · `4o` iOS's
-weigh-in write-again guard moved inside `TrainingStore.weighIn`. `3q` is NOT among them —
+weigh-in write-again guard moved inside `TrainingStore.weighIn`. S4 adds one, stamped
+**built 2026-09-01**: `4p`, the same law on four more web screens and — once the phones were swept
+for the first time — on four iOS screens and six Android instances besides. `3q` is NOT among them —
 the detail was shortened and measured, and iOS still reads three lines at 390 points, which moves
 the entry off the copy and onto the transient's row. `3c` is NOT among them either: its wording was
 corrected where S2a made it false, and the entry stays open because the web still has no way to
@@ -926,6 +930,17 @@ themselves were not run**: every custom action is asserted in a suite, and no sc
 turned on. And the **predictive-back animation over the `when` dispatch** (**D2**) stays unproven,
 because no run recorded here has been on a version where predictive back applies.
 
+**What S4 did not verify.** The stances the wave fixed are pinned by suites and by one source-text
+pin (iOS's `testEveryGymScreenReadsTheStoreForItsStateAndTheWindowForItsRows`), and **nothing was
+driven in a real browser or on real hardware**. What did render, rendered in a harness: the web's
+cases run in node's DOM harness (`test/products/gym/harness.mjs`), Android's under Robolectric with
+`createComposeRule`, and on iOS the routines stance renders in `RoutineScreensHostingTests` while
+the stances a host does not reach are pinned at the store or by that source-text pin. Two of the wave's own findings are recorded as unreachable-in-fact
+rather than proven so: `TrainingStore.apply`'s remove-proposal verdict is drivable at the store's
+API and not through the room's navigation today, and iOS's editor seam in `GymRoom` — the `editing:`
+flag, `untested(_:)` and `save(_:)`'s replace-vs-create branch — asks `allRoutines` for the draft's
+own id, over an editor no path opens above a withheld routine.
+
 **Nothing in the remaining items was executed.** Where an item says a control "does not exist", it
 means no matching symbol appears in the tree — not that anyone watched a screen fail to show it.
 Where a comment states a measurement, the measurement was not reproduced. Citations drift by a few
@@ -995,13 +1010,14 @@ document reports what those documents say, not what the boards show.
 ## 8 · The simplification programme
 
 One rule, and nine of the eleven cuts behind it are it applied: **draw each fact once, in the state
-where it is true, and give every enforced refusal a sentence.** S1, S2a, S2b and S3 are in the tree,
-and with S2b closed **the board's confirmed list is finished**: all eleven of its shippable cuts have
-landed — 3, 6, 7, 9, 10 and 11 in S1, 1 and 2 in S2a, 4, 5 and 8 in S2b. **There is no next cut on
-that list.** S3 was not a cut either: it closed the programme's own debt — the rulings the first three
-waves MADE and RECORDED and never BUILT, which read as settled and were not true — and one salvage.
-What is left is named at the end of this section, and anything further is a new board rather than a
-next wave.
+where it is true, and give every enforced refusal a sentence.** S1, S2a, S2b, S3 and S4 are in the
+tree, and with S2b closed **the board's confirmed list is finished**: all eleven of its shippable cuts
+have landed — 3, 6, 7, 9, 10 and 11 in S1, 1 and 2 in S2a, 4, 5 and 8 in S2b. **There is no next cut
+on that list.** S3 was not a cut either: it closed the programme's own debt — the rulings the first
+three waves MADE and RECORDED and never BUILT, which read as settled and were not true — and one
+salvage. **S4 closed the last defect the programme itself created** — a window deciding what state a
+screen is in — swept all three surfaces for it, and took the one salvage S3 left. What is left is
+named at the end of this section, and anything further is a new board rather than a next wave.
 
 **What S1 landed.**
 
@@ -1273,9 +1289,10 @@ next wave.
   candidates it killed, the **settings captions** landed in S3 on the web and Android. **iOS was never
   owed its part of it**: `SettingsScreen.swift:65` already draws the lb clause under
   `store.preferences.units == .lb`, and that gate is the shape the other two copied — the roll-up
-  listing it as owed was reading the example as the debt. So the only piece of that salvage still
-  open is the **Android connect card narrowed to `sub`, `free` and `whereItLives`**. S2b itself moved nothing in
-  `products/gym`'s settings copy beyond the shelf's own control.
+  listing it as owed was reading the example as the debt. The last piece of that salvage — the
+  **Android connect card narrowed to `sub`, `free` and `whereItLives`** — landed in S4, so none of it
+  is open. S2b itself moved nothing in `products/gym`'s settings copy beyond the shelf's own
+  control.
 - **The moves the closing rulings left owed** — iOS's `30 days` (`3k`) and both phones' promise
   condition (`3t`) — were S3's opening two and are in the tree. Android's `Delete` and its `30 days`
   landed in S1.
@@ -1355,10 +1372,11 @@ it closed.
   removing it. `15-the-routine.md` records it as a decision so no later wave reads the gap as drift.
 - **A window stopped deciding what state a screen is in** (`4n`, closed, ruling **U3**) — the defect
   this programme created the day `bodyweight` joined `WITHHELD_KINDS`, against the law
-  `13-gestures.md:214-215` states in bold. Both surfaces now answer the two questions from two
-  lists: `useBodyweight` returns `entries` (the store) beside `rows` (what the window leaves), and
-  `TrainingStore` returns `allWeighIns` beside `bodyweight`. The empty stance reads the store; the
-  dots, the fix sheet, `latest` and the windowed sentence read the window. **The web's half needed a
+  `13-gestures.md:214-215` states in bold. The two surfaces that broke it answer the two questions
+  from two lists: `useBodyweight` returns `entries` (the store) beside `rows` (what the window
+  leaves), and Android's `TrainingStore` returns `allWeighIns` beside `bodyweight` — iOS's own half
+  of that screen came with S4's sweep. The empty stance reads the store; the dots, the fix sheet,
+  `latest` and the windowed sentence read the window. **The web's half needed a
   second change to be honest, and it belonged to the room**: `useTrainingLog`'s `settled` register
   is now exposed as `log.gone(kind)` beside `log.hidden(kind)`, and `entries` drops what it names,
   so the day leaves the READ as well as the drawn rows — without it the stance would have been
@@ -1404,22 +1422,86 @@ it closed.
   system dependency — *Android's touch-feedback setting can silence the haptic with this still on.*
   **Two true facts Android now states nowhere** rode out with those cuts — the wake lock and the
   syncing dials — and are ledger `4s` rather than a silent loss.
-- **What S3 opened and did not build**, each recorded rather than fixed. The `4n` law survives on
+- **What S3 opened and did not build**, each recorded rather than fixed. The `4n` law survived on
   **four more web screens** — the log's sessions and its sets, the routines home, and the coach's
   conversations — all reading a window-thinned list for a claim about the account, and the routines
-  home is the sharpest because its empty stance carries a drawn primary (`4p`). The state a held
-  delete of the only weigh-in leaves is answered three ways — and because both phones open on the
-  ninety days, the answer a lifter actually meets there is *no weigh-in in the last 90 days*, said
-  over a store still holding today's number; iOS's *no weigh-in yet* is the whole-series branch of
-  the same caption, still read off the drawn series (`4q`). iOS's pre-mint share offer still says
-  the window without its numeral, where `3k` ruled numerals for the consent screens (`4r`). And
-  Android's wake lock and syncing dials are true and unsaid (`4s`).
+  home was the sharpest because its empty stance carried a drawn primary (`4p`, **closed by S4**,
+  which also swept the phones and found the same class on both). The state a held delete of the only
+  weigh-in leaves is still answered three ways (`4q`, open, and now a copy call only: S4 took the
+  law's residue off iOS, so *no weigh-in yet* is drawn over a series that holds one on no surface).
+  iOS's pre-mint share offer still says the window without its numeral, where `3k` ruled numerals for
+  the consent screens (`4r`). And Android's wake lock and syncing dials are true and unsaid (`4s`).
 
-**What the programme owes, in full.** The board's list is finished and S3 closed the debt the first
-three waves recorded and never built, so this is everything S1, S2a, S2b and S3 opened and did not
-close. **One salvage is the only unbuilt *cut* left anywhere**: the Android connect card narrowed to
-`sub`, `free` and `whereItLives`. The settings-caption salvage landed in S3. Everything else is a
-ledger entry, and `../consistency.md` carries each one's evidence:
+**What S4 landed — the law on every surface, the first sweep of the phones, and the last salvage.**
+No new drawn control anywhere, and every screen it touched was already named in `../consistency.md`
+or found by the sweep it was asked to run.
+
+- **A window decides which rows are drawn and nothing else, on all three surfaces** (`4p`, closed,
+  stamped **built 2026-09-01**). Each screen with a drawn stance answers its read TWICE — one list
+  is what the ACCOUNT holds, the other what the window leaves — and the stance reads the first while
+  the rows read the second. **Web**: `Routines.jsx`'s `program` beside `routines`, with the empty
+  stance AND its `Build a routine` primary on `program`; `LogList`'s `sessions` beside `shown`, with
+  `LogFoot`'s *first session · …* on `sessions`; `SessionDetail`'s `logged` beside `sets`, with
+  `closedOnItsOwn` on `logged`; `ThreadsList`'s `conversations` beside `threads`, with `NO_THREADS`
+  and the `Export threads` door on `conversations`. **iOS**: `TrainingStore`'s `allSessions`,
+  `allRoutines` and `allWeighIns` beside `recent`, `routines` and `bodyweight`, read by
+  `RoutinesScreen`, `LogScreen`, `BodyweightScreen` and `ThreadsScreen` (`standing(_:outside:)`
+  beside `drawn`). **Android**: `allSessions`, `allRoutines` and `allThreads` beside `recent`,
+  `routines` and `threads`, read by `LogScreen` — its two silences and the *first session* line in
+  its foot, which names the day training started — `RoutinesScreen`, and `ThreadsScreen`, whose
+  screen-local `var threads by remember` snapshot went with the fix and whose rows are drawn only
+  off a read this entry landed, since a failed read is not a shorter list either.
+- **The second half is what makes the first honest, and it is owed on all four web screens.** The
+  settled delete leaves the READ and not only the drawn rows: the room's `log.gone(kind)` register
+  is folded out of the account lists whose own send never re-reads them — `notes/Notes.jsx`, whose
+  send does, re-reads inside it instead — or a screen whose last row is deleted draws neither rows
+  nor stance: a blank page with no words on it. `SessionDetail` needs it MOST: `dropSet` re-reads
+  the log's page and never this session's own read, so without the fold *No sets in this session.*
+  would never be drawn at all. Android's `deleteThread` spends the same half by dropping the row
+  from `conversations` on the 200 and the 404 alike (`threads()` is `readThreads()` now, because it
+  writes what it read); iOS needs none for sets, whose hold is on disk.
+- **The claims a window was deciding that are not stances at all**, all found by the sweep. A
+  WRITE: the position a new or duplicated routine is filed at, minted off the drawn list on all
+  three surfaces — a collision, not only words. A VERDICT, three times: `TrainingStore.apply`'s 404
+  branch on a remove-proposal answered `.removed`, *the routine and its ledger are gone*, over a
+  routine an Undo still reached; Android's `ReviewSheet` called a proposal superseded off the drawn
+  routines; and `Backfill.jsx` refused a span as *already in the log* over a session the
+  store had already answered a delete for, with a door into a session the log no longer draws. And a
+  FIRST-RUN predicate: Android's `TrainingStore.firstSession` opened the movement picker with *What
+  are you starting with?* and a drawn `Build my routine` over a log that still held a workout —
+  named by no entry, no board report and no contract before the sweep ran. The boundary kept on
+  purpose: **a count captioning rows a reader can see follows the window; a claim about what the
+  account HAS does not.**
+- **The phones were swept for the first time, and the whole sweep is written down** in
+  `briefs/13-gestures.md` beside the law — every screen checked, the clean ones included, so a fifth
+  wave does not pay for it twice. All 24 web `.jsx` files, four defective screens in three of them
+  plus `Backfill.jsx`'s refusal, which named a session the store had already deleted; iOS four
+  screens plus three non-stance claims and the editor seam nothing reaches today; Android six
+  instances, and every other screen on the surface checked and clean.
+- **The Android connect card took the third of the salvage the board could defend** — the last
+  unbuilt cut anywhere. `sub` (the verbatim `PITCH_LINE`), `free` (re-said by `FREE_LINE` and by the
+  kept precondition, which ends *the log stays free either way*) and `whereItLives`
+  (`DISCONNECT_LINE` plus the live Connections block plus the header row's own label) are deleted —
+  78 words, counted off the deleted string literals by this pass. **The structured can/cannot panel
+  stays**, which is what `../guidelines/text-budget.md`'s *short AND structured* asks for and why
+  the board refused the wider cut: three of its facts have no destination drawn anywhere on that
+  phone. `notNamedHere` was rewritten to *This phone does not read your connections* in the same
+  change, because `whereItLives` was the antecedent of its *that list* and a dangling referent is
+  the stale line the rule is about. `onTheWeb` was kept, so the `onClickLabel` / `say` half of the
+  ruling never fired — a failed browser launch is still silent, on both phones, and is now ledger
+  `4v`.
+
+**What the programme owes, in full.** The board's list is finished, S3 closed the debt the first
+three waves recorded and never built, and S4 closed the last defect the programme created and took
+the last salvage — so this is everything S1, S2a, S2b, S3 and S4 opened and did not close. **There is
+no unbuilt *cut* left anywhere.** Everything below is a ledger entry, and `../consistency.md` carries
+each one's evidence — with one thing that is neither, and that a ruling should reach before a later
+wave reads it as live copy: `ConnectedLog.head`, `sundayLabel`, `sundayLine`, `mondayLabel`,
+`mondayLine` and the three-item `truths` are declared on Android and drawn NOWHERE in
+`gym/src/main` — about 210 words across fifteen string literals, more than twice what S4's cut
+removed, already dead at `df03334` and held alive by `ConnectedLogTests.everySentence` and one
+`assertDoesNotExist` on `head` in `RoutinesScreenTests`, so a later cut breaks two files. The
+board reviewed a wider cut and refused it, so S4 filed this rather than taking it.
 
 - **A build is owed, on a named surface** — `3g` (the routine's own rest outranks the dial, and only
   Android says so) · `3l` (iOS's two proposal cards, and the wire behind the
@@ -1428,20 +1510,23 @@ ledger entry, and `../consistency.md` carries each one's evidence:
   rather than drift) · `3r` (Android's `Start workout` scrolls away) · `3x` (Android says the log went
   quiet for a log that answered with a reason) · `4e` (iOS's double-keep guard is in the tree
   and nothing can pin it: what is owed is the seam, an injectable store on `GymRoom` or a launch
-  argument that slows the write) · `4f` (iOS's two trim units) · and `4p` (the same law `4n` closed,
-  alive on four more web screens: the log's sessions and its sets, the routines home and the coach's
-  conversations, each reading a window-thinned list for a claim about the account — the phones were
-  not swept for it).
+  argument that slows the write) · and `4f` (iOS's two trim units).
 - **A ruling or a copy owner is owed** — `3b` · `3c` · `3j` · `3q` · `3s` · `3u` · `3w` ·
-  `3z` · `4d` · `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s`. Two of them are not gym's to answer
-  alone: `4j` is product-wide, since two surfaces of three do not answer a reader's own text size at
-  all, and `3w` is device residue, whose direction belongs to the security work's owner. The three S3
-  opened are all copy calls: the gap state a held bodyweight delete leaves (`4q`), whether the numeral
-  rule reaches the pre-mint share offer (`4r`), and whether Android's wake lock and its syncing dials
-  get a line of their own (`4s`).
+  `3z` · `4d` · `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v`. Two of them are not
+  gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer a reader's
+  own text size at all, and `3w` is device residue, whose direction belongs to the security work's
+  owner. The three S3 opened are all copy calls: the gap state a held bodyweight delete leaves
+  (`4q`, and `4p` has just given that gap four more instances), whether the numeral rule reaches the
+  pre-mint share offer (`4r`), and whether Android's wake lock and its syncing dials get a line of
+  their own (`4s`). The two S4 opened are both about reach rather than words: how far a delete's
+  window reaches beyond the screen the act was taken on, where the web and the phones already differ
+  (`4u`), and whether a door that hands the lifter to a browser owes a sentence when no browser comes
+  (`4v`).
 - **Closed, nothing owed** — `3a` · `3d` · `3e` · `3f` · `3h` · `3i` · `3k` · `3n` · `3o` · `3t` ·
-  `3v` · `4a` · `4c` · `4h` · `4i` · `4m` · `4n` · `4o`. Named here so no later wave re-opens one of
-  them by reading its heading alone. The seven S3 closed carry a **built 2026-08-31** stamp and the
+  `3v` · `4a` · `4c` · `4h` · `4i` · `4m` · `4n` · `4o` · `4p`. Named here so no later wave re-opens
+  one of them by reading its heading alone. `4p` is S4's and carries a **built 2026-09-01** stamp; it
+  is the widest of them, since the sweep behind it closed the same law on both phones as well as on
+  the four web screens the entry named. The seven S3 closed carry a **built 2026-08-31** stamp and the
   symbols that now agree, which is `../consistency.md`'s own rule for a landed fix — an entry is
   deleted outright only when it turns out to have named no real divergence, the way `3y` and `4b`
   were. `3d` closed
@@ -1461,61 +1546,64 @@ iOS asks *Discard these edits?* — so *a draft that cannot be eaten silently* i
 of three. That is ledger `4k`, opened by S2b and undecided: an unsaved draft was never on the wire,
 so the window Law 2 answers every other destructive act with has nothing to hold.
 
-**The suites.** All three were re-run by S3's documentation pass against the tree as it now stands —
-every S3 source edit on all three surfaces included — and each total below is that run's, not a
-builder's report of one. The baselines they are measured against are S2b's own close (web 1500, iOS
-706 gym cases, Android 837 per variant): a docs pass cannot rewind the tree to take a fresh one.
-Two things a runner has to know. Android needs its JDK named: `/usr/libexec/java_home -V` lists 1.8
+**The suites.** All three were re-run by S4's documentation pass against the tree as it now stands —
+every S4 source edit on all three surfaces included — and each total below is that run's, not a
+builder's report of one. The baselines they are measured against are S3's own close (web 1503, iOS
+713 gym cases, Android 843 per variant): a docs pass cannot rewind the tree to take a fresh one.
+Three things a runner has to know. Android needs its JDK named: `/usr/libexec/java_home -V` lists 1.8
 alone and the toolchain Gradle builds on is the one it provisioned for itself, so the gate runs with
 `JAVA_HOME=~/.gradle/jdks/eclipse_adoptium-21-aarch64-os_x.2/jdk-21.0.7+6/Contents/Home` and fails
-configuration without it. And **iOS's alarm-pixel reader lives in one file of its own** —
+configuration without it. **iOS's alarm-pixel reader lives in one file of its own** —
 `Tests/WindmillGymTests/AlarmInk.swift`, which SwiftPM picks up by globbing the directory: both
 `FinishSheetRefusalHostingTests` and `RoutineScreensHostingTests` call its `alarmPixels(of:)`, so
-neither hosting suite compiles without it.
+neither hosting suite compiles without it. And **the iOS device is `iPhone 17 Pro`, not `iPhone 17`**:
+CI resolves its simulator by capability and picks the Pro, and `4t` is what a run on the other device
+costs.
 
-- **web** — `cd web && npm test`: **1503 tests, 1503 pass, 0 fail** (`2.3 s`), against **1500** at the
-  S2b close. The three new cases are S3's, one per item it built on this surface: *the finish card cuts
-  a typed routine name at sixty code points, and draws no counter*, *the desk's silence is said once
-  for the whole section, and no row claims a difference the phones do not have*, and *the chart's
-  empty stance reads the store, so a held delete of the only weigh-in draws no invitation and the
-  settled one does*.
+- **web** — `cd web && npm test`: **1509 tests, 1509 pass, 0 fail**, against **1503** at the
+  S3 close. Six new cases are S4's — one per screen it fixed on this surface, plus the routine-copy
+  position and the Backfill overlap, both of which are the WRITE shape rather than a stance. Each
+  screen's pair drives both
+  directions — the held window and the settled delete: *the home's empty stance and its Build a
+  routine read the store*, *the log's empty stance reads the store … even when the re-read is stale*,
+  *the session's stance and its closed-on-its-own note read the store, and the meta counts the rows*,
+  and *the list's stance and its export door read the store*.
 - **iOS package** — `xcodebuild -scheme WindmillKit-Package -destination 'platform=iOS
-  Simulator,name=iPhone 17' test` from `apps/ios/WindmillKit`, `DEVELOPER_DIR` on Xcode:
-  **TEST SUCCEEDED — 849 executed, 843 passed, 0 failed, 6 skipped**, of which `WindmillGymTests` is
-  **713 cases**, against 706 at the S2b close. Eight cases were added and one deleted:
-  `testWeighingTheDayAgainTakesTheWindowDownBeforeTheNumberGoesIn` went with the guard it pinned on
-  the screen, replaced by `testAWeighInWrittenFromAnywhereTakesDownTheWindowOverThatDay` and
-  `testNoScreenTakesTheWindowDownBesideTheWriteThatOwnsIt`. The second is a source-text pin and the
-  one that holds the PLACEMENT: it asserts `writtenAgain` appears in neither `BodyweightScreen.swift`
-  nor `LogScreen.swift`, and that inside `TrainingStore.weighIn` the guard precedes
-  `bodyweightStore.keep`. The other six are the promise drawn while the proposal waits and gone with
-  the decision, **the proposal the room could not read keeping it** — both measured off the hosted
-  card's height, the promise being what the taller one is taller by — the share window's numerals on
-  both consent lines, the receipt's cap counted in code points, the finish card's empty name drawn
-  faint while only the log's refusal keeps the alarm, and the routine editor's two Save refusals drawn
-  in no alarm ink. The receipt's cap is pinned in two halves: `RoutineDraft.capped` is driven with a
-  fixture that tells graphemes, code points and UTF-16 units apart, and the field's use of it is a
-  source-text pin — nothing types into that field.
+  Simulator,name=iPhone 17 Pro' test` from `apps/ios/WindmillKit`, `DEVELOPER_DIR` on Xcode:
+  **TEST SUCCEEDED**, of which `WindmillGymTests` is **723 cases, 0 failed**, against 713 at the S3
+  close. **Ten** cases were added and none deleted — the two this list first missed are
+  `testDeletingTheOnlySessionOnAnUnsignedSeatLeavesTheReadAndNotOnlyTheDrawnLog`, which is V2's half
+  on the seat gym opens on, and `LogScreenHostingTests`'
+  `testTheEmptyStanceFollowsTheLogTheAccountHoldsAndNotTheDrawnRows`. Six are in
+  `WithheldRowsTests`: three of the shape *a withheld routine · session · weigh-in is still the … the
+  account holds*; the conversation pair that pins the settled delete in both directions — *a settled
+  conversation delete leaves the read and not only the drawn rows* and *deleting the only conversation
+  ends in the empty stance and not a blank page*; and the source-text pin
+  `testEveryGymScreenReadsTheStoreForItsStateAndTheWindowForItsRows`, which is what keeps a later
+  screen from taking the thinned list back for a stance. The seventh is `ProposalTests`'
+  `testAReplayedRemovalAsksWhatTheAccountHoldsAndNotWhatTheListDraws`, driving the 404 branch that
+  used to answer *removed* off the drawn list; the eighth is the wave's one hosted case,
+  `RoutineScreensHostingTests`' `testAWithheldRoutineDoesNotDrawTheEmptyProgramsPrimary`.
 - **iOS UITests** — **not run by this pass, and not run since S2a's closing pass.** The `Windmill`
-  scheme is a separate target holding **50** cases, unchanged: neither S2b nor S3 edited any file
-  under `apps/ios/UITests`. Nothing there reaches this wave's subjects either — every match for
-  `Coach` in that tree is `app.buttons["Coach"]` used to wait for the room to open, and no walk
-  touches the review band, Apply, Notes, the weigh-in sheet or the coach ceiling. Its last full run is
-  S2a's: **50 executed, 0 failures**, `TEST SUCCEEDED`, 1229 s, that run its own runner's. These walks
-  have no fake wire — `WMApiBaseURL` is empty, so they drive the real account at real speed and each
-  one writes and then takes back a routine and a session.
+  scheme is a separate target holding **50** cases, unchanged: no wave since has edited a file under
+  `apps/ios/UITests`. Nothing there reaches S4's subjects either — those walks open the room, write a
+  routine and a session and take them back, and none of them deletes the last row of anything. Its
+  last full run is S2a's: **50 executed, 0 failures**, `TEST SUCCEEDED`, 1229 s, that run its own
+  runner's. These walks have no fake wire — `WMApiBaseURL` is empty, so they drive the real account at
+  real speed.
 - **Android** — `./gradlew build` (the CI-shaped gate, `:gym:test` plus the release variant) from
-  `apps/android` with `JAVA_HOME` on the provisioned JDK 21: **BUILD SUCCESSFUL, 843 tests per
-  variant, 0 failures, 0 errors, 12 skipped**, against **837** at the S2b close. The six new cases
-  are the promise standing only while the proposal is pending, a held delete of the only weigh-in
-  never drawing the never-weighed-in stance, the name field taking the room's cap in code points —
-  asserted, counter and all, while the field still HOLDS the capped name, which is the only state a
-  counter would be drawn in — the shut band exposing the gate's refusal on exactly one node, the
-  pounds clause drawn under pounds and nowhere else, and the rest override said on the one screen
-  that says it. The count is the JUnit XML under `apps/android/gym/build/test-results/` summed
-  across all 89 classes per variant, read off disk rather than off a console tail, and run from a
-  deleted `test-results` so no result was carried over. The 89th class is `ui/LargestTypeTests.kt`,
-  the one file annotated `@GraphicsMode(NATIVE)`, which is where both fontScale-2.0 measurements live.
+  `apps/android` with `JAVA_HOME` on the provisioned JDK 21: **BUILD SUCCESSFUL, 854 tests per
+  variant, 0 failures, 0 errors, 12 skipped**, against **843** at the S3 close. **Eleven** cases were
+  added; nine of them are one class of their own, `ui/StanceReadsTheAccountTests.kt` — the log drawing neither silence over a
+  session the account still holds, the routines home never offering to build the first over a program
+  that still has one, the threads room reading the account and a deleted conversation never coming
+  back, and the first-session stance reading the account while the settled discard brings it back.
+  Two existing names changed with the connect-card cut
+  (`theCardSaysThePriceOnceAndRestatesNothingTheWebOwns`,
+  `testTheOfferIsMadeWithItsPreconditionBesideItAndSaysNothingTwice`) and the count is unaffected by
+  those. The total is the JUnit XML under `apps/android/gym/build/test-results/` summed across all 90
+  classes per variant, read off disk rather than off a console tail, and run from a deleted
+  `test-results` so no result was carried over.
 
 Everything else this section states is read off the tree at the symbols it names, in the same way as
 the rest of this document.

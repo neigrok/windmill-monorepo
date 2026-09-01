@@ -115,23 +115,26 @@ already let go of.
 **The screen's stance reads the STORE; only its rows read the window** — `13-gestures.md`'s law,
 which this screen is the reason for. *No weigh-ins yet. Weigh in from the log and the number lands
 here.* is a claim about the account, so deleting your only weigh-in may not draw it over a series
-that still holds one and offers *Undo* beside it. **Two surfaces of three answer the two questions
-from two lists**: `useBodyweight` answers `entries` (what the store holds) beside `rows` (what the
-window leaves), and Android's `TrainingStore` answers `allWeighIns` beside the thinned `bodyweight`.
-On both, the delete leaves the read as well as the drawn rows the moment the store takes it, so the
-invitation becomes true then rather than at the next re-read. **iOS has neither list** — its chart
-and the caption over it are both built from the thinned `store.bodyweight` — so its caption still
-answers for the account off the drawn series, which is ledger `4q`.
+that still holds one and offers *Undo* beside it. **All three surfaces answer the two questions from
+two lists**: `useBodyweight` answers `entries` (what the store holds) beside `rows` (what the window
+leaves), and both phones' `TrainingStore` answers `allWeighIns` beside the thinned `bodyweight`. On
+each, the delete leaves the read as well as the drawn rows the moment the store takes it, so the
+invitation becomes true then rather than at the next re-read. iOS charts both lists — `standing` off
+`store.allWeighIns` decides whether there is a series at all, `chart` off `store.bodyweight` decides
+the dots (`BodyweightScreen.swift`).
 
-**Between the two stances there is no one answer yet, and the default window decides which one a
-lifter meets.** For the nine seconds of a held delete of the only weigh-in there is no invitation —
+**Between the two stances there is no one answer yet, and the three surfaces fill the gap three
+ways.** For the nine seconds of a held delete of the only weigh-in there is no invitation —
 the store still holds a number — and no chart, because the window is holding its one dot. Both phones
-open on the ninety days, so both fill the gap with a sentence about them: Android draws the window
-control, the count line *last 90 days · 0 weigh-ins* and *no weigh-in in the last 90 days*, and iOS's
-caption draws that same sentence — said, on both, over a store that holds a weigh-in inside those
-ninety days. The web draws nothing at all. Switched to the whole series, Android's count line reads
-*the whole series · 0 weigh-ins* and it says nothing further, while iOS's caption becomes *no weigh-in
-yet*, a claim about the account read off the drawn list (ledger `4q`).
+open on the ninety days, and only one of them still says a sentence about them: Android draws the
+window control, the count line *last 90 days · 0 weigh-ins* and *no weigh-in in the last 90 days* —
+said over a store that holds a weigh-in inside those ninety days. In that gap iOS says no sentence
+in either window, because `Bodyweight.emptyWindow` is charted off the standing series and answers `nil`
+while the account holds a weigh-in: what stands there is the card, with `Chart.label` reading
+*last 90 days · 0 weigh-ins* over an empty dot field. The web draws nothing at all. Switched to the
+whole series, Android's count line reads *the whole series · 0 weigh-ins* and it says nothing
+further, and iOS's label reads the same over the same empty field. Which of the three the room should
+give is ledger `4q`.
 
 **What lands after the window is not the same fact on every surface, because the delete is not.**
 The web's delete reaches the log itself, so a refusal there means the row is standing again and says

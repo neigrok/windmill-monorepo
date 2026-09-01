@@ -214,14 +214,95 @@ shortened. The same reading answers the empty room: an account holding one note 
 off the screen is not an empty account, so nothing offers to seed it. **A window decides which rows
 are drawn; it never decides what state a screen is in** (`10-notes.md`).
 
-**The rule is the room's and not the notes screen's.** Every kind with a drawn empty stance owes it:
-the bodyweight screen answers the two questions from two lists on the web and on Android —
-`useBodyweight`'s `entries` beside `rows`, `TrainingStore.allWeighIns` beside `bodyweight` — so
-deleting your only weigh-in draws no *No weigh-ins yet* over a series still holding one
-(`11-bodyweight.md`). And the delete has to leave the READ and not only the drawn rows the moment the
-store takes it, or a stance suppressed for nine seconds is a stance suppressed forever. **Four web
-screens have not taken it yet** — the log's sessions and its sets, the routines home, the coach's
-conversations — and are ledger `4p`; iOS's own bodyweight caption is ledger `4q`.
+**The rule is the room's and not the notes screen's, and all three surfaces have taken it.** Every
+kind with a drawn empty stance owes it, and each surface now answers the two questions from two
+lists. **Web**: `useBodyweight`'s `entries` beside `rows`, `Routines.jsx`'s `program` beside
+`routines`, `LogList`'s `sessions` beside `shown`, `SessionDetail`'s `logged` beside `sets`,
+`ThreadsList`'s `conversations` beside `threads`, and `notes/Notes.jsx`'s `notes` beside `shown`.
+**iOS**: `TrainingStore`'s `allWeighIns`, `allSessions` and `allRoutines` beside `bodyweight`,
+`recent` and `routines`, with `ThreadsScreen.standing(_:outside:)` beside its private `drawn`, the
+shape `NotesScreen` already had. **Android**: `allWeighIns`, `allSessions`, `allRoutines` and
+`allThreads` beside `bodyweight`, `recent`, `routines` and `threads`. So deleting your only weigh-in
+draws no *No weigh-ins yet* over a series still holding one (`11-bodyweight.md`), and deleting your
+only routine offers no *Build a routine* over a program that still has one. **And the delete has to
+leave the READ and not only the drawn rows the moment the store takes it**, or a stance suppressed
+for nine seconds is a stance suppressed for ever: the web folds the room's `log.gone(kind)` out of
+the account lists whose own send never re-reads them, and `notes/Notes.jsx` — whose send does —
+re-reads inside it instead; Android's `deleteThread` drops the row from `conversations` on the 200
+and the 404 alike; and iOS writes a set's hold into the queue on disk (`Withheld.Kind.isHeldOnDisk`)
+so its read and its rows move together. Ledger `4n` and `4p`, both built. What those nine seconds
+should DRAW is still open as `4q`.
+
+**A window can decide a WRITE and a VERDICT as well as a stance, and a count is neither.** The sweep
+found three shapes past the empty state. A **write position** minted off the drawn list — the
+position a new or duplicated routine is filed at, on all three surfaces — which is a collision and
+not only words. A **verdict**, three times: `TrainingStore.apply`'s 404 branch on a remove-proposal
+answered `.removed`, *the routine and its ledger are gone*, off iOS's drawn list, over a routine an
+Undo still reached; Android's `ReviewSheet` called a proposal superseded off the drawn routines; and
+the web's `Backfill.jsx` refused a span as *already in the log* over a
+session the store had already answered a delete for, offering a door into a session the log no
+longer draws. And a **first-run predicate**: Android's `TrainingStore.firstSession` opened the
+movement picker with *What are you starting with?* and a drawn `Build my routine` over a log that
+still held a workout. All of them read the account now. The boundary that stays: **a count
+captioning rows a reader can see follows the window; a claim about what the ACCOUNT holds does not**
+— the web's `sessionDetailMeta`, `conversationsLine` and `loadedLine`, iOS's `Readout.routineCount`,
+`LogWeeks.loaded` and the conversations `meta`, and Android's `LogFold` session counts and
+`Threads.counted` all caption the rows drawn beneath them, so they follow the window and a later
+wave should not sweep them onto the account with the stances. *first session · …* is the other side
+of the same line: it names the day training started, so it reads the account on every surface.
+
+**The sweep, in full, so no later wave pays for it twice** — every screen checked, including the ones
+found clean.
+
+- **Web**, all 24 `.jsx` files under `web/src/products/gym`. Four screens carried it, in three files
+  — `Routines.jsx`, `Log.jsx`'s `LogList` and its `SessionDetail`, and `coach/Threads.jsx`'s
+  `ThreadsList`. Two already answered twice: `notes/Notes.jsx` (`notes` beside `shown`) and
+  `bodyweight/Bodyweight.jsx`. Two are the class and deliberate: `ThreadDetail`'s whole-screen state
+  reads `log.hidden('thread')`, because that screen IS the withheld row and a back gesture may not
+  walk into a room the room says is deleted, and `useTrainingLog.js` hands `summaries`, `sets` and
+  `catalog` out un-thinned, which is what lets a screen answer twice at all. Clean, with no
+  list-derived state a window reaches: `settings/GymSettingsSection.jsx` — its three export doors
+  read the store directly, and it renders in shell settings, outside the room, where no window
+  reaches it — `Proposals.jsx`, `RoutineEditor` (which shares `Routines.jsx`), `Mirror.jsx`,
+  `Finish.jsx`, `Record.jsx`, `logger/MovementPicker.jsx`, `coach/CoachRoom.jsx`,
+  `connect/ConnectLog.jsx`, `share/SharedSession.jsx`, `share/ShareWorkout.jsx`, `GymApp.jsx`,
+  `HomeCard.jsx`, `Back.jsx`, `Overflow.jsx`, `FixSheet.jsx`, `RoutinesGhost.jsx`,
+  `logger/Keypad.jsx` and `marketing/GymLanding.jsx`.
+- **iOS**. Four screens carried it — `RoutinesScreen`, `LogScreen`, `ThreadsScreen`,
+  `BodyweightScreen` — plus `GymRoom`'s `isFirst`, both new-routine positions and
+  `TrainingStore.apply`'s verdict. Swept and unreachable, which is why it is named here rather than
+  called clean: the editor seam in `GymRoom` — the `editing:` flag, `untested(_:)` and `save(_:)`'s
+  replace-vs-create branch each decide off the draft's own id, looked up in `allRoutines`, because a
+  decision is not a row; a routine is withheld only from `RoutinesScreen`, whose row is gone the
+  moment the window opens, so no navigation reaches the editor over a withheld routine today. Clean:
+  `SessionScreen`, and its reason is worth keeping — it thins no set list of its own and carries no
+  empty stance, because a set's hold is on disk, so its read and its rows move together, which is
+  why the web's `SessionDetail` has no twin here; its head's numbers are the log page's own summary
+  and not a fold over the drawn sets, so on a session the LOG holds they say what the account has
+  while a device-only session's follow the rows — a disagreement `../../guidelines/text-budget.md`
+  records as correct, and a count rather than a stance — `LoggerScreen`, `MovementPicker` and
+  `OpeningPicker` (sessions rank rows, and the option list is frozen at open), `RecordScreen`,
+  `SettingsScreen`, `ConnectedLog` / `ConnectScreen`, `CoachShare`, `AskScreen`, `ReviewSheet`,
+  `FinishScreen` and `NotesScreen`. iOS draws no `Export threads` door and thins no set list, so two
+  of the web's four have no counterpart at all.
+- **Android**. Seven instances — `LogScreen`'s two silences and its foot's *first session · …*, which
+  names the day training started and so may not follow a window that is holding the oldest row,
+  `RoutinesScreen`'s stance and primary and write position, `ThreadsScreen`'s stance (which also
+  held its own `var threads by remember` snapshot), `GymRoom`'s `isFirst`,
+  `TrainingStore.firstSession`, which nothing had named before the sweep, and `ReviewSheet`, which
+  read the drawn `routines` to decide a proposal was superseded — so a window holding the routine
+  made the sheet say the diff had been overtaken when it had not. Clean: `SessionScreen`,
+  which is better than the web's — it thins rows only, and `SessionHead` reads the summary's own
+  `closedItself` flag rather than a predicate over the drawn sets — `BodyweightScreen`,
+  `NotesScreen`, `SettingsScreen`'s `UnattributedRow` (the whole row goes, so no stance is left to
+  lie), `RecordScreen`, `AskScreen`, `MovementPicker`, `RoutineBuilder`, `LoggerScreen`,
+  `FinishScreen`, and the sheet family less the one above: `FixSheet`, `DeviationSheet`,
+  `AssemblySheet`, `KeypadSheet`, `RenameSheet`, `CoachShareCard`, `ConfirmDialog`, `RefusalBanner`.
+
+**What the sweep did not settle is how far the window REACHES.** It is the room's, and a screen's
+stance may not read it — but which other lists in the room it thins is undecided, and the surfaces
+disagree today: the web ranks the movement picker's six off the un-thinned `log.summaries`, both
+phones off the thinned `store.recent`. No stance is false either way; it is ledger `4u`.
 
 **The shelf's row goes whole, and its one fact rides in the transient's line.** Android's unclaimed
 training is the last copy of what it holds, so hiding only the discard control would leave

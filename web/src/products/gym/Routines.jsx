@@ -30,11 +30,26 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const view = useGymRead(() => gymApi.routines(), []);
   const [copying, setCopying] = useState(false);
 
+  // The read, answered TWICE: `program` is what the ACCOUNT holds — the read less the routines the
+  // store has answered a delete for — and `routines` is what the withheld window leaves to draw. The
+  // stance reads the account and the rows read the window: a window decides which rows are drawn and
+  // never what state a screen is in (`13-gestures.md`). Both questions are asked of the ROOM, so
+  // this list is right however many times it is rebuilt mid-window, and the settled delete leaves
+  // the read as well as the rows — without that the last routine's delete would leave a home with no
+  // rows and no words on it for ever.
+  const gone = log.gone('routine');
+  const hidden = log.hidden('routine');
+  const program = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
+  const routines = program.filter((routine) => !hidden.has(routine.id));
+
+  // The copy is filed past the end of the ACCOUNT's program, never the original's own place and
+  // never the raw read's length: nothing re-reads this list behind a settled delete, so the raw read
+  // would file every copy one place high for the life of the room. The phones file it the same way.
   const duplicate = async (routine) => {
     if (copying) return;
     setCopying(true);
     try {
-      await gymApi.createRoutine(duplicateRoutine(routine, { id: mintId('rt_'), position: view.data.length }));
+      await gymApi.createRoutine(duplicateRoutine(routine, { id: mintId('rt_'), position: program.length }));
       view.retry();
     } catch (error) {
       log.say(`That copy wasn’t made — ${failureReason(error)}.`);
@@ -51,11 +66,6 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
     send: () => gymApi.deleteRoutine(routine.id),
     refused: (error) => log.say(`${routine.name} is still in your program — ${failureReason(error)}.`),
   });
-
-  // Off the home while the window holds it, and off for good once the store has answered — one
-  // question, asked of the room, so this list is right however many times it is rebuilt mid-window.
-  const gone = log.hidden('routine');
-  const routines = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
 
   return (
     <>
@@ -90,7 +100,10 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
           <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       )}
-      {view.phase === 'ready' && routines.length === 0 && (
+      {/* Off the ACCOUNT: an account holding one routine the window has taken off the home is not an
+          account with no routines — it comes back on Undo, and `Build a routine` would be an act
+          offered over a program that still has one. Between the two stances the home draws neither. */}
+      {view.phase === 'ready' && program.length === 0 && (
         <>
           <p className="gym-quiet">No routines yet.</p>
           <p className="gym-quiet">Finish a session and gym offers to keep it as one — or write one out now.</p>

@@ -15,25 +15,41 @@ struct ThreadDoors {
 struct ThreadsScreen: View {
     let doors: ThreadDoors
     // The list is read from the server and never crossed out locally, so a row whose delete is still
-    // withheld comes out of what is DRAWN — and walks straight back in when the undo lands.
+    // withheld comes out of what is DRAWN — and walks straight back in when the undo lands. A
+    // conversation whose delete has LANDED leaves the store's list as well: `standing` is what the
+    // account holds and `drawn` is what the list shows, so the empty stance never reads a window and
+    // the count over the rows always does (`13-gestures.md`).
     @ObservedObject var withheld: WithheldWindow
 
     @Environment(\.gymSkin) private var skin
     @State private var served: [AskThread]?
     @State private var failure: AskRefusal?
 
-    private var threads: [AskThread]? {
-        served?.filter { !withheld.hides(.thread, $0.id) }
+    // What the ACCOUNT holds, which is what the empty stance reads. A conversation inside its window
+    // is still on the log; one whose delete has LANDED is not, and the register is the only thing
+    // that knows the difference. Read off the served list alone, the stance would stay suppressed for
+    // the rest of the visit — the delete has to leave the READ and not only the drawn rows.
+    @MainActor
+    static func standing(_ threads: [AskThread], outside withheld: WithheldWindow) -> [AskThread] {
+        threads.filter { !withheld.settled(.thread, $0.id) }
+    }
+
+    private func drawn(_ standing: [AskThread]) -> [AskThread] {
+        standing.filter { !withheld.hides(.thread, $0.id) }
     }
 
     var body: some View {
         List {
-            if let threads {
-                if threads.isEmpty {
+            if let served {
+                let standing = Self.standing(served, outside: withheld)
+                let rows = drawn(standing)
+                if standing.isEmpty {
                     Section { empty }.modifier(ThreadRow())
                 } else {
-                    Section { meta(threads.count) }.modifier(ThreadRow())
-                    months(of: threads)
+                    // The rows' count and not the account's, and nothing rather than a zero while
+                    // the window leaves no rows to caption.
+                    if !rows.isEmpty { Section { meta(rows.count) }.modifier(ThreadRow()) }
+                    months(of: rows)
                 }
             } else if let failure {
                 Section { silence(failure.line) }.modifier(ThreadRow())

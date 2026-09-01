@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../../src/products/gym/fix.js';
 import { THREADS_HREF } from '../../../../src/products/gym/log.js';
-import { THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED } from '../../../../src/products/gym/coach/threads.js';
+import { NO_THREADS, THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED } from '../../../../src/products/gym/coach/threads.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf,
 } from '../harness.mjs';
@@ -187,9 +187,45 @@ test('the row is off the list at once, and the window runs the full nine seconds
   await settle();
   assert.deepEqual(deletes(wire), ['DELETE /threads/thr_2'], 'exactly one, nine seconds later');
   assert.equal(room.log().transient, null, 'the transient retires with the last clock');
-  // The list read again once the store had answered, so the row cannot come back off the read it
-  // took while the conversation was still there.
+  // This list is never read again inside a visit, so the row stays off it because the ROOM records
+  // what the store answered for — not because a re-read stopped serving it.
   assert.deepEqual(titles(room.list()), ['Heavier bench?', 'More rows?']);
+});
+
+// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// The door is the sharp half here: `Export conversations` opens on everything the ACCOUNT holds, and
+// a delete that has not been sent may not take a door to all of it off the screen for nine seconds.
+test('the list’s stance and its export door read the store: every conversation held draws neither, and the settled deletes draw both', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = threadsOnTheWire();
+  const room = await coachRoom(t, 'thr_3');
+  const door = () => findByClass(room.list(), 'gym-threads-export');
+  const quiet = () => findByClass(room.list(), 'gym-quiet').map(textOf);
+  assert.equal(door().length, 1);
+  assert.deepEqual(quiet(), []);
+
+  deleteVerb(room.detail()).props.onClick();
+  await room.walkTo('thr_2');
+  deleteVerb(room.detail()).props.onClick();
+  await room.walkTo('thr_1');
+  deleteVerb(room.detail()).props.onClick();
+  await settle();
+
+  assert.deepEqual(titles(room.list()), [], 'all three rows are off the list, which is all the window decides');
+  assert.deepEqual(quiet(), [], 'the account still holds all three, so nothing says it holds none');
+  assert.equal(door().length, 1, 'least of all by closing the door to everything it holds');
+  assert.equal(room.log().transient.text, '3 deleted.');
+  assert.deepEqual(deletes(wire), []);
+
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(
+    deletes(wire).sort(),
+    ['DELETE /threads/thr_1', 'DELETE /threads/thr_2', 'DELETE /threads/thr_3'],
+  );
+  assert.deepEqual(quiet(), [NO_THREADS], 'the store answered for all three, and only now is the account empty');
+  assert.deepEqual(door(), [], 'and the door goes with the last conversation it would have carried');
 });
 
 test('Undo puts the conversation back at its own position, and the delete is never sent', async (t) => {
