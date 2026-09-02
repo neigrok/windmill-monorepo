@@ -3,10 +3,11 @@ package works.windmill.gym.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.filterToOne
-import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -98,9 +99,17 @@ class PickerMintTests {
     private fun search() =
         compose.onAllNodes(hasSetTextAction()).filterToOne(hasText("Search 6 movements"))
 
-    // The create step's own Cancel, told from the picker's by the line beside it.
-    private fun cancelTheCreateStep() =
-        compose.onAllNodesWithText("Cancel").filterToOne(hasAnySibling(hasText("not in the library")))
+    // The create step draws no Cancel of its own: its sheet's drag handle carries the platform's
+    // Dismiss, told from the picker's own handle by the window the step is drawn in.
+    private fun dismissTheCreateStep() {
+        val step = compose.onNodeWithText("Your movement").fetchSemanticsNode().root
+        val handle = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+            .fetchSemanticsNodes().single { it.root === step }
+        compose.runOnIdle { handle.config[SemanticsActions.Dismiss].action!!.invoke() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Your movement").fetchSemanticsNodes().isEmpty()
+        }
+    }
 
     @Test
     fun testCancellingTheCreateStepHandsBackTheSearchThatOpenedIt() {
@@ -113,8 +122,7 @@ class PickerMintTests {
         compose.waitForIdle()
 
         compose.onNodeWithText("Your movement").assertIsDisplayed()
-        cancelTheCreateStep().performClick()
-        compose.waitForIdle()
+        dismissTheCreateStep()
 
         // The door is drawn only where the query matches nothing, so its bytes ARE the query.
         compose.onNodeWithText("Create “Zercher”").assertIsDisplayed()

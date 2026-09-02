@@ -1,11 +1,9 @@
+import { dateLocalOf, msOfDateLocal } from './bodyweight/bodyweight.js';
 import {
   dayLabel, durLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmtKg, isFinished, NO_ROUTINE, routineNameOf,
   setCountLabel, timeLabel,
 } from './log.js';
 
-const DAY_MS = 86400000;
-
-export const DAY_CHIP_OFFSETS = [1, 2, 5];
 export const DEFAULT_START_HOUR = 17;
 export const DEFAULT_START_MINUTE = 30;
 
@@ -31,15 +29,19 @@ export function endsAhead({ startedAt, durationMs }, now = Date.now()) {
   };
 }
 
-export function dayChips(now = Date.now()) {
-  return DAY_CHIP_OFFSETS.map((days) => ({
-    days,
-    label: days === 1 ? 'Yesterday' : dayLabel(now - days * DAY_MS),
-  }));
+// The day a backfill opens on: yesterday, in the lifter's own calendar. The day is stepped and not
+// subtracted, so a clock change never lands it two days back or on today.
+export function yesterdayOf(now = Date.now()) {
+  const day = new Date(now);
+  day.setDate(day.getDate() - 1);
+  return dateLocalOf(day.getTime());
 }
 
-export function startedAtOf({ days, hour = DEFAULT_START_HOUR, minute = DEFAULT_START_MINUTE, now = Date.now() }) {
-  const day = new Date(now - days * DAY_MS);
+// `date` is a local `YYYY-MM-DD`; null for anything that is not a real day.
+export function startedAtOf({ date, hour = DEFAULT_START_HOUR, minute = DEFAULT_START_MINUTE }) {
+  const midnight = msOfDateLocal(date);
+  if (midnight === null) return null;
+  const day = new Date(midnight);
   day.setHours(hour, minute, 0, 0);
   return day.getTime();
 }

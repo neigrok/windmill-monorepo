@@ -288,4 +288,12 @@ final class ConnectedLogTests: XCTestCase {
                 ConnectedLog.settingsFallback, ConnectedLog.accountWide, ConnectedLog.webDoor,
             ]
     }
+
+    // The read line names notes the way the web and Android do (ledger 3m): a grant that reads the
+    // log reads the notes on it, and a consent screen that leaves that out is asking for less than
+    // it takes.
+    func testTheReadLineNamesNotesAsTheOtherSurfacesDo() {
+        XCTAssertEqual(ConnectedLog.canLines[0],
+                       "Read what you have logged — sets, sessions, routines, records and notes.")
+    }
 }

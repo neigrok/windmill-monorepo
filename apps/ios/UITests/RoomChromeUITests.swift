@@ -109,14 +109,16 @@ final class RoomChromeUITests: XCTestCase {
                                     + "\(String(format: "%.2f", read.ratio)):1")
     }
 
-    // A segmented `Picker` outside a Form or a List renders no label at all, so the card has to draw
-    // its own head — the way the two cards below it do.
+    // Settings is a `Form`, and each segmented `Picker` in it hides its own label: the group's name is
+    // its section header, drawn once over the control.
     func testTheUnitsCardSaysWhatItIs() {
         let door = app.buttons["Gym settings"]
         XCTAssertTrue(door.waitForExistence(timeout: 20))
         if !door.isHittable { app.swipeUp() }
         door.tap()
-        XCTAssertTrue(app.staticTexts["how the room behaves at the rack"].waitForExistence(timeout: 10))
+        let footer = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",
+                                                          "Display only — nothing stored changes.")).firstMatch
+        XCTAssertTrue(footer.waitForExistence(timeout: 10))
         frame("fixc-settings")
 
         XCTAssertTrue(app.staticTexts["Units"].exists,

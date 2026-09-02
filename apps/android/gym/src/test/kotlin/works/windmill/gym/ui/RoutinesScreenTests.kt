@@ -3,7 +3,10 @@ package works.windmill.gym.ui
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -17,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -119,7 +123,6 @@ class RoutinesScreenTests {
         compose.onNodeWithText("Just start logging").assertIsDisplayed()
         compose.onNodeWithText("New routine").assertDoesNotExist()
         compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
         compose.onNodeWithText(ConnectedLog.connect).assertDoesNotExist()
         compose.onNodeWithText("Gym settings").assertIsDisplayed()
 
@@ -280,6 +283,57 @@ class RoutinesScreenTests {
             assertEquals("the tile's body opens the routine, and nothing else fires",
                 listOf("open:${kept.id}"), doors)
         }
+        scope.cancel()
+    }
+
+    // The routine page's one primary is under the thumb: pinned in the Scaffold's bottom bar, out of
+    // the scrolling body, and it starts the workout.
+    @Test
+    fun testStartWorkoutIsPinnedOutOfTheScrollAndStartsTheRoutine() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val started = mutableListOf<String>()
+        val store = TrainingStore(
+            queue = SetQueue(File(tmp.root, "queue.json")),
+            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
+            localLog = LocalLog(File(tmp.root, "local.json")),
+            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
+            scope = scope,
+            sync = { null },
+        )
+        runBlocking {
+            store.connect(Account(
+                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+                user = null,
+            ))
+            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
+        }
+        val routineId = store.routines.single().id
+        compose.setContent {
+            RoutineScreen(
+                routineId = routineId,
+                store = store,
+                isSignedIn = false,
+                backTo = "Routines",
+                onBack = {},
+                onStart = { started += it },
+                onBuild = {},
+                onOpenMovement = {},
+                lookedAt = emptySet(),
+                onReview = {},
+                onOpenThread = {},
+            )
+        }
+
+        compose.onNodeWithText("Start workout").assertIsDisplayed()
+        compose.onNode(hasText("Start workout") and hasAnyAncestor(hasScrollAction())).assertDoesNotExist()
+        compose.onNode(hasText("Bench Press") and hasAnyAncestor(hasScrollAction())).assertExists()
+        val band = compose.onNodeWithText("Start workout").fetchSemanticsNode()
+        val body = compose.onNodeWithText("Bench Press").fetchSemanticsNode()
+        assertTrue("the band sits under the body", band.positionInRoot.y > body.positionInRoot.y)
+
+        compose.onNodeWithText("Start workout").performClick()
+        compose.runOnIdle { assertEquals(listOf(routineId), started) }
         scope.cancel()
     }
 }

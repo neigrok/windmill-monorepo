@@ -24,23 +24,21 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,7 +120,10 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     val read = record
     if (renaming && read != null) {
         ModalBottomSheet(
-            onDismissRequest = { close() },
+            onDismissRequest = {
+                refused = null
+                close()
+            },
             sheetState = sheetState,
             containerColor = GymSkin.surface,
         ) {
@@ -133,10 +134,6 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                 proof = Record.proof(read, aliased = store.renameKeepsAnAlias(exerciseId)),
                 refused = refused,
                 onValue = { draft = it },
-                onCancel = {
-                    refused = null
-                    close()
-                },
                 onRename = {
                     scope.launch {
                         when (val written = store.rename(exerciseId, draft)) {

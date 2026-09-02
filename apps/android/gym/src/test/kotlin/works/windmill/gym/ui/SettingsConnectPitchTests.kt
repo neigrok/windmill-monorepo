@@ -67,6 +67,18 @@ class SettingsConnectPitchTests {
         return store
     }
 
+    // The bar names the screen, and nothing else does: the head line that used to say what the
+    // screen was for is gone, because the platform's title already says it.
+    @Test
+    fun testTheBarNamesTheScreenAndNoHeadLineRepeatsIt() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        settings(scope)
+
+        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
+        scope.cancel()
+    }
+
     // A caption is drawn only in the state it describes: on kg the pounds clause is a sentence about
     // nothing. Tapping `lb` writes the answer and the clause arrives with it.
     @Test
@@ -82,18 +94,17 @@ class SettingsConnectPitchTests {
         scope.cancel()
     }
 
-    // The Rest card carries ONE caption and it is the override, because this screen is the only place
-    // on the phone that a routine's own rest beating this dial is said — `Rest.target` prefers the
-    // routine's line, and nothing else on Android tells a lifter so.
+    // The rest override is said on the timer, where it is in force, and a fact is drawn once: the
+    // Rest card here says nothing about a routine's own rest beating this dial.
     @Test
-    fun testTheRestOverrideIsSaidOnTheOnlyScreenThatSaysIt() {
+    fun testTheRestCardSaysNothingAboutTheOverride() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         settings(scope)
 
-        compose.onNodeWithText(
-            "A routine can carry its own rest for a movement. That one wins over this dial, " +
-                "off included — and only a change to that routine can move it."
-        ).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Rest timer").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("wins over this dial", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("from the routine", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("its own rest", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 

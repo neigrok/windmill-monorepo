@@ -1479,59 +1479,11 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-entry-drop:hover {
   color: var(--alarm-ink);
 }
-/* One overflow, on the routine row and nowhere else. It holds what a lifter does to a routine rather
-   than in it — Duplicate and Delete — and nothing destructive lives here until a withheld delete
-   does. */
-.gym-overflow {
-  position: relative;
-  flex: none;
-  display: flex;
-}
-.gym-overflow-open {
-  width: 44px;
-  min-height: 44px;
-  border: none;
-  background: transparent;
-  color: var(--gym-ink-faint);
-  font: inherit;
-  font-size: 17px;
-  line-height: 1;
-  cursor: pointer;
-}
-.gym-routine .gym-overflow-open {
+/* The routine row's overflow is the design system's Menu; the row alone stretches its opener to the
+   row's height and rules it off from the name. */
+.gym-routine .wm-menu-open {
   align-self: stretch;
   border-left: 1px solid var(--gym-line);
-}
-.gym-overflow-open:hover {
-  color: var(--gym-ink);
-}
-.gym-overflow-menu {
-  position: absolute;
-  top: calc(100% - 4px);
-  right: 4px;
-  z-index: 6;
-  min-width: 148px;
-  padding: 5px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
-  background: var(--gym-raised);
-  box-shadow: var(--shadow-lg);
-}
-.gym-overflow-item {
-  width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-.gym-overflow-item:hover {
-  background: var(--gym-surface);
 }
 
 /* The target sheet — three typed fields and nothing else. Emptying one is how you clear it, and the
@@ -1730,8 +1682,7 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 .gym-short-keep,
 .gym-keep-decline,
-.gym-overlap-fix,
-.gym-save-cancel {
+.gym-overlap-fix {
   height: 50px;
   padding: 0 18px;
   display: inline-flex;
@@ -1795,6 +1746,13 @@ button.gym-set:focus-visible .gym-set-fix,
   background: var(--alarm-fill);
   border-color: var(--alarm-fill);
   color: var(--gym-on-alarm);
+}
+
+/* The finished session's own door out of the log, the same window and the same face as the short
+   session's on the review. */
+.gym-detail-discard {
+  display: flex;
+  margin-top: 26px;
 }
 
 .gym-keep {
@@ -1873,6 +1831,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 .gym-chip,
+.gym-when-date,
 .gym-when-time {
   height: 40px;
   padding: 0 13px;
@@ -1890,9 +1849,16 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
   font-weight: 700;
 }
+.gym-when-date,
 .gym-when-time {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+.gym-when-date {
+  color-scheme: dark;
+}
+.gym-root[data-theme="light"] .gym-when-date {
+  color-scheme: light;
 }
 
 .gym-block {
@@ -2505,15 +2471,21 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 12px;
   margin: 8px 0 18px;
 }
-.gym-coach-threads-door {
+.gym-coach-doors {
   flex: none;
+  display: flex;
+  gap: 14px;
   padding-top: 4px;
+}
+.gym-coach-notes-door,
+.gym-coach-threads-door {
   color: var(--gym-ink-dim);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
 }
+.gym-coach-notes-door:hover,
 .gym-coach-threads-door:hover {
   color: var(--color-brand);
 }
@@ -2734,34 +2706,6 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-coach-trace > .gym-coach-steps {
   margin-top: 4px;
 }
-/* The door onto the notes: a row under the head, never a third icon in it. */
-.gym-coach-notes-door {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  margin: -6px 0 16px;
-  padding: 0 13px;
-  border: 1px solid var(--gym-line);
-  border-radius: 12px;
-  background: var(--gym-sunken);
-  color: var(--gym-ink);
-  text-decoration: none;
-}
-.gym-coach-notes-door:hover {
-  background: var(--gym-raised);
-  border-color: var(--gym-line-strong);
-}
-.gym-coach-notes-verb {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-.gym-coach-notes-go {
-  margin-left: auto;
-  color: var(--gym-ink-faint);
-  font-size: 14px;
-}
-
 /* A closed room and a full room share a face: a plain sentence where the composer would have been. */
 .gym-coach-closed {
   margin: 0;

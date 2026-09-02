@@ -209,6 +209,16 @@ data class RoutineDraft(
     fun removing(exerciseId: String): RoutineDraft =
         copy(entries = renumbered(entries.filterNot { it.exerciseId == exerciseId }))
 
+    // Zero-based, both ends clamped to the rows that exist, the same arithmetic as the web's
+    // `reorderEntries`: the line leaves `from` and lands at `to`, and every position is renumbered.
+    fun moving(from: Int, to: Int): RoutineDraft {
+        if (entries.isEmpty()) return this
+        val ordered = entries.sortedBy { it.position }.toMutableList()
+        val entry = ordered.removeAt(from.coerceIn(0, ordered.lastIndex))
+        ordered.add(to.coerceIn(0, ordered.size), entry)
+        return copy(entries = renumbered(ordered))
+    }
+
     // Sets are what make a line a target at all; cleared reps mean `max` and a cleared load means
     // `last time`, which is the domain's own reading of a null.
     fun targeting(exerciseId: String, sets: Int, reps: Int?, weightKg: Double?): RoutineDraft =

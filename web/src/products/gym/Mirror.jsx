@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { clockOf, fmt, nameOfMovement, recordHref, routineNameOf } from './log.js';
+import { clockOf, fmt, FROM_THE_ROUTINE, nameOfMovement, recordHref, restInForce, routineNameOf } from './log.js';
 import { LogNotOpen } from './Log.jsx';
 import { restLabel } from './settings/preferences.js';
 
@@ -42,6 +42,7 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
   const newest = sets.length === 0
     ? null
     : sets.reduce((late, set) => (set.completedAt >= late.completedAt ? set : late));
+  const rest = newest === null ? null : restInForce(session, newest.exerciseId, restSeconds);
   const walked = newest === null
     ? []
     : sets.filter((set) => set.exerciseId === newest.exerciseId)
@@ -62,7 +63,7 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
             {` — set ${newest.setNumber}`
               + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`
               + `  ·  last set ${clockOf(now - newest.completedAt)} ago`
-              + (restSeconds == null ? '' : `  ·  rest ${restLabel(restSeconds)}`)}
+              + (rest === null ? '' : `  ·  target ${restLabel(rest.seconds)}${rest.fromRoutine ? FROM_THE_ROUTINE : ''}`)}
           </p>
           <p className="gym-mirror-sets">
             {walked

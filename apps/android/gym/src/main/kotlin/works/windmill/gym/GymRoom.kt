@@ -776,7 +776,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         Away.Threads -> Threads.title
         // The noun, not the thread's title: a title is the lifter's first message verbatim.
         is Away.Thread -> Threads.conversation
-        Away.Settings -> "Gym"
+        Away.Settings -> "Settings"
         Away.Notes -> Notes.title
         is Away.NoteEditor -> Notes.title
         Away.Bodyweight -> Bodyweight.title

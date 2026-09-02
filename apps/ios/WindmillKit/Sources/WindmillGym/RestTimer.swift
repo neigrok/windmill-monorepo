@@ -8,6 +8,16 @@ public enum Rest {
         planEntry?.restSeconds ?? preferences.restSeconds
     }
 
+    // The target says where it came from, once, on the timer: a routine entry's own rest names the
+    // routine, the dial names nothing. The suffix is the cross-surface unit, byte for byte.
+    public static let fromTheRoutine = " · from the routine"
+
+    public static func targetLine(planEntry: PlanEntry?, preferences: GymPreferences) -> String? {
+        guard let seconds = target(planEntry: planEntry, preferences: preferences) else { return nil }
+        let source = planEntry?.restSeconds == nil ? "" : fromTheRoutine
+        return "target " + Readout.clock(Int64(seconds) * 1000) + source
+    }
+
     // A chime later than this is dropped as a false confirmation.
     public static let lateChimeSeconds: Int64 = 5
 

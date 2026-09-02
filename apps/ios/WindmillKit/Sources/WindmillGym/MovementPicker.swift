@@ -86,7 +86,7 @@ public enum PickerOptions {
                                 lastSets: [String: LastSet]? = nil,
                                 now: Int64 = 0,
                                 sessions: [SessionSummary] = []) -> Result {
-        let term = query.trimmingCharacters(in: .whitespaces)
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let available = catalog.filter { !taken.contains($0.id) }
         let six = term.isEmpty ? mostTrained(available: available, sessions: sessions) : []
         // The match is over the name and every alias this account gave it.
@@ -155,7 +155,7 @@ struct MovementList: View {
                     // The room's own primary chrome rather than `.borderedProminent`, which fills
                     // itself with the ambient tint and then paints its OWN label colour over it —
                     // a pairing nothing in this room controls. `onAccent` on `accent` is 6.18:1.
-                    Button { onCreate(query.trimmingCharacters(in: .whitespaces)) } label: {
+                    Button { onCreate(query.trimmingCharacters(in: .whitespacesAndNewlines)) } label: {
                         Text(create)
                             .font(WindmillFont.body(16, .semibold))
                             .foregroundStyle(skin.onAccent)

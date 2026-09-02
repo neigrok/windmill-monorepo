@@ -207,7 +207,7 @@ function routinesOnTheWire({ deleteStatus = 204 } = {}) {
   return wire;
 }
 
-const overflowOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Overflow');
+const menuOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Menu');
 
 test('a routine delete is in the row overflow, is not on the wire until the window closes, and names the routine', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -216,10 +216,10 @@ test('a routine delete is in the row overflow, is not on the wire until the wind
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  assert.deepEqual(overflowOf(home.screen()).props.items.map((item) => item.label), ['Duplicate', 'Delete']);
+  assert.deepEqual(menuOf(home.screen()).props.items.map((item) => item.label), ['Duplicate', 'Delete']);
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   assert.deepEqual(wire, ['GET /routines'], 'nothing is on the wire while the window runs');
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home');
   // Deleting a routine cascades its proposals, so the transient says WHICH routine it was.
@@ -242,7 +242,7 @@ test('a routine delete taken back is never sent, and the row is back on the home
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   home.log().transient.action.run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
@@ -266,7 +266,7 @@ test('the home’s empty stance and its Build a routine read the store: a held d
   assert.deepEqual(quiet(), []);
   assert.deepEqual(build(), []);
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home, which is all the window decides');
   assert.deepEqual(quiet(), [], 'the account still holds a routine, so nothing on this home says it holds none');
   assert.deepEqual(build(), [], 'least of all an act offered over a program that has one');
@@ -315,7 +315,7 @@ test('a routine copy is filed past the end of the account’s program, and a set
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
   const overflow = () => elementsOf(home.screen())
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'Overflow');
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'Menu');
 
   overflow()[1].props.items[0].run();
   await settle();
@@ -349,7 +349,7 @@ test('leaving the room abandons a held routine delete: the row is back, and noth
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
   // Out of the gym and into another product, four seconds in. Committing the delete here would put
@@ -375,7 +375,7 @@ test('a hidden tab abandons a held routine delete: the row is back, and nothing 
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
   // Another tab, four seconds in. A hidden tab is a room that has left the foreground — the exact
@@ -466,7 +466,7 @@ test('a delete settles into a screen that never armed it, and the row does not c
   const wire = routinesOnTheWire();
   const home = await homeAgainAndAgain(t);
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   home.redraw();
   assert.deepEqual(namesOn(home), [], 'off the home for the length of the window');
 
@@ -497,7 +497,7 @@ test('a refusal reaches the room even though the screen that armed it is gone, a
   const wire = routinesOnTheWire({ deleteStatus: 500 });
   const home = await homeAgainAndAgain(t);
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   t.mock.timers.tick(4000);
   await home.remount();
   assert.deepEqual(namesOn(home), []);
@@ -521,7 +521,7 @@ test('a routine delete the store refuses says the routine is still in the progra
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  overflowOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[1].run();
   t.mock.timers.tick(UNDO_MS);
   await settle();
 
@@ -621,6 +621,9 @@ function finishOnTheWire({ deleteStatus = 204 } = {}) {
     wire.push(`${options.method ?? 'GET'} ${path}`);
     if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
     if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
+    if (path === '/sessions/ses_1' && options.method === 'DELETE') {
+      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
+    }
     if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [] }) };
     if (path === '/sessions/ses_1/review') {
       return {
@@ -628,9 +631,6 @@ function finishOnTheWire({ deleteStatus = 204 } = {}) {
         status: 200,
         json: async () => ({ slight: true, stats: { durationMs: 600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
       };
-    }
-    if (path === '/sessions/ses_1' && options.method === 'DELETE') {
-      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
     }
     throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
   };
@@ -682,6 +682,78 @@ test('a discard taken back inside the window never reaches the store', async (t)
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
   assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+});
+
+test('a finished session’s detail draws Discard session, and it takes the same window as every other delete', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = finishOnTheWire();
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
+  await settle();
+
+  const discard = findByClass(detail.screen(), 'gym-short-discard');
+  assert.equal(discard.length, 1);
+  assert.equal(textOf(discard[0]), 'Discard session');
+  window.location.hash = '#/gym/log/ses_1';
+  discard[0].props.onClick();
+
+  assert.equal(findByClass(detail.screen(), 'gym-confirm').length, 0, 'no confirmation in front of an act with a way back');
+  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  assert.equal(detail.log().transient.text, 'Session deleted.');
+  assert.equal(detail.log().transient.action.label, 'Undo');
+  assert.equal(window.location.hash, '#/gym/log', 'the lifter is on the log, where the row is already off it');
+  assert.equal(detail.log().hidden('session').has('ses_1'), true);
+
+  t.mock.timers.tick(UNDO_MS - 1);
+  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  t.mock.timers.tick(1);
+  await settle();
+  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.equal(detail.log().transient, null);
+});
+
+test('a detail discard taken back never reaches the store, and a refused one says so in the room’s voice', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = finishOnTheWire();
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
+  await settle();
+  findByClass(detail.screen(), 'gym-short-discard')[0].props.onClick();
+  detail.log().transient.action.run();
+  t.mock.timers.tick(UNDO_MS * 2);
+  await settle();
+  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+});
+
+test('a detail discard the store refuses says the session was not discarded, in the review’s own words', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  browserWith();
+  const wire = finishOnTheWire({ deleteStatus: 500 });
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
+  await settle();
+  findByClass(detail.screen(), 'gym-short-discard')[0].props.onClick();
+  t.mock.timers.tick(UNDO_MS);
+  await settle();
+  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.equal(
+    detail.log().transient.text,
+    'That session wasn’t discarded — the log didn’t answer. Try again when you have signal.',
+  );
+  assert.equal(detail.log().hidden('session').has('ses_1'), false, 'the store kept it, so the log draws it');
+});
+
+test('the open session’s detail draws no discard: the phone owns it', async (t) => {
+  browserWith();
+  const open = { id: 'ses_1', startedAt: 1_755_000_000_000 };
+  global.fetch = async (url, options = {}) => {
+    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
+    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session: open, sets: [] }) };
+    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
+  };
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
+  await settle();
+  assert.equal(findByClass(detail.screen(), 'gym-short-discard').length, 0);
 });
 
 test('a session the window is holding is off the log, and on it again the moment the delete is taken back', async (t) => {
@@ -794,8 +866,8 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
 test('the past workout’s overlap refusal reads the account: it stands while the window holds the session it names, and falls away once the store has answered', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
-  const { startedAtOf } = await loadScreen('products/gym/backfill.js');
-  const startedAt = startedAtOf({ days: 1, hour: 17, minute: 30 });
+  const { startedAtOf, yesterdayOf } = await loadScreen('products/gym/backfill.js');
+  const startedAt = startedAtOf({ date: yesterdayOf(), hour: 17, minute: 30 });
   const ghost = { id: 'ses_1', startedAt, finishedAt: startedAt + 60 * 60_000 };
   const wire = [];
   global.fetch = async (url, options = {}) => {

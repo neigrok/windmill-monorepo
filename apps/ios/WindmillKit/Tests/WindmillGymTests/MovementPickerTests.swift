@@ -93,4 +93,18 @@ final class PickerOptionsTests: XCTestCase {
         let options = PickerOptions.matching(query: "squat", catalog: catalog, taken: [])
         XCTAssertEqual(options.matches.map(\.yours), [false, true])
     }
+
+    // A query pasted with a trailing newline is the same query (ledger 4f): `.whitespaces` alone
+    // leaves the `\n` on, and the match and the minted name would both carry it.
+    func testANewlineAroundTheQueryIsTrimmedLikeASpace() throws {
+        let options = PickerOptions.matching(query: "\nbench\n", catalog: catalog, taken: [])
+        XCTAssertEqual(options.matches.map(\.id), ["bench-press", "close-grip-bench-press"])
+        XCTAssertNil(options.create)
+
+        let picker = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym/MovementPicker.swift"), encoding: .utf8)
+        XCTAssertFalse(picker.contains("trimmingCharacters(in: .whitespaces)"),
+                       "the minted name is trimmed of newlines too, not only of spaces")
+    }
 }

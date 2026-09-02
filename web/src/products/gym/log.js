@@ -455,6 +455,18 @@ export function planFrozenLabel(session) {
   return `plan snapshot · frozen ${timeLabel(session.startedAt)}`;
 }
 
+// The rest target in force for a movement, and where it came from: the routine entry's own
+// `restSeconds` when the frozen plan names one for this movement alone, the dial otherwise. Null when
+// neither names one. `fromRoutine` is the fact the timer says once, on every surface.
+export function restInForce(session, exerciseId, dialSeconds) {
+  const entry = planReadingOf(session, exerciseId).entry;
+  if (entry?.restSeconds != null) return { seconds: entry.restSeconds, fromRoutine: true };
+  if (dialSeconds == null) return null;
+  return { seconds: dialSeconds, fromRoutine: false };
+}
+
+export const FROM_THE_ROUTINE = ' · from the routine';
+
 export const NOT_IN_PLAN = 'not in the plan';
 
 // Read off the frozen snapshot, never off today's routine. A snapshot entry names its fields

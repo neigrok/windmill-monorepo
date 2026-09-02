@@ -142,7 +142,7 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(KeypadEntry.deleteGlyph, "⌫", "the sheet draws this glyph on the key this names")
         XCTAssertTrue(KeypadEntry.keys.contains("±"), "the keypad lost the key this names")
 
-        // The grid is twelve keys; the delete key sits in the action row beside Cancel and Set. Of the
+        // The grid is twelve keys; the delete key sits beside the echo it edits. Of the
         // thirteen, two are named and the other eleven read as themselves.
         let named = (KeypadEntry.keys + [KeypadEntry.deleteGlyph]).filter { KeypadEntry.spoken($0) != $0 }
         XCTAssertEqual(named, ["±", KeypadEntry.deleteGlyph])

@@ -146,18 +146,39 @@ struct KeypadSheet: View {
 
     var body: some View {
         let reading = KeypadEntry.read(pad, as: mode, keeping: current)
-        return VStack(spacing: WindmillSpace.x4) {
-            Text(mode == .weight ? "Weight" : "Reps")
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return NavigationStack {
+            content(reading)
+                .navigationTitle(mode == .weight ? "Weight" : "Reps")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", action: onCancel)
+                    }
+                }
+        }
+    }
 
-            Text(pad.echo)
-                .font(WindmillFont.display(56, .heavy).monospacedDigit())
-                .foregroundStyle(reading.isValid ? skin.weightInk : skin.alarmInk)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    // The delete key sits beside the echo it edits; the twelve keys are the grid beneath, and the
+    // commit is the reach band under them (`12-native-idiom.md` §"Back, and the thumb": a committing
+    // action stays where the thumb is; only the bar's Cancel is the platform's).
+    private func content(_ reading: KeypadEntry.Reading) -> some View {
+        VStack(spacing: WindmillSpace.x4) {
+            HStack(alignment: .center, spacing: WindmillSpace.x3) {
+                Text(pad.echo)
+                    .font(WindmillFont.display(56, .heavy).monospacedDigit())
+                    .foregroundStyle(reading.isValid ? skin.weightInk : skin.alarmInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button { pad = pad.backspaced } label: {
+                    Text(KeypadEntry.deleteGlyph)
+                        .font(WindmillFont.body(20))
+                        .foregroundStyle(skin.ink)
+                        .frame(minWidth: GymTap.minimum, minHeight: GymTap.minimum)
+                        .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.raised))
+                }
+                .accessibilityLabel(KeypadEntry.spoken(KeypadEntry.deleteGlyph))
+            }
 
             Text(reading.message)
                 .font(GymType.numeral(12))
@@ -178,29 +199,15 @@ struct KeypadSheet: View {
                 }
             }
 
-            HStack(spacing: WindmillSpace.x3) {
-                Button("Cancel", action: onCancel)
-                    .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.inkDim)
-                    .frame(minWidth: 88, minHeight: GymTap.minimum)
-
-                Button { pad = pad.backspaced } label: {
-                    Text(KeypadEntry.deleteGlyph)
-                        .font(WindmillFont.body(20))
-                        .foregroundStyle(skin.ink)
-                        .frame(minWidth: GymTap.minimum, minHeight: GymTap.minimum)
-                }
-                .accessibilityLabel(KeypadEntry.spoken(KeypadEntry.deleteGlyph))
-
-                Button { if let value = reading.value { onCommit(value) } } label: {
-                    Text("Set")
-                        .font(WindmillFont.body(17, .bold))
-                        .foregroundStyle(reading.isValid ? skin.onAccent : skin.inkFaint)
-                        .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-                        .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                            .fill(reading.isValid ? skin.accent : skin.raised))
-                }
+            Button { if let value = reading.value { onCommit(value) } } label: {
+                Text("Set")
+                    .font(WindmillFont.body(17, .bold))
+                    .foregroundStyle(reading.isValid ? skin.onAccent : skin.inkFaint)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                        .fill(reading.isValid ? skin.accent : skin.raised))
             }
+            .disabled(!reading.isValid)
         }
         .padding(WindmillSpace.x5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

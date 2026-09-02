@@ -112,9 +112,12 @@ double-tapping it is who the single-pointer criterion is about, and a keyboard p
 rather than that (`13-gestures.md` Law 1). iOS reorders through the platform's `.onMove`
 (`RoutineBuilderScreens.swift:117`), which declares its own alternative.
 
-> **Android cannot reorder a draft at all, and that is a feature this programme does not build.**
-> It is a missing capability rather than a control disagreeing with canon, so it is owed as work and
-> not carried as drift (ledger `3p`).
+> **Android reorders a draft on the handle's tap, and declares the rest.** Each row's drag-handle
+> icon picks the row up on a tap and places it on a tap at another row's handle — the same
+> pick-up / place-down the web's grip answers, in the same words — and *Move up* / *Move down* are
+> custom accessibility actions rather than a drawn menu, with the move said once on a polite live
+> region under the list (`ui/RoutineBuilder.kt`, `RoutineDraft.moving`). No long press, and no new
+> dependency (ledger `3p`, closed).
 
 **A movement's record has a drawn door that does not cost a draft.** A routine line for a
 never-logged movement is a first-class state here, and every other route on the web to that

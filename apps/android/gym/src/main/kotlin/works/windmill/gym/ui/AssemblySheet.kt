@@ -29,11 +29,11 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +54,8 @@ import works.windmill.platform.design.WindmillSpace
 
 // Nothing advances a lifter on its own. A drag moves the walk order only (sets are keyed by movement,
 // never by position), and a swipe is offered only on a row with no sets (`LiveOrder.droppable`).
+// The sheet draws no Close: back, the scrim and the drag handle are the platform's, and every walk
+// edit made here has already landed, so putting the sheet down loses nothing.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssemblySheet(
@@ -63,7 +65,6 @@ fun AssemblySheet(
     onReorder: (from: Int, to: Int) -> Unit,
     onDrop: (String) -> Boolean,
     onAdd: () -> Unit,
-    onClose: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     // Read from inside a gesture that outlives its composition: the drag detector is keyed on the row id.
@@ -82,15 +83,6 @@ fun AssemblySheet(
             Text("This session", style = WindmillFont.display(20), color = GymSkin.ink)
             Spacer(Modifier.width(WindmillSpace.x3))
             Text(Readout.clock(elapsedMs), style = GymType.numeral(13), color = GymSkin.inkFaint)
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clickable(role = Role.Button, onClick = onClose),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Close", style = WindmillFont.body(16), color = GymSkin.inkDim)
-            }
         }
 
         LazyColumn(

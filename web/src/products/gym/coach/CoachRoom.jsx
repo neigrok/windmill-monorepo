@@ -67,14 +67,12 @@ export function CoachRoom({ log }) {
           <h1 className="gym-title">{COACH_TITLE}</h1>
           <p className="gym-coach-terms">{COACH_TERMS}</p>
         </div>
-        <a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>
+        {/* The two doors under the coach, side by side in the head: the notes are the lifter's own. */}
+        <nav className="gym-coach-doors" aria-label="Coach">
+          <a className="gym-coach-notes-door" href={NOTES_HREF}>{NOTES_DOOR} ›</a>
+          <a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>
+        </nav>
       </header>
-
-      {/* A row, never a third icon in the head: the notes are the lifter's, not the room's. */}
-      <a className="gym-coach-notes-door" href={NOTES_HREF}>
-        <span className="gym-coach-notes-verb">{NOTES_DOOR}</span>
-        <span className="gym-coach-notes-go" aria-hidden="true">›</span>
-      </a>
 
       <CoachBody
         log={log}

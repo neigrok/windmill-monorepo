@@ -137,24 +137,32 @@ struct LoggerScreen: View {
             let filled = Rest.filled(targetSeconds: clock.targetSeconds,
                                      startedAtMs: clock.startedAtMs, now: now)
             let reading = Rest.reading(startedAtMs: clock.startedAtMs, now: now)
+            let target = Rest.targetLine(planEntry: store.planEntry, preferences: store.preferences)
             Button { restStartedAtMs = nil } label: {
-                HStack(spacing: WindmillSpace.x3) {
-                    Capsule().fill(skin.line)
-                        .frame(height: 2)
-                        .overlay(alignment: .leading) {
-                            GeometryReader { rule in
-                                Capsule().fill(skin.accent).frame(width: rule.size.width * filled)
+                VStack(alignment: .trailing, spacing: WindmillSpace.x1) {
+                    HStack(spacing: WindmillSpace.x3) {
+                        Capsule().fill(skin.line)
+                            .frame(height: 2)
+                            .overlay(alignment: .leading) {
+                                GeometryReader { rule in
+                                    Capsule().fill(skin.accent).frame(width: rule.size.width * filled)
+                                }
                             }
-                        }
-                    Text(reading)
-                        .font(GymType.numeral(13))
-                        .foregroundStyle(skin.inkDim)
+                        Text(reading)
+                            .font(GymType.numeral(13))
+                            .foregroundStyle(skin.inkDim)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 22)
+                    if let target {
+                        Text(target)
+                            .font(GymType.numeral(12))
+                            .foregroundStyle(skin.inkFaint)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 22)
                 .contentShape(Rectangle())
             }
             .accessibilityLabel("Resting")
-            .accessibilityValue(reading)
+            .accessibilityValue([reading, target].compactMap { $0 }.joined(separator: " · "))
             .accessibilityHint("Clears the rest timer")
         }
     }

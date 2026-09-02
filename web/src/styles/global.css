@@ -93,3 +93,53 @@ a:hover {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* The overflow menu (design-system/core/Menu.jsx): the ⋯ opener and the list it drops. Painted off
+   the shared roles alone, so a room's brand scope resolves it without a line of its own. */
+.wm-menu {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.wm-menu-open {
+  width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wm-menu-open:hover {
+  color: var(--text-primary);
+}
+.wm-menu-list {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 4px;
+  z-index: 6;
+  min-width: 148px;
+  padding: 5px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-lg);
+}
+.wm-menu-item {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.wm-menu-item:hover {
+  background: var(--surface-card);
+}

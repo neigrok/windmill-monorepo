@@ -27,10 +27,13 @@ test('the routine row’s overflow is Duplicate and Delete, and it is the only h
   // The editor's head keeps no menu of its own. Its Duplicate copied the SAVED routine, took the
   // draft's unsaved edits with it, collided on the original's position and had no re-entrancy guard;
   // the row's — with `copying` and a position past the end of the list — is the one that survives.
-  assert.equal((source.match(/<Overflow/g) ?? []).length, 1, 'one overflow, on the row');
+  assert.equal((source.match(/<Menu/g) ?? []).length, 1, 'one menu, on the row');
+  assert.equal(source.includes("import { Button, Icon, Input, Menu, Tag } from '../../design-system/index.js';"), true, 'the menu is the design system’s');
+  assert.equal(fs.existsSync(path.join(GYM, 'Overflow.jsx')), false, 'the gym-local twin is gone');
+  assert.equal(/gym-overflow/.test(read('gym.css')), false);
+  assert.equal(read('gym.css').includes('.gym-routine .wm-menu-open {'), true, 'the row alone shapes its opener');
   assert.equal(source.includes('More for this routine'), false);
   assert.equal(source.includes('const copy = async ()'), false);
-  assert.equal(spoken(read('Overflow.jsx')).includes("editor's head"), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false, 'the two drawn buttons are gone');
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
   // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
@@ -38,10 +41,6 @@ test('the routine row’s overflow is Duplicate and Delete, and it is the only h
   assert.equal((source.match(/gymApi\.deleteRoutine/g) ?? []).length, 1);
   assert.equal(source.includes("log.withhold({\n    kind: 'routine',"), true);
   assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf('gymApi.deleteRoutine'));
-  const overflow = spoken(read('Overflow.jsx'));
-  assert.equal(overflow.includes("aria-haspopup=\"menu\""), true);
-  assert.equal(overflow.includes("role=\"menuitem\""), true);
-  assert.equal(overflow.includes("if (event.key === 'Escape') setOpen(false);"), true);
 });
 
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
@@ -161,7 +160,12 @@ test('Coach is a tab root: a column in the rail, no back link, its threads and n
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('gym-back'), false, 'a tab root keeps no back link');
   assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
-  assert.equal(room.includes('<a className="gym-coach-notes-door" href={NOTES_HREF}>'), true);
+  // The notes door sits in the head beside the threads door — one band, two doors, the words unchanged.
+  const head = room.slice(room.indexOf('<header className="gym-coach-head">'), room.indexOf('</header>'));
+  assert.equal(head.includes('<a className="gym-coach-notes-door" href={NOTES_HREF}>{NOTES_DOOR} ›</a>'), true);
+  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
+  assert.equal((room.match(/gym-coach-notes-door/g) ?? []).length, 1, 'one door, and it is in the head');
+  assert.equal(/gym-coach-notes-verb|gym-coach-notes-go/.test(read('gym.css')), false);
   assert.equal(room.includes('if (log.session) {'), true);
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
@@ -1411,4 +1415,43 @@ test('the review sheet: one Apply in a scroll-gated dialog, kept rows folded in 
   assert.equal(read('coach/CoachRoom.jsx').includes('<ReviewDoor head={proposal} onReview={() => setReviewing(true)} />'), true);
   const dialog = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Dialog.jsx'), 'utf8');
   assert.equal(dialog.includes("const gated = gate === 'scrolled';"), true);
+});
+
+test('the mirror’s rest label says where the target came from, once, and only when the routine entry set it', () => {
+  const mirror = speech('Mirror.jsx');
+  assert.equal(mirror.includes('restInForce(session, newest.exerciseId, restSeconds)'), true);
+  assert.equal(mirror.includes("`  ·  target ${restLabel(rest.seconds)}${rest.fromRoutine ? FROM_THE_ROUTINE : ''}`"), true);
+  assert.equal(speech('log.js').includes("export const FROM_THE_ROUTINE = ' · from the routine';"), true);
+  // Settings say nothing about the override: the timer carries the fact, and it is drawn once.
+  assert.equal(/from the routine|override|overrid/i.test(speech('settings/GymSettingsSection.jsx')), false);
+  for (const file of gymFiles()) {
+    if (!/\.(jsx?|css)$/.test(file) || file.endsWith('log.js')) continue;
+    assert.equal(fs.readFileSync(file, 'utf8').includes(' · from the routine'), false, `${file} spells the suffix itself`);
+  }
+});
+
+test('the finished session’s detail has the discard door, through the same window as every other delete; the live mirror has none', () => {
+  const log = read('Log.jsx');
+  assert.equal(log.includes('{isFinished(session) && ('), true);
+  assert.equal(log.includes('<button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>'), true);
+  assert.equal((log.match(/gymApi\.discardSession/g) ?? []).length, 1);
+  assert.ok(log.indexOf("kind: 'session',") < log.indexOf('gymApi.discardSession'));
+  assert.equal(log.includes('line: SESSION_DELETED,'), true, 'the same sentence as the review’s discard');
+  assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
+  assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');
+  assert.equal(/[Dd]iscard/.test(speech('Mirror.jsx')), false, 'the phone owns the open session');
+  assert.equal(read('Finish.jsx').includes('function ShortSession'), true, 'the review keeps its own');
+});
+
+test('the backfill takes a date, not a chip: any day up to today, yesterday by default, and one door back to the log', () => {
+  const screen = read('Backfill.jsx');
+  assert.equal(screen.includes('type="date"'), true);
+  assert.equal(screen.includes('max={dateLocalOf(Date.now())}'), true);
+  assert.equal(screen.includes('date: yesterdayOf()'), true);
+  assert.equal(/dayChips|DAY_CHIP_OFFSETS|form\.days/.test(screen), false);
+  assert.equal(/dayChips|DAY_CHIP_OFFSETS/.test(read('backfill.js')), false);
+  assert.equal((screen.match(/<Back href="#\/gym\/log">The log<\/Back>/g) ?? []).length, 1);
+  assert.equal(/gym-save-cancel|>Cancel</.test(screen), false, 'the bottom door is gone; Back is the one');
+  assert.equal(read('gym.css').includes('gym-save-cancel'), false);
+  assert.equal(read('gym.css').includes('.gym-when-date'), true, 'the same family as the weigh-in date');
 });

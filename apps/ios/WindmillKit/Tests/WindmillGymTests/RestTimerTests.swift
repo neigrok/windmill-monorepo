@@ -67,4 +67,17 @@ final class RestTests: XCTestCase {
     func testThePocketedPhoneComesBackToTheRealNumeral() {
         XCTAssertEqual(Rest.reading(startedAtMs: 1_000_000, now: 1_000_000 + 600_000), "10:00")
     }
+
+    // The target says where it came from, once, on the timer: the bytes ` · from the routine` are
+    // the cross-surface unit, and the dial names nothing.
+    func testTheTargetLineNamesTheRoutineOnlyWhenTheRoutinesOwnRestIsInForce() {
+        let dialled = GymPreferences.defaults.resting(120)
+        let owned = PlanEntry(exerciseId: "face-pull", sets: 3, reps: 15, restSeconds: 180)
+        let silent = PlanEntry(exerciseId: "back-squat", sets: 5)
+        XCTAssertEqual(Rest.fromTheRoutine, " · from the routine")
+        XCTAssertEqual(Rest.targetLine(planEntry: owned, preferences: dialled), "target 3:00 · from the routine")
+        XCTAssertEqual(Rest.targetLine(planEntry: silent, preferences: dialled), "target 2:00")
+        XCTAssertEqual(Rest.targetLine(planEntry: nil, preferences: dialled), "target 2:00")
+        XCTAssertNil(Rest.targetLine(planEntry: silent, preferences: .defaults), "no target, no line")
+    }
 }

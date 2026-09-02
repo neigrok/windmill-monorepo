@@ -40,6 +40,8 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
+// A sheet of the platform's: back, the scrim and the drag handle put it down and change nothing, so
+// no Cancel is drawn beside Rename.
 @Composable
 fun RenameSheet(
     title: String,
@@ -48,7 +50,6 @@ fun RenameSheet(
     proof: List<Record.Proof>,
     refused: String?,
     onValue: (String) -> Unit,
-    onCancel: () -> Unit,
     onRename: () -> Unit,
 ) {
     val focus = remember { FocusRequester() }
@@ -113,16 +114,6 @@ fun RenameSheet(
                 style = WindmillFont.body(17, FontWeight.Bold),
                 color = if (changed) GymSkin.onAccent else GymSkin.inkFaint,
             )
-        }
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(role = Role.Button, onClick = onCancel),
-        ) {
-            Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
     }
 }

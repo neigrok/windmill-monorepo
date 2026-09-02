@@ -1,13 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// The overflow a routine carries, drawn on its row and nowhere else: what a lifter does TO a routine
-// rather than in it. It holds Duplicate and Delete — one home each, and this is it. Delete is here
-// because the gate 13-gestures.md put in front of it is met: it is withheld, and the room's window
-// is the only thing that ever sends it.
-//
-// It closes on the act, on Escape, and on a pointer landing anywhere outside it, so a menu can never
-// be left open behind the screen that opened it.
-export function Overflow({ label, items }) {
+// An overflow menu: one ⋯ opener and the short list of acts it holds. `label` names the opener for
+// a screen reader; each item is `{ label, run }`. It closes on the act, on Escape, and on a pointer
+// landing anywhere outside it, so a menu can never be left open behind the screen that opened it.
+// Styled by `.wm-menu-*` in styles/global.css off the shared roles, so it resolves into any room.
+export function Menu({ label, items }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
 
@@ -24,10 +21,10 @@ export function Overflow({ label, items }) {
   }, [open]);
 
   return (
-    <span className="gym-overflow" ref={box}>
+    <span className="wm-menu" ref={box}>
       <button
         type="button"
-        className="gym-overflow-open"
+        className="wm-menu-open"
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -36,13 +33,13 @@ export function Overflow({ label, items }) {
         ⋯
       </button>
       {open && (
-        <span className="gym-overflow-menu" role="menu">
+        <span className="wm-menu-list" role="menu">
           {items.map((item) => (
             <button
               key={item.label}
               type="button"
               role="menuitem"
-              className="gym-overflow-item"
+              className="wm-menu-item"
               onClick={() => { setOpen(false); item.run(); }}
             >
               {item.label}

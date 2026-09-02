@@ -6,7 +6,12 @@ final class RoomTapFloorUITests: XCTestCase {
     private var app: XCUIApplication!
 
     private let settingsDoor = "Gym settings"
-    private let settingsMark = "how the room behaves at the rack"
+    // The settings screen is named by its bar and by nothing else, so "it is up" is read off the
+    // Units footer, which every account draws (an lb account draws a longer one that starts the same).
+    private let settingsMark = "Display only — nothing stored changes."
+    private var settingsUp: XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", settingsMark)).firstMatch
+    }
 
     override func setUp() {
         continueAfterFailure = false
@@ -27,7 +32,7 @@ final class RoomTapFloorUITests: XCTestCase {
         let door = app.buttons[settingsDoor]
         XCTAssertTrue(scrolled(to: door), "the routines home never drew its settings door")
         door.tap()
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForExistence(timeout: 10),
+        XCTAssertTrue(settingsUp.waitForExistence(timeout: 10),
                       "the settings screen never pushed")
 
         let controls = app.segmentedControls

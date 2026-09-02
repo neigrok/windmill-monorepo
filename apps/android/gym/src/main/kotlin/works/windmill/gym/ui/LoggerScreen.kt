@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,8 +32,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,13 +43,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -69,14 +67,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.DeviationOffer
-import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LoggerWalk
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
-import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -193,7 +189,7 @@ fun LoggerScreen(
     val restTarget = Rest.target(store.planEntry, preferences)
     LaunchedEffect(restStartedAtMs, restTarget, preferences.restSound) {
         val started = restStartedAtMs ?: return@LaunchedEffect
-        val target = restTarget ?: return@LaunchedEffect
+        val target = restTarget?.seconds ?: return@LaunchedEffect
         val waited = (System.currentTimeMillis() - started) / 1000
         if (waited >= target) return@LaunchedEffect
         delay((target - waited) * 1000)
@@ -327,12 +323,10 @@ fun LoggerScreen(
                 LoggerSheet.Weight -> KeypadSheet(
                     KeypadEntry.Mode.Weight, weightKg,
                     onCommit = { weightKg = it; close() },
-                    onCancel = { close() },
                 )
                 LoggerSheet.Reps -> KeypadSheet(
                     KeypadEntry.Mode.Reps, reps.toDouble(),
                     onCommit = { reps = it.toInt(); close() },
-                    onCancel = { close() },
                 )
                 LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets, store.session?.plan,
@@ -342,7 +336,6 @@ fun LoggerScreen(
                     onReorder = { from, to -> store.reorder(from, to) },
                     onDrop = { store.drop(it) },
                     onAdd = { sheet = LoggerSheet.Picker },
-                    onClose = { close() },
                 )
                 LoggerSheet.Picker -> MovementPicker(
                     catalog = store.catalog,

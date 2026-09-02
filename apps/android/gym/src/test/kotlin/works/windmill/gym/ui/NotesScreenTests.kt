@@ -271,7 +271,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = false,
-                backTo = "Gym",
+                backTo = "Settings",
                 onBack = {},
                 onEdit = { _, _ -> doors += "edit" },
                 onSignIn = { doors += "signIn" },

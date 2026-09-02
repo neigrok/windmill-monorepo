@@ -4,27 +4,6 @@ package works.windmill.gym.domain
 object ConnectedLog {
     const val title = "Connected log"
 
-    const val head = "Your training log, inside your own Claude."
-
-    const val sundayLabel = "Sunday, in your own Claude"
-    const val sundayLine =
-        "“Look at my last twelve weeks of bench. Write me a four-week block — heavier triples, and " +
-            "swap the flies for incline work.”"
-    const val mondayLabel = "Monday, in gym"
-    const val mondayLine = "A proposal on Push A · 4 changes. You read it, you tap Apply, you train."
-
-    val truths = listOf(
-        "Nothing to install and no key to paste. The first connect opens a browser, and that screen " +
-            "lists exactly what the tool asked for — product by product, level by level — to allow " +
-            "or refuse. A level it was never granted is a tool it cannot see.",
-        "It reads what you logged, and it writes in two ways that are not alike. What already " +
-            "happened lands at once — a set, a workout, a movement, a day of the program that did " +
-            "not exist. A change to a day that already stands never lands on its own: it arrives as " +
-            "a diff and waits for your tap, and nothing on that connection can tap it for you.",
-        "No tool can edit a set you logged, at any level. The delete level is blunter and is granted " +
-            "on its own — it discards a whole workout, its sets with it, and ends a link you shared.",
-    )
-
     const val precondition =
         "Needs an assistant you already use: Claude, or another client that speaks MCP — the setup " +
             "page walks through Claude, Cursor and Codex. If you use none of them, this one is not " +

@@ -243,6 +243,25 @@ final class ReviewSheetHostingTests: XCTestCase {
                        fitted(routine: "Push A", agent: "Claude", width: 393).height,
                        "a name typed to its cap truncates rather than growing the card by a line")
     }
+
+    // The review's title and its Close are the navigation bar's; Apply stays in the band under the diff.
+    func testTheReviewNamesTheProposalInTheBarAndClosesFromIt() async throws {
+        let window = await host(rows: 3, height: 800)
+        let bar = try XCTUnwrap(navigationBar(in: window)?.topItem)
+        XCTAssertEqual(bar.title, "Proposal · Push A")
+        XCTAssertEqual(bar.leadingItemGroups.flatMap(\.barButtonItems).compactMap(\.title), [Proposal.close],
+                       "Close is the bar's dismissal")
+        XCTAssertEqual(bar.trailingItemGroups.flatMap(\.barButtonItems).count, 0,
+                       "Apply is gated on the diff, so it is not the bar's")
+    }
+
+    private func navigationBar(in view: UIView) -> UINavigationBar? {
+        if let found = view as? UINavigationBar { return found }
+        for child in view.subviews {
+            if let found = navigationBar(in: child) { return found }
+        }
+        return nil
+    }
 }
 
 // The proposal read answers 300 ms later, as it does over a network.

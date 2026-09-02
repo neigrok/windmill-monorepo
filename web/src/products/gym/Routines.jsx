@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Icon, Input, Tag } from '../../design-system/index.js';
+import { Button, Icon, Input, Menu, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
@@ -8,7 +8,6 @@ import {
   showsNameCount, threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
-import { Overflow } from './Overflow.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
 import { mintId } from './mint.js';
 import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
@@ -118,7 +117,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
                 <span className="gym-routine-name">{routine.name}</span>
                 <span className="gym-routine-meta">{routineMetaLabel(routine)}</span>
               </a>
-              <Overflow
+              <Menu
                 label={`More for ${routine.name}`}
                 items={[
                   { label: 'Duplicate', run: () => duplicate(routine) },

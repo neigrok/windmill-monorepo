@@ -52,6 +52,15 @@ tap, Enter, Space and a screen reader's double tap into the one activation, so t
 in the same stroke (`rail.js`'s `useRail`, drawn by `EntryList` in `Routines.jsx` and `NoteList` in
 `notes/Notes.jsx`). No per-row *Move up* / *Move down* menu was bought for any of it.
 
+**Android's routine draft answers the same law in the same shape, and buys no menu either.** Each
+row's drag-handle icon (`Icons.Filled.DragHandle`, described *Move*) picks the row up on a tap and
+places it on a tap at another row's handle, its own name reading *Move Back Squat, 2 of 3 — picked
+up* and then *Place Back Squat at 3 of 3* exactly as the web's grip does; *Move up* / *Move down*
+are declared as custom accessibility actions — the half every Android gesture is owed by hand — and
+the move is said once on a polite live region under the list, in the web's own sentence
+(`ui/RoutineBuilder.kt`). There is no long-press drag on that phone; the tap path is the whole of
+it, and it is the path this law is about.
+
 ### 2 · A gesture that destroys needs an undo, not a confirmation.
 
 A confirmation on a swipe defeats the swipe: you swiped to be quick, and a dialog puts back the tap
@@ -266,8 +275,9 @@ found clean.
   reaches it — `Proposals.jsx`, `RoutineEditor` (which shares `Routines.jsx`), `Mirror.jsx`,
   `Finish.jsx`, `Record.jsx`, `logger/MovementPicker.jsx`, `coach/CoachRoom.jsx`,
   `connect/ConnectLog.jsx`, `share/SharedSession.jsx`, `share/ShareWorkout.jsx`, `GymApp.jsx`,
-  `HomeCard.jsx`, `Back.jsx`, `Overflow.jsx`, `FixSheet.jsx`, `RoutinesGhost.jsx`,
-  `logger/Keypad.jsx` and `marketing/GymLanding.jsx`.
+  `HomeCard.jsx`, `Back.jsx`, `FixSheet.jsx`, `RoutinesGhost.jsx`,
+  `logger/Keypad.jsx` and `marketing/GymLanding.jsx` (the routine row's overflow menu has since
+  left the room for the design system's `Menu`, and reads no list at all).
 - **iOS**. Four screens carried it — `RoutinesScreen`, `LogScreen`, `ThreadsScreen`,
   `BodyweightScreen` — plus `GymRoom`'s `isFirst`, both new-routine positions and
   `TrainingStore.apply`'s verdict. Swept and unreachable, which is why it is named here rather than
@@ -482,16 +492,17 @@ own alpha ramp and a declared custom action beside it. iOS reorders through the 
 everywhere it reorders (`RoutineBuilderScreens.swift:117`, `NotesScreen.swift:108`,
 `JumpSheet.swift:42`).
 
-**And one parity gap:** a routine draft reorders on iOS through `.onMove`, and on the web on one grip
-answering three paths — the drag, ArrowUp / ArrowDown, and the pick-up / place-down a single pointer
-takes — with the move said on a `role="status"` line whichever path took it (`15-the-routine.md`).
-**Android cannot reorder a draft at all** (ledger `3p`).
+**And the routine draft reorders on all three, each in its platform's shape**: iOS through
+`.onMove`; the web on one grip answering three paths — the drag, ArrowUp / ArrowDown, and the
+pick-up / place-down a single pointer takes — with the move said on a `role="status"` line whichever
+path took it (`15-the-routine.md`); Android on the handle's tap-to-pick-up / tap-to-place plus
+*Move up* / *Move down* as custom actions, said on a polite live region (ledger `3p`, closed).
 
 **The web's two author-built drags are the same grip now.** `Routines.jsx` and `notes/Notes.jsx` are
 the only files in `products/gym` declaring `onPointerDown`, and both read one hook (`rail.js`), so the
 notes list gained the drag's alternatives in the same shape rather than a second answer to the same
-question. That closes Law 1 and SC 2.5.7 on both of them. What remains for Android is a capability it
-never drew, not a control disagreeing with canon.
+question. That closes Law 1 and SC 2.5.7 on both of them, and Android's draft closes it with the
+same vocabulary on a different mechanism.
 
 ## Where a long-press earns its place
 
@@ -512,9 +523,10 @@ session` on the past-session screen, unconditionally (`SessionScreen.swift:153`,
 three doors — that screen, the finish receipt's slight-session stance (`Actions` in
 `ui/FinishScreen.kt`) and this long press — run through one act (`GymRoom.discard`) and print one
 constant (`FinishScreen.kt:56`), so three spellings of the act cannot drift apart. The web is
-outside this law, having no gesture at all; what it has instead is a gap — its `Discard session` is
-drawn for a `slight` session alone (`Finish.jsx:97`), so an ordinary past workout can be discarded
-from no web door. Ledger `3c`.
+outside this law, having no gesture at all, and it draws the door anyway: `Discard session` on every
+finished session's detail (`SessionDetail` in `Log.jsx`), through the same withheld window as every
+other web delete, and on the finish screen's slight branch (`ShortSession` in `Finish.jsx`). The
+live mirror draws none, because the phone owns the open session. Ledger `3c`, closed.
 
 Still unbuilt: a long press on the routine row (*Start · Duplicate · Delete*), which would put
 **Start** on the row where it does not exist today; and one on the set row, as the discoverable twin

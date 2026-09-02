@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -36,12 +34,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -49,10 +47,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -394,38 +390,16 @@ fun BodyweightScreen(
     }
 }
 
-// Two values, hand-drawn in the units row's own shape and read as one radio group: the picked one
-// says so in the semantics tree as well as in colour. The active one is printed beneath the row.
+// Two values, the platform's own segmented row — the same control the settings dials take — so the
+// picked one says so in the semantics tree as well as in the fill. The active one is printed
+// beneath the row.
 @Composable
 private fun WindowControl(window: ChartWindow, onPick: (ChartWindow) -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .clip(RoundedCornerShape(WindmillRadius.full))
-            .background(GymSkin.surface)
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
-            .padding(WindmillSpace.x1)
-            .selectableGroup(),
-    ) {
-        ChartWindow.entries.forEach { entry ->
-            val picked = entry == window
-            Box(
-                Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clip(RoundedCornerShape(WindmillRadius.full))
-                    .background(if (picked) GymSkin.accent else Color.Transparent)
-                    .selectable(selected = picked, role = Role.RadioButton) { onPick(entry) }
-                    .padding(horizontal = WindmillSpace.x4),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    entry.label,
-                    style = GymType.numeral(13, FontWeight.Bold),
-                    color = if (picked) GymSkin.onAccent else GymSkin.inkDim,
-                )
-            }
-        }
-    }
+    GymSegmented(
+        options = ChartWindow.entries.map { it to it.label },
+        picked = window,
+        onPick = onPick,
+    )
 }
 
 private val chartHeight = 220.dp

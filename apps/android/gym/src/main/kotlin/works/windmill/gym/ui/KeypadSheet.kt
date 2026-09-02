@@ -17,9 +17,9 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,9 +35,11 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// An invalid entry never silently reverts: the buffer stays and the only ways out are Set and Cancel.
-// The pad opens ON the number it was opened from, and `seeded` is what makes the first digit start a
-// fresh number rather than append. In reps mode the comma and the ± are stood DOWN, never removed.
+// An invalid entry never silently reverts: the buffer stays and the only ways out are Set and cancel
+// — the sheet's own dismissal where the pad is a sheet, a drawn Cancel where it has taken over
+// another sheet's body and the platform has no handle for "back to that body". The pad opens ON the
+// number it was opened from, and `seeded` is what makes the first digit start a fresh number rather
+// than append. In reps mode the comma and the ± are stood DOWN, never removed.
 object KeypadEntry {
     enum class Mode { Weight, Reps }
 
@@ -143,7 +145,7 @@ fun KeypadSheet(
     mode: KeypadEntry.Mode,
     current: Double,
     onCommit: (Double) -> Unit,
-    onCancel: () -> Unit,
+    onCancel: (() -> Unit)? = null,
 ) {
     val opening = if (mode == KeypadEntry.Mode.Weight) Readout.weight(current) else current.toInt().toString()
     var pad by remember { mutableStateOf(KeypadEntry.Pad(opening)) }
@@ -214,14 +216,16 @@ fun KeypadSheet(
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .widthIn(min = 88.dp)
-                    .heightIn(min = GymTap.minimum)
-                    .clickable(role = Role.Button, onClick = onCancel),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
+            onCancel?.let { cancel ->
+                Box(
+                    Modifier
+                        .widthIn(min = 88.dp)
+                        .heightIn(min = GymTap.minimum)
+                        .clickable(role = Role.Button, onClick = cancel),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
+                }
             }
 
             Box(

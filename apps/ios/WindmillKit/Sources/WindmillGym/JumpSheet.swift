@@ -14,18 +14,20 @@ struct JumpSheet: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            HStack {
-                Text("This session")
-                    .font(WindmillFont.display(20))
-                    .foregroundStyle(skin.ink)
-                Spacer()
-                Button("Close", action: onClose)
-                    .font(WindmillFont.body(16))
-                    .foregroundStyle(skin.inkDim)
-                    .frame(minHeight: GymTap.minimum)
-            }
+        NavigationStack {
+            content
+                .navigationTitle("This session")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", action: onClose)
+                    }
+                }
+        }
+    }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             List {
                 ForEach(rows) { row in
                     Button { onJump(row.id) } label: { movement(row) }

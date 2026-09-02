@@ -6,7 +6,7 @@ import {
   closedOnItsOwn,
   CONNECT_HREF,
   dayLabel,
-  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
+  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
   groupByExercise,
   hasRecord, isFinished, isFirstSession, isNameOverCap, isUntested, loadedLine, logWhenLabel,
   MOVEMENTS_HREF,
@@ -14,7 +14,7 @@ import {
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
-  recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
+  recordHref, restInForce, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
   threadHref, threadIdOf, THREADS_HREF,
@@ -844,4 +844,23 @@ test('setLoadLabel — what a set was, in the one spelling a weight has here', (
   assert.equal(setLoadLabel({ weightKg: 0, reps: 9 }), 'bodyweight × 9');
   assert.equal(setLoadLabel({ weightKg: -20, reps: 9 }), '−20 × 9');
   assert.equal(setLoadLabel({ weightKg: 100, reps: 1 }), '100 × 1');
+});
+
+test('restInForce — the routine entry’s own rest wins over the dial and says so; the dial is silent about where it came from', () => {
+  const session = {
+    plan: { routine: 'Push A', entries: [
+      { exerciseId: 'bench-press', targetSets: 5, restSeconds: 180 },
+      { exerciseId: 'dip', targetSets: 3 },
+      { exerciseId: 'row', targetSets: 3, restSeconds: 90 },
+      { exerciseId: 'row', targetSets: 3, restSeconds: 60 },
+    ] },
+  };
+  assert.deepEqual(restInForce(session, 'bench-press', 120), { seconds: 180, fromRoutine: true });
+  assert.deepEqual(restInForce(session, 'bench-press', null), { seconds: 180, fromRoutine: true }, 'the entry runs the clock even with the dial off');
+  assert.deepEqual(restInForce(session, 'dip', 120), { seconds: 120, fromRoutine: false });
+  assert.equal(restInForce(session, 'dip', null), null);
+  assert.deepEqual(restInForce(session, 'curl', 120), { seconds: 120, fromRoutine: false }, 'not in the plan: the dial');
+  assert.deepEqual(restInForce(session, 'row', 120), { seconds: 120, fromRoutine: false }, 'named twice, so nothing can say which entry: the dial');
+  assert.deepEqual(restInForce({ plan: null }, 'bench-press', 120), { seconds: 120, fromRoutine: false });
+  assert.equal(FROM_THE_ROUTINE, ' · from the routine');
 });

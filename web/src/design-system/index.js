@@ -8,6 +8,7 @@ export { Badge } from './core/Badge.jsx';
 export { Tag } from './core/Tag.jsx';
 export { Avatar } from './core/Avatar.jsx';
 export { Card } from './core/Card.jsx';
+export { Menu } from './core/Menu.jsx';
 
 // forms
 export { Input } from './forms/Input.jsx';

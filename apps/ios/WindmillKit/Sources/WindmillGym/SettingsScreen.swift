@@ -2,6 +2,8 @@ import SwiftUI
 import WindmillPlatform
 
 // Every tap writes the whole preferences document: the route replaces it whole, so one field would reset the rest.
+// The platform's own form: one section per group, the group's one caption as its footer, and the
+// controls inside it the system's.
 
 struct SettingsScreen: View {
     @ObservedObject var store: TrainingStore
@@ -13,41 +15,19 @@ struct SettingsScreen: View {
 
     @Environment(\.gymSkin) private var skin
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 9) {
-                head
-                units
-                restTimer
-                confirmation
-                caption(Settings.coachReads)
-                    .padding(.horizontal, WindmillSpace.x1)
-                    .padding(.vertical, WindmillSpace.x2)
-                doors
-            }
-            .padding(.horizontal, WindmillSpace.x4)
-            .padding(.top, WindmillSpace.x8)
-            .padding(.bottom, WindmillSpace.x8)
+        Form {
+            units
+            restTimer
+            confirmation
+            doors
         }
-    }
-
-    private var head: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("how the room behaves at the rack")
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-        }
-        .padding(.bottom, WindmillSpace.x2)
+        .scrollContentBackground(.hidden)
+        .background(skin.canvas)
     }
 
     // Kilograms are stored under either answer.
     private var units: some View {
-        card {
-            // Drawn, not inherited: a segmented `Picker` outside a Form or List renders no label at
-            // all, so without this row the card is an unnamed `kg | lb` pair. Same shape as the two
-            // cards below it.
-            Text("Units")
-                .font(WindmillFont.body(15, .bold))
-                .foregroundStyle(skin.ink)
+        Section {
             // A stock segmented control measures 30.7pt on this OS — under the 46pt floor every other
             // control in this room keeps (`GymTap.minimum`), and the one thing on a settings screen a
             // thumb would have to aim at. `.controlSize(.large)` takes it to 48; a `.frame` does not
@@ -61,25 +41,22 @@ struct SettingsScreen: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.large)
-            caption("Display only — nothing stored changes.")
-            if store.preferences.units == .lb {
-                caption("Not on this phone yet — this room still draws kg. Your answer is kept on the account.")
-            }
+        } header: {
+            Text("Units")
+        } footer: {
+            Text(unitsCaption)
         }
+        .listRowBackground(skin.surface)
     }
 
-    // A routine's own rest against a movement wins over this for that movement.
+    private var unitsCaption: String {
+        let displayOnly = "Display only — nothing stored changes."
+        guard store.preferences.units == .lb else { return displayOnly }
+        return displayOnly + " Not on this phone yet — this room still draws kg. Your answer is kept on the account."
+    }
+
     private var restTimer: some View {
-        card {
-            HStack(spacing: WindmillSpace.x3) {
-                Text("Rest timer")
-                    .font(WindmillFont.body(15, .bold))
-                    .foregroundStyle(skin.ink)
-                Spacer(minLength: 0)
-                Text(Self.spell(store.preferences.restSeconds))
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkDim)
-            }
+        Section {
             Picker("Rest timer", selection: Binding(get: { store.preferences.restSeconds },
                                                     set: { write(store.preferences.resting($0)) })) {
                 ForEach(Rest.choices, id: \.self) { seconds in
@@ -92,26 +69,33 @@ struct SettingsScreen: View {
             switching("Sound when it ends", isOn: store.preferences.restSound) {
                 write(store.preferences.with(restSound: $0))
             }
-            caption("The sound needs the app awake: a rest that ends while the phone is locked ends quietly.")
+        } header: {
+            Text("Rest timer")
+        } footer: {
+            Text("The sound needs the app awake: a rest that ends while the phone is locked ends quietly.")
         }
+        .listRowBackground(skin.surface)
     }
 
+    // The caption under the last dial names what Coach excludes rather than pointing at it.
     private var confirmation: some View {
-        card {
-            Text("Set confirmation")
-                .font(WindmillFont.body(15, .bold))
-                .foregroundStyle(skin.ink)
+        Section {
             switching("Haptic", isOn: store.preferences.confirmHaptic) {
                 write(store.preferences.with(confirmHaptic: $0))
             }
             switching("Sound", isOn: store.preferences.confirmSound) {
                 write(store.preferences.with(confirmSound: $0))
             }
+        } header: {
+            Text("Set confirmation")
+        } footer: {
+            Text(Settings.coachReads)
         }
+        .listRowBackground(skin.surface)
     }
 
     private var doors: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        Section {
             Button(action: onNotes) {
                 door(title: Notes.title, line: Notes.purpose, symbol: "note.text",
                      lit: false, away: false)
@@ -131,6 +115,7 @@ struct SettingsScreen: View {
                      symbol: "link", lit: true, away: false)
             }
         }
+        .listRowBackground(skin.surface)
     }
 
     // `away` draws the arrow that leaves this app for a browser; the chevron stays in the room.
@@ -153,11 +138,7 @@ struct SettingsScreen: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(lit ? skin.accent : skin.inkFaint)
         }
-        .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-            .strokeBorder(lit ? skin.accent : skin.line, lineWidth: 1))
     }
 
     private func switching(_ label: String, isOn: Bool, _ set: @escaping (Bool) -> Void) -> some View {
@@ -166,23 +147,6 @@ struct SettingsScreen: View {
             .foregroundStyle(skin.inkDim)
             .tint(skin.accent)
             .frame(minHeight: GymTap.minimum)
-    }
-
-    private func caption(_ line: String) -> some View {
-        Text(line)
-            .font(GymType.numeral(12.5))
-            .foregroundStyle(skin.inkFaint)
-            .lineSpacing(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2, content: content)
-            .padding(WindmillSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                .strokeBorder(skin.line, lineWidth: 1))
     }
 
     // nil spells `off`: there is no zero here and no `false`.
@@ -205,6 +169,6 @@ struct SettingsScreen: View {
 }
 
 enum Settings {
-    // Beside the dials, naming what Coach excludes rather than pointing at it.
+    // Under the last dial, naming what Coach excludes rather than pointing at it.
     static let coachReads = "Coach reads your notes, not your settings."
 }

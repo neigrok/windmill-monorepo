@@ -2,21 +2,21 @@ import React, { useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import {
-  dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL,
-  overlapWith, saveLabel, saveNote, saveReport, startedAtOf, withLineAdded, withLineChanged,
-  withLineRemoved, withMovementAdded,
+  DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL, overlapWith,
+  saveLabel, saveNote, saveReport, startedAtOf, withLineAdded, withLineChanged, withLineRemoved,
+  withMovementAdded, yesterdayOf,
 } from './backfill.js';
+import { dateLocalOf } from './bodyweight/bodyweight.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { fmtKg, nameOfMovement, sessionHref } from './log.js';
 import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 
-const DEFAULT_DAYS = 1;
 const DEFAULT_MINUTES = 60;
 
 export function Backfill({ log }) {
-  const [form, setForm] = useState({ days: DEFAULT_DAYS, hour: 17, minute: 30, minutes: DEFAULT_MINUTES, blocks: [] });
+  const [form, setForm] = useState(() => ({ date: yesterdayOf(), hour: 17, minute: 30, minutes: DEFAULT_MINUTES, blocks: [] }));
   const [overlap, setOverlap] = useState(null);
   const [ahead, setAhead] = useState(null);
   const [refused, setRefused] = useState(false);
@@ -33,7 +33,7 @@ export function Backfill({ log }) {
   };
   const blocks = (change) => edit({ blocks: change(form.blocks) });
 
-  const startedAt = startedAtOf({ days: form.days, hour: form.hour, minute: form.minute });
+  const startedAt = startedAtOf({ date: form.date, hour: form.hour, minute: form.minute });
   const durationMs = form.minutes * 60_000;
 
   const save = async () => {
@@ -84,16 +84,15 @@ export function Backfill({ log }) {
       <p className="gym-quiet">For the session that never made it into the log.</p>
 
       <div className="gym-when">
-        {dayChips().map((chip) => (
-          <button
-            key={chip.days}
-            type="button"
-            className={form.days === chip.days ? 'gym-chip is-on' : 'gym-chip'}
-            onClick={() => edit({ days: chip.days })}
-          >
-            {chip.label}
-          </button>
-        ))}
+        {/* Any day up to today; the field keeps the last real day it held rather than an empty one. */}
+        <input
+          className="gym-when-date"
+          type="date"
+          aria-label="Day"
+          value={form.date}
+          max={dateLocalOf(Date.now())}
+          onChange={(event) => { if (event.target.value !== '') edit({ date: event.target.value }); }}
+        />
         <span className="gym-when-word">at</span>
         <input
           className="gym-when-time"
@@ -219,7 +218,6 @@ export function Backfill({ log }) {
       )}
 
       <div className="gym-save">
-        <a className="gym-save-cancel" href="#/gym/log">Cancel</a>
         <button
           type="button"
           className={form.blocks.length === 0 || saving ? 'gym-save-do is-inert' : 'gym-save-do'}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { gymApi } from './gymApi.js';
+import { failureReason, gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import { BodyweightReading, useBodyweight, WeighInChip, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
@@ -12,6 +12,7 @@ import {
   planFrozenLabel, planReadingOf, recordHref, routineNameOf, sessionDetailMeta, sessionHref,
   setLoadLabel, setNoteOf, tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
+import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -202,6 +203,24 @@ export function SessionDetail({ id, log }) {
     });
   };
 
+  // Discarding the whole session is the same withheld delete the review's short session takes: off
+  // the log at once, nothing on the wire for the length of the window, the transient the way back.
+  // The lifter lands on the log, where the row is already gone and the Undo stands.
+  const discard = () => {
+    setFixing(null);
+    withhold({
+      kind: 'session',
+      id,
+      line: SESSION_DELETED,
+      send: async () => {
+        await gymApi.discardSession(id);
+        await reloadLog();
+      },
+      refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
+    });
+    window.location.hash = '#/gym/log';
+  };
+
   // A re-read drops the corrections in hand; the deletes it must not drop are the room's, and a
   // re-read cannot reach them.
   const reread = () => {
@@ -325,6 +344,12 @@ export function SessionDetail({ id, log }) {
         );
       })}
       <ShareWorkout sessionId={id} />
+      {/* A finished session only: the phone owns the open one, and the mirror draws no door. */}
+      {isFinished(session) && (
+        <div className="gym-detail-discard">
+          <button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>
+        </div>
+      )}
       {fixing && (
         <FixSheet
           key={fixing.id}

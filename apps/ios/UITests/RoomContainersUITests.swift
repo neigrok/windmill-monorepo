@@ -9,7 +9,12 @@ final class RoomContainersUITests: XCTestCase {
 
     private let tabs = ["Routines", "The log", "Coach"]
     private let settingsDoor = "Gym settings"
-    private let settingsMark = "how the room behaves at the rack"
+    // The settings screen is named by its bar and by nothing else, so "it is up" is read off the
+    // Units footer, which every account draws (an lb account draws a longer one that starts the same).
+    private let settingsMark = "Display only — nothing stored changes."
+    private var settingsUp: XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", settingsMark)).firstMatch
+    }
     private let capsule = "Switch app"
     private let openLine = "You decide the numbers at the rack."
 
@@ -31,7 +36,7 @@ final class RoomContainersUITests: XCTestCase {
         XCTAssertTrue(door.waitForExistence(timeout: 20), "the routines home never drew its settings door")
         if !door.isHittable { app.swipeUp() }
         door.tap()
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForExistence(timeout: 10),
+        XCTAssertTrue(settingsUp.waitForExistence(timeout: 10),
                       "the settings screen never pushed")
     }
 
@@ -50,12 +55,14 @@ final class RoomContainersUITests: XCTestCase {
     }
 
     // The hand-off defect the D1 prover left: every pushed screen drew its own heading underneath the
-    // navigation bar's title, so `Gym` appeared twice on the settings screen.
+    // navigation bar's title, so the settings screen was named twice. Now the bar names it `Settings`
+    // and nothing under the bar says so again.
     func testAPushedScreenDrawsItsTitleOnceAndOnlyInTheBar() {
         pushGymSettings()
 
-        XCTAssertTrue(app.navigationBars["Gym"].exists, "the pushed screen has no title in its bar")
-        XCTAssertFalse(app.scrollViews.staticTexts["Gym"].exists,
+        XCTAssertTrue(app.navigationBars["Settings"].exists, "the pushed screen has no title in its bar")
+        XCTAssertFalse(app.navigationBars["Gym"].exists, "the pushed screen is still named after the room")
+        XCTAssertFalse(app.collectionViews.staticTexts["Settings"].exists,
                        "the screen draws its own heading as well as the bar's")
     }
 
@@ -67,11 +74,11 @@ final class RoomContainersUITests: XCTestCase {
         app.tabBars.buttons["The log"].tap()
         XCTAssertTrue(app.navigationBars["The log"].waitForExistence(timeout: 10),
                       "the log tab opened inside another tab's stack")
-        XCTAssertFalse(app.staticTexts[settingsMark].exists,
+        XCTAssertFalse(settingsUp.exists,
                        "a screen pushed in one tab is drawn in another")
 
         app.tabBars.buttons["Routines"].tap()
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForExistence(timeout: 10),
+        XCTAssertTrue(settingsUp.waitForExistence(timeout: 10),
                       "the routines tab forgot the screen it was left on")
     }
 

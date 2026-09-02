@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  AHEAD_TITLE, dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel,
-  LINE_SETS_MAX, LINE_SETS_MIN, MID_WORKOUT_REFUSAL, OVERLAP_TITLE, overlapWith, saveLabel, saveNote,
-  saveReport, startedAtOf, totalSets, withLineAdded, withLineChanged, withLineRemoved,
-  withMovementAdded,
+  AHEAD_TITLE, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, LINE_SETS_MAX,
+  LINE_SETS_MIN, MID_WORKOUT_REFUSAL, OVERLAP_TITLE, overlapWith, saveLabel, saveNote, saveReport,
+  startedAtOf, totalSets, withLineAdded, withLineChanged, withLineRemoved, withMovementAdded,
+  yesterdayOf,
 } from '../../../src/products/gym/backfill.js';
 
 const BLOCKS = [
@@ -22,20 +22,19 @@ const BLOCKS = [
   },
 ];
 
-test('the chips a backfill is dialled with, and the instant a day chip means', () => {
+test('the day a backfill opens on, the duration chips, and the instant a day and a time mean', () => {
   const now = new Date(2026, 7, 4, 9, 41).getTime();
-  assert.deepEqual(dayChips(now), [
-    { days: 1, label: 'Yesterday' },
-    { days: 2, label: 'Sun 2 Aug' },
-    { days: 5, label: 'Thu 30 Jul' },
-  ]);
+  assert.equal(yesterdayOf(now), '2026-08-03');
+  assert.equal(yesterdayOf(new Date(2026, 0, 1, 0, 10).getTime()), '2025-12-31', 'a year boundary is a day step');
   assert.deepEqual(DURATION_CHIPS, [
     { minutes: 45, label: '45 min' },
     { minutes: 60, label: '1 h' },
     { minutes: 90, label: '1 h 30' },
   ]);
-  assert.equal(startedAtOf({ days: 1, now }), new Date(2026, 7, 3, 17, 30).getTime());
-  assert.equal(startedAtOf({ days: 5, hour: 7, minute: 15, now }), new Date(2026, 6, 30, 7, 15).getTime());
+  assert.equal(startedAtOf({ date: '2026-08-03' }), new Date(2026, 7, 3, 17, 30).getTime());
+  assert.equal(startedAtOf({ date: '2026-07-30', hour: 7, minute: 15 }), new Date(2026, 6, 30, 7, 15).getTime());
+  assert.equal(startedAtOf({ date: '2026-02-30', hour: 7, minute: 15 }), null, 'not a real day');
+  assert.equal(startedAtOf({ date: '', hour: 7, minute: 15 }), null);
 });
 
 test('the total, the button that carries it, and the note under it', () => {

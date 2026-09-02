@@ -483,6 +483,31 @@ fun RoutineScreen(
                 TopAction("Edit") { onBuild(RoutineDraft.of(routine)) }
             }
         },
+        // The reach band: the one thing a lifter does here with a bar in their hands, pinned above
+        // the safe-bottom inset and out of the scroll — the room's Scaffold already pads a pushed
+        // screen for the navigation bar, so this band sits on top of that padding. The routine's
+        // name is the screen title, so the verb is locked — literally "Start workout".
+        bottomBar = {
+            if (routine != null) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(GymSkin.canvas)
+                        .padding(horizontal = WindmillSpace.x5)
+                        .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
+                        .heightIn(min = GymTap.primary)
+                        .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                        .clickable(role = Role.Button) { onStart(routine.id) },
+                ) {
+                    Text(
+                        "Start workout",
+                        style = WindmillFont.body(17, FontWeight.Bold),
+                        color = GymSkin.onAccent,
+                    )
+                }
+            }
+        },
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -529,22 +554,6 @@ fun RoutineScreen(
                     TargetEntry.openLine,
                     style = WindmillFont.body(14).copy(lineHeight = 21.sp),
                     color = GymSkin.inkDim,
-                )
-            }
-
-            // The routine's name is the screen title, so the verb is locked — literally "Start workout".
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.primary - 8.dp)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(role = Role.Button) { onStart(routine.id) },
-            ) {
-                Text(
-                    "Start workout",
-                    style = WindmillFont.body(16, FontWeight.Bold),
-                    color = GymSkin.onAccent,
                 )
             }
 

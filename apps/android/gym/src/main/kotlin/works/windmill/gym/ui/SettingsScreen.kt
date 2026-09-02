@@ -7,18 +7,13 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,15 +21,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -76,7 +66,7 @@ fun SettingsScreen(
         }
     }
 
-    GymScreen(title = "Gym", onBack = onBack, backTo = backTo) {
+    GymScreen(title = "Settings", onBack = onBack, backTo = backTo) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -85,9 +75,6 @@ fun SettingsScreen(
                 .padding(bottom = WindmillSpace.x8),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Text("how this room behaves at the rack", style = GymType.numeral(12), color = GymSkin.inkFaint)
-            Spacer(Modifier.height(WindmillSpace.x1))
-
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
             RestRow(
                 preferences = preferences,
@@ -126,6 +113,8 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
 }
 
 // Off is not a missing value: the clock still counts the gap between two sets, upward, and silently.
+// Nothing here says a routine's own rest beats this dial: the timer says so, on the reading it
+// governs, and a fact is drawn once.
 @Composable
 private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggleSound: () -> Unit) {
     SettingCard {
@@ -140,9 +129,6 @@ private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggl
             onPick = onPick,
         )
         ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
-        // ONE caption, and it is the override: this is the only place on the phone that a routine's
-        // own rest beating this dial is said, and it is the one fact here with a dial behind it.
-        Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only a change to that routine can move it.")
     }
 }
 

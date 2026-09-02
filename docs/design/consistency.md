@@ -911,8 +911,8 @@ long press (`LogScreen.kt:279-340`, its hand-declared accessibility action at `:
 `GymRoom.discard` (`GymRoom.kt`), which withholds a `Deletion.Session` like every other
 delete, and all three print `Finish.discard` (`FinishScreen.kt:56`) rather than their own spelling of
 it. The confirmation is gone from all of them: an act with an undo does not get a dialog. The web is
-not part of this entry — it draws no gesture at all, so Law 1 was never at stake there; what it does
-and does not offer is `3c`.
+not part of this entry — it draws no gesture at all, so Law 1 was never at stake there; the door it
+draws instead is `3c`.
 
 **2u · a sheet that cannot scroll cannot be finished** → fixed on both phones 2026-08-27; recorded
 for the class, not the instance. Both fix sheets laid out content shorter than the viewport, so
@@ -1045,16 +1045,16 @@ The rule underneath is `2w`'s and P3's — a client never rewrites server text �
 builder's fix: it wants a shape that carries the server's sentence AND names the subject, decided
 once for the room rather than invented at the call site.
 
-**3c · the web offers no way to discard an ordinary past workout** → a product decision, not a Law 1
-breach. `2t` is about a gesture being the only path; the web has no gesture, and here it has no path
-at all. `FinishScreen` draws `ShortSession` — the only `Discard session` control on the surface —
-under `review.slight` alone (`Finish.jsx:97`, the control at `:130-132`), so a normal workout's
-review screen offers the head's *Session detail* back, the share card, and — where the workout was
-not run from a routine — the keep-as-routine offer, and no discard at all; and the log's session row
-carries no control but its own link (`Log.jsx:146`). Both phones reach the act from three doors.
-Either the web's session review gains the door the phones draw, or the ledger records that
-discarding is a phone act on purpose — which would be a defensible reading of `01-context.md`'s
-split, and is not what any brief says today.
+**3c · the web offers no way to discard an ordinary past workout** → **built 2026-09-02**, nothing
+owed. `SessionDetail` (`Log.jsx:348-350`) draws `Discard session` under `isFinished(session)` — every
+finished session, whatever its length — through the same withheld window every other web delete
+takes: `withhold({ kind: 'session', … line: SESSION_DELETED })`, nothing on the wire for the length
+of the window, the lifter landed on the log where the row is already gone and the Undo stands, and
+the refusal *That session wasn’t discarded — …* (`Log.jsx:209-221`). `ShortSession` on the finish
+screen stays for the slight branch (`Finish.jsx:111-137`, the same withhold). The live mirror draws
+no door — the phone owns the open session (`01-context.md`) — which is the one place the web still
+differs from the phones, and it differs on purpose. `withheldWindow.test.js` pins the door, the
+window and the refusal.
 
 **3d · the web abandons on unmount, and a hidden tab is not an unmount** → **closed at the tree by
 S2b's closing pass, which found the entry itself stale.** It read the web as abandoning on the room's
@@ -1080,17 +1080,20 @@ holding a refusal and a promise in two different places cannot claim a fixed hei
 order is now one order everywhere and `09-coach.md` states it: Apply · the gate's refusal · the
 atomic promise · turn down.
 
-**3g · the routine's own rest outranks the dial, and one surface says so** → fix flows to iOS and
-the web, or to the timer label on all three. Android's Rest caption is the only drawn statement
-anywhere in the product that a routine's own rest target beats the settings dial
-(`SettingsScreen.kt:142`). The override is
-real on every surface that runs a timer — `Rest.target` reads the plan entry's seconds before the
-preference (`RestTimer.kt:10`, `RestTimer.swift:7-9`) — and it arrives over the wire and on coach
-proposals, so a lifter whose timer disagrees with their dial has one surface that explains it and
-two that do not. iOS says it only in a source comment on the settings rest row
-(`SettingsScreen.swift:71`), and the web's settings section does not say it at all. Nor does the
-timer: the label is *resting · target 2:00* (`RestTimer.kt:27`) and names no provenance, which is
-probably the better home for the fact than a third caption.
+**3g · the routine's own rest outranks the dial, and one surface says so** → **built 2026-09-02**,
+nothing owed. The fact moved to the timer, once, on all three, and off every settings screen. The
+unit is `target m:ss` plus the bytes ` · from the routine` when the entry's own `restSeconds` is in
+force and nothing when the dial is: `Rest.Target(seconds, fromRoutine)` and `Rest.fromRoutine` on
+Android (`RestTimer.kt:11-17`, drawn as *resting · target 2:00 · from the routine* at `:35-37`);
+`Rest.targetLine` and `Rest.fromTheRoutine` on iOS (`RestTimer.swift:11-18`, drawn under the rest
+reading by `LoggerScreen.swift:140`, where the row used to draw elapsed alone); `restInForce` and
+`FROM_THE_ROUTINE` on the web (`log.js:461-468`), drawn on the mirror's meta as *target 2:00 · from
+the routine* (`Mirror.jsx:66`), which read *rest 2:00* before. The override is still real on every
+timer (`RestTimer.kt:16`, `RestTimer.swift:8`) and no settings copy states it any more: Android's
+Rest caption sentence is gone and its `RestRow` comment says why (`SettingsScreen.kt:115-117`), and
+iOS's source comment on the settings rest row went with the `Form`. `LoggerRestTargetTests.kt`,
+`RestTimerTests` on both phones and `mirror.test.js` pin the bytes. One residue is ledger `5h`: which
+entry's rest is in force when a plan names a movement twice.
 
 **3h · iOS's routine home card draws the routine screen behind it** → closed 2026-08-31. The card is
 the routine's name, `untested`, one meta line — `{n} movements · trained {ago}`, iOS's
@@ -1107,7 +1110,7 @@ offline once the card stops naming them. The copy is opened under the seat the r
 launch that has not resolved one yet leaves it standing (`AccountCopy.open(under:)`).
 **The bound is stated and no surface writes *all*:** that settled history is the newest **twenty**
 proposals (`kRoutineHistoryProposals`, `backend/products/gym/ports/ProgramRepository.h:48`). The one
-thing the cut left open is a phone split — `3r`.
+thing the cut left open was a phone split — `3r`, closed since.
 
 **3i · Duplicate copies the saved routine on two surfaces and the unsaved draft on the third** → a
 deliberate divergence, recorded so the next wave does not read it as drift. Duplicate's one home is
@@ -1158,14 +1161,16 @@ count would be inventing it. The wire carries `intent` on the thread's proposal 
 keep saying it wrong. Canon is `gym/briefs/09-coach.md`.
 
 **3m · a connection reads how your gym is set up — claimed on two surfaces, refused by the backend**
-→ closed 2026-08-30, one omission left behind. `get_preferences` does not exist and nothing replaced
-it: the rest target and the reading unit are dials, not context a tool fetches
-(`GymToolCatalog.cpp:448-451`), and Android's `cannotDo` says so on screen
+→ closed 2026-08-30; the notes omission **built 2026-09-02**, nothing owed here. `get_preferences`
+does not exist and nothing replaced it: the rest target and the reading unit are dials, not context
+a tool fetches (`GymToolCatalog.cpp:448-451`), and Android's `cannotDo` says so on screen
 (`domain/ConnectedLog.kt:55-58`). The web's `LEVEL_LINES.read` and iOS's `Level.read.reach` /
-`canLines[0]` no longer claim the reach (`connect.js:39`, `ConnectedLog.swift:16`, `:157`). What is
-left is smaller and the other way round: `list_notes` is a read-level tool
-(`GymToolCatalog.cpp:232`), the web and Android name notes in what a connection reads and iOS names
-them nowhere on its consent screen.
+`canLines[0]` no longer claim the reach (`connect.js:39`, `ConnectedLog.swift:16`, `:159`). And
+`list_notes` being a read-level tool (`GymToolCatalog.cpp:232`) is now said on all three consent
+screens: iOS's `canLines[0]` reads *Read what you have logged — sets, sessions, routines, records and
+notes.* (`ConnectedLog.swift:159`), beside the web's `connect.js:39` and Android's `canDo`
+(`ConnectedLog.kt:21`), pinned by `ConnectedLogTests.swift`. What the three read lines still
+disagree on — `workouts` against `sessions`, and the weigh-ins none of them names — is ledger `5l`.
 
 **3n · the product invariants asked for a confirm as well as an undo** → closed 2026-08-30 by ruling
 R2. `PRODUCT_LOG.md`'s destructive-act invariant is `13-gestures.md` Law 2's shape now: the act is
@@ -1184,18 +1189,21 @@ dot on their routine's row — and the routine the card is about now draws no ch
 the tie between the card and its row, on the routines that keep a chip as much as on the one that
 does not.
 
-**3p · Android cannot reorder a routine draft at all** → **owed as a feature, not carried as
-drift.** The web half closed 2026-08-31 and closed completely: the editor's handle is a real
-`<button>` answering three paths — the drag it always had, ArrowUp / ArrowDown, and a single pointer
-picking the row up and placing it at another handle — with the move said once on a `role="status"`
-line whichever path took it, and no *Move up* / *Move down* row menu bought to get there
-(`EntryList` in `Routines.jsx` over `rail.js`'s `useRail`, pinned by `entryReorder.test.js`). So
-`gym/briefs/13-gestures.md` Law 1 and WCAG 2.2 SC 2.5.7 are both answered there, on the grip itself.
-iOS reorders through `.onMove` (`RoutineBuilderScreens.swift:117`), which declares its own
-alternative. **What is left is Android, which has never drawn a reorder for a draft** — no control
-disagrees with canon there, so this is a capability the surface owes rather than a conformance
-failure, and ruling S1 of the simplification programme keeps it out of a wave whose subject is
-removing controls. Delete this entry when Android draws one.
+**3p · Android cannot reorder a routine draft at all** → **built 2026-09-02**, nothing owed. The
+web half closed 2026-08-31: the editor's handle is a real `<button>` answering three paths — the
+drag, ArrowUp / ArrowDown, and a single pointer picking the row up and placing it at another handle
+— with the move said once on a `role="status"` line (`EntryList` in `Routines.jsx` over `rail.js`'s
+`useRail`, pinned by `entryReorder.test.js`); iOS reorders through `.onMove`
+(`RoutineBuilderScreens.swift:117`). Android now draws one, with no new dependency
+(`ui/RoutineBuilder.kt`): each draft row carries a drag-handle icon (`Icons.Filled.DragHandle`,
+`contentDescription` *Move*) whose tap picks the row up and whose tap on another row's handle places
+it there — `handleTapped` at `:244-256`, the handle's own name reading *Move X, 2 of 3 — picked up*
+and then *Place X at 3 of 3* exactly as the web's `nameFor` does (`:258-263`) — plus two
+`CustomAccessibilityAction`s, *Move up* and *Move down* (`:391-395`), and the move said once on a
+`liveRegion = Polite` line (`:431`) in the web's own sentence shape — `"${nameOf(from)}, ${placeOf(to)}"`
+(`:229`, `rail.js:63`). The state is `RoutineDraft.moving(from, to)` (`domain/Program.kt:214`). No
+long press, and no drawn row menu. `RoutineEditorTests.kt` pins the pick-up, the place-down, both
+actions and the said line.
 
 **3q · a transient with a detail is three lines on a phone, and the budget says two** → ruled
 2026-08-31 and **built on the web only; the phones' geometry is what is left, and it is a design
@@ -1230,14 +1238,15 @@ with a 64-point Undo, and that is what puts the detail over. Either the transien
 the whole width — the Undo beneath it rather than beside it — or the budget row says what a two-fact
 transient costs on a phone. Whichever is chosen moves all three surfaces at once.
 
-**3r · `Start workout` is pinned on one phone and scrolls away on the other** → fix flows to Android.
-`guidelines/thumb-reach.md` §3.1 puts a screen's one primary directly above the safe-bottom inset and
-§3.6 requires a scroll body to keep its bottom band pinned at every scroll position. iOS's routine
-screen draws it in a bottom `safeAreaInset` (`RoutineScreen.swift:191-203`, applied at `:44`), so the
-verb the screen exists for is under the thumb whatever the lifter has scrolled to. Android draws it
-inline in the `verticalScroll` body (`ui/RoutinesScreen.kt:530-544`, the scroll at `:486`), between
-the movement list and History, so a routine with a long history scrolls its own start button off. The
-split is what cut 3 left behind: iOS moved with the cut and Android is the half still to move.
+**3r · `Start workout` is pinned on one phone and scrolls away on the other** → **built
+2026-09-02**, nothing owed. `guidelines/thumb-reach.md` §3.1 puts a screen's one primary directly
+above the safe-bottom inset and §3.6 requires a scroll body to keep its bottom band pinned at every
+scroll position. iOS's routine screen draws it in a bottom `safeAreaInset`
+(`RoutineScreen.swift:191-203`, applied at `:44`); Android now draws it in `GymScreen`'s `bottomBar`
+slot (`ui/GymScreen.kt:68`, `:99`), pinned above the inset by the `Scaffold`, from the routine
+screen at `ui/RoutinesScreen.kt:490-504`, with the `verticalScroll` body (`:516`) padded so the last
+row is never under it. `RoutinesScreenTests.kt` pins the band. Both phones now put a third writer in
+a pinned bottom band — that is ledger `3s`, unchanged.
 
 **3s · three writers share one bottom band on iOS, and the room's rule names only two of them** → a
 room-level decision, not a screen's. `GymRoom` puts the withheld transient in a bottom `overlay` and
@@ -1373,17 +1382,12 @@ than kept green and dead. What is owed is the seam — an injectable store on `G
 argument that slows the write — not another attempt at the same pin.
 
 **4f · the movement picker trims a search in one unit and the create step it opens trims in another**
-→ fix flows to `.whitespacesAndNewlines`, which is the house rule everywhere else in `WindmillGym`.
-`MovementPicker.swift:89` reads `query.trimmingCharacters(in: .whitespaces)` for the search term and
-`:158` seeds the create door with the same expression; `CreateMovement.swift:131` then re-trims in
-`.whitespacesAndNewlines` one screen away. `CharacterSet.whitespaces` is Unicode `Zs` plus tab and
-**excludes** U+000A–U+000D, so a pasted `"\n"` is a search term to the picker and not a name to the
-step it opens: the six-most-trained list is replaced by zero matches, the create door appears, and
-`Create and add` stays disabled until something is typed. Nothing is minted blank, which is why this
-is milder than the finish card's version of it was — but it is the same word measured in two units on
-one surface, and it wants closing by the wave that owns the picker. Checked and clean, so this is the
-only site: `KeypadSheet.swift:102` builds its buffer key by key from a digit pad, and every other name
-predicate in the module already reads `.whitespacesAndNewlines`.
+→ **built 2026-09-02**, nothing owed. `MovementPicker.swift:89` reads
+`query.trimmingCharacters(in: .whitespacesAndNewlines)` for the search term and `:158` seeds the
+create door with the same expression, which is the unit `CreateMovement.swift:131` re-trims in one
+screen away — so a pasted `"\n"` is blank to the picker and to the step it opens alike, and the
+six-most-trained list stands rather than being replaced by zero matches. Every name predicate in
+`WindmillGym` now reads one unit; `MovementPickerTests.swift` pins the picker's.
 
 **4g · the cap-reached sentence is pinned on one phone and scrolls on the other** → a phone-layout
 decision, and only one half of it rests on a real measurement. `gym/briefs/09-coach.md` puts the two
@@ -1977,3 +1981,67 @@ fix is a `scroll-margin-top` on `.journal-day` while a trail is up, which offset
 `scrollIntoView` at once; it needs the trail's measured height rather than a constant, because a long
 walk wraps its chips.
 
+**5h · a plan that names one movement twice picks its rest on the phones and drops it on the web**
+→ a ruling owed, not a defect either surface chose. The rest target in force is read off the frozen
+plan entry for the movement, and the three surfaces find that entry three ways. Android takes the
+first (`Training.kt:93`, `entries.firstOrNull { it.exerciseId == exerciseId }`) and iOS the same
+(`Training.swift:94`, `entries.first { $0.exerciseId == exerciseId }`), so a plan holding Back Squat
+at 3:00 and Back Squat again at 1:30 runs both blocks at 3:00 and says *from the routine* on both.
+The web's `planReadingOf` (`log.js:476-490`) answers `ambiguous` with a null entry for the same
+plan, so `restInForce` (`:461-466`) falls to the dial and says nothing about the routine — the same
+call the web already makes for the set's plan comparison, where a `PlanEntry` carries no id and
+nothing can tell which entry a set was performed against. Neither answer is wrong on its own: the
+phones prefer a target to none, the web prefers no claim to a guess. A lifter running one such plan
+on a phone and reading it on the web sees two targets, and that is the divergence. The ruling
+decides whether the first entry is the honest reading or the dial is, and the other two surfaces
+follow.
+
+**5i · Android's Rest group draws no caption while iOS's footer states the app-awake fact** → a
+copy owner's call, and a narrow one. iOS's Rest section footer reads *The sound needs the app awake:
+a rest that ends while the phone is locked ends quietly.* (`SettingsScreen.swift:75`). Android's
+`RestRow` carries the segmented dial and the sound toggle and no caption at all
+(`SettingsScreen.kt:119-133`): its override sentence left with `3g`, and the app-awake fact is not
+Android's to state — the room holds a wake lock while a session runs, so a rest that ends under a
+locked phone sounds there (ledger `4s` records that lock as one of the two true facts Android says
+nowhere). What is asymmetric is the group, not the sentence: one phone's Rest dial has a caption and
+the other's has none, and `../guidelines/text-budget.md` sets a budget per group without saying a
+group must spend it. The call is whether Android's Rest group owes a line — the wake lock would be
+the honest one, and closing `4s` would close this.
+
+**5j · the assembly sheet draws no Close on Android while iOS's `JumpSheet` keeps a toolbar Close**
+→ recorded as legal, nothing owed. Both are the platform's own dismissal per `gym/briefs/12-native-idiom.md`:
+on Android a `ModalBottomSheet` is left by the drag handle, the scrim and system back, and
+`AssemblySheet.kt:57` draws nothing beside them — `SheetDismissTests.kt` proves the handle exposes
+`SemanticsActions.Dismiss` and that invoking it calls `onDismissRequest` — while on iOS a sheet's
+dismissal is the navigation bar's `.cancellationAction`, which `JumpSheet.swift:22-23` fills with
+`Close`. The strings a lifter reads differ (one surface draws *Close*, the other draws no word)
+because the capability differs — Android has a handle and a system back, iOS has neither — which is
+the one condition under which the brief allows copy to diverge. Recorded so a later sweep does not
+read the missing word as drift.
+
+**5k · one discard, three refusal sentences** → a copy owner's call, product-wide in the shape of
+`2w`. When the log refuses or never answers a session discard, the transient's sentence is written
+three ways. Web: *That session wasn’t discarded — <reason>.* (`Log.jsx:219`, `Finish.jsx:120`,
+the reason from `failureReason`). iOS: *the log didn’t answer — the session is still there*
+(`GymRoom.swift:678`), and no sentence at all for a refusal the log answers with words — the
+`settleDelete` branch only distinguishes answered from not. Android: the log's own line when it
+refused, or *the log didn’t answer — that session is still on the log* when it did not
+(`WithheldDelete.kt:65`, `TrainingStore.kt:1401`, `:1886-1889`). The notes and conversation
+refusals were made byte-identical across the three in S2b's closing pass precisely because a
+near-miss pair reads as a typo (`13-gestures.md`); the session's was never brought in line. The
+same rule should decide these three, and `3b` — Android naming neither the subject nor that it is
+still there when the log answers with words — is the fourth voice in the same room.
+
+**5l · the read grant says `workouts` on one line and `sessions` on the next, and no surface names
+the weigh-ins** → a copy owner's call, with one wire fact behind it. The web's `LEVEL_LINES.read`
+is *Read your log — sets, workouts, routines, records and notes* (`connect.js:39`, drawn by
+`ConnectLog.jsx:44`); iOS draws both words on one screen — `Level.read.reach` *Reads your log —
+sets, workouts, routines, and records.* on a connected tool's grant row (`ConnectedLog.swift:16`,
+drawn at `:464`) and `canLines[0]` *Read what you have logged — sets, sessions, routines, records
+and notes.* on the panel (`:159`, drawn at `:361`); Android's `canDo` says *sessions*
+(`ConnectedLog.kt:21`). The wire itself says both — the tools are `list_sessions` and
+`discard_session`, and the MCP server's own description calls them workouts. And `list_bodyweight` is
+a read-level tool, so a read grant hands an agent every weigh-in, which none of the six lines says —
+a shared omission on all three surfaces rather than a divergence, and the more important half: a
+consent line that enumerates what a read reaches and leaves out a body measurement is the copy the
+mission line forbids. One word for the thing and the weigh-ins named, on all six lines at once.

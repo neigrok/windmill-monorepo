@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -49,9 +50,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -212,6 +215,53 @@ private fun BuildStep(
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val missing = Program.missing(draft)
+    val ordered = draft.entries.sortedBy { it.position }
+    // The reorder rail, the web's three paths less the drag: a tap on a handle picks the row up, the
+    // next tap on any handle places it there, the same handle again puts it down where it stands;
+    // and Move up / Move down are the row's own custom actions. `picked` is the row's id, so a row
+    // that travels stays held. Every path says the move ONCE, on the line under the list.
+    var picked by remember { mutableStateOf<String?>(null) }
+    var said by remember { mutableStateOf("") }
+    val nameOf = { index: Int -> Readout.movement(ordered[index].exerciseId, store.catalog) }
+    val placeOf = { index: Int -> "${index + 1} of ${ordered.size}" }
+    fun move(from: Int, to: Int) {
+        if (to < 0 || to > ordered.lastIndex) return
+        said = "${nameOf(from)}, ${placeOf(to)}"
+        onDraft(draft.moving(from, to))
+    }
+    fun heldIndex(): Int? =
+        picked?.let { id -> ordered.indexOfFirst { it.exerciseId == id } }?.takeIf { it >= 0 }
+    // A row that leaves the list is no longer held, and a sentence about holding it is no longer
+    // true: the line goes quiet rather than stale. The removal itself is not said — the web says
+    // nothing there either.
+    fun remove(exerciseId: String) {
+        if (picked == exerciseId) {
+            picked = null
+            said = ""
+        }
+        onRemove(exerciseId)
+    }
+    fun handleTapped(index: Int) {
+        val held = heldIndex()
+        if (held == null) {
+            picked = ordered[index].exerciseId
+            said = "${nameOf(index)}, ${placeOf(index)} — picked up"
+            return
+        }
+        picked = null
+        if (held == index) {
+            said = "${nameOf(index)}, ${placeOf(index)} — put back"
+            return
+        }
+        move(held, index)
+    }
+    // What the handle does next, in its own name — the web's `nameFor`.
+    fun handleName(index: Int): String {
+        val held = heldIndex()
+        if (held == index) return "Move ${nameOf(index)}, ${placeOf(index)} — picked up"
+        if (held != null) return "Place ${nameOf(held)} at ${placeOf(index)}"
+        return "Move ${nameOf(index)}, ${placeOf(index)}"
+    }
 
     GymScreen(
         title = if (editing) "Edit routine" else "New routine",
@@ -291,8 +341,9 @@ private fun BuildStep(
             Text("Nothing in this day yet.", style = WindmillFont.body(16), color = GymSkin.inkDim)
         }
 
-        draft.entries.sortedBy { it.position }.forEach { entry ->
+        ordered.forEachIndexed { index, entry ->
             var swipe by remember(entry.exerciseId) { mutableFloatStateOf(0f) }
+            val held = picked == entry.exerciseId
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -304,11 +355,15 @@ private fun BuildStep(
                     }
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(GymSkin.surface)
-                    .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+                    .border(
+                        1.dp,
+                        if (held) GymSkin.accent else GymSkin.line,
+                        RoundedCornerShape(WindmillRadius.md),
+                    )
                     .pointerInput(entry.exerciseId) {
                         detectHorizontalDragGestures(
                             onDragEnd = {
-                                if (abs(swipe) >= dropAt) onRemove(entry.exerciseId) else swipe = 0f
+                                if (abs(swipe) >= dropAt) remove(entry.exerciseId) else swipe = 0f
                             },
                             onDragCancel = { swipe = 0f },
                             onHorizontalDrag = { change, amount ->
@@ -324,16 +379,34 @@ private fun BuildStep(
                     // swipe is the only way a movement leaves a routine. Law 3: a stroke that begins in
                     // the edge strip belongs to the system — it is back, which here leaves the draft —
                     // so the row's own swipe starts away from the edge and never competes for it.
+                    // The two moves ride the same list, in the web's words, and the ends are not
+                    // wrapped: a row at the top has nowhere above it. A held row is what the two
+                    // moves move, whichever row's action was invoked — the web's `step`.
                     .semantics {
-                        customActions = listOf(
-                            CustomAccessibilityAction("Remove") {
-                                onRemove(entry.exerciseId)
+                        customActions = buildList {
+                            add(CustomAccessibilityAction("Remove") {
+                                remove(entry.exerciseId)
                                 true
-                            },
-                        )
+                            })
+                            if (index > 0) add(CustomAccessibilityAction("Move up") {
+                                move(heldIndex() ?: index, (heldIndex() ?: index) - 1)
+                                true
+                            })
+                            if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") {
+                                move(heldIndex() ?: index, (heldIndex() ?: index) + 1)
+                                true
+                            })
+                        }
                     }
-                    .padding(horizontal = WindmillSpace.x4),
+                    .padding(end = WindmillSpace.x4),
             ) {
+                IconButton(onClick = { handleTapped(index) }) {
+                    Icon(
+                        Icons.Filled.DragHandle,
+                        contentDescription = handleName(index),
+                        tint = if (held) GymSkin.accent else GymSkin.inkFaint,
+                    )
+                }
                 Text(
                     Readout.movement(entry.exerciseId, store.catalog),
                     style = WindmillFont.body(15, FontWeight.SemiBold),
@@ -347,6 +420,16 @@ private fun BuildStep(
                 )
             }
         }
+
+        // The move is said here, once, for every path alike — the web's `role="status"` line. The
+        // node stands before there is anything to say, because a live region announces a change
+        // and not an arrival.
+        Text(
+            said,
+            style = GymType.numeral(12),
+            color = GymSkin.inkFaint,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
 
         // Once beneath the list and never per row: each open row already reads `open` in its own
         // target column — that word says WHICH, and this sentence says what it means. And never

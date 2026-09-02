@@ -43,7 +43,6 @@ class AssemblySwipeTests {
                 onReorder = { _, _ -> },
                 onDrop = { dropped.add(it); true },
                 onAdd = {},
-                onClose = {},
             )
         }
 
@@ -66,7 +65,6 @@ class AssemblySwipeTests {
                 onReorder = { _, _ -> },
                 onDrop = { asked.add(it); false },
                 onAdd = {},
-                onClose = {},
             )
         }
 
@@ -88,7 +86,6 @@ class AssemblySwipeTests {
                 onReorder = { _, _ -> },
                 onDrop = { dropped.add(it); true },
                 onAdd = {},
-                onClose = {},
             )
         }
 

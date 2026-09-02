@@ -103,7 +103,7 @@ public struct GymRoom: View {
             case .threads: return AskThreads.title
             case .thread: return "Conversation"
             case .notes: return Notes.title
-            case .settings: return "Gym"
+            case .settings: return "Settings"
             case .connect: return "Connected log"
             case .routine(let routineId):
                 return routines.first { $0.id == routineId }?.name ?? "Routine"

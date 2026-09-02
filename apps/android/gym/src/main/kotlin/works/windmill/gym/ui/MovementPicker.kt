@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -29,11 +28,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Program
@@ -178,9 +176,9 @@ fun pickerMaxHeight(): Dp = (LocalConfiguration.current.screenHeightDp.dp * 0.92
 // `onClose` is nullable because the FIRST movement has nothing behind it to cancel back to.
 //
 // Creating a movement stays INSIDE the picker: the create step is a sheet of the picker's own over a
-// picker that stays mounted, so Cancel hands back the query that was typed and the six that were
-// frozen. `onCreate` is the mint itself and not a door to somewhere else — there is no second picker
-// to come back to.
+// picker that stays mounted, so putting it down — back, the scrim, the handle — hands back the query
+// that was typed and the six that were frozen. `onCreate` is the mint itself and not a door to
+// somewhere else — there is no second picker to come back to.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MovementPicker(
@@ -220,12 +218,6 @@ fun MovementPicker(
     val opened = held.value
     val options = PickerOptions.matching(query, catalog, taken, lastSets, nowMs,
                                          sessions = opened, catalogUnread = catalogUnread)
-    val scope = rememberCoroutineScope()
-
-    // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
-    fun closeCreate() {
-        scope.launch { createSheet.hide() }.invokeOnCompletion { minting = null }
-    }
 
     Column(
         modifier
@@ -326,7 +318,6 @@ fun MovementPicker(
                 onName = { minting = Program.capped(it) },
                 equipment = equipment,
                 onEquipment = { equipment = it },
-                onCancel = { closeCreate() },
                 // The step comes down before the mint is asked for: the caller closes the picker
                 // and says any refusal on the surface it lands back on.
                 onCreate = {
@@ -339,14 +330,14 @@ fun MovementPicker(
 }
 
 // Drawn state only: the two answers it collects are held by the picker above it, which survives a
-// process reclaim where a sheet's own slots do not.
+// process reclaim where a sheet's own slots do not. It draws no Cancel: the sheet it is raised in
+// is the platform's, and so is putting it down.
 @Composable
 private fun CreateMovementSheet(
     name: String,
     onName: (String) -> Unit,
     equipment: String,
     onEquipment: (String) -> Unit,
-    onCancel: () -> Unit,
     onCreate: () -> Unit,
 ) {
     val named = Program.named(name) != null
@@ -359,18 +350,7 @@ private fun CreateMovementSheet(
             .padding(WindmillSpace.x5),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clickable(role = Role.Button, onClick = onCancel),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Cancel", style = WindmillFont.body(16), color = GymSkin.inkDim)
-            }
-            Spacer(Modifier.weight(1f))
-            Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
-        }
+        Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
 
         Text("Your movement", style = WindmillFont.display(22), color = GymSkin.ink)
 

@@ -26,11 +26,31 @@ struct RenameSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            Text(title)
-                .font(WindmillFont.display(22))
-                .foregroundStyle(skin.ink)
+        NavigationStack {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", action: onClose)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        // Trim whitespace and newlines: `.whitespaces` excludes `\n`.
+                        Button(saving ? "Saving…" : "Rename") {
+                            Task {
+                                saving = true
+                                failure = await save(name.trimmingCharacters(in: .whitespacesAndNewlines))
+                                saving = false
+                            }
+                        }
+                        .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+        }
+    }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             field
 
             if !proof.isEmpty { proven }
@@ -41,27 +61,6 @@ struct RenameSheet: View {
                     .foregroundStyle(skin.alarmInk)
                     .lineSpacing(3)
             }
-
-            // Trim whitespace and newlines: `.whitespaces` excludes `\n`.
-            Button {
-                Task {
-                    saving = true
-                    failure = await save(name.trimmingCharacters(in: .whitespacesAndNewlines))
-                    saving = false
-                }
-            } label: {
-                Text(saving ? "Saving…" : "Rename")
-                    .font(WindmillFont.body(16, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-            }
-            .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button("Cancel", action: onClose)
-                .font(WindmillFont.body(13.5, .bold))
-                .foregroundStyle(skin.inkFaint)
-                .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
         }
         .padding(WindmillSpace.x5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

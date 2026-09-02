@@ -80,9 +80,9 @@ struct FixSheet: View {
     @State private var typing: KeypadEntry.Mode?
     // A sheet at a detent does not resize for the keyboard, so the platform's own avoidance never
     // reaches this scroll view: it keeps the FOCUSED field visible and leaves everything under the
-    // keyboard where it is, with a content shorter than the viewport and so nothing to scroll. Both
-    // of the sheet's commits live at the foot, and without this they cannot be reached at all while
-    // the note is being written. This is Android's `imePadding()`, spelled out.
+    // keyboard where it is, with a content shorter than the viewport and so nothing to scroll. The
+    // note's own foot and the delete row live under the field, and without this they cannot be
+    // reached at all while the note is being written. This is Android's `imePadding()`, spelled out.
     @State private var keyboardInset: CGFloat = 0
 
     init(set: TrainingSet, movement: String, number: String, routine: String?,
@@ -101,23 +101,27 @@ struct FixSheet: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                head
-                weight
-                ladder
-                repsRow
-                kinds
-                rating
-                noteRow
-                save
-                deleteRow
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                    head
+                    weight
+                    ladder
+                    repsRow
+                    kinds
+                    rating
+                    noteRow
+                    save
+                    deleteRow
+                }
+                .padding(WindmillSpace.x5)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(WindmillSpace.x5)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .safeAreaPadding(.bottom, keyboardInset)
+            .background(skin.surface)
+            .navigationTitle("Fix this set")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .safeAreaPadding(.bottom, keyboardInset)
-        .background(skin.surface)
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillChangeFrameNotification)) { raised in
                 let keyboard = raised.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
@@ -138,17 +142,12 @@ struct FixSheet: View {
         }
     }
 
+    // The bar carries the title; the content says which set this is.
     private var head: some View {
-        HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-            Text("Fix this set")
-                .font(WindmillFont.display(22))
-                .foregroundStyle(skin.ink)
-            Spacer(minLength: 0)
-            Text("\(movement) · set \(number)")
-                .font(GymType.numeral(11.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineLimit(1)
-        }
+        Text("\(movement) · set \(number)")
+            .font(GymType.numeral(11.5))
+            .foregroundStyle(skin.inkFaint)
+            .lineLimit(1)
     }
 
     private var weight: some View {
@@ -219,29 +218,17 @@ struct FixSheet: View {
                 .strokeBorder(skin.lineStrong, lineWidth: 1))
     }
 
-    // Every record rule and the prefill read `working` only.
+    // Every record rule and the prefill read `working` only. Four fixed choices, one armed: the
+    // platform's segmented control, the same one the rating below takes, at the same size, so the
+    // pair stands one height and both clear the room's tap floor (`GymTap.minimum`).
     private var kinds: some View {
-        HStack(spacing: WindmillSpace.x2) {
+        Picker("Kind", selection: $kind) {
             ForEach(SetKind.allCases, id: \.self) { choice in
-                Button { kind = choice } label: {
-                    Text(choice.rawValue)
-                        .font(WindmillFont.body(12.5, choice == kind ? .bold : .semibold))
-                        .foregroundStyle(ink(of: choice))
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                            .fill(choice == kind ? skin.accentSoft : .clear))
-                        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                            .strokeBorder(choice == kind ? skin.lineStrong : skin.line, lineWidth: 1))
-                }
-                .accessibilityAddTraits(choice == kind ? [.isSelected] : [])
+                Text(choice.rawValue).tag(choice)
             }
         }
-    }
-
-    private func ink(of choice: SetKind) -> Color {
-        if choice == .warmup { return skin.warmupInk }
-        if choice != kind { return skin.inkDim }
-        return choice == .working ? skin.setDone : skin.ink
+        .pickerStyle(.segmented)
+        .controlSize(.large)
     }
 
     // The platform's own segmented control, because it is one: nine values, one armed, and the tap
@@ -272,6 +259,7 @@ struct FixSheet: View {
                 }
             }
             .pickerStyle(.segmented)
+            .controlSize(.large)
         }
     }
 
@@ -311,6 +299,8 @@ struct FixSheet: View {
         }
     }
 
+    // The commit is the reach band, not the bar (`12-native-idiom.md` §"Back, and the thumb"); the
+    // bar carries the title only, and the scrim and the swipe are the dismissal.
     private var save: some View {
         Button { onSave(correction) } label: {
             Text("Save the fix")

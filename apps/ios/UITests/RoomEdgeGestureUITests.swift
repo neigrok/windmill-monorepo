@@ -12,7 +12,12 @@ final class RoomEdgeGestureUITests: XCTestCase {
 
     private let coachTab = "Coach"
     private let settingsDoor = "Gym settings"
-    private let settingsMark = "how the room behaves at the rack"
+    // The settings screen is named by its bar and by nothing else, so "it is up" is read off the
+    // Units footer, which every account draws (an lb account draws a longer one that starts the same).
+    private let settingsMark = "Display only — nothing stored changes."
+    private var settingsUp: XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", settingsMark)).firstMatch
+    }
     private let capsule = "Switch app"
 
     override func setUp() {
@@ -52,7 +57,7 @@ final class RoomEdgeGestureUITests: XCTestCase {
         XCTAssertTrue(door.waitForExistence(timeout: 20), "the routines home never drew its settings door")
         if !door.isHittable { app.swipeUp() }
         door.tap()
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForExistence(timeout: 10),
+        XCTAssertTrue(settingsUp.waitForExistence(timeout: 10),
                       "the settings screen never pushed")
     }
 
@@ -64,7 +69,7 @@ final class RoomEdgeGestureUITests: XCTestCase {
         pushGymSettings()
         swipeFromTheLeadingEdge()
 
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForNonExistence(timeout: 10),
+        XCTAssertTrue(settingsUp.waitForNonExistence(timeout: 10),
                       "the pushed screen did not pop — the shell's swipe took the edge")
         XCTAssertTrue(app.buttons[coachTab].waitForExistence(timeout: 10),
                       "the room went home instead of popping one screen")
@@ -87,7 +92,7 @@ final class RoomEdgeGestureUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons[coachTab].waitForExistence(timeout: 10),
                       "an abandoned back gesture left the room")
-        XCTAssertTrue(app.staticTexts[settingsMark].exists,
+        XCTAssertTrue(settingsUp.exists,
                       "an abandoned back gesture popped the screen anyway")
     }
 
@@ -136,7 +141,7 @@ final class RoomEdgeGestureUITests: XCTestCase {
 
         pushGymSettings()
         swipeFromTheLeadingEdge()
-        XCTAssertTrue(app.staticTexts[settingsMark].waitForNonExistence(timeout: 10), "the push did not pop")
+        XCTAssertTrue(settingsUp.waitForNonExistence(timeout: 10), "the push did not pop")
         XCTAssertTrue(app.buttons[coachTab].exists, "popping one screen also left the room")
 
         swipeFromTheLeadingEdge()

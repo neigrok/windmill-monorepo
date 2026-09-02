@@ -7,11 +7,6 @@ import org.junit.Test
 class ConnectedLogTests {
     private val everySentence = listOf(
         ConnectedLog.title,
-        ConnectedLog.head,
-        ConnectedLog.sundayLabel,
-        ConnectedLog.sundayLine,
-        ConnectedLog.mondayLabel,
-        ConnectedLog.mondayLine,
         ConnectedLog.precondition,
         ConnectedLog.connect,
         ConnectedLog.onTheWeb,
@@ -22,7 +17,7 @@ class ConnectedLogTests {
         ConnectedLog.deleteLevel,
         ConnectedLog.notNamedHere,
         ConnectedLog.deviceOnly,
-    ) + ConnectedLog.truths
+    )
 
     @Test
     fun nothingOnTheseCardsNamesAPriceALockOrATier() {
@@ -77,11 +72,6 @@ class ConnectedLogTests {
         assertTrue(
             "and the delete level says it can end one",
             ConnectedLog.deleteLevel.contains("end a share link"),
-        )
-        assertEquals(
-            "one sentence of the pitch names the shared link too",
-            1,
-            ConnectedLog.truths.count { it.contains("link you shared") },
         )
     }
 

@@ -48,15 +48,25 @@ the system puts them and no drawn heading repeating the bar's. `List` with secti
 that is a list, the card frame kept through row backgrounds. `.searchable` in the pickers. The
 system's segmented picker, toggle, menu, alert, share sheet and progress view;
 `ContentUnavailableView` where one action fits. SF Symbols on every affordance that has one. Sheets
-keep their detents. **No `Stepper`:** the room's only choice-shaped settings are fixed lists, and a
+keep their detents, and **a sheet's chrome is the bar's**: the room's five sheets (fix, jump,
+keypad, rename, review) are each a `NavigationStack` with an inline title and no drawn heading
+repeating the bar's; on four of them the dismissal — *Cancel* or *Close* — is the bar's
+`.cancellationAction`, and the fix sheet's bar carries the title alone because its scrim and its
+swipe are the dismissal (the finish's toolbar *Done* is ruled above). The strings do not change
+when they move into the bar. **No `Stepper`:** the room's only choice-shaped settings are fixed lists, and a
 Stepper needs a value you increment.
 
 **Android.** A real `Scaffold` with a real top app bar per screen and a real navigation bar drawn
 only while the three tabs are what is on screen. Material's list item, switch, segmented button,
 text field, snackbar and dialog, coloured from the room's **own** `ColorScheme` — gold is absent
 from it, because gold in this room means a personal record. Material icons on every affordance, each
-with its `contentDescription`. Modal bottom sheets keep the drag handle. The room opts in to
-predictive back, draws edge to edge on every version, and pairs that with `adjustResize` — without
+with its `contentDescription`. Modal bottom sheets keep the drag handle **and draw no Cancel or
+Close of their own**: the handle, the scrim and system back are the three ways out, all the
+platform's, and a Compose test proves the handle exposes `SemanticsActions.Dismiss` and that
+invoking it reaches `onDismissRequest` (`SheetDismissTests.kt`). The one drawn Cancel is the rack
+keypad's when it has taken over the fix sheet's body — there the platform has no handle for *back to
+that body*, so the pad draws the word (`KeypadSheet.kt`, under `onCancel`, which only the fix sheet
+passes). The room opts in to predictive back, draws edge to edge on every version, and pairs that with `adjustResize` — without
 it the keyboard pans the top bar off the screen instead of resizing the window, which is the half
 that is easy to miss.
 
@@ -99,10 +109,15 @@ disables the way home permanently and the room goes on working.
 
 So: **navigation chrome returns to where the platform puts it, and committing actions stay in the
 reach band.** `Log set` and `Just start logging` live in an iOS bottom safe-area inset and in an
-Android scaffold's bottom bar; **Apply** is the review sheet's own band. Two exceptions are ruled
-elsewhere and are not drift: **Finish** is a toolbar action, not a second full-strength commitment
-beside `Log set` (`16-the-workout.md`), and the editor's **Cancel and Save** are the navigation
-bar's, where the platform puts a draft's two answers (`15-the-routine.md`).
+Android scaffold's bottom bar; **Apply** is the review sheet's own band; the keypad's **Set** and
+the fix sheet's **Save the fix** stay in the band below the pad and the fields even now that the
+sheets' titles and dismissals are the bar's. Three exceptions are ruled and are not drift:
+**Finish** is a toolbar action, not a second full-strength commitment beside `Log set`
+(`16-the-workout.md`); the editor's **Cancel and Save** are the navigation bar's, where the platform
+puts a draft's two answers (`15-the-routine.md`); and the one-field rename sheet's **Rename** is its
+bar's `.confirmationAction` (iOS `RenameSheet`) — a sheet holding one text field under a raised
+keyboard has no reach band to put a commit in, and the bar is where the platform puts a single
+field's answer.
 
 **What earns the reach band, when two actions want it.** The Routines screen wants both *"start
 logging"* and *"make a new routine"*, and only one can be the primary. The tie-breaker is not
@@ -206,10 +221,11 @@ signal disappear. One line, and a real bug if it is missed.
 
 ## Type
 
-iOS hard-codes every point size, so **Dynamic Type does nothing to anything the room draws**. What
-the platform draws now *does* scale — the navigation bar, the tab bar, and the `List` section headers
-and footers the room leaves unstyled — which makes the gap louder rather than smaller: at the largest
-accessibility size a section header grows several times over beside a field that does not move.
+iOS hard-codes every point size the room sets itself, so **Dynamic Type does nothing to anything
+the room draws**. What the platform draws now *does* scale — the navigation bar, and with it every
+sheet's title, the tab bar, and the `List` and `Form` section headers and footers the room leaves
+unstyled — which makes the gap louder rather than smaller: at the largest accessibility size a
+section header grows several times over beside a field that does not move.
 Android's sizes are `sp` and do scale with the font-scale setting — but there is no named role scale
 on the room's own text, and no cap or reflow, so at a large scale the 104 sp numeral grows while
 every fixed-height row and fixed-width column does not, and the room **clips** rather than ignores.

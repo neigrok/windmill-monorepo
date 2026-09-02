@@ -23,6 +23,31 @@ struct ReviewSheet: View {
     @State private var gate = ReviewGate()
 
     var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle(proposal.map { "Proposal · \($0.baseName)" } ?? "Proposal")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(Proposal.close) { dismiss() }
+                    }
+                }
+        }
+        .task { await read() }
+        .confirmationDialog(Proposal.turnDownTitle, isPresented: $confirmingTurnDown, titleVisibility: .visible) {
+            Button(Proposal.turnDownConfirm, role: .destructive) {
+                guard let proposal else { return }
+                Task { await decide(proposal, apply: false) }
+            }
+            Button(Proposal.turnDownKeep, role: .cancel) {}
+        } message: {
+            Text(Proposal.turnDownBody)
+        }
+    }
+
+    // Apply stays in the band under the diff, not in the bar: it opens only once the diff has been
+    // read to its end, and the sentence saying so is drawn under the control it explains.
+    private var content: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
@@ -67,38 +92,17 @@ struct ReviewSheet: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { gate.viewportChanged(to: $0) }
             if let proposal, proposal.state == .pending { band(proposal) }
         }
-        .task { await read() }
-        .confirmationDialog(Proposal.turnDownTitle, isPresented: $confirmingTurnDown, titleVisibility: .visible) {
-            Button(Proposal.turnDownConfirm, role: .destructive) {
-                guard let proposal else { return }
-                Task { await decide(proposal, apply: false) }
-            }
-            Button(Proposal.turnDownKeep, role: .cancel) {}
-        } message: {
-            Text(Proposal.turnDownBody)
-        }
     }
 
-    // Named as it was when the diff was written (`baseName`), not as the routine stands now.
+    // The bar names the proposal as it was when the diff was written (`baseName`), not as the routine
+    // stands now; the content says who wrote it, when, and where it stands.
     private func head(_ proposal: Proposal) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-            HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                Text("Proposal · \(proposal.baseName)")
-                    .font(WindmillFont.display(22))
-                    .foregroundStyle(skin.ink)
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-                chip(proposal.state)
-                Button { dismiss() } label: {
-                    Text(Proposal.close)
-                        .font(WindmillFont.body(13.5, .bold))
-                        .foregroundStyle(skin.accent)
-                        .frame(minHeight: GymTap.minimum - 18)
-                }
-            }
+        HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
             Text("from \(proposal.head.source.agentName) · \(Readout.when(proposal.head.createdAtMs, now: nowMs)) · \(Readout.time(proposal.head.createdAtMs))")
                 .font(GymType.numeral(11.5))
                 .foregroundStyle(skin.inkFaint)
+            Spacer(minLength: 0)
+            chip(proposal.state)
         }
     }
 
