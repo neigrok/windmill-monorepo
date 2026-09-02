@@ -1799,7 +1799,7 @@ other.
 2026-09-02**: the numeral is re-inked a step darker than the fill it stands on, which is the move
 `palettes.css:133` already makes for the day link ink. `.je-tab-face` now takes `--je-tab-ink`, and
 the two theme blocks answer it — night keeps `--lamp-400` (it clears throughout), day takes
-`--lamp-200` #6B4D12, the ramp's darkest step: 7.16:1 resting and 5.18:1 on the lit face by an sRGB
+`--lamp-200` #6B4D12, the ramp's darkest step: 7.26:1 resting and 5.25:1 on the lit face by an sRGB
 composite of the same four weights. One token, all four weights, no new hex. The measurement that
 opened this entry stands and is kept below, because it is the reason the ink moved rather than the
 fill. Original finding: Composited in a browser through the real sRGB pipeline (ground

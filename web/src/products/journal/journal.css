@@ -125,9 +125,12 @@
   --je-tab-lit-glow: color-mix(in srgb, var(--lamp-400) 16%, transparent);
   --je-seam-lit:     color-mix(in srgb, var(--lamp-400) 30%, transparent);
   /* A STEP DARKER THAN THE FILL, the same move palettes.css makes for the day link ink. Day's own
-     lamp-400 as the numeral measured 4.33:1 on bare paper and 3.13:1 on the lit face — under the
+     lamp-400 as the numeral measured 4.39:1 on bare paper and 3.18:1 on the lit face — under the
      4.5 gate at all four weights, and it is the fill DARKENING the ground that does it. lamp-200
-     on day is the ramp's darkest step: 7.16:1 resting, 5.18:1 lit. */
+     on day is the ramp's darkest step: 7.26:1 resting, 5.25:1 lit. Composited over the day ground
+     --neutral-50 #F7F7F5, which the room palette hands down and this block deliberately does not
+     re-pin — NOT over #F9F5EB, which is another room's paper and gives every figure here 0.06 too
+     little. */
   --je-tab-ink: var(--lamp-200);
   /* THE ADDRESSED PAGE, and the one place on paper where lighting something has to be checked rather
      than assumed. Measured on this room's day ground, --neutral-50 #F7F7F5: the unlit date
