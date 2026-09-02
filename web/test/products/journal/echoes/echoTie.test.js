@@ -18,7 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { findByClass, loadScreen, renderHook, settle } from '../../gym/harness.mjs';
 import { stampWeekday } from '../../../../src/products/journal/echoes/echoDates.js';
 
-const { EchoMargin, aimMark, bandTop, tieAim } = await loadScreen('products/journal/echoes/EchoMargin.jsx');
+const { EchoMargin, aimMark, bandTop, tieAim, trailBottom } = await loadScreen('products/journal/echoes/EchoMargin.jsx');
 
 const CSS = readFileSync(new URL('../../../../src/products/journal/journal.css', import.meta.url), 'utf8');
 const MARGIN_SOURCE = readFileSync(new URL('../../../../src/products/journal/echoes/EchoMargin.jsx', import.meta.url), 'utf8');
@@ -157,9 +157,27 @@ test('the band the mark refuses to leave is the band the stamp scrolls a row INT
   // half a row the reader cannot read, and the line would point into the bar
   assert.equal(tieAim(rowAt(130), FRAME, 157.5), null, 'centre 138, still under a trail ending at 157.5');
   assert.equal(tieAim(rowAt(150), FRAME, 157.5), 157.25, 'centre 158, just clear of it');
-  assert.match(MARGIN, /scroller\.scrollTop \+= article\.getBoundingClientRect\(\)\.top - bandTop\(frame, trailBottom\(\)\);/);
+  assert.match(MARGIN, /scroller\.scrollTop \+= article\.getBoundingClientRect\(\)\.top - bandTop\(frame, trailBottom\(marginRef\.current\)\);/);
   assert.ok(!MARGIN.includes("scrollIntoView"),
     'the stamp is scrolling to the frame top again, which is under the trail on a walked-to page');
+});
+
+test('the trail is looked for one node ABOVE the panel, where it actually hangs', () => {
+  // Scoped to the panel this finds nothing, the band widens to the whole frame, and the mark points
+  // at a row under an opaque bar — with every source regex in this file still matching. So the node
+  // it starts from is asserted by handing it a panel that would answer differently either way.
+  const at = (bottom) => ({ getBoundingClientRect: () => ({ bottom }) });
+  const panel = {
+    querySelector: () => at(999),                    // there is no trail inside the panel; if this
+    parentElement: { querySelector: (s) => (s === '.je-trail' ? at(157.5) : null) },
+  };
+  assert.equal(trailBottom(panel), 157.5, 'the search started inside the panel instead of above it');
+  assert.equal(trailBottom({ parentElement: { querySelector: () => null } }), null, 'no walk is up');
+  assert.equal(trailBottom(null), null);
+  assert.equal(trailBottom(undefined), null);
+  // and the band it feeds narrows by exactly that much
+  assert.equal(tieAim(rowAt(130), FRAME, trailBottom(panel)), null);
+  assert.equal(tieAim(rowAt(130), FRAME, trailBottom(null)), 137.25);
 });
 
 test('the tracker re-aims on every fact it depends on, and aims once before any of them move', () => {
@@ -170,8 +188,7 @@ test('the tracker re-aims on every fact it depends on, and aims once before any 
     'the rule no longer re-aims when the panel changes page, is drawn, or gets a new canvas');
   // The band is measured, not left to z-order: the rule would be occluded by the trail along with the
   // row, but the STUB sits inside the panel and would not be — and the two must answer the same.
-  assert.match(MARGIN, /trailBottom: trailBottom\(\),/, 'the trail no longer narrows the band');
-  assert.match(MARGIN, /querySelector\('\.je-trail'\)\?\.getBoundingClientRect\(\)\.bottom/);
+  assert.match(MARGIN, /trailBottom: trailBottom\(marginRef\.current\),/, 'the trail no longer narrows the band');
 });
 
 // ─── the five conditions, and the two that are not measurements ───────────────────────────────────
@@ -424,4 +441,147 @@ test('the gap the hook holds between the two fades goes with them', () => {
   assert.match(HOOK, /window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches \? 0 : SWAP_MS/);
   assert.match(HOOK, /const gap = shownSubject === null \? 0 : swapGap\(\);/);
   assert.match(HOOK, /const SWAP_MS = 90;/);
+});
+
+// ─── does the RESULT show? ────────────────────────────────────────────────────────────────────────
+//
+// Everything above proves the tie's mechanism runs. None of it would notice the tie being re-pointed
+// at the ink it replaces, faded to nothing, or given a stub of zero width — the mark would go dark
+// with the suite green, because a mechanism test asks "did the code run" and never "did anything
+// appear". These read the shipped stylesheet, resolve its tokens the way a browser would, and assert
+// what the reader ends up looking at. Every number here was verified against a real sRGB composite in
+// headless Chrome; the arithmetic is here so a palette moving under the tie fails the build.
+
+const PALETTES = readFileSync(new URL('../../../../src/styles/tokens/palettes.css', import.meta.url), 'utf8');
+const COLORS = readFileSync(new URL('../../../../src/styles/tokens/colors.css', import.meta.url), 'utf8');
+
+function declarationsOf(css, selector) {
+  const body = new RegExp(`^${selector.replace(/[.[\]$()*+?^{}|\\]/g, '\\$&')} \\{([\\s\\S]*?)\\n\\}`, 'm').exec(css);
+  if (!body) return new Map();
+  const clean = body[1].replace(/\/\*[\s\S]*?\*\//g, '');
+  return new Map([...clean.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map(([, k, v]) => [k, v.trim()]));
+}
+
+// The cascade a `.journal-root` custom property actually resolves through: the product's own theme
+// block, then the room palette the shell stamps on <html>, then the family ramp.
+function scopeFor(theme) {
+  return [
+    declarationsOf(CSS, `.journal-root[data-theme='${theme}']`),
+    declarationsOf(PALETTES, `[data-theme="${theme}"][data-brand="journal"]`),
+    declarationsOf(PALETTES, '[data-brand="journal"]'),
+    declarationsOf(COLORS, ':root'),
+  ];
+}
+
+function resolve(token, scope, depth = 0) {
+  const found = scope.find((block) => block.has(token));
+  if (!found || depth > 8) return null;
+  const value = found.get(token);
+  const ref = /^var\((--[\w-]+)\)$/.exec(value);
+  return ref ? resolve(ref[1], scope, depth + 1) : value;
+}
+
+// A colour and the alpha it is painted at, out of either form this stylesheet writes: a night `rgba`
+// or a day `color-mix` with transparent. One reader, so the two skins are measured the same way.
+function paint(token, scope) {
+  const value = resolve(token, scope);
+  const mix = /color-mix\(in srgb,\s*var\((--[\w-]+)\)\s*([\d.]+)%,\s*transparent\)/.exec(value);
+  if (mix) return { hex: resolve(mix[1], scope), alpha: Number(mix[2]) / 100 };
+  const rgba = /rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(value);
+  if (rgba) {
+    const hex = `#${[1, 2, 3].map((i) => Number(rgba[i]).toString(16).padStart(2, '0')).join('')}`;
+    return { hex, alpha: Number(rgba[4]) };
+  }
+  return { hex: value, alpha: 1 };
+}
+
+const channels = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const luminance = (hex) => {
+  const [r, g, b] = channels(hex).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return Number(((hi + 0.05) / (lo + 0.05)).toFixed(2));
+};
+const over = (hex, ground, alpha) => {
+  const [f, g] = [channels(hex), channels(ground)];
+  return `#${f.map((c, i) => Math.round((c * alpha + g[i] * (1 - alpha)) * 255).toString(16).padStart(2, '0')).join('')}`;
+};
+const groundOf = (scope) => resolve('--surface-canvas', scope) ?? resolve('--neutral-50', scope);
+
+test('THE LIT ROW MOVES CONTRAST THE RIGHT WAY, in both skins — lighting that dims is not lighting', () => {
+  for (const [theme, expected] of [['dark', { dim: 6.66, lit: 10.54 }], ['light', { dim: 5.27, lit: 7.26 }]]) {
+    const scope = scopeFor(theme);
+    const ground = groundOf(scope);
+    const dim = contrast(resolve('--journal-ink-dim', scope), ground);
+    const lit = contrast(resolve('--je-addressed', scope), ground);
+    assert.equal(dim, expected.dim, `${theme}: the unlit date moved`);
+    assert.equal(lit, expected.lit, `${theme}: the addressed date moved`);
+    assert.ok(lit > dim, `${theme}: the lit row (${lit}:1) is QUIETER than the unlit one (${dim}:1)`);
+    assert.ok(lit >= 4.5, `${theme}: the addressed date is ${lit}:1, under the gate`);
+  }
+  // day's own lamp-400 is the trap this token exists to avoid: under the gate AND lighter than the
+  // dim it would replace, so it would have lowered the row's contrast to light it
+  const day = scopeFor('light');
+  assert.equal(contrast(resolve('--lamp-400', day), groundOf(day)), 4.39);
+});
+
+test('THE RULE IS QUIETER THAN EVERY MARK THAT CARRIES MEANING, and louder than nothing', () => {
+  for (const theme of ['dark', 'light']) {
+    const scope = scopeFor(theme);
+    const ground = groundOf(scope);
+    const rest = Number(/--je-tie-rest:\s*([\d.]+);/.exec(CSS)[1]);
+    const tie = paint('--je-tie', scope);
+    const raised = contrast(over(tie.hex, ground, tie.alpha), ground);
+    const resting = contrast(over(tie.hex, ground, tie.alpha * rest), ground);
+    // A.6 caps it: the rule is redundant with the stamp and is never counted toward legibility.
+    assert.ok(raised < 3, `${theme}: the rule reads at ${raised}:1, loud enough to be counted`);
+    assert.ok(raised < contrast(resolve('--journal-ink', scope), ground),
+      `${theme}: the rule is as loud as the prose it crosses the gutter beside`);
+    // and a floor, so it cannot be faded to a line nobody can follow: never quieter than the quietest
+    // thing this family already draws, `--je-tab-aged-line`
+    const aged = paint('--je-tab-aged-line', scope);
+    const quietest = contrast(over(aged.hex, ground, aged.alpha), ground);
+    assert.ok(resting > quietest,
+      `${theme}: the resting rule (${resting}:1) is fainter than an aged tab's edge (${quietest}:1)`);
+  }
+});
+
+test('the rule lands ON the panel because the two share one number, not because they were typed alike', () => {
+  const gutter = /\.journal-root\.has-margin \{ --je-gutter: (\d+)px; \}/.exec(CSS)[1];
+  const width = /^\.je-margin \{[\s\S]*?\n  width: (\d+)px;/m.exec(CSS)[1];
+  assert.equal(width, gutter,
+    `the panel is ${width}px wide in a ${gutter}px gutter, so the rule stops short of it or runs under it`);
+});
+
+test('every part of the mark has a size to be seen at', () => {
+  const px = (selector, prop) => Number(
+    new RegExp(`^\\${selector} \\{([\\s\\S]*?)\\n\\}`, 'm').exec(CSS)[1].match(new RegExp(`${prop}:\\s*([\\d.]+)px`))[1],
+  );
+  assert.equal(px('.je-tie', 'height'), 1.5, 'the house weight for "these two are joined"');
+  assert.equal(px('.je-margin-stub', 'width'), 14);
+  assert.equal(px('.je-margin-stub', 'height'), 1.5, 'the stub is the rule’s own weight or it is not its near end');
+  // and the head has to paint OVER the ink scrolling under it, or the name goes behind the passages
+  const head = /^\.je-margin-head \{([\s\S]*?)\n\}/m.exec(CSS)[1];
+  assert.match(head, /position: sticky;/);
+  assert.ok(Number(/z-index:\s*(-?\d+)/.exec(head)[1]) > 0, 'the sticky head paints behind the list it heads');
+});
+
+test('a press on the stamp for a page the canvas is not holding yet does nothing, and throws nothing', async (t) => {
+  // Reachable: `walkTo` holds the panel on its destination and `extendTo` is still fetching, so the
+  // panel names a page that has no element on the canvas for a beat.
+  const echoes = echoesWith({ canvas: { scroller: {}, dayElement: () => null, stampRect: () => null } });
+  const run = renderHook(t, () => EchoMargin({ echoes, page: PAGE }));
+  await settle(6);
+  const stamp = findByClass(run.tree, 'je-margin-stamp')[0];
+  assert.doesNotThrow(() => stamp.props.onClick());
+});
+
+test('the band is measured against the SCROLL FRAME, not whatever box happens to share its extent', () => {
+  // `.journal-root` and `.journal-scroll` have the same top and bottom today, so reading the wrong one
+  // is invisible — until the root gains a header and the band silently follows a box the canvas is
+  // not scrolling in.
+  assert.match(MARGIN, /frame: scroller \? scroller\.getBoundingClientRect\(\) : null,/);
+  assert.match(MARGIN, /const frame = scroller\.getBoundingClientRect\(\);/);
 });

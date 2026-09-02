@@ -52,6 +52,18 @@ export function bandTop(frame, trailBottom = null) {
   return Math.max(frame.top, trailBottom);
 }
 
+// The bottom edge of whatever is covering the top of the canvas, or null.
+//
+// IT TAKES THE PANEL AND WALKS UP ITSELF, and that is the point rather than a convenience: `.je-trail`
+// is `position: fixed` with an opaque ground and it is a SIBLING of the canvas under `.journal-root`,
+// so a lookup starting inside the panel finds nothing at all, the band silently widens to the whole
+// frame, and the mark draws a line to a row buried under the bar. Left as a `.parentElement` at the
+// call site that mistake is one character and nothing but a browser can see it; folded in here, the
+// node the search starts from is a fact this module states once and a test can hold it to.
+export function trailBottom(panel) {
+  return panel?.parentElement?.querySelector('.je-trail')?.getBoundingClientRect().bottom ?? null;
+}
+
 // One frame of the mark: decide, then draw, and tell BOTH halves the same answer. The stub in the
 // panel's head is not decoration — it answers the same question the rule does, so a rule that aimed
 // while its stub stayed hidden would be two answers to "does this line reach a row you can see".
@@ -146,11 +158,6 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
   const ruleRef = useRef(null);
   const stubRef = useRef(null);
   const marginRef = useRef(null);
-  // The trail is the echo family's own element and it is the only thing that covers the canvas, so
-  // this is a question about the band rather than a reach into the canvas's markup.
-  const trailBottom = () => marginRef.current?.parentElement
-    ?.querySelector('.je-trail')?.getBoundingClientRect().bottom ?? null;
-
   // The row this stamp names, brought into the band the reader can SEE — not merely to the frame's
   // top, which during a walk is underneath `.je-trail`'s opaque bar. With no trail up this is exactly
   // `scrollIntoView({ block: 'start' })`, which is what the brief asks for; with one up it clears the
@@ -168,7 +175,7 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
     const article = canvas?.dayElement?.(page.day);
     if (!scroller || !article) return;
     const frame = scroller.getBoundingClientRect();
-    scroller.scrollTop += article.getBoundingClientRect().top - bandTop(frame, trailBottom());
+    scroller.scrollTop += article.getBoundingClientRect().top - bandTop(frame, trailBottom(marginRef.current));
   };
 
   useEffect(() => {
@@ -186,7 +193,7 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
         rootTop: root.getBoundingClientRect().top,
         stampRect: scroller && stampRect ? stampRect(page.day) : null,
         frame: scroller ? scroller.getBoundingClientRect() : null,
-        trailBottom: trailBottom(),
+        trailBottom: trailBottom(marginRef.current),
       });
     };
     aim();

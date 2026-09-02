@@ -1923,8 +1923,9 @@ ABSENCE of motion relative to the content it is glued to", and rests the whole r
 argument on it — a mark that does not move relative to its row is not added motion, so it survives
 the preference. **It does not hold.** `.je-tie` lives outside `.journal-scroll`, so the day rows are
 scrolled by the compositor while the rule only moves when the tracking callback writes its transform.
-Measured in composited pixels during a ~47px/frame wheel scroll: the hairline sits **12-14px** below
-its row's lit glyph band, against **1px** at rest — most of a row height, so it points at the gap
+Measured in composited pixels during a ~47px/frame wheel scroll, twice, by two runs of the same
+harness: the hairline sits **12-14px** below its row's lit glyph band (13, 13, 13, 12, 13, 11, 13),
+against **1px** at rest — most of a row height, so it points at the gap
 under the date rather than through it, and snaps on when the scroll stops.
 
 The shipped code now states this rather than the brief's claim, and the reduced-motion ruling is
@@ -1947,7 +1948,12 @@ page a reader reaches most deliberately opens with its day row **under the bar**
 `openingRef` is re-armed by the walk's own hash change and is cleared only by a gesture ON THE CANVAS,
 so the canvas re-takes that position on every reflow. Measured after a walk at 1440: the trail's
 bottom edge at 157.5, the destination row's top at 52, and a scroll away from it put back inside one
-frame — 138 → 33 → 138.
+frame — 138 → 33 → 138. The call site is `takePosition` (`Canvas.jsx:135`) reached from the
+ResizeObserver callback (`Canvas.jsx:145`), caught by wrapping `Element.prototype.scrollIntoView`:
+two `{ block: 'start' }` calls on the destination day at +19ms and +35ms after the press, with
+`openingRef.current` still true. One real gesture on the canvas first and the same press lands —
+scrollTop 138 → 33, the row from y60 to y165, clear of the trail, and both halves of the mark back —
+which isolates `openingRef` as the whole of it.
 
 Two consequences, both real before the tie and both now visible. The date row of the page you are
 standing on is unreadable for the length of a walk. And the margin's stamp — a button whose whole job

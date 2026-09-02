@@ -684,15 +684,20 @@ export function useEchoes({
     return () => clearTimeout(swap);
   }, [addressedDay, shownSubject]);
 
+  const pageOf = useCallback((day) => (floored ? null : pages.get(day) || null), [floored, pages]);
+
   // THE DAY THE PANEL IS ACTUALLY DRAWING, which is not always the day the machine is settled on: a
   // page whose last match the reader has just refused leaves `pages` at once, and for the length of
   // one swap the machine is still pointed at it. Ungated, the panel would rest — it draws `pageOf`,
   // which answers null — while the canvas went on lighting that page's row in lamp, which is exactly
-  // the disagreement between the two surfaces this whole mark exists to make impossible. One
-  // predicate, answered once, so no consumer can hold the other half of it.
-  const shownDay = shownSubject && pages.has(shownSubject) ? shownSubject : null;
-
-  const pageOf = useCallback((day) => (floored ? null : pages.get(day) || null), [floored, pages]);
+  // the disagreement between the two surfaces this whole mark exists to make impossible.
+  //
+  // Asked THROUGH `pageOf` and not through `pages`, so it is the same question its only consumers
+  // ask. `pageOf` also answers null under the page floor, and a gate written against `pages` would
+  // agree with it only because `setFloored` and `setPages` happen to land in one React batch — true
+  // by coincidence rather than by construction, and one un-batched write away from a lit row beside
+  // an empty panel.
+  const shownDay = pageOf(shownSubject) ? shownSubject : null;
 
   return {
     today,

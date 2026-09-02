@@ -1529,8 +1529,9 @@ a.journal-link:focus-visible {
    already shipped as `.je-link-rule` in the trail.
 
    z-index 2 puts it above `.journal-scroll` (1) and below `.je-margin` (3), `.je-trail` (4),
-   `.je-home` (5) and the tool rail (40). Occluded by the trail with the rows it covers, WHICH IS
-   CORRECT — and `tieAim` hides it there anyway, so the occlusion is belt and braces. */
+   `.je-home` (5) and the tool rail (40). So the trail covers the rule along with the rows it covers,
+   which is the right answer drawn twice: `tieAim` has already refused to point there, and it has to,
+   because the stub in the panel sits outside the trail's reach and would otherwise stay on. */
 .je-tie {
   /* Positioned against `.journal-root`, which is NOT the viewport: the app shell's `.wm-room` carries
      `contain: layout paint`, which makes it the containing block for `position: fixed` descendants,
