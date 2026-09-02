@@ -32,13 +32,31 @@
   --journal-scrim: color-mix(in srgb, #000 46%, transparent);
   --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 
-  /* Echo alphas hold --lamp-400 (#E0B972) over the night; three tab weights: aged, here, open. */
+  /* Echo alphas hold --lamp-400 (#E0B972) over the night; four tab weights: aged, here, open, lit. */
   --je-tab-fill: rgba(224, 185, 114, 0.14);
   --je-tab-line: rgba(224, 185, 114, 0.32);
   --je-tab-aged-fill: rgba(224, 185, 114, 0.07);
   --je-tab-aged-line: rgba(224, 185, 114, 0.16);
   --je-tab-open-fill: rgba(224, 185, 114, 0.26);
   --je-tab-open-line: rgba(224, 185, 114, 0.45);
+  /* Lit — what an arrival raises, on the face and on the margin's own edge. Night's fill LIGHTENS
+     the ground it washes, under a light numeral, so it is the heaviest of the four. */
+  --je-tab-lit-fill: rgba(224, 185, 114, 0.30);
+  --je-tab-lit-line: rgba(224, 185, 114, 0.58);
+  --je-tab-lit-glow: rgba(224, 185, 114, 0.26);
+  --je-seam-lit:     rgba(224, 185, 114, 0.26);
+  /* The numeral standing on those four fills. On the night ground the fill LIGHTENS under a light
+     glyph, so the lamp itself clears the gate at every weight (5.5:1 at the heaviest). */
+  --je-tab-ink: var(--lamp-400);
+  /* THE ADDRESSED PAGE. The date stamp of the one page the margin describes, lifted off
+     --journal-ink-dim. Measured against this block's own ground #040D19: dim #8A98AC 6.66:1, lit
+     --lamp-400 #E0B972 10.54:1 — the warmest AND the brightest date on screen, and contrast moves the
+     way lighting something has to. The rule is the same ink faded, and it is NEVER counted toward
+     legibility: at 42% over the ground it composites to #60553E, 2.66:1, deliberately under the gate
+     and deliberately inside the tab family's own band (--je-tab-line 0.32, --je-tab-open-line 0.45).
+     The stamp in the panel's head carries the whole of this tie's legibility at 10.54:1. */
+  --je-addressed: var(--lamp-400);
+  --je-tie: color-mix(in srgb, var(--je-addressed) 42%, transparent);
   --je-here-fill: rgba(224, 185, 114, 0.16);
   --je-here-border: rgba(224, 185, 114, 0.35);
   --je-hairline: rgba(255, 255, 255, 0.07);
@@ -99,6 +117,30 @@
   --je-tab-aged-line: color-mix(in srgb, var(--lamp-400) 18%, transparent);
   --je-tab-open-fill: color-mix(in srgb, var(--lamp-400) 26%, transparent);
   --je-tab-open-line: color-mix(in srgb, var(--lamp-400) 46%, transparent);
+  /* Lit stops its fill at the open weight, 26%: on parchment --lamp-400 (#986B1E) DARKENS the
+     ground it washes, where night's LIGHTENS it under a light numeral, so a heavier day fill would
+     only bury the numeral standing on it. The line and the glow carry the rest of the rise. */
+  --je-tab-lit-fill: color-mix(in srgb, var(--lamp-400) 26%, transparent);
+  --je-tab-lit-line: color-mix(in srgb, var(--lamp-400) 60%, transparent);
+  --je-tab-lit-glow: color-mix(in srgb, var(--lamp-400) 16%, transparent);
+  --je-seam-lit:     color-mix(in srgb, var(--lamp-400) 30%, transparent);
+  /* A STEP DARKER THAN THE FILL, the same move palettes.css makes for the day link ink. Day's own
+     lamp-400 as the numeral measured 4.33:1 on bare paper and 3.13:1 on the lit face — under the
+     4.5 gate at all four weights, and it is the fill DARKENING the ground that does it. lamp-200
+     on day is the ramp's darkest step: 7.16:1 resting, 5.18:1 lit. */
+  --je-tab-ink: var(--lamp-200);
+  /* THE ADDRESSED PAGE, and the one place on paper where lighting something has to be checked rather
+     than assumed. Measured on this room's day ground, --neutral-50 #F7F7F5: the unlit date
+     --journal-ink-dim #74654F is 5.27:1, and day's --lamp-400 #986B1E is 4.39:1 — LIGHTER than the dim
+     it would replace, so lighting the row with it would LOWER its contrast and fail the 4.5 gate at
+     the same time. --lamp-200 (#6B4D12 in this block) is warmer AND darker: 7.26:1, the biggest lift
+     the ramp has and the same step this block already re-inked the tab numeral to, so lamp-as-text on
+     paper is one answer and not two. On night the addressed row is the warmest date on screen; on
+     paper it is the darkest. Both mean "this one". The rule is that ink faded, at a higher alpha than
+     night's because a wash over paper DARKENS where a wash over the night LIGHTENS: 62% composites to
+     #A08E68, 2.98:1 — under 3:1 on purpose, and far quieter than .journal-prose at 14.73:1. */
+  --je-addressed: var(--lamp-200);
+  --je-tie: color-mix(in srgb, var(--je-addressed) 62%, transparent);
   --je-here-fill: color-mix(in srgb, var(--lamp-400) 16%, transparent);
   --je-here-border: color-mix(in srgb, var(--lamp-400) 38%, transparent);
   --je-hairline: rgba(42, 33, 24, 0.1);
@@ -115,6 +157,30 @@
 
   /* The echo margin's reserved space. Held open for the whole mount, never per-scroll. */
   --je-gutter: 0px;
+
+  /* An arrival's two ramps, and where a sticky tab comes to rest. The rise is half --duration-glow
+     — the canon pulse cycle; the settle is the full one, because a fall slow enough to go unnoticed
+     has to be longer than the rise that earned the glance. 30px is .journal-marker's own height, so
+     the tab rests just under the sticky day chip. */
+  --je-kindle-in: 1200ms;
+  --je-kindle-out: var(--duration-glow);
+  --je-tab-sticky-top: 30px;
+
+  /* The margin panel's padding, named because the leaving rest line is positioned against the
+     panel's PADDING box and has to land on the same pixel as the resting line it replaces. Two
+     readers, one number. */
+  --je-margin-pad-y: 26px;
+  --je-margin-pad-x: 22px;
+
+  /* Half the panel's shipped 180ms entrance. The panel and the rule leave over it, the subject
+     changes while both are at zero, and they come back over it — so no new duration enters the
+     product, the existing one is split, and the two halves of the mark share one clock. Its other
+     reader is SWAP_MS in echoes/useEchoes.js, which holds the gap between the two fades. */
+  --je-swap: 90ms;
+  /* The rule's resting weight, as a fraction of --je-tie. 0.76 lands night's 42% on 0.32 — which IS
+     --je-tab-line, the quiet end of the tab family's band — and hovering the panel returns it to the
+     42% the token names. A raise needs somewhere to rise from; this is where. */
+  --je-tie-rest: 0.76;
 
   position: fixed;
   inset: 0;
@@ -194,7 +260,15 @@
   line-height: 16px;
   letter-spacing: 0.04em;
   color: var(--journal-ink-dim);
+  transition: color 180ms var(--ease-standard);
 }
+/* THE LIT ROW — the third part of the tie, and the only mark the tie leaves on the canvas. Colour and
+   nothing else: no background, no border, and NO WEIGHT CHANGE, because a weight change would reflow
+   a sticky row and journal.md:56 forbids any canvas geometry change at any scroll speed. The mood pip
+   and the energy tick keep their own colours — those encode data, and lamp would overwrite meaning.
+   The 180ms is journal.md §10's state-change beat, and it is left to the site-wide reduced-motion
+   clamp on purpose: with no fade the change is a hard cut, which is what the preference asks for. */
+.journal-marker.is-addressed .journal-meta { color: var(--je-addressed); }
 
 .journal-glyphs {
   display: inline-flex;
@@ -1154,13 +1228,26 @@ a.journal-link:focus-visible {
 /* An echo is a lamp-tinted tab at rest; opened it is ink — a mono date and the older words, no card.
    Terracotta is allowed on the One sheet only; never brick. */
 
-.journal-page { position: relative; }
-.journal-page:has(.je-tab) { padding-right: 40px; }
+/* The tab's lane is reserved on every page, echo or none — held for the whole mount, the way the
+   margin holds its 300px gutter. The measure is one width down the whole canvas, and nothing an
+   echo does can take a pixel of it back. */
+.journal-page { position: relative; padding-right: 40px; }
 
-.je-tab {
+/* The tab rides its own page. The rail spans the page top to bottom and the tab sticks inside it,
+   so a writer deep in a long page still finds the tab at the top of the frame instead of somewhere
+   above it. The rail passes presses straight through; only the tab takes them. */
+.je-tab-rail {
   position: absolute;
-  top: -9px;                    /* centres the 26px face in the 44px tap row */
+  top: 0;
   right: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+}
+.je-tab {
+  position: sticky;
+  top: var(--je-tab-sticky-top);
+  margin-top: -9px;             /* centres the 26px face in the 44px tap row */
   z-index: 1;
   display: flex;
   align-items: center;
@@ -1169,6 +1256,7 @@ a.journal-link:focus-visible {
   border: 0;
   background: none;
   cursor: pointer;
+  pointer-events: auto;
 }
 .je-tab-face {
   display: flex;
@@ -1181,7 +1269,7 @@ a.journal-link:focus-visible {
   border-right: 0;
   border-radius: 8px 0 0 8px;
   background: var(--je-tab-fill);
-  color: var(--lamp-400);
+  color: var(--je-tab-ink);
   font: 700 9px/1 var(--font-mono), ui-monospace, monospace;
 }
 .je-tab-aged .je-tab-face {
@@ -1189,13 +1277,89 @@ a.journal-link:focus-visible {
   background: var(--je-tab-aged-fill);
   opacity: 0.7;
 }
-.je-tab-open .je-tab-face {
+/* Two states take the open face: the tab whose ink is open below the margin's width, and the tab
+   holding the panel above it. `je-tab-addressed` — the panel on this page by the scroll's own choice
+   — takes the plain face above, and `je-tab-aged` the quiet one. */
+.je-tab-open .je-tab-face,
+.je-tab-held .je-tab-face {
   border-color: var(--je-tab-open-line);
   background: var(--je-tab-open-fill);
 }
+/* The tab itself never transitions. `je-tab-addressed`, `je-tab-current` and `je-tab-aged` flip as
+   the scroll carries the panel from page to page, and a face that answers a scroll has to land at
+   once — a lazy cross-fade running on every tab on screen is the theatre this tab does not have.
+   The ramps belong to the arrival alone, and it declares its own clock at each of its three
+   moments: the rise, the settle the writer's own surfacing spends, and the press that ends it
+   early. Because a transition picks up from the value standing there, a second echo landing
+   mid-settle ramps back with no jump. The rise takes --ease-glow, whose slow start is what keeps
+   the onset out of the eye; the settle is linear, because any easing gives the disappearance one
+   moment where it moves fastest, and that moment is the only part peripheral vision catches. The
+   glow is thrown LEFT, so the light pools onto the page instead of off the cut edge the face
+   carries no border on — the pool multiplies the signal's area at a lower alpha than the tab
+   itself, and the periphery integrates over area. Lit is orthogonal to the state enum, never
+   folded into it: a page can be aged and lit at once, so this rule stands after every face above
+   and takes the aged dimming off with it — which is why opacity rides the ramp beside the rest. */
+.je-tab-lit .je-tab-face {
+  border-color: var(--je-tab-lit-line);
+  background: var(--je-tab-lit-fill);
+  box-shadow: -2px 0 18px -2px var(--je-tab-lit-glow);
+  opacity: 1;
+  transition: background-color var(--je-kindle-in) var(--ease-glow),
+    border-color var(--je-kindle-in) var(--ease-glow),
+    box-shadow var(--je-kindle-in) var(--ease-glow),
+    opacity var(--je-kindle-in) var(--ease-glow);
+}
+/* The light was spent by the writer surfacing, so the face falls back to whatever its state says,
+   over the long clock. Worn only while a settle runs, and never beside the lit class. */
+.je-tab.is-settling .je-tab-face {
+  transition: background-color var(--je-kindle-out) linear,
+    border-color var(--je-kindle-out) linear,
+    box-shadow var(--je-kindle-out) linear,
+    opacity var(--je-kindle-out) linear;
+}
+/* A press ends the dwell with no decay: the face the press asked for takes over at feedback speed
+   (motion-language.md §0 — feedback runs immediately, never queued). */
+.je-tab.is-taken .je-tab-face {
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+/* A remount mid-dwell resumes the face it left standing; it never kindles a second time. Last of
+   the four, because the two above match it at the same weight and a remount has to win. */
+.je-tab-lit.is-resumed .je-tab-face { transition: none; }
+/* A tab that did not exist yet mounts already carrying the lit face, and only its opacity ramps,
+   on the same clock. No translate and no scale: motion onset is the strongest attention capture
+   there is and a new object is the strongest case of it, so the slow ramp is the whole defusing. */
+.je-tab.is-born { animation: je-tab-born var(--je-kindle-in) var(--ease-glow) both; }
+@keyframes je-tab-born { from { opacity: 0; } to { opacity: 1; } }
+/* The count swaps at the ramp's midpoint, under a cross-fade the JSX times the digit against: it
+   holds the new number back 600ms, so the glyph changes while the numeral sits at its dimmest and
+   only opacity is authored here. Never journal-numeral-rise — its 3px flip is a motion onset. */
+.je-tab-count.is-swapping { animation: je-tab-count-swap var(--je-kindle-in) linear both; }
+@keyframes je-tab-count-swap {
+  0% { opacity: 1; }
+  50% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
 /* -22px is the canvas gutter below the measure width: the tab must reach the screen edge. */
 @media (max-width: 684px) {
-  .je-tab { right: -22px; }
+  .je-tab-rail { right: -22px; }
+}
+
+/* The arrival's only voice. A colour change announces nothing, so one region — owned by the hook,
+   never one per tab — says the tab's own words once, and off screen, because on screen the light is
+   the whole sentence. It is never empty of purpose and never visible, so it takes no room. */
+.je-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .je-ink { display: flex; flex-direction: column; }
@@ -1345,6 +1509,72 @@ a.journal-link:focus-visible {
 .je-first .je-ink-margin { width: 44px; padding-top: 4px; }
 .je-first .je-ink-passage { font-size: 15px; line-height: 27px; }
 
+/* THE RULE — the tie's aiming half. ONE ANCHOR, always the day row: it is `position: sticky; top: 0`
+   inside its own article, so it holds at the top of the frame for as long as its page is under the
+   reader. The tab is not that anchor — it sits on `.journal-page` and scrolls away on a tall page —
+   and an anchor that moves between two elements jitters and breeds conditional geometry.
+
+   THE ROW IS NOT ALWAYS ON SCREEN, and the brief's claim that it is does not hold: `pick` keeps an
+   article with `box.bottom > frame.top`, so a page with five pixels left in frame is still followed
+   while its sticky row has already been pushed off the top. `tieAim`'s band check is what catches
+   that, and it is load-bearing rather than belt-and-braces — the same guard covers a held page
+   scrolled away and a row under the trail.
+
+   `50% - var(--je-gutter)/2` is the canvas area's centre, the idiom `.journal-lamp` and `.je-home`
+   already use; +320px is the 640px measure's half; +10px is breath past `.journal-glyphs` and absorbs
+   the half-width of a classic scrollbar. `right: var(--je-gutter)` lands it exactly on `.je-margin`'s
+   border-left, so it TOUCHES the panel and nothing is drawn at the far end. 140px at 1240 / 240 at
+   1440 / 480 at 1920, and it crosses only empty canvas — the measure is capped at 640px before the
+   margin appears — so IT NEVER CROSSES PROSE. 1.5px is the house weight for "these two are joined",
+   already shipped as `.je-link-rule` in the trail.
+
+   z-index 2 puts it above `.journal-scroll` (1) and below `.je-margin` (3), `.je-trail` (4),
+   `.je-home` (5) and the tool rail (40). Occluded by the trail with the rows it covers, WHICH IS
+   CORRECT — and `tieAim` hides it there anyway, so the occlusion is belt and braces. */
+.je-tie {
+  /* Positioned against `.journal-root`, which is NOT the viewport: the app shell's `.wm-room` carries
+     `contain: layout paint`, which makes it the containing block for `position: fixed` descendants,
+     so the root sits 52px down at 1440. `tieAim` answers in viewport px and EchoMargin.jsx converts.
+     Assuming the two spaces were one put the rule 52px below the row it was pointing at. */
+  position: absolute;
+  top: 0;
+  left: calc(50% - var(--je-gutter) / 2 + 320px + 10px);
+  right: var(--je-gutter);
+  height: 1.5px;
+  z-index: 2;
+  pointer-events: none;
+  /* PARKED, not at zero. Until the tracker has read a rect this rule has no row to be glued to, and a
+     rule at y=0 would draw a hairline across the top of the screen for the frame before the first
+     write. `.journal-root` is `overflow: hidden`, so anything above it is clipped and nothing shows —
+     which is also what lets the write happen after paint instead of before it. */
+  --je-tie-y: -100px;
+  transform: translateY(var(--je-tie-y));
+  will-change: transform;
+  transition: opacity var(--je-swap) var(--ease-standard);
+}
+/* An author rule, because `.je-tie`'s own `display` would out-rank the UA sheet's `[hidden]`. The
+   guard has to be instant and total: a rule fading out of a band it has already left would trail
+   behind a moving row, and a rule at any weight at all is a line pointing at something. */
+.je-tie[hidden],
+.je-margin-stub[hidden] { display: none; }
+.je-tie.is-out { opacity: 0; }
+/* ONE VARIABLE CARRIES THE BINARY: whether the rule LANDS. Following, the last 40% tapers out at
+   every viewport width — the taper is proportional, so it reads the same across a 140px gap and a
+   480px one. Held, it is uniform and reaches the panel's border. "It reaches when you hold it."
+   NOTHING ON THE CANVAS DISTINGUISHES THE TWO: the canvas never has to explain the panel's mode. */
+.je-tie-mark {
+  display: block;
+  height: 100%;
+  opacity: var(--je-tie-rest);
+  background: linear-gradient(to right, var(--je-tie) 0 60%, transparent 100%);
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.je-tie.is-held .je-tie-mark { background: var(--je-tie); }
+/* Asking the panel "which page?" is what the raise answers, so the resting face is free to stay
+   quiet. Feedback, and the canvas gains no hover chrome of its own — it is a reading surface. */
+.journal-root:has(.je-margin:hover) .je-tie-mark,
+.journal-root:has(.je-margin:focus-within) .je-tie-mark { opacity: 1; }
+
 .je-margin {
   position: fixed;
   top: 0;
@@ -1353,12 +1583,25 @@ a.journal-link:focus-visible {
   z-index: 3;
   box-sizing: border-box;
   width: 300px;
+  display: flex;
   flex-direction: column;
-  padding: 26px 22px;
+  /* No padding at the top: the sticky head carries it, so a long echo list scrolled inside the panel
+     never loses the name of the page it belongs to. */
+  padding: 0 var(--je-margin-pad-x) var(--je-margin-pad-y);
   overflow-y: auto;
   border-left: 1px solid var(--border-subtle);
   background: var(--surface-canvas);
 }
+/* The panel's own left edge is the best peripheral channel the desk has: a 1px line the full height
+   of the viewport, standing right beside the writing column. Same clock as the face, a third of the
+   amplitude — an enormous area at a tiny amplitude, and nothing about it moves. The seam carries no
+   transition of its own, for the reason the face carries none: only the arrival ramps, and it says
+   so at each end. */
+.je-margin.is-lit {
+  border-left-color: var(--je-seam-lit);
+  transition: border-left-color var(--je-kindle-in) var(--ease-glow);
+}
+.je-margin.is-settling { transition: border-left-color var(--je-kindle-out) linear; }
 .je-margin .je-ink-row,
 .je-margin .je-ink .je-ink-row + .je-ink-row { margin-top: 0; }
 .je-ink-desk { gap: 12px; }
@@ -1371,22 +1614,105 @@ a.journal-link:focus-visible {
 .je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
 @keyframes journal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* Everything the panel says about ONE page, on one clock. The swap lives here and not on the body
+   because the body carries the arrival's own 1200ms ramp, and an `animation` with a fill mode pins
+   opacity against any transition on the same element — two fades on one node is two fades fighting.
+   On two nodes they multiply, which is what a swap crossing an arrival has to do. */
+.je-margin-swap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  transition: opacity var(--je-swap) var(--ease-standard);
+}
+.je-margin-swap.is-out { opacity: 0; }
+
+/* THE STAMP NAMES THE PAGE, and it is the load-bearing half of the tie — the rule only aims. Sticky
+   with the day row's own gradient trick, so scrolling a long list inside the panel never loses it.
+   NO HAIRLINE UNDER IT: the gradient tail separates it exactly as the canvas separates day rows, and
+   the hairline the canon names is the panel's own border-left, which is untouched. */
+.je-margin-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--je-margin-pad-y) 0 12px;
+  background: linear-gradient(var(--surface-canvas) 62%, transparent);
+}
+/* The rule's near end, in the rule's own weight, on the panel's side of the border — `.je-link-rule`'s
+   form, so no new vocabulary. It is NOT at the rule's y and cannot be: this head is sticky at the
+   panel's top while the rule is wherever its row is, 354px apart at rest, so the pair does not read as
+   one line passing under the border. What it carries is the rule's own fact, in the one place that is
+   always on screen — stub present means the line reaches a row you can see, stub absent means it does
+   not — and neither state is explained in words. */
+.je-margin-stub {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 1.5px;
+  background: var(--je-tie);
+}
+/* BYTE-IDENTICAL TYPE TO `.journal-meta`, so the reader matches the panel to the canvas by shape
+   before reading either. A copy of the row it points at, today included: it says SUN 31 AUG, never
+   TONIGHT — the trail keeps TONIGHT, because a trail chip is a destination and not a mirror. */
+.je-margin-stamp {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--je-addressed);
+  font: 400 12px/16px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.je-margin-stamp:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+/* `.je-not-useful`'s grammar. Two words, and it names WHAT WILL HAPPEN rather than the mechanics —
+   the register `Back to tonight` set. It appears only while held. */
+.je-margin-follow {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+  font: 700 11.5px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+}
+
 .je-margin-body {
   display: flex;
   flex-direction: column;
   gap: 18px;
   flex: 1;
   min-height: 0;
-  animation: journal-fade-in 180ms var(--ease-standard) both;
 }
-@media (prefers-reduced-motion: reduce) {
-  .je-margin-body { animation: none; }
-}
+/* With no page there is no head, so the body wears the panel's top padding instead — and lands on the
+   same pixel the leaving rest line is positioned against. Two paths, one baseline. */
+.je-margin-body.is-resting { padding-top: var(--je-margin-pad-y); }
+/* Two entrances with two meanings, and they must not be confused. FOLLOW — the scroll carries the
+   panel to another page's ink — is the 180ms fade above, a moment. ARRIVAL — news landing in the
+   panel the reader is already beside — is one 1200ms ramp over the whole body: no stagger and no
+   rise, because four staggered rows are four onsets. */
+.je-margin-body.is-arrival { animation: journal-fade-in var(--je-kindle-in) var(--ease-glow) both; }
 .je-margin-rest {
   margin: 0;
   font: 400 12px/19px var(--font-body), sans-serif;
   color: var(--text-tertiary);
 }
+/* When news lands on the very page the panel was resting on, the rest line leaves from under the
+   incoming ink on the same clock. It is a SIBLING of the body, not a child: inside it, this fade
+   would be multiplied by the body's own 0 -> 1 ramp and start from nothing, which is the step a
+   cross-fade exists to avoid. Out of flow it is positioned against the panel's padding box, so it
+   is inset by the panel's own padding to land on the pixel the resting line occupies. */
+.je-margin-rest.is-leaving {
+  position: absolute;
+  top: var(--je-margin-pad-y);
+  left: var(--je-margin-pad-x);
+  right: var(--je-margin-pad-x);
+  margin: 0;
+  pointer-events: none;
+  animation: je-margin-rest-out var(--je-kindle-in) linear both;
+}
+@keyframes je-margin-rest-out { from { opacity: 1; } to { opacity: 0; } }
 .je-margin-foot {
   margin: auto 0 0;
   padding-top: 16px;
@@ -1394,14 +1720,41 @@ a.journal-link:focus-visible {
   color: var(--text-tertiary);
 }
 
-.je-margin { display: none; }
-@media (min-width: 1240px) {
-  .journal-root.has-gutter { --je-gutter: 300px; }
-  .journal-root.has-gutter .je-margin { display: flex; }
-  /* One ink at a time: the margin holds it, so the in-page copy hides. */
-  .journal-root.has-gutter .je-ink,
-  .journal-root.has-gutter .je-ink-foot { display: none; }
+/* The arrival has no reduced-motion variant, because nothing in it moves: no transform, no size, no
+   position, no loop, no flicker — only luminance, which guidelines/motion-language.md §5 preserves.
+   Its ramps are not shortened either. A 1200ms rise is gentler than a 280ms one, not harsher, and
+   global.css clamps every transition to 0.001ms under the preference — which would collapse the
+   whole arrival into one abrupt luminance STEP, the single transient this design exists to avoid,
+   handed to the reader who asked for less. So each ramp restates its own duration here, and its
+   duration only: global.css touches no property list, so the four properties each ramp names come
+   through untouched. Both declarations are author `!important`, so specificity decides and a class
+   outranks `*`. Do not "fix" this by deleting an `!important` or adding an `animation: none`.
+   `.je-tab-lit.is-resumed .je-tab-face` needs neither — `transition: none` sets transition-PROPERTY,
+   which global.css never touches — and the opacity-only keyframes (is-born, is-swapping, is-arrival,
+   is-leaving) survive by the same token, since global.css bounds iteration count and never duration.
+
+   THE TIE SPLITS THREE WAYS UNDER THE PREFERENCE, and each way is a decision rather than an omission.
+   The SWAP's two fades and the addressed row's 180ms colour are LEFT TO THE CLAMP: they are moments,
+   not signals, and with no fade the change is a hard cut, which is what was asked for — `useEchoes`
+   closes its gap between them to nothing so the panel is never held blank with nothing crossing it.
+   The HOVER RAISE is restated, because it is feedback: the reader asked "which page?" and the mark
+   answers, and an answer that arrives with no beat at all is a transient. And TRACKING — the rule
+   glued to its scrolling row — survives untouched without being named here at all, because it is a
+   transform written per frame and carries no transition to clamp. Freezing it would leave the tie
+   pointing at a row that had moved on. Reduced motion loses the theatre, never the event. */
+@media (prefers-reduced-motion: reduce) {
+  .je-tab-lit .je-tab-face { transition-duration: var(--je-kindle-in) !important; }
+  .je-tab.is-settling .je-tab-face { transition-duration: var(--je-kindle-out) !important; }
+  .je-tab.is-taken .je-tab-face { transition-duration: var(--duration-fast) !important; }
+  .je-margin.is-lit { transition-duration: var(--je-kindle-in) !important; }
+  .je-margin.is-settling { transition-duration: var(--je-kindle-out) !important; }
+  .je-tie-mark { transition-duration: var(--duration-fast) !important; }
 }
+
+/* The width that decides this is asked once, in `echoes/useEchoes.js` (MARGIN_MIN_WIDTH), and worn
+   here as `has-margin`. One ink at a time follows from the same answer rather than from a second
+   media query: while the margin holds a page's ink, nothing in the column renders one. */
+.journal-root.has-margin { --je-gutter: 300px; }
 
 .je-trail {
   position: fixed;

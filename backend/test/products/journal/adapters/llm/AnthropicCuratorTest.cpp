@@ -394,7 +394,7 @@ TEST(curator_sends_a_byte_stable_system_block_across_pages) {
   CHECK(transport->sent[0].user != transport->sent[1].user);
 }
 
-TEST(curator_version_names_the_model_the_effort_and_the_prompt) {
+TEST(curator_version_names_the_model_the_effort_the_prompt_and_the_floor) {
   auto transport = std::make_shared<FakeMessages>();
 
   const AnthropicCurator standard(transport);
@@ -402,9 +402,30 @@ TEST(curator_version_names_the_model_the_effort_and_the_prompt) {
 
   const std::string version = standard.version();
   CHECK_EQ(version.rfind("claude-sonnet-5/low/", 0), std::size_t{0});
-  CHECK_EQ(version.size(), std::string("claude-sonnet-5/low/").size() + 8);
+  // model / effort / eight hex digits of prompt digest / the floor in thousandths.
+  CHECK_EQ(version.size(), std::string("claude-sonnet-5/low/").size() + 8 + std::string("/f600").size());
+  CHECK(version.find("/f600") != std::string::npos);
   CHECK(pricier.version() != version);
   CHECK_EQ(pricier.version().rfind("claude-opus-5/high/", 0), std::size_t{0});
+}
+
+// The floor decides which pairings come back `related` and it lives on this adapter, not in
+// SelectionRules, so `rulesTag` does not cover it. Left out of the version, moving it reopened NO
+// page: every settled page kept verdicts judged under the old threshold, forever.
+TEST(curator_moving_the_relation_floor_moves_the_version_that_reopens_a_page) {
+  auto transport = std::make_shared<FakeMessages>();
+
+  const AnthropicCurator strict(transport, "claude-sonnet-5", "low", nullptr, nullptr, 0.8f);
+  const AnthropicCurator loose(transport, "claude-sonnet-5", "low", nullptr, nullptr, 0.4f);
+  const AnthropicCurator same(transport, "claude-sonnet-5", "low", nullptr, nullptr, 0.8f);
+
+  CHECK(strict.version() != loose.version());
+  CHECK_EQ(strict.version(), same.version());   // and the same floor is the same version
+  CHECK(strict.version().find("/f800") != std::string::npos);
+  CHECK(loose.version().find("/f400") != std::string::npos);
+  // Nothing but the floor differs, so the model, the effort and the prompt digest are shared.
+  CHECK_EQ(strict.version().substr(0, strict.version().rfind('/')),
+           loose.version().substr(0, loose.version().rfind('/')));
 }
 
 // --- The meter ------------------------------------------------------------------------------

@@ -65,11 +65,15 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     if (el) el.scrollIntoView({ block });
   };
 
-  // Echoes measure inside this canvas from outside it: it hands them the scroller and the day lookup.
+  // Echoes measure inside this canvas from outside it: it hands them the scroller, the day lookup, and
+  // the answer to ONE question about a day row — where its date stamp is on screen — which is what the
+  // margin's tie aims at. A question and not a node, so this canvas stays free to move `.journal-meta`
+  // without breaking a mark drawn somewhere else entirely.
   const { holdCanvas } = echoes || {};
   useEffect(() => {
     if (!holdCanvas) return undefined;
-    holdCanvas({ scroller: scrollRef.current, dayElement });
+    const stampRect = (date) => dayElement(date)?.querySelector('.journal-meta')?.getBoundingClientRect() ?? null;
+    holdCanvas({ scroller: scrollRef.current, dayElement, stampRect });
     return () => holdCanvas(null);
   }, [holdCanvas]);
 
@@ -95,7 +99,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   }, [why]);
 
   // Grow the composer to its content before the position below measures the bottom — on a change of
-  // WIDTH as well as of text. The echo gutter opening at 1240px re-wraps every line the field holds,
+  // WIDTH as well as of text. The echo gutter opening re-wraps every line the field holds,
   // and lines a field is too short to show are lines the foot is measured short by.
   const sizeToContent = () => {
     const ta = textareaRef.current;
@@ -203,6 +207,10 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   }, [flyTo, loading, extendTo, today]);
 
   const standingOn = focusDate || today;
+  // The page the echo margin is describing right now — the hook's own answer, run through the swap, so
+  // the row that lights and the panel that names it can never be two different days. Null below the
+  // margin's width: with no panel there is nothing addressing a page, so nothing lights one.
+  const addressedDay = echoes?.shownDay ?? null;
 
   const rendered = [];
   let lastMonth = null;
@@ -221,6 +229,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
         highlight={dayHighlight}
         echoes={echoes}
         standing={day.date === standingOn}
+        addressed={day.date === addressedDay}
       />,
     );
   }
@@ -248,6 +257,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             date={today}
             wordCount={wordCount(body)}
             isToday
+            addressed={today === addressedDay}
             trailing={<SavedNote state={saveState} tick={saveTick} />}
           />
           <div className="journal-page">
@@ -307,10 +317,16 @@ function MonthDivider({ iso }) {
 }
 
 // The writing and its echoes share one positioning context, .journal-page.
-function DayBlock({ day, born, highlight = null, echoes = null, standing = false }) {
+function DayBlock({ day, born, highlight = null, echoes = null, standing = false, addressed = false }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
-      <DayMarker date={day.date} mood={day.mood} energy={day.energy} wordCount={wordCount(day.body)} />
+      <DayMarker
+        date={day.date}
+        mood={day.mood}
+        energy={day.energy}
+        wordCount={wordCount(day.body)}
+        addressed={addressed}
+      />
       <div className="journal-page">
         <div className="journal-prose"><Prose text={day.body} highlight={highlight} /></div>
         {echoes && <PageEchoes echoes={echoes} day={day.date} standing={standing} />}

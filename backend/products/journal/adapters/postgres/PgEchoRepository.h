@@ -27,10 +27,10 @@ public:
 
   std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override;
   std::vector<DuePage> allPages(const UserId& user) override;
-  std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
+  std::vector<StoredSpan> spansOf(const UserId& user, const LocalDate& day) override;
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& spans,
-                                     const std::string& embedVersion,
+                                     const std::string& embedVersion, const std::string& body,
                                      std::uint64_t bodyStampMs) override;
 
   std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) override;

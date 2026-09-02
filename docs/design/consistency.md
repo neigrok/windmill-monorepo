@@ -162,12 +162,15 @@ The nudge ships to real inboxes and the only copy of its markup is inside Resend
 repo can be reviewed, versioned or corrected.
 
 **F28 · journal's in-page echo form does not exist at any desktop width**
-→ decide, then fix the doc or the CSS.
-`journal.css:926-930` sets `.je-ink` and `.je-ink-foot` to `display: none` for every viewport
-≥1240px — gated on the media query alone, not on `.has-margin`. The "in-page echo form on desktop"
-that briefs and boards describe cannot be produced at 1280; it appears only below 1240. The Figma
-board draws it at 1024 and says why. Either the gate lost its `.has-margin` half, or the form is
-deliberately margin-only above 1240 and every description of it is wrong.
+→ **ruled and built 2026-09-01 in code; the descriptions are owed a designer.**
+The form is deliberately margin-only: wherever the margin is open, the panel is the page's ink and
+the only one, and the column draws none. That is now one fact rather than two rules kept in step —
+`echoes/useEchoes.js` answers `marginOpen` (its `MARGIN_MIN_WIDTH` is the only place the width
+lives), `JournalApp.jsx` wears it as `has-margin`, and `PageEchoes.jsx` renders no `.je-ink` under
+it, so nothing is hidden after the fact and no width can produce a column ink and a panel at once.
+What is still owed is the other half of the finding: the "in-page echo form on desktop" that briefs
+and boards describe cannot be produced at 1280, and the Figma board draws it at 1024. Those
+descriptions have to say margin-only above the margin's width, or name the width they are drawn at.
 
 **F29 · three journal mono styles are authored at weights the product never loads** → drop them to 600.
 `.je-tab-face` asks 700, `.je-trail-label` 800, `.je-plan-price` 700; `styles/fonts.js` self-hosts
@@ -1684,6 +1687,15 @@ non-empty read (`held.current` in `logger/MovementPicker.jsx`), so the divergenc
 a lifter deletes a session and opens a picker inside the same nine seconds. It is drift rather than a
 defect, and the question is the general one: does a window reach only the screen the act was taken
 on, or every list in the room?
+→ **Ruled 2026-09-01: a window thins what is DRAWN, and nothing that is COMPUTED.** It follows from
+`4p` rather than adding to it. `4p` settled that a window answers *which rows are drawn* and never
+*what the account holds*; a ranking over the account's history is the second kind wearing different
+clothes — it is not a row a lifter is looking at, it is an input to an ordering, and a session an
+Undo can still bring back is part of the history that ranking is about. So **the web is the one that
+is right here** and the phones owe the move: hand the picker the account's sessions, not the drawn
+ones. The rule is one sentence and it decides the general case, so no later wave has to ask again.
+Owed on iOS (`LoggerScreen`, `RoutineEditorScreen`) and Android (`LoggerScreen`, `RoutineBuilder`),
+each of which passes `store.recent` where it wants the account.
 
 **4v · a door that hands the lifter to a browser says nothing when no browser comes** → a ruling,
 on both phones. Android's connect row and its `Connect my log` button both fire
@@ -1695,3 +1707,256 @@ on a door rather than on a verb. The web has no half of this: the setup page is 
 (`connect/ConnectLog.jsx`), reached by an anchor rather than by launching anything. What is owed is a
 decision on whether a launch that does not land is worth a sentence, and if it is, the same sentence
 on both phones.
+
+**4w · a page re-wrapped under the caret when its echo arrived** → **BUILT 2026-09-02**,
+`journal.css` `.journal-page`. `.journal-page:has(.je-tab) { padding-right: 40px; }` gave the edge
+tab's lane only once the tab existed, so an echo landing on tonight's page narrowed the composer
+mid-sentence: the textarea lost 40px, `Canvas.jsx`'s `sizeToContent` re-ran, every line re-wrapped
+and the page's height changed under the writer — against `journal.md:56` in bold, *"The reading
+column never moves… nothing may change the canvas's geometry, at any scroll speed"*. **Measured in
+headless Chrome against the shipped stylesheet before the fix: the composer went 640px → 600px, and
+across prose lengths of 8–120 words 40% of them gained a wrapped line and the page grew 28px under
+the caret.** The same selector also made the measure 40px narrower on a page with an echo than on one
+without, down one canvas. Both are closed by one rule: `.journal-page { position: relative;
+padding-right: 40px; }`, the lane held for every page the way the 300px margin gutter is held for the
+whole mount. The measure is now one width down the whole canvas, and
+`test/products/journal/echoes/pageEchoes.test.js` fails if `:has(` returns to that selector. **One
+consequence wants a designer's eye**: the lane is 40px at every width, so on a 375px phone every page
+now writes in 291px rather than 331px, where before only a page that already had an echo did. 40px is
+what echo pages have always reserved, and the ruling was that the measure must not differ page to
+page — but on the phone the rail hangs *outside* the page box (`right: -22px`), so the tab intrudes
+only 2px there and the other 38px is clearance, not room. A narrower phone lane would buy the measure
+back without reintroducing the drift.
+
+**4x · the echo mark is drawn before its quotes are re-located** → fix flows to
+`echoes/PageEchoes.jsx` and `echoes/useEchoes.js`. `ECHOES.md` (*The surface*) states that `count`
+is computed after re-location succeeds *so the mark and the card cannot disagree*.
+`PageEchoes.jsx:22-23` draws `EdgeTab count={page.matches.length}` from `pageOf(day)` alone, with no
+read of `verified`; and its `verify(day)` effect (`:17`) has stable deps, so it fires once at mount —
+when a page usually has no echo yet — and never again when one arrives. A page that lands mid-session
+is re-located only by the poll's own `check(day, true)` sweep (`useEchoes.js:224`), up to
+`LIVE_INTERVAL` = 15s later. Between those two moments the tab states a count no quote has been
+checked against, and a quote the writer has since edited away is counted until the next beat.
+**Half built 2026-09-02**: a page a LATER read adds or changes is now re-located the moment that read
+hands it over, so the up-to-15s window is gone for anything arriving mid-session, and the arrival
+arms on `verified` rather than on presence. Deliberately scoped to those pages: sweeping every
+unverified page instead would make opening the journal fetch every body of every echo the account
+has (measured at the backend's own caps: 280 body GETs before the reader has scrolled anywhere),
+where the mount's own pages are still re-located by the tabs that draw them. What is still owed is
+the tab's own face — `EdgeTab` draws `page.matches.length` with no read of `verified`, so on the
+mount's read a count is stated for a round trip before its quotes are checked, and a retracted echo's
+tab blinks back for that same round trip on every beat until the server's sweep catches up.
+
+**4y · the two canon halves disagreed about the margin's rest line** → RULED AND CLOSED
+2026-09-01. `ECHOES.md` rule 2 read as an outright ban — *"Never render an empty 'no echoes'
+state"* — while `journal.md:90` required the line, and `EchoMargin.jsx:23` shipped it. **Ruled by
+the owner: the line stays, and rule 2 is narrowed to say what it always meant.** The distinction is
+whose absence is being described. Rule 2 exists to stop the journal inferring things about the
+WRITER from silence — that a subject never came back, that a stretch of the archive is empty. A
+panel saying one named page in view carries no echo asserts nothing of the kind: it is a checkable
+fact about a page on screen, which is the same standard rule 1 holds every echo to. `ECHOES.md`
+rule 2 now carries that carve-out; `journal.md:90` stands unchanged. Also ruled the same day and
+for the same reason: `.je-margin-foot`'s *"This panel follows the scroll."* stays, and does not
+become dead weight when the addressed-page tie (5a) draws the same fact — a drawn tie and a said
+one are not one statement twice.
+
+**4z · the echo arrival is a third class of motion and the language names two** → fix flows to
+`guidelines/motion-language.md`. §0 splits every animated moment into **Feedback** (caused by the
+user's own act, runs immediately) and **Ceremony** (schedulable, one at a time, yields), and §4 rules
+that while editing *"ceremonies don't start"*. An echo arriving is neither: no act of the user's
+caused it, and it is ruled to fire the moment it lands, mid-sentence included. What it needs is its
+own row — an **arrival**: news the system now holds, drawn where the news belongs, never queued and
+never interrupting the act in progress, which it buys by carrying no transient at all (luminance
+only, gradual on both edges, no onset, no travel, persisting until it is seen rather than repeating
+to be caught).
+
+**5a · the held panel is a state two lines of shipped copy do not know about** → a designer's call,
+then `EchoMargin.jsx` and the tab's label. Where the margin is open the edge tab is no longer a
+disclosure: it holds the panel on a page, and a press on the page already holding it hands the panel
+back to the scroll (`useEchoes.js` `holdPanel` / `followScroll`, `marginDay` being the one answer to
+which page the panel sits beside). `aria-expanded`, the ✕ glyph and `je-tab-open` are gone at that
+width because none of them had a referent. Two lines have not caught up. `EchoMargin.jsx`'s foot says
+*This panel follows the scroll*, which is false for as long as a page is held — the state that line
+describes is now one of two, and it names only the other. And the tab's own label at that width,
+*Hold panel on this page* / *Follow the scroll again*, is the whole of what a screen reader hears:
+the count lives in the face, which is `aria-hidden`, so above the margin's width the number of
+passages behind a page is announced to nobody, where below it the label still carries it. Both are
+copy decisions rather than code ones, and the first of them got LOUDER rather than quieter when the
+tie landed (5e): the panel's head now carries a `Follow again` button about forty pixels above a foot
+that says *This panel follows the scroll*, so while a page is held one panel states a thing and
+offers to undo it in the same breath. The owner ruled in 4y that the foot line stays; what is still
+open is whether it stays UNCHANGED, or grows a second half for the state the panel is now in half the
+time. It is one statement and its own undo inside one landmark, in the accessibility tree as much as
+on screen — `complementary "What you wrote before"` → `button "Go to TUE 01 SEP"` → `button "Follow
+again"` → `StaticText "This panel follows the scroll."` — and the edge tab agrees with the button
+(*"2 passages you wrote before — follow the scroll again"*), which leaves the foot as the only line
+in the family that is false. Separately, `je-tab-addressed` — the panel on this page by the scroll's own choice — takes the
+plain face with no paint of its own, and the tab still draws no tie to the panel: that indicator is
+built and it is the tie (5e), which is an INDICATOR where the tab is a CONTROL, so neither reads the
+other.
+
+**5b · the day theme's 9px tab numeral failed the 4.5:1 gate at every weight** → **RULED AND BUILT
+2026-09-02**: the numeral is re-inked a step darker than the fill it stands on, which is the move
+`palettes.css:133` already makes for the day link ink. `.je-tab-face` now takes `--je-tab-ink`, and
+the two theme blocks answer it — night keeps `--lamp-400` (it clears throughout), day takes
+`--lamp-200` #6B4D12, the ramp's darkest step: 7.16:1 resting and 5.18:1 on the lit face by an sRGB
+composite of the same four weights. One token, all four weights, no new hex. The measurement that
+opened this entry stands and is kept below, because it is the reason the ink moved rather than the
+fill. Original finding: Composited in a browser through the real sRGB pipeline (ground
+filled, the face's own alpha over it, `getImageData` byte read), `--lamp-400` #986B1E as the numeral
+measures: bare paper 4.39:1, aged fill 3.96, plain 3.66, the open/lit fill 3.18. Night clears
+throughout (10.54 / 9.57 / 8.33 / 6.24, and 5.50 on the lit face). The 9px bold numeral takes no
+large-text exemption, so the whole day tab family is under the gate today. **The echo arrival does
+not worsen it and does not fix it**: day's new `--je-tab-lit-fill` is *defined as* the existing
+`--je-tab-open-fill` weight (26%) precisely because on parchment the fill DARKENS the ground, so the
+lit face measures byte-identical to the open face that already ships. Dropping the lit fill further
+buys nothing — the numeral, not the fill, is what is wrong. Measured candidates against the lit
+composite: `--lamp-500` #7A5410 → 4.56, `--lamp-200` #6B4D12 → 5.25, `--journal-ink` #2A2118 →
+10.65. Re-inking the numeral re-colours all four weights at once, which is why it is a designer's
+call and not a motion one.
+
+**5c · the site-wide reduced-motion clamp deletes a signal that is not motion** → fix flows to
+`styles/global.css` and `guidelines/motion-language.md`. `global.css:88-95` forces
+`transition-duration: 0.001ms !important` on `*` under `prefers-reduced-motion`. **Verified in
+headless Chrome: it reaches any author transition (a 1200ms transition computes to `1e-06s`), and a
+class-level `!important` re-assertion does out-rank it — same origin, so specificity decides and
+`.je-tab-lit .je-tab-face` beats `*`.** The echo arrival is authored as a transition pair because its
+dwell has no fixed length, and it changes luminance only — no transform, size, position, loop or
+flicker. Left to the clamp, its 1200ms rise collapses into an instant luminance STEP, which is an
+abrupt onset: the reader who asked for *less* motion is handed the one transient the whole design
+exists to carry none of. `journal.css` therefore restates each of the arrival's durations with
+`!important` inside its own reduced-motion block. Two things are owed by the owners of the two files.
+`motion-language.md` §5 preserves *"colour/opacity cross-fades ≤280ms"*, and every fallback it lists
+is a 150ms ramp; the arrival deliberately keeps its full 1200ms under the preference, on the ground
+that a slower luminance ramp is gentler than a faster one, not harsher — §5 does not license that in
+its letter, and either it grows the case or the arrival is out of canon. And the same argument
+`scales.md:241-252` won for `animation-duration` — *"a site-wide clamp must permit finite durations
+rather than nuking them"* — applies unchanged to `transition-duration`, which is the half that was
+left behind; while it stands, every luminance-only transition in the brand needs the same
+`!important` escape hatch this one now carries.
+
+**5d · the first echo an account ever got slid the whole reading column sideways** → **RULED AND
+BUILT 2026-09-02**: the gutter is reserved on WIDTH ALONE. `journal.md:56`'s "held whether or not the
+panel has anything in it" is ruled to mean every account at that width, not only one that has been
+paired before — so `marginOpen` is now the media query and nothing else, and the `hasGutter`
+localStorage latch, its per-account key and the three `keepGutter` calls that maintained it are
+deleted rather than moved. A wide-screen writer who has never had an echo now gives 300px to an
+empty column; the trade is deliberate and one-directional, because an empty column costs a reader
+nothing and a canvas that moves costs them the sentence they were writing — and it moved at exactly
+the moment the arrival light was asking to be looked at. The measurement that opened this entry
+stands and is kept below. Original finding: `journal.md:56` rules that above 1240px the margin's 300px is
+*"reserved space, held whether or not the panel has anything in it"*, and that nothing may change the
+canvas's geometry at any scroll speed. The code reserves it on a narrower fact: `hasGutter` is a
+per-account localStorage latch that turns on the first time a read comes back with any echo at all,
+so `marginOpen` flips mid-session the first time an account is ever paired, `--je-gutter` goes 0 →
+300px under the writer, and `.journal-scroll` narrows by 300px. **Measured in headless Chrome: the
+measure does NOT change — `.journal-column` is `min(640px, 100% - 44px)` and the scroller stays wider
+than 684px at every width the margin opens at, so the composer is 600px wide and 112px tall before
+and after, and no line re-wraps. What moves is the column itself, 150px to the left** (at 1240px its
+left edge goes 300 → 150; at 1920px, 640 → 490). Once ever per account, and exactly at the moment of
+that account's first echo arrival — so the one time the light matters most is the one time the page
+slides under it. The question canon has not answered is whether "held whether or not the panel has
+anything in it" means held for every account at that width, or only for an account that has ever been
+paired. If the former, the latch goes and the gutter is reserved on width alone; if the latter,
+`journal.md:56` should say so, and the slide needs a ruling of its own.
+
+**5e · the margin described one of four pages on screen and named none of them** → **RULED AND BUILT
+2026-09-02**. Above 1240px the canvas shows several dated pages at once and `.je-margin` draws the
+echoes of exactly one, picked by a scroll waterline; nothing on screen said which. For a feature whose
+whole rule is that *an echo may only assert something the reader can check from what is on screen*
+(`ECHOES.md` rule 1), an unattributed panel was the one assertion the reader could not check. The tie
+is three parts of one mark and all three read ONE day, `shownDay`, so no frame can have them naming
+two. THE STAMP (`.je-margin-stamp`) wears that page's date in `.journal-meta`'s own type — byte-equal
+face, so the panel is matched to the canvas by shape before it is read — and both callers now share
+one `stampWeekday` in `echoes/echoDates.js`. It is a copy of the row it points at, today included: it
+says `WED 02 SEP`, never `TONIGHT`, where the trail keeps `TONIGHT` because a trail chip is a
+destination and a stamp is a mirror. THE RULE
+(`.je-tie`) crosses the empty gutter from the row's right edge to the panel's border: 140px at 1240,
+240 at 1440, 480 at 1920, measured in headless Chrome, landing exactly on the border at all three, and
+it never crosses prose because the measure is capped at 640px before the margin appears. THE LIT ROW
+lifts `.journal-marker.is-addressed .journal-meta` to `--je-addressed` — colour and nothing else, no
+weight change, because a weight change would reflow a sticky row and `journal.md:56` forbids any
+canvas geometry change at any scroll speed.
+
+**The rule is never counted toward legibility; the stamp is** — the same doctrine `scales.md` §3 holds
+for a glow. Composited in a browser through the real sRGB pipeline, the way 5b was: night ground
+#040D19, addressed `--lamp-400` #E0B972 **10.54:1** against the unlit `--journal-ink-dim` #8A98AC's
+6.66:1; day ground `--neutral-50` #F7F7F5, addressed `--lamp-200` #6B4D12 **7.26:1** against the unlit
+#74654F's 5.27:1. Day's own `--lamp-400` #986B1E measures 4.39:1 — under the gate AND *lighter* than
+the dim it would replace, so lighting the row with it would have LOWERED its contrast. `--lamp-200` is
+the step 5b already re-inked the tab numeral to, so **lamp-as-text on paper is now one answer in this
+family and not two**. The rule itself is that ink faded: night 42%, day 62% — the alphas differ
+because a wash over paper darkens where a wash over the night lightens — composited to 2.66:1 and
+2.98:1 raised, 1.99:1 and 2.21:1 at the resting weight the mark actually wears. All four are under 3:1
+deliberately, and far under `.journal-prose` (16.56:1 / 14.73:1). **The designer's own day arithmetic
+in the tie brief was computed against #F9F5EB and is superseded by these; F3's stale-parchment finding
+is the reason, and F3 is still open.**
+
+Three rulings worth reading before the next wave touches this. **The rate limit is not motion**: the
+waterline PROPOSES continuously and the panel's subject only changes once a proposal has held 160ms,
+so a fling across four pages proposes four times and commits once — the motion then runs immediately
+on the changed fact, which is why a debounced tie does not violate `motion-language.md` §0's feedback
+class. Beside it sits a 12px deadband, which is the guard a clock cannot give, because trackpad
+inertia RESTS: a scroll that stops three pixels past the waterline would commit, drift, and commit
+again for as long as you waited. **The swap is a gap, not a cross-fade**: 90ms out, the subject
+changes at zero, 90ms in — for the length of a cross-fade there would be two rules on screen pointing
+at two pages, which is a literally false assertion, and the gap never shows two. The 90+90 sums to the
+panel's already-shipped 180ms entrance, so no new duration enters the product. **And the mark is
+dropped rather than weakened whenever it cannot be drawn honestly**: no rect, a row outside the band
+between `.je-trail`'s bottom edge and the scroll frame's, or the One sheet over the panel, and the
+rule and its stub both go instantly and without a fade — a fade would trail behind a moving row. The
+stamp carries the tie alone in every one of those states, which is what makes the drawn half
+droppable at all.
+
+Under `prefers-reduced-motion` the tie splits three ways, and each way is a decision. The swap's two
+fades and the row's 180ms colour are LEFT to `global.css`'s clamp — they are moments, not signals, and
+`useEchoes` closes its own 90ms gap to zero to match, so the panel is never held blank with nothing
+crossing it. The hover raise is restated with `!important`, 5c's pattern, because it is feedback and
+an answer arriving with no beat at all is a transient. And the tracking survives untouched without
+being named at all: a transform written per frame carries no transition for a clamp to reach, and
+freezing it would leave the tie pointing at a row that had moved on. Reduced motion loses the theatre,
+never the event. All three verified in headless Chrome under the emulated preference.
+
+**5f · the echo tie's rule is not glued to its row, and the brief says it is** → a design owner's call,
+then either `journal.css` + `EchoMargin.jsx` or the tie's brief. The brief rules tracking to be "the
+ABSENCE of motion relative to the content it is glued to", and rests the whole reduced-motion
+argument on it — a mark that does not move relative to its row is not added motion, so it survives
+the preference. **It does not hold.** `.je-tie` lives outside `.journal-scroll`, so the day rows are
+scrolled by the compositor while the rule only moves when the tracking callback writes its transform.
+Measured in composited pixels during a ~47px/frame wheel scroll: the hairline sits **12-14px** below
+its row's lit glyph band, against **1px** at rest — most of a row height, so it points at the gap
+under the date rather than through it, and snaps on when the scroll stops.
+
+The shipped code now states this rather than the brief's claim, and the reduced-motion ruling is
+unaffected: a mark that lags is still not a mark that animates, and freezing it would be worse.
+What is open is whether the lag is acceptable. **The only shape without it glues the mark to
+`.journal-marker` itself**, which is already `position: sticky` and therefore moves with the row for
+free — no rAF, no scroll listener, no resize listener, and the scroll frame's own clip replaces the
+band's bottom guard. The rule's whole x-range (900→1140 at 1440) is inside `.journal-scroll`'s box, so
+it would not be clipped horizontally. Three costs, and they are why this is not a code decision: the
+canvas would own an echo-family glyph, which `journal.md` §10 and the tie's own C.6 both lean against;
+the reach from inside a 640px column to the scroller's right edge has to be expressed in `vw`, which
+a classic scrollbar makes approximate; and the stub in the panel would still need the measurement,
+because CSS occlusion cannot tell the panel that the rule is covered.
+
+**5g · a walked-to page is parked underneath the trail that says how you got there** → fix flows to
+`Canvas.jsx` and `.je-trail`; predates the tie and is not caused by it. `takePosition` scrolls the
+focused day with `scrollIntoView({ block: 'start' })`, and `.je-trail` is `position: fixed; top: 0`
+with an opaque `--surface-canvas` background, 105px of the frame plus a 16px gradient tail. So the
+page a reader reaches most deliberately opens with its day row **under the bar**, and stays there:
+`openingRef` is re-armed by the walk's own hash change and is cleared only by a gesture ON THE CANVAS,
+so the canvas re-takes that position on every reflow. Measured after a walk at 1440: the trail's
+bottom edge at 157.5, the destination row's top at 52, and a scroll away from it put back inside one
+frame — 138 → 33 → 138.
+
+Two consequences, both real before the tie and both now visible. The date row of the page you are
+standing on is unreadable for the length of a walk. And the margin's stamp — a button whose whole job
+is taking you to the row it names — cannot move the canvas there, because a press in the panel is not
+a canvas gesture; it lands everywhere else, including the case C.4 wrote it for. The tie's own
+behaviour here is correct and deliberate: `tieAim` refuses to point at a row under the trail, so the
+rule and its stub go and the stamp carries the tie alone. That is the brief's A.8 rule 4 working, not
+a defect — but it means the drawn half of the mark is dark for the whole of every walk. The narrow
+fix is a `scroll-margin-top` on `.journal-day` while a trail is up, which offsets every
+`scrollIntoView` at once; it needs the trail's measured height rather than a constant, because a long
+walk wraps its chips.
+

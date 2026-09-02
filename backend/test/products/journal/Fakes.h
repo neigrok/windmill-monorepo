@@ -257,11 +257,16 @@ struct FakeSegmenter : Segmenter {
 struct FakeEmbedder : Embedder {
   bool isConfigured = true;
   bool failNext = false;
+  std::string embedVersion = "fake-embedder-v1";
+  int calls = 0;                        // round trips — zero is the point of reusing a vector
+  std::vector<std::string> asked;       // every passage this embedder was actually paid for
 
   bool configured() const override { return isConfigured; }
-  std::string version() const override { return "fake-embedder-v1"; }
+  std::string version() const override { return embedVersion; }
 
   std::vector<std::vector<float>> embed(const std::vector<std::string>& passages) override {
+    ++calls;
+    for (const std::string& passage : passages) asked.push_back(passage);
     if (failNext) return {};
     std::vector<std::vector<float>> out;
     out.reserve(passages.size());
@@ -312,11 +317,12 @@ struct FakeCurator : Curator {
 // Stores spans and echoes the way the real adapter does: replace-a-page-atomically, identities minted on demand.
 class FakeEchoRepository : public EchoRepository {
 public:
-  struct StoredSpan {
+  struct SpanRow {
     LocalDate day;
     SpanWrite write;
     std::string embedVersion;
     std::uint64_t bodyStampMs = 0;   // the page stamp this passage was cut from, as the column holds
+    std::string body;                // the bytes it was cut from, as body_sha256 holds their digest
   };
 
   // The curation ledger row, written exactly as the upsert writes it: a settled pass records the
@@ -346,7 +352,7 @@ public:
   std::vector<EchoUser> users;
   std::map<std::string, std::vector<DuePage>> due;
   std::map<std::string, std::string> bodies;   // "user|day" -> the page as it stands right now
-  std::map<std::string, std::vector<StoredSpan>> spans;
+  std::map<std::string, std::vector<SpanRow>> spans;
   // Waved-away pairs keyed on the two passages' NORMALISED TEXT and scoped to one user, exactly as the SQL keys them on content hashes.
   std::map<std::string, std::set<std::pair<std::string, std::string>>> dismissals;
   std::set<std::string> offersRetired;   // "user|day" -> the reader answered "not now" here
@@ -367,18 +373,22 @@ public:
   void plantPage(const UserId& user, const LocalDate& day, const std::string& body) {
     bodies[pageKey(user, day)] = body;
   }
-  void addDuePage(const UserId& user, const LocalDate& day, const std::string& body) {
-    due[user.str()].push_back(DuePage{day, body, stamp, 0});
+  // `bodyMoved` false is the page whose bytes storage has already been paid to cut — a save that
+  // moved the HLC and nothing else, which is what setting mood or energy does.
+  void addDuePage(const UserId& user, const LocalDate& day, const std::string& body,
+                  bool bodyMoved = true) {
+    due[user.str()].push_back(DuePage{day, body, stamp, 0, bodyMoved});
     plantPage(user, day, body);
   }
   // Plant an already-derived page. `lo` is the passage's byte offset into the body, which is what tells two identical sentences apart.
   void plantSpan(const UserId& user, const LocalDate& day, std::int64_t spanId,
-                 const std::string& text, const std::vector<float>& vector, int lo = 0) {
+                 const std::string& text, const std::vector<float>& vector, int lo = 0,
+                 const std::string& body = "", const std::string& embedVersion = "fake-embedder-v1") {
     spans[user.str()].push_back(
-        StoredSpan{day,
-                   SpanWrite{spanId, Passage{0, lo, lo + static_cast<int>(text.size()), text},
-                             vector},
-                   "fake-embedder-v1", stamp});
+        SpanRow{day,
+                SpanWrite{spanId, Passage{0, lo, lo + static_cast<int>(text.size()), text},
+                          vector},
+                embedVersion, stamp, body.empty() ? text : body});
   }
 
   std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
@@ -389,7 +399,7 @@ public:
     auto it = spans.find(user.str());
     if (it == spans.end()) return 0;
     std::map<std::int64_t, std::string> byId;
-    for (const StoredSpan& stored : it->second)
+    for (const SpanRow& stored : it->second)
       // NORMALISED, because the SQL digests text_sha256 and PgEchoRepository hashes that over
       // normalizedForIdentity — so a re-derivation that changes only whitespace must move neither
       // stamp. A fake that moved on whitespace where production does not is the exact divergence
@@ -431,46 +441,63 @@ public:
                 pages.end());
   }
 
-  // The page as it stands, whether or not anything is owed. `bodyMoved` false means the text is unchanged, so units are read back rather than bought again.
+  // What the day's passages claim they were cut from — the fake's body_sha256. Held per span, as
+  // the column is, so a day carrying no passage claims nothing and reads as MOVED.
+  bool cutFromTheseBytes(const UserId& user, const LocalDate& day, const std::string& body) const {
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return false;
+    for (const SpanRow& stored : it->second)
+      if (stored.day == day && stored.body == body) return true;
+    return false;
+  }
+
+  // The page as it stands, whether or not anything is owed. `bodyMoved` asks storage exactly as the
+  // due queries do — assuming false here let the reverse edge settle an edited page on its old cut.
   std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override {
     auto it = bodies.find(pageKey(user, day));
     if (it == bodies.end()) return std::nullopt;
-    return DuePage{day, it->second, stamp, 0, false};
+    return DuePage{day, it->second, stamp, 0, !cutFromTheseBytes(user, day, it->second)};
   }
 
   std::vector<DuePage> allPages(const UserId& user) override {
     std::vector<DuePage> pages;
     for (const auto& [key, body] : bodies) {
       if (key.rfind(user.str() + "|", 0) != 0) continue;
-      pages.push_back(DuePage{ld(key.substr(user.str().size() + 1)), body, stamp, 0, false});
+      const LocalDate day = ld(key.substr(user.str().size() + 1));
+      pages.push_back(DuePage{day, body, stamp, 0, !cutFromTheseBytes(user, day, body)});
     }
     return pages;
   }
 
-  std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override {
-    std::vector<KnownSpan> known;
+  // The vector and the space it was embedded in ride along, so a caller can tell a reusable vector
+  // from one belonging to another embedding space. Never filtered by version: reconciliation must
+  // still carry ids forward across an embedder change.
+  std::vector<StoredSpan> spansOf(const UserId& user, const LocalDate& day) override {
+    std::vector<StoredSpan> held;
     auto it = spans.find(user.str());
-    if (it == spans.end()) return known;
-    for (const StoredSpan& stored : it->second)
-      if (stored.day == day) known.push_back(KnownSpan{stored.write.spanId, stored.write.passage.text});
-    return known;
+    if (it == spans.end()) return held;
+    for (const SpanRow& stored : it->second)
+      if (stored.day == day)
+        held.push_back(StoredSpan{stored.write.spanId, stored.write.passage.text,
+                                  stored.write.vector, stored.embedVersion});
+    return held;
   }
 
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& writes,
-                                     const std::string& embedVersion,
+                                     const std::string& embedVersion, const std::string& body,
                                      std::uint64_t bodyStampMs) override {
     // The ORDER pages were worked in, whether or not a page proposed anything.
     derived.push_back(pageKey(user, day));
-    std::vector<StoredSpan>& all = spans[user.str()];
+    std::vector<SpanRow>& all = spans[user.str()];
     all.erase(std::remove_if(all.begin(), all.end(),
-                             [&](const StoredSpan& s) { return s.day == day; }),
+                             [&](const SpanRow& row) { return row.day == day; }),
               all.end());
     std::vector<Vectored> stored;
     stored.reserve(writes.size());
     for (SpanWrite write : writes) {
       if (write.spanId == 0) write.spanId = nextSpanId++;
-      all.push_back(StoredSpan{day, write, embedVersion, bodyStampMs});
+      all.push_back(SpanRow{day, write, embedVersion, bodyStampMs, body});
       stored.push_back(Vectored{write.spanId, day, write.passage.text, write.vector});
     }
     return stored;
@@ -481,7 +508,7 @@ public:
     std::vector<Vectored> corpus;
     auto it = spans.find(user.str());
     if (it == spans.end()) return corpus;
-    for (const StoredSpan& stored : it->second) {
+    for (const SpanRow& stored : it->second) {
       if (stored.embedVersion != embedVersion) continue;
       corpus.push_back(Vectored{stored.write.spanId, stored.day, stored.write.passage.text,
                                 stored.write.vector});
@@ -489,18 +516,18 @@ public:
     // ORDER BY day, ord, like the SQL — the order is part of the port's contract.
     std::stable_sort(corpus.begin(), corpus.end(), [&](const Vectored& a, const Vectored& b) {
       if (!(a.day == b.day)) return a.day < b.day;
-      const StoredSpan* left = spanOf(user, a.spanId);
-      const StoredSpan* right = spanOf(user, b.spanId);
+      const SpanRow* left = spanOf(user, a.spanId);
+      const SpanRow* right = spanOf(user, b.spanId);
       return left && right && left->write.passage.ord < right->write.passage.ord;
     });
     return corpus;
   }
 
   // One span by identity, or nothing — the same INNER join the SQL does.
-  const StoredSpan* spanOf(const UserId& user, std::int64_t spanId) const {
+  const SpanRow* spanOf(const UserId& user, std::int64_t spanId) const {
     auto it = spans.find(user.str());
     if (it == spans.end()) return nullptr;
-    for (const StoredSpan& stored : it->second)
+    for (const SpanRow& stored : it->second)
       if (stored.write.spanId == spanId) return &stored;
     return nullptr;
   }
@@ -517,9 +544,9 @@ public:
     std::vector<SpanPair> pairs;
     auto it = spans.find(user.str());
     if (it == spans.end()) return pairs;
-    for (const StoredSpan& trigger : it->second) {
+    for (const SpanRow& trigger : it->second) {
       if (!(trigger.day == day)) continue;
-      for (const StoredSpan& match : it->second) {
+      for (const SpanRow& match : it->second) {
         if (!(match.day < day)) continue;
         if (!isDismissed(user, trigger.write.passage.text, match.write.passage.text)) continue;
         pairs.push_back(SpanPair{trigger.write.spanId, match.write.spanId});
@@ -530,8 +557,8 @@ public:
 
   // Content in, and only content: the same key the SQL writes.
   void plantDismissal(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) {
-    const StoredSpan* trigger = spanOf(user, triggerSpanId);
-    const StoredSpan* match = spanOf(user, matchSpanId);
+    const SpanRow* trigger = spanOf(user, triggerSpanId);
+    const SpanRow* match = spanOf(user, matchSpanId);
     if (!trigger || !match) return;   // a passage that is already gone is already unshown
     dismissals[user.str()].insert({normalizedForIdentity(trigger->write.passage.text),
                                    normalizedForIdentity(match->write.passage.text)});
@@ -590,7 +617,7 @@ public:
   void replaceEchoes(const UserId& user, const LocalDate& day,
                      const CuratedEchoes& curated) override {
     const auto lives = [&](std::int64_t spanId) {
-      for (const StoredSpan& stored : spans[user.str()])
+      for (const SpanRow& stored : spans[user.str()])
         if (stored.write.spanId == spanId) return true;
       return false;
     };
@@ -653,8 +680,8 @@ public:
       const LocalDate triggerDay{key.substr(user.str().size() + 1)};
       if (triggerDay < from || to < triggerDay) continue;
       for (const EchoRow& row : page.rows) {
-        const StoredSpan* trigger = spanOf(user, row.triggerSpanId);
-        const StoredSpan* match = spanOf(user, row.matchSpanId);
+        const SpanRow* trigger = spanOf(user, row.triggerSpanId);
+        const SpanRow* match = spanOf(user, row.matchSpanId);
         if (!trigger || !match) continue;
         if (isDismissed(user, trigger->write.passage.text, match->write.passage.text)) continue;
         auto body = bodies.find(pageKey(user, row.matchDay));

@@ -39,12 +39,17 @@ void reset() {
   w.commit();
 }
 
-void writePage(const std::string& user, const std::string& day, const std::string& body) {
+// `stampMs` is the page HLC. A save that only sets mood or energy moves it and leaves the body
+// alone, which is the case body_sha256 exists to tell apart from a real edit.
+void writePage(const std::string& user, const std::string& day, const std::string& body,
+               long long stampMs = 0) {
   PgLease c{*pgTestPool()};
   pqxx::work w{*c};
-  w.exec_params("INSERT INTO journal_page (user_id, day, body) VALUES ($1::uuid, $2::date, $3) "
-                "ON CONFLICT (user_id, day) DO UPDATE SET body = EXCLUDED.body",
-                user, day, body);
+  w.exec_params("INSERT INTO journal_page (user_id, day, body, stamp_ms) "
+                "VALUES ($1::uuid, $2::date, $3, $4) "
+                "ON CONFLICT (user_id, day) DO UPDATE SET body = EXCLUDED.body, "
+                "stamp_ms = EXCLUDED.stamp_ms",
+                user, day, body, stampMs);
   w.commit();
 }
 
@@ -62,7 +67,8 @@ void plantPanel(PgEchoRepository& repo, const std::string& user, const std::stri
                 std::int64_t base) {
   const std::string tag = " (" + user.substr(0, 4) + " " + triggerDay + ")";
   writePage(user, triggerDay, kTrigger + tag);
-  repo.replaceSpans(UserId{user}, LocalDate{triggerDay}, {span(base, 0, 0, kTrigger + tag)}, "v1", 1);
+  repo.replaceSpans(UserId{user}, LocalDate{triggerDay}, {span(base, 0, 0, kTrigger + tag)}, "v1",
+                    kTrigger + tag, 1);
 
   CuratedEchoes curated;
   curated.curatorVersion = "pg-test-v1";
@@ -70,7 +76,8 @@ void plantPanel(PgEchoRepository& repo, const std::string& user, const std::stri
     const std::string matchDay = "2024-0" + std::to_string(at) + "-01";
     const std::string text = kLine + tag + " " + std::to_string(at);
     writePage(user, matchDay, text);
-    repo.replaceSpans(UserId{user}, LocalDate{matchDay}, {span(base + at, 0, 0, text)}, "v1", 1);
+    repo.replaceSpans(UserId{user}, LocalDate{matchDay}, {span(base + at, 0, 0, text)}, "v1", text,
+                      1);
     curated.rows.push_back(echoRow(base, matchDay, base + at));
   }
   repo.replaceEchoes(UserId{user}, LocalDate{triggerDay}, curated);
@@ -102,9 +109,10 @@ TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
   const int second = static_cast<int>(body.rfind(kLine));
   writePage(kMine, "2026-05-01", kTrigger);
   writePage(kMine, "2024-01-01", body);
-  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(21, 0, 0, kTrigger)}, "v1", 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(21, 0, 0, kTrigger)}, "v1",
+                    kTrigger, 1);
   repo.replaceSpans(UserId{kMine}, LocalDate{"2024-01-01"},
-                    {span(11, 0, 0, kLine), span(12, 1, second, kLine)}, "v1", 1);
+                    {span(11, 0, 0, kLine), span(12, 1, second, kLine)}, "v1", body, 1);
 
   CuratedEchoes curated;
   curated.curatorVersion = "pg-test-v1";
@@ -131,9 +139,10 @@ TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
 
   writePage(kMine, "2026-05-01", kTrigger);
   writePage(kMine, "2024-01-01", body);
-  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(21, 0, 0, kTrigger)}, "v1", 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(21, 0, 0, kTrigger)}, "v1",
+                    kTrigger, 1);
   repo.replaceSpans(UserId{kMine}, LocalDate{"2024-01-01"},
-                    {span(11, 0, 0, accented), span(12, 1, second, accented)}, "v1", 1);
+                    {span(11, 0, 0, accented), span(12, 1, second, accented)}, "v1", body, 1);
 
   CuratedEchoes curated;
   curated.curatorVersion = "pg-test-v1";
@@ -216,7 +225,7 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   // The units this body was cut into. `bodyMoved` asks storage whether they are there, so a page
   // with none of them reports as moved however settled its ledger row looks.
   repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, "wrote a little.")},
-                    kPipeline.embed, 0);
+                    kPipeline.embed, "wrote a little.", 0);
   repo.recordCuration(UserId{kMine}, LocalDate{day},
                       CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
 
@@ -243,6 +252,136 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   CHECK_EQ(repo.duePages(UserId{kMine}, 9, rejudge).size(), std::size_t{1});
 }
 
+// The case the stamp comparison could not see. `pageStore.js` `set(field, value)` writes mood and
+// energy IMMEDIATELY, under a fresh HLC, with the body untouched — so `body_stamp_ms` moved and not
+// one byte did, and the page bought a segmenter call to re-cut identical text. The body is compared
+// by CONTENT now. The fixture is Russian on purpose: this is the one place a digest C++ writes is
+// compared against one Postgres computes, and multi-byte text is where they would part company.
+TEST(pg_echo_a_save_that_moves_the_stamp_without_the_bytes_is_not_a_moved_body) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string day = "2026-05-01";
+  const std::string body = "устал сегодня, дождь весь вечер.";
+  writePage(kMine, day, body, 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body)}, kPipeline.embed, body, 1);
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 1, 9, "", kPipeline});
+  REQUIRE(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+
+  // The writer touches the mood scale. Same bytes, later stamp.
+  writePage(kMine, day, body, 2);
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
+  REQUIRE(owed.has_value());          // owed a pass: the ledger's body stamp is behind the page's
+  CHECK_EQ(owed->bodyMoved, false);   // and not one vendor cut is bought for it
+  CHECK_EQ(repo.duePages(UserId{kMine}, 9, kPipeline).size(), std::size_t{1});
+  CHECK_EQ(repo.duePages(UserId{kMine}, 9, kPipeline)[0].bodyMoved, false);
+
+  // An edit of one character is a moved body, and the digest is what says so.
+  writePage(kMine, day, body + "с", 3);
+  owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->bodyMoved, true);
+
+  // Cut again under the new bytes, and the page is quiet once more.
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body + "с")}, kPipeline.embed,
+                    body + "с", 3);
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 3, 9, "", kPipeline});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+}
+
+// Every row written before body_sha256 existed carries no hash, and the backfill can only reach the
+// ones whose page has not moved since. An unknown hash must read as MOVED — read as unchanged it
+// would freeze the page's cut against whatever the writer does to it, forever.
+TEST(pg_echo_a_passage_carrying_no_body_hash_reads_as_a_moved_body) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string day = "2026-05-01";
+  const std::string body = "wrote a little about the rain.";
+  writePage(kMine, day, body, 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body)}, kPipeline.embed, body, 1);
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 1, 9, "", kPipeline});
+  REQUIRE(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+
+  // A row as an older build left it.
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    w.exec_params("UPDATE journal_span SET body_sha256 = NULL WHERE user_id = $1::uuid", kMine);
+    w.commit();
+  }
+
+  writePage(kMine, day, body, 2);   // any pass that reopens the page at all
+  const std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->bodyMoved, true);
+}
+
+// `bodyMoved` is ONE question of storage and every path that hands back a DuePage must ask it. The
+// reverse edge (`pageAt`) and the rejudge door (`allPages`) used to assume `false`, and the page the
+// reverse edge reaches is exactly the one nothing else looked at: a page edited since its cut, whose
+// own derivation the per-user budget deferred. Trusting `false` there read the OLD units back and
+// settled the page on them, then recorded a digest claiming they were cut from the new bytes — after
+// which the page reads as unchanged forever and the edit is never cut, embedded or echoed.
+TEST(pg_echo_every_path_asks_storage_whether_the_page_still_holds_the_bytes_it_cut) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string settled = "2026-05-01";
+  const std::string edited = "2026-05-02";
+  const std::string body = "wrote a little about the rain.";
+
+  writePage(kMine, settled, body, 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{settled}, {span(0, 0, 0, body)}, kPipeline.embed, body,
+                    1);
+  // Cut from `body`, and then the writer added a line the cut knows nothing about.
+  writePage(kMine, edited, body, 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{edited}, {span(0, 0, 0, body)}, kPipeline.embed, body,
+                    1);
+  writePage(kMine, edited, body + " and then the sun came out.", 2);
+
+  const std::optional<DuePage> quiet = repo.pageAt(UserId{kMine}, LocalDate{settled});
+  REQUIRE(quiet.has_value());
+  CHECK_EQ(quiet->bodyMoved, false);   // its cut is of the bytes it holds, so nothing is bought
+
+  const std::optional<DuePage> moved = repo.pageAt(UserId{kMine}, LocalDate{edited});
+  REQUIRE(moved.has_value());
+  CHECK_EQ(moved->bodyMoved, true);    // and this one owes a cut however it was reached
+
+  // The rejudge door reads the same answer rather than a blanket false.
+  const std::vector<DuePage> all = repo.allPages(UserId{kMine});
+  REQUIRE_EQ(all.size(), std::size_t{2});
+  CHECK_EQ(all[0].day.iso(), settled);
+  CHECK_EQ(all[0].bodyMoved, false);
+  CHECK_EQ(all[1].day.iso(), edited);
+  CHECK_EQ(all[1].bodyMoved, true);
+}
+
+// The vector rides back out of storage with the space it was embedded in, which is what lets a
+// re-derivation reuse it for text that did not move and refuse to for text embedded elsewhere.
+TEST(pg_echo_stored_passages_carry_their_vector_and_their_embedding_version) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "tonight.", 1);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day},
+                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {0.25f, -0.5f, 1.0f}}}, "e7",
+                    "tonight.", 1);
+
+  const std::vector<StoredSpan> held = repo.spansOf(UserId{kMine}, LocalDate{day});
+  REQUIRE_EQ(held.size(), std::size_t{1});
+  CHECK_EQ(held[0].text, std::string("tonight."));
+  CHECK_EQ(held[0].embedVersion, std::string("e7"));
+  REQUIRE_EQ(held[0].vector.size(), std::size_t{3});
+  CHECK_EQ(held[0].vector[0], 0.25f);
+  CHECK_EQ(held[0].vector[1], -0.5f);
+  CHECK_EQ(held[0].vector[2], 1.0f);
+}
+
 // A stamp of max(body_stamp_ms) could not answer this: the passages that went were not the newest,
 // so the max over the ones that survived did not move and no page read as stale.
 TEST(pg_echo_emptying_a_page_moves_the_corpus_under_every_page_that_reads_it) {
@@ -253,8 +392,10 @@ TEST(pg_echo_emptying_a_page_moves_the_corpus_under_every_page_that_reads_it) {
   const std::string day = "2026-05-01";
   writePage(kMine, older, kLine);
   writePage(kMine, day, kTrigger);
-  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed, 0);
-  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(21, 0, 0, kTrigger)}, kPipeline.embed, 0);
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed,
+                    kLine, 0);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(21, 0, 0, kTrigger)}, kPipeline.embed,
+                    kTrigger, 0);
   CHECK_EQ(repo.corpusStamp(UserId{kTheirs}), std::uint64_t{0});   // an empty corpus, not mine
 
   const std::uint64_t before = repo.corpusStamp(UserId{kMine});
@@ -263,11 +404,12 @@ TEST(pg_echo_emptying_a_page_moves_the_corpus_under_every_page_that_reads_it) {
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, before, kPipeline).has_value());
 
   // Re-derived into the same passages: nothing moved, so nobody is owed a curator call.
-  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed, 0);
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed,
+                    kLine, 0);
   CHECK_EQ(repo.corpusStamp(UserId{kMine}), before);
 
   // The page the writer emptied tonight: its passages go, and not one of them was the newest.
-  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, kPipeline.embed, 9);
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, kPipeline.embed, "", 9);
   const std::uint64_t after = repo.corpusStamp(UserId{kMine});
   CHECK(after != before);
   CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, after, kPipeline).has_value());
@@ -283,7 +425,7 @@ TEST(pg_echo_a_failed_pass_keeps_the_cut_it_paid_for_and_is_still_owed) {
   const std::string day = "2026-05-01";
   const std::string body = "wrote a little.";
   writePage(kMine, day, body);
-  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body)}, kPipeline.embed, 0);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body)}, kPipeline.embed, body, 0);
   repo.recordCuration(UserId{kMine}, LocalDate{day},
                       CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
   REQUIRE(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
@@ -403,7 +545,8 @@ TEST(pg_echo_replacing_a_pages_spans_hands_back_the_identities_it_minted) {
 
   const std::vector<Vectored> stored = repo.replaceSpans(
       UserId{kMine}, LocalDate{day},
-      {span(0, 0, 0, kLine), span(4242, 1, static_cast<int>(kLine.size()) + 1, kTrigger)}, "v1", 1);
+      {span(0, 0, 0, kLine), span(4242, 1, static_cast<int>(kLine.size()) + 1, kTrigger)}, "v1",
+      kLine + " " + kTrigger, 1);
 
   REQUIRE_EQ(stored.size(), std::size_t{2});
   CHECK(stored[0].spanId != 0);
@@ -466,7 +609,8 @@ TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) 
 
   const std::string rewritten = "a completely different sentence tonight, nothing like the last.";
   writePage(kMine, "2026-05-01", rewritten);
-  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(900, 0, 0, rewritten)}, "v1", 2);
+  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(900, 0, 0, rewritten)}, "v1",
+                    rewritten, 2);
 
   CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"2026-01-01"}, LocalDate{"2026-12-31"}).size(),
            std::size_t{1});
@@ -515,14 +659,16 @@ TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
   const std::string opening = "a new opening line.\n";
   writePage(kMine, "2026-05-01", opening + kTrigger + tag);
   repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"},
-                    {span(900, 0, static_cast<int>(opening.size()), kTrigger + tag)}, "v1", 2);
+                    {span(900, 0, static_cast<int>(opening.size()), kTrigger + tag)}, "v1",
+                    opening + kTrigger + tag, 2);
 
   CuratedEchoes curated;
   curated.curatorVersion = "pg-test-v2";
   for (int at = 1; at <= 3; ++at) {
     const std::string matchDay = "2024-0" + std::to_string(at) + "-01";
     const std::string text = kLine + tag + " " + std::to_string(at);
-    repo.replaceSpans(UserId{kMine}, LocalDate{matchDay}, {span(900 + at, 0, 0, text)}, "v1", 2);
+    repo.replaceSpans(UserId{kMine}, LocalDate{matchDay}, {span(900 + at, 0, 0, text)}, "v1", text,
+                      2);
     curated.rows.push_back(echoRow(900, matchDay, 900 + at));
   }
   repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
@@ -671,14 +817,16 @@ TEST(pg_echo_a_dismissed_pairing_stays_dismissed_when_its_passages_move) {
   const std::string opening = "a new opening line.\n";
   writePage(kMine, "2026-05-01", opening + kTrigger + tag);
   repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"},
-                    {span(900, 0, static_cast<int>(opening.size()), kTrigger + tag)}, "v1", 2);
+                    {span(900, 0, static_cast<int>(opening.size()), kTrigger + tag)}, "v1",
+                    opening + kTrigger + tag, 2);
 
   CuratedEchoes curated;
   curated.curatorVersion = "pg-test-v2";
   for (int at = 1; at <= 3; ++at) {
     const std::string matchDay = "2024-0" + std::to_string(at) + "-01";
     const std::string text = kLine + tag + " " + std::to_string(at);
-    repo.replaceSpans(UserId{kMine}, LocalDate{matchDay}, {span(900 + at, 0, 0, text)}, "v1", 2);
+    repo.replaceSpans(UserId{kMine}, LocalDate{matchDay}, {span(900 + at, 0, 0, text)}, "v1", text,
+                      2);
     curated.rows.push_back(echoRow(900, matchDay, 900 + at));
   }
   repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
@@ -699,11 +847,11 @@ TEST(pg_echo_a_refused_pairing_is_retracted_and_an_unasked_one_is_not) {
   PgEchoRepository repo{pgTestPool()};
 
   repo.replaceSpans(UserId{kMine}, LocalDate{day},
-                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", 1);
+                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", "tonight.", 1);
   const std::vector<Vectored> old = repo.replaceSpans(
       UserId{kMine}, LocalDate{older},
       {SpanWrite{0, Passage{0, 0, 8, "january."}, {1.0f, 0.0f}},
-       SpanWrite{0, Passage{1, 0, 8, "january."}, {0.0f, 1.0f}}}, "e1", 1);
+       SpanWrite{0, Passage{1, 0, 8, "january."}, {0.0f, 1.0f}}}, "e1", "january.", 1);
   const std::int64_t trigger = repo.spansOf(UserId{kMine}, LocalDate{day}).front().spanId;
   REQUIRE_EQ(old.size(), std::size_t{2});
 
@@ -736,10 +884,11 @@ TEST(pg_echo_clearing_a_page_leaves_it_carrying_nothing) {
   writePage(kMine, older, "january.");
   PgEchoRepository repo{pgTestPool()};
   repo.replaceSpans(UserId{kMine}, LocalDate{day},
-                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", 1);
+                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", "tonight.", 1);
   const std::vector<Vectored> old =
       repo.replaceSpans(UserId{kMine}, LocalDate{older},
-                        {SpanWrite{0, Passage{0, 0, 8, "january."}, {1.0f, 0.0f}}}, "e1", 1);
+                        {SpanWrite{0, Passage{0, 0, 8, "january."}, {1.0f, 0.0f}}}, "e1",
+                        "january.", 1);
   const std::int64_t trigger = repo.spansOf(UserId{kMine}, LocalDate{day}).front().spanId;
 
   CuratedEchoes stored;
@@ -772,10 +921,12 @@ TEST(pg_echo_a_passage_the_writer_deletes_takes_its_echo_with_it) {
 
   const std::vector<Vectored> trigger = repo.replaceSpans(
       UserId{kMine}, LocalDate{tonight},
-      {SpanWrite{0, Passage{0, 0, 15, "i like c++ now."}, {1.0f, 0.0f}}}, "e1", 1);
+      {SpanWrite{0, Passage{0, 0, 15, "i like c++ now."}, {1.0f, 0.0f}}}, "e1", "i like c++ now.",
+      1);
   const std::vector<Vectored> match = repo.replaceSpans(
       UserId{kMine}, LocalDate{older},
-      {SpanWrite{0, Passage{0, 0, 20, "i want to learn c++."}, {0.9f, 0.1f}}}, "e1", 1);
+      {SpanWrite{0, Passage{0, 0, 20, "i want to learn c++."}, {0.9f, 0.1f}}}, "e1",
+      "i want to learn c++.", 1);
   REQUIRE_EQ(trigger.size(), std::size_t{1});
   REQUIRE_EQ(match.size(), std::size_t{1});
 
@@ -789,7 +940,7 @@ TEST(pg_echo_a_passage_the_writer_deletes_takes_its_echo_with_it) {
 
   // The writer empties the older page. Its derivation replaces that day's passages with none —
   // which is what a save does, seconds later, through the same call.
-  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, "e1", 2);
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, "e1", "", 2);
 
   // SERVED: gone at once, with nothing else having run. This is the layer the reader feels.
   CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{tonight}).empty(), true);

@@ -708,8 +708,25 @@ create table if not exists journal_span (
 create index if not exists journal_span_page on journal_span (user_id, day, ord);
 create index if not exists journal_span_hash on journal_span (user_id, text_sha256);
 
+-- sha256 of the RAW page body these passages were cut from — the bytes, not the normalised text
+-- text_sha256 digests. It answers "was this page already cut?", which body_stamp_ms only ever
+-- proxied: a save that sets mood or energy moves the page HLC without moving one byte, and the
+-- stamp comparison called that a moved body and bought the segmenter again for identical bytes.
+-- NULL means unknown, which reads as MOVED — the safe answer, never "unchanged".
+alter table journal_span add column if not exists body_sha256 bytea;
+
+-- Rows written before the column know which page stamp they were cut from, so wherever that stamp
+-- is still the page's, the page's body IS the body they were cut from and the hash is exact.
+-- Everything else stays null and is cut once more, which is what the stamp comparison already said.
+-- Idempotent: only nulls are touched, so a re-applied schema does nothing.
+update journal_span s set body_sha256 = sha256(convert_to(p.body, 'UTF8'))
+  from journal_page p
+ where p.user_id = s.user_id and p.day = s.day
+   and s.body_sha256 is null and s.body_stamp_ms = p.stamp_ms;
+
 -- cosine is what retrieval measured. relation is the curator's judgement and is comparable only
--- within one call. curator_version folds in the digest of the curator's own system prompt.
+-- within one call. curator_version names the model, the effort, a digest of the curator's own
+-- system prompt, and the relation floor it applied — move any of them and the page is re-judged.
 -- match_is_self false means the older passage is something the writer copied down, not their words.
 create table if not exists journal_echo (
   user_id         uuid not null references users(id) on delete cascade,

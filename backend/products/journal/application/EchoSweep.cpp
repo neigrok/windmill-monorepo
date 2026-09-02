@@ -155,7 +155,8 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
       if (isSettled(outcome.status)) outcome.versions = versions();   // see derivePage
       echoes_.recordCuration(user, page.day, outcome);
       countPage(report, outcome.status);
-      // Walked on settled, not on success: a refused page still replaced its own spans at step 3.
+      // Walked on settled, not on success: a refused page replaced its own spans before the
+      // curator was ever asked.
       if (!isSettled(outcome.status)) continue;
 
       int enqueued = 0;
@@ -181,20 +182,22 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
   // WHAT THIS PASS ACHIEVED, filled in as each step succeeds — not what the build would produce.
-  // The difference is money: a dead embedder fails every page at step 2, and a pass that claimed a
+  // The difference is money: a dead embedder fails every page at step 3, and a pass that claimed a
   // segment version anyway would look cut when it is not, while a pass that claims none buys the
   // cut it already paid a vendor for again in six hours, and again, forever, producing no echoes.
   // Each string is written by the step that earned it, and storage keeps the ones a failed pass
   // leaves empty rather than clearing them.
 
-  // 1 — cut the page into idea units. A vendor call, made only when the body moved.
-  const std::vector<KnownSpan> stored = echoes_.spansOf(user, page.day);
+  // 1 — cut the page into idea units. A vendor call, made only when the BYTES moved: `bodyMoved`
+  // compares storage's digest of the body it cut against this one, so a save that set mood or
+  // energy and left the text alone reads false here and buys nothing.
+  const std::vector<StoredSpan> stored = echoes_.spansOf(user, page.day);
   std::vector<Passage> fresh;
   if (!page.bodyMoved && !stored.empty()) {
-    // Located rather than trusted, so a stale stamp cannot produce a passage that is not there.
+    // Located rather than trusted, so a stale claim cannot produce a passage that is not there.
     std::vector<std::string> texts;
     texts.reserve(stored.size());
-    for (const KnownSpan& span : stored) texts.push_back(span.text);
+    for (const StoredSpan& span : stored) texts.push_back(span.text);
     fresh = locateUnits(page.body, texts);
   } else {
     const Segmentation cut = segmenter_.unitsOf(user, page.body);
@@ -212,39 +215,71 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
 
   // An empty page is finished, not owed a retry.
   if (fresh.empty()) {
-    echoes_.replaceSpans(user, page.day, {}, embedder_.version(), page.bodyStampMs);
+    echoes_.replaceSpans(user, page.day, {}, embedder_.version(), page.body, page.bodyStampMs);
     echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     outcome.status = CurationStatus::emptyOk;
     return outcome;
   }
 
-  // 2 — embed. A short result is a failed call, never a page with fewer passages.
+  // 2 — reconcile, so unchanged text keeps its identity however far down the page it moved. It runs
+  // BEFORE the embedder rather than after, which is only a reordering because reconciliation needs
+  // nothing but text — and it is the whole saving: knowing which passages survived is what lets the
+  // next step ask the embedder for the new ones alone. The embed round trip sits between the save
+  // and the echo appearing, so this is latency and not only bill.
+  std::vector<KnownSpan> known;
+  known.reserve(stored.size());
+  for (const StoredSpan& span : stored) known.push_back(KnownSpan{span.spanId, span.text});
+  const std::vector<IdentifiedPassage> carried = reconcile(known, fresh);
+
+  // 3 — embed what storage cannot already answer. Reuse is gated on the EMBEDDING VERSION, because
+  // a cosine between two embedding spaces is meaningless, and on the RAW text rather than the
+  // normalised identity reconcile carried the id by, because the vector is a function of the exact
+  // bytes the embedder was handed.
+  std::map<std::int64_t, const StoredSpan*> reusable;
+  for (const StoredSpan& span : stored)
+    if (span.embedVersion == embedder_.version()) reusable.emplace(span.spanId, &span);
+
+  std::vector<std::vector<float>> vectors(carried.size());
   std::vector<std::string> texts;
-  texts.reserve(fresh.size());
-  for (const Passage& passage : fresh) texts.push_back(passage.text);
-  const std::vector<std::vector<float>> vectors = embedder_.embed(texts);
-  if (vectors.size() != fresh.size()) {
-    outcome.status = CurationStatus::transport;
-    outcome.error = "embedder returned " + std::to_string(vectors.size()) + " of " +
-                    std::to_string(fresh.size());
-    return outcome;
+  std::vector<std::size_t> asked;   // where each answer belongs in `vectors`
+  for (std::size_t i = 0; i < carried.size(); ++i) {
+    const auto held = reusable.find(carried[i].spanId);
+    if (carried[i].spanId != 0 && held != reusable.end() &&
+        held->second->text == carried[i].passage.text) {
+      vectors[i] = held->second->vector;
+      continue;
+    }
+    asked.push_back(i);
+    texts.push_back(carried[i].passage.text);
   }
-  report.passagesEmbedded += static_cast<int>(fresh.size());
+  // A short result is a failed call, never a page with fewer passages. Nothing to ask is not a
+  // call at all, so an unchanged page reaches storage without touching the embedder.
+  if (!texts.empty()) {
+    const std::vector<std::vector<float>> fetched = embedder_.embed(texts);
+    if (fetched.size() != texts.size()) {
+      outcome.status = CurationStatus::transport;
+      outcome.error = "embedder returned " + std::to_string(fetched.size()) + " of " +
+                      std::to_string(texts.size());
+      return outcome;
+    }
+    for (std::size_t i = 0; i < fetched.size(); ++i) vectors[asked[i]] = fetched[i];
+    // What was BOUGHT, not what the page holds: the two differ now, and the gap is the saving.
+    report.passagesEmbedded += static_cast<int>(fetched.size());
+  }
 
-
-  // 3 — reconcile, so unchanged text keeps its identity however far down the page it moved.
-  const std::vector<IdentifiedPassage> carried = reconcile(stored, fresh);
   std::vector<SpanWrite> writes;
   writes.reserve(carried.size());
   for (std::size_t i = 0; i < carried.size(); ++i)
     writes.push_back(SpanWrite{carried[i].spanId, carried[i].passage, vectors[i]});
-  echoes_.replaceSpans(user, page.day, writes, embedder_.version(), page.bodyStampMs);
+  echoes_.replaceSpans(user, page.day, writes, embedder_.version(), page.body, page.bodyStampMs);
   // Recorded HERE and not a line earlier, because these strings are a claim about what is IN
   // STORAGE, not about what this pass attempted. A pass that cut the page and then died at the
-  // embedder stored nothing, and a segment_version recorded there is not merely useless: the next
-  // pass would read body_moved false and judge the OLD units under a claim of the new grammar,
-  // forever. Past this line both are true, so a curate that dies afterwards reads its units back
-  // instead of re-buying the cut — which is the whole saving.
+  // embedder stored nothing, so claiming a segment_version there would name the grammar that cut
+  // units storage does not hold. The body digest above catches that case on its own now — no span
+  // carries the new body's hash, so the page still reads as moved — but the claim would be a lie
+  // either way, and `segment_version` is the half that answers a GRAMMAR bump rather than an edit.
+  // Past this line both are true, so a curate that dies afterwards reads its units back instead of
+  // re-buying the cut — which is the whole saving.
   outcome.versions.segment = segmenter_.version();
   outcome.versions.embed = embedder_.version();
 
@@ -296,7 +331,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   if (!curation.ok) {
     outcome.status = statusFor(curation.failure);
     outcome.error = curation.failure;
-    // A refusal settles the page; step 3 has already replaced this page's spans.
+    // A refusal settles the page; this page's spans were replaced before the curator was asked.
     if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
     return outcome;
   }

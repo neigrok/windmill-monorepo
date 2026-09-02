@@ -70,7 +70,7 @@ TEST(a_re_derived_page_moves_the_warm_corpus_rather_than_emptying_it) {
   warm.replaceSpans(uid("u1"), ld(kMay),
                     {SpanWrite{22, Passage{0, 0, static_cast<int>(rewritten.size()), rewritten},
                                embedder.embed({rewritten})[0]}},
-                    "fake-embedder-v1", 7);
+                    "fake-embedder-v1", rewritten, 7);
 
   const std::vector<Vectored> after = warm.corpusOf(uid("u1"), "fake-embedder-v1");
   CHECK_EQ(storage.corpusLoads, 1);   // still warm — the page moved, the corpus did not reload
@@ -88,7 +88,7 @@ TEST(a_page_emptied_of_passages_leaves_the_warm_corpus) {
   WarmEchoRepository warm{storage, clock, kTtlMs};
   warm.corpusOf(uid("u1"), "fake-embedder-v1");
 
-  warm.replaceSpans(uid("u1"), ld(kMay), {}, "fake-embedder-v1", 7);
+  warm.replaceSpans(uid("u1"), ld(kMay), {}, "fake-embedder-v1", "", 7);
 
   const std::vector<Vectored> after = warm.corpusOf(uid("u1"), "fake-embedder-v1");
   REQUIRE_EQ(after.size(), std::size_t{1});
@@ -105,7 +105,7 @@ TEST(a_write_in_another_embedding_version_drops_the_warm_corpus) {
   WarmEchoRepository warm{storage, clock, kTtlMs};
   warm.corpusOf(uid("u1"), "fake-embedder-v1");
 
-  warm.replaceSpans(uid("u1"), ld(kMay), {}, "fake-embedder-v2", 7);
+  warm.replaceSpans(uid("u1"), ld(kMay), {}, "fake-embedder-v2", "", 7);
 
   warm.corpusOf(uid("u1"), "fake-embedder-v1");
   CHECK_EQ(storage.corpusLoads, 2);

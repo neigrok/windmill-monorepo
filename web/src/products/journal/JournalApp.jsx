@@ -12,6 +12,7 @@ import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
 import { ZoomView } from './zoom/ZoomView.jsx';
 import { EchoMargin } from './echoes/EchoMargin.jsx';
+import { EchoLive } from './echoes/PageEchoes.jsx';
 import { InkFooter } from './echoes/Ink.jsx';
 import { EchoTrail, BackToTonight } from './echoes/EchoTrail.jsx';
 import { OneSheet } from './echoes/OneSheet.jsx';
@@ -26,7 +27,6 @@ export function JournalApp({ hash }) {
   const [flyTo, setFlyTo] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
-  const [settledDay, setSettledDay] = useState(null);
   const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
@@ -37,7 +37,12 @@ export function JournalApp({ hash }) {
   // The clock is the one the canvas turns over on, so a tab left open across midnight cannot leave the
   // echoes reading yesterday.
   const today = useToday();
-  const echoes = useEchoes({ today, account, onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
+  // An arrival that lands while the canvas is under something is HELD rather than spent: it kindles
+  // on the first frame the canvas is back. The One sheet is the hook's own answer, so it is not here.
+  const covered = searchOpen || zoomOpen || nudgeOpen;
+  const echoes = useEchoes({
+    today, account, covered, onFly: (target) => setFlyTo({ ...target, at: Date.now() }),
+  });
   const nudge = useNudge(account);
   // The canvas lends the rail one write into today and keeps the store to itself.
   const writeRef = useRef(null);
@@ -48,15 +53,11 @@ export function JournalApp({ hash }) {
   const focusDate = openPosition(hash, documentEntry());
   const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
   const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
-  // The margin follows the scroll until a tab is opened, and then it holds that page. The follow is
-  // committed only once the scroll has rested, so a fast pass does not strobe the panel.
-  const marginPage = openPage || (settledDay ? echoes.pageOf(settledDay) : null);
-
-  useEffect(() => {
-    const day = echoes.followedDay;
-    const settle = setTimeout(() => setSettledDay(day), 160);
-    return () => clearTimeout(settle);
-  }, [echoes.followedDay]);
+  // Which page the panel is DESCRIBING is the hook's answer, not this frame's: the panel, its stamp,
+  // its rule and the day row that lights on the canvas all read this one day, so no two of them can
+  // ever name a different one. The edge tabs read `marginDay` instead — they are controls answering a
+  // press, and feedback lands at once rather than waiting out a fade.
+  const shownPage = echoes.shownDay ? echoes.pageOf(echoes.shownDay) : null;
 
   // ⌘K / Ctrl-K opens search.
   useEffect(() => {
@@ -72,7 +73,7 @@ export function JournalApp({ hash }) {
 
   return (
     <div
-      className={'journal-root' + (echoes.hasGutter ? ' has-gutter' : '') + (sheetPage ? ' is-sheeted' : '')}
+      className={'journal-root' + (echoes.marginOpen ? ' has-margin' : '') + (sheetPage ? ' is-sheeted' : '')}
       ref={lendDoorSkin}
       data-theme={theme}
     >
@@ -82,8 +83,9 @@ export function JournalApp({ hash }) {
         echoes={echoes}
         holdWriter={holdWriter}
       />
-      <EchoMargin echoes={echoes} page={marginPage} />
-      {openPage && <InkFooter echoes={echoes} page={openPage} />}
+      {echoes.marginOpen && <EchoMargin echoes={echoes} page={shownPage} sheeted={Boolean(sheetPage)} />}
+      {!echoes.marginOpen && openPage && <InkFooter echoes={echoes} page={openPage} />}
+      <EchoLive arrival={echoes.announce} />
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
       <BackToTonight echoes={echoes} />
       <div className="journal-lamp" aria-hidden="true" />

@@ -4,21 +4,19 @@
 
 import React from 'react';
 import { energyBars, moodBand } from './scaleBands.js';
+import { stampWeekday } from './echoes/echoDates.js';
 
-const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-function stamp(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const weekday = WEEKDAYS[new Date(y, m - 1, d).getDay()];
-  return `${weekday} ${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
-}
-
-export function DayMarker({ date, mood = null, energy = null, wordCount = 0, isToday = false, trailing = null }) {
+// `addressed` is the echo margin describing THIS page: the date lifts from --journal-ink-dim to lamp
+// and nothing else moves. No weight change and no box of its own — a sticky row that reflowed would
+// change the canvas's geometry, which journal.md:56 forbids at any scroll speed. The pip and the tick
+// keep their own colours: those encode data, and lamp would overwrite meaning.
+export function DayMarker({
+  date, mood = null, energy = null, wordCount = 0, isToday = false, trailing = null, addressed = false,
+}) {
   return (
-    <header className="journal-marker">
+    <header className={'journal-marker' + (addressed ? ' is-addressed' : '')}>
       <span className="journal-meta">
-        {stamp(date)}
+        {stampWeekday(date)}
         {wordCount > 0 && ` · ${wordCount} ${wordCount === 1 ? 'WORD' : 'WORDS'}`}
         {trailing}
       </span>

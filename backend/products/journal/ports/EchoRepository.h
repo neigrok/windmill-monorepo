@@ -22,9 +22,21 @@ struct DuePage {
   std::string body;
   std::uint64_t bodyStampMs = 0;
   int attempts = 0;
-  // True re-cuts the body (a vendor call); false reads its units back from storage. A page never
-  // derived is true.
+  // True re-cuts the body (a vendor call); false reads its units back from storage. It is ONE
+  // question of storage — are this page's stored passages cut from the bytes it holds now — and
+  // every path that hands back a DuePage asks it. A page never derived is true, so is one whose
+  // stored passages carry no body hash, and so is one edited since it was last cut.
   bool bodyMoved = true;
+};
+
+// One passage as storage holds it. `vector` is reusable ONLY under `embedVersion`: a vector from
+// another embedding space is not comparable to this corpus and has to be bought again. Carrying
+// both is what lets a re-derivation skip the embedder for text that did not move.
+struct StoredSpan {
+  std::int64_t spanId = 0;
+  std::string text;
+  std::vector<float> vector;
+  std::string embedVersion;
 };
 
 // A moved `segment` means the page is cut again; a moved `embed` only re-embedded.
@@ -163,19 +175,27 @@ struct EchoRepository {
                                          std::uint64_t corpusStamp,
                                          const PipelineVersions& versions) = 0;
 
-  // One page as it stands, owed anything or not; nullopt when there is no page that day.
+  // One page as it stands, owed anything or not; nullopt when there is no page that day. Its
+  // `bodyMoved` is answered by storage like everywhere else — the reverse edge reaches pages
+  // nothing else looked at, and one of them edited is one whose stored cut is of other bytes.
   virtual std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) = 0;
 
-  // Every page this writer has, owed anything or not. `bodyMoved` is false throughout: no page is
-  // cut again.
+  // Every page this writer has, owed anything or not. `bodyMoved` is false for all but a page whose
+  // stored cut is not of its current bytes, which is cut again rather than settled on the old one.
   virtual std::vector<DuePage> allPages(const UserId& user) = 0;
 
-  virtual std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
+  // Every passage held for this day, whatever space it was embedded in — an embedder change must
+  // still carry span ids forward, so this never filters on version and the caller checks it instead.
+  virtual std::vector<StoredSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
 
-  // Returns exactly what it stored, minted ids and all.
+  // Returns exactly what it stored, minted ids and all. `body` is the page these passages were cut
+  // from: storage keeps its hash, which is how the next pass knows the bytes did not move. It comes
+  // from the caller and never from the page row, so a save that landed mid-derivation cannot make
+  // this claim about bytes nobody cut.
   virtual std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                              const std::vector<SpanWrite>& spans,
                                              const std::string& embedVersion,
+                                             const std::string& body,
                                              std::uint64_t bodyStampMs) = 0;
 
   // One embedding version only. At most kCorpusSpans, the most recent, oldest-first.

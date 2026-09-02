@@ -1,6 +1,7 @@
 #include "products/journal/adapters/llm/AnthropicCurator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <set>
@@ -220,7 +221,15 @@ bool AnthropicCurator::configured() const { return transport_ && transport_->con
 
 std::string AnthropicCurator::version() const {
   static const std::string tag = promptTag();
-  return model_ + "/" + effort_ + "/" + tag;
+  // The floor belongs here as much as the model, the effort and the wording do: it decides which
+  // pairings come back `related`, and it lives on this adapter rather than in `SelectionRules`, so
+  // `rulesTag` does not cover it. Left out, moving the floor reopened no page — every already
+  // settled page kept verdicts judged under the old threshold, forever.
+  // Written in THOUSANDTHS as an integer: a formatted float carries the decimal point of whatever
+  // locale the process is in, and a version string is a stored key that must not move under it.
+  char floorTag[16];
+  std::snprintf(floorTag, sizeof(floorTag), "f%d", static_cast<int>(std::lround(floor_ * 1000.0f)));
+  return model_ + "/" + effort_ + "/" + tag + "/" + floorTag;
 }
 
 Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored>& tonight,

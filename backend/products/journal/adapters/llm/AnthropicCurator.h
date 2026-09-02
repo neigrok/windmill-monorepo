@@ -35,7 +35,7 @@ public:
 
   bool configured() const override;
 
-  // model / effort / prompt tag.
+  // model / effort / prompt tag / relation floor in thousandths.
   std::string version() const override;
 
   Curation curate(const UserId& user, const std::vector<Vectored>& tonight,

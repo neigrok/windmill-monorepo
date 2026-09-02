@@ -76,12 +76,12 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   }
 
   // 1 — the idea units, read back from storage unless `recut`.
-  const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
+  const std::vector<StoredSpan> stored = echoes_.spansOf(user, request.day);
   explained.storedSpans = static_cast<int>(stored.size());
   if (!request.recut && !stored.empty()) {
     std::vector<std::string> texts;
     texts.reserve(stored.size());
-    for (const KnownSpan& span : stored) texts.push_back(span.text);
+    for (const StoredSpan& span : stored) texts.push_back(span.text);
     explained.passages = locateUnits(page->body, texts);
     explained.unitsFromStorage = true;
   } else if (explained.segmenterConfigured) {
@@ -103,8 +103,13 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
     return explained;
   }
 
-  // 3 — reconcile, without storing.
-  const std::vector<IdentifiedPassage> carried = reconcile(stored, explained.passages);
+  // 3 — reconcile, without storing. This door always pays the embedder (step 2 above), so it does
+  // not reuse stored vectors the way the sweep does: it exists to report what a derivation decides
+  // right now, and a reused vector would report the last pass's answer instead.
+  std::vector<KnownSpan> known;
+  known.reserve(stored.size());
+  for (const StoredSpan& span : stored) known.push_back(KnownSpan{span.spanId, span.text});
+  const std::vector<IdentifiedPassage> carried = reconcile(known, explained.passages);
   std::vector<Vectored> tonight;
   std::int64_t provisional = 0;
   for (std::size_t i = 0; i < carried.size(); ++i)

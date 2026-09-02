@@ -50,9 +50,10 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
 std::vector<Vectored> WarmEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
                                                        const std::vector<SpanWrite>& spans,
                                                        const std::string& embedVersion,
+                                                       const std::string& body,
                                                        std::uint64_t bodyStampMs) {
   std::vector<Vectored> stored =
-      storage_.replaceSpans(user, day, spans, embedVersion, bodyStampMs);
+      storage_.replaceSpans(user, day, spans, embedVersion, body, bodyStampMs);
 
   std::lock_guard<std::mutex> guard{lock_};
   ++writes_[user.str()];
@@ -102,7 +103,7 @@ std::vector<DuePage> WarmEchoRepository::allPages(const UserId& user) {
   return storage_.allPages(user);
 }
 
-std::vector<KnownSpan> WarmEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
+std::vector<StoredSpan> WarmEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   return storage_.spansOf(user, day);
 }
 std::vector<SpanPair> WarmEchoRepository::dismissalsOn(const UserId& user,

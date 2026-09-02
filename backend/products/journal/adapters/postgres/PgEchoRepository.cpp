@@ -69,13 +69,25 @@ std::vector<float> vectorFrom(const std::string& hex) {
   return values;
 }
 
-// Normalised first: a dismissal keyed on raw text would be undone by a re-flowed line.
-std::string hashOf(const std::string& text) {
-  const std::string identity = normalizedForIdentity(text);
+// The digest of exactly these bytes, hex. Postgres computes the same thing as
+// sha256(convert_to(text, 'UTF8')), which is what the due queries compare body_sha256 against.
+std::string sha256HexOf(const std::string& bytes) {
   std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
-  SHA256(reinterpret_cast<const unsigned char*>(identity.data()), identity.size(), digest.data());
+  SHA256(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), digest.data());
   return hexOf(digest.data(), digest.size());
 }
+
+// Normalised first: a dismissal keyed on raw text would be undone by a re-flowed line. A page
+// body is hashed RAW instead — re-flowing it is a different cut, and the segmenter is owed it.
+std::string hashOf(const std::string& text) { return sha256HexOf(normalizedForIdentity(text)); }
+
+// STORAGE'S ANSWER to "were this page's passages cut from THESE bytes?" — the half of `bodyMoved`
+// that needs no pipeline version, written once because four queries ask it and they must agree. A
+// null body_sha256 makes `=` yield null, so the row fails the EXISTS and the page reads as MOVED:
+// unknown is never "unchanged". Aliases the page as `p`, so every caller must too.
+constexpr const char* kCutFromTheseBytes =
+    "EXISTS (SELECT 1 FROM journal_span s WHERE s.user_id = p.user_id AND s.day = p.day "
+    "        AND s.body_sha256 = sha256(convert_to(p.body, 'UTF8')))";
 
 std::string statusText(CurationStatus status) {
   switch (status) {
@@ -163,12 +175,14 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      // The page is cut again unless storage already holds passages cut from THIS body by THIS
+      // The page is cut again unless storage already holds passages cut from THESE BYTES by THIS
       // segmenter; a moved embedder alone does not buy the segmenter again. The curation row cannot
       // answer it, because a pass that stored the cut and then failed at the curator leaves that
       // row's body stamp behind — and reading it would buy the same cut again every six hours.
-      "(NOT EXISTS (SELECT 1 FROM journal_span s WHERE s.user_id = p.user_id AND s.day = p.day "
-      "                                          AND s.body_stamp_ms = p.stamp_ms) "
+      // It compares the body's CONTENT and not its stamp: setting mood or energy saves immediately
+      // under a fresh HLC with the body untouched, and a stamp comparison called that a moved body
+      // and re-cut identical bytes.
+      "(NOT " + std::string(kCutFromTheseBytes) +
       "     OR c.segment_version IS DISTINCT FROM $3) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
@@ -204,8 +218,7 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      "(NOT EXISTS (SELECT 1 FROM journal_span s WHERE s.user_id = p.user_id AND s.day = p.day "
-      "                                          AND s.body_stamp_ms = p.stamp_ms) "
+      "(NOT " + std::string(kCutFromTheseBytes) +
       "     OR c.segment_version IS DISTINCT FROM $4) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
@@ -228,11 +241,17 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
 
 std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalDate& day) {
   // No due-ness clause: the reverse edge walks to pages owed nothing and needs their text anyway.
-  // `bodyMoved` is false, since this page's own units still stand.
+  // `bodyMoved` still ASKS STORAGE rather than assuming false. It used to assume, and the page this
+  // walk reaches is exactly the one nothing else looked at: a page the writer edited but whose own
+  // derivation the per-user budget deferred arrives here with a stale cut, and a pass that trusted
+  // `false` read the OLD units back, settled the page on them, and recorded a body digest saying
+  // they were cut from bytes nobody cut. That claim then reads as unchanged forever, so the
+  // appended sentence would never be cut, never embedded and never an echo.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "SELECT p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
+      "(NOT " + std::string(kCutFromTheseBytes) + ") AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid AND p.day = $2::date",
@@ -240,14 +259,17 @@ std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalD
 
   if (rows.empty()) return std::nullopt;
   return DuePage{day, rows[0]["body"].as<std::string>(), rows[0]["stamp_ms"].as<std::uint64_t>(),
-                 rows[0]["attempts"].as<int>(), false};
+                 rows[0]["attempts"].as<int>(), rows[0]["body_moved"].as<bool>()};
 }
 
 std::vector<DuePage> PgEchoRepository::allPages(const UserId& user) {
+  // The rejudge door takes every page, and asks storage the same question as everywhere else: a
+  // page whose stored cut is not of its current bytes is re-cut rather than settled on the old one.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
+      "(NOT " + std::string(kCutFromTheseBytes) + ") AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid ORDER BY p.day",
@@ -258,29 +280,36 @@ std::vector<DuePage> PgEchoRepository::allPages(const UserId& user) {
   for (const auto& row : rows)
     pages.push_back(DuePage{LocalDate{row["day"].as<std::string>()},
                             row["body"].as<std::string>(),
-                            row["stamp_ms"].as<std::uint64_t>(), row["attempts"].as<int>(), false});
+                            row["stamp_ms"].as<std::uint64_t>(), row["attempts"].as<int>(),
+                            row["body_moved"].as<bool>()});
   return pages;
 }
 
-std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
-  // Ordered by ord: reconciliation matches duplicated text within a page in document order.
+std::vector<StoredSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
+  // Ordered by ord: reconciliation matches duplicated text within a page in document order. The
+  // vector rides along so a re-derivation can reuse it for text that did not move; NOT filtered by
+  // embedding version, because reconciliation must still carry span ids forward across an embedder
+  // change and the caller is the one that decides a vector is comparable.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT span_id, text FROM journal_span "
+      "SELECT span_id, text, encode(vector, 'hex') AS vector, embed_version FROM journal_span "
       "WHERE user_id = $1::uuid AND day = $2::date ORDER BY ord",
       user.str(), day.iso());
 
-  std::vector<KnownSpan> spans;
+  std::vector<StoredSpan> spans;
   spans.reserve(rows.size());
   for (const auto& row : rows)
-    spans.push_back(KnownSpan{row["span_id"].as<std::int64_t>(), row["text"].as<std::string>()});
+    spans.push_back(StoredSpan{row["span_id"].as<std::int64_t>(), row["text"].as<std::string>(),
+                               vectorFrom(row["vector"].as<std::string>()),
+                               row["embed_version"].as<std::string>()});
   return spans;
 }
 
 std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
                                                      const std::vector<SpanWrite>& spans,
                                                      const std::string& embedVersion,
+                                                     const std::string& body,
                                                      std::uint64_t bodyStampMs) {
   // A day's passages are always a complete set, and a carried span_id is re-inserted under the
   // identity the caller chose. No foreign key ties journal_echo to these rows, so an echo aimed at a
@@ -291,6 +320,10 @@ std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const L
   txn.exec_params("DELETE FROM journal_span WHERE user_id = $1::uuid AND day = $2::date",
                   user.str(), day.iso());
 
+  // Every passage of the day carries the same body digest, written in THIS transaction beside the
+  // rows it describes, so a crash can never leave a cut claiming bytes that are not stored.
+  const std::string bodyHash = sha256HexOf(body);
+
   // RETURNING in ord order, the order corpusOf serves, so a warm corpus splices it in unchanged.
   std::vector<Vectored> stored;
   stored.reserve(spans.size());
@@ -298,13 +331,14 @@ std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const L
     pqxx::result rows = txn.exec_params(
         "INSERT INTO journal_span "
         "(user_id, span_id, day, ord, lo, hi, text, text_sha256, vector, embed_version, "
-        "body_stamp_ms) "
+        "body_stamp_ms, body_sha256) "
         "VALUES ($1::uuid, coalesce(nullif($2::bigint, 0), nextval('journal_span_id_seq')), "
-        "$3::date, $4, $5, $6, $7, decode($8, 'hex'), decode($9, 'hex'), $10, $11) "
+        "$3::date, $4, $5, $6, $7, decode($8, 'hex'), decode($9, 'hex'), $10, $11, "
+        "decode($12, 'hex')) "
         "RETURNING span_id",
         user.str(), static_cast<long long>(span.spanId), day.iso(), span.passage.ord,
         span.passage.lo, span.passage.hi, span.passage.text, hashOf(span.passage.text),
-        hexOfVector(span.vector), embedVersion, static_cast<long long>(bodyStampMs));
+        hexOfVector(span.vector), embedVersion, static_cast<long long>(bodyStampMs), bodyHash);
     stored.push_back(Vectored{rows[0]["span_id"].as<std::int64_t>(), day, span.passage.text,
                               span.vector});
   }

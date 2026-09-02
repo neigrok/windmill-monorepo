@@ -21,9 +21,12 @@ scores, categories, or counts of anything the reader cannot see and check.
 1. **An echo may only assert something the reader can check from what is on screen.** Enforced by a
    shared low-frequency lexical anchor between the two passages: no anchor, no echo, whatever the
    cosine says.
-2. **Nothing is inferred from absence.** Never render an empty "no echoes" state, and never present
-   a list as *the* times. A total may be shown only when every item it counts is on screen and
-   tappable; a truncated list gets no number.
+2. **Nothing is inferred from absence.** Never present a list as *the* times, and never say anything
+   about the writer's life that absence alone cannot establish — that nothing was written about a
+   thing, that a subject never came back, that a stretch of the archive is empty. A total may be
+   shown only when every item it counts is on screen and tappable; a truncated list gets no number.
+   What a surface MAY say is that one named page in view carries no echo: that is a checkable fact
+   about a page on screen, and it is what the desktop margin's rest line is.
 3. **A quote is re-located by text in the live page at render, or not shown.**
 
 ## Pipeline
@@ -32,16 +35,31 @@ For each page whose body changed, whose corpus moved under it, or whose pipeline
 
 ```
 1  segment    page body                    → idea units                     [Segmenter]
-2  embed      each passage                 → vector                         [Embedder]
-3  reconcile  new passages vs. old         → carry span_id forward          [pure]
+2  reconcile  new passages vs. old         → carry span_id forward          [pure]
+3  embed      each passage WITHOUT a vector → vector                        [Embedder]
 4  retrieve   stratified by age band       → candidates                     [repo]
 5  select     dedup, quota, diversify      → ≤10 per trigger, ≤10 per page  [pure]
 6  curate     tonight's + candidates       → related pairs + speaker        [Curator]
 7  persist    ≤10 echoes, replacing the page's prior set                    [repo]
 ```
 
+**Reconciliation runs before the embedder, and the order is the saving.** It needs nothing but
+text, so knowing which passages survived is what lets step 3 ask for the new ones alone: a carried
+passage keeps the vector storage already holds, and an appended sentence is the only thing bought.
+Reuse is gated twice — on the stored `embed_version` matching the running embedder, because a cosine
+between two embedding spaces is meaningless, and on the RAW text, because the vector is a function
+of the exact bytes the embedder was handed and not of the normalised identity `reconcile` matched
+on. The embed round trip sits between the save and the echo appearing, so this is latency and not
+only bill. `EchoSweepReport::passagesEmbedded` counts what was BOUGHT, not what the page holds.
+
+The cost of that is that **nothing re-embeds unchanged text any more**, `rejudge=1` included. A
+vector that is wrong but well-formed — a mis-ordered sidecar batch, a zero vector, which `cosine`
+reads as resonating with nothing so the passage silently produces no echo ever again — is permanent
+for that passage. The only lever is moving the embedder's version string, which re-buys the whole
+corpus; there is no narrower one.
+
 **Segmenter** (`ports/Segmenter.h`) cuts the page into idea units, one vendor call per page whose
-body moved. `AnthropicSegmenter` runs `claude-sonnet-5` at effort `low`. Without an Anthropic key the
+BYTES moved. `AnthropicSegmenter` runs `claude-sonnet-5` at effort `low`. Without an Anthropic key the
 composition root wires `RuleSegmenter` (`segment`, `SegmentRules{minWords = 6, maxAtoms = 3}`,
 pure); that deploy has no curator either, so no echo can arrive from it.
 
@@ -82,6 +100,12 @@ on the absolute `relation` scale below and **anything under its floor (0.6) is n
 prompt names the case that band is made of: a shared state — feeling rested, feeling ill, being
 tired, a good evening — is two evenings, not an echo.
 
+The floor is folded into `version()` beside the model, the effort and the prompt digest, written in
+thousandths as an integer so no locale's decimal point can move a stored key. It has to be: the
+floor decides which pairings come back `related`, it lives on the adapter rather than in
+`SelectionRules`, so `rulesTag` does not reach it — and left out, moving it reopened NO page. Every
+settled page kept verdicts judged under the old threshold, forever.
+
 If any of the three boundaries is unconfigured the pass is a no-op and no echo is written.
 
 ## Delivery
@@ -114,6 +138,15 @@ The drain deals round-robin across accounts, not in queue order: one drain threa
 `Entitlements::sweepAllowanceFor` is the per-user AI spend ceiling, asked once per user on both
 paths. Over budget is **skipped**, not failed: stamps never advance and the page stays owed.
 
+**It is not an echo budget, it is a JOURNAL budget.** `kSweepMonthlyAiNanos` is $2.00 per account
+per rolling 30 days and `sweepAllowanceFor` sums `spentSinceNanos(user, "journal", …)`, which is
+every `product = 'journal'` row in the ledger — and `OpenAiTranscriber` tags voice transcription
+`journal` too. So a writer who dictates their pages spends the echoes' allowance on transcription
+and stops receiving echoes sooner, silently, since over budget is skipped and nothing is shown about
+it. It is denominated in DOLLARS where `perPageDaily` (4) and `perUserDaily` (40) count calls, so
+which of the three binds first cannot be read off the source at all — it turns on the per-call cost,
+and that is a question for `ai_usage` which has not been asked.
+
 No pending state is served — no progress route, no spinner. The client re-reads on its own.
 
 ### A refusal is final
@@ -124,8 +157,8 @@ unreadable answer — leaves both stamps where they were, so the page comes back
 advances both stamps, and `duePages` / `duePage` additionally never reopen a row whose status is
 `refused` on corpus movement. Only an edit to that body, or a pipeline version bump, reopens it.
 
-A refused page ends carrying no echoes: `derive` calls `clearEchoes`, and step 3 has already replaced
-that page's spans.
+A refused page ends carrying no echoes: `derive` calls `clearEchoes`, and the page's spans were
+already replaced before the curator was asked.
 
 Nothing is shown to the reader about any of this. The count lives in
 `EchoSweepReport::pagesRefused`, apart from `pagesFailed`, and in `journal_page_curation.status`.
@@ -187,9 +220,35 @@ above is how far it has been bought back.
 `EchoSweepReport::unitsDiscarded` counts repaired indices; above zero on an ordinary night it means
 the model is answering about a page it did not read properly.
 
-**The segmenter is asked only when the body moved** — and `DuePage::bodyMoved` asks STORAGE, not a
-clock: it is true when no passage is held for this page under this body stamp AND this segmenter
-version. Every other pass reads the units back out of storage and costs the vendor nothing.
+**The segmenter is asked only when the BYTES moved** — and `DuePage::bodyMoved` asks STORAGE, not a
+clock: it is true when no passage is held for this page whose `body_sha256` is the digest of this
+body AND under this segmenter version. Every path that hands back a `DuePage` asks it, `pageAt` and
+`allPages` included — the reverse edge reaches pages nothing else looked at, and one of them edited
+is one whose stored cut is of other bytes. Every other pass reads the units back out of storage and
+costs the vendor nothing.
+
+One page is asked anyway: a page holding NO passage. `replaceSpans` writes the digest onto the rows,
+so a page cut into nothing stores none and can never satisfy the test, and `derive` falls through to
+the segmenter on `stored.empty()` regardless. It costs no MONEY — `AnthropicSegmenter` returns
+before the vendor when the page has no atom — but it is a call per pass, and the only page it can
+happen to is one with nothing written on it.
+
+It compares the body's CONTENT because a stamp comparison answered a different question. Setting
+mood or energy saves immediately (`pageStore.js` `set` → `scheduleSave(0)`) with the body untouched,
+so the page HLC moved and not one byte did — and the page bought a segmenter call to re-cut
+identical text. The digest is written by `replaceSpans`, in the same transaction as the rows it
+describes, so a cut can never claim bytes that are not stored; it comes from the CALLER's body and
+never from the page row, so a save that landed mid-derivation cannot be claimed as cut. A row
+carrying no digest — one written before the column, whose page has moved since, so the backfill
+could not reach it — reads as MOVED. Unknown must never read as unchanged: that would freeze a
+page's cut against whatever the writer does to it.
+
+**A byte-identical save is still not free.** The corpus fingerprint digests each span's
+`body_stamp_ms`, and every pass rewrites this page's spans under the new stamp, so a
+mood-only save moves `corpusStamp` and every OTHER page of that writer reads as stale on the next
+repair pass — one curator call each, up to `pagesPerUser`. The page itself buys nothing; the account
+does. Nothing about a passage's identity, text or vector changed, so the stamp is answering a
+question it was not asked.
 
 `journal_page_curation` records three version strings, and both due-ness queries compare them against
 what the running build would produce (`PipelineVersions`). A SETTLED pass records all three; an
@@ -203,7 +262,7 @@ than one, because they go stale differently:
 |---|---|---|
 | `segment_version` | the segmenter's prompt or model | the page is **cut** again — a vendor call, so it reports as `bodyMoved` |
 | `embed_version` | the embedding model | the units still stand; only their vectors are worthless |
-| `judge_version` | the curator's prompt/effort, or **any `SelectionRules` knob** (folded to eight characters by `rulesTag`) | units and vectors stand; only the verdicts are stale |
+| `judge_version` | the curator's prompt, effort or **relation floor**, or **any `SelectionRules` knob** (folded to eight characters by `rulesTag`) | units and vectors stand; only the verdicts are stale |
 
 The columns default to empty, so a row written before them reads as derived by a pipeline that is not
 the current one and re-derives over the following passes at the ordinary per-user budget.
@@ -211,8 +270,12 @@ the current one and re-derives over the following passes at the ordinary per-use
 **Add a knob to `SelectionRules` and add it to `rulesTag`, or that knob ships silently.** No version
 string covers a change to the selection *algorithm* rather than to its knobs; that is what
 `POST /v1/admin/journal/echo/sweep?rejudge=1` is for. It takes every page of every scanned writer
-instead of the ones the stamps owe, and re-cuts nothing (every page reports as body-unmoved), so it
-costs the embedder and the curator and never the segmenter.
+instead of the ones the stamps owe. On a page whose stored cut is of the bytes it still holds it
+costs the CURATOR ALONE — no segmenter, because the page reports as body-unmoved, and no embedder,
+because every passage keeps the vector storage holds under the running embedding version. It is not
+free on every page: a page carrying NO stored passage is cut whatever `bodyMoved` says (`derive`
+falls through on `stored.empty()`), and a page whose body moved under its cut now reports as moved
+and is cut again rather than settled on units it no longer contains.
 
 A spoken page is cut exactly like a typed one: `ports/Transcriber.h` hands back a finished
 `Transcript` with no pause boundaries, and `DuePage` carries no `source` field.
@@ -306,7 +369,10 @@ about a row must never read as a refusal of it.
 
 **Inbound.** When page X's passages change, every page holding an echo into X (`where match_day = X`)
 is enqueued for re-derivation. This is the repair pass's work and not the live path's: the walk is
-unbounded, and `SweepBudget::inboundPerPage` bounds it per page.
+unbounded, and `SweepBudget::inboundPerPage` bounds it per page. A page whose own bytes have not
+moved costs one curator call and nothing else — no cut, and no vector bought twice. One whose bytes
+HAVE moved is cut here: this walk is the only thing that looks at a page the per-user budget
+deferred, and settling it on a cut of bytes it no longer holds would lose the edit for good.
 
 **Backfill.** A user-level corpus stamp — a fingerprint of every passage the writer holds — changes
 whenever any page's passages change, INCLUDING when they are deleted. It is a
@@ -329,7 +395,7 @@ Match exactly; no case-folding, no fuzzy matching.
 
 | Table | Key | Holds |
 |---|---|---|
-| `journal_span` | `(user_id, span_id)` | one passage: `day`, `ord`, byte span `[lo, hi)`, text, `text_sha256` of the normalised text, `vector` as little-endian float32 `bytea`, `embed_version`, `body_stamp_ms` |
+| `journal_span` | `(user_id, span_id)` | one passage: `day`, `ord`, byte span `[lo, hi)`, text, `text_sha256` of the normalised text, `vector` as little-endian float32 `bytea`, `embed_version`, `body_stamp_ms`, `body_sha256` of the RAW body it was cut from (null = unknown, which reads as moved) |
 | `journal_echo` | `(user_id, trigger_span_id, match_span_id)` | one kept pair: `cosine`, `relation`, `match_is_self`, `curator_version`; `check (match_day < trigger_day)` |
 | `journal_echo_dismissal` | `(user_id, trigger_hash, match_hash)` | the reader retired a pairing |
 | `journal_echo_signal` | `(user_id, trigger_span_id, match_span_id, kind)` | `opened` / `useful` / `not_useful`, with the `cosine`, `relation` and `curator_version` of the pairing judged |
@@ -465,12 +531,28 @@ at 8,000 passages × 384 dims. Select vectors without page bodies. Brute force i
 scale; `pgvector` is the escape hatch behind the repository, and `WarmEchoRepository` amortises the
 load across an evening's derivations.
 
-Curator: ~2,600 input tokens, and output is the expensive half — thinking is on by default on this
-family and bills as output, so `effort` is the only real cost lever.
+**Both prompts are dominated by their fixed half.** The curator's system prompt measures 4,284
+characters and the segmenter's 1,475; the full-sentence Russian bodies in
+`test/products/journal/domain/PassageTest.cpp` — the only realistic diary text in the repository —
+run 86–161 bytes and 47–89 characters. So on the INPUT side the page is a few percent of what a
+segmenter call sends, and the block that never varies is nearly all of it. Output is the expensive
+half either way: thinking is on by default on this family and bills as output, and `claude-sonnet-5`
+prices output at five times input (`platform/domain/AiUsage.cpp`), so `effort` is the only real cost
+lever.
 
-Segmenter: one call per page whose body moved, so it also runs on pages that end up proposing
-nothing. Its input is the page and its output is the page again, so it bills roughly two page-lengths
-per call.
+Segmenter: one call per page whose bytes moved, so it also runs on pages that end up proposing
+nothing. **Its output is an integer array** — `{"starts":[1,3,4]}`, two to four elements on a
+realistic page — plus thinking. It is never given a place to put text, so it does not bill a page
+length of output and never did under this design.
+
+**No per-call token figure here has been measured.** `meterSpend` posts every reply — refusals and
+truncations included — under the operation tags `echo.curate` and `echo.segment`, so the ledger is
+where the answer lives and no figure here substitutes for it. The character counts above are
+measured from source; everything
+downstream of a tokeniser is not, and the thinking term — the term that decides the whole bill — is
+neither bounded in the source nor visible without the ledger. One query over `ai_usage` grouped by
+`operation` and `outcome` answers it, and it should be asked before any cost argument is made from
+this section.
 
 Four traps, each producing a silent failure:
 
@@ -482,9 +564,12 @@ Four traps, each producing a silent failure:
   only on-mode.
 - **Use structured outputs** (`output_config.format`) — it eliminates the schema-invalid branch.
 
-The system prompt does not cache: Sonnet 5's minimum cacheable prefix is 1024 tokens and the prompt
-is ~800, so the `cache_control` marker is a no-op (`cache_creation_input_tokens: 0`). Keep it
-byte-stable regardless — the curator folds its prompt digest into `curator_version`.
+Whether the system prompt caches is UNKNOWN and worth knowing. Sonnet 5's minimum cacheable prefix
+is 1024 tokens; the prompt measures 4,284 characters over 682 words, which straddles that threshold
+rather than sitting under it. If it caches, the fixed block — most of every curator call's input —
+costs a tenth. `cache_read_tokens` / `cache_write_tokens` in the same `ai_usage` query settle it in
+one line. Keep the prompt byte-stable regardless — the curator folds its digest into
+`curator_version`.
 
 Present candidates to the curator **chronologically, without their cosine scores**.
 

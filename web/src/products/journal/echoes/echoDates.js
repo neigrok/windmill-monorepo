@@ -1,6 +1,7 @@
 // The server sends ISO days only. A distance is a bare span, always measured from the trigger page's
 // day, never from today.
 
+const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const SHORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -15,6 +16,15 @@ function parts(iso) {
 
 function pad(n) {
   return String(n).padStart(2, '0');
+}
+
+// FRI 29 AUG — the canvas day row, and the margin's stamp naming the page the panel describes. The
+// two are the same glyph run on purpose: the reader matches the panel to the canvas by shape before
+// reading either, so this format has exactly two callers and one grammar. Today is not special here —
+// the stamp is a COPY of the row it points at, never `TONIGHT`, which is a destination and not a mirror.
+export function stampWeekday(iso) {
+  const { year, month, day } = parts(iso);
+  return `${WEEKDAYS[new Date(year, month - 1, day).getDay()]} ${pad(day)} ${SHORT_MONTHS[month - 1]}`;
 }
 
 // "14 MAR" / "2026" — the two lines of the ink's margin column.

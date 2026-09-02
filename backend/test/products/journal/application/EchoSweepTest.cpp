@@ -4,7 +4,9 @@
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -232,7 +234,7 @@ TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
   echoes.addDuePage(uid("u1"), ld(kOldDay), "slept badly last night.\n" + kOldLine);
   sweep.run(kNow - kDay);
 
-  const std::vector<KnownSpan> after = echoes.spansOf(uid("u1"), ld(kOldDay));
+  const std::vector<StoredSpan> after = echoes.spansOf(uid("u1"), ld(kOldDay));
   REQUIRE_EQ(after.size(), std::size_t{2});
   CHECK_EQ(after[1].spanId, std::int64_t{11});
 }
@@ -550,6 +552,9 @@ TEST(a_pairing_selection_itself_now_refuses_is_taken_off_the_page) {
   // pairing is now dropped at the anchor rule, so the curator is never asked about it.
   const std::string bland = "the piano needed tuning again";
   echoes.spans[uid("u1").str()].clear();
+  // The page itself carries the rewrite, not only its passage: a body and a cut that disagree is a
+  // page owed a re-cut, which is a different test from this one.
+  echoes.plantPage(uid("u1"), ld(kOldDay), bland);
   echoes.plantSpan(uid("u1"), ld(kOldDay), 11, bland, embedder.embed({bland})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
   const int judged = curator.calls;
@@ -587,4 +592,217 @@ TEST(a_second_echo_into_the_same_past_day_is_taken_off_the_page) {
   const std::vector<EchoRow> rows = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(rows.size(), std::size_t{1});
   CHECK_EQ(rows[0].matchDay, ld(kOldDay));
+}
+
+// --- What a repeat derivation is allowed to buy -------------------------------------------------
+
+// A vector the fake embedder would never return, so a stored one that survives a pass proves the
+// pass reused it rather than buying it again.
+std::vector<float> marker() {
+  std::vector<float> planted(26, 0.0f);
+  planted[0] = 1.0f;
+  return planted;
+}
+
+// Setting mood or energy saves IMMEDIATELY (pageStore.js `set` → `scheduleSave(0)`) with the body
+// untouched, so the page HLC moves and not one byte does. `bodyMoved` used to be a stamp
+// comparison, which called that a moved body and re-cut identical bytes; it compares the body's
+// CONTENT now, so this page reaches storage having bought nothing at all.
+TEST(a_save_that_moved_no_bytes_buys_neither_a_cut_nor_an_embedding) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kNewLine, marker(), 0, kNewLine);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(segmenter.calls, 0);
+  CHECK_EQ(embedder.calls, 0);
+  CHECK_EQ(curator.calls, 0);
+  CHECK_EQ(report.passagesEmbedded, 0);
+  CHECK_EQ(report.pagesDerived, 1);   // and the page is settled rather than left owed
+
+  // The stored vector is the planted one, so nothing re-embedded it behind the reuse.
+  const std::vector<StoredSpan> after = echoes.spansOf(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(after.size(), std::size_t{1});
+  CHECK_EQ(after[0].spanId, std::int64_t{21});
+  CHECK_EQ(after[0].vector, marker());
+  // And the pass claims it cut exactly the bytes it was handed, so the next one reads it back.
+  CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kNewDay), kNewLine));
+}
+
+// The honest residual, and the reason this is not the whole saving: the curator is asked whenever
+// selection proposes anything, and it does not care whether the body moved. A page that reaches
+// back still buys one curator call per derivation to re-decide pairings it ruled on minutes
+// earlier. Only a verdict cache removes that, and there is none.
+TEST(a_save_that_moved_no_bytes_still_pays_the_curator_on_a_page_that_reaches_back) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, embedder.embed({kOldLine})[0]);
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kNewLine, embedder.embed({kNewLine})[0], 0, kNewLine);
+  embedder.calls = 0;
+  embedder.asked.clear();
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(segmenter.calls, 0);
+  CHECK_EQ(embedder.calls, 0);
+  CHECK_EQ(curator.calls, 1);
+  CHECK_EQ(report.echoesWritten, 1);
+}
+
+// The append case: reconciliation runs BEFORE the embedder, so the sentence that did not move keeps
+// the vector storage holds and only the new one is bought. The embed round trip sits between the
+// save and the echo appearing, so this is latency as much as bill.
+TEST(a_carried_passage_is_not_embedded_again_and_only_the_new_one_is) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+
+  const std::string kept = "i want to learn kotlin properly this time, not just skimming it.";
+  const std::string added = "and tonight i finally sat down with it for an hour.";
+  segmenter.units = {kept, added};
+
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kept, marker(), 0, kept);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kept + "\n" + added);   // the writer appended a line
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(segmenter.calls, 1);   // the bytes DID move, so the cut is bought — that is unavoidable
+  CHECK_EQ(embedder.calls, 1);
+  REQUIRE_EQ(embedder.asked.size(), std::size_t{1});
+  CHECK_EQ(embedder.asked[0], added);          // the new sentence, and nothing else
+  CHECK_EQ(report.passagesEmbedded, 1);        // while the page ends holding two passages
+
+  const std::vector<StoredSpan> after = echoes.spansOf(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(after.size(), std::size_t{2});
+  CHECK_EQ(after[0].spanId, std::int64_t{21});   // identity carried
+  CHECK_EQ(after[0].vector, marker());           // and its vector carried with it
+  CHECK_EQ(after[1].text, added);
+  CHECK(after[1].vector != marker());
+}
+
+// Reuse is gated on the embedding version and must be: a cosine between two embedding spaces is
+// meaningless, so a vector held under an older embedder is bought again however unchanged the text.
+TEST(a_vector_held_under_another_embedding_version_is_never_reused) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kNewLine, marker(), 0, kNewLine, "fake-embedder-v0");
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(segmenter.calls, 0);   // the BYTES still did not move, so the cut is still not bought
+  CHECK_EQ(embedder.calls, 1);
+  REQUIRE_EQ(embedder.asked.size(), std::size_t{1});
+  CHECK_EQ(embedder.asked[0], kNewLine);
+  CHECK_EQ(report.passagesEmbedded, 1);
+
+  const std::vector<StoredSpan> after = echoes.spansOf(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(after.size(), std::size_t{1});
+  CHECK_EQ(after[0].spanId, std::int64_t{21});          // identity is carried across the space
+  CHECK(after[0].vector != marker());                   // the vector is not
+  CHECK_EQ(after[0].embedVersion, std::string("fake-embedder-v1"));
+}
+
+// The reverse edge reaches pages nothing else looked at, and `pageAt` used to assume their bytes
+// had not moved. A page the writer edited but whose own derivation the per-user budget deferred
+// arrives here with a stale cut: trusting `false` read the OLD units back, settled the page on
+// them, and recorded a body digest claiming they were cut from bytes nobody cut — which then reads
+// as unchanged forever, so the appended sentence is never cut, never embedded and never an echo.
+TEST(the_reverse_edge_re_cuts_a_page_whose_body_moved_instead_of_settling_the_old_units) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+
+  // Distinct from kOldLine, which is the due page's own body: the two must not share a passage, or
+  // the count below cannot tell whose embedding it is looking at.
+  const std::string wasCut = "the piano needed tuning again and i did nothing about it.";
+  const std::string added = "and tonight i finally sat down with it for an hour.";
+  const std::string edited = wasCut + "\n" + added;
+
+  // The page being derived, and a NEWER page reaching back into it — which is the direction the
+  // reverse edge walks. That newer page was edited after its cut, and nothing else will look at it:
+  // its own derivation is not what this pass was given.
+  echoes.addUser(uid("u1"));
+  echoes.addDuePage(uid("u1"), ld(kOldDay), kOldLine);
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, wasCut, embedder.embed({wasCut})[0], 0, wasCut);
+  echoes.plantPage(uid("u1"), ld(kNewDay), edited);
+  echoes.inbound[FakeEchoRepository::pageKey(uid("u1"), ld(kOldDay))] = {ld(kNewDay)};
+  embedder.asked.clear();   // planting a vector is not something the sweep bought
+  embedder.calls = 0;
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  REQUIRE_EQ(report.inboundEnqueued, 1);   // the walk did reach the edited page
+  // Two cuts, not one: the due page, and the edited page the walk brought in. Assuming
+  // body-unmoved here bought only one, settled the edited page on units it no longer contains,
+  // and then CLAIMED those units were cut from the new bytes — a claim that reads as unchanged
+  // forever, so the added sentence would never be cut, embedded or echoed.
+  CHECK_EQ(segmenter.calls, 2);
+  CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kNewDay), edited));
+  CHECK_EQ(echoes.pageAt(uid("u1"), ld(kNewDay))->bodyMoved, false);   // and it is quiet now
+  // The sentence the writer added is a passage, which is the whole point of re-cutting.
+  const std::vector<StoredSpan> after = echoes.spansOf(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(after.size(), std::size_t{2});
+  CHECK_EQ(after[0].spanId, std::int64_t{21});   // the untouched passage kept its identity
+  CHECK_EQ(after[1].text, added);
+  // And the carried passage was not bought again — the reorder holds on this path too. Counted
+  // rather than sized, because the due page that started the walk did its own embedding first.
+  CHECK_EQ(std::count(embedder.asked.begin(), embedder.asked.end(), added), std::ptrdiff_t{1});
+  CHECK_EQ(std::count(embedder.asked.begin(), embedder.asked.end(), wasCut), std::ptrdiff_t{0});
+}
+
+// The rejudge door asks what a page reaches, not what it says — but a page whose stored cut is not
+// of its current bytes is cut again rather than settled on units the page no longer contains.
+TEST(a_rejudge_re_cuts_only_the_page_whose_stored_cut_is_of_other_bytes) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+
+  const std::string settled = "i want to learn kotlin properly this time, not just skimming it.";
+  const std::string moved = "the piano needed tuning again, and i did nothing about it.";
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, settled, embedder.embed({settled})[0], 0, settled);
+  echoes.plantPage(uid("u1"), ld(kOldDay), settled);          // cut matches the body
+  echoes.plantSpan(uid("u1"), ld(kNewDay), 21, settled, embedder.embed({settled})[0], 0, settled);
+  echoes.plantPage(uid("u1"), ld(kNewDay), moved);            // cut does NOT match the body
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay, /*rejudgeAll=*/true);
+
+  CHECK_EQ(segmenter.calls, 1);   // the moved page only, never the settled one
+  CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kNewDay), moved));
+  CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kOldDay), settled));
 }
