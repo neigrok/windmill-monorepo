@@ -49,10 +49,11 @@ struct SettingsScreen: View {
         .listRowBackground(skin.surface)
     }
 
+    // The one honest limitation, said under the control at the moment of the choice, and only when
+    // the choice is the one this phone does not apply.
     private var unitsCaption: String {
-        let displayOnly = "Display only — nothing stored changes."
-        guard store.preferences.units == .lb else { return displayOnly }
-        return displayOnly + " Not on this phone yet — this room still draws kg. Your answer is kept on the account."
+        guard store.preferences.units == .lb else { return "" }
+        return Settings.stillKg
     }
 
     private var restTimer: some View {
@@ -72,12 +73,11 @@ struct SettingsScreen: View {
         } header: {
             Text("Rest timer")
         } footer: {
-            Text("The sound needs the app awake: a rest that ends while the phone is locked ends quietly.")
+            Text("A rest that ends while the phone is locked ends quietly.")
         }
         .listRowBackground(skin.surface)
     }
 
-    // The caption under the last dial names what Coach excludes rather than pointing at it.
     private var confirmation: some View {
         Section {
             switching("Haptic", isOn: store.preferences.confirmHaptic) {
@@ -88,8 +88,6 @@ struct SettingsScreen: View {
             }
         } header: {
             Text("Set confirmation")
-        } footer: {
-            Text(Settings.coachReads)
         }
         .listRowBackground(skin.surface)
     }
@@ -101,7 +99,7 @@ struct SettingsScreen: View {
                      lit: false, away: false)
             }
             Link(destination: page("/#/settings")) {
-                door(title: "Export", line: "sets, notes and weigh-ins as CSV · yours, always",
+                door(title: "CSV export", line: "on the web",
                      symbol: "tablecells", lit: false, away: true)
             }
             Link(destination: page("/#/gym/coach/threads")) {
@@ -169,6 +167,6 @@ struct SettingsScreen: View {
 }
 
 enum Settings {
-    // Under the last dial, naming what Coach excludes rather than pointing at it.
-    static let coachReads = "Coach reads your notes, not your settings."
+    // Under the Units control, lb only: the same bytes on every surface.
+    static let stillKg = "This phone still draws kg."
 }

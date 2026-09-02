@@ -431,17 +431,6 @@ private fun BuildStep(
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
 
-        // Once beneath the list and never per row: each open row already reads `open` in its own
-        // target column — that word says WHICH, and this sentence says what it means. And never
-        // while a target sheet stands over the list, because the sheet is saying it there.
-        if (!targeting && draft.entries.any { it.targetSets == null }) {
-            Text(
-                TargetEntry.openLine,
-                style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-                color = GymSkin.inkDim,
-            )
-        }
-
         // The dashed slot goes at the ceiling the log itself refuses past.
         if (!draft.full) {
             Box(
@@ -533,10 +522,11 @@ private fun TargetSheet(
             )
         }
 
-        // What leaving the fields empty MEANS, said where the lifter is deciding it — and said
-        // ABOVE them, beside the never-logged line: everything drawn UNDER a field is that field's
-        // own note, while this is a statement about the whole line. The row keeps the compact
-        // `open` token. A refusal and a blessing of the same state are never drawn together.
+        // What leaving the fields empty MEANS, said here and nowhere else — the lists behind this
+        // sheet print the compact `open` token per row and no sentence. Said ABOVE the fields,
+        // beside the never-logged line: everything drawn UNDER a field is that field's own note,
+        // while this is a statement about the whole line. A refusal and a blessing of the same
+        // state are never drawn together.
         if (reading == TargetEntry.Reading.Open && clearRefused == null) {
             Text(
                 TargetEntry.openLine,
@@ -601,12 +591,10 @@ private fun TargetSheet(
         }
 
         // One refusal at a time, and the clear's own outranks the rest because it is what just
-        // happened.
-        val said = clearRefused ?: refused?.said
-        if (said != null) {
+        // happened. Nothing stands in the row otherwise: a comma and a point both read, and the
+        // field shows what was typed.
+        (clearRefused ?: refused?.said)?.let { said ->
             Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
-        } else {
-            Text(TargetEntry.decimalHint, style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
 
         Box(
@@ -650,9 +638,10 @@ private fun SignKey(onFlip: () -> Unit) {
             .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
             .background(GymSkin.raised)
-            .clickable(role = Role.Button, onClickLabel = "Flip the sign", onClick = onFlip)
-            // The glyph reads as nothing out loud, so the control says what it is.
-            .semantics(mergeDescendants = true) { contentDescription = "Flip the sign" },
+            .clickable(role = Role.Button, onClickLabel = KeypadEntry.signName, onClick = onFlip)
+            // The glyph reads as nothing out loud, so the control says what it is — and what a
+            // negative load is, since no sentence beside the fields says it any more.
+            .semantics(mergeDescendants = true) { contentDescription = KeypadEntry.signName },
         contentAlignment = Alignment.Center,
     ) {
         Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = GymSkin.ink)

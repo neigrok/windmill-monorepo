@@ -49,15 +49,6 @@ struct RoutineEditorScreen: View {
             case .targeting(let lineId): return "targeting:\(lineId)"
             }
         }
-
-        // A target sheet standing over the list OWNS the open line's sentence, and the list's copy
-        // beneath the movements steps aside while it does (C19): one state, one sentence, never a
-        // blessing behind the scrim beside a refusal in front of it. The other two sheets say
-        // nothing about an open line, so neither takes it.
-        var ownsTheOpenLine: Bool {
-            guard case .targeting = self else { return false }
-            return true
-        }
     }
 
     init(draft: RoutineDraft, catalog: [Exercise], sessions: [SessionSummary], editing: Bool,
@@ -123,14 +114,10 @@ struct RoutineEditorScreen: View {
                 Text("Movements")
                     .foregroundStyle(skin.inkFaint)
             } footer: {
-                // Once beneath the list and never per row: the word `open` in a row's target column
-                // says WHICH rows, and this says what that word means (C1).
+                // A row's target column reads `open` for itself; the sheet says what that means the
+                // moment a line is opened, and the list says nothing more.
                 if draft.lines.isEmpty {
                     Text("Add the movements, in the order you do them.")
-                        .foregroundStyle(skin.inkDim)
-                } else if sheet?.ownsTheOpenLine != true,
-                          let said = TargetEntry.openLineUnder(draft.entries) {
-                    Text(said)
                         .foregroundStyle(skin.inkDim)
                 }
             }
@@ -354,9 +341,9 @@ private struct TargetSheet: View {
 
                     if untested { neverLogged }
 
-                    // The sheet's half of C1, said once while the line on this sheet is open — and
-                    // said ABOVE the fields, beside the other statement about the whole line (C15).
-                    // Everything drawn UNDER a field is that field's own note.
+                    // Said once while the line on this sheet is open — and said ABOVE the fields,
+                    // beside the other statement about the whole line (C15). Everything drawn UNDER
+                    // a field is that field's own note.
                     if TargetEntry.blank(sets), refusal == nil {
                         Text(TargetEntry.openLine)
                             .font(WindmillFont.body(13.5))
@@ -373,10 +360,6 @@ private struct TargetSheet: View {
 
                     field("Weight · kg", text: $weight, placeholder: TargetEntry.weightPlaceholder,
                           refusal: refusal(under: .weight), focus: .weight, signed: true)
-
-                    Text(TargetEntry.decimalHint)
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
 
                     commit
                 }
@@ -496,7 +479,6 @@ private struct TargetSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(KeypadEntry.flipTheSign)
-        .accessibilityHint("Band-assisted work is a negative load")
     }
 
     // Naming no sets is what an open line is, so the one button commits either shape.

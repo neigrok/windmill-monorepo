@@ -1530,6 +1530,91 @@ class TrainingStoreTests {
         assertEquals(listOf(0), store.logged.map { it.workingSetCount })
     }
 
+    // The live session's rows are the queue's. A set the log has not taken is rewritten IN the
+    // queue, still owed: nothing goes over the wire, the strip draws the correction at once, and
+    // the corrected body is what lands when the signal is back.
+    @Test
+    fun testFixingASetStillOwedRewritesItInTheQueueAndTheCorrectionIsWhatLands() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        server.online = false
+        store.logSet(weightKg = 82.5, reps = 5)
+        val setId = store.sets.single().id
+        assertEquals(setOf(setId), store.stalled)
+
+        val fixed = store.fixSet("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+
+        assertEquals(90.0, (fixed as FixOutcome.Corrected).set.weightKg, 0.0)
+        assertEquals("the strip draws the correction from the store", listOf(90.0 to 3),
+            store.sets.map { it.weightKg to it.reps })
+        assertEquals("still owed — nothing was PATCHed at a log that has never seen the id",
+            setOf(setId), store.stalled)
+        assertTrue(server.fixes.isEmpty())
+        assertEquals(listOf(90.0), queueOnDisk().pending.map { it.set.weightKg })
+
+        server.online = true
+        store.flushPendingSets(force = true)
+        assertEquals("the corrected body is the one that landed", listOf(90.0 to 3),
+            server.sets.getValue("ses_1").map { it.weightKg to it.reps })
+        assertTrue(store.stalled.isEmpty())
+    }
+
+    @Test
+    fun testFixingADeliveredSetOfTheLiveSessionRedrawsTheStripFromTheStore() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        val setId = store.sets.single().id
+        assertTrue(store.stalled.isEmpty())
+
+        val fixed = store.fixSet("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+
+        assertEquals(listOf(Triple("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))),
+            server.fixes)
+        assertEquals((fixed as FixOutcome.Corrected).set, store.sets.single())
+        assertEquals("the queue's row followed the log's answer", listOf(Triple(90.0, 3, SetKind.Drop)),
+            store.sets.map { Triple(it.weightKg, it.reps, it.kind) })
+        assertTrue("a fix the log took owes nothing", store.stalled.isEmpty())
+    }
+
+    @Test
+    fun testDeletingASetStillOwedLeavesTheQueueAndSendsNothing() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        server.online = false
+        store.logSet(weightKg = 82.5, reps = 5)
+        val setId = store.sets.single().id
+
+        assertNull(store.deleteSet("ses_1", setId))
+
+        assertEquals(emptyList<TrainingSet>(), store.sets)
+        assertTrue("nothing to tell — the log never had it", server.removed.isEmpty())
+        assertTrue(queueOnDisk().pending.isEmpty())
+        server.online = true
+        store.flushPendingSets(force = true)
+        assertEquals("and it never lands", emptyList<TrainingSet>(), server.sets["ses_1"] ?: emptyList<TrainingSet>())
+    }
+
+    @Test
+    fun testDeletingADeliveredSetOfTheLiveSessionTakesItOffTheStrip() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        val setId = store.sets.single().id
+
+        assertNull(store.deleteSet("ses_1", setId))
+
+        assertEquals(listOf("ses_1" to setId), server.removed)
+        assertEquals("the queue let it go once the log did", emptyList<TrainingSet>(), store.sets)
+        assertEquals(setOf(setId), store.deletedSets)
+
+        server.refuseDelete = storageFailure
+        store.logSet(weightKg = 90.0, reps = 3)
+        val second = store.sets.single().id
+        assertNotNull("a delete the log refused takes nothing off the queue", store.deleteSet("ses_1", second))
+        assertEquals(listOf(second), store.sets.map { it.id })
+    }
+
     @Test
     fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest {
         val server = FakeTraining()

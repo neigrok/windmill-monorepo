@@ -575,8 +575,10 @@ test('the desk’s silence is said once for the whole section, and no row claims
   assert.equal(said.includes('Sets are logged on your phone, and that is where these are honoured.'), true);
   // The lb clause enumerates because the enumeration is the disclosure: the three fields typed here
   // stay in kilograms, and the weigh-in — the one field typed in the display unit — is not among them.
-  assert.equal(said.includes('a backfill, a correction, a routine target'), true);
+  assert.equal(said.includes("'A backfill, a correction, a routine target — typed in kg.'"), true);
   assert.equal(said.includes('preferences.units === LB &&'), true);
+  // A display unit that rewrote data would be the surprise; that it does not is not said.
+  assert.equal(said.includes('Display only'), false);
 });
 
 test('the exports are rows of the section: the sets for an account with a log, the notes beside it for one with notes', () => {
@@ -967,11 +969,13 @@ test('a proposal is turned down, not dismissed, behind a confirmation, and the s
   assert.equal(rules.includes('Turned down ${when}. Nothing changed, and it stays in the routine’s history as a record.'), true);
 });
 
-test('the settings section carries the Notes door with the line naming what Coach does not read', () => {
+test('the settings section carries the Notes door under the line the Notes screen heads itself with', () => {
   const source = read('settings/GymSettingsSection.jsx');
   assert.equal(source.includes('href={NOTES_HREF}'), true);
-  assert.equal(source.includes('{SETTINGS_LINE}'), true);
-  assert.equal(speech('notes/notes.js').includes("SETTINGS_LINE = 'Coach reads your notes, not your settings.'"), true);
+  assert.equal(source.includes('{HEAD_LINE}'), true);
+  // "Not your settings" is no lifter's question at this door; `NEVER` on the connect page says it.
+  assert.equal(speech('notes/notes.js').includes('SETTINGS_LINE'), false);
+  assert.equal(source.includes('SETTINGS_LINE'), false);
   assert.ok(source.indexOf('href={NOTES_HREF}') > source.indexOf('Set confirmation'));
   assert.ok(source.indexOf('href={NOTES_HREF}') < source.indexOf('href={EXPORT_HREF}'));
 });
@@ -1196,11 +1200,11 @@ test('the ladder and the keypad are rack controls: off the target sheet, kept on
   // The digits and the decimal separator read as themselves; the pad's two glyphs are named through
   // one lookup, and ± takes the target sheet's own bytes.
   const keypad = read('logger/Keypad.jsx');
-  assert.equal(keypad.includes("const SPOKEN = { '±': 'Flip the sign', [DELETE]: 'Delete' };"), true);
+  assert.equal(keypad.includes("const SPOKEN = { '±': 'Flip the sign — band-assisted', [DELETE]: 'Delete' };"), true);
   assert.equal(keypad.includes('aria-label={SPOKEN[key]}'), true);
   assert.equal(keypad.includes('aria-label={SPOKEN[DELETE]}'), true);
-  assert.equal((keypad.match(/aria-label="Flip the sign"/g) ?? []).length, 0, 'one key, not twelve');
-  assert.equal(source.includes('aria-label="Flip the sign"'), true, 'the sheet names it in the same bytes');
+  assert.equal((keypad.match(/aria-label="Flip the sign/g) ?? []).length, 0, 'one key, not twelve');
+  assert.equal(source.includes('aria-label="Flip the sign — band-assisted"'), true, 'the sheet names it in the same bytes');
   assert.equal(/\d\.\d/.test(speech('Routines.jsx').replace(/strokeWidth=\{[\d.]+\}/g, '')), false);
 });
 
@@ -1212,8 +1216,9 @@ test('the target sheet is three typed fields, each saying what empty means, and 
   assert.equal(source.includes("inputMode=\"decimal\""), true);
   assert.equal((source.match(/<Input/g) ?? []).length, 4, 'the name field and the sheet’s three');
   assert.equal(source.includes("const refusalFor = (field) => (refusal?.field === field ? refusal.message : undefined);"), true);
-  assert.equal(source.includes('{DECIMAL_NOTE}'), true);
-  assert.equal((source.match(/DECIMAL_NOTE/g) ?? []).length, 2, 'said once on the sheet: the import and the one use');
+  // Both separators are read and the field shows what was typed, so no note explains the decimal.
+  assert.equal(source.includes('DECIMAL_NOTE'), false);
+  assert.equal(source.includes('gym-target-decimal'), false);
   // The escape hatches came off with the ladder: clearing a field IS the escape.
   for (const gone of ['take it to max', 'use last time', 'Leave it open', 'decide at the rack']) {
     assert.equal(source.includes(gone), false, gone);
@@ -1255,22 +1260,18 @@ test('the target sheet says there is nothing to prefill from, and prefills nothi
   }
 });
 
-test('the open line is one sentence, drawn once beneath the list and once on the sheet', () => {
+test('the open line is one sentence, drawn once, on the sheet', () => {
   const source = read('Routines.jsx');
-  // Once under the whole list, when at least one row is open — never one copy per open row — and
-  // never while a target sheet stands over the list: up there the sheet owns the sentence, so the
-  // list's copy is not left lit behind the scrim beside the sheet's own refusal.
-  assert.equal(
-    source.includes('{target == null && hasOpenEntry(draft.entries) && <p className="gym-open-line">{OPEN_LINE}</p>}'),
-    true,
-  );
-  // And once on the target sheet, while the line it is holding is the open one AND nothing on the
+  // On the target sheet only, while the line it is holding is the open one AND nothing on the
   // sheet is being refused: a refusal and a blessing of the same state are never drawn together.
+  // The list draws no copy: its rows name themselves `open`, and the sheet says what that means
+  // the moment a lifter leaves one open.
   assert.equal(source.includes('{!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}'), true);
-  assert.equal((source.match(/OPEN_LINE/g) ?? []).length, 3, 'the import and the two placements');
+  assert.equal((source.match(/OPEN_LINE/g) ?? []).length, 2, 'the import and the one placement');
+  assert.equal(source.includes('hasOpenEntry'), false, 'the list asks no question of its rows');
+  assert.equal(read('routines.js').includes('hasOpenEntry'), false);
   assert.equal(source.includes('gym-entry-open'), false, 'the per-row copy is gone');
   assert.equal(/\.gym-entry-open\b/.test(read('gym.css')), false);
-  assert.equal(read('routines.js').includes('export function hasOpenEntry(entries) {'), true);
   assert.equal(source.includes('openTargetsLine'), false);
   assert.equal(read('routines.js').includes('openTargetsLine'), false);
   assert.equal(read('routines.js').includes("export const OPEN_LINE = 'You decide the numbers at the rack.';"), true);

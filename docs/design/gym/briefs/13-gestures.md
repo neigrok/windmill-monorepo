@@ -431,10 +431,10 @@ TalkBack (`RefusalBanner.kt:54-66`). Removes its "Dismiss" button. Safe: it disc
 data.
 
 **Walking between movements in the logger** — a horizontal swipe on the body
-(`LoggerScreen.swift:84`, `:229-243`; `LoggerScreen.kt:466-488`). Removes **two chevron buttons**
+(`LoggerScreen.swift:84`, `:229-243`; `MovementHead`'s `pointerInput` in `LoggerScreen.kt`). Removes **two chevron buttons**
 from the screen a lifter looks at with a bar in their hands. The progress dots stay: they are the
 position readout the swipe needs, and on Android each step is declared again as a custom action on
-the title (`LoggerScreen.kt:456-461`).
+the title (`MovementHead`'s `steps`, `LoggerScreen.kt`).
 
 Three collisions, all three answered in the build: the today-column is a nested vertical scroll, so
 the stroke claims the pointer only once horizontal dominance is proven and a vertical one still
@@ -452,7 +452,7 @@ chrome, so there is no go-home swipe layered underneath as a simultaneous gestur
 risk, and it does not exist here — where, at the logger, the room reports depth zero and the shell's
 edge still means home. Law 3's question is answered the same way on both: a stroke that starts inside
 the system's edge strip is never the room's (`LoggerScreen.swift:232`, `:241`;
-`LoggerWalk.startsInTheEdge`, `LoggerScreen.kt:469-471`).
+`LoggerWalk.startsInTheEdge`, read first in `MovementHead`'s `pointerInput`, `LoggerScreen.kt`).
 
 ## What does not ship, and why
 

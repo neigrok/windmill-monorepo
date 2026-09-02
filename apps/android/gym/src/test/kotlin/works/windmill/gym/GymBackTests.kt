@@ -16,9 +16,9 @@ class GymBackTests {
         assertTrue("a workout claims back, so the platform never backgrounds the app on it",
                    means != BackMeans.LeaveTheApp)
         assertEquals(
-            "a pushed screen underneath does not change it: the logger is what stands",
-            BackMeans.StayInTheWorkout,
-            backMeans(live = true, building = false, away = 2, tab = Tab.Log),
+            "the gear pushes settings over the workout, and back pops that one screen",
+            BackMeans.PopOnePushedScreen,
+            backMeans(live = true, building = false, away = 1, tab = Tab.Log),
         )
     }
 

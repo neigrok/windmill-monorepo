@@ -3,14 +3,30 @@ package works.windmill.gym.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.DpRect
+import org.junit.Assert.assertEquals
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +46,7 @@ import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalSource
@@ -180,6 +197,128 @@ class LargestTypeTests {
         }
         assertTrue("the refusal keeps its slot between Apply and the atomic promise, and it is $slot",
             slot >= 57.dp)
+        scope.cancel()
+    }
+
+    // The logger's rack is pinned and never shrinks, so at the largest text it is the reading region
+    // above it that compresses and then scrolls. On the smallest supported frame at fontScale 1.3,
+    // with a set landed (clocks and strip both up): Log set ends inside the window, and each of the
+    // four ladder labels sits inside its own pill — relative claims, never a point value.
+    @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h780dp-xhdpi")
+    fun theRackStaysInsideTheSmallestFrameAtFontScaleOnePointThree() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        runBlocking {
+            store.start(null)
+            store.choose("bench-press")
+            store.logSet(60.0, 5)
+        }
+        compose.setContent {
+            // The room's own faces, because it is their widths at 1.3 that are being measured.
+            GymMaterial {
+                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1.3f)) {
+                    LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                                 onSettings = {})
+                }
+            }
+        }
+
+        compose.onNode(hasContentDescription("Weight 60 kg")).assertExists()
+        val window = compose.onRoot().getBoundsInRoot()
+        // A node pushed off the frame reports an EMPTY rect, so `inside` has to mean drawn as well.
+        val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("Log set ends at ${log.bottom} in a window ${window.bottom} tall",
+            log.height > 0.dp && log.bottom <= window.bottom)
+        Ladder.labels(60.0).forEach { label ->
+            // A label inside a bounded pill measures the pill's width whatever its glyphs need, so
+            // the claim is read off the text engine's own paragraph: one line, whose unbroken
+            // width fits inside the pill it sits in.
+            val laid = mutableListOf<TextLayoutResult>()
+            compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
+                .config[SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
+            val line = laid.single()
+            val pill = compose.onNode(hasText(label) and hasClickAction()).getBoundsInRoot()
+            val pillPx = with(compose.density) { pill.width.toPx() }
+            val needs = line.multiParagraph.maxIntrinsicWidth
+            assertTrue("$label needs ${needs}px inside a pill ${pillPx}px wide",
+                line.lineCount == 1 && needs <= pillPx)
+        }
+        scope.cancel()
+    }
+
+    // A logger over a walk of two, stood on the 411 × 731 phone with the 24 dp status bar and the
+    // 24 dp gesture bar the device takes off that frame — Robolectric's window has no insets, so
+    // without them this measures a phone 48 dp taller than the one in hand.
+    private fun loggerOnThePhone(scope: CoroutineScope, fontScale: Float): TrainingStore {
+        val store = store(scope)
+        runBlocking {
+            store.start(null)
+            store.choose("bench-press")
+            store.choose("deadlift")
+            store.choose("bench-press")
+        }
+        compose.setContent {
+            GymMaterial {
+                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = fontScale)) {
+                    Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
+                        LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                                     onSettings = {})
+                    }
+                }
+            }
+        }
+        return store
+    }
+
+    private fun scroller() =
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).getBoundsInRoot()
+
+    private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
+
+    // At fontScale 1.0 on the 411 × 731 phone the reading region has 196 dp between the bar and the
+    // dots once the numeral owns a 72 dp box: the head, the set line, the clocks, the strip and the
+    // pinned dots are all drawn, and the strip is fully INSIDE the scroller rather than clipped by it
+    // — while Log set stands exactly where it stood before the set landed.
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun theWholeReadingRegionShowsAfterASetLandsOnTheSmallPhoneAtFontScaleOne() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        loggerOnThePhone(scope, fontScale = 1f)
+        val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+
+        compose.onNodeWithText("Log set").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        compose.onNodeWithText("Set 2").assertIsDisplayed()
+        compose.onNode(hasContentDescription("resting", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
+        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
+        val region = scroller()
+        assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
+        assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
+        scope.cancel()
+    }
+
+    // At fontScale 1.3 the same frame does overflow, and a landed set brings its own pill into view:
+    // the scroller is at the strip, not at the head.
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun aLandedSetScrollsItsPillIntoViewWhereTheLargestTextOverflows() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        loggerOnThePhone(scope, fontScale = 1.3f)
+        compose.onNodeWithText("Log set").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
+        val region = scroller()
+        assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
+        compose.onNodeWithText("Log set").assertIsDisplayed()
         scope.cancel()
     }
 }

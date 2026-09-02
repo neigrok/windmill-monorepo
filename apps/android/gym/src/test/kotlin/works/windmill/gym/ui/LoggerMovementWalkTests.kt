@@ -82,7 +82,7 @@ class LoggerMovementWalkTests {
             store.choose("bench-press")
         }
         compose.setContent {
-            LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {})
+            LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
         }
         return store
     }
@@ -101,7 +101,9 @@ class LoggerMovementWalkTests {
 
         title("Bench Press").assertIsDisplayed()
         assertEquals("the dots stay — they are the position readout the swipe needs", 1,
-            compose.nodesDescribed("movement 1 of 2"))
+            compose.nodesDescribed("Movement 1 of 2"))
+        assertEquals("and the dots are the only thing that says it: no uppercased line beneath them", 0,
+            compose.onAllNodes(hasText("MOVEMENT 1 OF 2")).fetchSemanticsNodes().size)
         assertEquals("but no button says either verb any more", 0,
             compose.nodesDescribed("Previous movement") + compose.nodesDescribed("Next movement"))
         scope.cancel()

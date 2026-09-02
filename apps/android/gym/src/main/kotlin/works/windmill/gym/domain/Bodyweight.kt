@@ -47,7 +47,6 @@ object Bodyweight {
     const val title = "Bodyweight"
     const val chip = "Weigh in"
     const val save = "Save"
-    const val fieldHint = "comma or point, both read as a decimal"
     const val unit = "kg"
 
     // The refusals, one at a time, in the order the field is read.
@@ -59,15 +58,16 @@ object Bodyweight {
     // One tap. The sheet comes down and the window holds the day, with Undo on the room's transient.
     const val deleteRow = "Delete weigh-in"
 
-    // Printed on the chart, because a segment is a connection and not data.
-    const val gapRule = "no line is drawn across a gap longer than seven days"
+    // A segment is a connection and not data: none is drawn across a gap longer than this, and the
+    // gap reads as a gap with no legend.
     const val maxGapDays = 7L
 
     const val nothingYet = "No weigh-ins yet. Weigh in from the log."
     const val noneInWindow = "no weigh-in in the last 90 days"
 
-    // The same words the settings screen uses: this phone converts nothing.
-    const val kilogramsOnly = "This phone still draws every weight in kilograms — nothing on this screen converts one."
+    // Said once, under the Units control in settings when lb is picked: the bodyweight screen itself
+    // draws `kg` on its axis and its readings.
+    const val kilogramsOnly = "This phone still draws kg."
 
     const val minKg = 20.0
     const val maxKg = 400.0

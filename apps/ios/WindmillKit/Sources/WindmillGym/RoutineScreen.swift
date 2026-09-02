@@ -95,14 +95,6 @@ struct RoutineScreen: View {
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                     .strokeBorder(skin.line, lineWidth: 1))
             }
-            // Once, beneath the list, when a row in it is open: the word `open` in a row's target
-            // column says WHICH, and this says what that word means. Never once per row (C1).
-            if let said = TargetEntry.openLineUnder(routine.entries) {
-                Text(said)
-                    .font(GymType.numeral(11.5))
-                    .foregroundStyle(skin.inkFaint)
-                    .padding(.horizontal, WindmillSpace.x1)
-            }
         }
     }
 

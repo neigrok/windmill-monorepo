@@ -104,15 +104,15 @@ test('the review is a scroll-gated dialog: Apply stands alone in the band and is
   // band's height — and Apply's place in it — never changes.
   const gateUnseen = findByClass(unseen, 'gym-proposal-gate');
   assert.equal(gateUnseen.length, 1);
-  assert.equal(textOf(gateUnseen[0]), 'Read the changes to the end to apply them.');
+  assert.equal(textOf(gateUnseen[0]), 'Scroll to the end to apply.');
   assert.notEqual(gateUnseen[0].props.id, '');
   // And it is read ONCE. Drawn for the eye, out of the tree for the reader, and reached only as
   // Apply's description — which still computes, because the description is taken off the node the
   // reference names whether that node is hidden or not.
   assert.equal(gateUnseen[0].props['aria-hidden'], 'true', 'the drawn sentence is out of the tree');
-  assert.equal(traversed(unseen).includes('Read the changes to the end to apply them.'), false,
+  assert.equal(traversed(unseen).includes('Scroll to the end to apply.'), false,
     'traversing the band a reader never meets the sentence — that reading would be the second one');
-  assert.equal(describing(unseen), 'Read the changes to the end to apply them.',
+  assert.equal(describing(unseen), 'Scroll to the end to apply.',
     'and the one reading there is: Apply says why it is shut');
   assert.equal(traversed(unseen), 'Apply all 2All two or none. Nothing is applied until you tap.Turn this down',
     'what is left to traverse is Apply, the atomic promise and the turn-down — each said once');

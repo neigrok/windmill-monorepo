@@ -35,7 +35,6 @@ class NotesTests {
         assertEquals("10 of 10 notes. Delete one to add another.", Notes.full)
         assertEquals(listOf("How I want to be talked to", "What I am training for"), Notes.placeholders)
         assertEquals("Notes live with your account, so they need you signed in.", Notes.signedOut)
-        assertEquals("Coach reads your notes, not your settings.", Notes.settingsLine)
         // One tap and a way back on the transient: the note's delete asks nothing.
         assertEquals("Delete note", Notes.delete)
     }

@@ -234,10 +234,10 @@ all three surfaces. They live inline under the field, one at a time:
 | sets outside the domain's band | **Sets, 1 to 20.** |
 | a typed zero | **A zero target is no target — clear the field instead.** |
 
-The field takes **a comma or a point**, and the screen says so once beside it rather than refusing.
-The pinned bytes carry no full stop, because it is a note under a field and not a sentence:
-`comma or point, both read as a decimal`. Refusing a comma would be refusing how most of the world
-writes a number.
+The field takes **a comma or a point**, and says nothing about it: both are accepted and the field
+shows what was typed, so there is nothing to explain. Refusing a comma would be refusing how most of
+the world writes a number. No hint stands under the field — on any surface, on this sheet or on the
+rack keypad — because a hint whose deletion breaks nothing is decoration.
 
 **The illegal shape has two ways in, and each takes its own sentence, because each has its own way
 out.** Only one refusal is ever drawn at a time — the refused keystroke first, then the line's shape,
@@ -262,24 +262,26 @@ because the finish card's keep-as-routine form draws the same sentence under the
 (`16-the-workout.md`).
 
 **The open line** keeps its sentence on every surface, not just one:
-*You decide the numbers at the rack.* It has **one placement rule**: in the target sheet while the
-line on that sheet is open, drawn **above** the three fields beside the never-logged note (anything
-under a field is that field's own note); and **once** beneath any list of a routine's movements that
-holds an open row — the editor's and the routine's own screen — never once per row. The word `open`
-in a row's target column says *which* rows; the sentence says what that word means, and a list needs
-it said once. It is suppressed while a refusal stands, and while a target sheet stands over the list:
-a blessing and a refusal of the same state are never on screen together.
+*You decide the numbers at the rack.* It has **one placement**: the target sheet, while the line on
+that sheet is open, drawn **above** the three fields beside the never-logged note (anything under a
+field is that field's own note) — the moment a lifter leaves a line open. The lists — the editor's
+and the routine's own screen — draw the word `open` in a row's target column and no sentence: the
+word says *which* rows, and the sheet says what it means the moment a line is touched. It is
+suppressed while a refusal stands: a blessing and a refusal of the same state are never on screen
+together. One constant per surface — `OPEN_LINE` (`routines.js`), `TargetEntry.openLine`
+(`TargetEntry.swift`, `Program.kt`) — and one draw site each.
 
-**The sign control is `±`, everywhere**, and **its spoken name is *Flip the sign***. A standalone `−`
-reads as *decrement* in this product — that is what it means in the stepper on the adjacent sheet —
-and it cannot express "back to positive". The name is pinned because the glyph reads as nothing
-aloud, and it is one control met on two screens: the planning sheet's weight field and the rack
-keypad.
+**The sign control is `±`, everywhere**, and **its spoken name is *Flip the sign — band-assisted***.
+A standalone `−` reads as *decrement* in this product — that is what it means in the stepper on the
+adjacent sheet — and it cannot express "back to positive". The name is pinned because the glyph reads
+as nothing aloud, and it is one control met on two screens: the planning sheet's weight field and the
+rack keypad. The name's second half is where the one fact about a negative load lives — it is
+band-assisted work — now that no hint beside the field or under the pad spells it.
 
 **A key that is not a character says what it does.** The rack pad is thirteen keys — a twelve-key
 grid of the ten digits, `±` and the decimal separator, plus `⌫` in the action row. Eleven of them
-speak themselves; the two glyphs do not, so each carries a name: **`±` → *Flip the sign*** and
-**`⌫` → *Delete***. A screen reader left to read the glyphs says "plus minus sign" and "erase to the
+speak themselves; the two glyphs do not, so each carries a name: **`±` → *Flip the sign —
+band-assisted*** and **`⌫` → *Delete***. A screen reader left to read the glyphs says "plus minus sign" and "erase to the
 left", or nothing at all.
 
 **The picker's placeholder is `Search {n} movements`**, and `n` is the catalogue's real size. The seed

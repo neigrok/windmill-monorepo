@@ -123,9 +123,77 @@ stat the product shows them.
 
 It belongs on the set being logged, not in a sheet: the kind is a property of the rep you are about
 to do, and choosing it must not cost a trip. Built that way on both phones — all four kinds one tap
-away in place, on the logger's own pill (`LoggerScreen.swift:353-357`, `LoggerScreen.kt:290-295`).
-**The default is working**, because it always is, and the pill disarms itself the moment a set lands
-so a warmup toggle left on cannot file the working sets after it as ramp-ups.
+away in place. On Android it is an `AssistChip` on the set line, labelled by the kind's wire word
+and opening a `DropdownMenu` of the four, the armed one carrying a check (`KindChip` in
+`LoggerScreen.kt`; spoken *Set kind*, state the wire word); on iOS a `Menu` holding a `Picker`
+(`LoggerScreen.swift:363-366`). **The default is working**, because it always is, and the control
+disarms itself the moment a set lands so a warmup toggle left on cannot file the working sets after
+it as ramp-ups.
+
+## The Android logger is the ruled shape
+
+The live screen has one canon and Android draws it; iOS's logger still draws the older shape and
+follows in its own wave (ledger `5m`). The web starts no sessions and has no logger to follow. Read
+against `LoggerScreen.kt`, top to bottom:
+
+- **The chrome is the platform's.** A centred top bar: `Finish` as the navigation action, the
+  routine's name as the title — `Free session` when there is none, `Readout.noRoutine`, the same
+  bytes the log's rows and the finish sheet draw on all three surfaces — and a settings gear
+  (*Gym settings*) that opens the room's settings screen. A planning door in a top corner is what
+  `../../guidelines/thumb-reach.md` §2 allows there: a destination, not an action.
+- **Two regions.** The reading region — name, set line, history, clocks, the logged strip — is the
+  only elastic part, centred while it is short and scrolling only once the largest text leaves it no
+  room; the walk's dots and the `+` sit under that scroller, pinned above a hairline. The rack —
+  `Weight`, the ladder, `Reps`, `Log set` — is pinned to the bottom, never scrolls and never shrinks.
+- **The set line is the domain's, capitalised at the draw site.** `Set 2 of 4` (`Set 2` with no
+  count) from `LiveLines.counter`, whose bytes stay `set 2 of 4`; when the plan line carries a rep
+  or load target the tail ` · target 5 @ 82.5` follows in the target ink, and a plan with no target
+  draws no tail — the absence says it. The kind chip shares the line and wraps under it at the
+  largest text.
+- **History is a chip, or nothing.** With a last time, an `AssistChip` reads the one matching set —
+  last time's Nth working set for the coming Nth, `LiveLines.lastTimeSet` — as `20 kg × 15`; its
+  spoken description is the whole card `LiveLines.prefillCard` builds (the day, how long ago, the
+  other routine, every set) and its menu dials any of those sets. With no history **nothing is
+  drawn** — no chip, no row, no reserved height. A read that missed draws a disabled chip reading
+  *didn’t load*, because a failed read must never draw as no history.
+- **The rest is two numerals and a ring, and it still says the old words.** From the first landed
+  set of a movement: the time since, counting up, beside a ring filling toward the target and the
+  target's numeral — a check at overrun. The row is one node whose description keeps the bytes the
+  label used to draw, `resting · target 1:30 · from the routine  ·  0:03`, and tapping it clears the
+  rest. When the routine's own rest is in force the caption *from the routine* is drawn under the
+  clocks and hidden from the reader, which the merged node already told.
+- **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
+  keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs. This is the only
+  prose on the screen, and it exists only while something is wrong.
+- **The logged sets are a strip of pills**, one fixed row scrolling sideways: index and `20 × 5`,
+  a warmup in its own ink, a stalled set carrying a cloud-off glyph whose name is *on this device*.
+  Every pill is a door — *fix this set* — to the same `FixSheet` the session screen raises, and a set
+  still owed to the log is fixed or deleted in the queue it waits in (`TrainingStore.fixSet`,
+  `deleteSet`), so the corrected body is what lands. A pill without the cloud is synced: an absence
+  needs no glyph.
+- **The walk's dots say their position** — *Movement 1 of 3*, `LiveLines.place` capitalised — and
+  are drawn only for a walk of two or more; the `+` beside them is *Add movement*, the free
+  session's one way to a next movement, and opens the picker directly.
+- **The rack.** `Weight` over the numeral and its unit, one node (*Weight 20 kg*, *type a weight*)
+  that raises the rack keypad; four **equal** ladder pills whose labels are the golden's by weight
+  band (`Ladder.labels`), never a fixed ±1/±5; `Reps` over the numeral (*Reps 5*, *type the reps*)
+  between two filled circles named *one rep fewer* / *one rep more*; and one full-width primary
+  reading **`Log set`** with no echo — the two numerals stand directly above it. While a finish is
+  in flight the primary is drawn disabled under the same label.
+- **What is gone from Android's screen, and where each fact went.** The first-time card (*First time
+  logging this* and its two lines): an absence, said by the absent chip and the set line's target
+  tail. *reading your log…*: the chip appears when the answer lands. The uppercase `SET N` and
+  `MOVEMENT N OF M` eyebrows: the set line and the dots' spoken name. `plan 4 × 5 @ 82.5` / *no
+  target*: the set line's tail, or nothing. The `× 5` beside the weight and the `Log set  ·  20 × 5`
+  echo: the reps numeral. The picker subtitle *the session is already running*: the title and
+  `Finish` exist only while one runs. The four-segment kind row: the chip.
+
+**The keypad's own words**, pinned here so nothing holds them by test alone: a valid load's line is
+its unit, `kg` (`WEIGHT_UNIT` in `logger/entry.js`, `KeypadEntry.weightUnit` in `KeypadSheet.swift`,
+`KeypadEntry.weightHint` in `KeypadSheet.kt`); a valid rep count's is *whole reps*; the empty-buffer
+line is *Enter a number, or cancel to keep {n}*; the refusals are `15-the-routine.md`'s four with
+this screen's 1–99 band; and the two glyphs are named *Flip the sign — band-assisted* and *Delete*.
+No hint about separators stands under the pad on any surface.
 
 ## The undo lives on the transient
 
@@ -166,5 +234,6 @@ and the transient's count line. Three of the five belong to screens this brief o
 ## Open
 
 - **Whether a drop set needs to name its parent.** The column exists; the relationship does not.
-- **What the logger shows when the queue is behind.** Unsynced work is said, never hidden, but the
-  logger is the screen where saying it competes with the numeral for the only space there is.
+- **What the logger shows when the queue is behind**, on iOS. Android answers it above — the
+  stranded band in the reading region and a cloud-off glyph on the stalled pill, nothing in the
+  rack — and iOS's logger answers it its own way until it follows (`5m`).

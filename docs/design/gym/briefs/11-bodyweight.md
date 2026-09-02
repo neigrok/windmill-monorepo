@@ -62,14 +62,12 @@ Seven, because a lifter who weighs in two or three mornings a week has ordinary 
 days, and the line should break on a **missed week** — that is the thing worth seeing. A longer
 threshold buys smoothness by implying a fortnight of measurements that do not exist.
 
-A connecting segment is still a connection and not data, so the chart **says so on itself**: *"no
-line is drawn across a gap longer than seven days"*, beside the window it is showing. A reader who
-knows the rule can read the line correctly; a reader who does not would be misled by it, which is
-why the sentence is part of the chart rather than part of a spec.
+A connecting segment is still a connection and not data, and the chart draws **no legend for the
+rule**: a gap in the line reads as a gap, and a caption explaining an absence is chrome. The threshold
+lives in one constant per surface (`GAP_DAYS` in `bodyweight.js`, `Bodyweight.gapDays` in
+`Bodyweight.swift`, `Bodyweight.maxGapDays` in `Bodyweight.kt`) and in no sentence.
 
-**It is drawn where a chart is, and only there.** The sentence is the chart's disclosure about its
-own segments, so a window holding no weigh-in says that it is empty and nothing else — there are no
-segments to read, and a rule about lines under a screen with no line is chrome. Not gated on whether
+**A window holding no weigh-in says that it is empty and nothing else.** Not gated on whether
 a gap is present: a dense series drawn as one unbroken line is exactly where over-reading it is
 likeliest.
 
@@ -171,8 +169,8 @@ server refuses a day more than one past its own UTC today with the same sentence
 dated after the device's today is never the reading and never a dot.
 
 The field refuses one thing at a time, in this order: *That is not a number yet.* · *One decimal
-point only.* · *Between 20 and 400 kg — check the number.* It takes comma or point, and says so once
-beside it: *comma or point, both read as a decimal*.
+point only.* · *Between 20 and 400 kg — check the number.* It takes comma or point and says nothing
+about it — the field shows what was typed.
 
 Without the repair path a fat-fingered 182 for 82 is permanent and rescales the chart forever. That
 would be out of character: gym gives a whole backfill door to a missed session and a fix sheet with

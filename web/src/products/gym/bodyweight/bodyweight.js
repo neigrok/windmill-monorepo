@@ -10,7 +10,6 @@ export const BODYWEIGHT_TITLE = 'Bodyweight';
 export const WEIGH_IN_VERB = 'Weigh in';
 export const DATE_LABEL = 'Date';
 export const SAVE_VERB = 'Save';
-export const DECIMAL_HINT = 'comma or point, both read as a decimal';
 export const NO_WEIGH_INS = 'No weigh-ins yet.';
 export const NO_WEIGH_INS_LINE = 'Weigh in from the log and the number lands here.';
 export const NO_WEIGH_INS_IN_WINDOW = 'No weigh-in in the last 90 days.';
@@ -37,7 +36,6 @@ export const REFUSALS = {
 // breaks it. Calendar days, not elapsed hours: the dots sit on local midnights, and a week of those
 // runs 167 or 169 hours across a clock change.
 export const GAP_DAYS = 7;
-export const GAP_RULE = 'no line is drawn across a gap longer than seven days';
 
 export function joinsAcross(from, to) {
   return Math.round((to.at - from.at) / 86400000) <= GAP_DAYS;

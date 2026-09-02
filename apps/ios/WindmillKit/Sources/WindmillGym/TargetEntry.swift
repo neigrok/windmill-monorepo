@@ -1,14 +1,5 @@
 import Foundation
 
-// Both shapes of a routine's row answer this — the one the log holds and the one being written — so
-// the placement rule below reads the same under either list.
-public protocol RoutineRow {
-    var isOpen: Bool { get }
-}
-
-extension RoutineEntry: RoutineRow {}
-extension RoutineWrite.Entry: RoutineRow {}
-
 // The routine target's three typed fields — sets, reps, weight — and the six refusals they carry.
 //
 // These are the PLANNING sheet's bands, the ones `backend/products/gym/domain/Routine.cpp:20-26`
@@ -26,25 +17,15 @@ public enum TargetEntry {
     public static let maxWeightKg: Double = 500
 
     // What an open line MEANS. One sentence on every surface (`15-the-routine.md`), the twin of
-    // `web/src/products/gym/routines.js` OPEN_LINE and Android's `TargetEntry.openLine`, and it has
-    // one placement rule: in the target sheet while the line is open, and ONCE beneath any list of a
-    // routine's movements that holds an open row — never once per row. The word `open` in the target
-    // column says WHICH rows; this says what that word means, and a list needs it said once.
+    // `web/src/products/gym/routines.js` OPEN_LINE and Android's `TargetEntry.openLine`, drawn on
+    // the target sheet alone while the line on it is open — a list's target column already reads
+    // `open` per row, and the sheet says what that means the moment a line is touched.
     public static let openLine = "You decide the numbers at the rack."
-
-    // nil when no row in the list is open, so a screen draws the sentence by drawing what this returns.
-    public static func openLineUnder<Row: RoutineRow>(_ rows: [Row]) -> String? {
-        guard rows.contains(where: \.isOpen) else { return nil }
-        return openLine
-    }
 
     // What an emptied field means, drawn as the placeholder inside it.
     public static let setsPlaceholder = "open"
     public static let repsPlaceholder = "max"
     public static let weightPlaceholder = "last time"
-
-    // Said once beside the fields rather than refused. Most of the world writes a decimal with a comma.
-    public static let decimalHint = "comma or point, both read as a decimal"
 
     // `.decimalPad` has no sign key, and a load may be band-assisted — a chin-up planned at −20 kg is
     // a target `Routine.cpp:26` accepts and the rack already logs. So the weight field carries the

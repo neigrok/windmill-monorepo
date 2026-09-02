@@ -171,10 +171,10 @@ final class ReviewSheetTests: XCTestCase {
     }
 
     // The gate is enforced, so it is said — on the screen and on the VoiceOver channel, in one sentence
-    // of eight words that names the way out. Pinned here because nothing else names these bytes: a phone
+    // of six words that names the way out. Pinned here because nothing else names these bytes: a phone
     // could otherwise reword the refusal, drift from the other two surfaces, and stay green (ledger 2p).
     func testTheBandSaysWhyApplyIsShutInBytesTheOtherSurfacesShare() throws {
-        XCTAssertEqual(Proposal.applyHint, "Read the changes to the end to apply them.")
+        XCTAssertEqual(Proposal.applyHint, "Scroll to the end to apply.")
         XCTAssertLessThanOrEqual(Proposal.applyHint.split(separator: " ").count, 12,
                                  "a refusal runs to twelve words and names the way out")
 

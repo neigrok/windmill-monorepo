@@ -11,9 +11,9 @@ object ConnectedLog {
 
     const val connect = "Connect my log"
 
-    const val onTheWeb =
-        "Opens the setup page in your browser — which line to paste where. Your tool’s first call " +
-            "opens the approval screen itself."
+    // The button's own icon says it opens the browser; this says what happens after.
+    const val onTheWeb = "Your tool’s first call opens the approval screen."
+    const val opensInBrowser = "opens in your browser"
 
     const val canDoHead = "What it can do"
 
@@ -36,11 +36,6 @@ object ConnectedLog {
             "of its own. It lets a tool discard a whole workout, permanently and its sets with it, " +
             "end a share link you have already handed out, and propose taking a day out of your " +
             "program."
-
-    // The list itself, and the Disconnect beside each row, are the web's — the row above is the door
-    // to them. This says the one thing the door cannot: the phone never reads what is on the other
-    // side of it.
-    const val notNamedHere = "This phone does not read your connections, so it names no tool of its own."
 
     const val deviceOnly =
         "This log is on this device. An agent reads the log on your account, so signing in comes first."

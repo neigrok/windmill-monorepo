@@ -150,37 +150,19 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // C1: the open line's sentence has one placement rule — once beneath the list when at least one
-    // row is open, never per row. The row's own target column says WHICH row it is about.
+    // The open line's sentence has one home — the target sheet, where the lifter is deciding it.
+    // The list prints the compact `open` token in the row's own target column and no sentence.
     @Test
-    fun testTheEditorSaysTheOpenLineOnceBeneathItsMovementList() {
+    fun testTheEditorPrintsOpenPerRowAndLeavesTheSentenceToTheTargetSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat")
             .targeting("squat", sets = 3, reps = 5, weightKg = 60.0))
 
-        compose.onAllNodesWithText("You decide the numbers at the rack.").assertCountEquals(1)
-        compose.onNodeWithText("You decide the numbers at the rack.").assertIsDisplayed()
         compose.onNodeWithText("open").assertIsDisplayed()
-        scope.cancel()
-    }
+        compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
 
-    // C19: and the list keeps that sentence only while nothing stands over it. The target sheet says
-    // the same words in front of the scrim, so the list's copy stands down for as long as the sheet is
-    // up — one state, one sentence.
-    @Test
-    fun testTheEditorsOpenLineStandsDownWhileATargetSheetStandsOverIt() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, RoutineDraft(name = "Push Day").adding("bench-press"))
-
-        // With nothing over it, the list says it, beneath the movement it is about.
-        compose.onAllNodesWithText("You decide the numbers at the rack.").assertCountEquals(1)
-        val said = compose.onNodeWithText("You decide the numbers at the rack.")
-            .fetchSemanticsNode().positionInRoot.y
-        val movement = compose.onNodeWithText("bench-press").fetchSemanticsNode().positionInRoot.y
-        assertTrue("beneath the movement list", said > movement)
-
-        // The sheet stands up and takes the sentence with it: still exactly one on screen, and it is
-        // the sheet's — drawn beside the never-logged line the list has no equivalent of.
+        // The sheet stands up and says it, once, beside the never-logged line the list has no
+        // equivalent of.
         compose.onNodeWithText("bench-press").performClick()
         compose.onAllNodesWithText("You decide the numbers at the rack.").assertCountEquals(1)
         compose.onNodeWithText("Never logged — these are your numbers.").assertIsDisplayed()

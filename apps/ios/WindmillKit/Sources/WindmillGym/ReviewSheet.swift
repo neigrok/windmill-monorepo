@@ -286,7 +286,7 @@ struct ReviewSheet: View {
             // to read further while the apply request is already in flight.
             //
             // One fact, one channel each: these are the pixels, and the button's own hint is what
-            // VoiceOver reads. Exposed here as well, the eight words are announced twice in a row —
+            // VoiceOver reads. Exposed here as well, the sentence is announced twice in a row —
             // once as the control's hint and once as the row beneath it. Android says it on the
             // control too, as `stateDescription`.
             Text(Proposal.applyHint)

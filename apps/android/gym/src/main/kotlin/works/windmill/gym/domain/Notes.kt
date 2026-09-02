@@ -54,9 +54,6 @@ object Notes {
 
     const val signedOut = "Notes live with your account, so they need you signed in."
 
-    // Beside the dials in settings, where the question is asked.
-    const val settingsLine = "Coach reads your notes, not your settings."
-
     const val titlePlaceholder = "Title"
     const val bodyPlaceholder = "What Coach should know"
     const val save = "Save"

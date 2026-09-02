@@ -35,14 +35,14 @@ This screen is the worked example in `../../guidelines/text-budget.md`. It carri
 sentences in a column, which is not four times as honest as one — it is a paragraph, a paragraph is
 not read, and stacking them made the product **less** honest.
 
-- *"…and nothing else you have set"* answers a question you ask **in settings, looking at the dials**,
-  so it moved there and became six words beside them:
-
-  > **Coach reads your notes, not your settings.**
-
-  On the Notes screen it answered a question nobody was asking; among the dials it answers the obvious
-  one. That is the *moment of consequence* move, and the salience finding — the same fact placed where
-  it is surprising rather than where it is merely true.
+- *"…and nothing else you have set"* is a fact about what a connected agent cannot reach, and it is
+  said there — in the connect panel's cannot column, beside the other things a grant never reaches
+  (Android's `ConnectedLog.cannotDo` ends *your rest dial and the unit you read in are yours alone*).
+  It is drawn nowhere else: the settings screen's Notes door carries the notes' own purpose line,
+  *what you write for Coach* (`HEAD_LINE` in `notes.js`, `Notes.purpose` in `Notes.swift`,
+  `Notes.sub` in `Notes.kt`), and no caption about the dials. Among the dials the sentence answered a
+  question no lifter asks at that door, and a caption that qualifies the whole group from under one
+  control is the drift the ledger keeps finding.
 
   **It names what it excludes, rather than pointing.** The first draft said *"not these"*, which
   depends entirely on which control it happens to sit beside — and it landed under the haptic and

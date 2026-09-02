@@ -14,8 +14,8 @@ import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryDroppedLine,
-  entryPlaceLabel, hasOpenEntry, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
+  blankRoutine, builtLabel, draftFrom, duplicateRoutine, entryDroppedLine,
+  entryPlaceLabel, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
   NAME_IT_TO_SAVE_IT, OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite,
   saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt,
   withEntryRemoved, withEntrySet, withField, withSignFlipped,
@@ -105,7 +105,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
       {view.phase === 'ready' && program.length === 0 && (
         <>
           <p className="gym-quiet">No routines yet.</p>
-          <p className="gym-quiet">Finish a session and gym offers to keep it as one — or write one out now.</p>
+          <p className="gym-quiet">One training day, written down.</p>
           <Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>
         </>
       )}
@@ -265,12 +265,6 @@ export function RoutineEditor({ id, log }) {
         onRemove={dropEntry}
       />
 
-      {/* Once, under the whole list, while a row is open and no target sheet stands over it: the
-          rows say WHICH by reading `open` in their own target column, and this says what that word
-          means. While a sheet is up the sheet owns the sentence — one state, one sentence, never a
-          blessing behind a scrim beside a refusal in front of it. */}
-      {target == null && hasOpenEntry(draft.entries) && <p className="gym-open-line">{OPEN_LINE}</p>}
-
       <Button full variant="secondary" onClick={() => { setQuery(''); setPicking(true); }}>
         + Add movement
       </Button>
@@ -373,10 +367,10 @@ function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
           </button>
         </div>
         {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
-        {/* The same sentence the list draws beneath its rows, said here for the row being decided.
-            It sits with the other statement about the line, above the fields: everything under a
-            field belongs to that field. While a refusal stands the sentence is not drawn: blessing a
-            state the sheet is refusing in the same breath says two things at once. */}
+        {/* The one place the open line is said: the rows only name themselves `open`. It sits with
+            the other statement about the line, above the fields: everything under a field belongs to
+            that field. While a refusal stands the sentence is not drawn: blessing a state the sheet
+            is refusing in the same breath says two things at once. */}
         {!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}
 
         <div className="gym-target-fields">
@@ -396,32 +390,28 @@ function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
             error={refusalFor('reps')}
             onChange={type('reps')}
           />
-          <div>
-            <Input
-              label="Weight"
-              value={fields.weight}
-              placeholder={LAST_TIME_PLACEHOLDER}
-              inputMode="decimal"
-              error={refusalFor('weight')}
-              onChange={type('weight')}
-              describedBy="gym-target-decimal"
-              trailing={(
-                <>
-                  <span className="gym-target-unit">kg</span>
-                  {/* A decimal keyboard offers no sign, and band-assisted work is a negative load. */}
-                  <button
-                    type="button"
-                    className="gym-target-sign"
-                    aria-label="Flip the sign"
-                    onClick={() => setFields(withSignFlipped)}
-                  >
-                    ±
-                  </button>
-                </>
-              )}
-            />
-            <p className="gym-target-decimal" id="gym-target-decimal">{DECIMAL_NOTE}</p>
-          </div>
+          <Input
+            label="Weight"
+            value={fields.weight}
+            placeholder={LAST_TIME_PLACEHOLDER}
+            inputMode="decimal"
+            error={refusalFor('weight')}
+            onChange={type('weight')}
+            trailing={(
+              <>
+                <span className="gym-target-unit">kg</span>
+                {/* A decimal keyboard offers no sign, and band-assisted work is a negative load. */}
+                <button
+                  type="button"
+                  className="gym-target-sign"
+                  aria-label="Flip the sign — band-assisted"
+                  onClick={() => setFields(withSignFlipped)}
+                >
+                  ±
+                </button>
+              </>
+            )}
+          />
         </div>
 
         {/* The field is kilograms; null when the account also reads kilograms. */}

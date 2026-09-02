@@ -7,7 +7,7 @@ import { connectedLabel, connectionsToTheLog, NOTHING_CONNECTED } from '../conne
 import { EXPORT_BODYWEIGHT_LINE, EXPORT_BODYWEIGHT_VERB } from '../bodyweight/bodyweight.js';
 import { EXPORT_BODYWEIGHT_HREF, EXPORT_HREF, EXPORT_NOTES_HREF, gymApi } from '../gymApi.js';
 import { CONNECT_HREF, NOTES_HREF } from '../log.js';
-import { EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, SETTINGS_LINE } from '../notes/notes.js';
+import { EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, HEAD_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
 import {
   preferenceRefusal, preferencesWrite, readPreferences, REST_CHOICES, restLabel,
@@ -81,12 +81,9 @@ export function GymSettingsSection({ api = gymApi } = {}) {
       <p style={{ ...styles.calmLine, marginBottom: 10 }}>This page never sounds an alarm of its own.</p>
 
       <Row title="Units" aside={<Choices options={UNITS} value={preferences.units} onPick={(units) => change({ units })} />}>
-        Display only — nothing stored changes.
-        {preferences.units === LB && (
-          <> Weights you type at this desk — a backfill, a correction, a routine target — stay in
-            kilograms, and say so on the field.
-          </>
-        )}
+        {/* The enumeration is the disclosure: these three stay in kilograms, and the weigh-in — the
+            one field typed in the display unit — is not among them. */}
+        {preferences.units === LB && 'A backfill, a correction, a routine target — typed in kg.'}
       </Row>
 
       <Row title="Rest timer" aside={<span style={look.aside}>{restLabel(preferences.restSeconds)}</span>}>
@@ -119,11 +116,10 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         records what you want, it does not act here.
       </Row>
 
-      {/* The line names what Coach does not read, so it is true wherever it sits on the page. */}
       <a href={NOTES_HREF} style={look.door}>
         <span style={look.doorMain}>
           <span style={styles.primaryText}>Notes</span>
-          <span style={styles.metaText}>{SETTINGS_LINE}</span>
+          <span style={styles.metaText}>{HEAD_LINE}</span>
         </span>
         <span aria-hidden="true" style={look.chevron}>›</span>
       </a>
@@ -202,7 +198,7 @@ function Row({ title, aside, children }) {
         {aside}
       </div>
       {/* A div and not a paragraph: these rows nest controls, which a <p> would reshape around. */}
-      <div style={{ ...styles.calmLine, marginTop: 8 }}>{children}</div>
+      {children !== false && <div style={{ ...styles.calmLine, marginTop: 8 }}>{children}</div>}
     </div>
   );
 }

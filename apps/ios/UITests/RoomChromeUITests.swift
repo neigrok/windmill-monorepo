@@ -116,16 +116,15 @@ final class RoomChromeUITests: XCTestCase {
         XCTAssertTrue(door.waitForExistence(timeout: 20))
         if !door.isHittable { app.swipeUp() }
         door.tap()
-        let footer = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",
-                                                          "Display only — nothing stored changes.")).firstMatch
-        XCTAssertTrue(footer.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Set confirmation"].waitForExistence(timeout: 10))
         frame("fixc-settings")
 
         XCTAssertTrue(app.staticTexts["Units"].exists,
                       "the kg | lb control is drawn with no name over it")
-        for named in ["Rest timer", "Set confirmation"] {
-            XCTAssertTrue(app.staticTexts[named].exists, "\(named) lost its head too")
-        }
+        XCTAssertTrue(app.staticTexts["Rest timer"].exists, "Rest timer lost its head too")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",
+                                                            "Display only")).firstMatch.exists,
+                       "the units control still explains that a display unit rewrites nothing")
     }
 
     // The first root the room opens on is handed a navigation bar whose layout margins are zero, and

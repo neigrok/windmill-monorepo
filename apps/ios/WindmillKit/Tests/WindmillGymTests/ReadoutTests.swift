@@ -141,8 +141,8 @@ final class ReadoutTests: XCTestCase {
         let named = Session(id: "ses_3", startedAtMs: 1_000,
                             plan: PlanSnapshot(routine: "Push A", entries: []))
 
-        XCTAssertEqual(Readout.routine(of: bare), "Session · no routine")
-        XCTAssertEqual(Readout.routine(of: blank), "Session · no routine")
+        XCTAssertEqual(Readout.routine(of: bare), "Free session")
+        XCTAssertEqual(Readout.routine(of: blank), "Free session")
         XCTAssertEqual(Readout.routine(of: named), "Push A")
     }
 }

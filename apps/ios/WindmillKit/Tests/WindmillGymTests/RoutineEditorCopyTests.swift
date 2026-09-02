@@ -50,17 +50,25 @@ final class RoutineEditorCopyTests: XCTestCase {
         }
     }
 
-    // ── C1 · the open line's one sentence ───────────────────────────────────────────────────────
+    // ── C1 · the open line's one sentence, and the one screen that draws it ─────────────────────
 
-    func testTheOpenSentenceIsDrawnOnceForAListAndNeverPerRow() {
-        let open = RoutineWrite.Entry(exerciseId: "back-squat")
-        let named = RoutineWrite.Entry(exerciseId: "bench-press", targetSets: 3, targetReps: 5,
-                                       targetWeightKg: 80)
-        XCTAssertNil(TargetEntry.openLineUnder([RoutineWrite.Entry]()))
-        XCTAssertNil(TargetEntry.openLineUnder([named]))
-        XCTAssertEqual(TargetEntry.openLineUnder([open]), TargetEntry.openLine)
-        XCTAssertEqual(TargetEntry.openLineUnder([open, named, open]), TargetEntry.openLine,
-                       "two open rows are still one sentence")
+    // The target sheet says what `open` means the moment a line is opened; the two lists of a
+    // routine's movements draw `open` in the target column and nothing beneath.
+    func testTheOpenSentenceIsTheTargetSheetsAloneAndNoListDrawsIt() throws {
+        XCTAssertEqual(TargetEntry.openLine, "You decide the numbers at the rack.")
+
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/WindmillGym")
+        let editor = try String(contentsOf: sources.appendingPathComponent("RoutineBuilderScreens.swift"),
+                                encoding: .utf8)
+        let sheet = try XCTUnwrap(editor.range(of: "private struct TargetSheet: View"))
+        XCTAssertFalse(editor[..<sheet.lowerBound].contains("TargetEntry.openLine"),
+                       "the editor's list draws the sentence beneath the movements")
+        XCTAssertEqual(editor[sheet.upperBound...].components(separatedBy: "Text(TargetEntry.openLine)").count - 1, 1,
+                       "the sheet draws it once")
+        let routine = try String(contentsOf: sources.appendingPathComponent("RoutineScreen.swift"), encoding: .utf8)
+        XCTAssertFalse(routine.contains("TargetEntry.openLine"), "the saved routine's screen draws it too")
     }
 
     // ── C8 · the counter is chrome a short name never carries ───────────────────────────────────

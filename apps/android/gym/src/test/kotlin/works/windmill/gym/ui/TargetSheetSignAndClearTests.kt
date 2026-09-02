@@ -126,10 +126,10 @@ class TargetSheetSignAndClearTests {
         val draft = editor(scope, RoutineDraft(name = "Pull Day").adding("bench-press")
             .targeting("bench-press", sets = 3, reps = 8, weightKg = 20.0))
 
-        compose.onNodeWithContentDescription("Flip the sign").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").assertIsDisplayed()
         compose.onNodeWithText("±").assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Flip the sign").performClick()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").performClick()
         compose.onNodeWithContentDescription("Weight target").assertTextContains("−20")
 
         compose.onNodeWithText("Set  ·  ", substring = true).performClick()
@@ -147,10 +147,10 @@ class TargetSheetSignAndClearTests {
             .targeting("bench-press", sets = 3, reps = 8, weightKg = -20.0))
 
         compose.onNodeWithContentDescription("Weight target").assertTextContains("−20")
-        compose.onNodeWithContentDescription("Flip the sign").performClick()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").performClick()
         compose.onNodeWithContentDescription("Weight target").assertTextContains("20")
 
-        compose.onNodeWithContentDescription("Flip the sign").performClick()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").performClick()
         compose.onNodeWithContentDescription("Weight target").assertTextContains("−20")
         scope.cancel()
     }
@@ -163,9 +163,9 @@ class TargetSheetSignAndClearTests {
         editor(scope, RoutineDraft(name = "Pull Day").adding("bench-press")
             .targeting("bench-press", sets = 3, reps = 8, weightKg = 20.0))
 
-        val sign = compose.onNodeWithContentDescription("Flip the sign").fetchSemanticsNode()
-        assertEquals(listOf("Flip the sign"), sign.config[SemanticsProperties.ContentDescription])
-        assertEquals("Flip the sign", sign.config[SemanticsActions.OnClick].label)
+        val sign = compose.onNodeWithContentDescription("Flip the sign — band-assisted").fetchSemanticsNode()
+        assertEquals(listOf("Flip the sign — band-assisted"), sign.config[SemanticsProperties.ContentDescription])
+        assertEquals("Flip the sign — band-assisted", sign.config[SemanticsActions.OnClick].label)
         scope.cancel()
     }
 
@@ -176,7 +176,7 @@ class TargetSheetSignAndClearTests {
         editor(scope, RoutineDraft(name = "Pull Day").adding("bench-press")
             .targeting("bench-press", sets = 3, reps = 8, weightKg = null))
 
-        compose.onNodeWithContentDescription("Flip the sign").performClick()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").performClick()
         compose.onNodeWithText("That is not a number yet.").assertDoesNotExist()
         compose.onNodeWithContentDescription("Weight target").performTextReplacement("20")
         compose.onNodeWithContentDescription("Weight target").assertTextContains("20")

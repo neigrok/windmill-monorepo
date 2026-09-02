@@ -70,9 +70,10 @@ object Record {
             nothingYet = if (untrained)
                 "Nothing logged for this movement yet. The first set you log lands here."
             else null,
-            // Only where the estimate is genuinely missing rather than undefined.
+            // Only where the estimate is genuinely missing rather than undefined — and it names the
+            // way out, which is why it is drawn at all.
             noEstimate = if (!untrained && record.bestE1rm == null && (record.heaviest?.weightKg ?: 0.0) > 0)
-                "e1RM is computed on your log. Sign in and the chart arrives with it."
+                "e1RM needs your account — sign in for the chart."
             else null,
         )
     }

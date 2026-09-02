@@ -60,17 +60,17 @@ final class BodyweightReadingTests: XCTestCase {
                        Bodyweight.Reading(value: nil, refusal: "Between 20 and 400 kg — check the number."))
         XCTAssertEqual(Bodyweight.read("20"), Bodyweight.Reading(value: 20, refusal: nil))
         XCTAssertEqual(Bodyweight.read("400"), Bodyweight.Reading(value: 400, refusal: nil))
-        XCTAssertEqual(Bodyweight.hint, "comma or point, both read as a decimal")
     }
 
+    // The chart's gap rule is drawn as a gap, and the kg limitation is the settings screen's alone.
     func testTheWordsArePinned() {
         XCTAssertEqual(Bodyweight.title, "Bodyweight")
         XCTAssertEqual(Bodyweight.chip, "Weigh in")
-        XCTAssertEqual(Bodyweight.gapRule, "no line is drawn across a gap longer than seven days")
+        XCTAssertEqual(Bodyweight.gapDays, 7)
         XCTAssertEqual(Bodyweight.Window.allCases.map(\.rawValue), ["90 days", "All"])
         XCTAssertEqual(Bodyweight.deleteRow, "Delete weigh-in")
         XCTAssertEqual(WithheldWords.weighIn, "Weigh-in deleted.")
-        XCTAssertEqual(Bodyweight.drawsKg, "Not on this phone yet — this room still draws kg.")
+        XCTAssertEqual(Settings.stillKg, "This phone still draws kg.")
     }
 
     func testTheLocalDayIsARealCalendarDateOrNothing() {

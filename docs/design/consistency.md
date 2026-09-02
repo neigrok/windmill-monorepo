@@ -848,17 +848,13 @@ read *"the count above was taken before they were drawn"*, which records history
 own rule is that docs hold the current state only. It also truncated mid-word. Rewritten to say what
 the budget IS.
 
-**2p · the rack keypad's own words live in code and in no brief** → `16-the-workout.md` takes them.
-That brief keeps the keypad at the rack and says its strings are pinned before anything is drawn,
-but it enumerates none of them. Two are byte-identical on three surfaces and written down nowhere in
-canon: the pad's hint *kg  ·  comma or point both read as a decimal  ·  ± for band-assisted*
-(`logger/entry.js` `WEIGHT_HINT`, `KeypadSheet.swift` and `KeypadSheet.kt` `weightHint`) and its
-empty-buffer line *Enter a number, or cancel to keep {n}*. The only thing holding the hint's bytes
-is one web test that asserts them and names the two phone files in a comment
-(`test/products/gym/logger/entry.test.js`); a phone suite asserts its own constant, not the bytes,
-so a phone can move it and stay green. `15-the-routine.md` pins the four refusals the pad shares
-(with the logger's 1–99 band, `2i`) and both glyph names — `±` → *Flip the sign*, `⌫` → *Delete*;
-these two sentences have no owner at all.
+**2p · the rack keypad's own words live in code and in no brief** → **built 2026-09-02**,
+`16-the-workout.md` takes them. The pad's separator hint is gone from all three surfaces and a valid
+load's line is its unit alone — `kg`, `logger/entry.js` `WEIGHT_UNIT`, `KeypadSheet.swift`
+`KeypadEntry.weightUnit`, `KeypadSheet.kt` `KeypadEntry.weightHint` — the empty-buffer line is
+*Enter a number, or cancel to keep {n}* on all three, and the glyph names are `±` → *Flip the sign —
+band-assisted* and `⌫` → *Delete*. The brief now enumerates every one of them beside the logger's
+shape, so the bytes have an owner and are no longer held by `entry.test.js` alone.
 
 **2q · the picker says one sentence for a catalogue that never loaded, and no brief says it** →
 the brief takes it, or the sentence is canon by grep. *The catalog didn’t load. It comes back when
@@ -1489,7 +1485,7 @@ delete lands in a moment.* — or the cap line drops its second clause while a n
 held. One string, three files, whichever is chosen.
 
 **4m · the gate's refusal reaches a screen reader once on all three surfaces** → built 2026-08-31,
-nothing owed. *Read the changes to the end to apply them.* is on both channels — drawn, and on the
+nothing owed. *Scroll to the end to apply.* is on both channels — drawn, and on the
 control that is refusing — and each surface keeps the drawn copy out of the accessibility tree in
 **both** gate states so a reader traversing the shut band meets it once. iOS:
 `.accessibilityHint` on Apply, the row `.accessibilityHidden(true)`. The web: `aria-describedby` on
@@ -1645,8 +1641,8 @@ numeral rule reaches the pre-mint offer or stops at the consent screens.
 by the settings-caption salvage that cut them. (1) **Windmill holds the screen awake for an open
 session** — `GymRoom.kt` adds `FLAG_KEEP_SCREEN_ON` while one is running and clears it on the way out
 — and the rest chime is scheduled inside the app, so closing the app takes it. iOS says its half of
-that fact (*The sound needs the app awake: a rest that ends while the phone is locked ends quietly.*,
-`SettingsScreen.swift`); Android now says none of it. (2) **The dials are kept with the account and
+that fact (*A rest that ends while the phone is locked ends quietly.*, `SettingsScreen.swift:76`);
+Android now says none of it. (2) **The dials are kept with the account and
 follow a sign-in.** All five dials are one `GymPreferences` document written by one
 `store.savePreferences` (`Preferences.kt:32-37`), and the room already says the opposite state out
 loud when the write is refused — *that setting stayed on this device*. The only sentence that said
@@ -1702,9 +1698,10 @@ Owed on iOS (`LoggerScreen`, `RoutineEditorScreen`) and Android (`LoggerScreen`,
 each of which passes `store.recent` where it wants the account.
 
 **4v · a door that hands the lifter to a browser says nothing when no browser comes** → a ruling,
-on both phones. Android's connect row and its `Connect my log` button both fire
-`runCatching { web.openUri(…) }` (`ui/SettingsScreen.kt:195`, `:224`) with no failure branch and no
-`say` passed into the row; iOS's `GymRoom.swift:532` calls `openURL(…)` with no completion handler.
+on both phones. Android's connect row, its `Connect my log` button and the `CSV export` row all
+fire `runCatching { web.openUri(…) }` (`ui/SettingsScreen.kt:185`, `:215`, `:378`) with no failure
+branch and no `say` passed into the row; iOS's `GymRoom.swift:532` calls `openURL(…)` with no
+completion handler.
 On a device with no browser able to take the URL, the tap does nothing and the room says nothing —
 the one shape the programme's own rule (*give every enforced refusal a sentence*) exists to prevent,
 on a door rather than on a verb. The web has no half of this: the setup page is one of its own pages
@@ -1997,8 +1994,8 @@ decides whether the first entry is the honest reading or the dial is, and the ot
 follow.
 
 **5i · Android's Rest group draws no caption while iOS's footer states the app-awake fact** → a
-copy owner's call, and a narrow one. iOS's Rest section footer reads *The sound needs the app awake:
-a rest that ends while the phone is locked ends quietly.* (`SettingsScreen.swift:75`). Android's
+copy owner's call, and a narrow one. iOS's Rest section footer reads *A rest that ends while the
+phone is locked ends quietly.* (`SettingsScreen.swift:76`). Android's
 `RestRow` carries the segmented dial and the sound toggle and no caption at all
 (`SettingsScreen.kt:119-133`): its override sentence left with `3g`, and the app-awake fact is not
 Android's to state — the room holds a wake lock while a session runs, so a rest that ends under a
@@ -2045,3 +2042,41 @@ a read-level tool, so a read grant hands an agent every weigh-in, which none of 
 a shared omission on all three surfaces rather than a divergence, and the more important half: a
 consent line that enumerates what a read reaches and leaves out a body measurement is the copy the
 mission line forbids. One word for the thing and the weigh-ins named, on all six lines at once.
+
+**5m · the Android logger is the ruled shape and iOS's logger still draws the older one** → a build
+owed on iOS; the direction is Android → iOS, and the domain bytes do not move. Android's
+`LoggerScreen.kt` draws the shape `gym/briefs/16-the-workout.md` now pins: the set line `Set 2 of 4`
+with its target tail and a kind `AssistChip` opening a `DropdownMenu` (`KindChip`), a last-time
+`AssistChip` only where history exists (`LastTimeChip`, `LiveLines.lastTimeSet`), a clocks row that
+speaks the old label's bytes (`Clocks`), the logged sets as a strip of pills opening `FixSheet`
+(`LoggedStrip`, `SetPill`), the dots pinned above the hairline (`Walk`), four equal ladder pills
+(`LadderRow`), the reps between two filled circles (`RepsRow`) and a primary reading `Log set`
+alone (`LogButton`). iOS's `LoggerScreen.swift` still draws `counter.plan` under the name (`:202` —
+*plan 5 × 5 @ 82.5* / *no target*, `LiveSession.swift:33`, `:59`), the position eyebrow in
+`.textCase(.uppercase)` (`:220`), `counter.count` uppercased above the numeral (`:320-322`), the
+kind as a `Menu` holding a `Picker` (`:363-366`), and the primary as `Log set  ·  20 × 5` (`:477`);
+`LiveLines.Counter` keeps its `plan` there while Android's `counter` answers the count alone. The
+web starts no sessions and draws a mirror, so it has nothing to follow. What is owed is the same
+screen on iOS in the platform's own controls — a `Menu` where Android has a menu, a `Capsule` where
+it has a chip — with the same strings and the same absences.
+
+**5n · the Units lb sentence says two different things on the web and on the phones** → recorded as
+legal, nothing owed. Under the Units control with lb picked the web draws *A backfill, a correction,
+a routine target — typed in kg.* (`settings/GymSettingsSection.jsx:86`) and both phones draw *This
+phone still draws kg.* (`Settings.stillKg`, `SettingsScreen.swift:171`; `Bodyweight.kilogramsOnly`,
+`Bodyweight.kt:70`, drawn at `SettingsScreen.kt:113`). The words differ because the capability
+differs, which is the one condition `gym/briefs/12-native-idiom.md` allows copy to diverge under:
+the web converts its readings and takes the weigh-in in the display unit, so its sentence enumerates
+the three fields that stay in kilograms and excludes the one that does not; the phones convert
+nothing, so theirs says so in four words. Each is true of its own surface and false of the other.
+Neither draws *Display only — nothing stored changes.* any more, on any surface. Recorded so a later
+sweep does not read the two sentences as a byte drift to reconcile.
+
+**5o · the logger's two chips sit under the room's touch floor** → a ruling owed by
+`gym/guidelines/thumb-reach.md`. The Android logger's kind chip and last-time chip are Material
+`AssistChip`s drawn 32 dp tall with `LocalMinimumInteractiveComponentSize` lowered to 32 dp
+(`ChipRow` in `ui/LoggerScreen.kt`), because the reading region's height budget on a 411 × 731 dp
+frame at font scale 1.0 (`LargestTypeTests`) leaves no room for Material's 48 dp interactive box
+twice over. `GymTap.minimum` is 46 dp and every other control on the screen clears it. Either the
+floor admits a chip whose row is not in the reach band, or the two chips share one row. Decide once;
+until then this is the one control in the room below the floor.

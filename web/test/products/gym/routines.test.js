@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  blankRoutine, builtLabel, CLEAR_REPS_AND_WEIGHT, DECIMAL_NOTE, draftFrom, duplicateRoutine,
+  blankRoutine, builtLabel, CLEAR_REPS_AND_WEIGHT, draftFrom, duplicateRoutine,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, historyRows,
   isOpenEntry, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER, NAME_SETS_FIRST, ONE_DECIMAL,
   OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, refusalOf, reorderEntries, REPS_BAND,
@@ -253,7 +253,6 @@ test('the three typed fields open on the row, and an empty one is the null it st
     sets: '3', reps: '', weight: '-20', clearRefused: false,
   });
   assert.deepEqual([OPEN_PLACEHOLDER, MAX_PLACEHOLDER, LAST_TIME_PLACEHOLDER], ['open', 'max', 'last time']);
-  assert.equal(DECIMAL_NOTE, 'comma or point, both read as a decimal');
 });
 
 test('the six refusals are the pinned strings, and the reps band is the routine target’s 1–100', () => {

@@ -137,7 +137,7 @@ final class RoomUndoWindowUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         // Counted off the log's own head, not off the drawn rows: the simulator keeps whatever
-        // earlier runs logged, every one of those rows reads `Session · no routine`, and a `List`
+        // earlier runs logged, every one of those rows reads `Free session`, and a `List`
         // only puts the rows it is drawing into the hierarchy.
         XCTAssertTrue(sessionRow.waitForExistence(timeout: 15), "the log drew no session row")
         let before = sessionsLoaded()
@@ -318,7 +318,7 @@ final class RoomUndoWindowUITests: XCTestCase {
                        "the finish sheet is still up")
     }
 
-    // A session logged with no routine reads `Session · no routine` at the head of its own row.
+    // A session logged with no routine reads `Free session` at the head of its own row.
     private var sessionRow: XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "no routine")).firstMatch
     }

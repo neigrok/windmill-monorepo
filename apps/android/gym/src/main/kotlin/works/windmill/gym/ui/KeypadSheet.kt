@@ -51,8 +51,8 @@ object KeypadEntry {
 
     // The same four refusals the routine target's typed fields carry, in the same bytes — a lifter
     // who has read one has read the other. Only the band differs: a set that was PERFORMED is bounded
-    // at 99 reps, where `TargetEntry` plans up to 100. The comma lesson lives in `weightHint`, said
-    // once beside the pad rather than inside a refusal.
+    // at 99 reps, where `TargetEntry` plans up to 100. A comma and a point both read, and nothing
+    // says so: the echo shows what was typed.
     const val onePoint = "One decimal point only."
     const val notANumber = "That is not a number yet."
     const val overWeight = "Over 500 kg — check the number."
@@ -62,9 +62,10 @@ object KeypadEntry {
 
     // C21: the ten digits and the decimal separator read themselves out loud. The pad's two glyphs
     // read as nothing, so each carries a name — ± in the same bytes the target sheet's own ± control
-    // carries, so one control met on two screens is called one thing.
+    // carries, so one control met on two screens is called one thing. The sign key is also where
+    // the one fact about a negative load lives: it is band-assisted work.
     const val deleteGlyph = "⌫"
-    const val signName = "Flip the sign"
+    const val signName = "Flip the sign — band-assisted"
     const val deleteName = "Delete"
 
     fun spoken(key: String): String? = when (key) {
@@ -73,7 +74,8 @@ object KeypadEntry {
         else -> null
     }
 
-    const val weightHint = "kg  ·  comma or point both read as a decimal  ·  ± for band-assisted"
+    // Under a valid weight the row carries the unit and nothing else.
+    const val weightHint = "kg"
     const val repsHint = "whole reps"
 
     data class Pad(val text: String, val seeded: Boolean) {

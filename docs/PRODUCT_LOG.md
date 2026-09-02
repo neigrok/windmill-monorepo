@@ -182,8 +182,9 @@ and Coach fills it.
 **Notes** are the one place a lifter instructs their own instrument — title-and-text pairs Coach
 reads, bounded and ordered by precedence. Windmill authors no personality; the lifter may author one.
 The screen says the one surprising thing out loud — *Any agent you connect can read these too.* —
-because the tool grant can only narrow a catalogue every connected agent already sees; the settings
-dials carry the other half, *Coach reads your notes, not your settings.*
+because the tool grant can only narrow a catalogue every connected agent already sees; the other
+half — that no agent reads or changes the dials — is said in the connect panel's cannot column, and
+nowhere among the dials themselves.
 
 **Bodyweight** reads at the head of the log and writes from the reach band. A dot per measurement on
 a truncated axis, gaps left empty, and no goal line, projection or estimate over a number nobody gave

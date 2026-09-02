@@ -19,9 +19,10 @@ public enum KeypadEntry {
     // The ten digits and the decimal separator say themselves out loud. The pad's two glyphs do not —
     // a screen reader left to read one says "plus minus sign", "erase to the left" or nothing at all —
     // so each carries a name (C21). `±` takes the routine target's sign-control bytes (C17): one
-    // control, one name, two screens.
+    // control, one name, two screens — and the name is where the one fact about a negative load
+    // lives, now that no hint under the number spells it.
     public static let deleteGlyph = "⌫"
-    public static let flipTheSign = "Flip the sign"
+    public static let flipTheSign = "Flip the sign — band-assisted"
     public static let deleteTheDigit = "Delete"
 
     public static func spoken(_ key: String) -> String {
@@ -35,7 +36,9 @@ public enum KeypadEntry {
     // fields sit on two screens and each names the band it enforces so they cannot drift again.
     public static let repsBand = 1...99
     public static let maxWeightKg: Double = 500
-    public static let weightHint = "kg  ·  comma or point both read as a decimal  ·  ± for band-assisted"
+    // A valid load's message is its unit and nothing more: both separators are taken, and the echo
+    // shows what was typed.
+    public static let weightUnit = "kg"
     public static let repsHint = "whole reps"
 
     // The four refusals a keypad can raise, in the pinned bytes of `briefs/15-the-routine.md` — the
@@ -114,7 +117,7 @@ public enum KeypadEntry {
             guard abs(value) <= maxWeightKg else {
                 return Reading(value: nil, message: overWeight)
             }
-            return Reading(value: Ladder.round(value), message: weightHint)
+            return Reading(value: Ladder.round(value), message: weightUnit)
         }
         // The server refuses reps < 1.
         guard value == value.rounded(), let whole = Int(exactly: value.rounded()),

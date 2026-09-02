@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.material.icons.materialPath
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +54,10 @@ import works.windmill.platform.design.WindmillSpace
 
 // One container, so every screen in the room says its name in the same place: the platform's top app
 // bar. The back arrow carries WHERE it leads in its description rather than in a drawn label —
-// Android does not label a back arrow, and the gesture is the way most hands take it anyway.
+// Android does not label a back arrow, and the gesture is the way most hands take it anyway. A
+// screen whose way out is a WORD rather than an arrow — the logger's Finish — hands `navigation`
+// its own control for the leading slot, and a centred title puts that word and the gear either
+// side of the name.
 //
 // The room's own Scaffold owns the window insets and the rail; this one takes none, so a screen
 // drawn inside the room sits under that chrome and a screen drawn on its own still has its bar.
@@ -64,37 +68,56 @@ fun GymScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     backTo: String? = null,
+    navigation: (@Composable () -> Unit)? = null,
+    centred: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = GymSkin.canvas,
+        titleContentColor = GymSkin.ink,
+        navigationIconContentColor = GymSkin.inkDim,
+        actionIconContentColor = GymSkin.accent,
+    )
+    val leading: @Composable () -> Unit = {
+        if (navigation != null) {
+            navigation()
+        } else {
+            onBack?.let { back ->
+                IconButton(onClick = back) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = backTo?.let { "Back to $it" } ?: "Back",
+                    )
+                }
+            }
+        }
+    }
     Scaffold(
         modifier = modifier,
         containerColor = GymSkin.canvas,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, color = GymSkin.ink)
-                },
-                navigationIcon = {
-                    onBack?.let { back ->
-                        IconButton(onClick = back) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = backTo?.let { "Back to $it" } ?: "Back",
-                            )
-                        }
-                    }
-                },
-                actions = actions,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GymSkin.canvas,
-                    titleContentColor = GymSkin.ink,
-                    navigationIconContentColor = GymSkin.inkDim,
-                    actionIconContentColor = GymSkin.accent,
-                ),
-            )
+            if (centred) {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = GymSkin.ink)
+                    },
+                    navigationIcon = leading,
+                    actions = actions,
+                    colors = colors,
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, color = GymSkin.ink)
+                    },
+                    navigationIcon = leading,
+                    actions = actions,
+                    colors = colors,
+                )
+            }
         },
         bottomBar = bottomBar,
     ) { inner ->

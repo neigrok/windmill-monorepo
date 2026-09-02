@@ -387,7 +387,7 @@ class ProposalTests {
     // defect: the sentence names the way out. The same bytes on all three surfaces.
     @Test
     fun testTheShutGateSaysWhyAndNamesTheWayOut() {
-        assertEquals("Read the changes to the end to apply them.", Proposal.applyHint)
+        assertEquals("Scroll to the end to apply.", Proposal.applyHint)
         assertTrue("twelve words or fewer, which is the refusal row's budget",
             Proposal.applyHint.split(" ").size <= 12)
     }

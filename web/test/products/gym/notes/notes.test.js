@@ -9,7 +9,7 @@ import {
   firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
   NOTE_PREFIX,
   noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
-  EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, isTitleOverCap, SETTINGS_LINE, showsByteCount, showsTitleCount,
+  EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, isTitleOverCap, showsByteCount, showsTitleCount,
   TITLE_COUNT_FROM, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../../src/products/gym/notes/notes.js';
 
@@ -84,7 +84,6 @@ test('the ceilings are said at the moment they bite, in the pinned words', () =>
   assert.equal(FULL_LINE, '10 of 10 notes. Delete one to add another.');
   assert.equal(ADD_VERB, 'Add a note');
   assert.equal(PRECEDENCE_CAPTION, 'Top note wins.');
-  assert.equal(SETTINGS_LINE, 'Coach reads your notes, not your settings.');
 });
 
 test('the two seeds are placeholders addressed to the agent, and a body is never one of them', () => {

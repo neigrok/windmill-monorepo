@@ -35,7 +35,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ChartWindow
-import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.net.FakeTraining
@@ -119,7 +118,8 @@ class BodyweightScreenTests {
         log(store, mutableListOf())
 
         compose.onNodeWithText(Bodyweight.chip).performClick()
-        compose.onNodeWithText(Bodyweight.fieldHint).assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.unit).assertIsDisplayed()
+        compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Today · ", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription(weightField).performTextInput("82,4")
         compose.onNodeWithText(Bodyweight.save).performClick()
@@ -201,7 +201,7 @@ class BodyweightScreenTests {
         compose.onNodeWithText("last 90 days · 4 weigh-ins").assertIsDisplayed()
         compose.onNodeWithText("85 kg").assertIsDisplayed()
         compose.onNodeWithText("81 kg").assertIsDisplayed()
-        compose.onNodeWithText(Bodyweight.gapRule).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("no line is drawn", substring = true).assertDoesNotExist()
         val gap = "no weigh-in · ${Bodyweight.shortDay(today.minusDays(16))} – ${Bodyweight.shortDay(today.minusDays(4))}"
         compose.onNodeWithText(gap).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("goal", substring = true).assertDoesNotExist()
@@ -214,10 +214,10 @@ class BodyweightScreenTests {
         scope.cancel()
     }
 
-    // The gap rule is the chart's disclosure about its own segments, so it is on screen exactly when
-    // a chart is — never under `no weigh-in in the last 90 days`, which draws no line to read.
+    // A gap in the line reads as a gap: no legend explains it under either window, and the empty
+    // ninety-day window says only that it is empty.
     @Test
-    fun theGapRuleIsDrawnWithTheChartAndNotOverAnEmptyWindow() {
+    fun theChartCarriesNoLegendForItsGapsUnderEitherWindow() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
         val store = store(scope, server)
@@ -231,12 +231,12 @@ class BodyweightScreenTests {
 
         compose.onNodeWithText("last 90 days · 0 weigh-ins").assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.noneInWindow).assertIsDisplayed()
-        compose.onNodeWithText(Bodyweight.gapRule).assertDoesNotExist()
+        compose.onNodeWithText("no line is drawn", substring = true).assertDoesNotExist()
 
         compose.onNodeWithText("All").performScrollTo().performClick()
         compose.onNodeWithText("the whole series · 2 weigh-ins").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.noneInWindow).assertDoesNotExist()
-        compose.onNodeWithText(Bodyweight.gapRule).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("no line is drawn", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -339,7 +339,7 @@ class BodyweightScreenTests {
         compose.setContent {
             WeighInSheet(
                 initial = WeighIn(tomorrow.toString(), 82.4, 1_000), fixedDate = null,
-                nowMs = System.currentTimeMillis(), units = Units.Kilograms, saving = false, refused = null,
+                nowMs = System.currentTimeMillis(), saving = false, refused = null,
                 onSave = { dateLocal, _ -> saved += dateLocal }, onDelete = null,
             )
         }

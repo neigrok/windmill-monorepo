@@ -116,7 +116,7 @@ struct RoutinesScreen: View {
             Text("No routines yet")
                 .font(WindmillFont.body(17, .bold))
                 .foregroundStyle(skin.ink)
-            Text("A routine is one training day written down — the movements, in order, with your targets.")
+            Text("One training day, written down.")
                 .font(WindmillFont.body(15))
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
@@ -155,13 +155,14 @@ struct RoutinesScreen: View {
         }
     }
 
+    // The whole card is the sign-in door, so the sentence is not the only affordance.
     private var claimOffer: some View {
         Button(action: onSignIn) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Your log is saved on this device.")
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
-                Text("Sign in to claim it to your account — and open it on the web.")
+                Text("Sign in to claim it — it opens on the web too.")
                     .font(GymType.numeral(12))
                     .foregroundStyle(skin.inkFaint)
                     .lineSpacing(3)

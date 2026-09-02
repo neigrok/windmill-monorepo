@@ -60,10 +60,10 @@ test('the sheet never blesses the line it is refusing: the open sentence waits f
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), []);
 });
 
-test('the ± control is named `Flip the sign`, and the name sits on the control that flips it', async (t) => {
+test('the ± control is named `Flip the sign — band-assisted`, and the name sits on the control that flips it', async (t) => {
   const sheet = await openSheet(t);
   const sign = elementsOf(sheet.tree).find((each) => each.props?.className === 'gym-target-sign');
-  assert.equal(sign.props['aria-label'], 'Flip the sign');
+  assert.equal(sign.props['aria-label'], 'Flip the sign — band-assisted');
   assert.equal(textOf(sign), '±');
   assert.equal(sign.props.type, 'button');
 
@@ -77,7 +77,7 @@ test('the ± control is named `Flip the sign`, and the name sits on the control 
   assert.equal(field(sheet.tree, 'Weight').props.value, '20');
 });
 
-test('while a target sheet stands, the sheet owns the sentence and the list’s copy goes out', async (t) => {
+test('the sheet owns the sentence; the list never draws a copy, open row or not', async (t) => {
   browserWith();
   const { RoutineEditor } = await loadScreen('products/gym/Routines.jsx');
   const editor = renderHook(t, () => RoutineEditor({ id: NEW_ROUTINE_ID, log: LOG }));
@@ -85,19 +85,18 @@ test('while a target sheet stands, the sheet owns the sentence and the list’s 
   elementsOf(editor.tree).find((each) => textOf(each.props?.children) === '+ Add movement').props.onClick();
   handed(editor.tree, 'onPick').props.onPick('back-squat');
 
-  // One open row, no sheet: the list says once what the word `open` in the row means.
-  assert.deepEqual(drawn(editor.tree, 'gym-open-line'), [OPEN_LINE]);
+  // One open row, no sheet: the row names itself `open` and the list says nothing more.
+  assert.deepEqual(drawn(editor.tree, 'gym-open-line'), []);
 
-  // The row is tapped. The sheet is now the whole of what is said about that line — the list's copy
-  // is not left lit behind the scrim beside whatever the sheet says in front of it.
+  // The row is tapped. The sheet is the whole of what is said about that line.
   handed(editor.tree, 'onTarget').props.onTarget(0);
   assert.deepEqual(drawn(editor.tree, 'gym-open-line'), []);
   const sheet = handed(editor.tree, 'neverLogged');
   assert.deepEqual(drawn(renderHook(t, () => sheet.type(sheet.props)).tree, 'gym-open-line'), [OPEN_LINE]);
 
-  // The sheet closes with nothing set: the row is still open, so the list takes the sentence back.
+  // The sheet closes with nothing set: the row is still open, and the list still draws no copy.
   sheet.props.onClose();
-  assert.deepEqual(drawn(editor.tree, 'gym-open-line'), [OPEN_LINE]);
+  assert.deepEqual(drawn(editor.tree, 'gym-open-line'), []);
 
   // And a line the sheet named is not open any more, so nobody draws it.
   handed(editor.tree, 'onTarget').props.onTarget(0);

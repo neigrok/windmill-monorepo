@@ -84,7 +84,7 @@ class LoggerWalkRefusalTests {
         }
         compose.setContent {
             LoggerScreen(store = store, isSignedIn = false, say = { said += it },
-                         onFinish = {}, onSignIn = {})
+                         onFinish = {}, onSignIn = {}, onSettings = {})
         }
         return store
     }

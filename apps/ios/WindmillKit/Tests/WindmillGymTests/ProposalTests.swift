@@ -206,7 +206,7 @@ final class ProposalDiffTests: XCTestCase {
 
         XCTAssertEqual(removal.applyLabel, "Remove Push A")
         XCTAssertEqual(removal.footnote,
-                       "The routine goes and your logged sets stay. Nothing is removed until you tap.")
+                       "Removes the routine from your program · every logged set stays.")
     }
 
     func testASettledProposalKeepsItsTimestampAndItsWords() {

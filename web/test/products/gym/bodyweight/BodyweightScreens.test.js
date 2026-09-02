@@ -92,7 +92,7 @@ test('a refused save shows the store’s own sentence in the sheet and leaves it
   assert.notEqual(sheetOf(screen.tree), undefined);
 });
 
-test('the sheet: a plain decimal field with the hint once, a date defaulting to today, refusals one at a time on Save', async (t) => {
+test('the sheet: a plain decimal field with no hint, a date defaulting to today, refusals one at a time on Save', async (t) => {
   browserWith();
   const { WeighInSheet } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const saved = [];
@@ -101,8 +101,7 @@ test('the sheet: a plain decimal field with the hint once, a date defaulting to 
   const input = findByClass(screen.tree, 'gym-weigh-input')[0];
   assert.equal(input.props.inputMode, 'decimal');
   assert.equal(input.props.type, 'text');
-  assert.equal(findByClass(screen.tree, 'gym-weigh-hint').length, 1);
-  assert.equal(textOf(findByClass(screen.tree, 'gym-weigh-hint')[0]), 'comma or point, both read as a decimal');
+  assert.equal(findByClass(screen.tree, 'gym-weigh-hint').length, 0, 'both separators read; the field shows what was typed');
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input')[0].props.type, 'date');
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input')[0].props.value, TODAY);
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input')[0].props.max, TODAY, 'the picker’s range ends today');
@@ -184,7 +183,7 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   const chart = chartOf(screen.tree);
   assert.equal(chart.props.points.length, 2, 'the 90-day window by default');
   assert.equal(chart.props.caption, 'last 90 days · 2 weigh-ins');
-  assert.equal(chart.props.rule, 'no line is drawn across a gap longer than seven days');
+  assert.equal(chart.props.rule, undefined, 'a gap in the line reads as a gap; no legend explains it');
   assert.equal(chart.props.joins, joinsAcross, 'segments join by calendar days, not elapsed hours');
   assert.equal(chart.props.domain.to, new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime());
   assert.equal(chipOf(screen.tree), undefined, 'no second door onto a new weigh-in');

@@ -245,7 +245,6 @@ fun LogScreen(
                 initial = null,
                 fixedDate = null,
                 nowMs = nowMs,
-                units = store.preferences.units,
                 saving = saving,
                 refused = refused,
                 onSave = { dateLocal, weightKg ->
@@ -463,10 +462,5 @@ private fun Empty() {
         modifier = Modifier.padding(top = WindmillSpace.x6),
     ) {
         Text("No sessions yet.", style = WindmillFont.body(16), color = GymSkin.inkDim)
-        Text(
-            "The first one you log lands here, newest first.",
-            style = WindmillFont.body(15),
-            color = GymSkin.inkFaint,
-        )
     }
 }

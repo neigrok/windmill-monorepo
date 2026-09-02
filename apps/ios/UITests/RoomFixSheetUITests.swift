@@ -6,10 +6,10 @@ import XCTest
 final class RoomFixSheetUITests: XCTestCase {
     private var app: XCUIApplication!
 
-    // `KeypadEntry.weightHint` — drawn by the rack's keypad and by nothing else.
-    private let weightHint = "kg  ·  comma or point both read as a decimal  ·  ± for band-assisted"
+    // `KeypadEntry.weightUnit` — a valid load's whole message, drawn by the rack's keypad and by nothing else.
+    private let weightUnit = "kg"
     // `KeypadEntry.flipTheSign` — the one name the ± control answers to on every screen that has one.
-    private let flipTheSign = "Flip the sign"
+    private let flipTheSign = "Flip the sign — band-assisted"
 
     override func setUp() {
         continueAfterFailure = false
@@ -36,8 +36,12 @@ final class RoomFixSheetUITests: XCTestCase {
                       "the set row opened no fix sheet")
 
         app.buttons["Weight 20 kilograms"].tap()
-        XCTAssertTrue(app.staticTexts[weightHint].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars["Weight"].waitForExistence(timeout: 10),
                       "the weight numeral raised no keypad")
+        XCTAssertTrue(app.staticTexts[weightUnit].exists, "a valid load's message is its unit")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",
+                                                            "comma or point")).firstMatch.exists,
+                       "the keypad still explains the decimal separator")
         // C17 scope · the sign key is a glyph, and a screen reader left to read it reads the glyph. It
         // carries the name the routine target's sign control carries, and the same bytes.
         XCTAssertTrue(app.buttons[flipTheSign].exists, "this is not the rack's keypad")
@@ -90,10 +94,11 @@ final class RoomFixSheetUITests: XCTestCase {
     // The sheet's own scroll view, never the app's middle: with a keyboard up the middle of the
     // screen is the keyboard, and a swipe there scrolls nothing.
     private func scrolledTo(_ button: XCUIElement) -> Bool {
-        // Named by what it holds: the keyboard puts a scroll view of its own on screen, and
-        // `firstMatch` picks that one often enough to make the drag land on nothing.
-        let sheet = app.scrollViews
-            .containing(NSPredicate(format: "label == %@", "Fix this set")).firstMatch
+        // Named by the bar it sits under: the keyboard puts a scroll view of its own on screen, and
+        // a bare `firstMatch` picks that one often enough to make the drag land on nothing. The
+        // sheet's title is its navigation bar's, not a label inside the scroll view.
+        let sheet = app.otherElements.containing(.navigationBar, identifier: "Fix this set")
+            .firstMatch.scrollViews.firstMatch
         guard sheet.exists else { return false }
         // Dragged between two points the keyboard does not cover, so the stroke lands on the sheet.
         let from = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))

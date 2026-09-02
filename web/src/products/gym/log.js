@@ -520,7 +520,7 @@ export function setLoadLabel(set) {
   return `${fmt(set.weightKg)} × ${set.reps}`;
 }
 
-export const NO_ROUTINE = 'Session · no routine';
+export const NO_ROUTINE = 'Free session';
 
 export function routineNameOf(session) {
   // The snapshot is frozen jsonb echoed back verbatim: a non-string is no routine.

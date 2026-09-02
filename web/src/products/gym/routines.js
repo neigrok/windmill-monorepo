@@ -163,17 +163,13 @@ export function withEntrySet(entries, index, entry) {
 export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';
 
 // The open row names itself `open` in its own target column — that word says WHICH row. The sentence
-// says what the word means, so it is drawn ONCE beneath a list of movements that holds an open row,
-// and once in the target sheet while the line being edited is the open one. Never per row: six open
-// rows are one meaning, not six. The same sentence on every surface.
+// says what the word means and is drawn ONCE, on the target sheet while the line being edited is the
+// open one: the moment a lifter leaves one open. Never on the list, never per row. The same sentence
+// on every surface.
 export const OPEN_LINE = 'You decide the numbers at the rack.';
 
 export function isOpenEntry(entry) {
   return entry.targetSets == null;
-}
-
-export function hasOpenEntry(entries) {
-  return entries.some(isOpenEntry);
 }
 
 // ── The three typed fields ──────────────────────────────────────────────────────────────────────
@@ -183,7 +179,6 @@ export function hasOpenEntry(entries) {
 export const OPEN_PLACEHOLDER = 'open';
 export const MAX_PLACEHOLDER = 'max';
 export const LAST_TIME_PLACEHOLDER = 'last time';
-export const DECIMAL_NOTE = 'comma or point, both read as a decimal';
 
 // Pinned in briefs/15-the-routine.md. The reps band here is the ROUTINE TARGET's 1–100; the live
 // logger's 1–99 sentence is logger/entry.js's.

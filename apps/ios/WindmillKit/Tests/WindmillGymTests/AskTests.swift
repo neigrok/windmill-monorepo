@@ -204,7 +204,7 @@ final class AskDoorTests: XCTestCase {
         let named = [Ask.title, Ask.subtitle, Ask.needsSignIn, Ask.absentLine, Ask.noAnswer, Ask.tooLong,
                      Ask.allowance, Ask.capReached, Ask.ceilingReached, Ask.threadCeiling, Ask.threadTaken,
                      Ask.freeDoor, Ask.proposalNote, Ask.waiting, Ask.connect, Ask.notesDoor,
-                     Settings.coachReads, Notes.honesty, Notes.purpose, Notes.needsSignIn]
+                     Notes.honesty, Notes.purpose, Notes.needsSignIn]
         for sentence in named {
             XCTAssertNil(sentence.range(of: #"\bAsk\b"#, options: .regularExpression), sentence)
         }
@@ -455,10 +455,14 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(Ask.tooLong, "That question is longer than Coach takes. Shorten it to send.")
     }
 
-    func testTheEmptyStateNamesWhatAskCanNeverDo() {
-        XCTAssertTrue(Ask.scope.contains("It can never change what you lifted"))
-        XCTAssertTrue(Ask.scope.contains("a set that needs fixing is yours, in the log"))
+    // Two sentences on first paint, in the bytes the other two surfaces draw. What Coach can never
+    // do is said where it matters — on the proposal card and on the connect page — not here.
+    func testTheEmptyStateIsTwoSentencesAndThePromiseLivesOnTheProposalCard() {
+        XCTAssertEqual(Ask.scope,
+                       "Ask about your training. Coach can propose a routine change — you decide on the diff.")
         XCTAssertTrue(Ask.subtitle.contains("proposes only"))
+        XCTAssertTrue(Ask.proposalNote.contains("Your logged sets are never part of a proposal"))
+        XCTAssertTrue(ConnectedLog.neverLines.contains { $0.hasPrefix("Edit a set you already logged.") })
     }
 
     func testTheEmptyStatePointsAtTheFreeDoor() {

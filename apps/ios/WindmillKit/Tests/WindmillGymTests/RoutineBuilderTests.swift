@@ -213,10 +213,10 @@ final class TargetEntryTests: XCTestCase {
         XCTAssertEqual(TargetEntry.readSets(".").refusal, "That is not a number yet.")
     }
 
+    // Both separators are taken, and nothing on the sheet has to say so.
     func testACommaAndAPointBothReadAsADecimal() {
         XCTAssertEqual(TargetEntry.readWeight("72,5").value, 72.5)
         XCTAssertEqual(TargetEntry.readWeight("72.5").value, 72.5)
-        XCTAssertEqual(TargetEntry.decimalHint, "comma or point, both read as a decimal")
     }
 
     func testALoadBeyondTheStoredRangeIsQuestionedAndABandAssistedOneIsNot() {
@@ -302,21 +302,17 @@ final class RoutineReadoutTests: XCTestCase {
         XCTAssertFalse(routine([], trained: 1_700_000_000_000).isUntested)
     }
 
-    // One sentence for one state, said ONCE beneath a list that holds an open row and never per row
-    // (`15-the-routine.md`, C1). The target column's `open` is what says which rows they are.
-    func testTheOpenLineIsOnePinnedSentenceSaidOnceForTheWholeList() {
-        XCTAssertEqual(TargetEntry.openLine, "You decide the numbers at the rack.")
-
+    // The target column's `open` is what says which rows are open; the sentence about what that
+    // means is the target sheet's (`RoutineEditorCopyTests`), and a list draws none.
+    func testAnOpenRowIsOneThatNamesNoSets() {
         let named = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
                                           targetReps: 3, targetWeightKg: 110),
                              RoutineEntry(position: 2, exerciseId: "barbell-row")])
         XCTAssertEqual(named.entries.filter(\.isOpen).map(\.exerciseId), ["barbell-row"])
-        XCTAssertEqual(TargetEntry.openLineUnder(named.entries), TargetEntry.openLine)
 
         let none = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
                                          targetReps: 3, targetWeightKg: 110)])
         XCTAssertTrue(none.entries.filter(\.isOpen).isEmpty)
-        XCTAssertNil(TargetEntry.openLineUnder(none.entries))
     }
 
     func testTheMetaDatesOffTheHistoryAndCountsWhatIsThereNow() {

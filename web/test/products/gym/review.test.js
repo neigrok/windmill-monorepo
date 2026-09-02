@@ -27,7 +27,7 @@ test('finishHead — the word above a session, and the day it ran', () => {
     when: 'Tue 4 Aug · 18:12 – 19:14',
   });
   assert.equal(finishHead({ startedAt, finishedAt, first: true }).subtitle, 'Your first session');
-  assert.equal(finishHead({ startedAt, finishedAt }).subtitle, 'Session · no routine');
+  assert.equal(finishHead({ startedAt, finishedAt }).subtitle, 'Free session');
 });
 
 test('statTiles — three facts, and the one that can be absent says so', () => {

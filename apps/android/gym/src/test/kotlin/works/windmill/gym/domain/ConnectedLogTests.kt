@@ -15,7 +15,7 @@ class ConnectedLogTests {
         ConnectedLog.cannotDoHead,
         ConnectedLog.cannotDo,
         ConnectedLog.deleteLevel,
-        ConnectedLog.notNamedHere,
+        ConnectedLog.opensInBrowser,
         ConnectedLog.deviceOnly,
     )
 
@@ -103,7 +103,16 @@ class ConnectedLogTests {
             emptyList<String>(),
             everySentence.filter { it.contains(" ago") || it.lowercase().contains("last read") },
         )
-        assertTrue(ConnectedLog.notNamedHere.contains("does not read your connections"))
+        assertEquals("and no sentence explains that absence either", emptyList<String>(),
+            everySentence.filter { it.contains("does not read your connections") })
+    }
+
+    // The connect button leaves the app, and the icon on it says so in the bytes a reader hears; the
+    // caption under it says only what happens after.
+    @Test
+    fun theConnectButtonSaysItOpensTheBrowserAndTheCaptionSaysWhatFollows() {
+        assertEquals("opens in your browser", ConnectedLog.opensInBrowser)
+        assertEquals("Your tool’s first call opens the approval screen.", ConnectedLog.onTheWeb)
     }
 
     @Test

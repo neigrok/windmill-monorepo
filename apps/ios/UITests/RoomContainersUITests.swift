@@ -10,11 +10,8 @@ final class RoomContainersUITests: XCTestCase {
     private let tabs = ["Routines", "The log", "Coach"]
     private let settingsDoor = "Gym settings"
     // The settings screen is named by its bar and by nothing else, so "it is up" is read off the
-    // Units footer, which every account draws (an lb account draws a longer one that starts the same).
-    private let settingsMark = "Display only — nothing stored changes."
-    private var settingsUp: XCUIElement {
-        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", settingsMark)).firstMatch
-    }
+    // Set confirmation section head, which every account draws.
+    private var settingsUp: XCUIElement { app.staticTexts["Set confirmation"] }
     private let capsule = "Switch app"
     private let openLine = "You decide the numbers at the rack."
 
@@ -194,7 +191,7 @@ final class RoomContainersUITests: XCTestCase {
         app.textFields["Weight · kg"].tap()
         app.typeText("20")
 
-        let sign = app.buttons["Flip the sign"]
+        let sign = app.buttons["Flip the sign — band-assisted"]
         XCTAssertTrue(sign.waitForExistence(timeout: 10), "the weight field has no sign control")
         sign.tap()
         XCTAssertEqual(app.textFields["Weight · kg"].value as? String, "-20",
@@ -214,16 +211,14 @@ final class RoomContainersUITests: XCTestCase {
         for field in ["Sets", "Reps", "Weight · kg"] {
             XCTAssertTrue(app.textFields[field].exists, "\(field) is not a typed field")
         }
-        XCTAssertTrue(app.staticTexts["comma or point, both read as a decimal"].exists,
-                      "the field does not say it takes a comma")
+        XCTAssertFalse(app.staticTexts["comma or point, both read as a decimal"].exists,
+                       "both separators are taken, and the sheet still explains it")
         XCTAssertTrue(app.staticTexts[openLine].exists,
                       "an open line does not say what open means")
 
         // C15 · a statement about the whole line belongs ABOVE the three fields, beside `Never
         // logged — these are your numbers.`, and everything drawn UNDER a field is that field's own
-        // note. Picking the movement already put an open line in the editor behind the sheet, so
-        // that list has its own copy of the sentence: the one being placed here is the one on the
-        // sheet, which is the only one the lifter can reach.
+        // note. The sheet is the only screen that draws the sentence.
         guard let onTheSheet = app.staticTexts
                 .matching(NSPredicate(format: "label == %@", openLine))
                 .allElementsBoundByIndex.first(where: { $0.isHittable }) else {
@@ -232,9 +227,6 @@ final class RoomContainersUITests: XCTestCase {
         }
         XCTAssertLessThan(onTheSheet.frame.maxY, app.textFields["Sets"].frame.minY,
                           "a statement about the line is drawn under the fields it describes")
-        XCTAssertGreaterThan(app.staticTexts["comma or point, both read as a decimal"].frame.minY,
-                             app.textFields["Weight · kg"].frame.maxY,
-                             "the decimal hint left the field whose note it is")
         for gone in ["take it to max", "use last time", "Leave it open"] {
             XCTAssertFalse(app.buttons[gone].exists, "\(gone) survived the cut")
         }

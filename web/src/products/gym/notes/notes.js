@@ -80,9 +80,6 @@ export const NOTES_FAILED = 'Your notes didn’t load.';
 export const EXPORT_NOTES_VERB = 'Export notes';
 export const EXPORT_NOTES_LINE = 'every note as CSV · yours, always';
 
-// Beside the dials in settings, naming what it excludes rather than pointing at a control.
-export const SETTINGS_LINE = 'Coach reads your notes, not your settings.';
-
 // The row's meta line is the body's first line: facts, never a sentence of this screen's own.
 export function firstLineOf(body) {
   const line = (body ?? '').split('\n').find((each) => each.trim() !== '');

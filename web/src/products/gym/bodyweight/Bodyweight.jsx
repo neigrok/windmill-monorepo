@@ -7,8 +7,8 @@ import { weightUnit } from '../units.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
-  dateLocalOf, DECIMAL_HINT, DEFAULT_WINDOW, DELETE_FAILED, DELETE_VERB, entriesAfter, FAILED,
-  fieldValueOf, GAP_RULE, gapLabel, joinsAcross, latestOf, msOfDateLocal, NO_WEIGH_INS,
+  dateLocalOf, DEFAULT_WINDOW, DELETE_FAILED, DELETE_VERB, entriesAfter, FAILED,
+  fieldValueOf, gapLabel, joinsAcross, latestOf, msOfDateLocal, NO_WEIGH_INS,
   NO_WEIGH_INS_IN_WINDOW, NO_WEIGH_INS_LINE, OPENING, readingLine, SAVE_VERB, saveRefusal,
   WEIGH_IN_DELETED, WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
 } from './bodyweight.js';
@@ -130,7 +130,6 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
           />
           <span className="gym-weigh-unit">{weightUnit()}</span>
         </div>
-        <p className="gym-weigh-hint">{DECIMAL_HINT}</p>
 
         {fixedDate ? (
           <p className="gym-weigh-date">
@@ -219,7 +218,6 @@ export function BodyweightScreen({ log }) {
             formatValue={axisValue}
             formatDate={axisDate}
             caption={chartCaption(windowId, shown.length)}
-            rule={GAP_RULE}
             ariaLabel={BODYWEIGHT_TITLE}
             onPick={(point) => setFixing(point.dateLocal)}
           />

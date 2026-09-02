@@ -46,7 +46,8 @@ final class KeypadEntryTests: XCTestCase {
     func testACommaAndAPointBothReadAsADecimal() {
         XCTAssertEqual(KeypadEntry.read(pad("72,5"), as: .weight, keeping: 0).value, 72.5)
         XCTAssertEqual(KeypadEntry.read(pad("72.5"), as: .weight, keeping: 0).value, 72.5)
-        XCTAssertEqual(KeypadEntry.read(pad("72,5"), as: .weight, keeping: 0).message, KeypadEntry.weightHint)
+        XCTAssertEqual(KeypadEntry.read(pad("72,5"), as: .weight, keeping: 0).message, KeypadEntry.weightUnit)
+        XCTAssertEqual(KeypadEntry.weightUnit, "kg", "a valid load's message is its unit and nothing more")
     }
 
     func testASecondDecimalPointIsRefusedInThePinnedBytes() {
@@ -68,7 +69,7 @@ final class KeypadEntryTests: XCTestCase {
 
         let reading = KeypadEntry.read(opened, as: .weight, keeping: -20)
         XCTAssertEqual(reading.value, -20)
-        XCTAssertEqual(reading.message, KeypadEntry.weightHint)
+        XCTAssertEqual(reading.message, KeypadEntry.weightUnit)
 
         XCTAssertEqual(opened.pressing("±", in: .weight).text, "20", "and ± repairs rather than doubling the sign")
         XCTAssertEqual(KeypadEntry.read(KeypadEntry.Pad(opening: Readout.weight(82.5)),
@@ -133,9 +134,10 @@ final class KeypadEntryTests: XCTestCase {
     // read the glyph. `±` takes the name the routine target's sign control takes, in the SAME bytes —
     // one control met on two screens cannot be called two things — and `⌫` takes `Delete`. A digit and
     // the decimal separator say themselves, and a digit that says a word out loud is worse than silent.
+    // The name also carries the one fact no hint spells any more: a flipped sign is band-assisted work.
 
     func testBothGlyphKeysAreNamedAndEveryOtherKeySaysItself() {
-        XCTAssertEqual(KeypadEntry.flipTheSign, "Flip the sign")
+        XCTAssertEqual(KeypadEntry.flipTheSign, "Flip the sign — band-assisted")
         XCTAssertEqual(KeypadEntry.deleteTheDigit, "Delete")
         XCTAssertEqual(KeypadEntry.spoken("±"), KeypadEntry.flipTheSign)
         XCTAssertEqual(KeypadEntry.spoken(KeypadEntry.deleteGlyph), KeypadEntry.deleteTheDigit)

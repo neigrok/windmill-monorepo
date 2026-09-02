@@ -89,7 +89,6 @@ import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
-import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
@@ -151,7 +150,9 @@ internal fun backMeans(
     away: Int,
     tab: Tab,
 ): BackMeans = when {
-    live -> BackMeans.StayInTheWorkout
+    // The logger's gear pushes settings over the workout; back pops that and the workout is still
+    // there underneath.
+    live && away == 0 -> BackMeans.StayInTheWorkout
     building -> BackMeans.LeaveTheDraft
     away > 0 -> BackMeans.PopOnePushedScreen
     tab != Tab.Routines -> BackMeans.ReturnToTheRoutinesTab
@@ -780,7 +781,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         Away.Notes -> Notes.title
         is Away.NoteEditor -> Notes.title
         Away.Bodyweight -> Bodyweight.title
-        null -> tab.title
+        null -> if (live) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
     }
     val railUp = railStands(live, building != null, away.size)
     val youInitial = account.user?.email?.take(1) ?: ""
@@ -788,15 +789,10 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = GymSkin.canvas,
-        // The transient floats ABOVE the reach band rather than growing the bottom inset: the logger's
-        // primary is pressed forty times a session, and a snackbar sitting on Log set would be a
-        // nine-second lockout every time a set landed.
-        snackbarHost = {
-            SnackbarHost(
-                transient,
-                modifier = Modifier.padding(bottom = if (live) GymTap.primary + WindmillSpace.x4 else 0.dp),
-            )
-        },
+        // While the logger stands it hosts the transient itself, over its reading region and off
+        // its rack: a snackbar anywhere in the reach band would cover a dial for nine seconds every
+        // time a set landed. Everywhere else the transient sits where the platform puts it.
+        snackbarHost = { if (!(live && standing == null)) SnackbarHost(transient) },
         bottomBar = {
             val line = note
             // Nothing at all when there is neither: an empty bar would take the window inset away
@@ -837,13 +833,17 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         // otherwise count the navigation bar twice and leave a gap above the keys.
         Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
             when {
-                live -> LoggerScreen(
+                // A screen pushed from the logger's gear stands over the workout; the logger is what
+                // stands while nothing is pushed.
+                live && standing == null -> LoggerScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
                     say = { note = it },
                     onFinish = { close() },
                     // The shell's door: gym draws no sign-in of its own.
                     onSignIn = LocalShellActions.current.openYou,
+                    onSettings = { look(Away.Settings) },
+                    transient = transient,
                 )
                 // A day being built outranks a tab and nothing else, and it covers the rail.
                 building != null -> RoutineBuilder(

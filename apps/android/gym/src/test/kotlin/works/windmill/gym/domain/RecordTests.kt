@@ -267,8 +267,7 @@ class RecordTests {
                                     heaviest = RecordMark(105.0, 5, today))
         val page = Record.page(record, now = today)
 
-        assertEquals("e1RM is computed on your log. Sign in and the chart arrives with it.",
-                     page.noEstimate)
+        assertEquals("e1RM needs your account — sign in for the chart.", page.noEstimate)
         assertNull(page.nothingYet)
         assertEquals(listOf(Record.Tile("heaviest", "105", "kg · for 5", loud = false)), page.tiles)
     }

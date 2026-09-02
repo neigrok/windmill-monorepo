@@ -64,7 +64,7 @@ class ProgramTests {
     }
 
     // The roll-up that named every open row is gone: one sentence, `TargetEntry.openLine`, is drawn
-    // once beneath a list that holds an open row, and the row's own target column says WHICH.
+    // once, on the target sheet, and the row's own target column says WHICH row is open.
     @Test
     fun testTheOpenLineIsOneSentenceAndTheRowNamesItselfOpen() {
         assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
@@ -247,7 +247,7 @@ class ProgramTests {
     }
 
     @Test
-    fun testAnOpenLineFreezesAsAnAbsenceAndTheCounterSaysNoTarget() {
+    fun testAnOpenLineFreezesAsAnAbsenceAndTheCounterCountsWithoutIt() {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
             RoutineEntry(position = 1, exerciseId = "barbell-row"),
             RoutineEntry(position = 2, exerciseId = "back-squat", targetSets = 5, targetReps = 3),
@@ -255,13 +255,8 @@ class ProgramTests {
         val plan = PlanSnapshot(routine)
 
         assertEquals(PlanEntry(exerciseId = "barbell-row"), plan.entry("barbell-row"))
-        val open = LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("barbell-row"))
-        assertEquals("set 3", open.count)
-        assertEquals("no target", open.plan)
-
-        val named = LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("back-squat"))
-        assertEquals("set 3 of 5", named.count)
-        assertEquals("plan 5 × 3", named.plan)
+        assertEquals("set 3", LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("barbell-row")))
+        assertEquals("set 3 of 5", LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("back-squat")))
     }
 
     @Test

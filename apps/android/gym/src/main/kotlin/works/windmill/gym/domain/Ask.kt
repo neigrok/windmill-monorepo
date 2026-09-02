@@ -62,10 +62,9 @@ object Ask {
 
     const val fromLifter = "lifter"
 
-    const val whatItIs =
-        "Coach reads the log you already keep and answers questions about it. It can propose a " +
-            "change to a routine — you decide on the diff. It cannot edit or delete a set you " +
-            "logged: that one is yours."
+    // The rest is said where it counts: the subtitle says what Coach reads, `promise` on every
+    // proposal card says what it cannot touch.
+    const val whatItIs = "Ask about your training. Coach can propose a routine change — you decide on the diff."
 
     // The promise, immediately above the composer and always drawn; the cap-reached state is the
     // moment the promise runs out, and it replaces the composer rather than restating the rule.

@@ -1315,6 +1315,39 @@ class TrainingStore(
     // so the correction rewrites the row that will be sent. Anything else goes over the wire. The log
     // moves and the routine does not: a fix carries three fields, none of them a target.
     suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): FixOutcome {
+        // The live session's rows are the queue's, and the strip draws off the queue: a fix the log
+        // took has to land back in it, or the pill keeps the old numbers. A set the log has not heard
+        // of yet is rewritten IN the queue, still owed, so the corrected body is what the walk sends.
+        val live = session
+        if (live != null && sessionId == live.id) {
+            val standing = sets.firstOrNull { it.id == setId }
+                ?: return FixOutcome.Gone("that set is no longer on this device")
+            val owed = queue.pending.firstOrNull { it.set.id == setId }
+            if (owed != null) {
+                val corrected = fix.corrected(standing)
+                queue.store(corrected, live.id, needsPush = true, heldUntilMs = owed.heldUntilMs)
+                queue.flush()
+                drawFromQueue()
+                return FixOutcome.Corrected(corrected)
+            }
+            val log = gym
+                ?: return FixOutcome.Failed(WriteFailure.Refused("that set is on your account — sign in to fix it"))
+            return try {
+                val stored = log.fixSet(live.id, setId, fix)
+                queue.store(stored, live.id, needsPush = false)
+                queue.flush()
+                drawFromQueue()
+                FixOutcome.Corrected(stored)
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                when (val verdict = FixVerdict.refusing(RefusalFacts(refusing))) {
+                    is FixVerdict.Gone -> FixOutcome.Gone(verdict.said)
+                    is FixVerdict.Unwritable -> FixOutcome.Failed(WriteFailure.Refused(verdict.said))
+                    FixVerdict.Retry -> FixOutcome.Failed(WriteFailure(refusing))
+                }
+            }
+        }
         // THE SESSION decides the road, not the set: falling through would PATCH an id the log has
         // never seen.
         if (localLog.row(sessionId) != null) {
@@ -1344,6 +1377,27 @@ class TrainingStore(
     // refusal: already gone, never existed and another account's are all 204, so a retry after a lost
     // reply is safe. Nothing here recovers a deleted row.
     suspend fun deleteSet(sessionId: String, setId: String): WriteFailure? {
+        // The live session's rows are the queue's: a set the log never took leaves the queue and
+        // nothing is sent; one the log holds leaves the queue once the log has let it go.
+        val live = session
+        if (live != null && sessionId == live.id) {
+            val owed = queue.pending.any { it.set.id == setId }
+            if (!owed) {
+                val log = gym ?: return WriteFailure.Refused("that set is on your account — sign in to delete it")
+                try {
+                    log.deleteSet(live.id, setId)
+                } catch (interrupted: CancellationException) {
+                    throw interrupted
+                } catch (refusing: Exception) {
+                    return WriteFailure(refusing)
+                }
+            }
+            queue.drop(setId)
+            queue.flush()
+            deletedSets = deletedSets + setId
+            drawFromQueue()
+            return null
+        }
         // A row the shelf's session no longer holds is the same nothing-to-do the wire answers 204
         // with, never a question to put to the account.
         if (localLog.row(sessionId) != null) {

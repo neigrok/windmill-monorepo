@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { round } from '../../../src/products/gym/logger/ladder.js';
 import {
-  hasOpenEntry, isOpenFields, NOT_A_NUMBER, ONE_DECIMAL, OVER_MAX_LOAD, REPS_BAND, SETS_BAND,
+  isOpenFields, NOT_A_NUMBER, ONE_DECIMAL, OVER_MAX_LOAD, REPS_BAND, SETS_BAND,
   targetEntryOf, targetFieldsOf, targetRefusal, withSignFlipped,
 } from '../../../src/products/gym/routines.js';
 
@@ -60,15 +60,7 @@ test('the target weight is put on the ladder’s grid before it is stored', () =
   assert.equal(typed('').targetWeightKg, null);
 });
 
-test('the open line is a property of a LIST and of a SHEET, and each is one question', () => {
-  assert.equal(hasOpenEntry([]), false);
-  assert.equal(hasOpenEntry([{ exerciseId: 'back-squat', targetSets: 3 }]), false);
-  assert.equal(hasOpenEntry([
-    { exerciseId: 'back-squat', targetSets: 3 },
-    { exerciseId: 'chin-up' },
-    { exerciseId: 'deadlift' },
-  ]), true, 'two open rows are one sentence, asked once of the whole list');
-
+test('the open line is a property of the SHEET, and it is one question', () => {
   assert.equal(isOpenFields(targetFieldsOf({ exerciseId: 'chin-up' })), true);
   assert.equal(isOpenFields(targetFieldsOf({ exerciseId: 'back-squat', targetSets: 3 })), false);
   assert.equal(isOpenFields(fields({ sets: '  ' })), true);

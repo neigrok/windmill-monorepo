@@ -24,8 +24,8 @@ struct RecordScreen: View {
                         if page.best != nil || page.heaviest != nil { tiles(page) }
                         if let chart = page.chart {
                             self.chart(chart)
-                        } else if let why = page.noChart {
-                            Text(noChart(why))
+                        } else if let why = page.noChart, let said = noChart(why) {
+                            Text(said)
                                 .font(GymType.numeral(12))
                                 .foregroundStyle(skin.inkFaint)
                                 .lineSpacing(3)
@@ -206,7 +206,7 @@ struct RecordScreen: View {
             Text("Never logged.")
                 .font(WindmillFont.body(16))
                 .foregroundStyle(skin.inkDim)
-            Text("Log a working set of it and its record starts here. Warmups count toward nothing.")
+            Text("A working set starts the record — warmups count toward nothing.")
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkFaint)
                 .lineSpacing(3)
@@ -216,19 +216,19 @@ struct RecordScreen: View {
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
     }
 
-    private func noChart(_ why: Record.NoChart) -> String {
+    // A missing chart is named only when the line names a way out or a rule that counts; an
+    // estimate Epley cannot give (every working set at or below zero) draws nothing at all.
+    private func noChart(_ why: Record.NoChart) -> String? {
         switch why {
         case .onThisDevice:
-            guard isSignedIn else {
-                return "Your log is on this device. The estimate and the record ladder are computed on your account — sign in and they fill in here."
-            }
-            return "This movement is still on this device — the log hasn’t heard of it yet. The estimate and the record ladder fill in once it lands."
+            guard isSignedIn else { return "e1RM needs your account — sign in for the chart." }
+            return "Not on the log yet — the chart arrives when it lands."
         case .outsideWindow:
-            return "Nothing in the last \(Record.windowWeeks) weeks. The chart draws one bar per session inside that window."
+            return "Nothing in the last \(Record.windowWeeks) weeks."
         case .neverWorked:
-            return "No working sets of this one yet. A warmup and a drop set are kept, and neither counts toward a record here or anywhere else in gym."
+            return "No working sets yet — warmups and drop sets count toward nothing."
         case .unloaded:
-            return "No e1RM for this one: an estimate needs a load above zero, and this movement has none."
+            return nil
         }
     }
 

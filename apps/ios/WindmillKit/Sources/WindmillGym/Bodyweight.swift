@@ -54,16 +54,12 @@ public enum Bodyweight {
     public static let chip = "Weigh in"
     public static let sheetTitle = "Weigh in"
     public static let save = "Save"
-    public static let hint = "comma or point, both read as a decimal"
     public static let notANumber = "That is not a number yet."
     public static let oneDecimalPoint = "One decimal point only."
     public static let outOfBounds = "Between 20 and 400 kg — check the number."
     public static let notAForecast = "A weigh-in is not a forecast — today or earlier."
-    public static let gapRule = "no line is drawn across a gap longer than seven days"
     // One tap, no question: the row leaves the chart and the nine-second window carries the way back.
     public static let deleteRow = "Delete weigh-in"
-    // The settings screen's own words for the unit toggle this phone does not apply.
-    public static let drawsKg = "Not on this phone yet — this room still draws kg."
     public static let dateRow = "Date"
 
     public enum Window: String, CaseIterable, Sendable {

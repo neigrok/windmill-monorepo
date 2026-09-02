@@ -81,11 +81,6 @@ object LoggerWalk {
 }
 
 object LiveLines {
-    data class Counter(
-        val count: String,      // "set 3 of 5"
-        val plan: String,       // "plan 5 × 5 @ 82.5" · "no target"
-    )
-
     data class Card(val title: String, val body: String)
 
     const val onThisDevice = "on this device"
@@ -110,15 +105,19 @@ object LiveLines {
         val canDrop: Boolean,
     )
 
-    // A plan line with no set count answers like no line at all — "set 3", never "set 3 of 0".
-    fun counter(workingSetsToday: Int, planEntry: PlanEntry?): Counter {
-        val sets = planEntry?.sets
-        if (planEntry == null || sets == null) {
-            return Counter(count = "set ${workingSetsToday + 1}", plan = "no target")
-        }
-        val load = planEntry.weightKg?.let { " @ ${Readout.weight(it)}" } ?: ""
-        return Counter(count = "set ${workingSetsToday + 1} of $sets",
-                       plan = "plan $sets × ${Readout.repTarget(planEntry.reps)}$load")
+    // "set 3 of 5". A plan line with no set count answers like no line at all — "set 3", never
+    // "set 3 of 0".
+    fun counter(workingSetsToday: Int, planEntry: PlanEntry?): String {
+        val sets = planEntry?.sets ?: return "set ${workingSetsToday + 1}"
+        return "set ${workingSetsToday + 1} of $sets"
+    }
+
+    // The set the last-time chip draws for the coming working set: last time's Nth WORKING set, past
+    // its end the last working set, and only where last time was warmups alone its last set. Null
+    // where last time holds no set at all — no chip, never a crash.
+    fun lastTimeSet(lastTime: List<TrainingSet>, workingSetsToday: Int): TrainingSet? {
+        val working = lastTime.filter { it.kind == SetKind.Working }
+        return working.getOrNull(workingSetsToday) ?: working.lastOrNull() ?: lastTime.lastOrNull()
     }
 
     // Counted off the merged walk by position, never off a plan index; a walk of one has no place.
@@ -128,19 +127,14 @@ object LiveLines {
         return "movement ${at + 1} of ${order.size}"
     }
 
-    // Only an ANSWER may say "first time" — a failed read must never draw as "no history".
-    fun prefillCard(lastTime: LastTime?, planEntry: PlanEntry?, routine: String?,
-                    readFailed: Boolean, now: Long): Card {
+    // The chip's spoken card. No history is NULL — the screen draws nothing for a first time — and a
+    // failed read is a card, because a read that missed must never draw as no history.
+    fun prefillCard(lastTime: LastTime?, routine: String?, readFailed: Boolean, now: Long): Card? {
         if (lastTime == null) {
-            return Card(title = "Last time", body = if (readFailed) "the log didn’t answer" else "reading your log…")
+            if (!readFailed) return null
+            return Card(title = "Last time", body = "the log didn’t answer")
         }
-        val session = lastTime.session
-        if (session == null) {
-            val planned = planEntry?.weightKg
-                ?: return Card(title = "First time logging this", body = "no history — start where you like")
-            return Card(title = "First time logging this",
-                        body = "no history — dialled to the plan’s ${Readout.weight(planned)} kg")
-        }
+        val session = lastTime.session ?: return null
         val elsewhere = lastTime.routine?.takeIf { it != routine }?.let { "  ·  $it" } ?: ""
         val shown = lastTime.sets.take(4)
             .joinToString(",   ") { Readout.effort(it.weightKg, it.reps) }

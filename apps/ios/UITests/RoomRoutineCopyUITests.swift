@@ -2,7 +2,7 @@ import XCTest
 
 // What the routines list, the routine editor, its target sheet and a saved routine's own screen SAY
 // once they are drawn: which sentence a lifter is shown, where it sits, how many times it is drawn
-// (C1, C19), what the list names and what it leaves to the screen behind it, the two Save refusals
+// (C1), what the list names and what it leaves to the screen behind it, the two Save refusals
 // under the name field (C4), the single refusal a broken target sheet shows (C5), and the number a
 // refused clear keeps and selects (C6).
 //
@@ -54,50 +54,46 @@ final class RoomRoutineCopyUITests: XCTestCase {
         XCTAssertTrue(save.isEnabled, "a named routine holding a movement cannot be saved")
     }
 
-    // C1 · once beneath the list, however many rows are open. The `open` in a row's target column is
-    // what says WHICH rows they are; the sentence says what that word means, and a list needs it once.
-    func testTheOpenSentenceIsDrawnOnceBeneathTheMovementListAndNeverPerRow() {
+    // The `open` in a row's target column is what says WHICH rows are open; the list draws nothing
+    // beneath, however many rows are open. The sentence is the target sheet's alone.
+    func testTheMovementListDrawsOpenPerRowAndNoSentenceBeneath() {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
         XCTAssertEqual(sentences(openLine), 0, "an empty routine has no open row to explain")
 
         addOpenMovement()
-        XCTAssertEqual(sentences(openLine), 1, "one open row, one sentence")
+        XCTAssertEqual(sentences(openLine), 0, "the list explains what its target column already says")
 
         addOpenMovement(named: "Bench Press")
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 2,
                        "both rows read `open` in their target column")
-        XCTAssertEqual(sentences(openLine), 1, "two open rows drew the sentence twice")
+        XCTAssertEqual(sentences(openLine), 0, "two open rows drew the sentence beneath the list")
     }
 
-    // C19 · while a target sheet stands over the editor, the SHEET owns the sentence. The list's copy
-    // beneath the movements steps aside for as long as the sheet is up, so the one state a lifter is
-    // in is described once — never blessed behind the scrim while it is being refused in front of it.
-    func testTheTargetSheetOwnsTheOpenSentenceWhileItStandsOverTheEditor() {
+    // The sentence is said the moment a line is opened — on the target sheet, while it stands over
+    // the editor — and nowhere once the sheet goes.
+    func testTheTargetSheetAloneSaysWhatOpenMeans() {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
 
         addOpenMovement()
-        XCTAssertEqual(sentences(openLine), 1, "one open row beneath the list, one sentence")
+        XCTAssertEqual(sentences(openLine), 0, "the list beneath the movements drew the sentence")
 
         // The row is the way back into its own target sheet.
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back Squat")).firstMatch.tap()
         XCTAssertTrue(app.textFields["Sets"].waitForExistence(timeout: 10),
                       "the movement row is no door back to its target sheet")
-        XCTAssertEqual(sentences(openLine), 1,
-                       "the sheet says what open means and the list behind it says it again")
+        XCTAssertEqual(sentences(openLine), 1, "the sheet does not say what open means, or says it twice")
 
-        // And the list has it back the moment the sheet goes.
         app.navigationBars["Back Squat"].buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10),
                       "the target sheet never closed")
-        XCTAssertEqual(sentences(openLine), 1,
-                       "the sentence left with the sheet that borrowed it")
+        XCTAssertEqual(sentences(openLine), 0, "the sentence outlived the sheet it belongs to")
     }
 
-    // C1 · the other list of a routine's movements: the saved routine's own screen, where the sentence
-    // used to be drawn once per open row.
-    func testTheRoutineScreenAlsoSaysTheOpenSentenceOnceBeneathItsList() {
+    // The other list of a routine's movements: the saved routine's own screen draws `open` per row
+    // and no sentence either.
+    func testTheRoutineScreenDrawsOpenPerRowAndNoSentenceBeneathItsList() {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
         app.typeText("Open Thursday")
@@ -112,7 +108,7 @@ final class RoomRoutineCopyUITests: XCTestCase {
 
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 2,
                        "both rows read `open` in their target column")
-        XCTAssertEqual(sentences(openLine), 1, "two open rows drew the sentence twice")
+        XCTAssertEqual(sentences(openLine), 0, "the routine screen drew the sentence beneath its list")
 
         // A saved routine outlives the run that made it — the device keeps it — so this test takes its
         // own fixture back off the shelf rather than leaving one standing in front of every later test.
@@ -121,8 +117,7 @@ final class RoomRoutineCopyUITests: XCTestCase {
 
     // A card is a door and a door does not restate what is behind it: the list names the ROUTINE, and
     // its movements, their targets and the word `open` are read one tap deeper, on the routine's own
-    // screen. The list is also where a bare `open` used to be drawn with nothing near it to say what
-    // the word meant, since the sentence that explains it belongs to a list OF MOVEMENTS.
+    // screen.
     func testTheRoutinesListNamesTheRoutineAndItsMovementsAreNamedOneTapDeeper() {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
@@ -147,8 +142,7 @@ final class RoomRoutineCopyUITests: XCTestCase {
         }
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 0,
                        "the list draws a target column, and a bare `open` inside it")
-        XCTAssertEqual(sentences(openLine), 0,
-                       "the list explains a word it does not say")
+        XCTAssertEqual(sentences(openLine), 0, "the list explains a word it does not say")
         // The head counts the program and claims nothing about a session it cannot see: the Routines
         // tab is not even mounted while one is open (the twin of Android's `RoutinesScreenTests`).
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",
@@ -169,7 +163,7 @@ final class RoomRoutineCopyUITests: XCTestCase {
         }
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "open")).count, 2,
                        "the routine screen lost the target column the list gave up")
-        XCTAssertEqual(sentences(openLine), 1, "and the sentence that says what `open` means")
+        XCTAssertEqual(sentences(openLine), 0, "and drew a sentence that is the target sheet's")
 
         deleteTheOpenRoutine(named: "Listed Thursday")
     }

@@ -56,34 +56,41 @@ class LiveLinesTests {
     @Test
     fun testTheCounterKeepsCountingPastThePlansSetCount() {
         val entry = PlanEntry(exerciseId = "bench-press", sets = 3, reps = 5, weightKg = 82.5)
-        val counter = LiveLines.counter(workingSetsToday = 3, planEntry = entry)
-        assertEquals("set 4 of 3", counter.count)
-        assertEquals("plan 3 × 5 @ 82.5", counter.plan)
+        assertEquals("set 4 of 3", LiveLines.counter(workingSetsToday = 3, planEntry = entry))
     }
 
     @Test
-    fun testAMovementWithNoPlanSaysSoRatherThanBorrowingATarget() {
-        val counter = LiveLines.counter(workingSetsToday = 0, planEntry = null)
-        assertEquals("set 1", counter.count)
-        assertEquals("no target", counter.plan)
+    fun testAMovementWithNoPlanCountsWithoutBorrowingATarget() {
+        assertEquals("set 1", LiveLines.counter(workingSetsToday = 0, planEntry = null))
     }
 
     @Test
-    fun testAPlanWithNoTargetWeightPrintsNoLoad() {
-        val entry = PlanEntry(exerciseId = "chin-up", sets = 3, reps = 8)
-        assertEquals("plan 3 × 8", LiveLines.counter(workingSetsToday = 1, planEntry = entry).plan)
+    fun testAPlanLineWithNoSetCountCountsLikeNoLineAtAll() {
+        val entry = PlanEntry(exerciseId = "chin-up", reps = 8, weightKg = 10.0)
+        assertEquals("set 2", LiveLines.counter(workingSetsToday = 1, planEntry = entry))
+        assertEquals("set 3 of 3",
+                     LiveLines.counter(workingSetsToday = 2, planEntry = entry.copy(sets = 3)))
     }
 
+    // The chip stands in for the coming WORKING set: last time's warmups are skipped over, never
+    // counted as its first set; past the end the last working set stands; only a last time that was
+    // warmups alone answers with its last set; and one with no set at all answers with nothing.
     @Test
-    fun testAPlanWithNoRepTargetReadsAsMax() {
-        val entry = PlanEntry(exerciseId = "chin-up", sets = 3)
-        val counter = LiveLines.counter(workingSetsToday = 2, planEntry = entry)
-        assertEquals("set 3 of 3", counter.count)
-        assertEquals("plan 3 × max", counter.plan)
+    fun testTheLastTimeSetIsTheNthWorkingSetAndDegradesToTheLastOne() {
+        val lastTime = listOf(
+            aSet("bench-press", 40.0, 10, at = 100, kind = SetKind.Warmup, id = "w1"),
+            aSet("bench-press", 80.0, 5, at = 200, id = "s1"),
+            aSet("bench-press", 82.5, 3, at = 300, id = "s2"),
+            aSet("bench-press", 60.0, 8, at = 400, kind = SetKind.Drop, id = "d1"),
+        )
 
-        val loaded = PlanEntry(exerciseId = "chin-up", sets = 3, weightKg = 10.0)
-        assertEquals("plan 3 × max @ 10",
-                     LiveLines.counter(workingSetsToday = 0, planEntry = loaded).plan)
+        assertEquals("s1", LiveLines.lastTimeSet(lastTime, workingSetsToday = 0)?.id)
+        assertEquals("s2", LiveLines.lastTimeSet(lastTime, workingSetsToday = 1)?.id)
+        assertEquals("past the end, the last working set — never the drop after it",
+                     "s2", LiveLines.lastTimeSet(lastTime, workingSetsToday = 5)?.id)
+        val warmupsOnly = lastTime.take(1)
+        assertEquals("w1", LiveLines.lastTimeSet(warmupsOnly, workingSetsToday = 0)?.id)
+        assertNull(LiveLines.lastTimeSet(emptyList(), workingSetsToday = 0))
     }
 
     @Test
@@ -104,29 +111,19 @@ class LiveLinesTests {
 
     @Test
     fun testTheCardTellsAPendingReadFromAFailedOne() {
-        val reading = LiveLines.prefillCard(lastTime = null, planEntry = null, routine = null,
-                                            readFailed = false, now = 0)
-        assertEquals(LiveLines.Card(title = "Last time", body = "reading your log…"), reading)
+        assertNull("a read still running draws nothing — the chip appears when the answer lands",
+                   LiveLines.prefillCard(lastTime = null, routine = null, readFailed = false, now = 0))
 
-        val failed = LiveLines.prefillCard(lastTime = null, planEntry = null, routine = null,
-                                           readFailed = true, now = 0)
+        val failed = LiveLines.prefillCard(lastTime = null, routine = null, readFailed = true, now = 0)
         assertEquals(LiveLines.Card(title = "Last time", body = "the log didn’t answer"), failed)
     }
 
+    // No history is an ABSENCE and the screen draws nothing for it: no chip, no sentence. Only a
+    // failed read is a card, so the two can never draw alike.
     @Test
-    fun testAMovementNeverTrainedSaysSoAndNamesThePlansNumber() {
+    fun testAMovementNeverTrainedDrawsNoCardAtAll() {
         val answered = LastTime(exerciseId = "zercher-squat")
-        val entry = PlanEntry(exerciseId = "zercher-squat", sets = 3, reps = 5, weightKg = 60.0)
-
-        assertEquals(LiveLines.Card(title = "First time logging this",
-                                    body = "no history — dialled to the plan’s 60 kg"),
-                     LiveLines.prefillCard(lastTime = answered, planEntry = entry, routine = null,
-                                           readFailed = false, now = 0))
-
-        assertEquals(LiveLines.Card(title = "First time logging this",
-                                    body = "no history — start where you like"),
-                     LiveLines.prefillCard(lastTime = answered, planEntry = null, routine = null,
-                                           readFailed = false, now = 0))
+        assertNull(LiveLines.prefillCard(lastTime = answered, routine = null, readFailed = false, now = 0))
     }
 
     @Test
@@ -138,14 +135,14 @@ class LiveLinesTests {
             routine = "Push B",
             sets = listOf(aSet("bench-press", 80.0, 5, at = day), aSet("bench-press", 80.0, 5, at = day + 1))
         )
-        val card = LiveLines.prefillCard(lastTime = answer, planEntry = null, routine = "Push A",
+        val card = LiveLines.prefillCard(lastTime = answer, routine = "Push A",
                                          readFailed = false, now = day + 3 * 86_400_000)
-        assertEquals("Last time · ${Readout.day(day)} · 3 days ago  ·  Push B", card.title)
-        assertEquals("80 × 5,   80 × 5", card.body)
+        assertEquals("Last time · ${Readout.day(day)} · 3 days ago  ·  Push B", card?.title)
+        assertEquals("80 × 5,   80 × 5", card?.body)
 
-        val sameDay = LiveLines.prefillCard(lastTime = answer, planEntry = null, routine = "Push B",
+        val sameDay = LiveLines.prefillCard(lastTime = answer, routine = "Push B",
                                             readFailed = false, now = day + 3 * 86_400_000)
-        assertEquals("Last time · ${Readout.day(day)} · 3 days ago", sameDay.title)
+        assertEquals("Last time · ${Readout.day(day)} · 3 days ago", sameDay?.title)
     }
 
     @Test
@@ -156,9 +153,9 @@ class LiveLinesTests {
             session = Session(id = "ses_1", startedAtMs = day, finishedAtMs = day + 1),
             sets = (0 until 6).map { aSet("bench-press", 80.0, 5, at = day + it) }
         )
-        val card = LiveLines.prefillCard(lastTime = answer, planEntry = null, routine = null,
+        val card = LiveLines.prefillCard(lastTime = answer, routine = null,
                                          readFailed = false, now = day)
-        assertEquals("80 × 5,   80 × 5,   80 × 5,   80 × 5,   +2 more", card.body)
+        assertEquals("80 × 5,   80 × 5,   80 × 5,   80 × 5,   +2 more", card?.body)
     }
 
     @Test
@@ -189,7 +186,7 @@ class LiveLinesTests {
         assertEquals(0, LiveLines.workingCount(sets, of = "cable-fly"))
         assertEquals("set 3 of 5",
                      LiveLines.counter(workingSetsToday = LiveLines.workingCount(sets),
-                                       planEntry = pushA.entry("bench-press")).count)
+                                       planEntry = pushA.entry("bench-press")))
 
         val rows = LiveLines.assemblyRows(order = listOf("bench-press"), sets = sets, plan = pushA,
                                           catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),

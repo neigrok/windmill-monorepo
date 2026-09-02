@@ -277,7 +277,7 @@ test('the home’s empty stance and its Build a routine read the store: a held d
   // The read this home holds was taken while the routine was there and is never taken again, so the
   // stance becomes true only because the settled delete leaves the READ as well as the drawn rows.
   assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
-  assert.deepEqual(quiet(), ['No routines yet.', 'Finish a session and gym offers to keep it as one — or write one out now.']);
+  assert.deepEqual(quiet(), ['No routines yet.', 'One training day, written down.']);
   assert.equal(build().length, 1, 'the store answered, and only now is the offer honest');
 });
 
@@ -857,7 +857,7 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
   t.mock.timers.tick(UNDO_MS);
   await settle();
   assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
-  assert.deepEqual(quiet(), ['No sessions yet.', 'The first one you log lands here, newest first.']);
+  assert.deepEqual(quiet(), ['No sessions yet.']);
 });
 
 // The other screen that reads the log's page for a decision, and the decision is a REFUSAL with a

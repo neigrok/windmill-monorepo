@@ -135,7 +135,7 @@ final class LogWeeksTests: XCTestCase {
         XCTAssertFalse(served.deviceOnly)
 
         let unclaimed = weeks[0].rows[1]
-        XCTAssertEqual(unclaimed.title, "Session · no routine")
+        XCTAssertEqual(unclaimed.title, "Free session")
         XCTAssertEqual(unclaimed.e1rm, nil, "no Epley is computed on this device")
         XCTAssertTrue(unclaimed.deviceOnly, "the hollow ring is real on this surface — draw it")
     }
@@ -265,7 +265,8 @@ final class LogScreenHostingTests: XCTestCase {
         let whenEmpty = try await height(of: none)
 
         XCTAssertGreaterThan(whileHeld, 0, "the log laid nothing out")
-        XCTAssertGreaterThan(whenEmpty, whileHeld + 60,
+        // The stance is one label under its symbol — about fifty points of block, and no description.
+        XCTAssertGreaterThan(whenEmpty, whileHeld + 40,
                              "`No sessions yet.` is drawn over a log the account still holds one for")
 
         let went = await held.settleDelete(session: sessionId)

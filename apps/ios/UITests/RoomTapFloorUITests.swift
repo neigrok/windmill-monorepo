@@ -7,11 +7,8 @@ final class RoomTapFloorUITests: XCTestCase {
 
     private let settingsDoor = "Gym settings"
     // The settings screen is named by its bar and by nothing else, so "it is up" is read off the
-    // Units footer, which every account draws (an lb account draws a longer one that starts the same).
-    private let settingsMark = "Display only — nothing stored changes."
-    private var settingsUp: XCUIElement {
-        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", settingsMark)).firstMatch
-    }
+    // Set confirmation section head, which every account draws.
+    private var settingsUp: XCUIElement { app.staticTexts["Set confirmation"] }
 
     override func setUp() {
         continueAfterFailure = false

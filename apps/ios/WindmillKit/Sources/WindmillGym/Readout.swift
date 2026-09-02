@@ -149,7 +149,7 @@ public enum Readout {
         return String(format: "%.1f t", kg / 1000)
     }
 
-    public static let noRoutine = "Session · no routine"
+    public static let noRoutine = "Free session"
 
     public static func routine(of session: Session) -> String {
         guard let named = session.plan?.routine, !named.isEmpty else { return noRoutine }

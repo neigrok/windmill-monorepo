@@ -5,7 +5,7 @@ import { backspace, echoOf, isKeyLive, KEYS, openPad, parseEntry, pressKey } fro
 // glyphs do not, so each carries the name that is read in its place — ± in the bytes the routine
 // target's own sign control carries, so one control met on two screens is called one thing.
 const DELETE = '⌫';
-const SPOKEN = { '±': 'Flip the sign', [DELETE]: 'Delete' };
+const SPOKEN = { '±': 'Flip the sign — band-assisted', [DELETE]: 'Delete' };
 
 export function Keypad({ mode, current, editing = false, onCommit, onCancel }) {
   const [pad, setPad] = useState(() => openPad(current));

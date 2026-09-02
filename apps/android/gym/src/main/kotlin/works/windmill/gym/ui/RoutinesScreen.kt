@@ -51,7 +51,6 @@ import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEvent
-import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
@@ -211,7 +210,7 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
         }
         Text("No routines yet", style = WindmillFont.display(20), color = GymSkin.ink)
         Text(
-            "A routine is one training day written down — the movements, in order, with your targets.",
+            "One training day, written down.",
             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
             color = GymSkin.inkDim,
             textAlign = TextAlign.Center,
@@ -389,7 +388,7 @@ private fun ClaimCard(onSignIn: () -> Unit) {
             color = GymSkin.ink,
         )
         Text(
-            "Sign in to claim it to your account — and open it on the web.",
+            "Sign in to claim it — it opens on the web too.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
             color = GymSkin.inkFaint,
         )
@@ -545,16 +544,6 @@ fun RoutineScreen(
                 routine.entries.sortedBy { it.position }.forEach { entry ->
                     EntryRow(entry, store, onOpenMovement)
                 }
-            }
-
-            // Once beneath the list and never per row: each open row already reads `open` in its own
-            // target column — that word says WHICH, and this sentence says what it means.
-            if (routine.entries.any { it.targetSets == null }) {
-                Text(
-                    TargetEntry.openLine,
-                    style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-                    color = GymSkin.inkDim,
-                )
             }
 
             History(history, unread, nowMs, onReview, onOpenThread)

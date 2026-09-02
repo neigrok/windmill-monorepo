@@ -162,16 +162,19 @@ final class SheetChromeHostingTests: XCTestCase {
                        [Units.allCases.count, Rest.choices.count].sorted())
         XCTAssertEqual(views(UISwitch.self, in: window).count, 3, "rest sound, haptic, sound")
 
-        // One caption per group, and each is its section's footer.
+        // At most one caption per group, each its section's footer: the unit limitation (lb only)
+        // and the locked-phone fact. Set confirmation has nothing to add, and the Notes door's own
+        // line says what Coach reads.
         let settings = try String(contentsOf: URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/WindmillGym/SettingsScreen.swift"), encoding: .utf8)
-        XCTAssertEqual(settings.components(separatedBy: "} footer: {").count - 1, 3, "three captioned groups")
+        XCTAssertEqual(settings.components(separatedBy: "} footer: {").count - 1, 2, "two captioned groups")
         for footer in ["Text(unitsCaption)",
-                       "Text(\"The sound needs the app awake: a rest that ends while the phone is locked ends quietly.\")",
-                       "Text(Settings.coachReads)"] {
+                       "Text(\"A rest that ends while the phone is locked ends quietly.\")"] {
             XCTAssertEqual(settings.components(separatedBy: footer).count - 1, 1, footer)
         }
+        XCTAssertFalse(settings.contains("Display only"), "a display unit that rewrote data would be the surprise")
+        XCTAssertEqual(Settings.stillKg, "This phone still draws kg.")
         XCTAssertFalse(settings.contains("how the room behaves at the rack"), "the bar's title is the screen's")
 
         // The bar names the screen `Settings` — not the room — and it is the only thing that does.

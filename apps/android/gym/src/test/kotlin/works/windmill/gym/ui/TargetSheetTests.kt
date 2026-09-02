@@ -102,9 +102,11 @@ class TargetSheetTests {
         compose.onNodeWithContentDescription("Weight target").performTextReplacement("eighty")
         compose.onNodeWithText("That is not a number yet.").assertIsDisplayed()
 
-        // With every field readable the hint stands where the refusal was.
+        // With every field readable nothing stands where the refusal was: a comma and a point both
+        // read, and no sentence says so.
         compose.onNodeWithContentDescription("Weight target").performTextReplacement("100")
-        compose.onNodeWithText("comma or point, both read as a decimal").assertIsDisplayed()
+        compose.onNodeWithText("That is not a number yet.").assertDoesNotExist()
+        compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -145,7 +147,7 @@ class TargetSheetTests {
         compose.onNodeWithContentDescription("Weight target").performTextReplacement("82.5")
 
         compose.onNodeWithText("Name the sets first — an open line names neither.").assertIsDisplayed()
-        compose.onNodeWithText("comma or point, both read as a decimal").assertDoesNotExist()
+        compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Set  ·  ", substring = true).assertIsNotEnabled()
 
         // Naming the sets is the way out, and the two numbers the lifter typed are still there.
@@ -161,9 +163,9 @@ class TargetSheetTests {
         scope.cancel()
     }
 
-    // 15-the-routine pins the open line's sentence on EVERY surface, and C19 pins how many: while the
-    // sheet stands it OWNS the sentence, and the editor's copy beneath the movement list stands down.
-    // One state says it once — never a blessing behind a scrim beside a refusal in front of it.
+    // 15-the-routine pins the open line's sentence on EVERY surface, and the sheet is its one home:
+    // the list behind it prints `open` per row and no sentence. One state says it once — never a
+    // blessing beside a refusal.
     @Test
     fun testTheOpenLineSaysWhatItMeansWhereTheLifterDecidesIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -184,9 +186,9 @@ class TargetSheetTests {
     }
 
     // C15: a statement about the whole line sits ABOVE the three fields, beside the never-logged
-    // line; everything drawn UNDER a field is that field's own note, which is the decimal hint.
+    // line; under a field stands only that field's own refusal, and no hint.
     @Test
-    fun testTheOpenLineSitsAboveTheThreeFieldsAndTheDecimalHintBelowThem() {
+    fun testTheOpenLineSitsAboveTheThreeFieldsAndNoHintStandsUnderThem() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         // Every line of this draft names its numbers, so the editor behind the sheet says nothing and
         // the sentence on screen is the sheet's own.
@@ -202,12 +204,10 @@ class TargetSheetTests {
         val neverLogged = compose.onNodeWithText("Never logged — these are your numbers.")
             .fetchSemanticsNode().positionInRoot.y
         val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot.y
-        val hint = compose.onNodeWithText("comma or point, both read as a decimal")
-            .fetchSemanticsNode().positionInRoot.y
 
         assertTrue("beside the never-logged line", sentence > neverLogged)
         assertTrue("and above the three fields", sentence < sets)
-        assertTrue("the decimal hint is a field's own note and stays under them", hint > sets)
+        compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 

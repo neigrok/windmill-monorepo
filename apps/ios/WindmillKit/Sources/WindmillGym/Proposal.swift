@@ -332,7 +332,7 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     public static let stillWaiting = "still waiting"
     public static let review = "Review"
     public static let close = "Close"
-    public static let applyHint = "Read the changes to the end to apply them."
+    public static let applyHint = "Scroll to the end to apply."
 
     // The receipt is the server's reply, never the model's prose; it is not stored and it does not pretend to be.
     // A revision names the routine as it now stands (`name`, which a rename moved); a removal names what went.
@@ -357,7 +357,7 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
 
     public var footnote: String {
         guard intent == .revise else {
-            return "The routine goes and your logged sets stay. Nothing is removed until you tap."
+            return "Removes the routine from your program · every logged set stays."
         }
         guard head.changeCount > 1 else { return "Nothing is applied until you tap." }
         return "All \(Proposal.spelled(head.changeCount)) or none. Nothing is applied until you tap."

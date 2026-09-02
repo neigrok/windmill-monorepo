@@ -112,10 +112,10 @@ class FixSheetKeypadTests {
         sheet()
 
         compose.onNodeWithText("82.5").performClick()
-        val sign = compose.onNodeWithContentDescription("Flip the sign").fetchSemanticsNode()
-        assertEquals(listOf("Flip the sign"), sign.config[SemanticsProperties.ContentDescription])
+        val sign = compose.onNodeWithContentDescription("Flip the sign — band-assisted").fetchSemanticsNode()
+        assertEquals(listOf("Flip the sign — band-assisted"), sign.config[SemanticsProperties.ContentDescription])
 
-        compose.onNodeWithContentDescription("Flip the sign").performClick()
+        compose.onNodeWithContentDescription("Flip the sign — band-assisted").performClick()
         compose.onNodeWithText("−82.5").assertIsDisplayed()
 
         val delete = compose.onNodeWithContentDescription("Delete").fetchSemanticsNode()
@@ -136,7 +136,7 @@ class FixSheetKeypadTests {
             val node = compose.onNodeWithText(key).fetchSemanticsNode()
             assertNull("$key names itself", node.config.getOrNull(SemanticsProperties.ContentDescription))
         }
-        compose.onAllNodesWithContentDescription("Flip the sign").assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(1)
         compose.onAllNodesWithContentDescription("Delete").assertCountEquals(1)
     }
 

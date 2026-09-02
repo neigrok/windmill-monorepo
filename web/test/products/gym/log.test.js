@@ -533,7 +533,7 @@ test('agoLabel — the day is counted from midnight, not from a rounded number o
 });
 
 test('NO_ROUTINE — the one phrase for a session with no routine', () => {
-  assert.equal(NO_ROUTINE, 'Session · no routine');
+  assert.equal(NO_ROUTINE, 'Free session');
 });
 
 test('planOf — the frozen snapshot, parsed once for every surface that reads it', () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   backspace, echoOf, isKeyLive, KEYS, LOGGER_REPS_MAX, LOGGER_REPS_MIN, MAX_BUFFER, NOT_A_NUMBER,
-  ONE_DECIMAL, openPad, OVER_MAX_LOAD, parseEntry, pressKey, REPS_BAND, REPS_HINT, WEIGHT_HINT,
+  ONE_DECIMAL, openPad, OVER_MAX_LOAD, parseEntry, pressKey, REPS_BAND, REPS_HINT, WEIGHT_UNIT,
 } from '../../../../src/products/gym/logger/entry.js';
 
 const pad = (text) => ({ text, seeded: false });
@@ -25,7 +25,7 @@ test('the pad opens on the value it was opened from, valid and committable', () 
   assert.deepEqual(openPad(0), { text: '0', seeded: true });
   assert.deepEqual(openPad(5), { text: '5', seeded: true });
   assert.deepEqual(parseEntry(openPad(102.5), 'weight', 102.5), {
-    valid: true, value: 102.5, message: WEIGHT_HINT,
+    valid: true, value: 102.5, message: WEIGHT_UNIT,
   });
   assert.deepEqual(parseEntry(openPad(5), 'reps', 5), { valid: true, value: 5, message: REPS_HINT });
   assert.equal(echoOf(openPad(102.5)), '102.5');
@@ -61,7 +61,7 @@ test('a key that will not fit is refused whole — the sign never eats a typed d
   assert.deepEqual(pressKey(pad('-1234567'), '±', 'weight'), pad('1234567'));
   assert.deepEqual(pressKey(pad('00000499'), '±', 'weight'), pad('00000499'));
   assert.deepEqual(parseEntry(pressKey(pad('00000499'), '±', 'weight'), 'weight', 20), {
-    valid: true, value: 499, message: WEIGHT_HINT,
+    valid: true, value: 499, message: WEIGHT_UNIT,
   });
 });
 
@@ -72,20 +72,19 @@ test('echoOf — the raw buffer read back, with a typographic minus and an em da
   assert.equal(echoOf(pad('-20')), '−20');
 });
 
-test('the rack keypad’s hint is the bytes every surface draws, and it is not the target sheet’s', () => {
-  // `KeypadSheet.swift` and `KeypadSheet.kt` ship these bytes; one control, one sentence.
-  assert.equal(WEIGHT_HINT, 'kg  ·  comma or point both read as a decimal  ·  ± for band-assisted');
+test('the line under a valid weight is the unit alone, and under valid reps the one word', () => {
+  assert.equal(WEIGHT_UNIT, 'kg');
   assert.equal(REPS_HINT, 'whole reps');
 });
 
 test('parseEntry — a valid weight reads comma or point as the same decimal', () => {
-  assert.deepEqual(parseEntry(pad('105'), 'weight', 102.5), { valid: true, value: 105, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('72,5'), 'weight', 102.5), { valid: true, value: 72.5, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('72.5'), 'weight', 102.5), { valid: true, value: 72.5, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('-20'), 'weight', 102.5), { valid: true, value: -20, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('0'), 'weight', 102.5), { valid: true, value: 0, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('500'), 'weight', 102.5), { valid: true, value: 500, message: WEIGHT_HINT });
-  assert.deepEqual(parseEntry(pad('102,505'), 'weight', 0), { valid: true, value: 102.51, message: WEIGHT_HINT });
+  assert.deepEqual(parseEntry(pad('105'), 'weight', 102.5), { valid: true, value: 105, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('72,5'), 'weight', 102.5), { valid: true, value: 72.5, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('72.5'), 'weight', 102.5), { valid: true, value: 72.5, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('-20'), 'weight', 102.5), { valid: true, value: -20, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('0'), 'weight', 102.5), { valid: true, value: 0, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('500'), 'weight', 102.5), { valid: true, value: 500, message: WEIGHT_UNIT });
+  assert.deepEqual(parseEntry(pad('102,505'), 'weight', 0), { valid: true, value: 102.51, message: WEIGHT_UNIT });
 });
 
 test('parseEntry — every refusal names the problem, and the empty one names what Cancel keeps', () => {

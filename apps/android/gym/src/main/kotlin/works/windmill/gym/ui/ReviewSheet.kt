@@ -304,7 +304,7 @@ private fun Body(
                 color = GymSkin.ink,
             )
             Text(
-                "the whole routine is removed from your program · every set you logged against it stays in the log",
+                "Removes the routine from your program · every logged set stays.",
                 style = GymType.numeral(12).copy(lineHeight = 18.sp),
                 color = GymSkin.inkDim,
             )

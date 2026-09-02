@@ -118,6 +118,5 @@ class TargetEntryTests {
         assertEquals("open", TargetEntry.setsPlaceholder)
         assertEquals("max", TargetEntry.repsPlaceholder)
         assertEquals("last time", TargetEntry.weightPlaceholder)
-        assertEquals("comma or point, both read as a decimal", TargetEntry.decimalHint)
     }
 }

@@ -441,7 +441,7 @@ private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
             .padding(WindmillSpace.x4),
     ) {
         Text(
-            "Following a written program? Your agent can build the routine from it — that one needs an account.",
+            "Have a written program? An agent can build it — sign in first.",
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
             color = GymSkin.inkDim,
         )

@@ -35,20 +35,13 @@ struct BodyweightScreen: View {
                 } else {
                     card(chart)
                 }
-                if store.preferences.units == .lb {
-                    Text(Bodyweight.drawsKg)
-                        .font(GymType.numeral(12.5))
-                        .foregroundStyle(skin.inkFaint)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .padding(.horizontal, WindmillSpace.x5)
             .padding(.top, WindmillSpace.x10)
             .padding(.bottom, WindmillSpace.x8)
         }
         .sheet(item: $repairing) { held in
-            WeighInSheet(existing: held, fixedDate: held.dateLocal, drawsKgOnly: store.preferences.units == .lb,
+            WeighInSheet(existing: held, fixedDate: held.dateLocal,
                          onSave: { kg, day in
                              repairing = nil
                              Task { await save(kg, on: day) }
@@ -102,10 +95,6 @@ struct BodyweightScreen: View {
             }
             dots(chart)
                 .frame(height: 220)
-            Text(Bodyweight.gapRule)
-                .font(GymType.numeral(11))
-                .foregroundStyle(skin.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -218,7 +207,6 @@ struct BodyweightScreen: View {
 struct WeighInSheet: View {
     let existing: BodyweightEntry?
     let fixedDate: String?
-    let drawsKgOnly: Bool
     let onSave: (Double, String) -> Void
     let onDelete: (() -> Void)?
 
@@ -227,11 +215,10 @@ struct WeighInSheet: View {
     @State private var date: Date
     @FocusState private var typing: Bool
 
-    init(existing: BodyweightEntry?, fixedDate: String?, drawsKgOnly: Bool,
+    init(existing: BodyweightEntry?, fixedDate: String?,
          onSave: @escaping (Double, String) -> Void, onDelete: (() -> Void)?) {
         self.existing = existing
         self.fixedDate = fixedDate
-        self.drawsKgOnly = drawsKgOnly
         self.onSave = onSave
         self.onDelete = onDelete
         _text = State(initialValue: existing.map { Bodyweight.format($0.weightKg) } ?? "")
@@ -252,9 +239,6 @@ struct WeighInSheet: View {
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.alarmInk)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                if drawsKgOnly {
-                    caption(Bodyweight.drawsKg)
                 }
                 save(reading, on: day, refused: dateRefusal != nil)
                 if let onDelete { deleteRow(onDelete) }
@@ -280,7 +264,7 @@ struct WeighInSheet: View {
         }
     }
 
-    // One refusal at a time, in place of the hint, and only once something has been typed.
+    // One refusal at a time, under the field, and only once something has been typed.
     private func field(_ reading: Bodyweight.Reading) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             HStack(alignment: .lastTextBaseline, spacing: WindmillSpace.x2) {
@@ -304,8 +288,6 @@ struct WeighInSheet: View {
                     .font(GymType.numeral(12))
                     .foregroundStyle(skin.alarmInk)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                caption(Bodyweight.hint)
             }
         }
     }
@@ -344,12 +326,5 @@ struct WeighInSheet: View {
                 .foregroundStyle(skin.alarmInk)
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
         }
-    }
-
-    private func caption(_ line: String) -> some View {
-        Text(line)
-            .font(GymType.numeral(12))
-            .foregroundStyle(skin.inkFaint)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }

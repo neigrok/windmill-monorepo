@@ -199,10 +199,6 @@ final class NotesScreenWordsTests: XCTestCase {
         XCTAssertEqual(Notes.needsSignIn, "Notes live with your account, so they need you signed in.")
         XCTAssertEqual(Notes.signIn, "Sign in")
     }
-
-    func testTheSettingsLineNamesWhatCoachExcludes() {
-        XCTAssertEqual(Settings.coachReads, "Coach reads your notes, not your settings.")
-    }
 }
 
 // The cap counts what the STORE holds, so it has to hear the settle as well as the hold. A count read

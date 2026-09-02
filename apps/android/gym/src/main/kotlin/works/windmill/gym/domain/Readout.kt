@@ -55,7 +55,7 @@ object Readout {
         return "${tenths / 10}.${tenths % 10} t"
     }
 
-    const val noRoutine = "Session · no routine"
+    const val noRoutine = "Free session"
 
     fun workingSets(count: Int): String = "$count working"
 

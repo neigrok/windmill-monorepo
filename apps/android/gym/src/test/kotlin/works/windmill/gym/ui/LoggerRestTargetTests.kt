@@ -2,7 +2,8 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasContentDescription
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +31,10 @@ import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 
 // The rest target says where it came from, once, on the timer: a session run from a routine whose
-// line carries its own rest draws ` · from the routine` after the target; one run against the dial
-// draws the target alone. The settings screen says nothing about the override any more.
+// line carries its own rest SAYS ` · from the routine` after the target; one run against the dial
+// says the target alone. The clocks row draws two numerals and a ring and speaks the whole label —
+// the same bytes the old row drew — so the pin reads the description, not the drawn text. The
+// settings screen says nothing about the override any more.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class LoggerRestTargetTests {
@@ -67,7 +70,7 @@ class LoggerRestTargetTests {
             store.logSet(60.0, 5)
         }
         compose.setContent {
-            LoggerScreen(store = store, isSignedIn = false, say = {}, onFinish = {}, onSignIn = {})
+            LoggerScreen(store = store, isSignedIn = false, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
         }
     }
 
@@ -75,7 +78,8 @@ class LoggerRestTargetTests {
     fun testARoutineLinesOwnRestIsNamedOnTheTimer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, restSeconds = 60)
-        compose.onNodeWithText("resting · target 1:00 · from the routine").assertIsDisplayed()
+        compose.onNode(hasContentDescription("resting · target 1:00 · from the routine  ·  ", substring = true))
+            .assertIsDisplayed()
         scope.cancel()
     }
 
@@ -83,7 +87,8 @@ class LoggerRestTargetTests {
     fun testTheDialsRestIsNamedWithoutASource() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, restSeconds = null)
-        compose.onNodeWithText("resting · target 3:00").assertIsDisplayed()
+        compose.onNode(hasContentDescription("resting · target 3:00  ·  ", substring = true)).assertIsDisplayed()
+        compose.onAllNodes(hasContentDescription("from the routine", substring = true)).assertCountEquals(0)
         scope.cancel()
     }
 }

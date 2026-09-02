@@ -354,7 +354,7 @@ test('a removal names itself on the card, whatever its summary says', () => {
   assert.equal(documentLine(removal), null);
   assert.equal(
     atomicLine(removal),
-    'The routine goes and your logged sets stay. Nothing is applied until you tap.',
+    'Removes the routine from your program · every logged set stays.',
   );
 });
 

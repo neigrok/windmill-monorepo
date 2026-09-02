@@ -60,7 +60,9 @@ class KeypadEntryTests {
     fun testACommaAndAPointBothReadAsADecimal() {
         assertEquals(72.5, KeypadEntry.read(pad("72,5"), KeypadEntry.Mode.Weight, keeping = 0.0).value!!, 0.0)
         assertEquals(72.5, KeypadEntry.read(pad("72.5"), KeypadEntry.Mode.Weight, keeping = 0.0).value!!, 0.0)
-        assertEquals(KeypadEntry.weightHint, KeypadEntry.read(pad("72,5"), KeypadEntry.Mode.Weight, keeping = 0.0).message)
+        assertEquals("and the row under a valid weight carries the unit and nothing else", "kg",
+                     KeypadEntry.read(pad("72,5"), KeypadEntry.Mode.Weight, keeping = 0.0).message)
+        assertEquals("kg", KeypadEntry.weightHint)
     }
 
     @Test
@@ -86,6 +88,8 @@ class KeypadEntryTests {
         val reading = KeypadEntry.read(opened, KeypadEntry.Mode.Weight, keeping = -20.0)
         assertEquals(-20.0, reading.value!!, 0.0)
         assertEquals(KeypadEntry.weightHint, reading.message)
+        assertEquals("the sign key is where band-assisted is said, now that no hint says it",
+                     "Flip the sign — band-assisted", KeypadEntry.signName)
 
         assertEquals("and ± repairs rather than doubling the sign", "20",
                      opened.pressing("±", KeypadEntry.Mode.Weight).text)

@@ -38,7 +38,7 @@ test('the rack keypad draws the four refusals, and the band it names is the logg
 
   const signed = open('weight', 100);
   typeInto(signed, ['5', '±', '±']);
-  assert.equal(messageOf(signed), 'kg  ·  comma or point both read as a decimal  ·  ± for band-assisted');
+  assert.equal(messageOf(signed), 'kg', 'a valid weight reads its unit and no hint');
 
   const over = open('weight', 100);
   typeInto(over, ['5', '0', '1']);
@@ -51,7 +51,7 @@ test('the rack keypad draws the four refusals, and the band it names is the logg
   assert.equal(messageOf(notYet), NOT_A_NUMBER);
   assert.equal(inert(notYet), true);
   typeInto(notYet, ['5']);
-  assert.equal(messageOf(notYet), 'kg  ·  comma or point both read as a decimal  ·  ± for band-assisted');
+  assert.equal(messageOf(notYet), 'kg');
 
   const reps = open('reps', 5);
   typeInto(reps, ['1', '0', '0']);
@@ -90,7 +90,7 @@ test('the fix sheet is at the rack, so both its numerals raise the keypad', asyn
   assert.equal(padOf().props.current, 5);
 });
 
-test('the rack keypad names both its glyphs — ± `Flip the sign`, ⌫ `Delete` — and no digit', async (t) => {
+test('the rack keypad names both its glyphs — ± `Flip the sign — band-assisted`, ⌫ `Delete` — and no digit', async (t) => {
   browserWith();
   const { Keypad } = await loadScreen('products/gym/logger/Keypad.jsx');
   const drawn = renderHook(t, () => Keypad({ mode: 'weight', current: 100, onCommit: () => {}, onCancel: () => {} }));
@@ -103,7 +103,7 @@ test('the rack keypad names both its glyphs — ± `Flip the sign`, ⌫ `Delete`
     elementsOf(drawn.tree)
       .filter((each) => each.type === 'button' && each.props['aria-label'] != null)
       .map((each) => [each.props.children, each.props['aria-label']]),
-    [['\u00b1', 'Flip the sign'], ['\u232b', 'Delete']],
+    [['\u00b1', 'Flip the sign — band-assisted'], ['\u232b', 'Delete']],
   );
   assert.equal(keys.filter((each) => each.props['aria-label'] == null).length, 11);
 
@@ -123,7 +123,7 @@ test('the rack keypad names both its glyphs — ± `Flip the sign`, ⌫ `Delete`
   const reps = renderHook(t, () => Keypad({ mode: 'reps', current: 5, onCommit: () => {}, onCancel: () => {} }));
   const stood = elementsOf(reps.tree).find((each) => each.props?.className?.startsWith('gym-key') && each.props?.children === '±');
   assert.equal(stood.props.className, 'gym-key is-inert');
-  assert.equal(stood.props['aria-label'], 'Flip the sign');
+  assert.equal(stood.props['aria-label'], 'Flip the sign — band-assisted');
   assert.equal(
     elementsOf(reps.tree).find((each) => each.props?.className === 'gym-keypad-back').props['aria-label'],
     'Delete',

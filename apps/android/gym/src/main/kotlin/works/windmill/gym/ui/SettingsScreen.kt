@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -25,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -86,12 +91,10 @@ fun SettingsScreen(
                 onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
                 onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
             )
-            // One caption for the three dials: it answers the question a lifter asks here, looking at them.
-            Caption(Notes.settingsLine)
             NotesRow(onNotes)
             ConnectedLogRow(isSignedIn, origin)
             UnattributedRow(store, isSignedIn, say)
-            ClosingNote()
+            ClosingNote(origin)
         }
     }
 }
@@ -106,7 +109,6 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
             picked = units,
             onPick = onPick,
         )
-        Caption("Display only — nothing stored changes.")
         // Drawn only under the answer it is about: on kg it would be a sentence about nothing.
         if (units == Units.Pounds) Caption(Bodyweight.kilogramsOnly)
     }
@@ -140,11 +142,11 @@ private fun ConfirmRow(
 ) {
     SettingCard {
         Text("Set confirmation", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-        ToggleLine("Haptic", preferences.confirmHaptic, onToggleHaptic)
-        ToggleLine("Sound", preferences.confirmSound, onToggleSound)
         // The switch can be on and the phone still silent: Compose's haptics go through Android's
-        // own touch-feedback setting.
-        Caption("Android’s touch-feedback setting can silence the haptic with this still on.")
+        // own touch-feedback setting. Said on the row it qualifies.
+        ToggleLine("Haptic", preferences.confirmHaptic, onToggleHaptic,
+            supporting = "Silenced if Android’s touch feedback is off.")
+        ToggleLine("Sound", preferences.confirmSound, onToggleSound)
     }
 }
 
@@ -159,8 +161,10 @@ private fun NotesRow(onNotes: () -> Unit) {
                 .heightIn(min = GymTap.minimum)
                 .clickable(role = Role.Button, onClick = onNotes),
         ) {
-            Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+                Caption(Notes.sub)
+            }
             Chevron()
         }
     }
@@ -199,8 +203,9 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
                 .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
                 .padding(WindmillSpace.x3),
         )
-        Box(
-            contentAlignment = Alignment.Center,
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum + 6.dp)
@@ -211,6 +216,13 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
                 },
         ) {
             Text(ConnectedLog.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+            // The button leaves the app: the icon says so, in the bytes a screen reader hears.
+            Icon(
+                GymGlyph.openInNew,
+                contentDescription = ConnectedLog.opensInBrowser,
+                tint = GymSkin.accent,
+                modifier = Modifier.size(16.dp),
+            )
         }
         Caption(ConnectedLog.onTheWeb)
         if (!isSignedIn) Caption(ConnectedLog.deviceOnly)
@@ -244,7 +256,6 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             )
         }
         Caption(ConnectedLog.deleteLevel)
-        Caption(ConnectedLog.notNamedHere)
     }
 }
 
@@ -264,9 +275,7 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
     SettingCard {
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
             color = GymSkin.ink)
-        Caption("This phone was holding training that was never signed in to any account, from " +
-            "before this version. It is nobody’s until you say it is yours — it has not been " +
-            "added to any log and it will not be, on its own.")
+        Caption("Logged before any sign-in. Nothing joins an account until you say it is yours.")
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(heldLine(held, live), style = GymType.numeral(13), color = GymSkin.inkDim)
             held.days.take(4).forEach {
@@ -333,7 +342,7 @@ private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
 private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 @Composable
-private fun ClosingNote() {
+private fun ClosingNote(origin: String) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
@@ -348,10 +357,26 @@ private fun ClosingNote() {
             color = GymSkin.inkFaint,
         )
         // The export is a web page: this app's one API client reads JSON and that route answers CSV.
-        Text(
-            "Your CSV export is on the web — this phone has no screen for it yet.",
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
+        // The row is a door to the web's settings page — the same page the connections door opens —
+        // and its icon says it leaves the app, in the bytes a screen reader hears.
+        val web = LocalUriHandler.current
+        ListItem(
+            headlineContent = { Text("CSV export", style = WindmillFont.body(14), color = GymSkin.inkDim) },
+            supportingContent = { Caption("on the web") },
+            trailingContent = {
+                Icon(
+                    GymGlyph.openInNew,
+                    contentDescription = ConnectedLog.opensInBrowser,
+                    tint = GymSkin.accent,
+                    modifier = Modifier.size(16.dp),
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) {
+                    runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
+                },
         )
     }
 }
@@ -377,7 +402,7 @@ private fun Caption(line: String) {
 
 // The platform's switch, so TalkBack reads a switch with a state rather than a coloured box.
 @Composable
-private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
+private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit, supporting: String? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -385,8 +410,10 @@ private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .toggleable(value = on, role = Role.Switch, onValueChange = { onToggle() }),
     ) {
-        Text(label, style = WindmillFont.body(14), color = GymSkin.inkDim)
-        Spacer(Modifier.weight(1f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = WindmillFont.body(14), color = GymSkin.inkDim)
+            supporting?.let { Caption(it) }
+        }
         Switch(
             checked = on,
             // The row owns the tap, so the switch is drawn rather than separately reachable.

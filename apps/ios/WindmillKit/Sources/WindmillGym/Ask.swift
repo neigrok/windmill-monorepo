@@ -220,12 +220,9 @@ public enum Ask {
         return lines
     }
 
-    public static let scope = """
-        Ask about anything in your log — a movement that stalled, what a week actually looked like, \
-        whether a routine is doing what you wanted. It reads what you have logged and it can propose \
-        a change to a routine. It can never change what you lifted: a set that needs fixing is yours, \
-        in the log.
-        """
+    // Two sentences. The subtitle already says it reads and proposes only; the promise that it never
+    // touches a logged set is `proposalNote`, drawn on every proposal card at the moment it matters.
+    public static let scope = "Ask about your training. Coach can propose a routine change — you decide on the diff."
 
     public static let freeDoor = """
         If you already use Claude, Cursor, Codex or anything else that speaks MCP, connect it \

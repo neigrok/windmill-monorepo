@@ -5,6 +5,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -50,10 +53,21 @@ object GymType {
         fontFeatureSettings = "tnum",
     )
 
-    val movementHead = TextStyle(
+    // The logger's reps numeral and its one primary — sans, tabular, like every role in
+    // `gymTypography`.
+    val reps = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 56.sp,
+        lineHeight = 60.sp,
+        fontFeatureSettings = "tnum",
+    )
+
+    val primary = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        fontFeatureSettings = "tnum",
     )
 
     fun numeral(size: Int, weight: FontWeight = FontWeight.Normal) = TextStyle(
@@ -64,6 +78,23 @@ object GymType {
     )
 
     val readout = numeral(15)
+}
+
+// Material's open-in-new, in its own path data: one glyph is not worth the extended icon set.
+object GymGlyph {
+    val openInNew: ImageVector = ImageVector.Builder(
+        name = "OpenInNew", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f,
+        autoMirror = true,
+    ).path(fill = SolidColor(Color.Black)) {
+        moveTo(19f, 19f); horizontalLineTo(5f); verticalLineTo(5f); horizontalLineTo(12f); verticalLineTo(3f)
+        horizontalLineTo(5f); curveToRelative(-1.11f, 0f, -2f, 0.9f, -2f, 2f); verticalLineToRelative(14f)
+        curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f); horizontalLineToRelative(14f)
+        curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f); verticalLineToRelative(-7f); horizontalLineToRelative(-2f)
+        verticalLineToRelative(7f); close()
+        moveTo(14f, 3f); verticalLineToRelative(2f); horizontalLineToRelative(3.59f); lineToRelative(-9.83f, 9.83f)
+        lineToRelative(1.41f, 1.41f); lineTo(19f, 6.41f); verticalLineTo(10f); horizontalLineToRelative(2f)
+        verticalLineTo(3f); horizontalLineToRelative(-7f); close()
+    }.build()
 }
 
 // Nothing tappable under 46, and the primary action 64 and in the thumb zone.

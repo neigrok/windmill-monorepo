@@ -179,7 +179,7 @@ struct LogScreen: View {
         .safeAreaInset(edge: .bottom) { weighInChip }
         .sheet(item: $sharing) { link in ShareSheet(link: link) }
         .sheet(isPresented: $weighingIn) {
-            WeighInSheet(existing: nil, fixedDate: nil, drawsKgOnly: store.preferences.units == .lb,
+            WeighInSheet(existing: nil, fixedDate: nil,
                          onSave: { kg, day in
                              weighingIn = false
                              Task { await weighIn(kg, on: day) }
@@ -261,14 +261,11 @@ struct LogScreen: View {
         say(why.line("the weigh-in is saved on this device"))
     }
 
-    // One description and no action: the weigh-in chip below is this screen's only writing.
+    // One label and no action: the weigh-in chip below is this screen's only writing.
     private var nothingYet: some View {
         ContentUnavailableView {
             Label("No sessions yet.", systemImage: "book.closed")
                 .foregroundStyle(skin.inkDim)
-        } description: {
-            Text("The first one you log lands here, newest first.")
-                .foregroundStyle(skin.inkFaint)
         }
     }
 

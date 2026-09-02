@@ -115,9 +115,10 @@ asks for it.
 
 **And the gate says why, on the screen and not only to a screen reader:**
 
-> **Read the changes to the end to apply them.**
+> **Scroll to the end to apply.**
 
-Nine words, byte-identical on all three, inside `../../guidelines/text-budget.md`'s refusal row
+Six words, byte-identical on all three (`APPLY_HINT` in `proposals.js`, `Proposal.applyHint` in
+`Proposal.swift` and `Proposal.kt`), inside `../../guidelines/text-budget.md`'s refusal row
 because it names the way out rather than only refusing. It is driven off the **gate alone**, never
 off whatever else has Apply inert: while an apply request is in flight Apply is shut for a different
 reason, and a sentence bound to the disabled state would tell a lifter to read further while the

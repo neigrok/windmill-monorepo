@@ -8,8 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // it. The label sits inside the gap when it fits; on a narrow frame the gap carries a dashed marker
 // and its label moves beneath the axis under the gap's midpoint, a second line taking any label
 // that would collide with one already placed. Nothing here fits, projects, smooths or scores a
-// series: the dots are the data and the segments are a reading aid the chart says so about in
-// `rule`.
+// series: the dots are the data and the segments are a reading aid.
 
 const TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500];
 const MARGIN = { left: 46, right: 14, top: 14, bottom: 26 };
@@ -146,7 +145,7 @@ const label = {
 // The svg is a group, not one image: each dot is its own element for assistive tech, a button where
 // there is a repair path and an image where there is not, named by the caller's `label`.
 export function DotChart({
-  points, domain = null, joins, gapLabel, formatValue, formatDate, caption, rule, onPick = null,
+  points, domain = null, joins, gapLabel, formatValue, formatDate, caption, onPick = null,
   height = 220, ariaLabel = 'chart',
 }) {
   const host = useRef(null);
@@ -173,7 +172,7 @@ export function DotChart({
         <figcaption style={{ ...label, display: 'block', marginBottom: 6 }}>{caption}</figcaption>
       )}
       <div ref={host} style={{ width: '100%' }}>
-        <svg width={width} height={layout.height} viewBox={`0 0 ${width} ${layout.height}`} role="group" aria-label={rule ?? ariaLabel} style={{ display: 'block', maxWidth: '100%' }}>
+        <svg width={width} height={layout.height} viewBox={`0 0 ${width} ${layout.height}`} role="group" aria-label={ariaLabel} style={{ display: 'block', maxWidth: '100%' }}>
           {layout.yTicks.map((tick) => (
             <g key={`y-${tick.value}`}>
               <line x1={layout.plot.left} x2={layout.plot.right} y1={tick.y} y2={tick.y} stroke="var(--border-subtle)" strokeWidth="1" />
@@ -234,7 +233,6 @@ export function DotChart({
           ))}
         </svg>
       </div>
-      {rule && <p style={{ margin: '10px 0 0', fontSize: 12, lineHeight: 1.45, color: 'var(--text-tertiary)' }}>{rule}</p>}
     </figure>
   );
 }

@@ -108,7 +108,7 @@ test('every kilogram field on a screen carries the word kg', () => {
   assert.equal(read('FixSheet.jsx').includes('<span className="gym-fix-unit">kg</span>'), true);
   // The unit rides in the field beside the sign control, and neither is part of the field's name.
   assert.equal(read('Routines.jsx').includes('<span className="gym-target-unit">kg</span>'), true);
-  assert.equal(/WEIGHT_HINT = 'kg\b/.test(read('logger/entry.js')), true);
+  assert.equal(read('logger/entry.js').includes("WEIGHT_UNIT = 'kg'"), true);
 });
 
 test('the two sheets that stand over a converted reading say what the other numeral is', () => {

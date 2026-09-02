@@ -1,6 +1,12 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -65,6 +71,40 @@ class SettingsConnectPitchTests {
             )
         }
         return store
+    }
+
+    // The CSV row is a door, not a sentence: it opens the web's settings page in the browser — the
+    // page the export lives on — and its icon says it leaves the app, the way the connect door's does.
+    @Test
+    fun testTheCsvRowOpensTheWebSettingsPageInTheBrowser() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val opened = mutableListOf<String>()
+        val store = TrainingStore(
+            queue = SetQueue(File(tmp.root, "queue.json")),
+            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
+            localLog = LocalLog(File(tmp.root, "local.json")),
+            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
+            scope = scope,
+            sync = { null },
+        )
+        compose.setContent {
+            val browser = object : UriHandler {
+                override fun openUri(uri: String) { opened += uri }
+            }
+            CompositionLocalProvider(LocalUriHandler provides browser) {
+                SettingsScreen(store = store, isSignedIn = true, origin = "https://windmill.works",
+                               backTo = "routines", onBack = {}, onNotes = {}, say = {})
+            }
+        }
+
+        val row = compose.onNode(hasText("CSV export") and hasClickAction())
+        row.performScrollTo().assertIsDisplayed()
+        compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
+            .assertCountEquals(2)
+        row.performClick()
+        assertEquals(listOf("https://windmill.works/#/settings"), opened)
+        scope.cancel()
     }
 
     // The bar names the screen, and nothing else does: the head line that used to say what the

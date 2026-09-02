@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -68,8 +69,8 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
             Modifier.fillMaxWidth().background(GymSkin.canvas),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(headline, style = GymType.numeral(12), color = GymSkin.alarmInk)
-            Text(reason, style = GymType.numeral(12), color = GymSkin.inkDim)
+            Text(headline, style = MaterialTheme.typography.bodySmall, color = GymSkin.alarmInk)
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = GymSkin.inkDim)
         }
     }
 }

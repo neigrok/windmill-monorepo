@@ -1533,12 +1533,6 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-target-sign:hover {
   color: var(--color-brand);
 }
-/* Said once on the sheet, beside the one field that takes a decimal. */
-.gym-target-decimal {
-  margin: 6px 2px 0;
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
-}
 .gym-target-reads {
   margin: 6px 2px 0;
   font-family: var(--font-mono);
@@ -4018,11 +4012,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-family: var(--font-mono);
   font-size: 15px;
   color: var(--gym-ink-dim);
-}
-.gym-weigh-hint {
-  margin: 6px 2px 0;
-  font-size: 12px;
-  color: var(--gym-ink-faint);
 }
 .gym-weigh-date {
   display: flex;

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, dateLocalOf, DECIMAL_HINT,
-  DEFAULT_WINDOW, DELETE_VERB, entriesAfter, GAP_DAYS, GAP_RULE, gapLabel, joinsAcross, latestOf,
+  axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, dateLocalOf,
+  DEFAULT_WINDOW, DELETE_VERB, entriesAfter, GAP_DAYS, gapLabel, joinsAcross, latestOf,
   msOfDateLocal, parseWeighIn, readingLine, REFUSALS, saveRefusal, WEIGH_IN_DELETED, WEIGH_IN_VERB,
   weighInWrite, weightReading, WINDOWS, windowOf, windowStartOf,
 } from '../../../../src/products/gym/bodyweight/bodyweight.js';
@@ -17,14 +17,12 @@ const NOW = new Date(2026, 7, 26, 9, 30).getTime();
 test('the words are the pinned ones', () => {
   assert.equal(BODYWEIGHT_TITLE, 'Bodyweight');
   assert.equal(WEIGH_IN_VERB, 'Weigh in');
-  assert.equal(DECIMAL_HINT, 'comma or point, both read as a decimal');
   assert.deepEqual(REFUSALS, {
     notNumber: 'That is not a number yet.',
     decimals: 'One decimal point only.',
     bounds: 'Between 20 and 400 kg — check the number.',
     future: 'A weigh-in is not a forecast — today or earlier.',
   });
-  assert.equal(GAP_RULE, 'no line is drawn across a gap longer than seven days');
   assert.equal(GAP_DAYS, 7);
   assert.deepEqual(WINDOWS.map((window) => window.label), ['90 days', 'All']);
   assert.equal(DEFAULT_WINDOW, '90');

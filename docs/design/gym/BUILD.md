@@ -537,7 +537,10 @@ Doing this carelessly turns a documented decision into a silent regression.
 `WindmillFont.display/body/mono(size: Int)` builds a TextStyle from a raw Int
 (`platform/design/Tokens.kt:75-91`), called with literals at 369 sites in `:gym` (171 through
 `WindmillFont.`, 198 through `GymType.`). `GymType.weight` is
-a fixed 104.sp with 92.sp line height (`GymSkin.kt:44-51`). The **Material** half is answered:
+declared at a fixed 104.sp with 92.sp line height (`GymSkin.kt:47-54`); the logger overrides both,
+drawing it through `BasicText` auto-sized 44–80 sp on a 72 sp line (`LoggerScreen.kt:938`), and
+`GymSkin.kt` carries two more sans roles the logger alone uses, `GymType.reps` (56 sp) and
+`GymType.primary` (20 sp). The **Material** half is answered:
 `GymMaterial` passes a `Typography` built from the room's own faces with `fontFeatureSettings =
 "tnum"` on every numeric role (`ui/GymMaterial.kt:90`, `:93`), so no Material control in gym falls
 back to stock — `WindmillMaterial` still passes none (`WindmillMaterial.kt:10-13`), which is the
@@ -545,7 +548,7 @@ brand's problem and not this room's. `tnum` is also on `GymType.weight` (`:50`) 
 (`:63`) and on **none** of the raw `WindmillFont` roles gym calls directly. Rows are pinned by
 `heightIn(min = …)` at 92 sites; columns by `widthIn(min = 88.dp)` (`KeypadSheet.kt:222`) and
 `size(width = 32.dp, …)` (`AssemblySheet.kt:295`). Four partial mitigations exist, all
-`TextAutoSize.StepBased` (`KeypadSheet.kt:170`, `FixSheet.kt:121`, `LoggerScreen.kt:499`, `:614`).
+`TextAutoSize.StepBased` (`KeypadSheet.kt:172`, `FixSheet.kt:121`, `LoggerScreen.kt:613`, `:938`).
 ***The brief's premise needs qualifying before anyone builds from it.*** `12-native-idiom.md` says
 "Both phones hard-code point sizes, so Dynamic Type and font scale do nothing on either." On Android
 `.sp` scales with the user's font scale by definition, so font scale is **not** inert here. What is
@@ -850,8 +853,8 @@ legal under `12-native-idiom.md` rather than opened.
 
 **Documentation that goes stale in these changes:** `2g` `Routine.h:40-44` saying a client never
 sends `revision` while `TrainingJson.cpp:190-198` parses one and the web sends one ·
-`Bodyweight.kilogramsOnly` ("nothing on this screen converts one"), read by both the chart and
-Android's settings screen, once units convert ·
+the phones' lb-only Units line *This phone still draws kg.* (`Bodyweight.kilogramsOnly`,
+`Settings.stillKg`), drawn under the Units control alone, once units convert ·
 `ARCHITECTURE.md:1233` carries the verdict-code rule that must survive every copy change.
 
 ---
@@ -962,6 +965,20 @@ editor's handle reorder, the pinned `Start workout` band, the `Settings` bar, th
 rename and keypad sheets dismissing by scrim and swipe, and the `resting · target 1:30` line were all
 seen at font scale 1.0 and 1.3, with no crash in logcat; the ` · from the routine` variant was not
 exercised there because no routine entry carried rest.
+
+**What N2 verified, and what it did not.** The web gate was run by this pass — `cd web && npm test`,
+**1650 pass, 0 fail** — and the Android total was read off the JUnit XML under
+`apps/android/gym/build/test-results/` (both variants, from a deleted `test-results` re-run by the
+wave owner after the last fix pass on 2026-09-02): **896 per variant, 0 failures, 12 skipped**, across
+94 classes. The iOS package gate and the six UITest classes
+named in §8 were run by their builders, not by this pass. The Android logger was installed on the
+emulator at font scale 1.0 and 1.3 per its builder's report, and nothing in this section was watched
+by the pass that wrote it. **Not run for N2 at all:** the web in a real browser — every web cut is
+pinned in node's DOM harness and no page was driven end to end; the iOS UITest walks other than those
+six classes; any screen reader; any real hardware. The screen's spoken names — *Set kind* and its
+state, the clocks row's merged bytes, *Movement 1 of 3*, *on this device* on the cloud glyph — are
+asserted under Robolectric (`LoggerRestTargetTests`, `LoggerMovementWalkTests`, `LoggerScreenTests`)
+and heard by nobody.
 
 **Nothing in the remaining items was executed.** Where an item says a control "does not exist", it
 means no matching symbol appears in the tree — not that anyone watched a screen fail to show it.
@@ -1218,8 +1235,8 @@ which is why its block sits here and why six of the entries below closed in it.
 
 **What S2b landed — the three cuts that name a refusal.**
 
-- **The review band names its gate** (cut 4 and **R4**). *Read the changes to the end to apply them.*
-  is drawn on all three, byte-identical, in a slot laid out in **both** states so the band's height
+- **The review band names its gate** (cut 4 and **R4**). The gate's sentence — since N2 *Scroll to
+  the end to apply.* — is drawn on all three, byte-identical, in a slot laid out in **both** states so the band's height
   never changes — `APPLY_HINT` / `.gym-proposal-gate` with `min-height: 1.4em` on the web,
   `.opacity(gate.isOpen ? 0 : 1)` on iOS, `.alpha(if (seen) 0f else 1f)` on Android. It is bound to
   the gate **alone** and never to the disabled predicate, so it is silent while an apply request is
@@ -1412,7 +1429,7 @@ it closed.
   whole of what is true.
 - **Android's gate stopped being read twice** (`4m`, closed). `ReviewSheet.kt`'s drawn refusal is
   `clearAndSetSemantics { }` in **both** states, not only once `seen`, so TalkBack navigating the shut
-  band meets *Read the changes to the end to apply them.* once — on the Apply box's
+  band meets the gate's sentence once — on the Apply box's
   `stateDescription`, the control that is refusing. `ReviewSheetTests`'s
   `theShutBandExposesTheGatesRefusalOnExactlyOneNode` pins the count rather than the attribute. All
   three surfaces are single-reading; **still read off the source and the ARIA spec, with no screen
@@ -1434,17 +1451,18 @@ it closed.
   byte for byte, because it is correct *because* it enumerates — *a backfill, a correction, a routine
   target* — which is what excludes the weigh-in, the one field typed in the display unit.
   **Android:** the second Units caption is cut and the lb clause is gated on `units == Pounds` the
-  way iOS's is, reading `Bodyweight.kilogramsOnly` instead of restating it as a literal — which
-  makes that constant's own comment (*the same words the settings screen uses*) literally true for
-  the first time. The two Rest captions collapse to one, and it is the **override** that is kept: a
+  way iOS's is, reading `Bodyweight.kilogramsOnly` instead of restating it as a literal (N2 then
+  shortened the constant to *This phone still draws kg.* and cut it from the bodyweight screen, so
+  the settings row is its only draw site). The two Rest captions collapse to one, and it is the **override** that is kept: a
   routine's own rest beating the dial is real — `Rest.target` is
   `planEntry?.restSeconds ?: preferences.restSeconds`, so an entry that carries one wins even when
   the dial is OFF, which is what the caption's *off included* names, and `RestTests` pins both
   branches — the number rides the wire on the entry, and this is the only place on that phone the
   fact is said. Being the sole carrier is what earns it a pin of its own:
   `SettingsConnectPitchTests` now asserts the sentence is on the screen, so a later salvage cannot
-  cut it with the suite green. The 24-word Set-confirmation caption becomes one 11-word line for the
-  system dependency — *Android's touch-feedback setting can silence the haptic with this still on.*
+  cut it with the suite green. The 24-word Set-confirmation caption becomes one line for the
+  system dependency, which N2 shortened again and moved onto the row it qualifies — the Haptic
+  toggle's supporting text, *Silenced if Android’s touch feedback is off.*
   **Two true facts Android now states nowhere** rode out with those cuts — the wake lock and the
   syncing dials — and are ledger `4s` rather than a silent loss.
 - **What S3 opened and did not build**, each recorded rather than fixed. The `4n` law survived on
@@ -1510,11 +1528,12 @@ or found by the sweep it was asked to run.
   78 words, counted off the deleted string literals by this pass. **The structured can/cannot panel
   stays**, which is what `../guidelines/text-budget.md`'s *short AND structured* asks for and why
   the board refused the wider cut: three of its facts have no destination drawn anywhere on that
-  phone. `notNamedHere` was rewritten to *This phone does not read your connections* in the same
-  change, because `whereItLives` was the antecedent of its *that list* and a dangling referent is
-  the stale line the rule is about. `onTheWeb` was kept, so the `onClickLabel` / `say` half of the
-  ruling never fired — a failed browser launch is still silent, on both phones, and is now ledger
-  `4v`.
+  phone. `notNamedHere` was rewritten in the same change because `whereItLives` was the antecedent
+  of its *that list*, and N2 then deleted it outright: it explained an absence beside the door where
+  the list lives. `onTheWeb` was kept (N2 cut it to its consent half, *Your tool’s first call opens
+  the approval screen.*, and put the browser fact on the button's open-in-new glyph), so the
+  `onClickLabel` / `say` half of the ruling never fired — a failed browser launch is still silent,
+  on both phones, and is ledger `4v`.
 
 **What N1 landed — the platform's own chrome.** Not a cut: one wave of `briefs/12-native-idiom.md`'s
 law built under the programme's standing rules — a drawn control comes off only when its act is
@@ -1540,8 +1559,9 @@ and six amendments after review; everything below is read at the symbol.
   (`SettingsScreen.swift:18`, the sections at `:30-46`, `:59-75`, `:82-91`, `:98`) — titled
   `Settings` by the room (`GymRoom.swift:106`) and by nothing else: the head line *how the room
   behaves at the rack* is gone, and the four UITest classes that keyed "settings is up" on it now
-  key on the Units footer *Display only — nothing stored changes.* (`RoomContainersUITests.swift:14`,
-  `RoomEdgeGestureUITests.swift:17`, `RoomTapFloorUITests.swift:11`, `RoomChromeUITests.swift:120`).
+  key on the *Set confirmation* section head (`RoomContainersUITests`, `RoomEdgeGestureUITests`,
+  `RoomTapFloorUITests`, `RoomChromeUITests`) — N1 pointed them at the Units footer, and N2 deleted
+  that footer.
 - **Android sheets dismiss the way Material does.** `RenameSheet` (`:44`), `AssemblySheet` (`:57`),
   the logger-hosted `KeypadSheet` and `CreateMovementSheet` (`MovementPicker.kt:333`) draw no Cancel
   or Close; the act is re-homed on the three paths the platform owns — the drag handle, the scrim and
@@ -1615,16 +1635,96 @@ and six amendments after review; everything below is read at the symbol.
   the web and on one iOS line, `sessions` on the phones' panels, with the weigh-ins named on none
   (`5l`).
 
+**What N2 landed — the quiet logger, and fewer words everywhere.** The owner's ask was two
+screenshots of the Lift training screen and *still a lot of text on several screens*. Two halves:
+the Android logger rebuilt to a written spec, and a nineteen-row cut table applied on all three
+surfaces under the programme's standing rules. Everything below is read at the symbol.
+
+- **The Android logger is the ruled shape**, and `briefs/16-the-workout.md` now carries it in
+  words: `Finish` / the routine's name / a settings gear in the top bar; `Set 2 of 4` with its
+  target tail and a kind `AssistChip` opening a `DropdownMenu` (`KindChip`) where the four-segment
+  row was; a last-time `AssistChip` drawn only with history (`LastTimeChip`, the coming Nth working
+  set from `LiveLines.lastTimeSet`, the whole old card spoken and its sets in the menu) and a
+  disabled *didn’t load* chip for a read that missed; a clocks row — counting-up rest, ring, target —
+  that is one node speaking the old label's bytes (`Clocks`, `"${rest.label}  ·  ${rest.time}"`),
+  with *from the routine* drawn under it only when the entry's rest is in force; the stranded band
+  and the refusal rows kept; a horizontal strip of logged-set pills (`LoggedStrip`, `SetPill`) each
+  a door to `FixSheet` in the logger's own sheet (`LoggerSheet.Fix`), the cloud-off glyph speaking
+  *on this device*; the dots and `+` pinned above the hairline (`Walk`, *Movement N of M*, *Add
+  movement*); and the rack — `Weight`, the numeral with its unit, four equal ladder pills from the
+  golden (`LadderRow`), `Reps` between two 64 dp `FilledIconButton`s (`RepsRow`), a full-width
+  `Log set` with no echo (`LogButton`). **The store learned to fix what it still owes**:
+  `TrainingStore.fixSet` and `deleteSet` rewrite the live session's queue, so a set the log has not
+  taken yet is corrected in place and the corrected body is what the walk sends
+  (`TrainingStoreTests`). Deleted with their tests: `LiveLines.Counter` and the `plan` half of
+  `counter` (it answers the count string alone now), `GymType.movementHead`, `prefillCard`'s
+  first-time branches (it answers null for no history), the picker subtitle *the session is already
+  running*, `SET N`, `MOVEMENT N OF M`, `no target`, the `Log set  ·  20 × 5` echo. Two sans roles
+  joined `GymSkin.kt` — `GymType.reps`, `GymType.primary` — and the four glyphs the screen needed
+  from Material's extended set are drawn from their own path data rather than pulling the artifact
+  in. **iOS's logger was not redrawn** and is ledger `5m`.
+- **`Session · no routine` is `Free session` on all three** — `NO_ROUTINE` (`log.js`),
+  `Readout.noRoutine` (`Readout.swift`, `Readout.kt`) — the log's rows, the finish sheet and the
+  logger's title reading the one constant.
+- **The cuts, by the spec's row number, with the bytes that landed.** #1 *Ask about your training.
+  Coach can propose a routine change — you decide on the diff.* (`Ask.whatItIs` on Android,
+  `Ask.scope` on iOS; the web has no twin of the paragraph). #2 the open line *You decide the
+  numbers at the rack.* is drawn on the **target sheet only** on all three — the list draw sites,
+  `hasOpenEntry`, `TargetEntry.openLineUnder` and the `RoutineRow` protocol are gone. #3 Android's
+  unattributed shelf: *Logged before any sign-in. Nothing joins an account until you say it is
+  yours.* #4 `ConnectedLog.onTheWeb` = *Your tool’s first call opens the approval screen.*, and
+  `Connect my log` carries an open-in-new glyph named *opens in your browser*
+  (`ConnectedLog.opensInBrowser`). #5 *One training day, written down.* on all three routine
+  empties. #6 *Sign in to claim it — it opens on the web too.* on both phones' claim cards, the iOS
+  card being the sign-in button itself. #7 the three decimal hints are gone — `DECIMAL_NOTE`,
+  `DECIMAL_HINT`, `WEIGHT_HINT` on the web; `TargetEntry.decimalHint`, `Bodyweight.hint`,
+  `KeypadEntry.weightHint` on iOS; `TargetEntry.decimalHint`, `Bodyweight.fieldHint` on Android —
+  a valid weight's line is `kg`, and `±` is named *Flip the sign — band-assisted* on the keypad and
+  the target sheet of every surface. #8 *Display only — nothing stored changes.* is gone from all
+  three; the phones draw *This phone still draws kg.* under Units, lb only, and nowhere on the
+  bodyweight screen or the weigh-in sheet; the web keeps *A backfill, a correction, a routine
+  target — typed in kg.*, lb only (`5n`). #9 *Silenced if Android’s touch feedback is off.* as the
+  Haptic row's supporting text. #10 *Coach reads your notes, not your settings.* is gone from every
+  surface (`SETTINGS_LINE`, `Settings.coachReads`, `Notes.settingsLine`); the settings Notes door
+  reads the notes' own line *what you write for Coach*. #11 the log empty's second line is gone on
+  all three. #12 the gap rule is gone from the chart on all three (`GAP_RULE`, `Bodyweight.gapRule`;
+  `DotChart` lost its `rule` prop). #13 `ConnectedLog.notNamedHere` deleted. #14 a `CSV export` row
+  with supporting text *on the web* on both phones, a door to the web's `#/settings` page — iOS a
+  `Link`, Android a `ListItem` with the open-in-new glyph (contract N2-3: never the fifteen words).
+  #15 *Have a written program? An agent can build it — sign in first.* on both phones (iOS's
+  signed-in branch ends *connect it to this log.*). #16 and #19 *e1RM needs your account — sign in
+  for the chart.* (`Record.kt`, `RecordScreen.swift`), drawn only where a load above zero exists
+  and the estimate is still missing; where no working set carries a load, both phones draw nothing
+  (`Record.noEstimate` null, iOS's `noChart` nil for `.unloaded`). iOS's other three no-chart lines
+  shortened to one clause each.
+  #17 `applyHint` / `APPLY_HINT` = *Scroll to the end to apply.* on all three. #18 *Removes the
+  routine from your program · every logged set stays.* on all three. Two iOS-only cuts of the same
+  kind: the rest footer to *A rest that ends while the phone is locked ends quietly.* and the
+  record screen's never-logged line to *A working set starts the record — warmups count toward
+  nothing.* Kept, as the spec ruled: `$routine keeps its own numbers`, *Today's weights become next
+  week's targets.*, *Top note wins.*, every consent block on the connect card, and every refusal.
+- **Every dropped string left its domain file with its test** (contract N2-4): assertions moved
+  with the strings, none deleted to pass. The six iOS UITest classes that walked cut bytes were
+  repointed — the four that keyed "settings is up" on the Units footer now key on the *Set
+  confirmation* section head — and the fix-sheet walk finds the sheet by its navigation bar.
+- **Docs corrected in this pass**: `briefs/15-the-routine.md` (decimal hint, the open line's one
+  placement, the sign's spoken name), `briefs/16-the-workout.md` (the kind control's cite, the
+  logger's ruled shape, the keypad's words, the queue-behind open item), `briefs/09-coach.md`,
+  `briefs/10-notes.md`, `briefs/11-bodyweight.md`, `../PRODUCT_LOG.md`; ledger `2p` closed, `4m`,
+  `4s`, `4v` and `5i` re-cited, `5m` and `5n` opened; and the stale lines of this document above.
+
 **What the programme owes, in full.** The board's list is finished, S3 closed the debt the first
 three waves recorded and never built, S4 closed the last defect the programme created and took the
-last salvage, and N1 closed six entries under the programme's own rules — so this is everything S1,
-S2a, S2b, S3, S4 and N1 opened and did not close. **There is no unbuilt *cut* left anywhere.**
+last salvage, N1 closed six entries under the programme's own rules, and N2 closed `2p` and opened
+two — so this is everything S1, S2a, S2b, S3, S4, N1 and N2 opened and did not close. **There is no unbuilt *cut* left anywhere.**
 Everything below is a ledger entry, and `../consistency.md` carries each one's evidence.
 
 - **A build is owed, on a named surface** — `3l` (iOS's two proposal cards, and the wire behind the
   conversation rows) · `3x` (Android says the log went quiet for a log that answered with a reason)
   · `4e` (iOS's double-keep guard is in the tree and nothing can pin it: what is owed is the seam,
-  an injectable store on `GymRoom` or a launch argument that slows the write).
+  an injectable store on `GymRoom` or a launch argument that slows the write) · `5m` (iOS's logger
+  follows the Android shape N2 ruled — the kind menu, the last-time chip, the clocks row, the pill
+  strip, the pinned dots, the equal ladder, `Log set` with no echo).
 - **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` · `4d` ·
   `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l`. Two of
   them are not gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer
@@ -1642,7 +1742,9 @@ Everything below is a ledger entry, and `../consistency.md` carries each one's e
   (`5l`).
 - **Closed, nothing owed** — `3a` · `3c` · `3d` · `3e` · `3f` · `3g` · `3h` · `3i` · `3k` · `3m` ·
   `3n` · `3o` · `3p` · `3r` · `3t` · `3v` · `4a` · `4c` · `4f` · `4h` · `4i` · `4m` · `4n` · `4o` ·
-  `4p` · `5j`. Named here so no later wave re-opens one of them by reading its heading alone. `3c`,
+  `4p` · `5j` · `5n`. Named here so no later wave re-opens one of them by reading its heading
+  alone. `5n` is N2's, recorded as legal under brief 12 the way `5j` was: the web's and the phones'
+  lb-only Units sentences differ because the surfaces' conversion does. `3c`,
   `3g`, `3m`, `3p`, `3r` and `4f` are N1's and carry a **built 2026-09-02** stamp; `5j` is recorded
   as legal rather than built. `4p` is S4's and carries a **built 2026-09-01** stamp; it is the widest
   of them, since the sweep behind it closed the same law on both phones as well as on the four web
@@ -1666,11 +1768,10 @@ iOS asks *Discard these edits?* — so *a draft that cannot be eaten silently* i
 of three. That is ledger `4k`, opened by S2b and undecided: an unsaved draft was never on the wire,
 so the window Law 2 answers every other destructive act with has nothing to hold.
 
-**The suites.** The totals below are N1's, read off the runners against the tree as it now stands —
-every N1 source edit on all three surfaces included. The baselines are the tree at `9b16a64`, the
-commit N1 was built on: the web's was taken by this pass from a clean copy of that commit (the
-commits between S4's close at 1509 and `9b16a64` are journal's), the phones' from their builders'
-baseline runs. Three things a runner has to know. Android needs its JDK named: `/usr/libexec/java_home -V` lists 1.8
+**The suites.** The totals below are N2's, against the tree as it now stands — every N2 source edit
+on all three surfaces included. The baselines are the tree at `cdb8e2c`, the commit N2 was built on,
+as the wave contract recorded them: web 1650 · iOS `WindmillGymTests` 734 · Android 872 per
+variant. Three things a runner has to know. Android needs its JDK named: `/usr/libexec/java_home -V` lists 1.8
 alone and the toolchain Gradle builds on is the one it provisioned for itself, so the gate runs with
 `JAVA_HOME=~/.gradle/jdks/eclipse_adoptium-21-aarch64-os_x.2/jdk-21.0.7+6/Contents/Home` and fails
 configuration without it. **iOS's alarm-pixel reader lives in one file of its own** —
@@ -1681,49 +1782,47 @@ CI resolves its simulator by capability and picks the Pro, and `4t` is what a ru
 costs.
 
 - **web** — `cd web && npm test`, run by this pass: **1650 tests, 1650 pass, 0 fail**, against
-  **1635** on a clean copy of `9b16a64` run the same way. Sixteen cases added and the day-chip case
-  gone: the detail discard in all four directions in `withheldWindow.test.js` (*a finished session’s
-  detail draws Discard session, and it takes the same window as every other delete* · *a detail
-  discard taken back never reaches the store, and a refused one says so in the room’s voice* · *… the
-  store refuses says the session was not discarded, in the review’s own words* · *the open session’s
-  detail draws no discard: the phone owns it*), the mirror's three rest readings in the new
-  `mirror.test.js`, `Menu`'s four in the new `test/design-system/Menu.test.js`, three in
-  `screens.test.js` (the mirror's label, the detail's door beside the mirror's absence, the backfill's
-  date field), the day a backfill opens on in `backfill.test.js` — replacing *the chips a backfill is
-  dialled with* — and `restInForce` in `log.test.js`.
+  1650 at `cdb8e2c`: cases moved with their strings and none was added or lost. Seventeen test
+  files changed — the keypad's unit line and sign name in `logger/entry.test.js` and
+  `logger/rackKeypad.test.js`, the open line's one placement in `screens.test.js`,
+  `targetSheet.test.js` and `targetSheetDraw.test.js`, the gate's sentence in
+  `ProposalReviewDialog.test.js` and `proposals.test.js`, the chart without its rule in
+  `design-system/DotChart.test.js` and `bodyweight/*.test.js`, `Free session` in `log.test.js` and
+  `withheldWindow.test.js`.
 - **iOS package** — `xcodebuild -scheme WindmillKit-Package -destination 'platform=iOS
   Simulator,name=iPhone 17 Pro' test` from `apps/ios/WindmillKit`, `DEVELOPER_DIR` on Xcode, the
-  builder's gate run: **TEST SUCCEEDED**, `WindmillGymTests` **734 cases, 0 failed**, against 723
-  at `9b16a64`. Eleven new: seven in the new `SheetChromeHostingTests.swift` — the fix sheet's bar
-  title and band commit, its segmented kinds, the jump sheet's bar Close, the keypad's bar title and
-  band `Set`, the rename sheet's bar `Rename`, Settings as a `Form`, and
-  `testNoSheetDrawsAFixedPointTitleOfItsOwn` — plus `RestTimerTests`'
-  `testTheTargetLineNamesTheRoutineOnlyWhenTheRoutinesOwnRestIsInForce`, `MovementPickerTests`'
-  `testANewlineAroundTheQueryIsTrimmedLikeASpace`, `ConnectedLogTests`'
-  `testTheReadLineNamesNotesAsTheOtherSurfacesDo` and `ReviewSheetHostingTests`'
-  `testTheReviewNamesTheProposalInTheBarAndClosesFromIt`.
-- **iOS UITests** — **edited by N1 for the first time since S2a**: four classes
-  (`RoomContainersUITests`, `RoomEdgeGestureUITests`, `RoomTapFloorUITests`, `RoomChromeUITests`)
-  keyed "the settings screen is up" on the deleted head line and now key on the Units footer, and
-  `RoomChromeUITests`'s comment about a Picker outside a Form is rewritten. Those four
-  classes were run on the simulator (iPhone 17 Pro, Xcode 26.3): **21 executed, 0 failures, `TEST
-  SUCCEEDED`**. The other 29 walks in the scheme were not run this wave. The scheme still holds 50
-  cases; these walks have no fake wire — `WMApiBaseURL` is empty, so they drive the real account at
-  real speed.
+  builder's gate run and **not re-run by this pass**: **TEST SUCCEEDED**, `WindmillGymTests`
+  **733 cases, 0 failed**, against 734 at `cdb8e2c` — one fewer, net: four cases went with their
+  strings (the Ask empty state's old paragraph, the Notes settings line, the open line's two
+  list-placement cases) and three took their place (the two-sentence empty state, the open line as
+  the target sheet's alone, an open row named by its empty sets). Eleven test files moved with
+  their strings: `AskTests`, `BodyweightTests`, `KeypadSheetTests`, `LogScreenTests`, `NotesTests`,
+  `ProposalTests`, `ReadoutTests`, `ReviewSheetTests`, `RoutineBuilderTests`,
+  `RoutineEditorCopyTests`, `SheetChromeHostingTests`.
+- **iOS UITests** — seven classes edited by N2 for the cut bytes: the four that key "the settings
+  screen is up" (`RoomContainersUITests`, `RoomEdgeGestureUITests`, `RoomTapFloorUITests`,
+  `RoomChromeUITests`) now key on the *Set confirmation* section head, `RoomRoutineCopyUITests`
+  asserts the open line is drawn on the sheet and never beneath a list, `RoomFixSheetUITests` keys
+  on the keypad's `kg` line and the sign's new name and finds the sheet by its navigation bar, and
+  `RoomUndoWindowUITests`' comments read `Free session`. Six classes were run on the simulator by
+  the iOS builder — `RoomContainers` 10, `RoomRoutineCopy` 7, `RoomEdgeGesture` 7, `RoomTapFloor` 1,
+  `RoomChrome` 1, `RoomFixSheet` 2, all green — and **not by this pass**; the rest of the scheme was
+  not run this wave. These walks have no fake wire — `WMApiBaseURL` is empty, so they drive the real
+  account at real speed.
 - **Android** — `./gradlew build` (the CI-shaped gate, `:gym:test` plus the release variant) from
-  `apps/android` with `JAVA_HOME` on the provisioned JDK 21: **BUILD SUCCESSFUL, 872 tests per
-  variant, 0 failures, 0 errors, 12 skipped**, against **854** at `9b16a64`. Eighteen new; two
-  classes are N1's own — `ui/SheetDismissTests.kt` (the four sheets' handle and scrim, seven cases)
-  and `ui/LoggerRestTargetTests.kt` (the timer's *from the routine*, two) — with six in
-  `RoutineEditorTests` (pick-up, place-down, put-back, both actions and the ends, the held row's
-  removal, the said line), `RoutinesScreenTests`'
-  `testStartWorkoutIsPinnedOutOfTheScrollAndStartsTheRoutine`, `RestTimerTests`'
-  `testTheTargetSaysItCameFromTheRoutineOnlyWhenItDid` and `SettingsConnectPitchTests`'
-  `testTheBarNamesTheScreenAndNoHeadLineRepeatsIt`, whose override case became
-  `testTheRestCardSaysNothingAboutTheOverride`; `ConnectedLogTests.everySentence` dropped the six
-  dead strings and the `truths` assertion. The total is the JUnit XML under
-  `apps/android/gym/build/test-results/` summed across all **92** classes per variant, read off disk
-  by this pass rather than off a console tail.
+  `apps/android` with `JAVA_HOME` on the provisioned JDK 21, the wave owner's run after the last fix
+  pass: **896 tests per variant, 0 failures, 12 skipped**, against **872** at `cdb8e2c`. The total is
+  the JUnit XML under `apps/android/gym/build/test-results/` summed across all **94** classes per
+  variant, read off disk by this pass (stamped 23:21, 2026-09-02) rather than off a console tail;
+  the logger's builder was still editing spacing when it was read, so a later run may differ.
+  Twenty-one more: `store/TrainingStoreTests.kt`'s cases for the live queue's fix and delete,
+  `ui/LargestTypeTests.kt`'s logger case on a 360 × 780 frame at font scale 1.3 (`Log set` inside
+  the window, the ladder labels unclipped), `ui/SettingsConnectPitchTests.kt`'s
+  cases for the shortened consent lines and the CSV door, and the moved assertions in
+  `LoggerRestTargetTests` (content description, same bytes), `LoggerMovementWalkTests` (*Movement 1
+  of 3*), `LiveSessionTests` (the counter's one string, `lastTimeSet`, the null card),
+  `RoutineEditorTests`, `TargetSheetTests`, `TargetSheetSignAndClearTests`, `KeypadEntryTests`,
+  `FixSheetKeypadTests`, `BodyweightScreenTests`, `ProgramTests`, `ProposalTests`, `RecordTests`.
 
 Everything else this section states is read off the tree at the symbols it names, in the same way as
 the rest of this document.

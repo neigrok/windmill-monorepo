@@ -92,15 +92,13 @@ object TargetEntry {
     // lifter to clear what they just typed would be telling them to abandon what they asked for.
     const val nameSetsFirst = "Name the sets first — an open line names neither."
 
-    // Said once beside the fields rather than refused: most of the world writes a decimal with a comma.
-    const val decimalHint = "comma or point, both read as a decimal"
-
     const val setsPlaceholder = "open"
     const val repsPlaceholder = "max"
     const val weightPlaceholder = "last time"
 
-    // What the open line MEANS, said where the lifter is deciding it. `Readout.openTarget` stays the
-    // compact token a row prints; this is the sentence, and it is the same one on every surface.
+    // What the open line MEANS, said once, on the target sheet, where the lifter is deciding it.
+    // `Readout.openTarget` is the compact token a row prints; this is the sentence, and it is the
+    // same one on every surface.
     const val openLine = "You decide the numbers at the rack."
 
     enum class Field { Sets, Reps, Weight }

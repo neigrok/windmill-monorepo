@@ -87,10 +87,7 @@ export function LogList({ log, onSignIn }) {
           account with none, so nothing invites the lifter to log their first one while Undo stands.
           Between the two stances the log draws neither line. */}
       {phase !== 'loading' && phase !== 'failed' && sessions.length === 0 && (
-        <>
-          <p className="gym-quiet">No sessions yet.</p>
-          <p className="gym-quiet">The first one you log lands here, newest first.</p>
-        </>
+        <p className="gym-quiet">No sessions yet.</p>
       )}
       {shown.length > 0 && (
         <>

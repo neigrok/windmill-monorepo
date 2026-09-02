@@ -68,7 +68,6 @@ import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ChartRun
 import works.windmill.gym.domain.ChartWindow
 import works.windmill.gym.domain.ParsedWeight
-import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.TrainingStore
@@ -120,7 +119,6 @@ fun WeighInSheet(
     initial: WeighIn?,
     fixedDate: LocalDate?,
     nowMs: Long,
-    units: Units,
     saving: Boolean,
     refused: String?,
     onSave: (String, Double) -> Unit,
@@ -205,10 +203,6 @@ fun WeighInSheet(
                     .semantics { contentDescription = weightField },
             )
             Text(Bodyweight.unit, style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint)
-        }
-        Text(Bodyweight.fieldHint, style = GymType.numeral(12), color = GymSkin.inkFaint)
-        if (units == Units.Pounds) {
-            Text(Bodyweight.kilogramsOnly, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }
         (said ?: refused)?.let {
             Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.alarmInk)
@@ -332,12 +326,6 @@ fun BodyweightScreen(
             }
         } else {
             DotChart(shown, runs, window, today, onDot = { repairing = it })
-            // The rule is the chart's disclosure about its own segments, so it is drawn only where
-            // there are segments to read.
-            Text(Bodyweight.gapRule, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
-        }
-        if (store.preferences.units == Units.Pounds) {
-            Text(Bodyweight.kilogramsOnly, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }
       }
     }
@@ -353,7 +341,6 @@ fun BodyweightScreen(
                 initial = open,
                 fixedDate = open.date,
                 nowMs = nowMs,
-                units = store.preferences.units,
                 saving = saving,
                 refused = refused,
                 onSave = { dateLocal, weightKg ->

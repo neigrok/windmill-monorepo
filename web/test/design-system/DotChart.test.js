@@ -133,7 +133,7 @@ test('dotChartLayout — the axis column widens to its widest label, so a unit o
   assert.ok(unit.plot.left > bare.plot.left);
 });
 
-test('the chart draws the window it shows and the rule it follows, and a dot is a button when there is a repair path', async (t) => {
+test('the chart draws the window it shows, and a dot is a button when there is a repair path', async (t) => {
   browserWith();
   const { DotChart } = await loadScreen('design-system/charts/DotChart.jsx');
   const picked = [];
@@ -141,15 +141,15 @@ test('the chart draws the window it shows and the rule it follows, and a dot is 
     ...words,
     points: [{ at: AUG(1), value: 82.4, label: '82.4 kg · 1 Aug', dateLocal: '2026-08-01' }, { at: AUG(20), value: 83, label: '83 kg · 20 Aug' }],
     caption: 'last 90 days · 2 weigh-ins',
-    rule: 'no line is drawn across a gap longer than seven days',
+    ariaLabel: 'Bodyweight',
     onPick: (point) => picked.push(point.dateLocal),
   }));
   const figure = elementsOf(screen.tree).find((each) => each.type === 'figure');
   assert.equal(textOf(figure).includes('last 90 days · 2 weigh-ins'), true);
-  assert.equal(textOf(figure).includes('no line is drawn across a gap longer than seven days'), true);
+  assert.equal(elementsOf(figure).some((each) => each.type === 'p'), false, 'no legend under the chart explains a gap');
   const svg = elementsOf(screen.tree).find((each) => each.type === 'svg');
   assert.equal(svg.props.role, 'group', 'a group, so the dots inside stay reachable');
-  assert.equal(svg.props['aria-label'], 'no line is drawn across a gap longer than seven days');
+  assert.equal(svg.props['aria-label'], 'Bodyweight');
   assert.equal(elementsOf(screen.tree).some((each) => each.props?.role === 'img' && each.type === 'svg'), false);
   const dots = elementsOf(screen.tree).filter((each) => each.type === 'g' && each.props.role === 'button');
   assert.equal(dots.length, 2);
@@ -163,8 +163,8 @@ test('the chart draws the window it shows and the rule it follows, and a dot is 
   assert.equal(images.length, 1, 'with no repair path a dot is still its own named element');
   assert.equal(images[0].props['aria-label'], '82.4 kg · 1 Aug');
   assert.equal(findByClass(still.tree, 'gym-record-bar').length, 0);
-  const bare = renderHook(t, () => DotChart({ ...words, points: [{ at: AUG(1), value: 82.4, label: 'x' }], ariaLabel: 'Bodyweight' }));
-  assert.equal(elementsOf(bare.tree).find((each) => each.type === 'svg').props['aria-label'], 'Bodyweight', 'the caller’s name stands where no rule is printed');
+  const bare = renderHook(t, () => DotChart({ ...words, points: [{ at: AUG(1), value: 82.4, label: 'x' }] }));
+  assert.equal(elementsOf(bare.tree).find((each) => each.type === 'svg').props['aria-label'], 'chart', 'a caller that names nothing gets the plain word');
 });
 
 test('a gap the frame cannot hold is drawn as a dashed marker across the gap and its label beneath the axis; nothing is listed apart', async (t) => {

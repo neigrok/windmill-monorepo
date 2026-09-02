@@ -72,7 +72,7 @@ export function applyLabel(proposal) {
 // Apply is atomic against a frozen base revision: all of it or none.
 export function atomicLine(proposal) {
   if (proposal.intent === 'remove') {
-    return 'The routine goes and your logged sets stay. Nothing is applied until you tap.';
+    return 'Removes the routine from your program · every logged set stays.';
   }
   return `All ${numberWord(proposal.changeCount)} or none. Nothing is applied until you tap.`;
 }
@@ -80,7 +80,7 @@ export function atomicLine(proposal) {
 // Why Apply is shut, and the way out of it. Said on the screen and not only to a screen reader,
 // byte-identical on all three surfaces (`Proposal.applyHint`). Driven off `seen` alone: while the
 // apply request is in flight Apply is inert for a different reason, and this sentence would lie.
-export const APPLY_HINT = 'Read the changes to the end to apply them.';
+export const APPLY_HINT = 'Scroll to the end to apply.';
 
 // The consequence is drawn from the intent, never from what the proposal says about itself.
 export function intentLine(head, routineName) {

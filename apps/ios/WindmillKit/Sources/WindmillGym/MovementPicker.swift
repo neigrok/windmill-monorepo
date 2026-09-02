@@ -422,8 +422,8 @@ struct OpeningPicker: View {
             Button(action: onBuildRoutine) {
                 VStack(alignment: .leading, spacing: WindmillSpace.x2) {
                     Text(isSignedIn
-                         ? "Following a written program? Your agent can build the routine from it — connect it to this log."
-                         : "Following a written program? Your agent can build the routine from it — that one needs an account.")
+                         ? "Have a written program? An agent can build it — connect it to this log."
+                         : "Have a written program? An agent can build it — sign in first.")
                         .font(WindmillFont.body(14))
                         .foregroundStyle(skin.inkDim)
                         .lineSpacing(3)

@@ -15,9 +15,9 @@ export const LOGGER_REPS_MIN = 1;
 export const LOGGER_REPS_MAX = 99;
 export const MAX_LOAD_KG = 500;
 
-// The rack keypad's hint, in the bytes all three surfaces draw (`KeypadSheet.swift`,
-// `KeypadSheet.kt`). The target sheet's own note is a different sentence and lives in routines.js.
-export const WEIGHT_HINT = 'kg  ·  comma or point both read as a decimal  ·  ± for band-assisted';
+// The line under a valid weight is the unit and nothing else: both separators are accepted and the
+// echo shows what was typed, so there is nothing to explain. ± says what it is for in its own name.
+export const WEIGHT_UNIT = 'kg';
 export const REPS_HINT = 'whole reps';
 
 // Pinned in briefs/15-the-routine.md, in the same words the target sheet uses, with this screen's
@@ -77,6 +77,6 @@ export function parseEntry(pad, mode, current) {
   if (mode === 'reps' && (value < LOGGER_REPS_MIN || value > LOGGER_REPS_MAX || value % 1 !== 0)) {
     return { valid: false, value: null, message: REPS_BAND };
   }
-  if (mode === 'weight') return { valid: true, value: round(value), message: WEIGHT_HINT };
+  if (mode === 'weight') return { valid: true, value: round(value), message: WEIGHT_UNIT };
   return { valid: true, value, message: REPS_HINT };
 }
