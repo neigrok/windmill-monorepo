@@ -1757,24 +1757,22 @@ a.journal-link:focus-visible {
    media query: while the margin holds a page's ink, nothing in the column renders one. */
 .journal-root.has-margin { --je-gutter: 300px; }
 
+/* THE PAINTED BOX IS THE BORDER BOX, and that is load-bearing rather than tidy. The tail used to be a
+   `::after` at `top: 100%`, so this bar painted 16px further down the canvas than any rect of it
+   reports — and `EchoMargin.jsx` measures exactly that rect to decide which rows the reader can see.
+   Measured: the border box ended at 157.5 while the wash ran to 173.5, so a day row centred at 158
+   was washed almost to the ground with the tie's rule still running out of it. Folding the fade into
+   this element's own background, with the padding to hold it, makes the two the same number by
+   construction. Do not put the tail back on a pseudo-element. */
 .je-trail {
   position: fixed;
   top: 0;
   left: 0;
   right: var(--je-gutter);
   z-index: 4;
-  padding: 52px 22px 12px;
-  background: var(--surface-canvas);
+  padding: 52px 22px 28px;
+  background: linear-gradient(var(--surface-canvas) calc(100% - 16px), transparent);
   pointer-events: none;
-}
-.je-trail::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 16px;
-  background: linear-gradient(var(--surface-canvas), transparent);
 }
 .je-trail-label {
   margin: 0;

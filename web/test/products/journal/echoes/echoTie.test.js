@@ -43,6 +43,7 @@ function echoesWith(over = {}) {
     markUseful: () => {},
     retireMatch: () => {},
     followScroll: () => {},
+    holdPanel: () => {},
     lit: null,
     settling: null,
     swapping: false,
@@ -153,10 +154,17 @@ test('the band the mark refuses to leave is the band the stamp scrolls a row INT
   assert.equal(bandTop(FRAME), 0);
   assert.equal(bandTop(FRAME, 157.5), 157.5);
   assert.equal(bandTop(FRAME, -200), 0, 'a trail above the frame never widens the band');
-  // the row's CENTRE is what has to clear the bar, not its top: half a row still under the trail is
-  // half a row the reader cannot read, and the line would point into the bar
-  assert.equal(tieAim(rowAt(130), FRAME, 157.5), null, 'centre 138, still under a trail ending at 157.5');
-  assert.equal(tieAim(rowAt(150), FRAME, 157.5), 157.25, 'centre 158, just clear of it');
+  // The row's CENTRE is what has to clear the bar, not its top: half a row still under the trail is
+  // half a row the reader cannot read. 173.5 is where the trail actually ENDS — it used to report
+  // 157.5 while washing 16px further down on a `::after`, so a row centred at 158 was washed almost
+  // to the ground with a line still running out of it. The fade lives inside the box now.
+  assert.equal(tieAim(rowAt(150), FRAME, 173.5), null, 'centre 158, under a bar that paints to 173.5');
+  assert.equal(tieAim(rowAt(170), FRAME, 173.5), 177.25, 'centre 178, clear of it');
+  const trail = /^\.je-trail \{([\s\S]*?)\n\}/m.exec(CSS)[1];
+  assert.ok(!CSS.includes('.je-trail::after'),
+    'the trail paints below its own border box again, and every rect of it under-reports by that much');
+  assert.match(trail, /background: linear-gradient\(var\(--surface-canvas\) calc\(100% - 16px\), transparent\);/);
+  assert.match(trail, /padding: 52px 22px 28px;/, 'the box no longer holds the fade it paints');
   assert.match(MARGIN, /scroller\.scrollTop \+= article\.getBoundingClientRect\(\)\.top - bandTop\(frame, trailBottom\(marginRef\.current\)\);/);
   assert.ok(!MARGIN.includes("scrollIntoView"),
     'the stamp is scrolling to the frame top again, which is under the trail on a walked-to page');
@@ -365,7 +373,7 @@ test('the y is converted out of viewport space, because the root is not where th
 });
 
 test('the resting mark leaves room to rise, or the hover raise is a rule that does nothing', () => {
-  const rest = Number(/--je-tie-rest:\s*([\d.]+);/.exec(CSS)[1]);
+  const rest = Number(resolve('--je-tie-rest', scopeFor('dark')));
   assert.ok(rest > 0 && rest < 1, `--je-tie-rest is ${rest}: a raise to opacity 1 has nowhere to come from`);
   assert.match(CSS, /\.je-tie-mark \{[^}]*opacity: var\(--je-tie-rest\);/s);
   assert.match(CSS, /:has\(\.je-margin:hover\) \.je-tie-mark,\n\.journal-root:has\(\.je-margin:focus-within\) \.je-tie-mark \{ opacity: 1; \}/);
@@ -463,15 +471,48 @@ function declarationsOf(css, selector) {
 }
 
 // The cascade a `.journal-root` custom property actually resolves through: the product's own theme
-// block, then the room palette the shell stamps on <html>, then the family ramp.
+// block, its theme-independent block, then the room palette the shell stamps on <html>, then the
+// family ramp.
 function scopeFor(theme) {
   return [
     declarationsOf(CSS, `.journal-root[data-theme='${theme}']`),
+    declarationsOf(CSS, '.journal-root'),
     declarationsOf(PALETTES, `[data-theme="${theme}"][data-brand="journal"]`),
     declarationsOf(PALETTES, '[data-brand="journal"]'),
     declarationsOf(COLORS, ':root'),
   ];
 }
+
+// WHAT MAKES THE RESOLVER ABOVE HONEST. It walks a fixed list of blocks; a browser walks the whole
+// cascade, by specificity and through at-rules. So a definition added ANYWHERE this list does not
+// look — `.journal-root.has-margin[data-theme='dark']`, which out-specifies the theme block, or the
+// same block inside an `@media` — wins on screen and is invisible here, and every ratio below would
+// go on reporting the colour that lost. Proven in Chrome: an override of `--je-addressed` to
+// `--journal-ink-dim` left the lit row byte-identical to the unlit one while these tests still said
+// 10.54:1. Counting the definitions is what turns that difference into a failure. A token that grows
+// a second home has to be given one here in the same change.
+function definitionsOf(token) {
+  return [...CSS.matchAll(new RegExp(`(^|[;{\\s])${token}:`, 'gm'))].length;
+}
+
+test('every token these ratios rest on is defined exactly where the resolver looks, and nowhere else', () => {
+  for (const [token, homes, where] of [
+    ['--je-addressed', 2, 'one per theme'],
+    ['--je-tie', 2, 'one per theme'],
+    ['--journal-ink-dim', 2, 'one per theme'],
+    ['--je-tab-aged-line', 2, 'one per theme'],
+    ['--lamp-400', 2, 'one per theme'],
+    ['--je-tie-rest', 1, 'theme-independent, on .journal-root'],
+    ['--je-swap', 1, 'theme-independent, on .journal-root'],
+    ['--je-gutter', 2, 'the reserved 0, and the 300 has-margin opens'],
+  ]) {
+    assert.equal(definitionsOf(token), homes,
+      `${token} has ${definitionsOf(token)} definitions, not ${homes} (${where}) — a browser would `
+      + 'resolve one of them that these tests cannot see');
+  }
+  // and the two the resolver reads outside this file
+  assert.equal([...PALETTES.matchAll(/(^|[;{\s])--neutral-50:/gm)].length, 5, 'one ground per room');
+});
 
 function resolve(token, scope, depth = 0) {
   const found = scope.find((block) => block.has(token));
@@ -531,7 +572,7 @@ test('THE RULE IS QUIETER THAN EVERY MARK THAT CARRIES MEANING, and louder than 
   for (const theme of ['dark', 'light']) {
     const scope = scopeFor(theme);
     const ground = groundOf(scope);
-    const rest = Number(/--je-tie-rest:\s*([\d.]+);/.exec(CSS)[1]);
+    const rest = Number(resolve('--je-tie-rest', scope));
     const tie = paint('--je-tie', scope);
     const raised = contrast(over(tie.hex, ground, tie.alpha), ground);
     const resting = contrast(over(tie.hex, ground, tie.alpha * rest), ground);
@@ -568,10 +609,30 @@ test('every part of the mark has a size to be seen at', () => {
   assert.ok(Number(/z-index:\s*(-?\d+)/.exec(head)[1]) > 0, 'the sticky head paints behind the list it heads');
 });
 
+test('THE STAMP HOLDS THE PANEL ON THE PAGE IT NAMES — otherwise "Go to X" takes the panel off X', async (t) => {
+  // The scroll it performs pushes the next echo page over the waterline, so a following panel
+  // re-picks and settles somewhere else a quarter of a second after the press. The press is a
+  // deliberate act, `walkTo` already answers one this way, and `Follow again` is the undo.
+  const held = [];
+  const scrolled = { scrollTop: 400 };
+  const echoes = echoesWith({
+    holdPanel: (day) => held.push(day),
+    canvas: {
+      scroller: { ...scrolled, getBoundingClientRect: () => ({ top: 0, bottom: 600, height: 600 }) },
+      dayElement: () => ({ getBoundingClientRect: () => ({ top: 300, bottom: 900 }) }),
+      stampRect: () => rowAt(300),
+    },
+  });
+  const run = renderHook(t, () => EchoMargin({ echoes, page: PAGE }));
+  await settle(6);
+  findByClass(run.tree, 'je-margin-stamp')[0].props.onClick();
+  assert.deepEqual(held, [PAGE.day], 'the panel was left following, and the scroll moved it off this page');
+});
+
 test('a press on the stamp for a page the canvas is not holding yet does nothing, and throws nothing', async (t) => {
   // Reachable: `walkTo` holds the panel on its destination and `extendTo` is still fetching, so the
   // panel names a page that has no element on the canvas for a beat.
-  const echoes = echoesWith({ canvas: { scroller: {}, dayElement: () => null, stampRect: () => null } });
+  const echoes = echoesWith({ holdPanel: () => {}, canvas: { scroller: {}, dayElement: () => null, stampRect: () => null } });
   const run = renderHook(t, () => EchoMargin({ echoes, page: PAGE }));
   await settle(6);
   const stamp = findByClass(run.tree, 'je-margin-stamp')[0];

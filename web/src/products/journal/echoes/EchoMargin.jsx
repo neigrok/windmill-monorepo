@@ -174,6 +174,13 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
     const scroller = canvas?.scroller;
     const article = canvas?.dayElement?.(page.day);
     if (!scroller || !article) return;
+    // HELD, because the press is the reader asking for THIS page. Without it the button reliably took
+    // the panel off the page it names: the scroll it performs pushes the next echo page over the 0.55
+    // waterline, the settle re-picks, and 250ms after pressing "Go to TUE 14 APR" the panel is
+    // describing TUE 01 SEP. Measured at four scroll positions, identical every time. A walk already
+    // answers a deliberate act this way, and `Follow again` is the undo, already in this head and
+    // already appearing exactly when the panel is held — so this is the vocabulary, not a new rule.
+    echoes.holdPanel(page.day);
     const frame = scroller.getBoundingClientRect();
     scroller.scrollTop += article.getBoundingClientRect().top - bandTop(frame, trailBottom(marginRef.current));
   };

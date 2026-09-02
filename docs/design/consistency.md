@@ -1876,7 +1876,18 @@ destination and a stamp is a mirror. THE RULE
 it never crosses prose because the measure is capped at 640px before the margin appears. THE LIT ROW
 lifts `.journal-marker.is-addressed .journal-meta` to `--je-addressed` — colour and nothing else, no
 weight change, because a weight change would reflow a sticky row and `journal.md:56` forbids any
-canvas geometry change at any scroll speed.
+canvas geometry change at any scroll speed. The stamp is a button, and pressing it HOLDS the panel on
+the page it names as well as scrolling there: without that the scroll it performs pushes the next echo
+page over the 0.55 waterline, the settle re-picks, and a quarter of a second after pressing *Go to TUE
+14 APR* the panel is describing TUE 01 SEP — measured at four scroll positions, identical every time.
+`walkTo` already answers a deliberate act by holding, and `Follow again` is already in the head and
+already appears exactly when held, so this is the vocabulary rather than a new rule.
+
+One thing the tie changed outside itself, because it measures it: `.je-trail`'s fade used to be a
+`::after` at `top: 100%`, so the bar painted 16px further down the canvas than any rect of it
+reported — border box to 157.5, wash to 173.5 — and a day row centred at 158 was washed almost to
+the ground with a line still running out of it. The fade is now the element's own background with the
+padding to hold it, so the painted box IS the border box and the band cannot be short again.
 
 **The rule is never counted toward legibility; the stamp is** — the same doctrine `scales.md` §3 holds
 for a glow. Composited in a browser through the real sRGB pipeline, the way 5b was: night ground
@@ -1943,7 +1954,7 @@ because CSS occlusion cannot tell the panel that the rule is covered.
 **5g · a walked-to page is parked underneath the trail that says how you got there** → fix flows to
 `Canvas.jsx` and `.je-trail`; predates the tie and is not caused by it. `takePosition` scrolls the
 focused day with `scrollIntoView({ block: 'start' })`, and `.je-trail` is `position: fixed; top: 0`
-with an opaque `--surface-canvas` background, 105px of the frame plus a 16px gradient tail. So the
+with an opaque `--surface-canvas` background over 121.5px of the frame, its fade included. So the
 page a reader reaches most deliberately opens with its day row **under the bar**, and stays there:
 `openingRef` is re-armed by the walk's own hash change and is cleared only by a gesture ON THE CANVAS,
 so the canvas re-takes that position on every reflow. Measured after a walk at 1440: the trail's
