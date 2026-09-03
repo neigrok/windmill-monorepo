@@ -40,3 +40,12 @@ Worth noting the cap itself is the real problem for this use: a node that record
 evidence at file:line, and what it supersedes does not fit in 4000 characters, and the alternative —
 splitting one decision across two nodes — makes the tree worse. `create_node` shares the limit, so a
 node cannot even be born with its reasoning attached.
+
+## 2026-09-03 · import_subgraph — a colliding kind sent without label/description is blanked
+
+Seen on the live stack: re-sending `kinds: [{id: "build", hue: "terracotta"}]` for a kind that
+already exists set its label and description to "". That is the documented upsert ("scalar fields
+are replaced"), but a client that copies `get_tree` with the DEFAULT `kindFields` (which omits
+`description`) and sends it back erases every kind description in silence. Fix: an omitted kind
+field on a collision leaves the existing value (the way annotate_node treats an omitted field), or
+the receipt names the kinds whose fields were blanked.
