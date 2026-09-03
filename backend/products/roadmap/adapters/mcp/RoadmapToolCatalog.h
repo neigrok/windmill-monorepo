@@ -20,6 +20,11 @@ inline const std::vector<const char*> kNodeStates = {"locked", "available", "act
 inline constexpr std::size_t kMaxDeleteNodeIds = 200;    // delete_node's `nodeIds`
 inline constexpr std::size_t kMaxDisconnectEdges = 500;  // disconnect's `edges`
 
+// How import_subgraph meets a re-sent node's existing prerequisites, and how many ids one call may
+// tombstone — published as `enum` and `maxItems` on the tool.
+inline const std::vector<const char*> kPrerequisiteModes = {"merge", "replace"};
+constexpr std::size_t kMaxTombstones = 500;
+
 // Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
 // grant level that reaches it. Byte-pinned by the wire corpus test.
 std::vector<ToolDeclaration> roadmapToolCatalog();

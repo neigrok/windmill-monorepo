@@ -269,12 +269,13 @@ std::optional<Admission> admit(const TreeData& document) {
   return admit(LooseGraph{}, document);
 }
 
-std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming) {
+std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming) {
   // The ids and edges the batch would ADD, as sets: a document may name the same id — or the same
-  // prerequisite — many times, and each must count once.
+  // prerequisite — many times, and each must count once. What the graft removes is subtracted, so
+  // a rebuild that tombstones as much as it plants is judged on what it leaves behind.
   std::set<NodeId> arrivingNodes;
   std::set<Edge> arrivingEdges;
-  for (const NodeSpec& node : incoming.nodes) {
+  for (const NodeSpec& node : incoming.document.nodes) {
     if (std::optional<std::string> bad =
             nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.position))
       return Admission{Admission::Verdict::malformed, *bad};
@@ -282,10 +283,16 @@ std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming
     for (const NodeId& prereq : node.prerequisites)
       if (!graph.edgePresent(prereq, node.id)) arrivingEdges.insert(Edge{prereq, node.id});
   }
+  const GraftFootprint footprint = footprintOf(graph, incoming);
   const std::size_t nodesBefore = graph.presentNodeCount();
   const std::size_t edgesBefore = graph.presentEdgeCount();
-  return growthWithin(nodesBefore, nodesBefore + arrivingNodes.size(),
-                      edgesBefore, edgesBefore + arrivingEdges.size());
+  const std::size_t leavingEdges = footprint.replacedEdges.size() + footprint.tombstonedEdges.size();
+  return growthWithin(nodesBefore, nodesBefore + arrivingNodes.size() - footprint.tombstonedNodes.size(),
+                      edgesBefore, edgesBefore + arrivingEdges.size() - leavingEdges);
+}
+
+std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming) {
+  return admit(graph, Graft{incoming});
 }
 
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming) {

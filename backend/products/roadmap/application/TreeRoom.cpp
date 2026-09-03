@@ -85,15 +85,15 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   return head_;
 }
 
-Seq TreeRoom::importTree(const TreeData& incoming, std::uint64_t nowMs, const UserId& actor) {
-  Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft — an upsert by id
+Seq TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor) {
+  Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft: the upsert and every removal
   Subgraph frame;
   frame.treeId = id_;
   frame.frameId = "srv-import-" + toString(at);
   frame.actor = at.actor;
   frame.intent = SubgraphIntent::graft;
-  frame.graph = LooseGraph(incoming, at).exportState();
-  if (!incoming.kinds.empty()) frame.legend = Legend(incoming.kinds, at).exportState();
+  frame.graph = graftState(graph_, incoming, at);
+  if (!incoming.document.kinds.empty()) frame.legend = Legend(incoming.document.kinds, at).exportState();
   return joinSubgraph(frame, actor).value_or(head_);
 }
 

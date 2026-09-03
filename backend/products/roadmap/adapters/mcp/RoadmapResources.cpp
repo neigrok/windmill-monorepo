@@ -81,8 +81,11 @@ a description-only hit. Pasting an id you already know finds that node, at the t
 
 `import_subgraph` grafts a whole `{nodes[], kinds[]}` slice as ONE op, upserting by id; a carried
 `progress[]` is applied after it as ordinary overlay writes (and skipped entirely under `dryRun`,
-which previews the collisions and changes nothing). It does not touch the tree's title. Prefer it
-to N× `create_node` + `connect`.
+which previews the collisions and changes nothing). A re-sent node's fields are replaced, but its
+`prerequisites` are UNIONED with the edges it already has unless you pass
+`prerequisiteMode: "replace"` — a merge reports what it left standing in `keptEdges`. To delete in
+the same batch, list ids in `tombstone`. It does not touch the tree's title. Prefer it to N×
+`create_node` + `connect` + `delete_node`.
 
 ## Limits worth knowing
 

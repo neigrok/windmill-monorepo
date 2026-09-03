@@ -41,7 +41,11 @@ public:
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's
   // live state, not against the arrival alone. The frame overload asks graph, legend and title.
   std::optional<Admission> admit(const Subgraph& incoming) const;
-  std::optional<Admission> admit(const TreeData& incoming) const { return wm::admit(graph_, incoming); }
+  std::optional<Admission> admit(const Graft& incoming) const { return wm::admit(graph_, incoming); }
+
+  // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
+  // tombstones — read off this room's live state, changing nothing.
+  GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
 
   // Stamped from the room clock and joined as one title-only frame, so it broadcasts and LWW-merges
   // like any other field write.
@@ -54,9 +58,10 @@ public:
   // headline), so a reader never sees the tree between them. Admits nothing on its own.
   Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
 
-  // Stamped from the room clock, so a by-id collision is an upsert. Nothing is removed; an empty
-  // `kinds` leaves the legend untouched.
-  Seq importTree(const TreeData& incoming, std::uint64_t nowMs, const UserId& actor);
+  // Stamped from the room clock, so a by-id collision is an upsert; the graft's tombstones and
+  // replaced edges are removed at that same stamp, in the same frame. An empty `kinds` leaves the
+  // legend untouched.
+  Seq importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor);
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);

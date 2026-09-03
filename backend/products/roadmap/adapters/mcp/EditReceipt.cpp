@@ -49,4 +49,20 @@ void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& aft
   receipt["introducedDiagnostics"] = list;
 }
 
+void answerKeptEdges(const std::vector<Edge>& kept, Json::Value& receipt) {
+  constexpr std::size_t kMostListed = 50;
+  Json::Value list(Json::arrayValue);
+  for (std::size_t i = 0; i < kept.size() && i < kMostListed; ++i) {
+    Json::Value edge(Json::objectValue);
+    edge["from"] = kept[i].from.str();
+    edge["to"] = kept[i].to.str();
+    list.append(edge);
+  }
+  if (kept.size() > kMostListed)
+    list.append("and " + std::to_string(kept.size() - kMostListed) +
+                " more — re-send with prerequisiteMode \"replace\" to drop every edge the batch does not name");
+  receipt["keptEdges"] = list;
+  receipt["keptEdgeCount"] = static_cast<Json::UInt64>(kept.size());
+}
+
 }

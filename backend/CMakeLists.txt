@@ -41,6 +41,7 @@ add_library(windmill_roadmap
   products/roadmap/domain/Legend.cpp
   products/roadmap/domain/Subgraph.cpp
   products/roadmap/domain/Command.cpp
+  products/roadmap/domain/Graft.cpp
   products/roadmap/domain/NodeQuery.cpp
   products/roadmap/domain/TreeDiagnostics.cpp
   products/roadmap/domain/SkillTree.cpp
@@ -145,6 +146,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/LegendTest.cpp
   test/products/roadmap/domain/SubgraphTest.cpp
   test/products/roadmap/domain/CommandTest.cpp
+  test/products/roadmap/domain/GraftTest.cpp
   test/products/roadmap/domain/NodeQueryTest.cpp
   test/products/roadmap/domain/TreeDiagnosticsTest.cpp
   test/products/roadmap/domain/SkillTreeTest.cpp

@@ -484,6 +484,16 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet}
 }
 
+// `"a", "b", "c"` — every offender in one sentence, so one round-trip fixes the batch.
+std::string quotedList(const std::vector<std::string>& ids) {
+  std::string out;
+  for (const std::string& id : ids) {
+    if (!out.empty()) out += ", ";
+    out += "\"" + id + "\"";
+  }
+  return out;
+}
+
 // Checked before treeFromJson reads it: the decoder indexes each item as an object.
 std::optional<std::string> checkImport(const Json::Value& args) {
   if (args["nodes"].isNull())
@@ -534,6 +544,28 @@ std::optional<std::string> checkImport(const Json::Value& args) {
 
   if (!args["dryRun"].isNull() && !args["dryRun"].isBool())
     return "argument \"dryRun\" must be a boolean, got " + typeName(args["dryRun"]);
+  if (std::optional<std::string> bad =
+          optionalOneOf(args["prerequisiteMode"], "prerequisiteMode", kPrerequisiteModes))
+    return bad;
+
+  if (std::optional<std::string> bad = optionalStrings(args["tombstone"], "tombstone", kMaxIdLength)) return bad;
+  if (args["tombstone"].size() > kMaxTombstones)
+    return "tombstone has " + std::to_string(args["tombstone"].size()) + " items, max " +
+           std::to_string(kMaxTombstones);
+  // An id is upserted or tombstoned, never both; and no upserted node may hang off a node this call
+  // deletes. Every offender is named, so one round-trip fixes the batch.
+  std::set<std::string> tombstoned;
+  for (const Json::Value& id : args["tombstone"]) tombstoned.insert(id.asString());
+  std::vector<std::string> both;
+  for (const std::string& id : tombstoned) if (nodeIdAt.count(id)) both.push_back(id);
+  if (!both.empty())
+    return "tombstone names " + quotedList(both) +
+           ", which nodes[] also carries — an id is upserted or tombstoned, never both";
+  for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i)
+    for (const Json::Value& prereq : args["nodes"][i]["prerequisites"])
+      if (tombstoned.count(prereq.asString()))
+        return "nodes[" + std::to_string(i) + "].prerequisites names \"" + prereq.asString() +
+               "\", which tombstone deletes in this same call — drop it from one of them";
   return std::nullopt;
 }
 
@@ -572,15 +604,19 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
 
   std::optional<TreeData> parsed = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
   if (!parsed) return ToolResult::failure("this import's nodes or kinds carry a field of the wrong type");
-  TreeData incoming = *std::move(parsed);
+  Graft graft;
+  graft.document = *std::move(parsed);
   // `seedStatus` is this surface's name for the codec's `status`, folded over it here by id.
   std::map<std::string, std::string> seeds;
   for (const Json::Value& node : args["nodes"])
     if (node["seedStatus"].isString()) seeds[node["id"].asString()] = node["seedStatus"].asString();
-  for (NodeSpec& node : incoming.nodes) {
+  for (NodeSpec& node : graft.document.nodes) {
     auto seed = seeds.find(node.id.str());
     if (seed != seeds.end()) node.status = seed->second;
   }
+  const bool replace = args["prerequisiteMode"].asString() == "replace";
+  graft.prerequisites = replace ? PrerequisiteMode::replace : PrerequisiteMode::merge;
+  for (const Json::Value& id : args["tombstone"]) graft.tombstones.emplace_back(id.asString());
   const bool dryRun = args["dryRun"].asBool();
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -590,10 +626,18 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
 
+    // A tombstone must name a node that is there: every miss is named, and nothing is applied.
+    std::vector<std::string> missing;
+    for (const NodeId& id : graft.tombstones) if (!room.hasNode(id)) missing.push_back(id.str());
+    if (!missing.empty())
+      return ToolResult::failure("tombstone names " + quotedList(missing) +
+                                 ", which this tree does not hold. " + kNodeHandle.hint);
+
     // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
-    if (std::optional<Admission> refusal = room.admit(incoming))
+    if (std::optional<Admission> refusal = room.admit(graft))
       return ToolResult::failure(refusal->reason);
 
+    const TreeData& incoming = graft.document;
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
       return ToolResult::failure(*bad);
@@ -611,6 +655,10 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     int edges = 0;
     for (const NodeSpec& n : incoming.nodes) edges += static_cast<int>(n.prerequisites.size());
 
+    // What the join does beyond the upsert, read before it lands: the edges a merge leaves standing
+    // on a re-sent node (how a cycle gets in), the edges a replace drops, and what the tombstones take.
+    const GraftFootprint footprint = room.footprintOf(graft);
+
     Json::Value out(Json::objectValue);
     out["nodes"] = static_cast<int>(incoming.nodes.size());
     out["edges"] = edges;
@@ -619,12 +667,23 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     out["kindCollisions"] = kindCollisions;
     out["newNodes"] = static_cast<int>(incoming.nodes.size()) - nodeCollisions.size();
     out["newKinds"] = static_cast<int>(incoming.kinds.size()) - kindCollisions.size();
+    out["prerequisiteMode"] = replace ? "replace" : "merge";
+    answerKeptEdges(footprint.keptEdges, out);
+    if (replace) out["removedEdges"] = static_cast<Json::UInt64>(footprint.replacedEdges.size());
+    Json::Value tombstoned(Json::objectValue);
+    tombstoned["nodes"] = static_cast<Json::UInt64>(footprint.tombstonedNodes.size());
+    tombstoned["edges"] = static_cast<Json::UInt64>(footprint.tombstonedEdges.size());
+    out["tombstoned"] = tombstoned;
     if (dryRun) {
       out["dryRun"] = true;
+      Json::Value tombstone(Json::arrayValue);
+      for (const NodeId& id : footprint.tombstonedNodes) tombstone.append(id.str());
+      out["tombstone"] = tombstone;
       // Carried progress naming no node the graft would leave behind.
       if (args["progress"].isArray()) {
         std::set<std::string> afterGraft = presentNodes;
         for (const NodeSpec& n : incoming.nodes) afterGraft.insert(n.id.str());
+        for (const NodeId& id : footprint.tombstonedNodes) afterGraft.erase(id.str());
         Json::Value skipped(Json::arrayValue);
         for (const Json::Value& u : args["progress"]) {
           const Json::Value& handle =
@@ -638,8 +697,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
 
     // A graft can dangle an edge per node it carries; the receipt says which of them are new.
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.importTree(incoming, clock.nowMs(), actor);
+    Seq seq = room.importTree(graft, clock.nowMs(), actor);
     registry.persist(tree);
+    // The caller's own marks on a tombstoned node: cleared to none, the way prune clears an orphan.
+    Progress overlay = progress.progressOf(tree, actor);
+    for (const NodeId& node : footprint.tombstonedNodes) {
+      if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+    }
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
