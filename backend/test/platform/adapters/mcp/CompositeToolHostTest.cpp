@@ -316,3 +316,93 @@ TEST(windmill_server_info_dates_the_catalog_with_the_deployed_build) {
   CHECK(info.instructions.find("reconnect rather than concluding the server is old") !=
         std::string::npos);
 }
+
+namespace {
+
+// nodes[] of closed {id, position{x, y}} objects, and one `meta` object the schema leaves open.
+FakeProduct importer() {
+  FakeProduct product("roadmap");
+  Json::Value position(Json::objectValue);
+  position["type"] = "object";
+  position["properties"]["x"] = Json::Value(Json::objectValue);
+  position["properties"]["y"] = Json::Value(Json::objectValue);
+  position["additionalProperties"] = false;
+  Json::Value item(Json::objectValue);
+  item["type"] = "object";
+  item["properties"]["id"] = Json::Value(Json::objectValue);
+  item["properties"]["position"] = position;
+  item["additionalProperties"] = false;
+  Json::Value nodes(Json::objectValue);
+  nodes["type"] = "array";
+  nodes["items"] = item;
+  Json::Value meta(Json::objectValue);
+  meta["type"] = "object";
+
+  Json::Value props(Json::objectValue);
+  props["treeId"] = Json::Value(Json::objectValue);
+  props["nodes"] = nodes;
+  props["meta"] = meta;
+  Json::Value schema(Json::objectValue);
+  schema["type"] = "object";
+  schema["properties"] = props;
+  schema["additionalProperties"] = false;
+  Json::Value descriptor(Json::objectValue);
+  descriptor["name"] = "import_subgraph";
+  descriptor["description"] = "the import tool";
+  descriptor["inputSchema"] = schema;
+  product.catalog.push_back(ToolDeclaration{descriptor, "roadmap", Access::write});
+  return product;
+}
+
+Json::Value nodeItem(const char* id) {
+  Json::Value n(Json::objectValue);
+  n["id"] = id;
+  return n;
+}
+
+}
+
+TEST(composite_refuses_a_nested_key_no_schema_declares_and_names_its_path) {
+  FakeProduct r = importer();
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
+
+  Json::Value stray = nodeItem("b");
+  stray["deleted"] = true;
+  Json::Value call = args({{"treeId", "t"}});
+  call["nodes"].append(nodeItem("a"));
+  call["nodes"].append(stray);
+  const ToolResult refused = surface.callTool("import_subgraph", call, granted(""));
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, position."));
+  CHECK_EQ(r.calls.size(), std::size_t{0});
+
+  Json::Value deep = args({{"treeId", "t"}});
+  Json::Value placed = nodeItem("a");
+  placed["position"]["x"] = 1;
+  placed["position"]["z"] = 2;
+  deep["nodes"].append(placed);
+  CHECK_EQ(message(surface.callTool("import_subgraph", deep, granted(""))),
+           std::string("import_subgraph: unknown argument \"nodes[0].position.z\". nodes[0].position "
+                       "takes: x, y."));
+  CHECK_EQ(r.calls.size(), std::size_t{0});
+}
+
+TEST(composite_walks_only_what_a_schema_closes_and_passes_the_rest_through) {
+  FakeProduct r = importer();
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
+
+  Json::Value call = args({{"treeId", "t"}});
+  Json::Value placed = nodeItem("a");
+  placed["position"]["x"] = 1;
+  placed["position"]["y"] = 2;
+  call["nodes"].append(placed);
+  call["nodes"].append("not-an-object");  // a wrong-shape item is the tool's to refuse, by type
+  call["meta"]["anything"] = "goes";      // an open object keeps every key
+  const ToolResult ran = surface.callTool("import_subgraph", call, granted(""));
+  CHECK_FALSE(ran.isError);
+  REQUIRE_EQ(r.calls.size(), std::size_t{1});
+  CHECK_EQ(r.calls[0].args["nodes"][0]["position"]["y"].asInt(), 2);
+  CHECK_EQ(r.calls[0].args["nodes"][1].asString(), std::string("not-an-object"));
+  CHECK_EQ(r.calls[0].args["meta"]["anything"].asString(), std::string("goes"));
+}

@@ -1,5 +1,7 @@
 #include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 
+#include "platform/adapters/mcp/CompositeToolHost.h"
+#include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/testing.h"
 
 using namespace wm;
@@ -1344,4 +1346,238 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
   imported["nodes"] = nodes;
   CHECK_EQ(introduced(body(h.call("import_subgraph", imported))),
            (std::vector<std::string>{"dangling edge \"nowhere\" -> \"c\""}));
+}
+
+namespace {
+
+Json::Value nodeWith(const char* id, std::vector<const char*> prerequisites) {
+  Json::Value n = node(id, id);
+  n["prerequisites"] = list(std::move(prerequisites));
+  return n;
+}
+
+Json::Value importOf(std::vector<Json::Value> nodes) {
+  Json::Value args(Json::objectValue);
+  args["nodes"] = Json::Value(Json::arrayValue);
+  for (const Json::Value& n : nodes) args["nodes"].append(n);
+  return args;
+}
+
+const Json::Value* nodeNamed(const Json::Value& tree, const char* id) {
+  for (const Json::Value& n : tree["tree"]["nodes"])
+    if (n["id"].asString() == id) return &n;
+  return nullptr;
+}
+
+std::vector<std::string> strings(const Json::Value& array) {
+  std::vector<std::string> out;
+  for (const Json::Value& v : array) out.push_back(v.asString());
+  return out;
+}
+
+// a, b, c present; n hangs off a and c.
+void seedFan(Harness& h) {
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  h.call("create_node", node("c", "C"));
+  CHECK_FALSE(h.call("import_subgraph", importOf({nodeWith("n", {"a", "c"})})).isError);
+}
+
+}
+
+TEST(mcp_import_subgraph_merge_keeps_the_edge_the_batch_left_out_and_reports_it) {
+  Harness h;
+  seedFan(h);
+
+  ToolResult result = h.call("import_subgraph", importOf({nodeWith("n", {"a", "b"})}));
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK_EQ(receipt["prerequisiteMode"].asString(), std::string("merge"));
+  REQUIRE_EQ(receipt["keptEdges"].size(), 1u);
+  CHECK_EQ(receipt["keptEdges"][0]["from"].asString(), std::string("c"));
+  CHECK_EQ(receipt["keptEdges"][0]["to"].asString(), std::string("n"));
+  CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 1u);
+  CHECK_FALSE(receipt.isMember("removedEdges"));
+  CHECK_EQ(receipt["tombstoned"]["nodes"].asUInt64(), 0u);
+  CHECK_EQ(receipt["tombstoned"]["edges"].asUInt64(), 0u);
+  CHECK_EQ(receipt["edges"].asInt(), 2);
+
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
+  REQUIRE(nodeNamed(got, "n") != nullptr);
+  CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "b", "c"}));
+}
+
+TEST(mcp_import_subgraph_replace_drops_the_unnamed_edge_and_a_later_merge_re_adds_it) {
+  Harness h;
+  seedFan(h);
+
+  Json::Value args = importOf({nodeWith("n", {"a", "b"})});
+  args["prerequisiteMode"] = "replace";
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK_EQ(receipt["prerequisiteMode"].asString(), std::string("replace"));
+  CHECK_EQ(receipt["keptEdges"].size(), 0u);
+  CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 0u);
+  CHECK_EQ(receipt["removedEdges"].asUInt64(), 1u);
+  CHECK(receipt["diagnosticsClean"].asBool());
+
+  Json::Value got = body(h.call("get_tree", kNoArgs));
+  REQUIRE(nodeNamed(got, "n") != nullptr);
+  CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "b"}));
+
+  CHECK_FALSE(h.call("import_subgraph", importOf({nodeWith("n", {"c"})})).isError);
+  got = body(h.call("get_tree", kNoArgs));
+  CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "b", "c"}));
+}
+
+TEST(mcp_import_subgraph_caps_kept_edges_at_fifty_and_counts_the_rest) {
+  Harness h;
+  std::vector<std::string> names;
+  for (int i = 0; i < 60; ++i) names.push_back("p" + std::to_string(i));
+  std::vector<Json::Value> fan;
+  std::vector<const char*> parents;
+  for (const std::string& name : names) {
+    fan.push_back(node(name.c_str(), name.c_str()));
+    parents.push_back(name.c_str());
+  }
+  fan.push_back(nodeWith("n", parents));
+  CHECK_FALSE(h.call("import_subgraph", importOf(fan)).isError);
+
+  const Json::Value receipt = body(h.call("import_subgraph", importOf({nodeWith("n", {})})));
+  REQUIRE_EQ(receipt["keptEdges"].size(), 51u);
+  CHECK(receipt["keptEdges"][49].isObject());
+  CHECK_EQ(receipt["keptEdges"][50].asString(),
+           std::string("and 10 more — re-send with prerequisiteMode \"replace\" to drop every edge the "
+                       "batch does not name"));
+  CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 60u);
+}
+
+TEST(mcp_import_subgraph_tombstones_nodes_edges_and_progress_in_one_seq) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  CHECK_FALSE(h.call("import_subgraph", importOf({nodeWith("n", {"a"}), nodeWith("b", {"n"})})).isError);
+  CHECK_FALSE(h.call("set_progress", mark("n", "complete")).isError);
+  CHECK_FALSE(h.call("set_progress", mark("a", "complete")).isError);
+  const Json::Int64 before = body(h.call("get_tree", kNoArgs))["seq"].asInt64();
+
+  Json::Value args = importOf({});
+  args["tombstone"] = list({"n"});
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK(receipt["imported"].asBool());
+  CHECK_EQ(receipt["seq"].asInt64(), before + 1);
+  CHECK_EQ(receipt["tombstoned"]["nodes"].asUInt64(), 1u);
+  CHECK_EQ(receipt["tombstoned"]["edges"].asUInt64(), 2u);
+  CHECK(receipt["diagnosticsClean"].asBool());
+  CHECK_EQ(receipt["introducedDiagnostics"].size(), 0u);
+
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
+  CHECK_EQ(got["seq"].asInt64(), before + 1);
+  CHECK_EQ(ids(got["tree"]["nodes"]), (std::vector<std::string>{"a", "b"}));
+  CHECK_EQ((*nodeNamed(got, "b"))["prerequisites"].size(), 0u);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["dangling"].size(), 0u);
+  CHECK_EQ(strings(body(h.call("get_progress", kNoArgs))["completed"]), (std::vector<std::string>{"a"}));
+}
+
+TEST(mcp_import_subgraph_refuses_a_tombstone_it_cannot_honour_and_applies_nothing) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+
+  Json::Value strangers = importOf({node("x", "X")});
+  strangers["tombstone"] = list({"ghost", "a", "phantom"});
+  ToolResult refused = h.call("import_subgraph", strangers);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: tombstone names \"ghost\", \"phantom\", which this tree does not "
+                       "hold. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]), (std::vector<std::string>{"a"}));
+
+  Json::Value both = importOf({node("a", "A2"), node("x", "X")});
+  both["tombstone"] = list({"a", "x"});
+  refused = h.call("import_subgraph", both);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: tombstone names \"a\", \"x\", which nodes[] also carries — an id "
+                       "is upserted or tombstoned, never both"));
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]), (std::vector<std::string>{"a"}));
+
+  Json::Value hanging = importOf({nodeWith("x", {"a"})});
+  hanging["tombstone"] = list({"a"});
+  refused = h.call("import_subgraph", hanging);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: nodes[0].prerequisites names \"a\", which tombstone deletes in "
+                       "this same call — drop it from one of them"));
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]), (std::vector<std::string>{"a"}));
+
+  Json::Value tooMany = importOf({});
+  tooMany["tombstone"] = Json::Value(Json::arrayValue);
+  for (std::size_t i = 0; i <= kMaxTombstones; ++i) tooMany["tombstone"].append("t" + std::to_string(i));
+  refused = h.call("import_subgraph", tooMany);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("import_subgraph: tombstone has 501 items, max 500"));
+
+  Json::Value misspelled = importOf({});
+  misspelled["prerequisiteMode"] = "overwrite";
+  refused = h.call("import_subgraph", misspelled);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: prerequisiteMode \"overwrite\" is not one of {merge, replace}"));
+}
+
+TEST(mcp_import_subgraph_dry_run_echoes_the_tombstones_and_kept_edges_and_changes_nothing) {
+  Harness h;
+  seedFan(h);
+  CHECK_FALSE(h.call("set_progress", mark("b", "active")).isError);
+
+  Json::Value args = importOf({nodeWith("n", {"a"})});
+  args["tombstone"] = list({"b"});
+  args["dryRun"] = true;
+  args["progress"] = Json::Value(Json::arrayValue);
+  args["progress"].append(mark("b", "complete"));
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value preview = body(result);
+  CHECK(preview["dryRun"].asBool());
+  CHECK_FALSE(preview.isMember("imported"));
+  CHECK_EQ(strings(preview["tombstone"]), (std::vector<std::string>{"b"}));
+  CHECK_EQ(preview["tombstoned"]["nodes"].asUInt64(), 1u);
+  CHECK_EQ(preview["tombstoned"]["edges"].asUInt64(), 0u);
+  REQUIRE_EQ(preview["keptEdges"].size(), 1u);
+  CHECK_EQ(preview["keptEdges"][0]["from"].asString(), std::string("c"));
+  CHECK_EQ(preview["keptEdgeCount"].asUInt64(), 1u);
+  CHECK_EQ(strings(preview["progressSkipped"]), (std::vector<std::string>{"b"}));
+
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
+  CHECK_EQ(ids(got["tree"]["nodes"]), (std::vector<std::string>{"a", "b", "c", "n"}));
+  CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "c"}));
+  CHECK_EQ(strings(body(h.call("get_progress", kNoArgs))["inProgress"]), (std::vector<std::string>{"b"}));
+}
+
+TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
+  Harness h;
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+
+  Json::Value stray = node("x", "X");
+  stray["deleted"] = true;
+  Json::Value args = importOf({node("w", "W"), stray});
+  args["treeId"] = "t";
+  const ToolResult refused = gate.callTool("import_subgraph", args, h.actor);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: color, "
+                       "description, icon, id, label, links, order, position, prerequisites, seedStatus."));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
+
+  Json::Value deeper = node("x", "X");
+  deeper["position"] = Json::Value(Json::objectValue);
+  deeper["position"]["x"] = 1;
+  deeper["position"]["z"] = 2;
+  Json::Value deep = importOf({deeper});
+  deep["treeId"] = "t";
+  CHECK_EQ(message(gate.callTool("import_subgraph", deep, h.actor)),
+           std::string("import_subgraph: unknown argument \"nodes[0].position.z\". nodes[0].position "
+                       "takes: x, y."));
 }

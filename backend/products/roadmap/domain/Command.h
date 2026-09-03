@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/domain/Graft.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
@@ -88,7 +89,10 @@ struct Admission {
 };
 std::optional<Admission> admit(const TreeData& document);
 // A join: the caps are read off what the graph would HOLD once the arrival lands. The join is
-// performed, never estimated from the arriving stamps alone.
+// performed, never estimated from the arriving stamps alone. A graft's tombstones and replaced
+// edges count against its growth.
+std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming);
+// A document alone is a merge graft that tombstones nothing.
 std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming);
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);

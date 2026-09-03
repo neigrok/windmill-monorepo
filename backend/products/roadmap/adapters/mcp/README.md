@@ -17,8 +17,9 @@ platform/adapters/mcp/
                            injected ToolHost, a ServerInfo and a resource vector.
   CompositeToolHost        every connected product's tools behind the one ToolHost McpServer
                            binds, AND the grant gate: filters tools/list, refuses an
-                           out-of-scope call, a duplicate tool name at construction, and an
-                           argument no schema declares. A retired name answers with the sentence
+                           out-of-scope call, a duplicate tool name at construction, and a key no
+                           schema declares at any depth it closes with `additionalProperties:false`
+                           (named by JSON path: `nodes[3].deleted`). A retired name answers with the sentence
                            naming its replacement, consulted only after a catalog miss;
                            construction refuses a retirement that shadows a live tool or names a
                            replacement no product declares. `windmillServerInfo()` frames the
@@ -172,7 +173,7 @@ treated as internal and is not limited.
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits |
 | edit | `connect` · `disconnect` · `reconnect` | prerequisite-edge edits |
 | edit | `delete_node` · `tidy` · `prune` | tombstone / transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame |
 | legend | `add_kind` (inline label+description) · `rename_kind` · `describe_kind` · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -208,13 +209,26 @@ tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
 - **`import_subgraph`** takes the JSON `get_tree` returns (`{title?, nodes[], kinds[]}`, plus an
   optional `progress[]`) and applies it in **one** op via the subgraph CRDT graft path. It is
   **upsert by id**: an incoming id already present is overwritten and reported in
-  `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. The receipt counts
-  `nodes`, `edges` and `kinds` as carried, so a batch whose prerequisites were put in the wrong
-  place reads as `edges: 0`. `dryRun: true` previews the collisions and the refusals and changes
-  nothing. The graft is held to the per-tree capacity (10000 nodes, 20000 edges), counted on what
-  the tree would hold AFTER the upsert, so re-sending nodes already present costs nothing. The
-  graft path does not run the domain's `validate()`, so this tool's own item checks are the only
-  admission standing there.
+  `nodeCollisions`/`kindCollisions`; a new id is added. Scalar fields are LWW-replaced; a re-sent
+  node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
+  unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
+  `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
+  live prerequisite edge into that node the batch did not name, in the same frame, and counts them
+  as `removedEdges`. `tombstone[]` (max 500) deletes nodes in that same frame and seq — the node,
+  every present edge touching it in either direction, and the caller's own progress on it cleared
+  the way `prune` clears an orphan — counted back as `tombstoned: {nodes, edges}`. A tombstone id
+  that does not exist, or that is also in `nodes[]`, or that a batch node names as a prerequisite,
+  refuses the whole call naming every offender before anything is applied. Everything lands at one
+  stamp minted from the room clock, so a removal beats the edge's `addedAt` and a later re-add
+  (merge or `connect`) beats the removal. The receipt counts `nodes`, `edges` and `kinds` as
+  carried, so a batch whose prerequisites were put in the wrong place reads as `edges: 0`.
+  `dryRun: true` previews the collisions, the kept edges, the `tombstone` list and the refusals,
+  and changes nothing. The graft is held to the per-tree capacity (10000 nodes, 20000 edges),
+  counted on what the tree would hold AFTER the upsert less what the batch tombstones or replaces.
+  The graft path does not run the domain's `validate()`, so this tool's own item checks are the
+  only admission standing there. The rule itself lives in `domain/Graft` (`footprintOf`,
+  `graftState`), reached through `TreeRoom::importTree`; the handler only passes the mode and the
+  ids and reads the footprint back for the receipt.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. Unknown node ids are rejected, so no orphan overlay rows are created.

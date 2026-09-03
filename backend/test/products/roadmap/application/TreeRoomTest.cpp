@@ -291,3 +291,50 @@ TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
   CHECK_EQ(graph.nodes.size(), 2u);
   CHECK_EQ(legend.kinds.size(), 0u);
 }
+
+TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_one_seq) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  for (const char* id : {"a", "b", "c", "n"}) apply(room, createNode(id), 1);
+  apply(room, AddEdge{nid("a"), nid("n")}, 2);
+  apply(room, AddEdge{nid("c"), nid("n")}, 3);
+  apply(room, AddEdge{nid("n"), nid("b")}, 4);
+  const Seq before = room.head();
+
+  NodeSpec n;
+  n.id = nid("n");
+  n.label = "N";
+  n.prerequisites = {nid("a")};
+  Graft graft;
+  graft.document.nodes = {n};
+  graft.prerequisites = PrerequisiteMode::replace;
+  graft.tombstones = {nid("b")};
+
+  const Seq seq = room.importTree(graft, 100, uid());
+  CHECK_EQ(seq, before + 1);
+  CHECK_EQ(room.head(), seq);
+  CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a")}));
+  CHECK_FALSE(room.hasNode(nid("b")));
+  CHECK(room.diagnose().dangling.empty());
+
+  // Every removal carries the graft's one stamp, later than anything the room held.
+  const GraphState state = room.exportState();
+  Hlc removal;
+  for (const EdgeStateEntry& edge : state.edges) {
+    if (edge.edge == Edge{nid("a"), nid("n")}) CHECK_FALSE(edge.removedAt.isSet());
+    if (edge.edge == Edge{nid("c"), nid("n")} || edge.edge == Edge{nid("n"), nid("b")}) {
+      CHECK(edge.removedAt > edge.addedAt);
+      if (removal.isSet()) CHECK_EQ(edge.removedAt, removal);
+      removal = edge.removedAt;
+    }
+  }
+  CHECK(removal.isSet());
+
+  // A later merge re-add outranks the removal.
+  n.prerequisites = {nid("c")};
+  Graft again;
+  again.document.nodes = {n};
+  room.importTree(again, 200, uid());
+  CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a"), nid("c")}));
+}

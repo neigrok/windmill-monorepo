@@ -87,6 +87,7 @@ Json::Value objArray(const char* description, Json::Value properties, std::vecto
   Json::Value must(Json::arrayValue);
   for (const char* field : required) must.append(field);
   item["required"] = must;
+  item["additionalProperties"] = false;  // enforced by CompositeToolHost, so a misnamed key is named, not dropped
 
   Json::Value property(Json::objectValue);
   property["type"] = "array";
@@ -126,6 +127,7 @@ Json::Value position(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "object";
   property["properties"] = fields;
+  property["additionalProperties"] = false;
   property["description"] = description;
   return property;
 }
@@ -140,6 +142,7 @@ Json::Value linkArray(const char* description) {
   Json::Value required(Json::arrayValue);
   required.append("url");
   link["required"] = required;
+  link["additionalProperties"] = false;
 
   Json::Value property(Json::objectValue);
   property["type"] = "array";
@@ -491,8 +494,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
     nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
-    nodeFields["prerequisites"] = strArray("Ids of the nodes that unlock this one.", kMaxIdLength);
-    nodeFields["position"] = position("Optional canvas position {x, y}.");
+    nodeFields["prerequisites"] = strArray(
+        "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "
+        "says whether these are added to its existing prerequisites or become the whole list.",
+        kMaxIdLength);
+    nodeFields["position"] = position(
+        "Optional canvas position {x, y}. Optional because the web canvas lays the tree out from its "
+        "structure and never reads a stored position.");
     nodeFields["seedStatus"] = enumStr(
         "Optional authored baseline carried in the document — what every reader sees before their own "
         "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
@@ -519,21 +527,44 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                              "names a node that exists once the import lands; a row naming none is "
                              "reported back in progressSkipped, not silently dropped.",
                              progressFields, {"nodeId", "status"});
-    p["dryRun"] = boolean("If true, report collisions (and any progressSkipped) and change nothing.");
+    p["prerequisiteMode"] = enumStr(
+        "How a node already in the tree meets the `prerequisites` you send for it. `merge` (the "
+        "default) UNIONS them with the prerequisites it already has — an edge you leave out survives, "
+        "and is listed in the receipt's keptEdges. `replace` makes your list the whole list: every "
+        "live prerequisite edge into that node you did not name is removed in the same batch, and "
+        "the receipt counts them as removedEdges. New nodes and nodes not in the batch are untouched "
+        "either way.",
+        kPrerequisiteModes);
+    p["tombstone"] = strArray(
+        "Ids to delete in this same batch, at the same seq as the upserts: each node goes, every "
+        "edge touching it in either direction goes, and your own progress on it is cleared. Every id "
+        "must exist and must not also be in nodes[] — otherwise the whole call is refused, naming "
+        "each offending id, and nothing is applied. At most 500 per call.",
+        kMaxIdLength);
+    p["tombstone"]["maxItems"] = static_cast<Json::UInt64>(kMaxTombstones);
+    p["dryRun"] = boolean(
+        "If true, report collisions, keptEdges, what would be tombstoned (and any progressSkipped) "
+        "and change nothing.");
     tools.push_back(tool("import_subgraph", Access::write,
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
         "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
         "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
-        "against malformed input — a bad field or a repeated id changes nothing and names the "
-        "offending element — but never against a merely untidy result (a dangling edge lands and is "
-        "reported in introducedDiagnostics). Upsert by id: an incoming id already present is "
-        "overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is "
-        "removed, and the tree's title is not touched. The receipt counts what the batch carried — "
-        "`nodes`, `edges` (the prerequisites across them), `kinds` — so check `edges` against what "
-        "you meant to send. Pass dryRun to preview the collisions and change nothing. This "
-        "collapses hundreds of create/connect calls into one.",
+        "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
+        "changes nothing and names the offending element — but never against a merely untidy result "
+        "(a dangling edge lands and is reported in introducedDiagnostics). Upsert by id: an incoming "
+        "id already present is overwritten (reported in nodeCollisions/kindCollisions) — its scalar "
+        "fields are replaced, and its prerequisites are UNIONED with the ones it already has unless "
+        "prerequisiteMode is \"replace\"; a new id is added; the tree's title is not touched. The "
+        "only removals are the ones you ask for: `tombstone` ids, and under \"replace\" the "
+        "prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
+        "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "
+        "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
+        "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
+        "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
+        "nodes and edges the tombstones took. Pass dryRun to preview all of that and change nothing. "
+        "This collapses hundreds of create/connect/delete calls into one.",
         p, {"treeId", "nodes"}));
   }
   {
