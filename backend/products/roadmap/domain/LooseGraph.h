@@ -77,6 +77,8 @@ public:
   // Present edges no valid DAG keeps: a self-edge, or one whose endpoint is absent (never
   // created, or tombstoned). The prune set — removing them leaves the live graph unchanged.
   std::vector<Edge> danglingEdges() const;
+  // Present edges with either endpoint among `nodes` — what tombstoning those nodes would dangle.
+  std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
 
   // One entry's element-set life — the add/remove stamps alone — so an arriving entry's join can be
   // COUNTED instead of estimated. nullopt for a never-seen key.

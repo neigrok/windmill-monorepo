@@ -170,15 +170,19 @@ treated as internal and is not limited.
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits |
-| edit | `connect` · `disconnect` · `reconnect` | prerequisite-edge edits |
-| edit | `delete_node` · `tidy` · `prune` | tombstone / transitive reduction / GC dangling edges + orphan progress |
+| edit | `connect` · `reconnect` | prerequisite-edge edits |
+| edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
+| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
+| edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame |
 | legend | `add_kind` (inline label+description) · `rename_kind` · `describe_kind` · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Edits return
-`{applied, seq, diagnosticsClean, introducedDiagnostics}`; nothing is ever rejected. The two keys
+`{applied, seq, diagnosticsClean, introducedDiagnostics}`; the structure an edit leaves is never
+rejected — what refuses is a malformed argument, the legend and capacity rules, and a `delete_node`
+id that names no present node. The two keys
 answer different questions: `diagnosticsClean` is the whole tree's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
 tree did not hold before it. An innocent edit on a dirty tree answers `[]`.

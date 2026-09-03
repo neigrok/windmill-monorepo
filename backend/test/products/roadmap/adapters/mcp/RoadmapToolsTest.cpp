@@ -1345,3 +1345,311 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
   CHECK_EQ(introduced(body(h.call("import_subgraph", imported))),
            (std::vector<std::string>{"dangling edge \"nowhere\" -> \"c\""}));
 }
+
+// --- delete_node and disconnect: the two-form batch contract ------------------------------
+
+namespace {
+
+Json::Value edge(const char* from, const char* to) {
+  Json::Value e(Json::objectValue);
+  e["from"] = from;
+  e["to"] = to;
+  return e;
+}
+
+// a -> b -> c -> d, with the caller's marks a complete, b complete, c active.
+void chain(Harness& h) {
+  for (const char* id : {"a", "b", "c", "d"}) h.call("create_node", node(id, id));
+  h.call("connect", edge("a", "b"));
+  h.call("connect", edge("b", "c"));
+  h.call("connect", edge("c", "d"));
+  h.call("set_progress", mark("a", "complete"));
+  h.call("set_progress", mark("b", "complete"));
+  h.call("set_progress", mark("c", "active"));
+}
+
+Json::Value edgeList(std::vector<std::pair<const char*, const char*>> pairs) {
+  Json::Value edges(Json::arrayValue);
+  for (const auto& [from, to] : pairs) edges.append(edge(from, to));
+  return edges;
+}
+
+Seq headOf(Harness& h) { return body(h.call("get_tree", kNoArgs))["seq"].asInt64(); }
+
+}
+
+TEST(mcp_delete_node_array_with_one_missing_id_applies_nothing_and_names_it) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+
+  Json::Value args(Json::objectValue);
+  args["nodeIds"] = list({"b", "ghost", "c", "phantom"});
+  args["prune"] = true;
+  ToolResult refused = h.call("delete_node", args);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("delete_node: no node in this tree is named \"ghost\", \"phantom\" — nothing was "
+                       "deleted. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
+
+  CHECK_EQ(headOf(h), before);
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]),
+           (std::vector<std::string>{"a", "b", "c", "d"}));
+  CHECK(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);
+
+  // An id deleted earlier is as missing as one never seen.
+  h.call("delete_node", with("nodeId", "d"));
+  Json::Value again(Json::objectValue);
+  again["nodeIds"] = list({"d"});
+  CHECK_EQ(message(h.call("delete_node", again)),
+           std::string("delete_node: no node in this tree is named \"d\" — nothing was deleted. Call "
+                       "get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
+}
+
+TEST(mcp_delete_node_prune_drops_the_edges_it_dangles_and_the_callers_marks_in_one_seq) {
+  Harness h;
+  chain(h);
+  h.call("connect", edge("a", "ghost"));  // dirt this delete did not make: it stays
+  const Seq before = headOf(h);
+
+  Json::Value args(Json::objectValue);
+  args["nodeIds"] = list({"b", "c"});
+  args["prune"] = true;
+  ToolResult result = h.call("delete_node", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK_EQ(keys(receipt), (std::vector<std::string>{"applied", "diagnosticsClean", "ids",
+                                                    "introducedDiagnostics", "pruned", "seq"}));
+  CHECK(receipt["applied"].asBool());
+  CHECK_EQ(receipt["seq"].asInt64(), before + 1);
+  CHECK_EQ(receipt["ids"], list({"b", "c"}));
+  CHECK_EQ(receipt["pruned"]["edges"].asInt(), 3);
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 2);
+  CHECK_FALSE(receipt["diagnosticsClean"].asBool());  // a -> ghost was there before
+  CHECK_EQ(introduced(receipt), std::vector<std::string>{});
+
+  CHECK_EQ(headOf(h), before + 1);
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]), (std::vector<std::string>{"a", "d"}));
+  const Json::Value dangling = body(h.call("get_diagnostics", kNoArgs))["dangling"];
+  REQUIRE_EQ(dangling.size(), 1u);
+  CHECK_EQ(dangling[0]["from"].asString(), std::string("a"));
+  CHECK_EQ(dangling[0]["to"].asString(), std::string("ghost"));
+  const Json::Value progress = body(h.call("get_progress", kNoArgs));
+  CHECK_EQ(progress["completed"], list({"a"}));
+  CHECK(progress["inProgress"].empty());
+
+  // Nothing left to prune once the delete carried its own cleanup; the tree's old dirt is prune's.
+  const Json::Value swept = body(h.call("prune", kNoArgs));
+  CHECK_EQ(swept["prunedEdges"].asInt(), 1);
+  CHECK_EQ(swept["prunedProgress"].asInt(), 0);
+}
+
+TEST(mcp_delete_node_prune_on_a_clean_tree_leaves_it_clean) {
+  Harness h;
+  chain(h);
+  Json::Value args(Json::objectValue);
+  args["nodeId"] = "b";
+  args["prune"] = true;
+  const Json::Value receipt = body(h.call("delete_node", args));
+  CHECK(receipt["diagnosticsClean"].asBool());
+  CHECK_EQ(receipt["id"].asString(), std::string("b"));
+  CHECK_EQ(receipt["ids"], list({"b"}));
+  CHECK_EQ(receipt["pruned"]["edges"].asInt(), 2);
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 1);
+  CHECK(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
+}
+
+TEST(mcp_delete_node_without_prune_still_lists_the_edges_it_dangled) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+  const Json::Value receipt = body(h.call("delete_node", with("nodeId", "b")));
+  CHECK_EQ(keys(receipt), (std::vector<std::string>{"applied", "diagnosticsClean", "id", "ids",
+                                                    "introducedDiagnostics", "pruned", "seq"}));
+  CHECK_EQ(receipt["id"].asString(), std::string("b"));
+  CHECK_EQ(receipt["ids"], list({"b"}));
+  CHECK_EQ(receipt["seq"].asInt64(), before + 1);
+  CHECK_FALSE(receipt["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(receipt),
+           (std::vector<std::string>{"dangling edge \"a\" -> \"b\"", "dangling edge \"b\" -> \"c\""}));
+  CHECK_EQ(receipt["pruned"]["edges"].asInt(), 0);
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 0);
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);  // the mark on b stays
+
+  const Json::Value legacy = body(h.call("delete_node", with("id", "c")));
+  CHECK(legacy["applied"].asBool());
+  CHECK_EQ(legacy["id"].asString(), std::string("c"));
+}
+
+TEST(mcp_delete_node_refuses_neither_form_both_forms_and_a_malformed_batch) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+
+  Json::Value neither(Json::objectValue);
+  neither["prune"] = true;
+  CHECK_EQ(message(h.call("delete_node", neither)),
+           std::string("delete_node: missing required argument \"nodeId\" (or a \"nodeIds\" list of 1 to 200 "
+                       "ids). Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
+
+  Json::Value both(Json::objectValue);
+  both["nodeId"] = "a";
+  both["nodeIds"] = list({"b"});
+  CHECK_EQ(message(h.call("delete_node", both)),
+           std::string("delete_node: pass a single \"nodeId\" or a \"nodeIds\" list, not both — one form "
+                       "names what this call deletes."));
+
+  Json::Value empty(Json::objectValue);
+  empty["nodeIds"] = Json::Value(Json::arrayValue);
+  CHECK_EQ(message(h.call("delete_node", empty)),
+           std::string("delete_node: argument \"nodeIds\" is an empty list — pass at least one id to delete."));
+
+  Json::Value repeated(Json::objectValue);
+  repeated["nodeIds"] = list({"a", "b", "a"});
+  CHECK_EQ(message(h.call("delete_node", repeated)),
+           std::string("delete_node: nodeIds[2] \"a\" is already used by nodeIds[0] — an id names one node "
+                       "per batch"));
+
+  Json::Value tooMany(Json::objectValue);
+  Json::Value many(Json::arrayValue);
+  for (int i = 0; i < 201; ++i) many.append("n" + std::to_string(i));
+  tooMany["nodeIds"] = many;
+  CHECK_EQ(message(h.call("delete_node", tooMany)), std::string("delete_node: nodeIds has 201 items, max 200"));
+
+  Json::Value notStrings(Json::objectValue);
+  notStrings["nodeIds"] = "a";
+  CHECK_EQ(message(h.call("delete_node", notStrings)),
+           std::string("delete_node: argument \"nodeIds\" must be an array of strings, got string"));
+
+  Json::Value badPrune(Json::objectValue);
+  badPrune["nodeId"] = "a";
+  badPrune["prune"] = "yes";
+  CHECK_EQ(message(h.call("delete_node", badPrune)),
+           std::string("delete_node: argument \"prune\" must be a boolean, got string"));
+
+  CHECK_EQ(headOf(h), before);
+  CHECK_EQ(ids(body(h.call("get_tree", kNoArgs))["tree"]["nodes"]),
+           (std::vector<std::string>{"a", "b", "c", "d"}));
+}
+
+TEST(mcp_disconnect_batch_removes_every_edge_under_one_seq_and_counts_the_present_ones) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+
+  Json::Value args(Json::objectValue);
+  args["edges"] = edgeList({{"a", "b"}, {"c", "d"}, {"x", "y"}});
+  ToolResult result = h.call("disconnect", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK_EQ(keys(receipt),
+           (std::vector<std::string>{"applied", "diagnosticsClean", "introducedDiagnostics", "removed", "seq"}));
+  CHECK(receipt["applied"].asBool());
+  CHECK_EQ(receipt["seq"].asInt64(), before + 1);
+  CHECK_EQ(receipt["removed"].asInt(), 2);
+  CHECK(receipt["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(receipt), std::vector<std::string>{});
+
+  CHECK_EQ(headOf(h), before + 1);
+  Json::Value shape(Json::objectValue);
+  shape["fields"] = list({"id", "prerequisites"});
+  const Json::Value nodes = body(h.call("get_tree", shape))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 4u);
+  CHECK(nodes[0]["prerequisites"].empty());
+  CHECK(nodes[1]["prerequisites"].empty());
+  CHECK_EQ(nodes[2]["prerequisites"], list({"b"}));
+  CHECK(nodes[3]["prerequisites"].empty());
+
+  // The single form is the same contract with one edge, and an absent edge is a no-op there too.
+  const Json::Value single = body(h.call("disconnect", edge("b", "c")));
+  CHECK_EQ(single["removed"].asInt(), 1);
+  CHECK_EQ(single["seq"].asInt64(), before + 2);
+  const Json::Value absent = body(h.call("disconnect", edge("b", "c")));
+  CHECK(absent["applied"].asBool());
+  CHECK_EQ(absent["removed"].asInt(), 0);
+}
+
+TEST(mcp_disconnect_refuses_neither_form_both_forms_and_a_malformed_batch) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+
+  CHECK_EQ(message(h.call("disconnect", kNoArgs)),
+           std::string("disconnect: missing required arguments \"from\" and \"to\" (or an \"edges\" list of "
+                       "{from, to}, 1 to 500 edges). Call get_tree with fields [\"id\",\"prerequisites\"] to "
+                       "list the edges this tree has."));
+
+  Json::Value both = edge("a", "b");
+  both["edges"] = edgeList({{"b", "c"}});
+  CHECK_EQ(message(h.call("disconnect", both)),
+           std::string("disconnect: pass a single \"from\"+\"to\" or an \"edges\" list, not both — one form "
+                       "names what this call removes."));
+
+  CHECK_EQ(message(h.call("disconnect", with("from", "a"))),
+           std::string("disconnect: missing required argument \"to\""));
+
+  Json::Value empty(Json::objectValue);
+  empty["edges"] = Json::Value(Json::arrayValue);
+  CHECK_EQ(message(h.call("disconnect", empty)),
+           std::string("disconnect: argument \"edges\" is an empty list — pass at least one {from, to} to remove."));
+
+  Json::Value halfRow(Json::objectValue);
+  halfRow["edges"] = edgeList({{"a", "b"}});
+  halfRow["edges"][0].removeMember("to");
+  CHECK_EQ(message(h.call("disconnect", halfRow)),
+           std::string("disconnect: missing required argument \"edges[0].to\""));
+
+  Json::Value repeated(Json::objectValue);
+  repeated["edges"] = edgeList({{"a", "b"}, {"b", "c"}, {"a", "b"}});
+  CHECK_EQ(message(h.call("disconnect", repeated)),
+           std::string("disconnect: edges[2] repeats edges[0] (\"a\" -> \"b\") — an edge is named once per batch"));
+
+  Json::Value tooMany(Json::objectValue);
+  Json::Value many(Json::arrayValue);
+  for (int i = 0; i < 501; ++i) many.append(edge("a", ("n" + std::to_string(i)).c_str()));
+  tooMany["edges"] = many;
+  CHECK_EQ(message(h.call("disconnect", tooMany)), std::string("disconnect: edges has 501 items, max 500"));
+
+  CHECK_EQ(headOf(h), before);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 4u);
+}
+
+TEST(mcp_delete_node_and_disconnect_publish_both_forms_in_their_schemas) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+
+  const Json::Value* del = nullptr;
+  const Json::Value* dis = nullptr;
+  for (const Json::Value& tool : catalog) {
+    if (tool["name"].asString() == "delete_node") del = &tool;
+    if (tool["name"].asString() == "disconnect") dis = &tool;
+  }
+  REQUIRE(del != nullptr);
+  REQUIRE(dis != nullptr);
+
+  const Json::Value& deleteSchema = (*del)["inputSchema"];
+  CHECK_EQ(deleteSchema["required"], list({"treeId"}));
+  CHECK_EQ(deleteSchema["properties"]["nodeId"]["type"].asString(), std::string("string"));
+  CHECK(deleteSchema["properties"]["id"]["deprecated"].asBool());
+  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["type"].asString(), std::string("array"));
+  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["items"]["type"].asString(), std::string("string"));
+  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["minItems"].asInt(), 1);
+  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["maxItems"].asInt(), 200);
+  CHECK_EQ(deleteSchema["properties"]["prune"]["type"].asString(), std::string("boolean"));
+  CHECK(deleteSchema["additionalProperties"].isBool());
+  CHECK_FALSE(deleteSchema["additionalProperties"].asBool());
+
+  const Json::Value& disconnectSchema = (*dis)["inputSchema"];
+  CHECK_EQ(disconnectSchema["required"], list({"treeId"}));
+  const Json::Value& edges = disconnectSchema["properties"]["edges"];
+  CHECK_EQ(edges["type"].asString(), std::string("array"));
+  CHECK_EQ(edges["minItems"].asInt(), 1);
+  CHECK_EQ(edges["maxItems"].asInt(), 500);
+  CHECK_EQ(edges["items"]["type"].asString(), std::string("object"));
+  CHECK_EQ(edges["items"]["required"], list({"from", "to"}));
+  CHECK(edges["items"]["additionalProperties"].isBool());
+  CHECK_FALSE(edges["items"]["additionalProperties"].asBool());
+  CHECK_EQ(edges["items"]["properties"]["from"]["type"].asString(), std::string("string"));
+  CHECK_EQ(edges["items"]["properties"]["to"]["type"].asString(), std::string("string"));
+}

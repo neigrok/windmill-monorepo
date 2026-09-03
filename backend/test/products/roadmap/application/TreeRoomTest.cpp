@@ -291,3 +291,46 @@ TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
   CHECK_EQ(graph.nodes.size(), 2u);
   CHECK_EQ(legend.kinds.size(), 0u);
 }
+
+TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_deed) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  apply(room, createNode("a"), 1);
+  apply(room, createNode("b"), 2);
+  apply(room, AddEdge{nid("a"), nid("b")}, 3);
+
+  Seq seq = room.applyCommands(
+      {DeleteNode{nid("a")}, DeleteNode{nid("b")}, RemoveEdge{nid("a"), nid("b")}}, 4, uid());
+  CHECK_EQ(seq, static_cast<Seq>(4));
+  CHECK_EQ(room.head(), static_cast<Seq>(4));
+  CHECK_FALSE(room.hasNode(nid("a")));
+  CHECK_FALSE(room.hasNode(nid("b")));
+  CHECK_FALSE(room.hasEdge(nid("a"), nid("b")));
+  CHECK(room.diagnose().clean());
+
+  REQUIRE_EQ(log.byTree["t"].size(), 4u);
+  CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(4));
+  CHECK(std::holds_alternative<DeleteNode>(log.byTree["t"].back().command));
+  REQUIRE_EQ(bus.subgraphBroadcasts.size(), 4u);
+  CHECK_EQ(bus.subgraphBroadcasts.back().seq, static_cast<Seq>(4));
+  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.graph.nodes.size(), 2u);
+  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.graph.edges.size(), 1u);
+  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.frameId, log.byTree["t"].back().opId);
+}
+
+TEST(room_edges_touching_reads_the_live_graph) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  apply(room, createNode("a"), 1);
+  apply(room, createNode("b"), 2);
+  apply(room, createNode("c"), 3);
+  apply(room, AddEdge{nid("a"), nid("b")}, 4);
+  apply(room, AddEdge{nid("b"), nid("c")}, 5);
+
+  CHECK_EQ(room.edgesTouching({nid("b")}), (std::vector<Edge>{Edge{nid("a"), nid("b")}, Edge{nid("b"), nid("c")}}));
+  CHECK_EQ(room.edgesTouching({nid("a")}), (std::vector<Edge>{Edge{nid("a"), nid("b")}}));
+  CHECK(room.hasEdge(nid("a"), nid("b")));
+  CHECK_FALSE(room.hasEdge(nid("b"), nid("a")));
+}

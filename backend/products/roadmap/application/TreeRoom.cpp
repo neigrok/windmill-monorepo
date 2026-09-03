@@ -59,22 +59,30 @@ Seq TreeRoom::rename(const std::string& title, std::uint64_t nowMs) {
 }
 
 Seq TreeRoom::applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor) {
-  Hlc stamp = clock_.tick(nowMs);
+  return applyCommands({command}, nowMs, actor);
+}
+
+Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor) {
+  Hlc stamp = clock_.tick(nowMs);  // one stamp for the whole frame, as a graft takes one
   std::string frameId = "srv-" + toString(stamp);  // unique: the clock mints monotone stamps
   appliedOpIds_.insert(frameId);
   VersionVector before = frontier(graph_.exportState(), legend_.exportState());
-  merge(graph_, legend_, command, stamp);
-  AppliedOp op{++head_, frameId, command, stamp, actor};
-  ops_.append(id_, op);  // the op log still powers the activity feed
+  for (const Command& command : commands) merge(graph_, legend_, command, stamp);
+  ++head_;
 
   Subgraph produced = deltaBetween(graph_.exportState(), legend_.exportState(), before);
   produced.treeId = id_;
   produced.frameId = frameId;
   produced.actor = stamp.actor;
   produced.intent = SubgraphIntent::live;
+  // The op log still powers the activity feed: a lone command is its own deed, a batch is
+  // summarised by its frame's headline, exactly as a joined frame is.
+  std::optional<Command> deed =
+      commands.size() == 1 ? std::optional<Command>(commands.front()) : headline(produced.graph, produced.legend);
+  if (deed) ops_.append(id_, AppliedOp{head_, frameId, *deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
-  bus_.broadcastSubgraph(id_, op.seq, produced);
-  return op.seq;
+  bus_.broadcastSubgraph(id_, head_, produced);
+  return head_;
 }
 
 Seq TreeRoom::importTree(const TreeData& incoming, std::uint64_t nowMs, const UserId& actor) {
@@ -151,6 +159,14 @@ std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
 
 bool TreeRoom::hasNode(const NodeId& node) const {
   return graph_.hasNode(node);
+}
+
+bool TreeRoom::hasEdge(const NodeId& from, const NodeId& to) const {
+  return graph_.edgePresent(from, to);
+}
+
+std::vector<Edge> TreeRoom::edgesTouching(const std::vector<NodeId>& nodes) const {
+  return graph_.edgesTouching(nodes);
 }
 
 GraphState TreeRoom::exportState() const {

@@ -305,3 +305,20 @@ TEST(redundant_edges_skips_a_tree_whose_edges_blow_the_work_budget) {
   CHECK_EQ(dense.liveEdges().size(), std::size_t{19900});
   CHECK_EQ(dense.redundantEdges().size(), std::size_t{0});  // skipped, not computed
 }
+
+TEST(edges_touching_names_the_present_edges_on_either_side_of_the_nodes) {
+  LooseGraph g;
+  for (const char* id : {"a", "b", "c", "d"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  g.addEdge(nid("a"), nid("b"), at(2));
+  g.addEdge(nid("b"), nid("c"), at(2));
+  g.addEdge(nid("c"), nid("d"), at(2));
+  g.addEdge(nid("b"), nid("d"), at(2));
+  g.removeEdge(nid("b"), nid("d"), at(3));  // no longer present, so never touched
+
+  CHECK_EQ(g.edgesTouching({nid("b")}),
+           (std::vector<Edge>{Edge{nid("a"), nid("b")}, Edge{nid("b"), nid("c")}}));
+  CHECK_EQ(g.edgesTouching({nid("b"), nid("c")}),
+           (std::vector<Edge>{Edge{nid("a"), nid("b")}, Edge{nid("b"), nid("c")}, Edge{nid("c"), nid("d")}}));
+  CHECK_EQ(g.edgesTouching({nid("ghost")}), std::vector<Edge>{});
+  CHECK_EQ(g.edgesTouching({}), std::vector<Edge>{});
+}

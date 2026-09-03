@@ -377,10 +377,23 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    p["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
-    p["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
-    tools.push_back(tool("disconnect", Access::write, "Remove the prerequisite edge from `from` to `to`.", p,
-                      {"treeId", "from", "to"}));
+    p["from"] = cappedStr("The prerequisite node id (single form, with `to`).", kMaxIdLength);
+    p["to"] = cappedStr("The node it unlocks (single form, with `from`).", kMaxIdLength);
+    Json::Value endpoints(Json::objectValue);
+    endpoints["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
+    endpoints["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
+    Json::Value edges = objArray("Batch form: the edges to remove, each named once.", endpoints, {"from", "to"});
+    edges["items"]["additionalProperties"] = false;
+    edges["minItems"] = 1;
+    edges["maxItems"] = static_cast<Json::UInt64>(kMaxDisconnectEdges);
+    p["edges"] = edges;
+    tools.push_back(tool("disconnect", Access::write,
+        "Remove prerequisite edges. Two forms, exactly one per call: a single `from`+`to`, or "
+        "`edges: [{from, to}]` (1 to 500). The whole list lands as ONE op under one seq, or not at "
+        "all: a malformed row or a repeated edge changes nothing and is named. An edge the tree does "
+        "not hold is a no-op, never a refusal; the receipt's `removed` counts the edges that were "
+        "actually present.",
+        p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -399,10 +412,24 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
+    Json::Value nodeIds = strArray("Batch form: the node ids to delete, each named once.", kMaxIdLength);
+    nodeIds["minItems"] = 1;
+    nodeIds["maxItems"] = static_cast<Json::UInt64>(kMaxDeleteNodeIds);
+    p["nodeIds"] = nodeIds;
+    p["prune"] = boolean(
+        "If true, also remove every edge touching a deleted node (both directions) and clear your "
+        "own progress marks on them, in the same op. Default false: those edges stay and are "
+        "reported in introducedDiagnostics as dangling.");
     tools.push_back(tool("delete_node", Access::del,
-        "Delete a node (tombstone). Its edges go inert and its children detach into roots; nothing "
-        "is re-tethered. Reversible via undo.",
-        p, {"treeId", "nodeId"}));
+        "Delete nodes (tombstone). Two forms, exactly one per call: a single `nodeId`, or `nodeIds` "
+        "(1 to 200). Every id must name a present node — one missing or already-deleted id refuses "
+        "the whole call, naming each, and nothing is applied. The deletions land as ONE op under one "
+        "seq. A deleted node's children detach into roots; nothing is re-tethered. With `prune: "
+        "true` the edges the delete dangles and your marks on the deleted nodes go with it — that "
+        "cleanup is part of the delete and needs no write grant beyond the delete grant. The receipt "
+        "carries `ids`, `pruned: {edges, progress}` (0s when prune is false or nothing dangled), and "
+        "`id` for the single form.",
+        p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);
