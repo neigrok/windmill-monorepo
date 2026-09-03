@@ -183,6 +183,30 @@ answer different questions: `diagnosticsClean` is the whole tree's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
 tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
 
+### The descriptor
+
+Every `tools/list` entry is `{name, title, description, inputSchema, annotations, _meta}`. The
+catalog writes `name`, `description` and `inputSchema` and states two facts beside them — whether a
+write edits in bulk and whether a resend leaves it unchanged; `ToolDeclaration::wire()`
+(`platform/ports/ToolHost.h`) derives everything else from those facts and the grant level, so no
+product can declare a tool without its annotations:
+
+- `title` — the product word, a middle dot, the name in words: `Roadmap · Get tree`,
+  `Gym · Log set`. Names never change; the golden corpus and connected clients pin them.
+- `annotations.readOnlyHint` — true exactly for `read`-level tools.
+- `annotations.destructiveHint` — true for every `delete`-level tool and for the writes that
+  overwrite or remove in bulk: `import_subgraph`, `prune`, `tidy` (`kBulkEdits` beside the
+  catalog).
+- `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
+  (`kIdempotentWrites` beside the catalog); false for `create_tree` and `create_node`, which mint
+  an id. Every gym write is idempotent by the id the caller mints.
+- `annotations.openWorldHint` — false everywhere: nothing here reaches beyond the caller's account.
+- `_meta.product`, `_meta.access` — the grant the composite checks the call against.
+
+The server never gates a call on human approval. A "No approval received" answer is the client's
+own permission prompt, and the read-only hint is what lets a client stop raising it on reads; the
+handshake `instructions` say so.
+
 ## `status`, `seedStatus`, `state`, `summary`
 
 - **`status` is the caller's own mark** — `active`, `complete` or `none`, the vocabulary

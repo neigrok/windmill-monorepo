@@ -352,6 +352,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/mcp/McpServerTest.cpp
     test/platform/adapters/mcp/McpHttpEndpointTest.cpp
     test/platform/adapters/mcp/CompositeToolHostTest.cpp
+    test/platform/adapters/mcp/ToolAnnotationsTest.cpp
     test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
     test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
     test/products/roadmap/adapters/mcp/WireCorpusTest.cpp

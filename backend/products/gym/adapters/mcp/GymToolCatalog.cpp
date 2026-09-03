@@ -144,7 +144,11 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["name"] = name;
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
-  return ToolDeclaration{std::move(descriptor), "gym", access};
+  ToolDeclaration declaration{std::move(descriptor), "gym", access};
+  // Every gym write answers a resend with what the first call did — by the id the caller mints,
+  // or by the one link and one end a workout has — and no gym write edits in bulk.
+  declaration.idempotent = true;
+  return declaration;
 }
 
 }  // namespace

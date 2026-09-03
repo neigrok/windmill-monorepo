@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cctype>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,13 +45,50 @@ struct ToolResult {
   }
 };
 
-// The `tools/list` entry an agent reads, plus the two facts a grant is checked against.
+// What a product authors for one tool, and the facts the wire annotations and the grant gate are
+// both derived from. `wire()` is the `tools/list` entry an agent reads: the descriptor plus the MCP
+// `annotations` block and a `_meta` naming the product and level — derived here, once, so no
+// product can declare a tool without them.
 struct ToolDeclaration {
-  Json::Value descriptor;  // {name, description, inputSchema} — the wire shape, verbatim
+  Json::Value descriptor;  // {name, description, inputSchema}, as the catalog wrote it
   std::string product;     // whose grant reaches it: the `product` half of `gym:delete`
   Access access;
+  bool bulkEdit = false;    // a `write` that overwrites or removes many entries in one call
+  bool idempotent = false;  // a write the same arguments leave unchanged the second time
 
   std::string name() const { return descriptor.get("name", "").asString(); }
+
+  // Delete-level tools destroy by definition; a bulk edit destroys under a write grant.
+  bool destructive() const { return access == Access::del || bulkEdit; }
+
+  // "Roadmap · Get tree": the product word first, so a client's search groups one product's tools.
+  std::string title() const {
+    std::string word = product;
+    if (!word.empty()) word[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(word[0])));
+    std::string human = name();
+    for (char& c : human) c = c == '_' ? ' ' : c;
+    if (!human.empty()) human[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(human[0])));
+    return word + " · " + human;
+  }
+
+  Json::Value wire() const {
+    Json::Value annotations(Json::objectValue);
+    annotations["title"] = title();
+    annotations["readOnlyHint"] = access == Access::read;
+    annotations["destructiveHint"] = destructive();
+    annotations["idempotentHint"] = access == Access::read || idempotent;
+    annotations["openWorldHint"] = false;  // every tool reaches the caller's own account and nothing beyond it
+
+    Json::Value meta(Json::objectValue);
+    meta["product"] = product;
+    meta["access"] = toString(access);
+
+    Json::Value out = descriptor;
+    out["title"] = title();
+    out["annotations"] = annotations;
+    out["_meta"] = meta;
+    return out;
+  }
 };
 
 // A retired tool name and the answer an agent calling it should read; `replacement` is empty when
@@ -80,11 +118,11 @@ struct ToolHost {
     return std::nullopt;
   }
 
-  // Filtered from the same declarations the dispatcher gates on.
+  // Filtered from the same declarations the dispatcher gates on, each in its wire shape.
   Json::Value listTools(const ToolCaller& caller) const {
     Json::Value tools(Json::arrayValue);
     for (const ToolDeclaration& tool : declareTools())
-      if (caller.scope.allows(tool.product, tool.access)) tools.append(tool.descriptor);
+      if (caller.scope.allows(tool.product, tool.access)) tools.append(tool.wire());
     return tools;
   }
 };

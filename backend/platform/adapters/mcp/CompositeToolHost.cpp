@@ -119,7 +119,11 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
       (connected.empty() ? std::string("nothing — no product is wired into this server") : connected) +
       ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "
       "surface this connection may use — a tool you cannot see is a level that was not granted, not a "
-      "tool that is missing; ask your human to reconnect and approve it.";
+      "tool that is missing; ask your human to reconnect and approve it. Windmill never gates a call "
+      "on human approval: a call this server accepts runs the moment it arrives, and an answer that "
+      "reads \"No approval received\" or \"awaiting approval\" is your own client's permission prompt, "
+      "not this server. Every read is declared readOnlyHint, so a client can stop prompting on reads; "
+      "every delete-level tool and every bulk edit is declared destructiveHint.";
   const std::string stamp = build.substr(0, 7);
   if (!stamp.empty())
     instructions += " This server is build " + stamp +

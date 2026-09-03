@@ -4,6 +4,7 @@
 #include "products/roadmap/domain/Command.h"
 
 #include <cstddef>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -149,6 +150,17 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
+// The two facts the wire annotations need that the grant level does not carry (ToolHost.h derives
+// the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
+// under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
+// create_tree and create_node mint an id, so a resend plants a second one.
+const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy"};
+const std::set<std::string> kIdempotentWrites = {
+    "delete_tree",  "annotate_node", "rename_node",   "set_node_color", "move_node",
+    "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
+    "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
+    "recolor_kind", "set_progress",  "import_subgraph", "prune"};
+
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
 // not see those tools in tools/list.
@@ -166,7 +178,10 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["name"] = name;
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
-  return ToolDeclaration{std::move(descriptor), "roadmap", access};
+  ToolDeclaration declaration{std::move(descriptor), "roadmap", access};
+  declaration.bulkEdit = kBulkEdits.count(name) > 0;
+  declaration.idempotent = kIdempotentWrites.count(name) > 0;
+  return declaration;
 }
 
 }

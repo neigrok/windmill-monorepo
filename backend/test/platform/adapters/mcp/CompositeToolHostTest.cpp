@@ -167,6 +167,61 @@ TEST(composite_owns_the_whole_server_answer_for_a_name_nothing_declared) {
 }
 
 // The composite resolves names against the catalogs it was built from, so a retired name answers with the product's own sentence.
+Json::Value annotations(const char* title, bool readOnly, bool destructive, bool idempotent) {
+  Json::Value out(Json::objectValue);
+  out["title"] = title;
+  out["readOnlyHint"] = readOnly;
+  out["destructiveHint"] = destructive;
+  out["idempotentHint"] = idempotent;
+  out["openWorldHint"] = false;
+  return out;
+}
+
+Json::Value meta(const char* product, const char* access) {
+  Json::Value out(Json::objectValue);
+  out["product"] = product;
+  out["access"] = access;
+  return out;
+}
+
+TEST(composite_lists_every_tool_in_its_wire_shape_with_annotations_derived_from_its_declaration) {
+  FakeProduct r = roadmap();
+  r.declare("prune", Access::write, {"treeId"});
+  r.catalog.back().bulkEdit = true;
+  r.catalog.back().idempotent = true;
+  r.declare("rename_node", Access::write, {"treeId", "nodeId", "label"});
+  r.catalog.back().idempotent = true;
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
+
+  const Json::Value tools = surface.listTools(granted(""));
+  REQUIRE_EQ(tools.size(), 5u);
+  for (const Json::Value& tool : tools) {
+    const ToolDeclaration& declared = *std::find_if(
+        r.catalog.begin(), r.catalog.end(),
+        [&](const ToolDeclaration& d) { return d.name() == tool["name"].asString(); });
+    CHECK_EQ(tool["description"], declared.descriptor["description"]);
+    CHECK_EQ(tool["inputSchema"], declared.descriptor["inputSchema"]);
+    CHECK_EQ(tool["title"], tool["annotations"]["title"]);
+    CHECK_EQ(tool.getMemberNames(),
+             (std::vector<std::string>{"_meta", "annotations", "description", "inputSchema", "name", "title"}));
+  }
+  CHECK_EQ(tools[0]["annotations"], annotations("Roadmap · Get tree", true, false, true));
+  CHECK_EQ(tools[0]["_meta"], meta("roadmap", "read"));
+  CHECK_EQ(tools[1]["annotations"], annotations("Roadmap · Create node", false, false, false));
+  CHECK_EQ(tools[1]["_meta"], meta("roadmap", "write"));
+  CHECK_EQ(tools[2]["annotations"], annotations("Roadmap · Delete node", false, true, false));
+  CHECK_EQ(tools[2]["_meta"], meta("roadmap", "delete"));
+  CHECK_EQ(tools[3]["annotations"], annotations("Roadmap · Prune", false, true, true));
+  CHECK_EQ(tools[3]["_meta"], meta("roadmap", "write"));
+  CHECK_EQ(tools[4]["annotations"], annotations("Roadmap · Rename node", false, false, true));
+  CHECK_EQ(tools[4]["_meta"], meta("roadmap", "write"));
+
+  // The dispatcher gates on the declaration, so the wire keys are never mistaken for arguments.
+  const ToolResult ran = surface.callTool("prune", args({{"treeId", "t1"}}), granted(""));
+  CHECK_FALSE(ran.isError);
+  CHECK_EQ(r.calls.size(), std::size_t{1});
+}
+
 TEST(composite_answers_a_retired_name_with_the_products_sentence_and_never_calls_it) {
   FakeProduct g = gym();
   g.retired.push_back(ToolRetirement{"save_routine", "log_set",
