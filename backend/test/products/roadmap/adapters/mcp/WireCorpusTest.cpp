@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 5;  // v5: `summary` joins the vocabulary (tools/list schema enum)
+constexpr int kWireCorpusVersion = 6;  // v6: import_subgraph prerequisiteMode/tombstone receipts, get_health crossBranchExempt, batch delete_node/disconnect
 
 struct Step {
   const char* tool;

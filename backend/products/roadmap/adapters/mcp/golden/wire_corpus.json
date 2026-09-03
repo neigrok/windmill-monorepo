@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 5,
+  "schemaVersion" : 6,
   "steps" : 
   [
     {
@@ -299,13 +299,21 @@
               "edges" : 3,
               "imported" : true,
               "introducedDiagnostics" : [],
+              "keptEdgeCount" : 0,
+              "keptEdges" : [],
               "kindCollisions" : [],
               "kinds" : 0,
               "newKinds" : 0,
               "newNodes" : 2,
               "nodeCollisions" : [],
               "nodes" : 2,
-              "seq" : 10
+              "prerequisiteMode" : "merge",
+              "seq" : 10,
+              "tombstoned" : 
+              {
+                "edges" : 0,
+                "nodes" : 0
+              }
             },
             "type" : "text"
           }
@@ -326,6 +334,8 @@
             {
               "dryRun" : true,
               "edges" : 0,
+              "keptEdgeCount" : 0,
+              "keptEdges" : [],
               "kindCollisions" : [],
               "kinds" : 0,
               "newKinds" : 0,
@@ -334,7 +344,14 @@
               [
                 "root"
               ],
-              "nodes" : 1
+              "nodes" : 1,
+              "prerequisiteMode" : "merge",
+              "tombstone" : [],
+              "tombstoned" : 
+              {
+                "edges" : 0,
+                "nodes" : 0
+              }
             },
             "type" : "text"
           }
@@ -357,12 +374,15 @@
               "edges" : 0,
               "imported" : true,
               "introducedDiagnostics" : [],
+              "keptEdgeCount" : 0,
+              "keptEdges" : [],
               "kindCollisions" : [],
               "kinds" : 0,
               "newKinds" : 0,
               "newNodes" : 0,
               "nodeCollisions" : [],
               "nodes" : 0,
+              "prerequisiteMode" : "merge",
               "progress" : 
               [
                 {
@@ -375,7 +395,12 @@
               [
                 "ghost"
               ],
-              "seq" : 11
+              "seq" : 11,
+              "tombstoned" : 
+              {
+                "edges" : 0,
+                "nodes" : 0
+              }
             },
             "type" : "text"
           }
@@ -635,6 +660,7 @@
             {
               "avgInDegree" : 1.0,
               "crossBranch" : 1,
+              "crossBranchExempt" : 0,
               "edgeCount" : 5,
               "nodeCount" : 5,
               "redundant" : 0,

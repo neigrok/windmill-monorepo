@@ -816,15 +816,6 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
   return cleaned;
 }
 
-std::string quotedList(const std::vector<std::string>& names) {
-  std::string out;
-  for (const std::string& name : names) {
-    if (!out.empty()) out += ", ";
-    out += "\"" + name + "\"";
-  }
-  return out;
-}
-
 // One `nodeId` (or its `id` alias) or a `nodeIds` list, never both, never neither.
 std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<NodeId>& out) {
   const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
