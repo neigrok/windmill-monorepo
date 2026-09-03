@@ -115,10 +115,14 @@ create table if not exists tree_kinds (
   label_hlc       text not null default '',
   description     text not null default '',
   description_hlc text not null default '',
+  cross_branch_exempt     boolean not null default false,
+  cross_branch_exempt_hlc text not null default '',
   rank            double precision not null default 0,
   rank_hlc        text not null default '',
   primary key (tree_id, kind_id)
 );
+alter table tree_kinds add column if not exists cross_branch_exempt boolean not null default false;
+alter table tree_kinds add column if not exists cross_branch_exempt_hlc text not null default '';
 
 -- The unfurl card served by GET /og/:id.png. No FK to trees: addressed by tree id and read behind
 -- the tree's own visibility gate.

@@ -68,3 +68,49 @@ TEST(health_skips_the_redundant_pass_when_the_edges_blow_the_budget) {
   CHECK_EQ(health.edgeCount, 19900);
   CHECK_EQ(health.redundant, 0);
 }
+
+static NodeSpec colored(const char* id, NodeColor color, std::vector<NodeId> prereqs) {
+  NodeSpec node = spec(id, std::move(prereqs));
+  node.color = color;
+  return node;
+}
+
+// a(sky) -> b(sky), a -> c(plum), c -> d(plum), b -> d: d's trunk parent is c, so b -> d is the
+// one edge joining two colour-derived branches.
+static TreeData twoBranches(bool reviewExempt) {
+  TreeData data;
+  data.id = TreeId{std::string("t")};
+  data.title = "T";
+  data.nodes = {
+    colored("a", NodeColor::sky, {}),
+    colored("b", NodeColor::sky, {nid("a")}),
+    colored("c", NodeColor::plum, {nid("a")}),
+    colored("d", NodeColor::plum, {nid("c"), nid("b")}),
+  };
+  data.kinds = {Kind{KindId{std::string("build")}, NodeColor::sky, "Build", "", false},
+                Kind{KindId{std::string("review")}, NodeColor::plum, "Review", "", reviewExempt}};
+  return data;
+}
+
+TEST(health_counts_an_edge_between_colour_branches_as_cross_branch) {
+  Health health = TreeHealth::assess(SkillTree(twoBranches(false)));
+  CHECK_EQ(health.edgeCount, 4);
+  CHECK_EQ(health.crossBranch, 1);
+  CHECK_EQ(health.crossBranchExempt, 0);
+  CHECK_EQ(health.redundant, 0);
+  CHECK_EQ(health.score, 85);
+}
+
+TEST(health_leaves_an_edge_touching_an_exempt_kind_out_of_the_cross_branch_count) {
+  Health health = TreeHealth::assess(SkillTree(twoBranches(true)));
+  CHECK_EQ(health.edgeCount, 4);
+  CHECK_EQ(health.crossBranch, 0);
+  CHECK_EQ(health.crossBranchExempt, 1);
+  CHECK_EQ(health.score, 100);
+
+  TreeData skySide = twoBranches(false);  // the sky endpoint of b -> d is enough on its own
+  skySide.kinds[0].crossBranchExempt = true;
+  Health either = TreeHealth::assess(SkillTree(skySide));
+  CHECK_EQ(either.crossBranch, 0);
+  CHECK_EQ(either.crossBranchExempt, 1);
+}

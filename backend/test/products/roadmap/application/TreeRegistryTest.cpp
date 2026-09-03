@@ -108,11 +108,11 @@ TEST(create_with_a_requested_id_plants_an_empty_tree_with_the_default_legend_at_
   const Hlc genesis{1, 0, "genesis"};
   LegendState expected;
   expected.kinds.push_back(KindStateEntry{KindId{"build"}, genesis, Hlc{}, NodeColor::terracotta,
-                                          genesis, "Build", genesis, "Things you make", genesis, 0, genesis});
+                                          genesis, "Build", genesis, "Things you make", genesis, false, genesis, 0, genesis});
   expected.kinds.push_back(KindStateEntry{KindId{"learn"}, genesis, Hlc{}, NodeColor::olive,
-                                          genesis, "Learn", genesis, "Things you figure out", genesis, 1, genesis});
+                                          genesis, "Learn", genesis, "Things you figure out", genesis, false, genesis, 1, genesis});
   expected.kinds.push_back(KindStateEntry{KindId{"milestone"}, genesis, Hlc{}, NodeColor::gold,
-                                          genesis, "Milestone", genesis, "Moments that matter", genesis, 2, genesis});
+                                          genesis, "Milestone", genesis, "Moments that matter", genesis, false, genesis, 2, genesis});
   CHECK(stored.legend == expected);
 }
 

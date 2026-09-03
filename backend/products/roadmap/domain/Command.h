@@ -59,9 +59,11 @@ struct PruneDangling {};
 // Legend commands, on the same op log / undo / broadcast machinery as the node/edge commands.
 // RecolorKind is atomic: it swaps a kind's hue *and* repaints every node wearing the old hue.
 struct RenameKind { KindId id; std::string label; };
-struct DescribeKind { KindId id; std::string description; };
-// A kind's label and description may be seeded inline at creation, so a legend entry lands in one op.
-struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; };
+// Each register DescribeKind carries is written; one it leaves unset keeps the kind's value.
+struct DescribeKind { KindId id; std::optional<std::string> description; std::optional<bool> crossBranchExempt; };
+// A kind's label, description and cross-branch exemption may be seeded inline at creation, so a
+// legend entry lands in one op.
+struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; bool crossBranchExempt = false; };
 struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };

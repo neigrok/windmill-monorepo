@@ -162,9 +162,9 @@ treated as internal and is not limited.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
-| read | `get_tree` | title + nodes (label, icon, color, position, description, links) + edges + seq |
+| read | `get_tree` | title + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
-| read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG) |
+| read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed / in-progress node ids |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
@@ -173,7 +173,7 @@ treated as internal and is not limited.
 | edit | `connect` · `disconnect` · `reconnect` | prerequisite-edge edits |
 | edit | `delete_node` · `tidy` · `prune` | tombstone / transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame |
-| legend | `add_kind` (inline label+description) · `rename_kind` · `describe_kind` · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
+| legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
@@ -200,8 +200,26 @@ tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
   no marks: roots available, the rest locked. `find_nodes` takes `state` as a filter too, ANDed
   with the rest and applied after the ranked selection but before the page, so `count` and the
   cursor speak of the filtered set.
-- **`summary` is a projection of `description`** — its opening 200 characters, cut at a word and
+- **`summary` is a projection of `description`** — its opening 200 characters (Unicode code
+  points, so a CJK description is cut at 200 characters, not 200 bytes), cut at a word and
   ellipsized when anything was cut.
+- **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
+  node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
+
+## Edges and health
+
+- **`get_tree {includeEdges: true}`** answers a top-level `edges: [{from, to}]` of every live edge
+  in the tree — the same whole list on every page, independent of node paging, so ask for it once.
+  A tree past the reachability budget (`withinReachabilityBudget`, `domain/LooseGraph.h`: 1500
+  nodes, 6000 edges, 3M nodes×edges) answers `edgesOmitted` with the counts instead of a cut list.
+- **Branches derive from colour.** `TrunkTree` elects each node's trunk parent (same-hue parents
+  win) and a node's branch is the run of same-hue trunk parents above it, so an edge joining two
+  hues is `crossBranch` in `get_health`, 60% of the score. A legend kind marked
+  `crossBranchExempt` (on `add_kind` or `describe_kind`, read through `kindFields`) takes every
+  edge touching one of its nodes out of that count; `get_health` reports those as
+  `crossBranchExempt` beside `crossBranch`, and they weigh nothing. The flag is a kind register
+  like `label` and `description` — its own LWW stamp, carried on the lattice, the document codec
+  and `tree_kinds` — and `import_subgraph` round-trips it on `kinds[]`.
 
 ## Bulk
 

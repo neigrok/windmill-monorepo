@@ -40,8 +40,15 @@ Health TreeHealth::assess(const SkillTree& tree) {
   health.nodeCount = static_cast<int>(tree.nodes().size());
   health.edgeCount = static_cast<int>(tree.edges().size());
 
+  std::set<NodeColor> exemptHues;
+  for (const Kind& kind : tree.kinds())
+    if (kind.crossBranchExempt) exemptHues.insert(kind.hue);
   for (const Edge& edge : tree.edges()) {
-    if (tree.trunk().edgeKind(edge.from, edge.to) == EdgeKind::cross_branch) ++health.crossBranch;
+    if (tree.trunk().edgeKind(edge.from, edge.to) != EdgeKind::cross_branch) continue;
+    const bool exempt = exemptHues.count(tree.nodeById(edge.from).color) ||
+                        exemptHues.count(tree.nodeById(edge.to).color);
+    if (exempt) ++health.crossBranchExempt;
+    else ++health.crossBranch;
   }
   // Bounded by the work, never by nodes alone: the pass that fills this in is a transitive
   // closure, and a tree wide in edges is the expensive one (domain/LooseGraph.h).

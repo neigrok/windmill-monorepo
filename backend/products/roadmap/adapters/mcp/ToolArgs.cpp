@@ -106,6 +106,12 @@ std::optional<std::string> optionalNumber(const Json::Value& value, const std::s
   return std::nullopt;
 }
 
+std::optional<std::string> optionalBool(const Json::Value& value, const std::string& path) {
+  if (value.isNull()) return std::nullopt;
+  if (!value.isBool()) return wrongType(path, "a boolean", value);
+  return std::nullopt;
+}
+
 std::optional<std::string> requireOneOf(const Json::Value& value, const std::string& path,
                                         const std::vector<const char*>& legal) {
   if (value.isNull()) return missing(path) + ", one of " + set(legal);

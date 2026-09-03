@@ -44,6 +44,7 @@ std::optional<std::string> optionalString(const Json::Value& value, const std::s
                                           std::size_t limit = 0);
 std::optional<std::string> requireNumber(const Json::Value& value, const std::string& path);
 std::optional<std::string> optionalNumber(const Json::Value& value, const std::string& path);
+std::optional<std::string> optionalBool(const Json::Value& value, const std::string& path);
 std::optional<std::string> requireOneOf(const Json::Value& value, const std::string& path,
                                         const std::vector<const char*>& legal);
 std::optional<std::string> optionalOneOf(const Json::Value& value, const std::string& path,

@@ -9,7 +9,7 @@ using namespace wm::test;
 namespace {
 
 Json::Value everyNodeField() {
-  return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
+  return list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
                "seedStatus", "state", "summary", "description", "links"});
 }
 
@@ -876,7 +876,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
                                               "order", "position", "prerequisites", "seedStatus",
-                                              "state", "status", "summary"}));
+                                              "state", "status", "summary"}));  // no kind wears plum
   CHECK_EQ(b["id"].asString(), std::string("b"));
   CHECK_EQ(b["label"].asString(), std::string("B"));
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
@@ -928,23 +928,30 @@ TEST(mcp_summary_is_the_descriptions_opening_and_says_when_it_was_cut) {
   CHECK_FALSE(nodes[1].isMember("description"));
 }
 
-TEST(mcp_summary_never_cuts_inside_a_multibyte_character) {
+TEST(mcp_summary_budget_is_200_code_points_not_bytes) {
   Harness h;
   std::string cjk;
-  for (int i = 0; i < 120; ++i) cjk += "\u5b57";  // 360 bytes of 字
+  for (int i = 0; i < 260; ++i) cjk += "\u5b57";  // 260 characters of 字, 780 bytes, no word boundary
   Json::Value annotated = node("cjk", "CJK");
   annotated["description"] = cjk;
   h.call("create_node", annotated);
+  std::string accented;
+  for (int i = 0; i < 150; ++i) accented += "\u00e9 ";  // 300 characters, 450 bytes, a word every two
+  Json::Value worded = node("worded", "Worded");
+  worded["description"] = accented;
+  h.call("create_node", worded);
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "summary"});
-  const std::string summary = body(h.call("get_tree", args))["tree"]["nodes"][0]["summary"].asString();
-  const std::string ellipsis = "\u2026";
-  const std::string head = summary.substr(0, summary.size() - ellipsis.size());
-  CHECK_EQ(summary.substr(summary.size() - ellipsis.size()), ellipsis);
-  CHECK_EQ(head.size() % 3, 0u);
-  CHECK_EQ(head.size(), 198u);                                // the last whole one under 200
-  CHECK_EQ(cjk.rfind(head, 0), 0u);
+  const Json::Value nodes = body(h.call("get_tree", args))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 2u);
+  std::string wholeCharacters;
+  for (int i = 0; i < 200; ++i) wholeCharacters += "\u5b57";
+  CHECK_EQ(nodes[0]["summary"].asString(), wholeCharacters + "\u2026");
+  CHECK_EQ(nodes[0]["summary"].asString().size(), 603u);
+  std::string atAWord;
+  for (int i = 0; i < 99; ++i) atAWord += "\u00e9 ";
+  CHECK_EQ(nodes[1]["summary"].asString(), atAWord + "\u00e9\u2026");
 }
 
 TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
@@ -976,7 +983,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult misspelled = h.call("find_nodes", args);
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
-           std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
+           std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, kind, order, "
                        "prerequisites, position, status, seedStatus, state, summary, description, links}"));
 
   Json::Value kindArgs(Json::objectValue);
@@ -984,7 +991,8 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult wrongVocabulary = h.call("get_tree", kindArgs);
   CHECK(wrongVocabulary.isError);
   CHECK_EQ(message(wrongVocabulary),
-           std::string("get_tree: kindFields[0] \"color\" is not one of {id, hue, label, description}"));
+           std::string("get_tree: kindFields[0] \"color\" is not one of {id, hue, label, description, "
+                       "crossBranchExempt}"));
 
   Json::Value progressArgs(Json::objectValue);
   progressArgs["fields"] = list({"nodes"});
@@ -1344,4 +1352,204 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
   imported["nodes"] = nodes;
   CHECK_EQ(introduced(body(h.call("import_subgraph", imported))),
            (std::vector<std::string>{"dangling edge \"nowhere\" -> \"c\""}));
+}
+
+namespace {
+
+Json::Value edge(const char* from, const char* to) {
+  Json::Value e(Json::objectValue);
+  e["from"] = from;
+  e["to"] = to;
+  return e;
+}
+
+Json::Value kindArgs(const char* id, const char* hue) {
+  Json::Value k(Json::objectValue);
+  k["id"] = id;
+  k["hue"] = hue;
+  return k;
+}
+
+Json::Value coloredNode(const char* id, const char* color, std::vector<const char*> prerequisites) {
+  Json::Value n = node(id, id);
+  n["color"] = color;
+  if (!prerequisites.empty()) n["prerequisites"] = list(prerequisites);
+  return n;
+}
+
+// a(sky) -> b(sky), a -> c(plum), c -> d(plum), b -> d: d's trunk parent is c, so b -> d joins two
+// colour-derived branches and is the one cross-branch edge.
+void plantTwoBranches(Harness& h) {
+  h.call("add_kind", kindArgs("build", "sky"));
+  Json::Value review = kindArgs("review", "plum");
+  review["description"] = "looking back";
+  h.call("add_kind", review);
+  h.call("create_node", coloredNode("a", "sky", {}));
+  h.call("create_node", coloredNode("b", "sky", {"a"}));
+  h.call("create_node", coloredNode("c", "plum", {"a"}));
+  h.call("create_node", coloredNode("d", "plum", {"c", "b"}));
+}
+
+Json::Value exemptions(Harness& h) {
+  Json::Value args(Json::objectValue);
+  args["kindFields"] = list({"id", "crossBranchExempt"});
+  return body(h.call("get_tree", args))["tree"]["kinds"];
+}
+
+}
+
+TEST(mcp_include_edges_lists_every_live_edge_and_none_of_the_tombstoned) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", coloredNode("b", "sky", {"a"}));
+  h.call("create_node", coloredNode("c", "sky", {"a", "b"}));
+  h.call("create_node", coloredNode("d", "sky", {"c"}));
+  CHECK_FALSE(h.call("disconnect", edge("a", "c")).isError);  // tombstoned edge
+  CHECK_FALSE(h.call("delete_node", with("nodeId", "d")).isError);  // tombstoned node takes c -> d with it
+
+  Json::Value expected(Json::arrayValue);
+  expected.append(edge("a", "b"));
+  expected.append(edge("b", "c"));
+
+  CHECK_FALSE(body(h.call("get_tree", kNoArgs)).isMember("edges"));
+
+  Json::Value args(Json::objectValue);
+  args["includeEdges"] = true;
+  args["limit"] = 1;
+  const Json::Value firstPage = body(h.call("get_tree", args));
+  CHECK_EQ(keys(firstPage), (std::vector<std::string>{"count", "edges", "nextCursor", "seq", "tree"}));
+  CHECK_EQ(firstPage["tree"]["nodes"].size(), 1u);
+  CHECK_EQ(dump(firstPage["edges"]), dump(expected));
+
+  args["cursor"] = firstPage["nextCursor"].asString();
+  const Json::Value secondPage = body(h.call("get_tree", args));
+  CHECK_EQ(dump(secondPage["edges"]), dump(expected));  // the whole list on every page
+
+  args["includeEdges"] = "yes";
+  CHECK_EQ(message(h.call("get_tree", args)),
+           std::string("get_tree: argument \"includeEdges\" must be a boolean, got string"));
+}
+
+TEST(mcp_include_edges_says_so_instead_of_cutting_a_tree_past_the_listing_budget) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  for (int i = 0; i < 1501; ++i) {
+    const std::string id = "n" + std::to_string(i);
+    nodes.append(node(id.c_str(), id.c_str()));
+  }
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = nodes;
+  CHECK_FALSE(h.call("import_subgraph", imported).isError);
+
+  Json::Value args(Json::objectValue);
+  args["includeEdges"] = true;
+  args["limit"] = 1;
+  const Json::Value out = body(h.call("get_tree", args));
+  CHECK_EQ(keys(out), (std::vector<std::string>{"count", "edgesOmitted", "nextCursor", "seq", "tree"}));
+  CHECK_EQ(out["edgesOmitted"].asString(),
+           std::string("this tree holds 1501 nodes and 0 live edges, past the budget one reply lists edges "
+                       "within — page get_tree with fields [\"id\", \"prerequisites\"] instead."));
+}
+
+TEST(mcp_kind_joins_a_nodes_color_to_the_legend_and_is_omitted_when_no_kind_wears_it) {
+  Harness h;
+  h.call("add_kind", kindArgs("frontend", "sky"));
+  h.call("create_node", coloredNode("a", "sky", {}));
+  h.call("create_node", coloredNode("b", "brick", {}));
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "kind"});
+  const Json::Value nodes = body(h.call("get_tree", args))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 2u);
+  CHECK_EQ(keys(nodes[0]), (std::vector<std::string>{"id", "kind"}));
+  CHECK_EQ(nodes[0]["kind"].asString(), std::string("frontend"));
+  CHECK_EQ(keys(nodes[1]), (std::vector<std::string>{"id"}));
+
+  args["query"] = "b";
+  const Json::Value unclaimed = body(h.call("find_nodes", args))["nodes"];
+  REQUIRE_EQ(unclaimed.size(), 1u);
+  CHECK_EQ(keys(unclaimed[0]), (std::vector<std::string>{"id"}));
+  args["query"] = "a";
+  const Json::Value claimed = body(h.call("find_nodes", args))["nodes"];
+  REQUIRE_EQ(claimed.size(), 1u);
+  CHECK_EQ(claimed[0]["kind"].asString(), std::string("frontend"));
+}
+
+TEST(mcp_describe_kind_flips_the_exemption_and_get_health_skips_those_edges) {
+  Harness h;
+  plantTwoBranches(h);
+
+  Json::Value coupled = body(h.call("get_health", kNoArgs));
+  CHECK_EQ(keys(coupled), (std::vector<std::string>{"avgInDegree", "crossBranch", "crossBranchExempt",
+                                                     "edgeCount", "nodeCount", "redundant", "score"}));
+  CHECK_EQ(coupled["edgeCount"].asInt(), 4);
+  CHECK_EQ(coupled["crossBranch"].asInt(), 1);
+  CHECK_EQ(coupled["crossBranchExempt"].asInt(), 0);
+  CHECK_EQ(coupled["score"].asInt(), 85);
+  Json::Value before = exemptions(h);
+  CHECK_EQ(dump(before), std::string("[{\"crossBranchExempt\":false,\"id\":\"build\"},"
+                                     "{\"crossBranchExempt\":false,\"id\":\"review\"}]"));
+
+  Json::Value flip(Json::objectValue);
+  flip["id"] = "review";
+  flip["crossBranchExempt"] = true;
+  CHECK_FALSE(h.call("describe_kind", flip).isError);
+  Json::Value exempt = body(h.call("get_health", kNoArgs));
+  CHECK_EQ(exempt["crossBranch"].asInt(), 0);
+  CHECK_EQ(exempt["crossBranchExempt"].asInt(), 1);
+  CHECK_EQ(exempt["score"].asInt(), 100);
+  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":false,\"id\":\"build\"},"
+                                            "{\"crossBranchExempt\":true,\"id\":\"review\"}]"));
+
+  Json::Value described(Json::objectValue);
+  described["kindFields"] = list({"id", "description"});
+  CHECK_EQ(body(h.call("get_tree", described))["tree"]["kinds"][1]["description"].asString(),
+           std::string("looking back"));  // the flag write left the description alone
+
+  // Either endpoint: the sky side of b -> d is enough once build is the exempt kind instead.
+  flip["crossBranchExempt"] = false;
+  CHECK_FALSE(h.call("describe_kind", flip).isError);
+  flip["id"] = "build";
+  flip["crossBranchExempt"] = true;
+  CHECK_FALSE(h.call("describe_kind", flip).isError);
+  Json::Value otherSide = body(h.call("get_health", kNoArgs));
+  CHECK_EQ(otherSide["crossBranch"].asInt(), 0);
+  CHECK_EQ(otherSide["crossBranchExempt"].asInt(), 1);
+
+  CHECK_EQ(message(h.call("describe_kind", with("id", "build"))),
+           std::string("describe_kind: nothing to set — pass \"description\", \"crossBranchExempt\", or both."));
+  flip["crossBranchExempt"] = "yes";
+  CHECK_EQ(message(h.call("describe_kind", flip)),
+           std::string("describe_kind: argument \"crossBranchExempt\" must be a boolean, got string"));
+}
+
+TEST(mcp_add_kind_seeds_the_exemption_inline_and_import_subgraph_round_trips_it) {
+  Harness h;
+  Json::Value drill = kindArgs("drill", "gold");
+  drill["crossBranchExempt"] = true;
+  CHECK_FALSE(h.call("add_kind", drill).isError);
+  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":true,\"id\":\"drill\"}]"));
+
+  Json::Value wrong = kindArgs("x", "sky");
+  wrong["crossBranchExempt"] = "yes";
+  CHECK_EQ(message(h.call("add_kind", wrong)),
+           std::string("add_kind: argument \"crossBranchExempt\" must be a boolean, got string"));
+
+  Json::Value kinds(Json::arrayValue);
+  Json::Value drillAgain = kindArgs("drill", "gold");
+  drillAgain["crossBranchExempt"] = false;
+  kinds.append(drillAgain);
+  Json::Value review = kindArgs("review", "plum");
+  review["crossBranchExempt"] = true;
+  kinds.append(review);
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = Json::Value(Json::arrayValue);
+  imported["kinds"] = kinds;
+  CHECK_FALSE(h.call("import_subgraph", imported).isError);
+  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":false,\"id\":\"drill\"},"
+                                            "{\"crossBranchExempt\":true,\"id\":\"review\"}]"));
+
+  imported["kinds"][1]["crossBranchExempt"] = "yes";
+  CHECK_EQ(message(h.call("import_subgraph", imported)),
+           std::string("import_subgraph: argument \"kinds[1].crossBranchExempt\" must be a boolean, got string"));
 }
