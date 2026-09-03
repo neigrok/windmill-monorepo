@@ -63,6 +63,7 @@ Seq TreeRoom::applyCommand(const Command& command, std::uint64_t nowMs, const Us
 }
 
 Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor) {
+  if (commands.empty()) return head_;  // nothing to apply mints no seq, logs no op, broadcasts nothing
   Hlc stamp = clock_.tick(nowMs);  // one stamp for the whole frame, as a graft takes one
   std::string frameId = "srv-" + toString(stamp);  // unique: the clock mints monotone stamps
   appliedOpIds_.insert(frameId);
@@ -75,11 +76,10 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   produced.frameId = frameId;
   produced.actor = stamp.actor;
   produced.intent = SubgraphIntent::live;
-  // The op log still powers the activity feed: a lone command is its own deed, a batch is
-  // summarised by its frame's headline, exactly as a joined frame is.
-  std::optional<Command> deed =
-      commands.size() == 1 ? std::optional<Command>(commands.front()) : headline(produced.graph, produced.legend);
-  if (deed) ops_.append(id_, AppliedOp{head_, frameId, *deed, stamp, actor});
+  // The op row is the whole frame: a lone command as itself, a batch as one Batch, so replaying
+  // the log tail past a stored head lands exactly what this call did.
+  const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
+  ops_.append(id_, AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;

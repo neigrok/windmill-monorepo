@@ -78,6 +78,17 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     if (!hue) return std::nullopt;
     return RecolorKind{kindId(payload, "id"), *hue};
   }
+  if (kind == "Batch") {
+    // A member that does not decode makes the whole row undecodable: a half-read batch would
+    // replay as a frame the tree never saw.
+    Batch batch;
+    for (const Json::Value& member : payload["commands"]) {
+      std::optional<Command> decoded = commandFromJson(member["kind"].asString(), member["payload"]);
+      if (!decoded) return std::nullopt;
+      batch.commands.push_back(std::move(*decoded));
+    }
+    return batch;
+  }
   return std::nullopt;
 }
 
@@ -100,6 +111,7 @@ std::string commandKind(const Command& command) {
     [](const RemoveKind&) { return std::string("RemoveKind"); },
     [](const ReorderKinds&) { return std::string("ReorderKinds"); },
     [](const RecolorKind&) { return std::string("RecolorKind"); },
+    [](const Batch&) { return std::string("Batch"); },
   }, command);
 }
 
@@ -157,6 +169,16 @@ Json::Value commandPayload(const Command& command) {
       p["order"] = order;
     },
     [&](const RecolorKind& c) { p["id"] = c.id.str(); p["hue"] = std::string(toString(c.hue)); },
+    [&](const Batch& c) {
+      Json::Value commands(Json::arrayValue);
+      for (const Command& member : c.commands) {
+        Json::Value row(Json::objectValue);
+        row["kind"] = commandKind(member);
+        row["payload"] = commandPayload(member);
+        commands.append(row);
+      }
+      p["commands"] = commands;
+    },
   }, command);
   return p;
 }

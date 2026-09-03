@@ -296,15 +296,15 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
     if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
     out["tree"] = document;
-    // The edge list is whole or absent, never cut: past the reachability budget the reply says so.
+    // The edge list is whole or absent, never cut: past kMaxListedEdges the reply says so.
     if (args["includeEdges"].asBool()) {
       const std::size_t edgeCount = liveEdgeCount(data);
-      if (withinReachabilityBudget(data.nodes.size(), edgeCount)) {
+      if (edgeCount <= kMaxListedEdges) {
         out["edges"] = edgeList(data);
       } else {
-        out["edgesOmitted"] = "this tree holds " + std::to_string(data.nodes.size()) + " nodes and " +
-                              std::to_string(edgeCount) + " live edges, past the budget one reply lists "
-                              "edges within — page get_tree with fields [\"id\", \"prerequisites\"] instead.";
+        out["edgesOmitted"] = "this tree holds " + std::to_string(edgeCount) + " live edges, past the " +
+                              std::to_string(kMaxListedEdges) + " one reply lists — page get_tree with "
+                              "fields [\"id\", \"prerequisites\"] instead.";
       }
     }
     return ToolResult::json(out);
@@ -972,24 +972,23 @@ ToolResult disconnectEdges(RoomRegistry& registry, const TreeId& tree, const Jso
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
 
+    // Only a present edge becomes a RemoveEdge: a tombstone for an edge the lattice never held
+    // would be a phantom entry, persisted, broadcast and fed for nothing.
     std::vector<Command> commands;
-    int removed = 0;
-    for (const Edge& edge : targets) {
-      commands.push_back(RemoveEdge{edge.from, edge.to});
-      if (room.hasEdge(edge.from, edge.to)) ++removed;
-    }
+    for (const Edge& edge : targets)
+      if (room.hasEdge(edge.from, edge.to)) commands.push_back(RemoveEdge{edge.from, edge.to});
     for (const Command& command : commands)
       if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
 
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
+    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);  // an empty list leaves the head as is
     registry.persist(tree);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
-    out["removed"] = removed;
+    out["removed"] = static_cast<int>(commands.size());
     return ToolResult::json(out);
   });
 }

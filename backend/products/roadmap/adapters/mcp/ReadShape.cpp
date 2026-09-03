@@ -3,6 +3,8 @@
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 
+#include <cstdint>
+
 namespace wm {
 
 namespace {
@@ -25,11 +27,42 @@ std::size_t byteOffsetOfCodePoint(const std::string& text, std::size_t codePoint
   return std::string::npos;
 }
 
-// The budget is CODE POINTS: the head is the first kSummaryChars of them, cut back to the last
-// word boundary in its back half when there is one.
+std::uint32_t codePointAt(const std::string& text, std::size_t at) {
+  const unsigned char lead = static_cast<unsigned char>(text[at]);
+  const int length = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+  std::uint32_t value = length == 1 ? lead : lead & (0x7F >> length);
+  for (int i = 1; i < length && at + i < text.size(); ++i)
+    value = (value << 6) | (static_cast<unsigned char>(text[at + i]) & 0x3F);
+  return value;
+}
+
+// The marks that belong to the code point before them: combining diacritics, variation selectors,
+// and the zero-width joiner that glues an emoji sequence.
+bool joinsBackward(std::uint32_t codePoint) {
+  return (codePoint >= 0x0300 && codePoint <= 0x036F) || (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
+         codePoint == 0x200D;
+}
+
+// A cut at byte `cut` moved back until it lands between two code points that do not belong to one
+// grapheme: never before a combining mark or joiner, never after a joiner.
+std::size_t outsideGrapheme(const std::string& text, std::size_t cut) {
+  while (cut > 0) {
+    std::size_t previous = cut - 1;
+    while (previous > 0 && (static_cast<unsigned char>(text[previous]) & 0xC0) == 0x80) --previous;
+    const bool inside = joinsBackward(codePointAt(text, cut)) || codePointAt(text, previous) == 0x200D;
+    if (!inside) return cut;
+    cut = previous;
+  }
+  return cut;
+}
+
+// The budget is CODE POINTS: the head is the first kSummaryChars of them, backed off so the cut
+// never splits a grapheme, then cut back to the last word boundary in its back half when there is
+// one. ASCII is untouched by the grapheme rule.
 std::string summaryOf(const std::string& description) {
-  const std::size_t cut = byteOffsetOfCodePoint(description, kSummaryChars);
+  std::size_t cut = byteOffsetOfCodePoint(description, kSummaryChars);
   if (cut == std::string::npos) return description;
+  cut = outsideGrapheme(description, cut);
   std::string head = description.substr(0, cut);
   const std::size_t lastSpace = head.find_last_of(" \n\t");
   const std::size_t halfway = byteOffsetOfCodePoint(head, kSummaryChars / 2);

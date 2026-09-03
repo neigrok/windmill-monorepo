@@ -956,6 +956,32 @@ TEST(mcp_summary_budget_is_200_code_points_not_bytes) {
   CHECK_EQ(nodes[1]["summary"].asString(), atAWord + "\u00e9\u2026");
 }
 
+TEST(mcp_summary_never_cuts_inside_a_grapheme) {
+  Harness h;
+  std::string accentAtTheEdge(199, 'a');
+  accentAtTheEdge += "e\u0301 and more";  // e + combining acute is code points 200 and 201
+  Json::Value accented = node("accent", "Accent");
+  accented["description"] = accentAtTheEdge;
+  h.call("create_node", accented);
+  std::string familyAtTheEdge(196, 'a');
+  familyAtTheEdge += "\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466 and more";  // the cut lands mid-family
+  Json::Value family = node("family", "Family");
+  family["description"] = familyAtTheEdge;
+  h.call("create_node", family);
+  std::string ascii(300, 'a');
+  Json::Value plain = node("plain", "Plain");
+  plain["description"] = ascii;
+  h.call("create_node", plain);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "summary"});
+  const Json::Value nodes = body(h.call("get_tree", args))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 3u);
+  CHECK_EQ(nodes[0]["summary"].asString(), std::string(199, 'a') + "\u2026");
+  CHECK_EQ(nodes[1]["summary"].asString(), std::string(196, 'a') + "\u2026");
+  CHECK_EQ(nodes[2]["summary"].asString(), std::string(200, 'a') + "\u2026");
+}
+
 TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   Harness h;
   h.call("create_node", node("a", "A"));
@@ -1571,13 +1597,45 @@ TEST(mcp_disconnect_batch_removes_every_edge_under_one_seq_and_counts_the_presen
   CHECK_EQ(nodes[2]["prerequisites"], list({"b"}));
   CHECK(nodes[3]["prerequisites"].empty());
 
-  // The single form is the same contract with one edge, and an absent edge is a no-op there too.
+  // The single form is the same contract with one edge, and an absent edge is a no-op there too:
+  // nothing lands, so no seq is minted.
   const Json::Value single = body(h.call("disconnect", edge("b", "c")));
   CHECK_EQ(single["removed"].asInt(), 1);
   CHECK_EQ(single["seq"].asInt64(), before + 2);
   const Json::Value absent = body(h.call("disconnect", edge("b", "c")));
   CHECK(absent["applied"].asBool());
   CHECK_EQ(absent["removed"].asInt(), 0);
+  CHECK_EQ(absent["seq"].asInt64(), before + 2);
+}
+
+TEST(mcp_disconnecting_an_edge_the_tree_never_held_plants_no_tombstone) {
+  Harness h;
+  chain(h);
+  const Seq before = headOf(h);
+  const std::size_t entries = h.registry.open(tid())->exportState().edges.size();
+  CHECK_EQ(entries, 3u);
+
+  Json::Value args(Json::objectValue);
+  args["edges"] = edgeList({{"x", "y"}, {"a", "d"}, {"d", "a"}});
+  const Json::Value receipt = body(h.call("disconnect", args));
+  CHECK(receipt["applied"].asBool());
+  CHECK_EQ(receipt["removed"].asInt(), 0);
+  CHECK_EQ(receipt["seq"].asInt64(), before);
+  CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
+  CHECK_EQ(h.ops.byTree["t"].size(), static_cast<std::size_t>(before));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), static_cast<std::size_t>(before));
+
+  const Json::Value single = body(h.call("disconnect", edge("x", "y")));
+  CHECK_EQ(single["removed"].asInt(), 0);
+  CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
+
+  // A present edge among absent ones still lands, alone, as the one entry the frame touches.
+  args["edges"] = edgeList({{"x", "y"}, {"a", "b"}});
+  const Json::Value mixed = body(h.call("disconnect", args));
+  CHECK_EQ(mixed["removed"].asInt(), 1);
+  CHECK_EQ(mixed["seq"].asInt64(), before + 1);
+  CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.graph.edges.size(), 1u);
 }
 
 TEST(mcp_disconnect_refuses_neither_form_both_forms_and_a_malformed_batch) {
@@ -2084,7 +2142,7 @@ TEST(mcp_include_edges_lists_every_live_edge_and_none_of_the_tombstoned) {
            std::string("get_tree: argument \"includeEdges\" must be a boolean, got string"));
 }
 
-TEST(mcp_include_edges_says_so_instead_of_cutting_a_tree_past_the_listing_budget) {
+TEST(mcp_include_edges_is_gated_by_the_edge_count_alone_never_by_nodes) {
   Harness h;
   Json::Value nodes(Json::arrayValue);
   for (int i = 0; i < 1501; ++i) {
@@ -2099,10 +2157,10 @@ TEST(mcp_include_edges_says_so_instead_of_cutting_a_tree_past_the_listing_budget
   args["includeEdges"] = true;
   args["limit"] = 1;
   const Json::Value out = body(h.call("get_tree", args));
-  CHECK_EQ(keys(out), (std::vector<std::string>{"count", "edgesOmitted", "nextCursor", "seq", "tree"}));
-  CHECK_EQ(out["edgesOmitted"].asString(),
-           std::string("this tree holds 1501 nodes and 0 live edges, past the budget one reply lists edges "
-                       "within — page get_tree with fields [\"id\", \"prerequisites\"] instead."));
+  CHECK_EQ(keys(out), (std::vector<std::string>{"count", "edges", "nextCursor", "seq", "tree"}));
+  CHECK_EQ(out["count"].asUInt64(), 1501u);
+  CHECK(out["edges"].isArray());
+  CHECK_EQ(out["edges"].size(), 0u);
 }
 
 TEST(mcp_kind_joins_a_nodes_color_to_the_legend_and_is_omitted_when_no_kind_wears_it) {
@@ -2206,4 +2264,46 @@ TEST(mcp_add_kind_seeds_the_exemption_inline_and_import_subgraph_round_trips_it)
   imported["kinds"][1]["crossBranchExempt"] = "yes";
   CHECK_EQ(message(h.call("import_subgraph", imported)),
            std::string("import_subgraph: argument \"kinds[1].crossBranchExempt\" must be a boolean, got string"));
+}
+
+namespace {
+
+// A tree of `nodes` nodes where each node's prerequisites are the `fanIn` before it, seeded straight
+// into the repository: the shapes that decide whether one reply lists the edges.
+void seedLadder(Harness& h, int nodes, int fanIn) {
+  TreeData data;
+  data.id = tid();
+  data.title = "Ladder";
+  for (int i = 0; i < nodes; ++i) {
+    NodeSpec node;
+    node.id = nid(("n" + std::to_string(i)).c_str());
+    node.label = node.id.str();
+    node.icon = "icon";
+    for (int back = 1; back <= fanIn && i - back >= 0; ++back) node.prerequisites.push_back(nid(("n" + std::to_string(i - back)).c_str()));
+    data.nodes.push_back(std::move(node));
+  }
+  h.trees.byId["t"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{},
+                                 {"Ladder", {}}, 0, h.caller};
+}
+
+}
+
+TEST(mcp_get_tree_lists_edges_up_to_the_edge_count_alone_and_says_the_count_past_it) {
+  Harness within;
+  seedLadder(within, 1000, 4);  // 3990 edges: past the closure budget's nodes×edges, within the listing's
+  Json::Value args(Json::objectValue);
+  args["includeEdges"] = true;
+  args["limit"] = 1;
+  const Json::Value listed = body(within.call("get_tree", args));
+  CHECK_EQ(listed["count"].asUInt64(), 1000u);
+  CHECK_FALSE(listed.isMember("edgesOmitted"));
+  CHECK_EQ(listed["edges"].size(), 3990u);
+
+  Harness past;
+  seedLadder(past, 1000, 7);  // 6972 edges
+  const Json::Value omitted = body(past.call("get_tree", args));
+  CHECK_FALSE(omitted.isMember("edges"));
+  CHECK_EQ(omitted["edgesOmitted"].asString(),
+           std::string("this tree holds 6972 live edges, past the 6000 one reply lists — page get_tree with "
+                       "fields [\"id\", \"prerequisites\"] instead."));
 }

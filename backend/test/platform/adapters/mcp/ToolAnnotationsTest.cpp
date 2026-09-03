@@ -69,7 +69,7 @@ const std::vector<Row> kGym = {
     {"create_exercise", "Gym · Create exercise", false, false, true},
     {"share_session", "Gym · Share session", false, false, true},
     {"discard_session", "Gym · Discard session", false, true, true},
-    {"propose_routine_removal", "Gym · Propose routine removal", false, true, true},
+    {"propose_routine_removal", "Gym · Propose routine removal", false, false, true},  // a proposal removes nothing
     {"revoke_share", "Gym · Revoke share", false, true, true},
 };
 
@@ -113,8 +113,9 @@ void checkCatalog(const std::vector<ToolDeclaration>& catalog, const std::vector
 
     // The rules the table is written by, checked against the declaration itself.
     CHECK_EQ(wire["annotations"]["readOnlyHint"].asBool(), declared.access == Access::read);
-    if (declared.access == Access::del) CHECK(wire["annotations"]["destructiveHint"].asBool());
-    if (declared.bulkEdit) CHECK(wire["annotations"]["destructiveHint"].asBool());
+    if (declared.proposal) CHECK_FALSE(wire["annotations"]["destructiveHint"].asBool());
+    if (declared.access == Access::del && !declared.proposal) CHECK(wire["annotations"]["destructiveHint"].asBool());
+    if (declared.bulkEdit && !declared.proposal) CHECK(wire["annotations"]["destructiveHint"].asBool());
     if (declared.access == Access::read) CHECK(wire["annotations"]["idempotentHint"].asBool());
     CHECK_EQ(wire["title"].asString().rfind(std::string(productWord) + " · ", 0), std::size_t{0});
   }

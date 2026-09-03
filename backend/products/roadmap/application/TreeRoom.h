@@ -54,8 +54,9 @@ public:
   // Server-origin edit: stamped from the room clock, applied, logged, broadcast as one subgraph.
   // The frameId is minted from the (unique) stamp.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
-  // Several commands as ONE edit: one stamp, one frame, one seq, one feed deed (the frame's
-  // headline), so a reader never sees the tree between them. Admits nothing on its own.
+  // Several commands as ONE edit: one stamp, one frame, one seq, one op row (a Batch, so the log
+  // replays the whole edit), so a reader never sees the tree between them. An empty list is a
+  // no-op answering the current head. Admits nothing on its own.
   Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
 
   // Stamped from the room clock, so a by-id collision is an upsert; the graft's tombstones and

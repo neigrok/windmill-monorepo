@@ -100,6 +100,8 @@ subscriber treat it as a re-baselining graft.
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op
 log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes as one subgraph.
+`TreeRoom::applyCommands` lands several as one frame under one seq and logs them as one `Batch`
+op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
 
 `RenameNode` · `SetNodeColor` · `RepositionNode` · `CreateNode` · `AnnotateNode` · `AddEdge` ·
 `RemoveEdge` · `ReconnectEdge` · `DeleteNode` · `TransitiveReduction` · `PruneDangling` ·

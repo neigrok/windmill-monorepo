@@ -401,7 +401,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["summary"] = cappedStr("One sentence saying why this day should go — the line the lifter "
                              "reads on the card.",
                              kMaxSummaryLength);
-    tools.push_back(tool("propose_routine_removal", Access::del,
+    ToolDeclaration removal = tool("propose_routine_removal", Access::del,
         "Propose taking one whole day out of the program. THIS DELETES NOTHING. It puts that day's "
         "lines in front of the lifter as a diff of what would go, and the routine stays exactly "
         "where it is until they open it and tap Apply — and nothing on this connection can tap it "
@@ -410,7 +410,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "whatever the lifter decides, so nothing here can edit what the log says you did. YOU mint "
         "`id` and it IS the idempotency key: the same id names this one proposal for good, so a "
         "resend replays it and a different proposal needs a different id.",
-        p, {"id", "routineId"}));
+        p, {"id", "routineId"});
+    removal.proposal = true;  // the grant is delete-level; the tool mints a card and removes nothing
+    tools.push_back(std::move(removal));
   }
   {
     Json::Value p(Json::objectValue);
