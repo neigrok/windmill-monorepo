@@ -35,8 +35,9 @@ Derived read models:
 - `TrunkTree` — elects one trunk parent per node (same-kind parents win, then shallowest, then
   smallest id) and derives branch root, trunk depth, leaf weight, and `EdgeKind ∈ {trunk,
   in_branch, cross_branch}`.
-- `TreeHealth::assess(SkillTree) → Health {nodeCount, edgeCount, crossBranch, redundant,
-  avgInDegree, score}`.
+- `TreeHealth::assess(SkillTree) → Health {nodeCount, edgeCount, crossBranch, crossBranchExempt,
+  redundant, avgInDegree, score}` — an edge touching a node of a `crossBranchExempt` legend kind is
+  counted in `crossBranchExempt`, not `crossBranch`.
 
 `NodeColor ∈ {terracotta, olive, gold, brick, sky, plum}`.
 
@@ -256,7 +257,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | `trees` | title (LWW: `title_hlc` plus the `title_ms`/`title_counter` numeric split), `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present` |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp |
+| `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |

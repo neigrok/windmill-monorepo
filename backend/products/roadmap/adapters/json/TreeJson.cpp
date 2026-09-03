@@ -83,6 +83,7 @@ Json::Value toJson(const TreeData& data) {
     k["hue"] = std::string(toString(kind.hue));
     k["label"] = kind.label;
     k["description"] = kind.description;
+    if (kind.crossBranchExempt) k["crossBranchExempt"] = true;
     kinds.append(k);
   }
   root["kinds"] = kinds;
@@ -245,6 +246,8 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
       return std::nullopt;
     kind.id = KindId{kindId};
     kind.hue = parseColor(hue).value_or(NodeColor::terracotta);
+    if (!k["crossBranchExempt"].isNull() && !k["crossBranchExempt"].isBool()) return std::nullopt;
+    kind.crossBranchExempt = k["crossBranchExempt"].asBool();
     data.kinds.push_back(std::move(kind));
   }
   return data;
@@ -347,6 +350,8 @@ Json::Value toJson(const LegendState& legend) {
     k["labelAt"] = hlcText(kind.labelAt);
     k["description"] = kind.description;
     k["descriptionAt"] = hlcText(kind.descriptionAt);
+    k["crossBranchExempt"] = kind.crossBranchExempt;
+    k["crossBranchExemptAt"] = hlcText(kind.crossBranchExemptAt);
     k["rank"] = kind.rank;
     k["rankAt"] = hlcText(kind.rankAt);
     kinds.append(k);
@@ -367,6 +372,8 @@ LegendState legendStateFromJson(const Json::Value& kinds) {
     kind.labelAt = hlcFromText(k.get("labelAt", "").asString());
     kind.description = k.get("description", "").asString();
     kind.descriptionAt = hlcFromText(k.get("descriptionAt", "").asString());
+    kind.crossBranchExempt = k.get("crossBranchExempt", false).asBool();
+    kind.crossBranchExemptAt = hlcFromText(k.get("crossBranchExemptAt", "").asString());
     kind.rank = k.get("rank", 0.0).asDouble();
     kind.rankAt = hlcFromText(k.get("rankAt", "").asString());
     state.kinds.push_back(std::move(kind));

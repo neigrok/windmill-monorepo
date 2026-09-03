@@ -211,3 +211,25 @@ TEST(joining_a_delta_advances_the_receiver_to_cover_it) {
   CHECK(after.covers(Hlc{5, 0, "s"}));                 // the receiver now covers the source's writes
   CHECK(delta.coverage->covers(Hlc{5, 0, "s"}));       // and the delta's stated coverage matches
 }
+
+TEST(delta_carries_an_exemption_write_the_peer_has_not_yet_seen) {
+  Legend source = Legend::seededDefaults(at(1));
+  source.setCrossBranchExempt(kid("build"), true, at(5));
+
+  VersionVector peer;
+  peer.observe(at(3));  // covers the seed (t=1), not the exemption write (t=5)
+
+  Subgraph delta = deltaBetween(LooseGraph{}.exportState(), source.exportState(), peer);
+  REQUIRE_EQ(delta.legend.kinds.size(), 1u);
+  const KindStateEntry& kind = delta.legend.kinds[0];
+  CHECK_EQ(kind.id, kid("build"));
+  CHECK_EQ(kind.descriptionAt, Hlc{});          // covered → masked
+  CHECK_EQ(kind.crossBranchExemptAt, at(5));    // uncovered → carried on the delta
+  CHECK(kind.crossBranchExempt);
+  CHECK(delta.coverage->covers(at(5)));
+
+  Legend target = Legend::seededDefaults(at(1));
+  target.join(delta.legend);
+  CHECK(target.view(kid("build"))->crossBranchExempt);
+  CHECK(target.exportState() == source.exportState());
+}

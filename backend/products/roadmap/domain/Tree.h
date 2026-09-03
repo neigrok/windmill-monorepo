@@ -137,12 +137,14 @@ struct NodeSpec {
 };
 
 // A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and
-// orders the hues; order is generation priority.
+// orders the hues; order is generation priority. A kind marked `crossBranchExempt` keeps the edges
+// touching its nodes out of TreeHealth's cross-branch count.
 struct Kind {
   KindId id;
   NodeColor hue = NodeColor::terracotta;
   std::string label;
   std::string description;
+  bool crossBranchExempt = false;
 };
 
 struct TreeData {

@@ -25,6 +25,7 @@ public:
   const TreeId& id() const { return data_.id; }
   const std::string& title() const { return data_.title; }
   const std::vector<NodeSpec>& nodes() const { return data_.nodes; }
+  const std::vector<Kind>& kinds() const { return data_.kinds; }
   const std::vector<Edge>& edges() const { return edges_; }
   const TrunkTree& trunk() const { return trunk_; }
 

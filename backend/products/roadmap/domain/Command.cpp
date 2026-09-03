@@ -108,11 +108,15 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       for (const auto& edge : graph.danglingEdges()) graph.removeEdge(edge.from, edge.to, at);
     },
     [&](const RenameKind& c) { legend.setLabel(c.id, c.label, at); },
-    [&](const DescribeKind& c) { legend.setDescription(c.id, c.description, at); },
+    [&](const DescribeKind& c) {
+      if (c.description) legend.setDescription(c.id, *c.description, at);
+      if (c.crossBranchExempt) legend.setCrossBranchExempt(c.id, *c.crossBranchExempt, at);
+    },
     [&](const AddKind& c) {
       legend.addKind(c.id, c.hue, at);
       if (!c.label.empty()) legend.setLabel(c.id, c.label, at);
       if (!c.description.empty()) legend.setDescription(c.id, c.description, at);
+      if (c.crossBranchExempt) legend.setCrossBranchExempt(c.id, true, at);
     },
     [&](const RemoveKind& c) { legend.removeKind(c.id, at); },
     [&](const ReorderKinds& c) { legend.reorder(c.order, at); },
@@ -201,8 +205,8 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     },
     [&](const DescribeKind& c) -> std::optional<std::string> {
       if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
-      if (c.description.size() > kMaxKindDescriptionLength)
-        return "description is " + std::to_string(c.description.size()) + " characters, max " +
+      if (c.description && c.description->size() > kMaxKindDescriptionLength)
+        return "description is " + std::to_string(c.description->size()) + " characters, max " +
                std::to_string(kMaxKindDescriptionLength);
       return std::nullopt;
     },
@@ -368,7 +372,9 @@ std::optional<Command> headline(const GraphState& graph, const LegendState& lege
   for (const KindStateEntry& k : legend.kinds)
     if (k.labelAt.isSet()) return RenameKind{k.id, k.label};
   for (const KindStateEntry& k : legend.kinds)
-    if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description};
+    if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description, std::nullopt};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.crossBranchExemptAt.isSet()) return DescribeKind{k.id, std::nullopt, k.crossBranchExempt};
   for (const KindStateEntry& k : legend.kinds)
     if (k.rankAt.isSet()) return ReorderKinds{};
   for (const NodeStateEntry& n : graph.nodes)

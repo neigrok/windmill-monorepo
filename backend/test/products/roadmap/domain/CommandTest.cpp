@@ -571,3 +571,36 @@ TEST(admit_title_bounds_the_register_a_frame_would_set) {
   CHECK(refusal->verdict == Admission::Verdict::malformed);
   CHECK_EQ(refusal->reason, std::string("the title is 40000 characters, max 200"));
 }
+
+TEST(describe_kind_writes_only_the_registers_it_carries) {
+  LooseGraph g;
+  Legend legend = Legend::seededDefaults(at(1));
+
+  merge(g, legend, Command{DescribeKind{kid("build"), std::nullopt, true}}, at(2));
+  Kind flagged = *legend.view(kid("build"));
+  CHECK(flagged.crossBranchExempt);
+  CHECK_EQ(flagged.description, std::string("Things you make"));
+
+  merge(g, legend, Command{DescribeKind{kid("build"), std::string("Made things"), std::nullopt}}, at(3));
+  Kind described = *legend.view(kid("build"));
+  CHECK(described.crossBranchExempt);
+  CHECK_EQ(described.description, std::string("Made things"));
+  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, at(2));
+
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::nullopt, false}}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt, true}}),
+           std::optional<std::string>("no kind \"nope\" in this legend"));
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y'), true}}),
+           std::optional<std::string>("description is 81 characters, max 80"));
+}
+
+TEST(add_kind_seeds_the_exemption_inline) {
+  LooseGraph g;
+  Legend legend;
+  merge(g, legend, Command{AddKind{kid("drill"), NodeColor::gold, "Drill", "", true}}, at(1));
+  merge(g, legend, Command{AddKind{kid("build"), NodeColor::sky, "Build", ""}}, at(2));
+  CHECK(legend.view(kid("drill"))->crossBranchExempt);
+  CHECK_FALSE(legend.view(kid("build"))->crossBranchExempt);
+  CHECK_EQ(legend.exportKind(kid("drill"))->crossBranchExemptAt, at(1));
+  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, Hlc{});  // false was never written
+}

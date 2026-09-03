@@ -222,23 +222,32 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
-        "the tree. Ask for description, links, position, order or icon when you need them; `status` "
+        "the tree. Ask for description, links, position, order or icon when you need them; `kind` is "
+        "the legend kind id whose hue the node wears, omitted on a node no kind claims; `status` "
         "is your own mark on each node (active/complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · active · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters, "
-        "cut at a word, ellipsized when cut) — ask for it to skim a whole tree's notes, and for "
-        "`description` when you need one node's whole text.",
+        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
+        "whole tree's notes, and for `description` when you need one node's whole text.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
-        "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
+        "Which fields each legend kind carries. Default {id, hue, label}; `crossBranchExempt` is "
+        "whether get_health leaves the kind's edges out of its cross-branch count.",
+        kindVocabulary().names());
+    p["includeEdges"] = boolean(
+        "Also answer a top-level `edges` array of EVERY live edge in the tree as {from, to}, "
+        "independent of node paging — the same list on whichever page you ask it, so ask once. "
+        "A tree past the listing budget (1500 nodes, 6000 edges) answers `edgesOmitted` saying so "
+        "instead of a cut list. Default false.");
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.push_back(tool("get_tree", Access::read,
         "Read a roadmap's current document — title, its nodes and their prerequisite edges, and the "
         "ordered legend `kinds` — with the tree's op sequence number. Call this before editing to "
         "learn the node ids the other tools take, and the legend a node's color refers to. `count` "
-        "is the tree's whole node count; when it exceeds one page a `nextCursor` comes back with it.",
+        "is the tree's whole node count; when it exceeds one page a `nextCursor` comes back with it. "
+        "`includeEdges: true` adds the whole tree's edge list beside the page.",
         p, {"treeId"}));
   }
   {
@@ -255,8 +264,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     tools.push_back(tool("get_health", Access::read,
         "Tidiness metrics for a structurally-valid roadmap: node/edge counts, cross-branch "
-        "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score. "
-        "Fails if the tree currently has cycles/dangling edges — fix those first.",
+        "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score "
+        "(100 × (1 − 0.6 × crossBranch/edges − 0.4 × redundant/edges)). Branches derive from "
+        "colour: a node's branch is the run of same-hue trunk parents above it, so an edge joining "
+        "two hues counts as `crossBranch` — unless either endpoint wears a kind marked "
+        "`crossBranchExempt` (add_kind / describe_kind), in which case it is counted in "
+        "`crossBranchExempt` instead and weighs nothing. Fails if the tree currently has "
+        "cycles/dangling edges — fix those first.",
         p, {"treeId"}));
   }
   {
@@ -284,12 +298,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
         "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
+        "`kind` is the legend kind id whose hue the node wears, omitted on a node no kind claims; "
         "`status` is your own mark on each node (active/complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · active · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters, "
-        "cut at a word, ellipsized when cut) — ask for it to skim a whole tree's notes, and for "
-        "`description` when you need one node's whole text.",
+        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
+        "whole tree's notes, and for `description` when you need one node's whole text.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
@@ -450,10 +465,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["label"] = cappedStr("Optional label — set inline so the kind lands in one op.", kMaxKindLabelLength);
     p["description"] = cappedStr("Optional description — the generator's sorting brief.",
                                  kMaxKindDescriptionLength);
+    p["crossBranchExempt"] = boolean(
+        "Optional, default false: get_health leaves every edge touching a node of this kind out of "
+        "its cross-branch count — for a kind whose whole point is to interleave with the others.");
     tools.push_back(tool("add_kind", Access::write,
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
-        "legend must have fewer than 6 kinds. `label` and `description` may be set inline, or later "
-        "with rename_kind / describe_kind.",
+        "legend must have fewer than 6 kinds. `label`, `description` and `crossBranchExempt` may be "
+        "set inline, or later with rename_kind / describe_kind.",
         p, {"treeId", "id", "hue"}));
   }
   {
@@ -472,7 +490,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["kindId"] = kindHandleAlias();
     p["description"] = cappedStr("The kind's description (plain text; the generator's sorting brief).",
                                  kMaxKindDescriptionLength);
-    tools.push_back(tool("describe_kind", Access::write, "Set a legend kind's description.", p, {"treeId", "id", "description"}));
+    p["crossBranchExempt"] = boolean(
+        "Whether get_health leaves every edge touching a node of this kind out of its cross-branch "
+        "count. Omit to leave it as it is.");
+    tools.push_back(tool("describe_kind", Access::write,
+        "Set a legend kind's `description`, its `crossBranchExempt` flag, or both; a field you omit "
+        "keeps its value.",
+        p, {"treeId", "id"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -554,6 +578,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     kindFields["hue"] = enumStr("The kind's hue — unique per kind, at most 6 kinds per tree.", kHues);
     kindFields["label"] = cappedStr("Optional label.", kMaxKindLabelLength);
     kindFields["description"] = cappedStr("Optional sorting brief.", kMaxKindDescriptionLength);
+    kindFields["crossBranchExempt"] = boolean("Optional, default false: get_health leaves this kind's edges "
+                                              "out of its cross-branch count.");
 
     Json::Value progressFields(Json::objectValue);
     progressFields["nodeId"] = nodeHandle();

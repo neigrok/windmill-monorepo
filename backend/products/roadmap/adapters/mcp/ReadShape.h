@@ -19,11 +19,12 @@ namespace wm {
 
 // `status` is the CALLER'S OWN mark, `seedStatus` the document's authored baseline, and `state`
 // what the tree DERIVES — the unlock cascade over the caller's marks. `summary` is the
-// description's first kSummaryChars, cut at a word and marked with an ellipsis when cut.
-enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus, state,
-                       summary, description, links };
+// description's first kSummaryChars code points, cut at a word and marked with an ellipsis when
+// cut. `kind` is the legend kind whose hue the node wears, omitted when no kind wears it.
+enum class NodeField { id, label, icon, color, kind, order, prerequisites, position, status, seedStatus,
+                       state, summary, description, links };
 constexpr std::size_t kSummaryChars = 200;
-enum class KindField { id, hue, label, description };
+enum class KindField { id, hue, label, description, crossBranchExempt };
 enum class ProgressField { completed, inProgress, cleared };
 
 using NodeFields = std::set<NodeField>;
@@ -101,11 +102,13 @@ const Vocabulary<NodeField>& nodeVocabulary();
 const Vocabulary<KindField>& kindVocabulary();
 const Vocabulary<ProgressField>& progressVocabulary();
 
-// Each half is filled only when a field or a filter asks for it, and stays empty otherwise.
-// The states are derived over EVERY node the tree holds, since a prerequisite may sit off the page.
+// Each part is filled only when a field or a filter asks for it, and stays empty otherwise.
+// The states are derived over EVERY node the tree holds, since a prerequisite may sit off the page;
+// `kindByHue` is the legend's hue -> kind id join, one entry per kind.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
+  std::map<NodeColor, KindId> kindByHue;
 };
 
 // Field semantics are TreeJson's: empty and absent values are omitted as the document omits

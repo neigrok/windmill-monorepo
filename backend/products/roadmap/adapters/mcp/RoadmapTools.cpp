@@ -9,6 +9,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "platform/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/NodeQuery.h"
 #include "products/roadmap/domain/SkillTree.h"
 #include "products/roadmap/domain/TreeHealth.h"
@@ -190,12 +191,20 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (std::optional<std::string> bad = requireOneOf(args["hue"], "hue", kHues)) return bad;
     if (std::optional<std::string> bad = optionalString(args["label"], "label", kMaxKindLabelLength))
       return bad;
-    return optionalString(args["description"], "description", kMaxKindDescriptionLength);
+    if (std::optional<std::string> bad = optionalString(args["description"], "description", kMaxKindDescriptionLength))
+      return bad;
+    return optionalBool(args["crossBranchExempt"], "crossBranchExempt");
   }
   if (tool == "rename_kind")
     return requireString(args["label"], "label", Empty::allowed, kMaxKindLabelLength);
-  if (tool == "describe_kind")
-    return requireString(args["description"], "description", Empty::allowed, kMaxKindDescriptionLength);
+  if (tool == "describe_kind") {
+    if (args["description"].isNull() && args["crossBranchExempt"].isNull())
+      return "nothing to set — pass \"description\", \"crossBranchExempt\", or both.";
+    if (std::optional<std::string> bad =
+            optionalString(args["description"], "description", kMaxKindDescriptionLength))
+      return bad;
+    return optionalBool(args["crossBranchExempt"], "crossBranchExempt");
+  }
   if (tool == "remove_kind") return std::nullopt;  // its handle is all it takes
   if (tool == "reorder_kinds") {
     if (args["order"].isNull())
@@ -217,13 +226,36 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
 
 // States are derived over the whole tree: a prerequisite may sit off the page.
 NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
-                               const std::vector<NodeSpec>& nodes, const NodeFields& fields, bool filtersOnState) {
+                               const TreeData& data, const NodeFields& fields, bool filtersOnState) {
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
   NodeReadContext context;
   if (needsMarks && caller) context.marks = progress.progressOf(tree, *caller);
-  if (needsStates) context.states = UnlockRules::derive(nodes, context.marks);
+  if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
+  if (fields.count(NodeField::kind))
+    for (const Kind& kind : data.kinds) context.kindByHue[kind.hue] = kind.id;
   return context;
+}
+
+// Every live edge, as {from, to}, in node order then prerequisite order; the snapshot's
+// prerequisites are exactly the live edges (LooseGraph::liveEdges).
+Json::Value edgeList(const TreeData& data) {
+  Json::Value edges(Json::arrayValue);
+  for (const NodeSpec& node : data.nodes) {
+    for (const NodeId& prereq : node.prerequisites) {
+      Json::Value edge(Json::objectValue);
+      edge["from"] = prereq.str();
+      edge["to"] = node.id.str();
+      edges.append(edge);
+    }
+  }
+  return edges;
+}
+
+std::size_t liveEdgeCount(const TreeData& data) {
+  std::size_t count = 0;
+  for (const NodeSpec& node : data.nodes) count += node.prerequisites.size();
+  return count;
 }
 
 ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
@@ -239,12 +271,14 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     std::optional<KindFields> kindFields =
         kindVocabulary().parse(args["kindFields"], "kindFields", kLegendFields, error);
     if (!kindFields) return ToolResult::failure(error);
+    if (std::optional<std::string> bad = optionalBool(args["includeEdges"], "includeEdges"))
+      return ToolResult::failure(*bad);
 
     const TreeData data = room.snapshot();
     std::optional<Page> page = pageOf(data.nodes, args, error);
     if (!page) return ToolResult::failure(error);
 
-    const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *nodeFields, false);
+    const NodeReadContext context = readContextFor(progress, tree, caller, data, *nodeFields, false);
     Json::Value nodes(Json::arrayValue);
     for (std::size_t i = page->begin; i < page->end; ++i)
       nodes.append(projectNode(data.nodes[i], *nodeFields, context));
@@ -262,6 +296,17 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
     if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
     out["tree"] = document;
+    // The edge list is whole or absent, never cut: past the reachability budget the reply says so.
+    if (args["includeEdges"].asBool()) {
+      const std::size_t edgeCount = liveEdgeCount(data);
+      if (withinReachabilityBudget(data.nodes.size(), edgeCount)) {
+        out["edges"] = edgeList(data);
+      } else {
+        out["edgesOmitted"] = "this tree holds " + std::to_string(data.nodes.size()) + " nodes and " +
+                              std::to_string(edgeCount) + " live edges, past the budget one reply lists "
+                              "edges within — page get_tree with fields [\"id\", \"prerequisites\"] instead.";
+      }
+    }
     return ToolResult::json(out);
   });
 }
@@ -285,6 +330,7 @@ ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::opt
       out["nodeCount"] = health.nodeCount;
       out["edgeCount"] = health.edgeCount;
       out["crossBranch"] = health.crossBranch;
+      out["crossBranchExempt"] = health.crossBranchExempt;
       out["redundant"] = health.redundant;
       out["avgInDegree"] = health.avgInDegree;
       out["score"] = health.score;
@@ -331,7 +377,7 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
 
     // selectNodes must stay pure in (tree, filter) or a cursor stops resuming: the state filter runs after it.
     const TreeData data = room.snapshot();
-    const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *fields, state.has_value());
+    const NodeReadContext context = readContextFor(progress, tree, caller, data, *fields, state.has_value());
     std::vector<NodeSpec> matches = selectNodes(data, filter);
     if (state)
       std::erase_if(matches, [&](const NodeSpec& node) { return context.states.at(node.id) != *state; });
@@ -524,6 +570,9 @@ std::optional<std::string> checkImport(const Json::Value& args) {
       return bad;
     if (std::optional<std::string> bad = optionalString(args["kinds"][i]["description"],
                                                         path + ".description", kMaxKindDescriptionLength))
+      return bad;
+    if (std::optional<std::string> bad =
+            optionalBool(args["kinds"][i]["crossBranchExempt"], path + ".crossBranchExempt"))
       return bad;
     const auto [seen, fresh] = kindIdAt.emplace(args["kinds"][i]["id"].asString(), i);
     if (!fresh)

@@ -13,18 +13,27 @@ Json::Value idArray(const std::set<NodeId>& ids) {
   return array;
 }
 
-// The budget is BYTES and the cut is never mid-character: with no word boundary in the back
-// half the head backs off to the start of the code point straddling the edge.
-std::string summaryOf(const std::string& description) {
-  if (description.size() <= kSummaryChars) return description;
-  std::string head = description.substr(0, kSummaryChars);
-  const std::size_t lastSpace = head.find_last_of(" \n\t");
-  if (lastSpace != std::string::npos && lastSpace > kSummaryChars / 2) {
-    head.resize(lastSpace);
-    return head + "\u2026";
+// The byte offset where the code point numbered `codePoints` (zero-based) starts, or npos when
+// the text holds no more than that many. Counts UTF-8 lead bytes, so a multi-byte character is one.
+std::size_t byteOffsetOfCodePoint(const std::string& text, std::size_t codePoints) {
+  std::size_t seen = 0;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) continue;
+    if (seen == codePoints) return i;
+    ++seen;
   }
-  while (!head.empty() && (static_cast<unsigned char>(description[head.size()]) & 0xC0) == 0x80)
-    head.pop_back();
+  return std::string::npos;
+}
+
+// The budget is CODE POINTS: the head is the first kSummaryChars of them, cut back to the last
+// word boundary in its back half when there is one.
+std::string summaryOf(const std::string& description) {
+  const std::size_t cut = byteOffsetOfCodePoint(description, kSummaryChars);
+  if (cut == std::string::npos) return description;
+  std::string head = description.substr(0, cut);
+  const std::size_t lastSpace = head.find_last_of(" \n\t");
+  const std::size_t halfway = byteOffsetOfCodePoint(head, kSummaryChars / 2);
+  if (lastSpace != std::string::npos && lastSpace > halfway) head.resize(lastSpace);
   return head + "\u2026";
 }
 
@@ -41,6 +50,7 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"label", NodeField::label},
                                                  {"icon", NodeField::icon},
                                                  {"color", NodeField::color},
+                                                 {"kind", NodeField::kind},
                                                  {"order", NodeField::order},
                                                  {"prerequisites", NodeField::prerequisites},
                                                  {"position", NodeField::position},
@@ -57,7 +67,8 @@ const Vocabulary<KindField>& kindVocabulary() {
   static const Vocabulary<KindField> vocabulary({{"id", KindField::id},
                                                  {"hue", KindField::hue},
                                                  {"label", KindField::label},
-                                                 {"description", KindField::description}});
+                                                 {"description", KindField::description},
+                                                 {"crossBranchExempt", KindField::crossBranchExempt}});
   return vocabulary;
 }
 
@@ -74,6 +85,10 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
   if (fields.count(NodeField::label)) n["label"] = node.label;
   if (fields.count(NodeField::icon)) n["icon"] = node.icon;
   if (fields.count(NodeField::color)) n["color"] = std::string(toString(node.color));
+  if (fields.count(NodeField::kind)) {
+    const auto kind = context.kindByHue.find(node.color);
+    if (kind != context.kindByHue.end()) n["kind"] = kind->second.str();
+  }
   if (fields.count(NodeField::order) && !node.order.empty()) n["order"] = node.order;
   if (fields.count(NodeField::prerequisites)) {
     Json::Value prerequisites(Json::arrayValue);
@@ -101,6 +116,7 @@ Json::Value projectKind(const Kind& kind, const KindFields& fields) {
   if (fields.count(KindField::hue)) k["hue"] = std::string(toString(kind.hue));
   if (fields.count(KindField::label)) k["label"] = kind.label;
   if (fields.count(KindField::description)) k["description"] = kind.description;
+  if (fields.count(KindField::crossBranchExempt)) k["crossBranchExempt"] = kind.crossBranchExempt;
   return k;
 }
 

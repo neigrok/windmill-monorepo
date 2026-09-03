@@ -55,12 +55,17 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
   if (kind == "TransitiveReduction") return TransitiveReduction{};
   if (kind == "PruneDangling") return PruneDangling{};
   if (kind == "RenameKind") return RenameKind{kindId(payload, "id"), payload["label"].asString()};
-  if (kind == "DescribeKind") return DescribeKind{kindId(payload, "id"), payload["description"].asString()};
+  if (kind == "DescribeKind") {
+    DescribeKind describe{kindId(payload, "id"), std::nullopt, std::nullopt};
+    if (payload.isMember("description")) describe.description = payload["description"].asString();
+    if (payload.isMember("crossBranchExempt")) describe.crossBranchExempt = payload["crossBranchExempt"].asBool();
+    return describe;
+  }
   if (kind == "AddKind") {
     auto hue = parseColor(payload["hue"].asString());
     if (!hue) return std::nullopt;
     return AddKind{kindId(payload, "id"), *hue, payload.get("label", "").asString(),
-                   payload.get("description", "").asString()};
+                   payload.get("description", "").asString(), payload.get("crossBranchExempt", false).asBool()};
   }
   if (kind == "RemoveKind") return RemoveKind{kindId(payload, "id")};
   if (kind == "ReorderKinds") {
@@ -133,12 +138,17 @@ Json::Value commandPayload(const Command& command) {
     [&](const TransitiveReduction&) {},
     [&](const PruneDangling&) {},
     [&](const RenameKind& c) { p["id"] = c.id.str(); p["label"] = c.label; },
-    [&](const DescribeKind& c) { p["id"] = c.id.str(); p["description"] = c.description; },
+    [&](const DescribeKind& c) {
+      p["id"] = c.id.str();
+      if (c.description) p["description"] = *c.description;
+      if (c.crossBranchExempt) p["crossBranchExempt"] = *c.crossBranchExempt;
+    },
     [&](const AddKind& c) {
       p["id"] = c.id.str();
       p["hue"] = std::string(toString(c.hue));
       if (!c.label.empty()) p["label"] = c.label;
       if (!c.description.empty()) p["description"] = c.description;
+      if (c.crossBranchExempt) p["crossBranchExempt"] = true;
     },
     [&](const RemoveKind& c) { p["id"] = c.id.str(); },
     [&](const ReorderKinds& c) {

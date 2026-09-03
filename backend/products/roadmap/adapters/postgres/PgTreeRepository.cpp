@@ -58,17 +58,21 @@ void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge)
 void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind) {
   txn.exec_params(
       "INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, "
-      "label, label_hlc, description, description_hlc, rank, rank_hlc) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
+      "label, label_hlc, description, description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, "
+      "rank, rank_hlc) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) "
       "ON CONFLICT (tree_id, kind_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "hue = EXCLUDED.hue, hue_hlc = EXCLUDED.hue_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
+      "cross_branch_exempt = EXCLUDED.cross_branch_exempt, "
+      "cross_branch_exempt_hlc = EXCLUDED.cross_branch_exempt_hlc, "
       "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc",
       tree.str(), kind.id.str(), toString(kind.createdAt), toString(kind.deletedAt),
       std::string(toString(kind.hue)), toString(kind.hueAt), kind.label, toString(kind.labelAt),
-      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt));
+      kind.description, toString(kind.descriptionAt), kind.crossBranchExempt,
+      toString(kind.crossBranchExemptAt), kind.rank, toString(kind.rankAt));
 }
 
 void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend) {
@@ -130,7 +134,8 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
       "SELECT kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, description, "
-      "description_hlc, rank, rank_hlc FROM tree_kinds WHERE tree_id = $1",
+      "description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, rank, rank_hlc "
+      "FROM tree_kinds WHERE tree_id = $1",
       tree.str());
   for (const auto& row : kinds) {
     KindStateEntry kind;
@@ -143,6 +148,8 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
     kind.labelAt = parseHlc(row["label_hlc"].as<std::string>());
     kind.description = row["description"].as<std::string>();
     kind.descriptionAt = parseHlc(row["description_hlc"].as<std::string>());
+    kind.crossBranchExempt = row["cross_branch_exempt"].as<bool>();
+    kind.crossBranchExemptAt = parseHlc(row["cross_branch_exempt_hlc"].as<std::string>());
     kind.rank = row["rank"].as<double>();
     kind.rankAt = parseHlc(row["rank_hlc"].as<std::string>());
     legend.kinds.push_back(std::move(kind));

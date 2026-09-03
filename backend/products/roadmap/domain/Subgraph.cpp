@@ -50,13 +50,15 @@ KindStateEntry maskKind(const KindStateEntry& kind, const VersionVector& since) 
   if (!since.covers(kind.hueAt))         { masked.hue = kind.hue;                 masked.hueAt = kind.hueAt; }
   if (!since.covers(kind.labelAt))       { masked.label = kind.label;             masked.labelAt = kind.labelAt; }
   if (!since.covers(kind.descriptionAt)) { masked.description = kind.description;  masked.descriptionAt = kind.descriptionAt; }
+  if (!since.covers(kind.crossBranchExemptAt)) { masked.crossBranchExempt = kind.crossBranchExempt; masked.crossBranchExemptAt = kind.crossBranchExemptAt; }
   if (!since.covers(kind.rankAt))        { masked.rank = kind.rank;               masked.rankAt = kind.rankAt; }
   return masked;
 }
 
 bool kindUncovered(const KindStateEntry& kind, const VersionVector& since) {
   return !since.covers(kind.createdAt) || !since.covers(kind.deletedAt) || !since.covers(kind.hueAt)
-      || !since.covers(kind.labelAt) || !since.covers(kind.descriptionAt) || !since.covers(kind.rankAt);
+      || !since.covers(kind.labelAt) || !since.covers(kind.descriptionAt)
+      || !since.covers(kind.crossBranchExemptAt) || !since.covers(kind.rankAt);
 }
 }
 
@@ -84,6 +86,7 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
     vector.observe(kind.hueAt);
     vector.observe(kind.labelAt);
     vector.observe(kind.descriptionAt);
+    vector.observe(kind.crossBranchExemptAt);
     vector.observe(kind.rankAt);
   }
   return vector;
