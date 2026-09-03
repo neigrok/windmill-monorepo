@@ -199,9 +199,10 @@ product can declare a tool without its annotations:
 - `title` — the product word, a middle dot, the name in words: `Roadmap · Get tree`,
   `Gym · Log set`. Names never change; the golden corpus and connected clients pin them.
 - `annotations.readOnlyHint` — true exactly for `read`-level tools.
-- `annotations.destructiveHint` — true for every `delete`-level tool and for the writes that
-  overwrite or remove in bulk: `import_subgraph`, `prune`, `tidy` (`kBulkEdits` beside the
-  catalog).
+- `annotations.destructiveHint` — true for a `delete`-level tool and for the writes that
+  overwrite or remove in bulk (`import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
+  catalog), unless the declaration says `proposal`: `propose_routine_removal` sits at
+  `gym:delete` and mints a card the lifter applies, so it is declared non-destructive.
 - `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
   (`kIdempotentWrites` beside the catalog); false for `create_tree` and `create_node`, which mint
   an id. Every gym write is idempotent by the id the caller mints.
@@ -230,8 +231,9 @@ handshake `instructions` say so.
   with the rest and applied after the ranked selection but before the page, so `count` and the
   cursor speak of the filtered set.
 - **`summary` is a projection of `description`** — its opening 200 characters (Unicode code
-  points, so a CJK description is cut at 200 characters, not 200 bytes), cut at a word and
-  ellipsized when anything was cut.
+  points, so a CJK description is cut at 200 characters, not 200 bytes), never split inside a
+  grapheme (a combining mark, a variation selector or a ZWJ emoji sequence backs the cut off),
+  cut at a word and ellipsized when anything was cut.
 - **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
   node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
 
@@ -239,14 +241,16 @@ handshake `instructions` say so.
 
 - **`get_tree {includeEdges: true}`** answers a top-level `edges: [{from, to}]` of every live edge
   in the tree — the same whole list on every page, independent of node paging, so ask for it once.
-  A tree past the reachability budget (`withinReachabilityBudget`, `domain/LooseGraph.h`: 1500
-  nodes, 6000 edges, 3M nodes×edges) answers `edgesOmitted` with the counts instead of a cut list.
+  Listing is linear, so only the edge count gates it: a tree holding more than 6000 live edges
+  (`kMaxListedEdges`, `adapters/mcp/ReadShape.h`) answers `edgesOmitted` with the count instead
+  of a cut list, whatever its node count.
 - **Branches derive from colour.** `TrunkTree` elects each node's trunk parent (same-hue parents
   win) and a node's branch is the run of same-hue trunk parents above it, so an edge joining two
   hues is `crossBranch` in `get_health`, 60% of the score. A legend kind marked
   `crossBranchExempt` (on `add_kind` or `describe_kind`, read through `kindFields`) takes every
   edge touching one of its nodes out of that count; `get_health` reports those as
-  `crossBranchExempt` beside `crossBranch`, and they weigh nothing. The flag is a kind register
+  `crossBranchExempt` beside `crossBranch`, and they weigh nothing: the score's fractions are over
+  `edgeCount − crossBranchExempt`, while `edgeCount` stays every live edge. The flag is a kind register
   like `label` and `description` — its own LWW stamp, carried on the lattice, the document codec
   and `tree_kinds` — and `import_subgraph` round-trips it on `kinds[]`.
 

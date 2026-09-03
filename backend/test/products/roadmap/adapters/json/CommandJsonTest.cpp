@@ -36,3 +36,27 @@ TEST(add_kind_payload_carries_the_exemption_only_when_set) {
   CHECK_FALSE(std::get<AddKind>(plain).crossBranchExempt);
   CHECK_EQ(dump(commandPayload(plain)), std::string("{\"hue\":\"sky\",\"id\":\"build\",\"label\":\"Build\"}"));
 }
+
+TEST(batch_round_trips_every_member_and_refuses_a_member_it_cannot_decode) {
+  const Command batch = Batch{{DeleteNode{NodeId{"a"}}, DeleteNode{NodeId{"b"}}, RemoveEdge{NodeId{"a"}, NodeId{"b"}}}};
+  CHECK_EQ(commandKind(batch), std::string("Batch"));
+  const std::string wire =
+      "{\"commands\":[{\"kind\":\"DeleteNode\",\"payload\":{\"id\":\"a\"}},"
+      "{\"kind\":\"DeleteNode\",\"payload\":{\"id\":\"b\"}},"
+      "{\"kind\":\"RemoveEdge\",\"payload\":{\"from\":\"a\",\"to\":\"b\"}}]}";
+  CHECK_EQ(dump(commandPayload(batch)), wire);
+
+  std::optional<Command> decoded = commandFromJson("Batch", parse(wire));
+  REQUIRE(decoded.has_value());
+  const std::vector<Command>& members = std::get<Batch>(*decoded).commands;
+  REQUIRE_EQ(members.size(), 3u);
+  CHECK_EQ(std::get<DeleteNode>(members[0]).id, NodeId{"a"});
+  CHECK_EQ(std::get<DeleteNode>(members[1]).id, NodeId{"b"});
+  CHECK_EQ(std::get<RemoveEdge>(members[2]).from, NodeId{"a"});
+  CHECK_EQ(std::get<RemoveEdge>(members[2]).to, NodeId{"b"});
+  CHECK_EQ(dump(commandPayload(*decoded)), wire);
+
+  CHECK_FALSE(commandFromJson("Batch", parse("{\"commands\":[{\"kind\":\"DeleteNode\",\"payload\":{\"id\":\"a\"}},"
+                                             "{\"kind\":\"NoSuchCommand\",\"payload\":{}}]}"))
+                  .has_value());
+}

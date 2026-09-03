@@ -78,3 +78,28 @@ TEST(activity_keeps_the_most_recent_when_over_limit) {
   CHECK_EQ(events[0].seq, 5u);  // removed
   CHECK_EQ(events[1].seq, 6u);  // tidied
 }
+
+TEST(activity_sums_a_batch_by_verb_under_its_first_members_subject) {
+  std::vector<AppliedOp> ops = {
+      op(7, Batch{{DeleteNode{nid("renderer")}, DeleteNode{nid("ghost")},
+                   RemoveEdge{nid("product"), nid("renderer")}, RepositionNode{nid("product"), Vec2{1, 1}}}},
+         "dev", 7000),
+      op(8, Batch{{RemoveEdge{nid("product"), nid("renderer")}}}, "u5", 8000),
+      op(9, Batch{{RepositionNode{nid("product"), Vec2{2, 2}}}}, "u5", 9000),  // nudges only: no event
+  };
+  std::vector<ActivityEvent> events = activityFeed(currentTree(), ops, 100);
+
+  REQUIRE_EQ(events.size(), 2u);
+  CHECK_EQ(events[0].seq, 7u);
+  CHECK_EQ(events[0].verb, std::string("removed"));
+  CHECK_EQ(events[0].node, nid("renderer"));
+  CHECK_EQ(events[0].label, std::string("WebGL2 renderer"));
+  CHECK_EQ(events[0].kind, std::string("sky"));
+  CHECK_EQ(events[0].summary, std::string("removed 2 nodes and unlinked 1 link"));
+  CHECK_EQ(events[0].actor, std::string("You"));
+  CHECK_EQ(events[0].at, 7000u);
+
+  CHECK_EQ(events[1].verb, std::string("unlinked"));
+  CHECK_EQ(events[1].summary, std::string("unlinked 1 link"));
+  CHECK_EQ(events[1].node, nid("renderer"));
+}

@@ -126,6 +126,9 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       legend.setHue(c.id, c.hue, at);
       for (const NodeId& node : graph.nodesWithColor(*old)) graph.setColor(node, c.hue, at);
     },
+    [&](const Batch& c) {
+      for (const Command& member : c.commands) merge(graph, legend, member, at);
+    },
   }, command);
 }
 
@@ -241,6 +244,11 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (owner && *owner != c.id)
         return "hue " + quoted(std::string(toString(c.hue))) + " already belongs to kind " +
                quoted(owner->str()) + " — a hue names one kind, so pick a free one";
+      return std::nullopt;
+    },
+    [&](const Batch& c) -> std::optional<std::string> {
+      for (const Command& member : c.commands)
+        if (std::optional<std::string> reason = validate(graph, legend, member)) return reason;
       return std::nullopt;
     },
     [&](const auto&) -> std::optional<std::string> { return std::nullopt; },

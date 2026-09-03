@@ -56,8 +56,11 @@ Health TreeHealth::assess(const SkillTree& tree) {
       withinReachabilityBudget(tree.nodes().size(), tree.edges().size()) ? countRedundantEdges(tree) : 0;
   health.avgInDegree = std::round((static_cast<double>(health.edgeCount) / std::max(1, health.nodeCount)) * 100) / 100;
 
-  double crossFrac = health.edgeCount ? static_cast<double>(health.crossBranch) / health.edgeCount : 0;
-  double redFrac = health.edgeCount ? static_cast<double>(health.redundant) / health.edgeCount : 0;
+  // The score is taken over the edges that weigh something: an exempt edge is out of the fraction
+  // on both sides, so marking a kind exempt never dilutes the coupling the rest of the tree has.
+  const int weighed = health.edgeCount - health.crossBranchExempt;
+  double crossFrac = weighed ? static_cast<double>(health.crossBranch) / weighed : 0;
+  double redFrac = weighed ? static_cast<double>(health.redundant) / weighed : 0;
   double raw = 100 * (1 - 0.6 * crossFrac - 0.4 * redFrac);
   health.score = static_cast<int>(std::round(std::max(0.0, std::min(100.0, raw))));
 

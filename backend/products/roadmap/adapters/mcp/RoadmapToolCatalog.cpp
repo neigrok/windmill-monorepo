@@ -238,8 +238,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["includeEdges"] = boolean(
         "Also answer a top-level `edges` array of EVERY live edge in the tree as {from, to}, "
         "independent of node paging — the same list on whichever page you ask it, so ask once. "
-        "A tree past the listing budget (1500 nodes, 6000 edges) answers `edgesOmitted` saying so "
-        "instead of a cut list. Default false.");
+        "A tree holding more than 6000 live edges answers `edgesOmitted` with the count instead of "
+        "a cut list, whatever its node count. Default false.");
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.push_back(tool("get_tree", Access::read,
@@ -265,11 +265,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_health", Access::read,
         "Tidiness metrics for a structurally-valid roadmap: node/edge counts, cross-branch "
         "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score "
-        "(100 × (1 − 0.6 × crossBranch/edges − 0.4 × redundant/edges)). Branches derive from "
+        "(100 × (1 − 0.6 × crossBranch/weighed − 0.4 × redundant/weighed), where weighed is "
+        "edgeCount − crossBranchExempt). Branches derive from "
         "colour: a node's branch is the run of same-hue trunk parents above it, so an edge joining "
         "two hues counts as `crossBranch` — unless either endpoint wears a kind marked "
         "`crossBranchExempt` (add_kind / describe_kind), in which case it is counted in "
-        "`crossBranchExempt` instead and weighs nothing. Fails if the tree currently has "
+        "`crossBranchExempt` instead and weighs nothing — out of the score's numerator and its "
+        "denominator both, while `edgeCount` stays every live edge. Fails if the tree currently has "
         "cycles/dangling edges — fix those first.",
         p, {"treeId"}));
   }

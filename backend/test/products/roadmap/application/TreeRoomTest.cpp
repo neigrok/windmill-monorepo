@@ -292,7 +292,7 @@ TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
   CHECK_EQ(legend.kinds.size(), 0u);
 }
 
-TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_deed) {
+TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_op_row_holding_every_member) {
   FakeOpLog log;
   FakeBus bus;
   TreeRoom room = makeRoom(log, bus);
@@ -311,7 +311,13 @@ TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_deed) {
 
   REQUIRE_EQ(log.byTree["t"].size(), 4u);
   CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(4));
-  CHECK(std::holds_alternative<DeleteNode>(log.byTree["t"].back().command));
+  REQUIRE(std::holds_alternative<Batch>(log.byTree["t"].back().command));
+  const std::vector<Command>& logged = std::get<Batch>(log.byTree["t"].back().command).commands;
+  REQUIRE_EQ(logged.size(), 3u);
+  CHECK_EQ(std::get<DeleteNode>(logged[0]).id, nid("a"));
+  CHECK_EQ(std::get<DeleteNode>(logged[1]).id, nid("b"));
+  CHECK_EQ(std::get<RemoveEdge>(logged[2]).from, nid("a"));
+  CHECK_EQ(std::get<RemoveEdge>(logged[2]).to, nid("b"));
   REQUIRE_EQ(bus.subgraphBroadcasts.size(), 4u);
   CHECK_EQ(bus.subgraphBroadcasts.back().seq, static_cast<Seq>(4));
   CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.graph.nodes.size(), 2u);
@@ -380,4 +386,43 @@ TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_on
   again.document.nodes = {n};
   room.importTree(again, 200, uid());
   CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a"), nid("c")}));
+}
+
+// The crash window: the op row at seq N is written before the lattice at N is persisted. A room
+// reopened from the N-1 document replays that row and must land the whole batch, not its first
+// member.
+TEST(room_replays_a_persisted_batch_op_whole) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom live = makeRoom(log, bus);
+  apply(live, createNode("a"), 1);
+  apply(live, createNode("b"), 2);
+  apply(live, AddEdge{nid("a"), nid("b")}, 3);
+  const LooseGraph persisted{live.exportState()};  // the document as saved at head 3
+  const Legend persistedLegend{live.exportLegend()};
+
+  live.applyCommands({DeleteNode{nid("a")}, DeleteNode{nid("b")}, RemoveEdge{nid("a"), nid("b")}}, 4, uid());
+
+  FakeBus quiet;
+  TreeRoom reopened(tid(), {"Title", {}}, persisted, persistedLegend, 3, std::nullopt,
+                    Visibility::private_, 0, log, quiet);
+  CHECK(reopened.hasNode(nid("b")));
+  for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);
+  CHECK_EQ(reopened.head(), static_cast<Seq>(4));
+  CHECK_FALSE(reopened.hasNode(nid("a")));
+  CHECK_FALSE(reopened.hasNode(nid("b")));
+  CHECK_FALSE(reopened.hasEdge(nid("a"), nid("b")));
+  CHECK_EQ(reopened.exportState(), live.exportState());
+}
+
+TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  apply(room, createNode("a"), 1);
+
+  CHECK_EQ(room.applyCommands({}, 2, uid()), static_cast<Seq>(1));
+  CHECK_EQ(room.head(), static_cast<Seq>(1));
+  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
 }

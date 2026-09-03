@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <utility>
 #include <variant>
 
 namespace wm {
@@ -19,46 +20,25 @@ std::string displayActor(const std::string& actor) {
   }
   return {};  // genesis / seed / unknown → the tree itself
 }
-}
 
-std::vector<ActivityEvent> activityFeed(const TreeData& current, const std::vector<AppliedOp>& ops, std::size_t limit) {
-  std::map<NodeId, const NodeSpec*> byId;
-  for (const NodeSpec& node : current.nodes) byId.emplace(node.id, &node);
-
-  // Branch context is available only when the current graph is a clean tree.
-  std::optional<SkillTree> tree;
-  try {
-    tree.emplace(current);
-  } catch (const std::exception&) {
-    tree.reset();
+// One command to one event, with the tree's current labels for context; nullopt for a nudge.
+class Projector {
+public:
+  explicit Projector(const TreeData& current) {
+    for (const NodeSpec& node : current.nodes) byId_.emplace(node.id, &node);
+    // Branch context is available only when the current graph is a clean tree.
+    try {
+      tree_.emplace(current);
+    } catch (const std::exception&) {
+      tree_.reset();
+    }
   }
 
-  auto named = [](const std::string& label) { return label.empty() ? std::string("a step") : label; };
-  auto labelOf = [&](const NodeId& id) {
-    auto it = byId.find(id);
-    return it != byId.end() ? it->second->label : id.str();
-  };
-  auto kindOf = [&](const NodeId& id) {
-    auto it = byId.find(id);
-    return it != byId.end() ? std::string(toString(it->second->color)) : std::string{};
-  };
-  auto crossBranch = [&](const NodeId& from, const NodeId& to) {
-    if (!tree || !byId.count(from) || !byId.count(to)) return std::string{};
-    return tree->trunk().edgeKind(from, to) == EdgeKind::cross_branch ? std::string(" · cross-branch") : std::string{};
-  };
-  auto link = [&](const NodeId& from, const NodeId& to) { return named(labelOf(from)) + " → " + named(labelOf(to)); };
-
-  std::vector<ActivityEvent> events;
-  for (const AppliedOp& op : ops) {
+  std::optional<ActivityEvent> operator()(const Command& command) const {
     ActivityEvent event;
-    event.seq = op.seq;
-    event.at = op.createdAtMs;
-    event.actor = displayActor(op.actor.str());
-    const Command& command = op.command;
-
     if (auto* c = std::get_if<CreateNode>(&command)) {
       event.verb = "added"; event.node = c->id;
-      event.label = byId.count(c->id) ? labelOf(c->id) : c->label;
+      event.label = byId_.count(c->id) ? labelOf(c->id) : c->label;
       event.kind = kindOf(c->id);
       event.summary = "added " + named(event.label);
     } else if (auto* c = std::get_if<RenameNode>(&command)) {
@@ -100,10 +80,78 @@ std::vector<ActivityEvent> activityFeed(const TreeData& current, const std::vect
     } else if (auto* c = std::get_if<RecolorKind>(&command)) {
       event.verb = "recolored-kind"; event.kind = std::string(toString(c->hue));
       event.summary = "recolored a kind " + event.kind;
+    } else if (auto* c = std::get_if<Batch>(&command)) {
+      return batch(*c);
     } else {
-      continue;  // RepositionNode: a nudge is not a feed-worthy deed
+      return std::nullopt;  // RepositionNode: a nudge is not a feed-worthy deed
     }
-    events.push_back(std::move(event));
+    return event;
+  }
+
+private:
+  // Summed by verb in first-appearance order, under the first member's verb and subject:
+  // "removed 2 nodes and unlinked 3 links". Nudges inside it count for nothing.
+  std::optional<ActivityEvent> batch(const Batch& batch) const {
+    std::vector<std::pair<std::string, int>> countByVerb;
+    std::optional<ActivityEvent> first;
+    for (const Command& member : batch.commands) {
+      std::optional<ActivityEvent> event = (*this)(member);
+      if (!event) continue;
+      if (!first) first = event;
+      auto counted = std::find_if(countByVerb.begin(), countByVerb.end(),
+                                  [&](const auto& entry) { return entry.first == event->verb; });
+      if (counted == countByVerb.end()) countByVerb.emplace_back(event->verb, 1);
+      else ++counted->second;
+    }
+    if (!first) return std::nullopt;
+    std::string summary;
+    for (const auto& [verb, count] : countByVerb) {
+      if (!summary.empty()) summary += " and ";
+      summary += verb + " " + std::to_string(count) + " " + noun(verb) + (count == 1 ? "" : "s");
+    }
+    first->summary = summary;
+    return first;
+  }
+
+  static std::string noun(const std::string& verb) {
+    if (verb == "linked" || verb == "unlinked" || verb == "rerouted") return "link";
+    if (verb == "added" || verb == "removed" || verb == "renamed" || verb == "recolored") return "node";
+    if (verb.size() > 5 && verb.compare(verb.size() - 5, 5, "-kind") == 0) return "kind";
+    return "edit";
+  }
+
+  static std::string named(const std::string& label) { return label.empty() ? std::string("a step") : label; }
+  std::string labelOf(const NodeId& id) const {
+    auto it = byId_.find(id);
+    return it != byId_.end() ? it->second->label : id.str();
+  }
+  std::string kindOf(const NodeId& id) const {
+    auto it = byId_.find(id);
+    return it != byId_.end() ? std::string(toString(it->second->color)) : std::string{};
+  }
+  std::string crossBranch(const NodeId& from, const NodeId& to) const {
+    if (!tree_ || !byId_.count(from) || !byId_.count(to)) return {};
+    return tree_->trunk().edgeKind(from, to) == EdgeKind::cross_branch ? std::string(" · cross-branch") : std::string{};
+  }
+  std::string link(const NodeId& from, const NodeId& to) const {
+    return named(labelOf(from)) + " → " + named(labelOf(to));
+  }
+
+  std::map<NodeId, const NodeSpec*> byId_;
+  std::optional<SkillTree> tree_;
+};
+}
+
+std::vector<ActivityEvent> activityFeed(const TreeData& current, const std::vector<AppliedOp>& ops, std::size_t limit) {
+  const Projector project{current};
+  std::vector<ActivityEvent> events;
+  for (const AppliedOp& op : ops) {
+    std::optional<ActivityEvent> event = project(op.command);
+    if (!event) continue;
+    event->seq = op.seq;
+    event->at = op.createdAtMs;
+    event->actor = displayActor(op.actor.str());
+    events.push_back(std::move(*event));
   }
 
   if (events.size() > limit) events.erase(events.begin(), events.end() - static_cast<std::ptrdiff_t>(limit));

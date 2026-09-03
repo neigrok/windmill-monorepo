@@ -69,10 +69,16 @@ struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
 
+// Several commands that landed as ONE frame under one seq, logged whole so a replay of the op row
+// reproduces the frame and not just its first deed. Every member folds at the batch's own stamp.
+struct Batch;
+
 using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNode, AnnotateNode,
                              AddEdge, RemoveEdge, ReconnectEdge, DeleteNode, TransitiveReduction,
                              PruneDangling, RenameKind, DescribeKind, AddKind, RemoveKind,
-                             ReorderKinds, RecolorKind>;
+                             ReorderKinds, RecolorKind, Batch>;
+
+struct Batch { std::vector<Command> commands; };
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 

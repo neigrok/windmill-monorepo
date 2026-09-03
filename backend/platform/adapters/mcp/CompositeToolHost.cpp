@@ -143,7 +143,8 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
       "on human approval: a call this server accepts runs the moment it arrives, and an answer that "
       "reads \"No approval received\" or \"awaiting approval\" is your own client's permission prompt, "
       "not this server. Every read is declared readOnlyHint, so a client can stop prompting on reads; "
-      "every delete-level tool and every bulk edit is declared destructiveHint.";
+      "every tool that deletes or edits in bulk is declared destructiveHint, and a tool that only "
+      "proposes a removal for your human to apply is not.";
   const std::string stamp = build.substr(0, 7);
   if (!stamp.empty())
     instructions += " This server is build " + stamp +
