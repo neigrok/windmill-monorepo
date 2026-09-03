@@ -63,9 +63,7 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
   if (tool == "set_node_color") return "SetNodeColor";
   if (tool == "move_node")      return "RepositionNode";
   if (tool == "connect")        return "AddEdge";
-  if (tool == "disconnect")     return "RemoveEdge";
   if (tool == "reconnect")      return "ReconnectEdge";
-  if (tool == "delete_node")    return "DeleteNode";
   if (tool == "tidy")           return "TransitiveReduction";
   if (tool == "add_kind")       return "AddKind";
   if (tool == "rename_kind")    return "RenameKind";
@@ -78,7 +76,7 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
 
 bool namesAnExistingNode(const std::string& tool) {
   return tool == "annotate_node" || tool == "rename_node" || tool == "set_node_color" ||
-         tool == "move_node" || tool == "delete_node";
+         tool == "move_node";
 }
 
 bool namesAnExistingKind(const std::string& tool) {
@@ -171,7 +169,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;
     return requireNumber(args["y"], "y");
   }
-  if (tool == "connect" || tool == "disconnect") {
+  if (tool == "connect") {
     if (std::optional<std::string> bad = requireString(args["from"], "from", Empty::rejected, kMaxIdLength))
       return bad;
     return requireString(args["to"], "to", Empty::rejected, kMaxIdLength);
@@ -704,6 +702,184 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
   return cleaned;
 }
 
+std::string quotedList(const std::vector<std::string>& names) {
+  std::string out;
+  for (const std::string& name : names) {
+    if (!out.empty()) out += ", ";
+    out += "\"" + name + "\"";
+  }
+  return out;
+}
+
+// One `nodeId` (or its `id` alias) or a `nodeIds` list, never both, never neither.
+std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<NodeId>& out) {
+  const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
+  const bool batch = !args["nodeIds"].isNull();
+  if (!single && !batch)
+    return "missing required argument \"nodeId\" (or a \"nodeIds\" list of 1 to " +
+           std::to_string(kMaxDeleteNodeIds) + " ids). " + kNodeHandle.hint;
+  if (single && batch)
+    return "pass a single \"nodeId\" or a \"nodeIds\" list, not both — one form names what this call "
+           "deletes.";
+  if (single) {
+    std::string node;
+    if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node)) return bad;
+    out = {NodeId{node}};
+    return std::nullopt;
+  }
+  if (std::optional<std::string> bad = optionalStrings(args["nodeIds"], "nodeIds", kMaxIdLength)) return bad;
+  if (args["nodeIds"].empty())
+    return "argument \"nodeIds\" is an empty list — pass at least one id to delete.";
+  if (args["nodeIds"].size() > kMaxDeleteNodeIds)
+    return "nodeIds has " + std::to_string(args["nodeIds"].size()) + " items, max " +
+           std::to_string(kMaxDeleteNodeIds);
+  std::map<std::string, Json::ArrayIndex> seenAt;
+  for (Json::ArrayIndex i = 0; i < args["nodeIds"].size(); ++i) {
+    const auto [seen, fresh] = seenAt.emplace(args["nodeIds"][i].asString(), i);
+    if (!fresh)
+      return "nodeIds[" + std::to_string(i) + "] \"" + seen->first + "\" is already used by nodeIds[" +
+             std::to_string(seen->second) + "] — an id names one node per batch";
+    out.emplace_back(seen->first);
+  }
+  return std::nullopt;
+}
+
+// Every id is checked before any is applied, and the deletions — with the edges they dangle, when
+// asked — land as one frame under one seq: the tree is never seen between them.
+ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+                       const Json::Value& args, Clock& clock, const UserId& actor) {
+  std::vector<NodeId> targets;
+  if (std::optional<std::string> bad = deleteTargets(args, targets)) return ToolResult::failure(*bad);
+  if (!args["prune"].isNull() && !args["prune"].isBool())
+    return ToolResult::failure("argument \"prune\" must be a boolean, got " + typeName(args["prune"]));
+  const bool prune = args["prune"].asBool();
+  const bool single = args["nodeIds"].isNull();
+
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (!canRead(actor, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
+
+    std::vector<std::string> missing;
+    for (const NodeId& node : targets)
+      if (!room.hasNode(node)) missing.push_back(node.str());
+    if (!missing.empty())
+      return ToolResult::failure("no node in this tree is named " + quotedList(missing) +
+                                 " — nothing was deleted. " + kNodeHandle.hint);
+
+    std::vector<Command> commands;
+    for (const NodeId& node : targets) commands.push_back(DeleteNode{node});
+    const std::vector<Edge> dangled = prune ? room.edgesTouching(targets) : std::vector<Edge>{};
+    for (const Edge& edge : dangled) commands.push_back(RemoveEdge{edge.from, edge.to});
+    for (const Command& command : commands)
+      if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
+
+    // The caller's own marks on what is going: cleared to none, as prune clears an orphan's.
+    std::vector<NodeId> orphans;
+    if (prune) {
+      const Progress overlay = progress.progressOf(tree, actor);
+      for (const NodeId& node : targets)
+        if (overlay.completed.count(node) || overlay.inProgress.count(node)) orphans.push_back(node);
+    }
+
+    const TreeDiagnostics before = room.diagnose();
+    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
+    registry.persist(tree);
+    for (const NodeId& node : orphans)
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+
+    Json::Value ids(Json::arrayValue);
+    for (const NodeId& node : targets) ids.append(node.str());
+    Json::Value pruned(Json::objectValue);
+    pruned["edges"] = static_cast<int>(dangled.size());
+    pruned["progress"] = static_cast<int>(orphans.size());
+
+    Json::Value out(Json::objectValue);
+    out["applied"] = true;
+    out["seq"] = static_cast<Json::Int64>(seq);
+    answerDiagnostics(before, room.diagnose(), out);
+    if (single) out["id"] = targets.front().str();
+    out["ids"] = ids;
+    out["pruned"] = pruned;
+    return ToolResult::json(out);
+  });
+}
+
+// One `from`+`to` pair or an `edges` list of them, never both, never neither.
+std::optional<std::string> disconnectTargets(const Json::Value& args, std::vector<Edge>& out) {
+  const bool single = !args["from"].isNull() || !args["to"].isNull();
+  const bool batch = !args["edges"].isNull();
+  if (!single && !batch)
+    return "missing required arguments \"from\" and \"to\" (or an \"edges\" list of {from, to}, 1 to " +
+           std::to_string(kMaxDisconnectEdges) + " edges). Call get_tree with fields "
+           "[\"id\",\"prerequisites\"] to list the edges this tree has.";
+  if (single && batch)
+    return "pass a single \"from\"+\"to\" or an \"edges\" list, not both — one form names what this call "
+           "removes.";
+  if (single) {
+    if (std::optional<std::string> bad = requireString(args["from"], "from", Empty::rejected, kMaxIdLength))
+      return bad;
+    if (std::optional<std::string> bad = requireString(args["to"], "to", Empty::rejected, kMaxIdLength))
+      return bad;
+    out = {Edge{NodeId{args["from"].asString()}, NodeId{args["to"].asString()}}};
+    return std::nullopt;
+  }
+  if (std::optional<std::string> bad = optionalObjects(args["edges"], "edges", kMaxDisconnectEdges)) return bad;
+  if (args["edges"].empty())
+    return "argument \"edges\" is an empty list — pass at least one {from, to} to remove.";
+  std::map<Edge, Json::ArrayIndex> seenAt;
+  for (Json::ArrayIndex i = 0; i < args["edges"].size(); ++i) {
+    const std::string row = "edges[" + std::to_string(i) + "]";
+    const Json::Value& item = args["edges"][i];
+    if (std::optional<std::string> bad = requireString(item["from"], row + ".from", Empty::rejected, kMaxIdLength))
+      return bad;
+    if (std::optional<std::string> bad = requireString(item["to"], row + ".to", Empty::rejected, kMaxIdLength))
+      return bad;
+    const Edge edge{NodeId{item["from"].asString()}, NodeId{item["to"].asString()}};
+    const auto [seen, fresh] = seenAt.emplace(edge, i);
+    if (!fresh)
+      return row + " repeats edges[" + std::to_string(seen->second) + "] (\"" + edge.from.str() + "\" -> \"" +
+             edge.to.str() + "\") — an edge is named once per batch";
+    out.push_back(edge);
+  }
+  return std::nullopt;
+}
+
+// An edge the tree does not hold is a no-op, per edge; the whole list lands under one seq.
+ToolResult disconnectEdges(RoomRegistry& registry, const TreeId& tree, const Json::Value& args, Clock& clock,
+                           const UserId& actor) {
+  std::vector<Edge> targets;
+  if (std::optional<std::string> bad = disconnectTargets(args, targets)) return ToolResult::failure(*bad);
+
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (!canRead(actor, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
+
+    std::vector<Command> commands;
+    int removed = 0;
+    for (const Edge& edge : targets) {
+      commands.push_back(RemoveEdge{edge.from, edge.to});
+      if (room.hasEdge(edge.from, edge.to)) ++removed;
+    }
+    for (const Command& command : commands)
+      if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
+
+    const TreeDiagnostics before = room.diagnose();
+    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
+    registry.persist(tree);
+
+    Json::Value out(Json::objectValue);
+    out["applied"] = true;
+    out["seq"] = static_cast<Json::Int64>(seq);
+    answerDiagnostics(before, room.diagnose(), out);
+    out["removed"] = removed;
+    return ToolResult::json(out);
+  });
+}
+
 ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
   TreeData initial;
   initial.title = title;
@@ -797,6 +973,10 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
     return importSubgraph(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "prune")
     return pruneTree(registry_, progress_, tree, clock_, caller);
+  if (name == "delete_node")
+    return deleteNodes(registry_, progress_, tree, arguments, clock_, caller);
+  if (name == "disconnect")
+    return disconnectEdges(registry_, tree, arguments, clock_, caller);
 
   if (commandKindFor(name)) return applyEdit(registry_, tree, name, arguments, clock_, caller);
 

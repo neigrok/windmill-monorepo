@@ -228,6 +228,16 @@ std::vector<Edge> LooseGraph::danglingEdges() const {
   return dangling;
 }
 
+std::vector<Edge> LooseGraph::edgesTouching(const std::vector<NodeId>& nodes) const {
+  const std::set<NodeId> touched(nodes.begin(), nodes.end());
+  std::vector<Edge> touching;
+  for (const auto& [edge, element] : edges_) {
+    if (!element.present()) continue;
+    if (touched.count(edge.from) || touched.count(edge.to)) touching.push_back(edge);
+  }
+  return touching;
+}
+
 bool withinReachabilityBudget(std::size_t nodes, std::size_t edges) {
   constexpr std::size_t kBudgetNodes = 1500;
   constexpr std::size_t kBudgetEdges = 6000;

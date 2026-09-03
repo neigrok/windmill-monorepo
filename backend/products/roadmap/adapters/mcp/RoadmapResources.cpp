@@ -38,10 +38,11 @@ A cycle, a detached node, an edge to an id that does not exist: all accepted, no
 `diagnosticsClean` is a property of the WHOLE tree — a `false` may be dirt that was already there
 — and `introducedDiagnostics` is what YOUR edit broke, the errors the tree holds now and did not
 hold a moment before, named endpoint by endpoint. An innocent edit on a dirty tree answers
-`{"diagnosticsClean": false, "introducedDiagnostics": []}`, so you never have to ask twice. Two
+`{"diagnosticsClean": false, "introducedDiagnostics": []}`, so you never have to ask twice. Three
 things do refuse: the legend (hues are unique per kind, at most 6 kinds, and a kind nodes still
-wear cannot be removed — `import_subgraph` is held to the same rule) and the per-tree capacity
-(10000 nodes, 20000 edges).
+wear cannot be removed — `import_subgraph` is held to the same rule), the per-tree capacity
+(10000 nodes, 20000 edges), and `delete_node` when an id names no present node — the whole call,
+every missing id named, nothing applied.
 
 ## 4. `set_progress` is advisory, `status` is yours, and `state` is derived for you
 

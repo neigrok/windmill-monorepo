@@ -24,8 +24,9 @@ const Json::Value* toolNamed(const Json::Value& catalog, const std::string& name
   return nullptr;
 }
 
+// delete_node takes the handle too, but as one of two forms; its contract is pinned in RoadmapToolsTest.
 const std::vector<const char*> kNodeHandleTools = {"annotate_node", "rename_node", "set_node_color",
-                                                   "move_node", "delete_node"};
+                                                   "move_node"};
 
 Json::Value handleToolArgs(const std::string& tool) {
   Json::Value args(Json::objectValue);

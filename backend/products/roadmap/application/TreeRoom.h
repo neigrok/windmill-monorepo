@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace wm {
 
@@ -49,6 +50,9 @@ public:
   // Server-origin edit: stamped from the room clock, applied, logged, broadcast as one subgraph.
   // The frameId is minted from the (unique) stamp.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
+  // Several commands as ONE edit: one stamp, one frame, one seq, one feed deed (the frame's
+  // headline), so a reader never sees the tree between them. Admits nothing on its own.
+  Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
 
   // Stamped from the room clock, so a by-id collision is an upsert. Nothing is removed; an empty
   // `kinds` leaves the legend untouched.
@@ -77,6 +81,9 @@ public:
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
+  bool hasEdge(const NodeId& from, const NodeId& to) const;
+  // Present edges with either endpoint among `nodes`: what deleting them would leave dangling.
+  std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
   // An unset stamp means the create-time baseline, never renamed.
   const Lww<std::string>& title() const { return title_; }
   Seq head() const { return head_; }
