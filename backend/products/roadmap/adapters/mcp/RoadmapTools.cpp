@@ -648,8 +648,13 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
 }
 
 ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
-                          const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& actor) {
+                          const TreeId& tree, const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
+  // The tool is write-level, but a tombstone is what delete_node does, and `delete` is never implied
+  // by `write`: refused before the tree is read, in the composite's own words.
+  if (args["tombstone"].size() > 0 && !caller.scope.allows(kRoadmapProduct, Access::del))
+    return ToolResult::failure(notGrantedSentence(kRoadmapProduct, Access::del));
+  const UserId& actor = caller.user;
 
   std::optional<TreeData> parsed = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
   if (!parsed) return ToolResult::failure("this import's nodes or kinds carry a field of the wrong type");
@@ -748,12 +753,16 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.importTree(graft, clock.nowMs(), actor);
     registry.persist(tree);
-    // The caller's own marks on a tombstoned node: cleared to none, the way prune clears an orphan.
-    Progress overlay = progress.progressOf(tree, actor);
-    for (const NodeId& node : footprint.tombstonedNodes) {
-      if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
-    }
+    // The caller's own marks on a tombstoned node: cleared to none after the graft, the way prune
+    // clears an orphan's. The graft has committed, so a throw from this best-effort overlay write
+    // must not reach callTool's catch and answer "Nothing was changed".
+    try {
+      Progress overlay = progress.progressOf(tree, actor);
+      for (const NodeId& node : footprint.tombstonedNodes) {
+        if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
+        progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+      }
+    } catch (const std::exception&) { /* the graft stands; the marks on what it deleted simply didn't clear */ }
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
@@ -1027,7 +1036,7 @@ std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmap
 ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments,
                                   const ToolCaller& caller) {
   try {
-    ToolResult outcome = dispatch(name, arguments, caller.user);
+    ToolResult outcome = dispatch(name, arguments, caller);
     if (!outcome.isError) return outcome;
     return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
   } catch (const std::bad_alloc&) {
@@ -1041,11 +1050,12 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   }
 }
 
-ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller) {
+ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& actor) {
   // jsoncpp throws when a key is asked of something that is not an object.
   if (!arguments.isObject())
     return ToolResult::failure("arguments must be a JSON object of this tool's named arguments, got " +
                                typeName(arguments));
+  const UserId& caller = actor.user;
 
   if (name == "create_tree") {
     if (std::optional<std::string> bad = optionalString(arguments["title"], "title"))
@@ -1075,7 +1085,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")
-    return importSubgraph(registry_, progress_, bus_, tree, arguments, clock_, caller);
+    return importSubgraph(registry_, progress_, bus_, tree, arguments, clock_, actor);
   if (name == "prune")
     return pruneTree(registry_, progress_, tree, clock_, caller);
   if (name == "delete_node")

@@ -87,8 +87,9 @@ a description-only hit. Pasting an id you already know finds that node, at the t
 which previews the collisions and changes nothing). A re-sent node's fields are replaced, but its
 `prerequisites` are UNIONED with the edges it already has unless you pass
 `prerequisiteMode: "replace"` — a merge reports what it left standing in `keptEdges`. To delete in
-the same batch, list ids in `tombstone`. It does not touch the tree's title. Prefer it to N×
-`create_node` + `connect` + `delete_node`.
+the same batch, list ids in `tombstone` — that needs the roadmap:delete grant, and your own marks
+on those nodes are cleared after the graft, as `prune` clears an orphan's. It does not touch the
+tree's title. Prefer it to N× `create_node` + `connect` + `delete_node`.
 
 ## Limits worth knowing
 

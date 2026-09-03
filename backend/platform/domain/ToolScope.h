@@ -21,6 +21,13 @@ inline std::string toString(Access access) {
   return "read";
 }
 
+// The one refusal a missing grant gets, wherever the gate stands: the composite for a tool's own
+// level, and a tool for a level one of its arguments needs beyond that.
+inline std::string notGrantedSentence(const std::string& product, Access access) {
+  return "this connection was not granted " + product + ":" + toString(access) +
+         ", so it cannot run this tool. Reconnect and approve that level.";
+}
+
 inline std::optional<Access> parseAccess(const std::string& level) {
   if (level == "read") return Access::read;
   if (level == "write") return Access::write;

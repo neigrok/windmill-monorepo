@@ -20,6 +20,9 @@ inline const std::vector<const char*> kNodeStates = {"locked", "available", "act
 inline constexpr std::size_t kMaxDeleteNodeIds = 200;    // delete_node's `nodeIds`
 inline constexpr std::size_t kMaxDisconnectEdges = 500;  // disconnect's `edges`
 
+// The product half of every grant that reaches this catalog (`roadmap:write`).
+inline constexpr const char* kRoadmapProduct = "roadmap";
+
 // How import_subgraph meets a re-sent node's existing prerequisites, and how many ids one call may
 // tombstone — published as `enum` and `maxItems` on the tool.
 inline const std::vector<const char*> kPrerequisiteModes = {"merge", "replace"};

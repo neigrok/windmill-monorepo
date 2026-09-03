@@ -10,7 +10,8 @@
 namespace wm {
 
 // How a re-sent node's prerequisites meet the ones it already has: `merge` unions them, `replace`
-// removes every live edge into that node the document does not name.
+// removes every present edge into that node the document does not name — live, or left behind by a
+// delete and waiting to revive with the node.
 enum class PrerequisiteMode { merge, replace };
 
 // One bulk arrival: a document upserted by id, and the ids it deletes outright. A tombstoned node
@@ -22,8 +23,9 @@ struct Graft {
 };
 
 // What joining a graft does beyond the upsert itself. `keptEdges` and `replacedEdges` are the same
-// set under the two modes — live edges into a node the document re-sends that its prerequisites do
-// not name — kept by merge, removed by replace. Only present ids among the tombstones count.
+// set under the two modes — present edges into a node the document re-sends (present or tombstoned:
+// any id with a life record) that its prerequisites do not name — kept by merge, removed by
+// replace. Only present ids among the tombstones count.
 struct GraftFootprint {
   std::vector<Edge> keptEdges;
   std::vector<Edge> replacedEdges;

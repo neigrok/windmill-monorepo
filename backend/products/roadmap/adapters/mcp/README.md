@@ -175,7 +175,7 @@ treated as internal and is not limited.
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -259,10 +259,14 @@ handshake `instructions` say so.
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
-  live prerequisite edge into that node the batch did not name, in the same frame, and counts them
-  as `removedEdges`. `tombstone[]` (max 500) deletes nodes in that same frame and seq — the node,
-  every present edge touching it in either direction, and the caller's own progress on it cleared
-  the way `prune` clears an orphan — counted back as `tombstoned: {nodes, edges}`. A tombstone id
+  present prerequisite edge into that node the batch did not name — live, or left dangling by an
+  earlier delete and about to revive with a re-sent id — in the same frame, and counts them as
+  `removedEdges`. `tombstone[]` (max 500) needs the `roadmap:delete` grant — the tool is
+  write-level, but a tombstone is what `delete_node` does, so a connection without that level is
+  refused before the tree is read, in `CompositeToolHost`'s own sentence — and deletes nodes in
+  that same frame and seq: the node and every present edge touching it in either direction,
+  counted back as `tombstoned: {nodes, edges}`. The caller's own progress on them is cleared after
+  the graft, the way `prune` clears an orphan's. A tombstone id
   that does not exist, or that is also in `nodes[]`, or that a batch node names as a prerequisite,
   refuses the whole call naming every offender before anything is applied. Everything lands at one
   stamp minted from the room clock, so a removal beats the edge's `addedAt` and a later re-add

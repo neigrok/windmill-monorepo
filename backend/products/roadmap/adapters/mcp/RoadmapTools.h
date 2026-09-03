@@ -21,9 +21,10 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
 
 private:
-  // The grant is settled above by CompositeToolHost, so everything here is an ownership question.
-  // callTool wraps it so every failure names its tool.
-  ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
+  // A tool's own level is settled above by CompositeToolHost, so nearly everything here is an
+  // ownership question; the scope rides along for the one argument that needs a level beyond the
+  // tool's own (import_subgraph's tombstone). callTool wraps it so every failure names its tool.
+  ToolResult dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& caller);
 
 
   RoomRegistry& registry_;

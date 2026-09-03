@@ -181,7 +181,7 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["name"] = name;
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
-  ToolDeclaration declaration{std::move(descriptor), "roadmap", access};
+  ToolDeclaration declaration{std::move(descriptor), kRoadmapProduct, access};
   declaration.bulkEdit = kBulkEdits.count(name) > 0;
   declaration.idempotent = kIdempotentWrites.count(name) > 0;
   return declaration;
@@ -596,18 +596,21 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                              "reported back in progressSkipped, not silently dropped.",
                              progressFields, {"nodeId", "status"});
     p["prerequisiteMode"] = enumStr(
-        "How a node already in the tree meets the `prerequisites` you send for it. `merge` (the "
-        "default) UNIONS them with the prerequisites it already has — an edge you leave out survives, "
-        "and is listed in the receipt's keptEdges. `replace` makes your list the whole list: every "
-        "live prerequisite edge into that node you did not name is removed in the same batch, and "
+        "How a node already in the tree — or deleted and re-sent, which revives it with its old "
+        "edges — meets the `prerequisites` you send for it. `merge` (the default) UNIONS them with "
+        "the prerequisites it already has — an edge you leave out survives, and is listed in the "
+        "receipt's keptEdges. `replace` makes your list the whole list: every prerequisite edge into "
+        "that node you did not name, live or waiting to revive, is removed in the same batch, and "
         "the receipt counts them as removedEdges. New nodes and nodes not in the batch are untouched "
         "either way.",
         kPrerequisiteModes);
     p["tombstone"] = strArray(
-        "Ids to delete in this same batch, at the same seq as the upserts: each node goes, every "
-        "edge touching it in either direction goes, and your own progress on it is cleared. Every id "
-        "must exist and must not also be in nodes[] — otherwise the whole call is refused, naming "
-        "each offending id, and nothing is applied. At most 500 per call.",
+        "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "
+        "edge touching it in either direction goes with it, and your own progress on it is cleared "
+        "after the graft, the way prune clears an orphan's. `tombstone` needs the roadmap:delete "
+        "grant — the level delete_node needs — and a connection without it is refused before the "
+        "tree is read. Every id must exist and must not also be in nodes[] — otherwise the whole "
+        "call is refused, naming each offending id, and nothing is applied. At most 500 per call.",
         kMaxIdLength);
     p["tombstone"]["maxItems"] = static_cast<Json::UInt64>(kMaxTombstones);
     p["dryRun"] = boolean(
@@ -625,8 +628,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "id already present is overwritten (reported in nodeCollisions/kindCollisions) — its scalar "
         "fields are replaced, and its prerequisites are UNIONED with the ones it already has unless "
         "prerequisiteMode is \"replace\"; a new id is added; the tree's title is not touched. The "
-        "only removals are the ones you ask for: `tombstone` ids, and under \"replace\" the "
-        "prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
+        "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
+        "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "

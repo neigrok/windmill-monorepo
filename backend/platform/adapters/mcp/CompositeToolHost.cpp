@@ -118,9 +118,7 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
   const Registered& tool = tools_[entry->second];
   const ToolDeclaration& declared = tool.declaration;
   if (!caller.scope.allows(declared.product, declared.access))
-    return ToolResult::failure(name + ": this connection was not granted " + declared.product + ":" +
-                               toString(declared.access) +
-                               ", so it cannot run this tool. Reconnect and approve that level.");
+    return ToolResult::failure(name + ": " + notGrantedSentence(declared.product, declared.access));
   if (std::optional<std::string> unknown = undeclaredKey(declared.descriptor["inputSchema"], arguments, ""))
     return ToolResult::failure(name + ": " + *unknown);
 

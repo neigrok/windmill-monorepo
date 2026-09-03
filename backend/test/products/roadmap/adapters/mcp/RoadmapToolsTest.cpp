@@ -1747,6 +1747,124 @@ TEST(mcp_import_subgraph_replace_drops_the_unnamed_edge_and_a_later_merge_re_add
   CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "b", "c"}));
 }
 
+TEST(mcp_import_subgraph_replace_on_a_revived_id_removes_the_edges_its_delete_left_behind) {
+  Harness h;
+  seedFan(h);
+  CHECK_FALSE(h.call("delete_node", with("nodeId", "n")).isError);  // no prune: a->n, c->n stay present
+  CHECK(nodeNamed(body(h.call("get_tree", kNoArgs)), "n") == nullptr);
+
+  Json::Value preview = importOf({nodeWith("n", {"b"})});
+  preview["dryRun"] = true;
+  Json::Value receipt = body(h.call("import_subgraph", preview));
+  CHECK_EQ(receipt["nodeCollisions"].size(), 0u);  // not present, so not a collision — but not new to the tree either
+  REQUIRE_EQ(receipt["keptEdges"].size(), 2u);
+  CHECK_EQ(receipt["keptEdges"][0]["from"].asString(), std::string("a"));
+  CHECK_EQ(receipt["keptEdges"][1]["from"].asString(), std::string("c"));
+  CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 2u);
+
+  Json::Value args = importOf({nodeWith("n", {"b"})});
+  args["prerequisiteMode"] = "replace";
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  receipt = body(result);
+  CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 0u);
+  CHECK_EQ(receipt["removedEdges"].asUInt64(), 2u);
+  CHECK(receipt["diagnosticsClean"].asBool());
+
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
+  REQUIRE(nodeNamed(got, "n") != nullptr);
+  CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"b"}));
+}
+
+TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_does) {
+  Harness h;
+  seedFan(h);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const ToolCaller writer{h.caller, parseToolScope("roadmap:read roadmap:write")};
+  const ToolCaller deleter{h.caller, parseToolScope("roadmap:read roadmap:write roadmap:delete")};
+
+  Json::Value del = with("nodeId", "n");
+  del["treeId"] = "t";
+  CHECK_EQ(message(gate.callTool("delete_node", del, writer)),
+           std::string("delete_node: this connection was not granted roadmap:delete, so it cannot run this "
+                       "tool. Reconnect and approve that level."));
+
+  Json::Value tombstone = importOf({});
+  tombstone["treeId"] = "t";
+  tombstone["tombstone"] = list({"n"});
+  const std::size_t saves = h.trees.savedNodeCounts.size();
+  const ToolResult refused = gate.callTool("import_subgraph", tombstone, writer);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: this connection was not granted roadmap:delete, so it cannot run "
+                       "this tool. Reconnect and approve that level."));
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saves);
+  CHECK(nodeNamed(body(h.call("get_tree", kNoArgs)), "n") != nullptr);
+
+  Json::Value plain = importOf({nodeWith("x", {"a"})});
+  plain["treeId"] = "t";
+  const ToolResult imported = gate.callTool("import_subgraph", plain, writer);
+  CHECK_FALSE(imported.isError);
+  CHECK(body(imported)["imported"].asBool());
+
+  const ToolResult deleted = gate.callTool("import_subgraph", tombstone, deleter);
+  CHECK_FALSE(deleted.isError);
+  CHECK_EQ(body(deleted)["tombstoned"]["nodes"].asUInt64(), 1u);
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
+  CHECK(nodeNamed(got, "n") == nullptr);
+  CHECK(nodeNamed(got, "x") != nullptr);
+}
+
+namespace {
+struct ThrowingProgressRepository : FakeProgressRepository {
+  bool armed = false;
+  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node, ProgressStatus status,
+                 const Hlc& at, std::uint64_t receivedAtMs) override {
+    if (armed) throw std::runtime_error("connect host=db.internal user=windmill password=hunter2: FATAL");
+    return FakeProgressRepository::setStatus(tree, user, node, status, at, receivedAtMs);
+  }
+};
+}
+
+TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_marks_throws) {
+  FakeTreeRepository trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  ThrowingProgressRepository progressRepo;
+  StepClock clock;
+  FakeTokens tokens;
+  RoomRegistry registry{trees, ops, bus};
+  ProgressService progress{progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  const UserId caller = uid("agent");
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
+  auto call = [&](const char* name, Json::Value args) {
+    args["treeId"] = "t";
+    return tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
+  };
+  CHECK_FALSE(call("create_node", node("n", "N")).isError);
+  CHECK_FALSE(call("set_progress", mark("n", "complete")).isError);
+  progressRepo.armed = true;
+
+  Json::Value args = importOf({});
+  args["tombstone"] = list({"n"});
+  const std::size_t saves = trees.savedNodeCounts.size();
+  const ToolResult result = call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK(receipt["imported"].asBool());
+  CHECK_EQ(receipt["tombstoned"]["nodes"].asUInt64(), 1u);
+  CHECK_EQ(trees.savedNodeCounts.size(), saves + 1);
+  CHECK_FALSE(registry.open(TreeId{"t"})->hasNode(NodeId{"n"}));
+  // The mark on the deleted node did not clear; the graft stands, and a retry says so.
+  CHECK_EQ(strings(body(call("get_progress", kNoArgs))["completed"]), (std::vector<std::string>{"n"}));
+  progressRepo.armed = false;
+  const ToolResult again = call("import_subgraph", args);
+  CHECK(again.isError);
+  CHECK(message(again).find("which this tree does not hold") != std::string::npos);
+}
+
 TEST(mcp_import_subgraph_caps_kept_edges_at_fifty_and_counts_the_rest) {
   Harness h;
   std::vector<std::string> names;
@@ -1769,7 +1887,7 @@ TEST(mcp_import_subgraph_caps_kept_edges_at_fifty_and_counts_the_rest) {
   CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 60u);
 }
 
-TEST(mcp_import_subgraph_tombstones_nodes_edges_and_progress_in_one_seq) {
+TEST(mcp_import_subgraph_tombstones_nodes_and_edges_in_one_seq_and_clears_progress_after_the_graft) {
   Harness h;
   h.call("create_node", node("a", "A"));
   CHECK_FALSE(h.call("import_subgraph", importOf({nodeWith("n", {"a"}), nodeWith("b", {"n"})})).isError);

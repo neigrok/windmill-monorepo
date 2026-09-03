@@ -71,6 +71,30 @@ TEST(graft_replace_removes_the_unnamed_edge_and_a_later_merge_re_add_wins) {
   CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("b"), nid("c")}));
 }
 
+TEST(graft_treats_a_tombstoned_id_as_re_sent_so_the_edges_a_delete_left_behind_are_named_or_replaced) {
+  LooseGraph g = seeded();
+  g.deleteNode(nid("n"), at(2));  // no prune: a->n, c->n, n->d stay present, dangling
+  CHECK_FALSE(g.hasNode(nid("n")));
+  CHECK(g.isTombstoned(nid("n")));
+
+  Graft merge;
+  merge.document.nodes = {spec("n", {"b"})};
+  const GraftFootprint kept = footprintOf(g, merge);
+  CHECK_EQ(kept.keptEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  CHECK(kept.replacedEdges.empty());
+
+  Graft replace = merge;
+  replace.prerequisites = PrerequisiteMode::replace;
+  const GraftFootprint replaced = footprintOf(g, replace);
+  CHECK(replaced.keptEdges.empty());
+  CHECK_EQ(replaced.replacedEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+
+  g.join(graftState(g, replace, at(3)));
+  CHECK(g.hasNode(nid("n")));
+  CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("b")}));
+  CHECK(g.edgePresent(nid("n"), nid("d")));  // an outgoing edge revives with the node either way
+}
+
 TEST(graft_replace_leaves_new_nodes_and_nodes_not_in_the_batch_alone) {
   LooseGraph g = seeded();
   Graft graft;

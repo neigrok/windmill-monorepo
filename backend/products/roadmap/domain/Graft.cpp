@@ -10,11 +10,11 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
   std::map<NodeId, std::set<NodeId>> named;  // each re-sent node -> the prerequisites the document names
   for (const NodeSpec& node : graft.document.nodes)
-    if (graph.hasNode(node.id))
+    if (graph.lifeOf(node.id))  // present or tombstoned: a revived node brings its old edges with it
       named[node.id] = std::set<NodeId>(node.prerequisites.begin(), node.prerequisites.end());
 
   GraftFootprint footprint;
-  for (const Edge& edge : graph.liveEdges()) {
+  for (const Edge& edge : graph.presentEdges()) {
     if (tombstoned.count(edge.from) || tombstoned.count(edge.to)) continue;  // counted below, once
     auto resent = named.find(edge.to);
     if (resent == named.end() || resent->second.count(edge.from)) continue;
