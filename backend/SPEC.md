@@ -110,8 +110,12 @@ A room never writes the op log itself: each write queues its row (`pendingOps`),
 `RoomRegistry::persist` — the step every write path takes before it answers — saves the lattice at
 the room's head first and appends the queued rows after (`landPendingOps`). A crash between the
 two leaves a lattice at `N` with no row at `N`: replay is a no-op and the feed misses one deed. A
-row the lattice cannot back cannot be written. An append that fails leaves its rows queued for the
-next persist; `tree_ops` is unique on `(tree_id, op_id)`, so the retry lands each row once.
+row the lattice cannot back cannot be written. An append that fails is logged and never surfaced:
+the lattice is durable, so the write answers as applied and the socket still acks; the rows stay
+queued for the next persist, and `tree_ops` is unique on `(tree_id, op_id)`, so a row that
+committed before its connection dropped lands once. Only a room closing — `evict` after its save,
+`retire`, shutdown — drops queued rows, and the room's teardown logs
+`N op rows for <tree> never landed`.
 
 `RenameNode` · `SetNodeColor` · `RepositionNode` · `CreateNode` · `AnnotateNode` · `AddEdge` ·
 `RemoveEdge` · `ReconnectEdge` · `DeleteNode` · `TransitiveReduction` · `PruneDangling` ·
@@ -124,15 +128,23 @@ next persist; `tree_ops` is unique on `(tree_id, op_id)`, so the retry lands eac
   edges touching an absent node. Both are computed server-side against the current state and
   applied as one op, one undo step.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
-- `validate(graph, legend, command)` runs at the edge. Graph commands are always admissible.
-  Legend commands may be refused — hue uniqueness, ≤6 kinds, no in-use removal, length caps are
-  all locally decidable on the authoritative state.
+- `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
+  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `RepositionNode` ·
+  `AnnotateNode` — an id no present node carries (`no node in this tree is named "x"`), so no
+  edit plants a phantom. Legend commands may be refused — hue uniqueness, ≤6 kinds, no in-use
+  removal, length caps are all locally decidable on the authoritative state.
 
 ### Bounds
 
 Declared once in `domain/Command.h` and published as `maxLength` by the MCP surface. Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
-names each field over its cap and by how much.
+names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
+surrogate, a code point past U+10FFFF, a lone or missing continuation byte) is refused at the same
+door with `<field> is not valid UTF-8` — `isValidUtf8` runs before any cap is counted, on every
+field including ids and edge endpoints, so a byte sequence Postgres would reject never reaches a
+live room. The MCP surface adds two byte budgets on top: a `get_tree`/`find_nodes` page carrying
+`description` ends at 4 MB of serialized nodes (the reply says `pageBytes` beside `nextCursor`),
+and one `import_subgraph` call carries at most 8 MB of description text.
 
 | Bound | Value |
 | --- | --- |

@@ -255,14 +255,17 @@ TEST(room_snapshot_carries_the_legend) {
   CHECK_EQ(snapshot.kinds[0].label, std::string("Infra"));
 }
 
-TEST(room_validate_rejects_invalid_legend_ops_only) {
+TEST(room_validate_speaks_for_the_live_state) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
 
   apply(room, AddKind{KindId{"sky"}, NodeColor::sky}, 1);
   CHECK(room.validate(AddKind{KindId{"dupe"}, NodeColor::sky}).has_value());
   CHECK_FALSE(room.validate(AddKind{KindId{"gold"}, NodeColor::gold}).has_value());
-  CHECK_FALSE(room.validate(RenameNode{nid("anything"), "x"}).has_value());
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::sky, {}, std::nullopt}, 2);
+  CHECK_FALSE(room.validate(RenameNode{nid("a"), "x"}).has_value());
+  CHECK_EQ(room.validate(RenameNode{nid("anything"), "x"}),
+           std::optional<std::string>("no node in this tree is named \"anything\""));
 }
 
 TEST(room_recolor_kind_repaints_nodes) {

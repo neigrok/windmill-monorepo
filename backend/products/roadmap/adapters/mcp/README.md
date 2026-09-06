@@ -71,10 +71,18 @@ The checks live in `ToolArgs.{h,cpp}`. `RoadmapTools::callTool` stamps the tool 
 and catches, so a malformed argument fails its own call rather than the whole HTTP request. Every
 cap a tool enforces is published as `maxLength` / `maxItems` in its `inputSchema`, and every
 length cap counts Unicode code points (`codePointCount`, `domain/Command.h`) — the published
-`maxLength` is what a CJK or emoji string is held to. A node's label, icon and description are
-capped by the domain — `validate()` for a command, `admit()` for a graft — in one sentence that
-names every field over its cap and by how much, so a caller who overran several fixes them in one
-round trip; `annotate_node {appendDescription}` is judged on the body the node would then hold.
+`maxLength` is what a CJK or emoji string is held to, and a string that is not valid UTF-8 is
+refused first, by name (`label is not valid UTF-8`), so the count only ever runs over real text.
+A node's label, icon and description are capped by the domain — `validate()` for a command,
+`admit()` for a graft — in one sentence that names every field over its cap and by how much, so a
+caller who overran several fixes them in one round trip; `annotate_node {appendDescription}` is
+judged on the body the node would then hold. Two byte budgets sit above the character caps: a
+`get_tree` / `find_nodes` page carrying `description` ends at 4 MB of serialized nodes and says
+`pageBytes` beside `nextCursor` when that is what ended it (`ReadShape::projectPage`), and one
+`import_subgraph` call carries at most 8 MB of description text (`kMaxImportDescriptionBytes`).
+An edit of one node — `annotate_node`, `rename_node`, `set_node_color`, `move_node` — names a
+present node or is refused with `no node in this tree is named "x"`, the sentence `delete_node`
+and `set_progress` use.
 
 ## Handles
 

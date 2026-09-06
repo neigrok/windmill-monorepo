@@ -68,8 +68,8 @@ public:
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);
 
-  // Graph commands are always admissible; legend commands may not be. Server-driven undo/redo
-  // bypasses it.
+  // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no
+  // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
   // Advances head + dedup set; does not re-persist or re-broadcast.
@@ -82,6 +82,10 @@ public:
   // save, and the log's `(tree_id, op_id)` uniqueness absorbs the retry.
   const std::vector<AppliedOp>& pendingOps() const { return pendingOps_; }
   void landPendingOps(OpLog& log);
+
+  // A room closing with rows still queued drops them — the lattice they describe is durable, only
+  // the feed misses those deeds — and says so in the log.
+  ~TreeRoom();
 
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;

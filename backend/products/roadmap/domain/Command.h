@@ -33,7 +33,12 @@ constexpr std::size_t kMaxKindDescriptionLength = 80;    // a kind's sorting bri
 
 // The one reading of "characters" every cap is held to: UTF-8 code points, so a CJK character or
 // an emoji counts once. byteOffsetOfCodePoint is where code point `index` (zero-based) starts, or
-// npos when the text holds no more than `index` of them — the cut a truncation makes.
+// npos when the text holds no more than `index` of them — the cut a truncation makes. Both count
+// only valid text: every door that holds a cap refuses malformed UTF-8 first (isValidUtf8 — no
+// overlong form, no surrogate, nothing past U+10FFFF, no lone or missing continuation byte), with
+// the clause `<field> is not valid UTF-8`, so a byte sequence Postgres would reject never reaches
+// a live room.
+bool isValidUtf8(const std::string& bytes);
 std::size_t codePointCount(const std::string& utf8);
 std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index);
 
@@ -94,9 +99,11 @@ struct Batch { std::vector<Command> commands; };
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
-// Server-authoritative validation before a command is admitted to the log. Graph commands are never
-// rejected (nullopt); legend commands may be — hue uniqueness, ≤6 kinds, no in-use removal, length
-// caps. The string is a human-readable reason.
+// Server-authoritative validation before a command is admitted to the log. A graph command is
+// refused only for a malformed or over-cap field, or — for an edit of one node's registers
+// (rename, recolor, move, annotate) — an id no present node carries, with the sentence
+// `no node in this tree is named "x"`; legend commands may also be refused for hue uniqueness,
+// ≤6 kinds and in-use removal. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
 
 // The same bounds for arrivals that mint no Command and so are never seen by validate(). A refusal

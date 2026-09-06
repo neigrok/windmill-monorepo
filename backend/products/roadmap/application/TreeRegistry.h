@@ -38,7 +38,7 @@ public:
   Removal remove(const TreeId& tree, const UserId& caller);
 
   // trim → refuse a blank → owner check → apply through RoomRegistry.
-  enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle };
+  enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
 
   // owner check → set read visibility through RoomRegistry: the durable column write plus the live

@@ -1,6 +1,7 @@
 #include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
+#include "products/roadmap/adapters/mcp/ReadShape.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/testing.h"
 
@@ -2651,4 +2652,117 @@ TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_n
   CHECK_EQ((*replaced)["label"].asString(), std::string("Drills"));
   CHECK_EQ((*replaced)["description"].asString(), std::string(""));
   CHECK_FALSE((*replaced)["crossBranchExempt"].asBool());
+}
+
+namespace {
+
+Json::Value describedImport(int nodes, const std::string& description) {
+  Json::Value args(Json::objectValue);
+  Json::Value array(Json::arrayValue);
+  for (int i = 0; i < nodes; ++i) {
+    Json::Value n = node(("n" + std::to_string(i)).c_str(), "N");
+    n["description"] = description;
+    array.append(n);
+  }
+  args["nodes"] = array;
+  return args;
+}
+
+std::string grinsOf(int count) {
+  std::string out;
+  for (int i = 0; i < count; ++i) out += "\xF0\x9F\x98\x80";
+  return out;
+}
+
+}
+
+// The lattice is saved before the reply, so a row that fails to land after it is the log's
+// problem: the caller is told the truth — applied — and the row lands with the next write.
+TEST(mcp_a_write_whose_op_row_fails_to_land_still_answers_applied_and_the_row_lands_next_time) {
+  Harness h;
+  h.ops.failNextAppends = 1;
+  ToolResult first = h.call("create_node", node("a", "A"));
+  CHECK_FALSE(first.isError);
+  CHECK(body(first)["applied"].asBool());
+  CHECK_EQ(body(first)["seq"].asInt64(), 1);
+  CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(1));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).presentNodeIds().size(), 1u);
+  CHECK(h.ops.byTree["t"].empty());
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 1u);
+
+  ToolResult second = h.call("create_node", node("b", "B"));
+  CHECK_FALSE(second.isError);
+  CHECK_EQ(body(second)["seq"].asInt64(), 2);
+  REQUIRE_EQ(h.ops.byTree["t"].size(), 2u);
+  CHECK_EQ(h.ops.byTree["t"][0].seq, static_cast<Seq>(1));
+  CHECK_EQ(h.ops.byTree["t"][1].seq, static_cast<Seq>(2));
+}
+
+// Sixteen thousand four-byte characters serialize as twelve bytes each, so a page of them is held
+// to a byte budget as well as a node limit: the reply says pageBytes when the budget ended it, and
+// the cursor walks the rest as usual. ASCII of the same character count never reaches the budget.
+TEST(mcp_a_page_carrying_descriptions_ends_at_the_byte_budget_and_says_so) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", describedImport(30, grinsOf(16000))).isError);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "description"});
+  args["limit"] = 1000;
+  Json::Value page = body(h.call("get_tree", args));
+  CHECK_EQ(page["count"].asUInt64(), 30u);
+  const std::size_t onPage = page["tree"]["nodes"].size();
+  CHECK(onPage < 30u);
+  CHECK(onPage >= 20u);  // 4 MB / 192 KB per node
+  CHECK(page["pageBytes"].asUInt64() > kPageByteBudget);
+  CHECK_EQ(page["nextCursor"].asString(), page["tree"]["nodes"][static_cast<Json::ArrayIndex>(onPage - 1)]["id"].asString());
+  CHECK_EQ(page["tree"]["nodes"][0]["description"].asString(), grinsOf(16000));
+
+  std::size_t walked = onPage;
+  while (page.isMember("nextCursor")) {
+    args["cursor"] = page["nextCursor"];
+    page = body(h.call("get_tree", args));
+    walked += page["tree"]["nodes"].size();
+  }
+  CHECK_EQ(walked, 30u);
+
+  // find_nodes shares the page, and a page without `description` is bounded by `limit` alone.
+  Json::Value find(Json::objectValue);
+  find["fields"] = list({"id", "description"});
+  find["limit"] = 1000;
+  Json::Value found = body(h.call("find_nodes", find));
+  CHECK_EQ(found["nodes"].size(), onPage);
+  CHECK(found.isMember("pageBytes"));
+  CHECK(found.isMember("nextCursor"));
+  Json::Value summaries(Json::objectValue);
+  summaries["fields"] = list({"id", "summary"});
+  summaries["limit"] = 1000;
+  Json::Value light = body(h.call("get_tree", summaries));
+  CHECK_EQ(light["tree"]["nodes"].size(), 30u);
+  CHECK_FALSE(light.isMember("pageBytes"));
+  CHECK_FALSE(light.isMember("nextCursor"));
+
+  Harness ascii;
+  CHECK_FALSE(ascii.call("import_subgraph", describedImport(30, std::string(16000, 'd'))).isError);
+  args.removeMember("cursor");
+  Json::Value whole = body(ascii.call("get_tree", args));
+  CHECK_EQ(whole["tree"]["nodes"].size(), 30u);
+  CHECK_FALSE(whole.isMember("pageBytes"));
+  CHECK_FALSE(whole.isMember("nextCursor"));
+}
+
+// One call's description text is bounded as a whole: the graft is one frame every subscriber
+// receives entire, so the cap is on the batch, and the refusal names the size.
+TEST(mcp_import_subgraph_refuses_more_description_text_than_one_call_may_carry) {
+  Harness h;
+  ToolResult refused = h.call("import_subgraph", describedImport(525, std::string(16000, 'd')));  // 8400000 bytes
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: nodes carries 8400000 bytes of description text, 11392 over the "
+                       "8388608-byte cap one call may carry — split the import"));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
+  CHECK(h.bus.subgraphBroadcasts.empty());
+
+  ToolResult landed = h.call("import_subgraph", describedImport(524, std::string(16000, 'd')));  // 8384000 bytes
+  CHECK_FALSE(landed.isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 524u);
 }

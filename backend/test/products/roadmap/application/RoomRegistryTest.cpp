@@ -413,13 +413,7 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
     const Seq seq = room.importTree(manyNodeGraft(200), 10, uid());
     CHECK_EQ(seq, static_cast<Seq>(8));
     log.failAppend = true;
-    bool threw = false;
-    try {
-      registry.persist(tid());
-    } catch (const std::runtime_error&) {
-      threw = true;
-    }
-    CHECK(threw);
+    registry.persist(tid());  // the row's failure is logged, never thrown: the lattice is durable
     CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
     CHECK_EQ(room.pendingOps().size(), 1u);  // still queued for the next save, had the process lived
   }
@@ -470,5 +464,61 @@ TEST(registry_a_failed_save_lands_no_op_row_and_keeps_the_write_queued) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
   REQUIRE_EQ(log.byTree["t"].size(), 1u);
   CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK(room.pendingOps().empty());
+}
+
+// A row that fails to land after the save is an incident for the log, not a refusal for the
+// caller: persist returns normally, the row stays queued, and the next persist lands it in order
+// with whatever came after.
+TEST(registry_persist_returns_normally_when_a_row_fails_to_land_and_lands_it_next_time) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = *registry.open(tid());
+  room.applyCommand(createNode("added"), 10, uid());
+  log.failAppend = true;
+  registry.persist(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK(log.byTree["t"].empty());
+  CHECK_EQ(room.pendingOps().size(), 1u);
+
+  log.failAppend = false;
+  room.applyCommand(createNode("also"), 11, uid());
+  registry.persist(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8", "save@9", "append@8", "append@9"}));
+  CHECK(room.pendingOps().empty());
+  REQUIRE_EQ(log.byTree["t"].size(), 2u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
+}
+
+// Evict saves first and closes regardless: a row that fails to land after that save goes with the
+// room, since the lattice it describes is durable — the feed misses the deed, the tree nothing.
+TEST(registry_evict_closes_the_room_after_its_save_even_when_the_rows_fail_to_land) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  registry.open(tid())->applyCommand(createNode("added"), 10, uid());
+  log.failAppend = true;
+  registry.evict(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  CHECK(log.byTree["t"].empty());
+
+  // Reopened, the tree holds the write and has nothing to replay.
+  TreeRoom& room = *registry.open(tid());
+  CHECK_EQ(room.head(), static_cast<Seq>(8));
+  CHECK(room.hasNode(NodeId{"added"}));
   CHECK(room.pendingOps().empty());
 }

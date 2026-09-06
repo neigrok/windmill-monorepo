@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <set>
 
@@ -27,6 +28,10 @@ struct Overages {
   std::vector<std::string> clauses;
 
   void note(const std::string& field, const std::string& value, std::size_t cap) {
+    if (!isValidUtf8(value)) {
+      clauses.push_back(field + " is not valid UTF-8");
+      return;
+    }
     const std::size_t size = codePointCount(value);
     if (size <= cap) return;
     clauses.push_back(field + " would be " + std::to_string(size) + " characters, " +
@@ -71,6 +76,18 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
   return std::nullopt;
 }
 
+// An edge names two ids that may belong to no node the frame carries, so they are bounded on
+// their own — a dangling edge lands, but never one Postgres would refuse to store.
+std::optional<std::string> edgeEndpointBounds(const Edge& edge) {
+  for (const NodeId* endpoint : {&edge.from, &edge.to}) {
+    if (endpoint->empty()) return "an edge has an empty endpoint";
+    Overages over;
+    over.note("an edge endpoint", endpoint->str(), kMaxIdLength);
+    if (std::optional<std::string> bad = over.sentence()) return bad;
+  }
+  return std::nullopt;
+}
+
 // Every per-kind bound admit() enforces, wherever the kind arrived from.
 std::optional<std::string> kindFieldBounds(const KindId& id, const std::string& label,
                                            const std::string& description) {
@@ -100,6 +117,36 @@ std::optional<Admission> growthWithin(std::size_t nodesBefore, std::size_t nodes
                          std::to_string(kMaxEdges) + " — call tidy to drop the edges a longer path already implies"};
   return std::nullopt;
 }
+}
+
+bool isValidUtf8(const std::string& bytes) {
+  const std::size_t size = bytes.size();
+  std::size_t i = 0;
+  while (i < size) {
+    const unsigned char lead = static_cast<unsigned char>(bytes[i]);
+    if (lead < 0x80) {
+      ++i;
+      continue;
+    }
+    std::size_t length = 0;
+    std::uint32_t value = 0;
+    std::uint32_t floor = 0;  // the smallest code point this length may encode; below it is overlong
+    if (lead >= 0xC2 && lead <= 0xDF) { length = 2; value = lead & 0x1F; floor = 0x80; }
+    else if (lead >= 0xE0 && lead <= 0xEF) { length = 3; value = lead & 0x0F; floor = 0x800; }
+    else if (lead >= 0xF0 && lead <= 0xF4) { length = 4; value = lead & 0x07; floor = 0x10000; }
+    else return false;  // a lone continuation byte, an overlong lead (C0, C1) or a lead past F4
+    if (i + length > size) return false;  // truncated sequence
+    for (std::size_t k = 1; k < length; ++k) {
+      const unsigned char next = static_cast<unsigned char>(bytes[i + k]);
+      if ((next & 0xC0) != 0x80) return false;
+      value = (value << 6) | (next & 0x3F);
+    }
+    if (value < floor) return false;
+    if (value >= 0xD800 && value <= 0xDFFF) return false;  // a UTF-16 surrogate is not a scalar value
+    if (value > 0x10FFFF) return false;
+    i += length;
+  }
+  return true;
 }
 
 std::size_t codePointCount(const std::string& utf8) {
@@ -184,6 +231,12 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     over.note("node id", id.str(), kMaxIdLength);
     return over.sentence();
   };
+  // An edit of one node's registers must land on a present node: a tombstoned or never-created id
+  // would otherwise be written as a phantom no reader ever sees.
+  auto present = [&](const NodeId& id) -> std::optional<std::string> {
+    if (graph.hasNode(id)) return std::nullopt;
+    return "no node in this tree is named " + quoted(id.str());
+  };
   return std::visit(overloaded{
     [&](const CreateNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
@@ -212,20 +265,25 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
         over.note("description", appendedTo(graph.descriptionOf(c.id), *c.appendDescription),
                   kMaxNodeDescriptionLength);
       if (c.links) over.noteLinks(*c.links);
-      return over.sentence();
+      if (auto bad = over.sentence()) return bad;
+      return present(c.id);
     },
     [&](const RenameNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
       Overages over;
       over.note("label", c.label, kMaxNodeLabelLength);
-      return over.sentence();
+      if (auto bad = over.sentence()) return bad;
+      return present(c.id);
     },
     [&](const RepositionNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
       if (!(std::isfinite(c.position.x) && std::isfinite(c.position.y))) return "position is not finite";
-      return std::nullopt;
+      return present(c.id);
     },
-    [&](const SetNodeColor& c) -> std::optional<std::string> { return idBounds(c.id); },
+    [&](const SetNodeColor& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.id)) return bad;
+      return present(c.id);
+    },
     [&](const DeleteNode& c) -> std::optional<std::string> { return idBounds(c.id); },
     [&](const AddEdge& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.from)) return bad;
@@ -359,6 +417,8 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
   }
   std::map<Edge, ElementSet> edgeLives;
   for (const EdgeStateEntry& edge : incoming.edges) {
+    if (std::optional<std::string> bad = edgeEndpointBounds(edge.edge))
+      return Admission{Admission::Verdict::malformed, *bad};
     auto [life, fresh] = edgeLives.try_emplace(edge.edge);
     if (fresh) life->second = graph.lifeOf(edge.edge).value_or(ElementSet{});
     life->second.add(edge.addedAt);

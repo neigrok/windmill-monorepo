@@ -247,7 +247,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "ordered legend `kinds` — with the tree's op sequence number. Call this before editing to "
         "learn the node ids the other tools take, and the legend a node's color refers to. `count` "
         "is the tree's whole node count; when it exceeds one page a `nextCursor` comes back with it. "
-        "`includeEdges: true` adds the whole tree's edge list beside the page.",
+        "A page whose `fields` carry `description` is also held to 4 MB of serialized nodes: when that "
+        "budget, not `limit`, ends the page, the reply says `pageBytes` beside `nextCursor` — follow "
+        "the cursor as usual. `includeEdges: true` adds the whole tree's edge list beside the page.",
         p, {"treeId"}));
   }
   {
@@ -319,7 +321,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "you can work on right now, in one call — and `query` is a case-insensitive substring over id + "
         "label + description, best match first — so pasting an id you already know finds that node, at "
         "the top. Omit all filters to list every node. `count` is everything that matched, not the size "
-        "of the page you got; when more remain a `nextCursor` comes back with it.",
+        "of the page you got; when more remain a `nextCursor` comes back with it. A page whose `fields` "
+        "carry `description` is also held to 4 MB of serialized nodes, and says `pageBytes` when that "
+        "budget, not `limit`, ended it.",
         p, {"treeId"}));
   }
   {
@@ -666,7 +670,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
         "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
         "nodes and edges the tombstones took. Pass dryRun to preview all of that and change nothing. "
-        "This collapses hundreds of create/connect/delete calls into one.",
+        "One call carries at most 8 MB of description text across nodes[] (each description is still "
+        "capped at 16000 characters on its own); past that the call is refused naming the size, so "
+        "split a bigger import. This collapses hundreds of create/connect/delete calls into one.",
         p, {"treeId", "nodes"}));
   }
   {

@@ -94,6 +94,7 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   const std::size_t start = title.find_first_not_of(" \t\r\n");
   if (start == std::string::npos) return Renaming::blankTitle;
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
+  if (!isValidUtf8(trimmed)) return Renaming::malformedTitle;  // the one thing the row cannot hold
 
   // A name, not a payload. Truncate — never reject — to kMaxTitleChars (domain/Command.h), on the
   // code-point reading every cap shares, so the cut can never split a sequence.

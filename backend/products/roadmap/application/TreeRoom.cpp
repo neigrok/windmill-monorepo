@@ -2,7 +2,14 @@
 
 #include "products/roadmap/domain/Subgraph.h"
 
+#include <trantor/utils/Logger.h>
+
 namespace wm {
+
+TreeRoom::~TreeRoom() {
+  if (pendingOps_.empty()) return;
+  LOG_WARN << pendingOps_.size() << " op rows for " << id_.str() << " never landed";
+}
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
                    std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,

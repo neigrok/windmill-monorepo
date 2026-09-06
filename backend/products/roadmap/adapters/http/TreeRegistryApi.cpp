@@ -138,6 +138,10 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     callback(error(drogon::k400BadRequest, "a tree always has a name"));
     return;
   }
+  if (outcome == TreeRegistry::Renaming::malformedTitle) {
+    callback(error(drogon::k400BadRequest, "the title is not valid UTF-8"));
+    return;
+  }
   if (outcome == TreeRegistry::Renaming::notFound) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;

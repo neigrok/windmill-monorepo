@@ -11,6 +11,10 @@ static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static KindId kid(const char* s) { return KindId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
+static Command createNodeCommand(const char* id) {
+  return CreateNode{nid(id), id, "", NodeColor::sky, {}, std::nullopt};
+}
+
 static LooseGraph seeded() {
   LooseGraph g;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
@@ -259,6 +263,7 @@ TEST(annotate_node_sets_only_the_fields_it_carries) {
 TEST(annotate_and_create_bounds_are_enforced) {
   LooseGraph g;
   Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
   std::vector<Link> tooMany(kMaxNodeLinks + 1, Link{"", "u"});
   CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, tooMany}}),
            std::optional<std::string>("links has 33 items, max 32"));
@@ -731,4 +736,132 @@ TEST(every_cap_counts_code_points_not_bytes) {
   std::string cjkTitle;
   for (std::size_t i = 0; i < kMaxTitleChars; ++i) cjkTitle += "\xE5\xAD\x97";
   CHECK_FALSE(admitTitle(cjkTitle).has_value());
+}
+
+TEST(malformed_utf8_is_refused_at_every_door_before_any_cap_is_counted) {
+  CHECK(isValidUtf8(""));
+  CHECK(isValidUtf8("plain ascii"));
+  CHECK(isValidUtf8("h\xC3\xA9llo \xE5\xAD\x97 \xF0\x9F\x98\x80"));
+  CHECK(isValidUtf8("\xF4\x8F\xBF\xBF"));           // U+10FFFF, the last scalar value
+  CHECK_FALSE(isValidUtf8("\xFF"));                  // no such lead byte
+  CHECK_FALSE(isValidUtf8("\x80"));                  // a lone continuation byte
+  CHECK_FALSE(isValidUtf8("\xE2\x82"));              // truncated: two bytes of a three-byte sequence
+  CHECK_FALSE(isValidUtf8("a\xC3"));                 // truncated at the end of the text
+  CHECK_FALSE(isValidUtf8("\xC0\x80"));              // overlong NUL
+  CHECK_FALSE(isValidUtf8("\xE0\x80\x80"));          // overlong three-byte form
+  CHECK_FALSE(isValidUtf8("\xF0\x80\x80\x80"));      // overlong four-byte form
+  CHECK_FALSE(isValidUtf8("\xED\xA0\x80"));          // U+D800, a surrogate
+  CHECK_FALSE(isValidUtf8("\xF4\x90\x80\x80"));      // U+110000, past the last scalar value
+  CHECK_FALSE(isValidUtf8("\xF5\x80\x80\x80"));      // a lead past F4
+  CHECK_FALSE(isValidUtf8("\xC3\x41"));              // a lead followed by a non-continuation byte
+
+  // 100000 continuation bytes count as zero characters, so without the gate every cap passes.
+  const std::string continuation(100000, '\x80');
+  CHECK_EQ(codePointCount(continuation), 0u);
+  LooseGraph g = seeded();
+  Legend legend;
+  CreateNode description{nid("c"), "L", ""};
+  description.description = continuation;
+  CHECK_EQ(validate(g, legend, Command{description}),
+           std::optional<std::string>("description is not valid UTF-8"));
+  CHECK_EQ(validate(g, legend, Command{CreateNode{NodeId{continuation}, "L", ""}}),
+           std::optional<std::string>("node id is not valid UTF-8"));
+  CHECK_EQ(validate(g, legend, Command{CreateNode{nid("c"), "\xFF", "\xE2\x82"}}),
+           std::optional<std::string>("label is not valid UTF-8; icon is not valid UTF-8"));
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), "\xC0\x80"}}),
+           std::optional<std::string>("label is not valid UTF-8"));
+  AnnotateNode links{nid("a")};
+  links.links = std::vector<Link>{Link{"ok", "https://x/\xED\xA0\x80"}};
+  CHECK_EQ(validate(g, legend, Command{links}), std::optional<std::string>("links[0].url is not valid UTF-8"));
+  CHECK_EQ(validate(g, legend, Command{AddKind{kid("k"), NodeColor::sky, "\xF5\x80\x80\x80", ""}}),
+           std::optional<std::string>("label is not valid UTF-8"));
+
+  // The HTTP save door: a posted document.
+  TreeData document;
+  document.title = "Mine";
+  NodeSpec hull;
+  hull.id = nid("hull");
+  hull.label = "hull";
+  hull.description = continuation;
+  document.nodes.push_back(hull);
+  std::optional<Admission> posted = admit(document);
+  REQUIRE(posted.has_value());
+  CHECK(posted->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(posted->reason, std::string("node \"hull\": description is not valid UTF-8"));
+  document.nodes[0].description = "";
+  document.nodes[0].id = NodeId{std::string(5000, '\x80')};
+  CHECK_EQ(admit(document)->reason, std::string("a node id is not valid UTF-8"));
+  document.nodes[0].id = nid("hull");
+  document.title = "\xE2\x82";
+  CHECK_EQ(admit(document)->reason, std::string("the title is not valid UTF-8"));
+  CHECK_EQ(admitTitle(std::string(300, '\x80'))->reason, std::string("the title is not valid UTF-8"));
+  document.title = "Mine";
+  Kind kind;
+  kind.id = kid("k");
+  kind.hue = NodeColor::sky;
+  kind.description = "\xFF";
+  document.kinds.push_back(kind);
+  CHECK_EQ(admit(document)->reason, std::string("kind \"k\": description is not valid UTF-8"));
+
+  // The socket door: a client lattice frame, whose edges name ids no node in the frame carries.
+  LooseGraph client;
+  client.createNode(nid("hull"), "hull", "", NodeColor::sky, std::nullopt, at(100, "client"));
+  client.setDescription(nid("hull"), continuation, at(101, "client"));
+  std::optional<Admission> frame = admit(g, client.exportState());
+  REQUIRE(frame.has_value());
+  CHECK(frame->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(frame->reason, std::string("node \"hull\": description is not valid UTF-8"));
+  LooseGraph dangling;
+  dangling.addEdge(NodeId{"\x80\x80"}, nid("a"), at(100, "client"));
+  CHECK_EQ(admit(g, dangling.exportState())->reason, std::string("an edge endpoint is not valid UTF-8"));
+  LooseGraph longEdge;
+  longEdge.addEdge(nid("a"), NodeId{std::string(129, 'e')}, at(100, "client"));
+  CHECK_EQ(admit(g, longEdge.exportState())->reason,
+           std::string("an edge endpoint would be 129 characters, 1 over the 128 cap"));
+  LegendState legendFrame;
+  KindStateEntry entry;
+  entry.id = kid("k");
+  entry.label = "\xC3";
+  legendFrame.kinds.push_back(entry);
+  CHECK_EQ(admit(legend, legendFrame)->reason, std::string("kind \"k\": label is not valid UTF-8"));
+
+  // Valid four-byte text is still counted by code point, at the cap and one over it.
+  std::string grins;
+  for (std::size_t i = 0; i < kMaxNodeDescriptionLength; ++i) grins += "\xF0\x9F\x98\x80";
+  CHECK_EQ(codePointCount(grins), kMaxNodeDescriptionLength);
+  AnnotateNode full{nid("a")};
+  full.description = grins;
+  CHECK_EQ(validate(g, legend, Command{full}), std::nullopt);
+  full.description = grins + "\xF0\x9F\x98\x80";
+  CHECK_EQ(validate(g, legend, Command{full}),
+           std::optional<std::string>("description would be 16001 characters, 1 over the 16000 cap"));
+}
+
+TEST(a_node_edit_naming_no_present_node_is_refused_before_it_can_plant_a_phantom) {
+  LooseGraph g = seeded();
+  Legend legend;
+  const std::optional<std::string> missing("no node in this tree is named \"ghost\"");
+  AnnotateNode annotate{nid("ghost")};
+  annotate.appendDescription = "boo";
+  CHECK_EQ(validate(g, legend, Command{annotate}), missing);
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("ghost"), "Ghost"}}), missing);
+  CHECK_EQ(validate(g, legend, Command{SetNodeColor{nid("ghost"), NodeColor::gold}}), missing);
+  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("ghost"), Vec2{1, 2}}}), missing);
+  CHECK_EQ(validate(g, legend, Command{Batch{{createNodeCommand("c"), Command{annotate}}}}), missing);
+
+  // A tombstoned id is as absent as one never created.
+  g.deleteNode(nid("a"), at(9));
+  AnnotateNode dead{nid("a")};
+  dead.icon = "zombie";
+  CHECK_EQ(validate(g, legend, Command{dead}), std::optional<std::string>("no node in this tree is named \"a\""));
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), "Back"}}),
+           std::optional<std::string>("no node in this tree is named \"a\""));
+
+  // A present node passes, and a cap is still named ahead of existence.
+  AnnotateNode fine{nid("b")};
+  fine.icon = "star";
+  CHECK_EQ(validate(g, legend, Command{fine}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("ghost"), std::string(201, 'l')}}),
+           std::optional<std::string>("label would be 201 characters, 1 over the 200 cap"));
+  CHECK_EQ(g.presentNodeCount(), 1u);
 }

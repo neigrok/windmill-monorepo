@@ -9,6 +9,7 @@
 #include "products/roadmap/application/TreeRegistry.h"
 #include "platform/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Subgraph.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
@@ -129,6 +130,23 @@ std::string progressFrame(const std::string& treeId, const std::string& frameId,
   }
   f["marks"] = rows;
   return dump(f);
+}
+
+// A subgraph frame carrying one node with the given description, as a client lattice would send
+// it. The description is spliced in after serialization, so malformed bytes reach the door as the
+// client sent them rather than as the JSON writer would rewrite them.
+std::string nodeFrame(const std::string& treeId, const char* frameId, const std::string& description) {
+  LooseGraph g;
+  g.createNode(NodeId{"hull"}, "hull", "", NodeColor::sky, std::nullopt, Hlc{100, 0, "client"});
+  g.setDescription(NodeId{"hull"}, "RAW", Hlc{101, 0, "client"});
+  Json::Value f(Json::objectValue);
+  f["t"] = "subgraph";
+  f["treeId"] = treeId;
+  f["frameId"] = frameId;
+  f["nodes"] = toJson(g.exportState())["nodes"];
+  std::string text = dump(f);
+  text.replace(text.find("RAW"), 3, description);
+  return text;
 }
 
 std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
@@ -1103,4 +1121,52 @@ TEST(ws_deleting_a_tree_drops_its_readers_and_refuses_a_fresh_one) {
   broadcastTo(h.bus, "t_pub");
   CHECK_EQ(reader->sent.size(), 2u);
   CHECK_EQ(fresh->sent.size(), 1u);
+}
+
+TEST(ws_a_frame_carrying_invalid_utf8_is_rejected_by_name_before_it_touches_the_room) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  h.collab.onMessage(conn, nodeFrame("t_priv", "f-bad", std::string(100000, '\x80')));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("node \"hull\": description is not valid UTF-8"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-bad"));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(0));
+  CHECK(h.trees.byId["t_priv"].state.nodes.empty());
+
+  h.collab.onMessage(conn, nodeFrame("t_priv", "f-ok", "\xE5\xAD\x97 \xF0\x9F\x98\x80"));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
+}
+
+// The ack attests the save, and the save happened: a row that fails to land after it is logged and
+// the frame is still acked, so the client does not re-flush a write the tree already holds.
+TEST(ws_a_write_whose_op_row_fails_to_land_is_still_acked_and_the_row_lands_next_time) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  h.ops.failNextAppends = 1;
+  h.collab.onMessage(conn, nodeFrame("t_priv", "f1", "body"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f1"));
+  CHECK_EQ(parse(conn->sent[0])["seq"].asInt64(), 1);
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
+  CHECK(h.ops.byTree["t_priv"].empty());
+
+  h.collab.onMessage(conn, nodeFrame("t_priv", "f2", "more"));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  REQUIRE_EQ(h.ops.byTree["t_priv"].size(), 2u);
+  CHECK_EQ(h.ops.byTree["t_priv"][0].seq, static_cast<Seq>(1));
+  CHECK_EQ(h.ops.byTree["t_priv"][1].seq, static_cast<Seq>(2));
 }
