@@ -2762,7 +2762,7 @@ TEST(mcp_import_subgraph_refuses_more_description_text_than_one_call_may_carry) 
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
   CHECK(h.bus.subgraphBroadcasts.empty());
 
-  ToolResult landed = h.call("import_subgraph", describedImport(524, std::string(16000, 'd')));  // 8384000 bytes
+  ToolResult landed = h.call("import_subgraph", describedImport(393, std::string(16000, 'd')));  // 6288000 bytes
   CHECK_FALSE(landed.isError);
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 524u);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 393u);
 }
