@@ -32,12 +32,17 @@ public:
   // drags the whole lattice off disk and pins it.
   std::optional<TreeAccess> accessOf(const TreeId& id);
 
+  // Save, then land the queued op rows, then close. A row that fails to land after the save is
+  // dropped with the room — logged, never surfaced — since the lattice it describes is durable.
   void evict(const TreeId& id);
 
   // Drops a retired tree's room and announces the change; deliberately does NOT persist on the way
   // out. Caller holds the strand.
   void retire(const TreeId& id);
-  void persist(const TreeId& id);  // snapshot a live room's full state without evicting
+  // Save a live room's dirty slice without evicting, then land its queued op rows. Returns
+  // normally when the rows fail to land: the save is what a caller's reply attests, and the rows
+  // retry on the next persist. Throws only when the save itself failed.
+  void persist(const TreeId& id);
   void setVisibility(const TreeId& id, Visibility visibility);  // share seam, durable + in-room
   bool isOpen(const TreeId& id) const;
   std::size_t openRooms() const;
@@ -59,6 +64,8 @@ public:
   std::mutex& strandFor(const TreeId& id);
 
 private:
+  void land(const TreeId& id, TreeRoom& room);
+
   static constexpr std::size_t kStrandStripes = 64;
   static constexpr std::size_t kMaxRooms = 256;
   static constexpr std::chrono::minutes kIdleFor{10};

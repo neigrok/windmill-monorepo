@@ -5,6 +5,7 @@
 #include "products/roadmap/domain/Command.h"
 
 #include <cstdint>
+#include <utility>
 
 namespace wm {
 
@@ -190,6 +191,27 @@ std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Val
   page.end = std::min(page.begin + static_cast<std::size_t>(limit), matches.size());
   if (page.end < matches.size()) page.nextCursor = matches[page.end - 1].id.str();
   return page;
+}
+
+ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const Page& page, const NodeFields& fields,
+                          const NodeReadContext& context) {
+  ProjectedPage out;
+  out.nextCursor = page.nextCursor;
+  const bool budgeted = fields.count(NodeField::description) > 0;
+  std::size_t bytes = 0;
+  for (std::size_t i = page.begin; i < page.end; ++i) {
+    Json::Value node = projectNode(matches[i], fields, context);
+    if (budgeted) bytes += dump(node).size();
+    out.nodes.append(std::move(node));
+    if (!budgeted || bytes <= kPageByteBudget) continue;
+    // The node that crossed the budget still rides: a page is never empty, and no node is skipped.
+    if (i + 1 < page.end) {
+      out.nextCursor = matches[i].id.str();
+      out.bytes = bytes;
+    }
+    break;
+  }
+  return out;
 }
 
 }

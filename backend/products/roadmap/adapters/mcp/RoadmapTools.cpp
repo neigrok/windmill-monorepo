@@ -289,22 +289,21 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     if (!page) return ToolResult::failure(error);
 
     const NodeReadContext context = readContextFor(progress, tree, caller, data, *nodeFields, false);
-    Json::Value nodes(Json::arrayValue);
-    for (std::size_t i = page->begin; i < page->end; ++i)
-      nodes.append(projectNode(data.nodes[i], *nodeFields, context));
+    ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
     Json::Value kinds(Json::arrayValue);
     for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
     Json::Value document(Json::objectValue);
     document["id"] = data.id.str();
     document["title"] = data.title;
-    document["nodes"] = nodes;
+    document["nodes"] = std::move(projected.nodes);
     document["kinds"] = kinds;
 
     Json::Value out(Json::objectValue);
     out["seq"] = static_cast<Json::Int64>(room.head());
     out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
-    if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
+    if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
+    if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
     out["tree"] = document;
     // The edge list is whole or absent, never cut: past kMaxListedEdges the reply says so.
     if (args["includeEdges"].asBool()) {
@@ -394,13 +393,12 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
     std::optional<Page> page = pageOf(matches, args, error);
     if (!page) return ToolResult::failure(error);
 
-    Json::Value nodes(Json::arrayValue);
-    for (std::size_t i = page->begin; i < page->end; ++i)
-      nodes.append(projectNode(matches[i], *fields, context));
+    ProjectedPage projected = projectPage(matches, *page, *fields, context);
     Json::Value out(Json::objectValue);
     out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
-    out["nodes"] = nodes;
-    if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
+    out["nodes"] = std::move(projected.nodes);
+    if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
+    if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
     return ToolResult::json(out);
   });
 }
@@ -424,6 +422,12 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
       for (int n = 2; present.count(id); ++n) id = base + "-" + std::to_string(n);
       payload["id"] = id;
     }
+
+    // The domain refuses the same edit (validate's `present` gate); this is where the next move is
+    // added to the sentence, the way delete_node's refusal carries it.
+    if (namesAnExistingNode(tool) && !room.hasNode(NodeId{payload["id"].asString()}))
+      return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
+                                 ". " + kNodeHandle.hint);
 
     // Unreachable by construction: prepareEdit has already refused everything the decode can.
     std::optional<Command> command = commandFromJson(kind, payload);
@@ -598,6 +602,16 @@ std::optional<std::string> checkImport(const Json::Value& args) {
       return path + ".id \"" + seen->first + "\" is already used by nodes[" +
              std::to_string(seen->second) + "] — an id names one node per batch";
   }
+
+  // Each description is within its own cap by here; the batch is bounded as a whole, since the
+  // graft is one frame every subscriber receives entire.
+  std::size_t descriptionBytes = 0;
+  for (const Json::Value& node : args["nodes"])
+    if (node["description"].isString()) descriptionBytes += node["description"].asString().size();
+  if (descriptionBytes > kMaxImportDescriptionBytes)
+    return "nodes carries " + std::to_string(descriptionBytes) + " bytes of description text, " +
+           std::to_string(descriptionBytes - kMaxImportDescriptionBytes) + " over the " +
+           std::to_string(kMaxImportDescriptionBytes) + "-byte cap one call may carry — split the import";
 
   if (std::optional<std::string> bad = optionalObjects(args["kinds"], "kinds")) return bad;
   std::map<std::string, Json::ArrayIndex> kindIdAt;

@@ -67,8 +67,22 @@ void RoomRegistry::evict(const TreeId& id) {
   if (it == rooms_.end()) return;
   auto [state, legend] = it->second.room->dirtyState();
   repo_.save(id, state, legend, it->second.room->title(), it->second.room->head());
-  it->second.room->landPendingOps(ops_);  // the lattice is durable at this head; now the rows may say so
-  rooms_.erase(it);
+  it->second.room->markClean();
+  land(id, *it->second.room);  // the lattice is durable at this head; now the rows may say so
+  rooms_.erase(it);            // a row that did not land is dropped here, and the room's teardown says so
+}
+
+// The lattice is durable before this is called, so a failed append is an incident for the log
+// and never a refusal for the caller: the write it describes has already happened. The rows
+// stay queued for the room's next save, where the op log's (tree_id, op_id) uniqueness absorbs
+// a row that committed before its connection dropped.
+void RoomRegistry::land(const TreeId& id, TreeRoom& room) {
+  try {
+    room.landPendingOps(ops_);
+  } catch (const std::exception& error) {
+    LOG_ERROR << "tree " << id.str() << ": " << room.pendingOps().size()
+              << " op rows did not land (" << error.what() << "); they retry on the next persist";
+  }
 }
 
 void RoomRegistry::retire(const TreeId& id) {
@@ -126,7 +140,7 @@ void RoomRegistry::persist(const TreeId& id) {
   // the feed misses one deed — never a row the lattice cannot back.
   repo_.save(id, state, legend, title, head);
   room->markClean();
-  room->landPendingOps(ops_);
+  land(id, *room);
 }
 
 void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,

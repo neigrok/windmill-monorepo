@@ -862,3 +862,91 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK_EQ(keys(found), (std::vector<std::string>{"id", "status"}));
   CHECK_EQ(found["status"].asString(), std::string("none"));
 }
+
+// Invalid UTF-8 counts as zero characters, so it is refused by name at the argument door, before
+// any cap is counted and before the tree is touched — the same sentence on every string argument.
+TEST(mcp_a_string_that_is_not_valid_utf8_is_refused_by_name_before_any_cap) {
+  Harness h;
+  const std::string continuation(100000, '\x80');
+  Json::Value create(Json::objectValue);
+  create["label"] = continuation;
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: label is not valid UTF-8"));
+  create["label"] = "fine";
+  create["id"] = std::string(5000, '\x80');
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: id is not valid UTF-8"));
+  create["id"] = "fine";
+  create["icon"] = "\xE2\x82";
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: icon is not valid UTF-8"));
+  create["icon"] = "star";
+  create["description"] = std::string(1000000, '\x80');
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: description is not valid UTF-8"));
+  create["description"] = "ok";
+  create["prerequisites"] = list({"\xC0\x80"});
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: prerequisites[0] is not valid UTF-8"));
+  create["prerequisites"] = Json::Value(Json::arrayValue);
+  Json::Value link(Json::objectValue);
+  link["url"] = "https://x/\xED\xA0\x80";
+  create["links"] = Json::Value(Json::arrayValue);
+  create["links"].append(link);
+  CHECK_EQ(message(h.call("create_node", create)), std::string("create_node: links[0].url is not valid UTF-8"));
+
+  Json::Value edge(Json::objectValue);
+  edge["from"] = "a";
+  edge["to"] = "\xF4\x90\x80\x80";
+  CHECK_EQ(message(h.call("connect", edge)), std::string("connect: to is not valid UTF-8"));
+  Json::Value title(Json::objectValue);
+  title["title"] = "\xFF";
+  CHECK_EQ(message(h.tools.callTool("create_tree", title, h.actor)), std::string("create_tree: title is not valid UTF-8"));
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = Json::Value(Json::arrayValue);
+  imported["nodes"].append(node("n", "N"));
+  imported["nodes"][0]["description"] = "\xF5\x80\x80\x80";
+  CHECK_EQ(message(h.call("import_subgraph", imported)),
+           std::string("import_subgraph: nodes[0].description is not valid UTF-8"));
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
+  CHECK(h.ops.byTree["t"].empty());
+
+  // Valid four-byte text still lands, counted by code point.
+  std::string grins;
+  for (int i = 0; i < 64; ++i) grins += "\xF0\x9F\x98\x80";
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  Json::Value icon(Json::objectValue);
+  icon["nodeId"] = "a";
+  icon["icon"] = grins;
+  CHECK_FALSE(h.call("annotate_node", icon).isError);
+  icon["icon"] = grins + "\xF0\x9F\x98\x80";
+  CHECK_EQ(message(h.call("annotate_node", icon)),
+           std::string("annotate_node: icon would be 65 characters, 1 over the 64 cap"));
+  icon["icon"] = grins + "\x80";
+  CHECK_EQ(message(h.call("annotate_node", icon)), std::string("annotate_node: icon is not valid UTF-8"));
+}
+
+// Every edit of one node names a present node, in the sentence delete_node and set_progress use;
+// an id never created or already deleted plants nothing.
+TEST(mcp_a_node_edit_on_a_missing_or_deleted_node_is_refused_by_name_and_plants_nothing) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  for (const char* tool : kNodeHandleTools) {
+    Json::Value ghost = handleToolArgs(tool);
+    ghost["nodeId"] = "ghost";
+    ToolResult refused = h.call(tool, ghost);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused),
+             std::string(tool) + ": no node in this tree is named \"ghost\". Call get_tree with fields "
+                                 "[\"id\",\"label\"] to list the ids this tree has.");
+  }
+  h.call("delete_node", with("nodeId", "a"));
+  for (const char* tool : kNodeHandleTools) {
+    Json::Value dead = handleToolArgs(tool);
+    dead["nodeId"] = "a";
+    CHECK_EQ(message(h.call(tool, dead)),
+             std::string(tool) + ": no node in this tree is named \"a\". Call get_tree with fields "
+                                 "[\"id\",\"label\"] to list the ids this tree has.");
+  }
+  Json::Value everything(Json::objectValue);
+  everything["fields"] = list({"id", "description", "icon"});
+  CHECK_EQ(body(h.call("get_tree", everything))["tree"]["nodes"].size(), 0u);
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).presentNodeIds().size(), 0u);
+  CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(2));  // the create and the delete; no phantom edit
+}

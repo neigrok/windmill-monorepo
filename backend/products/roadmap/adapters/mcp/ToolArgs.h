@@ -38,7 +38,8 @@ std::string typeName(const Json::Value& value);
 std::string literal(const Json::Value& value);
 
 // `limit` is a character cap on a string (Unicode code points; 0 = uncapped) or an item cap on an
-// array.
+// array. A string that is not valid UTF-8 is refused as `<path> is not valid UTF-8` before any
+// cap is counted.
 std::optional<std::string> requireString(const Json::Value& value, const std::string& path,
                                          Empty empty = Empty::rejected, std::size_t limit = 0);
 std::optional<std::string> optionalString(const Json::Value& value, const std::string& path,

@@ -28,6 +28,10 @@ inline constexpr const char* kRoadmapProduct = "roadmap";
 inline const std::vector<const char*> kPrerequisiteModes = {"merge", "replace"};
 constexpr std::size_t kMaxTombstones = 500;
 
+// The most description text one import_subgraph call may carry across nodes[], in bytes: each
+// description is legal on its own, but the graft is one frame every subscriber receives whole.
+constexpr std::size_t kMaxImportDescriptionBytes = 8 * 1024 * 1024;
+
 // Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
 // grant level that reaches it. Byte-pinned by the wire corpus test.
 std::vector<ToolDeclaration> roadmapToolCatalog();

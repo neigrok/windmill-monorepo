@@ -100,6 +100,18 @@ Json::Value document(const std::string& title, const std::string& nodeId) {
   return body;
 }
 
+drogon::HttpResponsePtr sendPutText(HttpApi& api, const std::string& session, const std::string& id,
+                                    const std::string& body) {
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Put);
+  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  request->setBody(body);
+  if (!session.empty()) request->addCookie("wm_session", session);
+  drogon::HttpResponsePtr captured;
+  api.putTree(request, [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
+
 drogon::HttpResponsePtr sendPut(HttpApi& api, const std::string& session, const std::string& id,
                                 const Json::Value& body) {
   auto request = drogon::HttpRequest::newHttpRequest();
@@ -733,4 +745,27 @@ TEST(put_and_fork_refuse_a_non_object_json_root_with_400) {
     CHECK_EQ(dump(bodyOf(forked)), std::string(R"({"error":"invalid json body"})"));
   }
   CHECK_EQ(h.trees->byId.count("t_0000000000000c03"), std::size_t{0});
+}
+
+// The bytes are spliced into the request text after serialization: the JSON writer would rewrite
+// them, and it is the raw client bytes the door must judge.
+TEST(put_with_a_field_that_is_not_valid_utf8_is_400_naming_the_field_and_creates_nothing) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value body = document("Mine", "hull");
+  body["nodes"][0]["description"] = "RAW";
+  std::string text = dump(body);
+  text.replace(text.find("RAW"), 3, std::string(100000, '\x80'));  // zero code points, so no cap would catch it
+
+  drogon::HttpResponsePtr response = sendPutText(h.api, "s-me", "t_00000000000000e3", text);
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"node \"hull\": description is not valid UTF-8"})"));
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e3"), std::size_t{0});
+
+  std::string titled = dump(document("RAW", "hull"));
+  titled.replace(titled.find("RAW"), 3, "\xE2\x82");
+  response = sendPutText(h.api, "s-me", "t_00000000000000e3", titled);
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title is not valid UTF-8"})"));
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e3"), std::size_t{0});
 }

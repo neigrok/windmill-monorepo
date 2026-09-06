@@ -15,6 +15,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,14 @@ namespace wm::fake {
 
 struct FakeOpLog : OpLog {
   std::map<std::string, std::vector<AppliedOp>> byTree;
-  void append(const TreeId& tree, const AppliedOp& op) override { byTree[tree.str()].push_back(op); }
+  int failNextAppends = 0;  // the next N appends throw before recording, the way a dropped connection does
+  void append(const TreeId& tree, const AppliedOp& op) override {
+    if (failNextAppends > 0) {
+      --failNextAppends;
+      throw std::runtime_error("connection reset before the row landed");
+    }
+    byTree[tree.str()].push_back(op);
+  }
   std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const override {
     std::vector<AppliedOp> out;
     auto it = byTree.find(tree.str());

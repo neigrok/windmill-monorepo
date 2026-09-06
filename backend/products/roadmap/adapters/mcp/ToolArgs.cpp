@@ -90,6 +90,7 @@ std::optional<std::string> optionalString(const Json::Value& value, const std::s
                                           std::size_t limit) {
   if (value.isNull()) return std::nullopt;
   if (!value.isString()) return wrongType(path, "a string", value);
+  if (!isValidUtf8(value.asString())) return path + " is not valid UTF-8";
   const std::size_t characters = codePointCount(value.asString());
   if (limit > 0 && characters > limit) return tooLong(path, characters, limit);
   return std::nullopt;
@@ -158,6 +159,7 @@ std::optional<std::string> optionalStrings(const Json::Value& value, const std::
     const std::string item = at(path, i);
     if (!value[i].isString() || value[i].asString().empty())
       return item + " must be a non-empty string, got " + literal(value[i]);
+    if (!isValidUtf8(value[i].asString())) return item + " is not valid UTF-8";
     if (itemLimit > 0 && value[i].asString().size() > itemLimit)
       return tooLong(item, value[i].asString().size(), itemLimit);
   }

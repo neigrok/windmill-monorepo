@@ -438,3 +438,15 @@ TEST(registry_remove_refused_leaves_the_live_room_standing) {
   CHECK(s.rooms.isOpen(tid()));
   CHECK(announced.empty());
 }
+
+TEST(rename_refuses_a_title_that_is_not_valid_utf8_and_keeps_the_old_name) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.rename(tid("t"), me, std::string(300, '\x80')) == TreeRegistry::Renaming::malformedTitle);
+  CHECK(s.registry.rename(tid("t"), me, "cut \xE2\x82") == TreeRegistry::Renaming::malformedTitle);
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
+  CHECK(s.registry.rename(tid("t"), me, "\xE5\xAD\x97 \xF0\x9F\x98\x80") == TreeRegistry::Renaming::renamed);
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("\xE5\xAD\x97 \xF0\x9F\x98\x80"));
+}

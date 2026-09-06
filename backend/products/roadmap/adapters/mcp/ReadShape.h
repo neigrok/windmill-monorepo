@@ -135,4 +135,18 @@ struct Page {
 // of range or a cursor these matches no longer hold.
 std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error);
 
+// A page whose fields carry `description` is also held to a byte budget, measured on the wire it
+// is sent as (`\uXXXX` escapes included): once the nodes serialized so far pass kPageByteBudget the
+// page ends there and `nextCursor` resumes after it, so a thousand nodes of 16000 four-byte
+// characters never make one 192 MB reply. `bytes` is set only when the budget, not `limit`, ended
+// the page — the reply carries it as `pageBytes` so the caller knows why the page is short.
+constexpr std::size_t kPageByteBudget = 4 * 1024 * 1024;
+struct ProjectedPage {
+  Json::Value nodes{Json::arrayValue};
+  std::string nextCursor;
+  std::optional<std::size_t> bytes;
+};
+ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const Page& page, const NodeFields& fields,
+                          const NodeReadContext& context);
+
 }
