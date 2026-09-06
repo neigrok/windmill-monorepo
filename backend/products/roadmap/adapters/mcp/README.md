@@ -19,7 +19,10 @@ platform/adapters/mcp/
                            binds, AND the grant gate: filters tools/list, refuses an
                            out-of-scope call, a duplicate tool name at construction, and a key no
                            schema declares at any depth it closes with `additionalProperties:false`
-                           (named by JSON path: `nodes[3].deleted`). A retired name answers with the sentence
+                           (named by JSON path: `nodes[3].deleted`) — that last check is
+                           `undeclaredArgument` on the ToolHost port itself, so a tend's
+                           `ScopedToolHost`, which never passes through the composite, refuses with
+                           the same sentence. A retired name answers with the sentence
                            naming its replacement, consulted only after a catalog miss;
                            construction refuses a retirement that shadows a live tool or names a
                            replacement no product declares. `windmillServerInfo()` frames the

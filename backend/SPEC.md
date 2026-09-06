@@ -91,8 +91,8 @@ peer at `since` lacks, with covered fields masked back to "no information", carr
 full frontier as coverage.
 
 `TreeRoom::joinSubgraph` dedupes on `frameId`, folds the frame's stamps into the room clock,
-joins graph + legend + title, assigns the next `seq`, logs a headline deed, and broadcasts the
-frame to subscribers. Duplicates return no seq. A broadcast carries the room's `seq` and always
+joins graph + legend + title, assigns the next `seq`, queues a headline deed for the op log, and
+broadcasts the frame to subscribers. Duplicates return no seq. A broadcast carries the room's `seq` and always
 states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
 subscriber treat it as a re-baselining graft.
 
@@ -100,8 +100,15 @@ subscriber treat it as a re-baselining graft.
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op
 log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes as one subgraph.
-`TreeRoom::applyCommands` lands several as one frame under one seq and logs them as one `Batch`
+`TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
+
+A room never writes the op log itself: each write queues its row (`pendingOps`), and
+`RoomRegistry::persist` — the step every write path takes before it answers — saves the lattice at
+the room's head first and appends the queued rows after (`landPendingOps`). A crash between the
+two leaves a lattice at `N` with no row at `N`: replay is a no-op and the feed misses one deed. A
+row the lattice cannot back cannot be written. An append that fails leaves its rows queued for the
+next persist; `tree_ops` is unique on `(tree_id, op_id)`, so the retry lands each row once.
 
 `RenameNode` · `SetNodeColor` · `RepositionNode` · `CreateNode` · `AnnotateNode` · `AddEdge` ·
 `RemoveEdge` · `ReconnectEdge` · `DeleteNode` · `TransitiveReduction` · `PruneDangling` ·
@@ -156,9 +163,11 @@ Rules:
   strands are a fixed stripe array shared by unrelated tree ids.
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
-- Persist before acking, so an ack attests durability.
+- Persist before acking, so an ack attests durability. Within a persist the lattice is saved
+  before the op rows are appended, so the log never runs ahead of the lattice.
 - `open()` loads the stored lattice and then replays the op-log tail past the stored head, so the
-  room reaches the true state and head and new writes never collide on `seq`.
+  room reaches the true state and head and new writes never collide on `seq`. Under the save-then-
+  land ordering that tail is empty; it is read for trees saved before the ordering held.
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
   ordered and the actor tiebreak is moot.
 - Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`. `replay()`

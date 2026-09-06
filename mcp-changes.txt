@@ -18,10 +18,6 @@ it. Log new friction here as you hit it; delete an entry when it ships.
   characters; they diverge on non-ASCII. Both halves live in
   backend/products/roadmap/domain/Command.h.
 
-- [tending] The unknown-argument refusal lives on the MCP wire, in
-  CompositeToolHost::callTool. A tend runs ScopedToolHost → RoadmapTools directly, so a tending
-  agent's misnamed argument is still dropped in silence.
-
 ## 2026-08-25 · annotate_node / create_node — the 4000-char description cap is a blind retry loop
 
 Writing a wave node's description (the Live Activity ruling, with its verified API facts and the

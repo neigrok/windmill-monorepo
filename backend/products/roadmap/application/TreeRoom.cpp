@@ -6,10 +6,10 @@ namespace wm {
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
                    std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
-                   OpLog& ops, PresenceBus& bus)
+                   PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
       head_(head), owner_(std::move(owner)), visibility_(visibility), createdAt_(createdAt),
-      ops_(ops), bus_(bus), clock_(std::string{kServerActor}) {
+      bus_(bus), clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title register
   // — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
@@ -40,9 +40,9 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   markDirty(incoming.graph, incoming.legend);
   ++head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
-  // double-counts. A nudge (position only) is not feed-worthy, so nothing is logged.
+  // double-counts. A nudge (position only) is not feed-worthy, so nothing is queued.
   if (std::optional<Command> deed = headline(incoming.graph, incoming.legend))
-    ops_.append(id_, AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
+    pendingOps_.push_back(AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
   bus_.broadcastSubgraph(id_, head_, incoming);
   return head_;
 }
@@ -79,7 +79,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   // The op row is the whole frame: a lone command as itself, a batch as one Batch, so replaying
   // the log tail past a stored head lands exactly what this call did.
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
-  ops_.append(id_, AppliedOp{head_, frameId, deed, stamp, actor});
+  pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;
@@ -114,6 +114,13 @@ void TreeRoom::replay(const AppliedOp& op) {
   merge(graph_, legend_, op.command, op.hlc);
   head_ = op.seq;
   allDirty_ = true;  // the snapshot is behind the log; the next save writes the full state
+}
+
+void TreeRoom::landPendingOps(OpLog& log) {
+  while (!pendingOps_.empty()) {
+    log.append(id_, pendingOps_.front());
+    pendingOps_.erase(pendingOps_.begin());
+  }
 }
 
 void TreeRoom::markDirty(const GraphState& graph, const LegendState& legend) {

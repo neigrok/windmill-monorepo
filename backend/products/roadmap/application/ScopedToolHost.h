@@ -3,13 +3,16 @@
 #include "products/roadmap/domain/Ids.h"
 #include "platform/ports/ToolHost.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
 namespace wm {
 
 // Pins a tend's agent to one tree: every tool call's `treeId` is forced to the scope, and tools that
-// reach across trees are dropped from the catalog and refused if named anyway.
+// reach across trees are dropped from the catalog and refused if named anyway. An argument the
+// tool's schema does not declare is refused here with the sentence the MCP wire gives, because a
+// tend never passes through CompositeToolHost.
 class ScopedToolHost : public ToolHost {
 public:
   ScopedToolHost(ToolHost& inner, TreeId scope);
@@ -24,6 +27,7 @@ public:
 private:
   ToolHost& inner_;
   TreeId scope_;
+  std::map<std::string, ToolDeclaration> byName_;  // the inner catalog, indexed once at construction
   std::vector<std::string> created_;
 };
 

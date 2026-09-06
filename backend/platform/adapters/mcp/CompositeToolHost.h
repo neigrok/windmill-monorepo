@@ -21,8 +21,7 @@ struct ToolModule {
 // name outside the caller's scope is refused here, naming the level that was not granted, and the
 // same scope filters the catalog through ToolHost::listTools.
 // A duplicate tool name across products is a construction failure. A key no schema declares is
-// refused before dispatch, at every depth the schema closes with `additionalProperties:false` —
-// nested objects and array items included — and named by its JSON path.
+// refused before dispatch by `undeclaredArgument`, the one check every dispatching host runs.
 class CompositeToolHost : public ToolHost {
 public:
   explicit CompositeToolHost(const std::vector<ToolModule>& modules);

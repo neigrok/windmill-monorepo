@@ -33,7 +33,8 @@ add_library(windmill_platform
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
   platform/application/OAuthService.cpp
-  platform/application/McpKeyService.cpp)
+  platform/application/McpKeyService.cpp
+  platform/ports/ToolHost.cpp)
 target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_library(windmill_roadmap

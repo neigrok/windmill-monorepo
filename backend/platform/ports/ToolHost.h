@@ -101,6 +101,13 @@ struct ToolRetirement {
   std::string sentence;
 };
 
+// A key `tool`'s schema does not declare, at any depth the schema closes with
+// `additionalProperties:false` — nested objects and array items included — named by its JSON path
+// and the keys that place takes; nullopt when every key is declared. Every host that dispatches a
+// call runs this before the tool sees the arguments, so a misnamed argument is refused on the MCP
+// wire and inside a tend alike, never dropped in silence.
+std::optional<std::string> undeclaredArgument(const ToolDeclaration& tool, const Json::Value& arguments);
+
 // A module declares its whole surface and never its own gate: CompositeToolHost gates above it.
 struct ToolHost {
   virtual ~ToolHost() = default;

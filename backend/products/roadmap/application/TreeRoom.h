@@ -31,11 +31,12 @@ public:
 
   TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
            std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
-           OpLog& ops, PresenceBus& bus);
+           PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title, assign
-  // the next seq, log its headline deed under `actor`, broadcast verbatim. nullopt means a duplicate
-  // frame. Admits nothing on its own — every door that can refuse asks admit() first.
+  // the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim. nullopt
+  // means a duplicate frame. Admits nothing on its own — every door that can refuse asks admit()
+  // first.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's
@@ -51,8 +52,8 @@ public:
   // like any other field write.
   Seq rename(const std::string& title, std::uint64_t nowMs);
 
-  // Server-origin edit: stamped from the room clock, applied, logged, broadcast as one subgraph.
-  // The frameId is minted from the (unique) stamp.
+  // Server-origin edit: stamped from the room clock, applied, queued for the op log, broadcast as
+  // one subgraph. The frameId is minted from the (unique) stamp.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
   // Several commands as ONE edit: one stamp, one frame, one seq, one op row (a Batch, so the log
   // replays the whole edit), so a reader never sees the tree between them. An empty list is a
@@ -73,6 +74,14 @@ public:
 
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);
+
+  // The op rows this room's writes minted and no save has yet landed, in seq order. A row leaves
+  // the queue only through landPendingOps, which RoomRegistry calls AFTER the lattice is saved at
+  // the head those rows carry — so the log can never run ahead of the lattice. Each row is
+  // appended and dropped in turn, so an append that throws leaves the rest queued for the next
+  // save, and the log's `(tree_id, op_id)` uniqueness absorbs the retry.
+  const std::vector<AppliedOp>& pendingOps() const { return pendingOps_; }
+  void landPendingOps(OpLog& log);
 
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
@@ -113,7 +122,7 @@ private:
   Visibility visibility_;
   std::uint64_t createdAt_;
   std::set<std::string> appliedOpIds_;
-  OpLog& ops_;
+  std::vector<AppliedOp> pendingOps_;
   PresenceBus& bus_;
   HlcClock clock_;
   std::set<NodeId> dirtyNodes_;

@@ -1,10 +1,12 @@
 #include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/Graft.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 #include <chrono>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,41 @@ struct FailingTreeRepository : FakeTreeRepository {
     throw std::runtime_error("connect host=db.internal: FATAL");
   }
 };
+
+// The two stores share one journal, so a test reads the order the registry called them in.
+struct RecordingTreeRepository : FakeTreeRepository {
+  std::vector<std::string>& journal;
+  bool failSave = false;
+  explicit RecordingTreeRepository(std::vector<std::string>& j) : journal(j) {}
+  void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+            const Lww<std::string>& title, Seq head) override {
+    journal.push_back("save@" + std::to_string(head));
+    if (failSave) throw std::runtime_error("connection reset before the lattice landed");
+    FakeTreeRepository::save(tree, state, legend, title, head);
+  }
+};
+
+struct RecordingOpLog : FakeOpLog {
+  std::vector<std::string>& journal;
+  bool failAppend = false;
+  explicit RecordingOpLog(std::vector<std::string>& j) : journal(j) {}
+  void append(const TreeId& tree, const AppliedOp& op) override {
+    journal.push_back("append@" + std::to_string(op.seq));
+    if (failAppend) throw std::runtime_error("connection reset before the row landed");
+    FakeOpLog::append(tree, op);
+  }
+};
+
+Graft manyNodeGraft(std::size_t count) {
+  Graft graft;
+  for (std::size_t i = 0; i < count; ++i) {
+    NodeSpec node;
+    node.id = NodeId{"n" + std::to_string(i)};
+    node.label = "Node " + std::to_string(i);
+    graft.document.nodes.push_back(node);
+  }
+  return graft;
+}
 
 }
 
@@ -312,4 +349,126 @@ TEST(registry_access_of_stops_speaking_for_a_tree_once_its_room_is_retired) {
   registry.retire(tid());
   CHECK_FALSE(registry.accessOf(tid()).has_value());
   CHECK_EQ(registry.open(tid()), static_cast<TreeRoom*>(nullptr));  // and nothing reloads it
+}
+
+// The ordering the op log's honesty rests on: a row at seq N exists only once the lattice is
+// durable at N. persist() saves first and lands the queued rows after, and so does evict().
+TEST(registry_persist_saves_the_lattice_before_it_lands_the_op_rows) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = *registry.open(tid());
+  room.applyCommand(createNode("added"), 10, uid());
+  room.applyCommand(createNode("also"), 11, uid());
+  CHECK(journal.empty());                        // a write alone touches neither store
+  CHECK(log.byTree["t"].empty());
+  CHECK_EQ(room.pendingOps().size(), 2u);
+
+  registry.persist(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@9", "append@8", "append@9"}));
+  CHECK(room.pendingOps().empty());
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
+  REQUIRE_EQ(log.byTree["t"].size(), 2u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
+
+  journal.clear();
+  registry.persist(tid());                       // nothing queued: the save alone
+  CHECK_EQ(journal, (std::vector<std::string>{"save@9"}));
+}
+
+TEST(registry_evict_saves_the_lattice_before_it_lands_the_op_rows) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  registry.open(tid())->applyCommand(createNode("added"), 10, uid());
+  registry.evict(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+}
+
+// The crash between the two stores, on the lossy side: the lattice landed, the row did not. A
+// process that reopens the tree finds the whole 200-node import in the lattice, the head it was
+// saved at, and nothing to replay — the feed misses one deed, and the tree misses nothing.
+TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  {
+    RoomRegistry registry(repo, log, bus);
+    TreeRoom& room = *registry.open(tid());
+    const Seq seq = room.importTree(manyNodeGraft(200), 10, uid());
+    CHECK_EQ(seq, static_cast<Seq>(8));
+    log.failAppend = true;
+    bool threw = false;
+    try {
+      registry.persist(tid());
+    } catch (const std::runtime_error&) {
+      threw = true;
+    }
+    CHECK(threw);
+    CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
+    CHECK_EQ(room.pendingOps().size(), 1u);  // still queued for the next save, had the process lived
+  }
+  CHECK(log.byTree["t"].empty());
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 201u);
+
+  FakeBus quiet;
+  RoomRegistry reopened(repo, log, quiet);
+  TreeRoom& room = *reopened.open(tid());
+  CHECK_EQ(room.head(), static_cast<Seq>(8));
+  CHECK_EQ(room.snapshot().nodes.size(), 201u);
+  CHECK(room.hasNode(NodeId{"n0"}));
+  CHECK(room.hasNode(NodeId{"n199"}));
+  CHECK(room.pendingOps().empty());
+  CHECK(log.since(tid(), 7).empty());  // nothing to replay: the lattice already holds the frame
+}
+
+// The inverse cannot happen: a save that fails lands no row, because the rows are only offered to
+// the log once the save has returned. The write stays queued and lands, in order, with the next save.
+TEST(registry_a_failed_save_lands_no_op_row_and_keeps_the_write_queued) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = *registry.open(tid());
+  room.applyCommand(createNode("added"), 10, uid());
+  repo.failSave = true;
+  bool threw = false;
+  try {
+    registry.persist(tid());
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8"}));
+  CHECK(log.byTree["t"].empty());
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(7));
+  CHECK_EQ(room.pendingOps().size(), 1u);
+
+  repo.failSave = false;
+  registry.persist(tid());
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "save@8", "append@8"}));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK(room.pendingOps().empty());
 }

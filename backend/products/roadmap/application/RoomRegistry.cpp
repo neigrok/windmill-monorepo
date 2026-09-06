@@ -36,9 +36,10 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
                                          stored->head, stored->owner, stored->visibility,
-                                         stored->createdAt, ops_, bus_);
-  // The document is a snapshot at stored->head; replay the op-log tail to reach the
-  // true current state (and the true head), so new ops never collide on seq.
+                                         stored->createdAt, bus_);
+  // The document is a snapshot at stored->head. A row past that head is what an older ordering
+  // could leave behind; replaying it reaches the true state and head, so new ops never collide on
+  // seq. Under the current ordering (save, then land) the tail is empty.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -66,6 +67,7 @@ void RoomRegistry::evict(const TreeId& id) {
   if (it == rooms_.end()) return;
   auto [state, legend] = it->second.room->dirtyState();
   repo_.save(id, state, legend, it->second.room->title(), it->second.room->head());
+  it->second.room->landPendingOps(ops_);  // the lattice is durable at this head; now the rows may say so
   rooms_.erase(it);
 }
 
@@ -119,9 +121,12 @@ void RoomRegistry::persist(const TreeId& id) {
     head = room->head();
   }
   // I/O outside the map lock. The caller holds the tree's strand, so no write can slip in between
-  // the export above and the markClean below.
+  // the export above and the markClean below. The lattice lands first and the op rows after, so a
+  // crash between the two leaves a lattice at `head` with no row at `head` — replay is a no-op and
+  // the feed misses one deed — never a row the lattice cannot back.
   repo_.save(id, state, legend, title, head);
   room->markClean();
+  room->landPendingOps(ops_);
 }
 
 void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,

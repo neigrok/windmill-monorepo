@@ -2,14 +2,16 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <stdexcept>
+
 using namespace wm;
 using namespace wm::fake;
 
 namespace {
 
-TreeRoom makeRoom(FakeOpLog& log, FakeBus& bus) {
+TreeRoom makeRoom(FakeBus& bus) {
   return TreeRoom(tid(), {"Title", {}}, LooseGraph{}, Legend{}, 0, std::nullopt,
-                  Visibility::private_, 0, log, bus);
+                  Visibility::private_, 0, bus);
 }
 
 Seq apply(TreeRoom& room, Command command, std::uint64_t ms) {
@@ -18,23 +20,21 @@ Seq apply(TreeRoom& room, Command command, std::uint64_t ms) {
 
 }
 
-TEST(room_applies_command_assigns_seq_logs_and_broadcasts) {
-  FakeOpLog log;
+TEST(room_applies_command_assigns_seq_queues_its_op_row_and_broadcasts) {
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Seq seq = apply(room, createNode("a"), 1);
   CHECK_EQ(seq, static_cast<Seq>(1));
   CHECK_EQ(room.head(), static_cast<Seq>(1));
-  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(room.pendingOps().size(), 1u);
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
 }
 
 TEST(room_next_stamp_is_monotone_and_server_actored) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Hlc first = room.nextStamp(100);
   Hlc second = room.nextStamp(100);  // same wall ms → counter advances
@@ -45,9 +45,8 @@ TEST(room_next_stamp_is_monotone_and_server_actored) {
 }
 
 TEST(room_next_stamp_dominates_a_replayed_op_after_restart) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Hlc high{9000, 3, "peer"};
   room.replay(AppliedOp{5, "r1", createNode("z"), high, uid()});  // a loaded op-log tail
@@ -59,10 +58,9 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   LooseGraph loaded;
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, std::nullopt, old);
-  FakeOpLog log;
   FakeBus bus;
   TreeRoom room(tid(), {"T", {}}, std::move(loaded), Legend{}, 0, std::nullopt,
-                Visibility::private_, 0, log, bus);
+                Visibility::private_, 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
   CHECK(next > old);              // the constructor folded the loaded document's frontier
@@ -82,9 +80,8 @@ Subgraph frameWith(const char* frameId, const NodeId& node, const Hlc& stamp) {
 }
 
 TEST(room_join_subgraph_folds_assigns_seq_and_broadcasts) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   std::optional<Seq> seq = room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid());
   REQUIRE(seq.has_value());
@@ -95,15 +92,14 @@ TEST(room_join_subgraph_folds_assigns_seq_and_broadcasts) {
   CHECK_EQ(bus.subgraphBroadcasts[0].seq, static_cast<Seq>(1));
 }
 
-TEST(room_join_subgraph_logs_its_headline_for_the_feed) {
-  FakeOpLog log;
+TEST(room_join_subgraph_queues_its_headline_for_the_feed) {
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Seq seq = *room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid());
-  REQUIRE_EQ(log.byTree["t"].size(), 1u);
-  const AppliedOp& op = log.byTree["t"].front();
-  CHECK_EQ(op.seq, seq);                           // logged at the seq the frame took
+  REQUIRE_EQ(room.pendingOps().size(), 1u);
+  const AppliedOp& op = room.pendingOps().front();
+  CHECK_EQ(op.seq, seq);                           // queued at the seq the frame took
   CHECK_EQ(op.opId, std::string("f1"));            // keyed on the frameId, so a re-gossip can't double-count
   const CreateNode* deed = std::get_if<CreateNode>(&op.command);
   REQUIRE(deed != nullptr);
@@ -111,10 +107,9 @@ TEST(room_join_subgraph_logs_its_headline_for_the_feed) {
   CHECK_EQ(deed->label, std::string("N"));
 }
 
-TEST(room_join_subgraph_reposition_only_frame_logs_nothing) {
-  FakeOpLog log;
+TEST(room_join_subgraph_reposition_only_frame_queues_nothing) {
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Subgraph frame;
   frame.treeId = tid();
@@ -128,13 +123,12 @@ TEST(room_join_subgraph_reposition_only_frame_logs_nothing) {
   Seq seq = *room.joinSubgraph(frame, uid());
   CHECK_EQ(seq, static_cast<Seq>(1));
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
-  CHECK(log.byTree["t"].empty());
+  CHECK(room.pendingOps().empty());
 }
 
-TEST(room_join_subgraph_edge_frame_logs_a_link) {
-  FakeOpLog log;
+TEST(room_join_subgraph_edge_frame_queues_a_link) {
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Subgraph frame;
   frame.treeId = tid();
@@ -145,30 +139,28 @@ TEST(room_join_subgraph_edge_frame_logs_a_link) {
   frame.graph.edges.push_back(link);
 
   room.joinSubgraph(frame, uid());
-  REQUIRE_EQ(log.byTree["t"].size(), 1u);
-  const AddEdge* deed = std::get_if<AddEdge>(&log.byTree["t"].front().command);
+  REQUIRE_EQ(room.pendingOps().size(), 1u);
+  const AddEdge* deed = std::get_if<AddEdge>(&room.pendingOps().front().command);
   REQUIRE(deed != nullptr);
   CHECK_EQ(deed->from, nid("a"));
   CHECK_EQ(deed->to, nid("b"));
 }
 
 TEST(room_join_subgraph_dedupes_on_frame_id) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   CHECK(room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid()).has_value());
   CHECK_FALSE(room.joinSubgraph(frameWith("f1", nid("b"), at(8)), uid()).has_value());  // same frameId
   CHECK_EQ(room.head(), static_cast<Seq>(1));
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
-  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(room.pendingOps().size(), 1u);
   CHECK_FALSE(room.snapshot().nodes.size() == 2u);
 }
 
 TEST(room_join_subgraph_observes_client_stamps) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   Hlc clientStamp{9000, 5, "u_9#r_z"};
   room.joinSubgraph(frameWith("f1", nid("a"), clientStamp), uid());
@@ -177,9 +169,8 @@ TEST(room_join_subgraph_observes_client_stamps) {
 }
 
 TEST(room_never_rejects_and_surfaces_cycle) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
@@ -195,23 +186,64 @@ TEST(room_never_rejects_and_surfaces_cycle) {
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
 
-TEST(room_op_log_replays_since_seq) {
+TEST(room_lands_its_queued_op_rows_in_seq_order_and_the_log_answers_since_seq) {
   FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
   apply(room, AddEdge{nid("a"), nid("b")}, 3);
+  CHECK_EQ(room.pendingOps().size(), 3u);
+  CHECK(log.byTree["t"].empty());  // nothing reaches the log until the room is told to land
 
+  room.landPendingOps(log);
+  CHECK(room.pendingOps().empty());
+  REQUIRE_EQ(log.byTree["t"].size(), 3u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(1));
+  CHECK_EQ(log.byTree["t"][2].seq, static_cast<Seq>(3));
   CHECK_EQ(log.since(tid(), 1).size(), 2u);
   CHECK_EQ(log.since(tid(), 0).size(), 3u);
+
+  room.landPendingOps(log);  // nothing queued: nothing appended twice
+  CHECK_EQ(log.byTree["t"].size(), 3u);
+}
+
+// An append that throws mid-way leaves the rows it did not land queued, in order, for the next save.
+TEST(room_keeps_the_rows_an_append_failure_did_not_land) {
+  struct FailingOnce : FakeOpLog {
+    int failuresLeft = 1;
+    void append(const TreeId& tree, const AppliedOp& op) override {
+      if (failuresLeft-- > 0) throw std::runtime_error("connection reset");
+      FakeOpLog::append(tree, op);
+    }
+  } log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, createNode("a"), 1);
+  apply(room, createNode("b"), 2);
+
+  bool threw = false;
+  try {
+    room.landPendingOps(log);
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(log.byTree["t"].empty());
+  REQUIRE_EQ(room.pendingOps().size(), 2u);
+  CHECK_EQ(room.pendingOps()[0].seq, static_cast<Seq>(1));
+
+  room.landPendingOps(log);
+  CHECK(room.pendingOps().empty());
+  REQUIRE_EQ(log.byTree["t"].size(), 2u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(1));
+  CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(2));
 }
 
 TEST(room_snapshot_carries_the_legend) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   apply(room, AddKind{KindId{"sky"}, NodeColor::sky}, 1);
   apply(room, RenameKind{KindId{"sky"}, "Infra"}, 2);
@@ -224,9 +256,8 @@ TEST(room_snapshot_carries_the_legend) {
 }
 
 TEST(room_validate_rejects_invalid_legend_ops_only) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   apply(room, AddKind{KindId{"sky"}, NodeColor::sky}, 1);
   CHECK(room.validate(AddKind{KindId{"dupe"}, NodeColor::sky}).has_value());
@@ -235,9 +266,8 @@ TEST(room_validate_rejects_invalid_legend_ops_only) {
 }
 
 TEST(room_recolor_kind_repaints_nodes) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
 
   apply(room, CreateNode{nid("a"), "A", "i", NodeColor::olive, {}, std::nullopt}, 1);
   apply(room, AddKind{KindId{"learn"}, NodeColor::olive}, 2);
@@ -250,9 +280,8 @@ TEST(room_recolor_kind_repaints_nodes) {
 }
 
 TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
   room.markClean();
@@ -280,9 +309,8 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
 }
 
 TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   apply(room, createNode("a"), 1);
   room.markClean();
 
@@ -293,9 +321,8 @@ TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
 }
 
 TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_op_row_holding_every_member) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
   apply(room, AddEdge{nid("a"), nid("b")}, 3);
@@ -309,10 +336,10 @@ TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_op_row_holding_eve
   CHECK_FALSE(room.hasEdge(nid("a"), nid("b")));
   CHECK(room.diagnose().clean());
 
-  REQUIRE_EQ(log.byTree["t"].size(), 4u);
-  CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(4));
-  REQUIRE(std::holds_alternative<Batch>(log.byTree["t"].back().command));
-  const std::vector<Command>& logged = std::get<Batch>(log.byTree["t"].back().command).commands;
+  REQUIRE_EQ(room.pendingOps().size(), 4u);
+  CHECK_EQ(room.pendingOps().back().seq, static_cast<Seq>(4));
+  REQUIRE(std::holds_alternative<Batch>(room.pendingOps().back().command));
+  const std::vector<Command>& logged = std::get<Batch>(room.pendingOps().back().command).commands;
   REQUIRE_EQ(logged.size(), 3u);
   CHECK_EQ(std::get<DeleteNode>(logged[0]).id, nid("a"));
   CHECK_EQ(std::get<DeleteNode>(logged[1]).id, nid("b"));
@@ -322,13 +349,12 @@ TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_op_row_holding_eve
   CHECK_EQ(bus.subgraphBroadcasts.back().seq, static_cast<Seq>(4));
   CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.graph.nodes.size(), 2u);
   CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.graph.edges.size(), 1u);
-  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.frameId, log.byTree["t"].back().opId);
+  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.frameId, room.pendingOps().back().opId);
 }
 
 TEST(room_edges_touching_reads_the_live_graph) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
   apply(room, createNode("c"), 3);
@@ -342,9 +368,8 @@ TEST(room_edges_touching_reads_the_live_graph) {
 }
 
 TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_one_seq) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   for (const char* id : {"a", "b", "c", "n"}) apply(room, createNode(id), 1);
   apply(room, AddEdge{nid("a"), nid("n")}, 2);
   apply(room, AddEdge{nid("c"), nid("n")}, 3);
@@ -388,13 +413,13 @@ TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_on
   CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a"), nid("c")}));
 }
 
-// The crash window: the op row at seq N is written before the lattice at N is persisted. A room
-// reopened from the N-1 document replays that row and must land the whole batch, not its first
-// member.
-TEST(room_replays_a_persisted_batch_op_whole) {
+// A row past the stored head — what the log holds for a tree saved before rows were made to land
+// after the lattice — replays whole: a room reopened from the N-1 document lands the entire batch,
+// not its first member.
+TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
   FakeOpLog log;
   FakeBus bus;
-  TreeRoom live = makeRoom(log, bus);
+  TreeRoom live = makeRoom(bus);
   apply(live, createNode("a"), 1);
   apply(live, createNode("b"), 2);
   apply(live, AddEdge{nid("a"), nid("b")}, 3);
@@ -402,10 +427,11 @@ TEST(room_replays_a_persisted_batch_op_whole) {
   const Legend persistedLegend{live.exportLegend()};
 
   live.applyCommands({DeleteNode{nid("a")}, DeleteNode{nid("b")}, RemoveEdge{nid("a"), nid("b")}}, 4, uid());
+  live.landPendingOps(log);
 
   FakeBus quiet;
   TreeRoom reopened(tid(), {"Title", {}}, persisted, persistedLegend, 3, std::nullopt,
-                    Visibility::private_, 0, log, quiet);
+                    Visibility::private_, 0, quiet);
   CHECK(reopened.hasNode(nid("b")));
   for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);
   CHECK_EQ(reopened.head(), static_cast<Seq>(4));
@@ -416,13 +442,12 @@ TEST(room_replays_a_persisted_batch_op_whole) {
 }
 
 TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
-  FakeOpLog log;
   FakeBus bus;
-  TreeRoom room = makeRoom(log, bus);
+  TreeRoom room = makeRoom(bus);
   apply(room, createNode("a"), 1);
 
   CHECK_EQ(room.applyCommands({}, 2, uid()), static_cast<Seq>(1));
   CHECK_EQ(room.head(), static_cast<Seq>(1));
-  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(room.pendingOps().size(), 1u);
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
 }

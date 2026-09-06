@@ -620,13 +620,15 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it)
   h.seed("t_00000000000000cc", "Old name", me, Visibility::unlisted);
   editInTheLiveRoom(h, "t_00000000000000cc", "socket-step", me);
   CHECK_EQ(h.trees->byId["t_00000000000000cc"].head, Seq{0});  // the row is behind the room by one op
-  CHECK_EQ(h.ops->byTree["t_00000000000000cc"].size(), 1u);
+  CHECK(h.ops->byTree["t_00000000000000cc"].empty());            // whose row is queued, not yet landed
 
   drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cc", document("New name", "mast"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(h.trees->byId["t_00000000000000cc"].head, Seq{1});
   CHECK_EQ(bodyOf(response)["seq"].asInt64(), 1);
+  REQUIRE_EQ(h.ops->byTree["t_00000000000000cc"].size(), 1u);   // the flush landed the row behind the save
+  CHECK_EQ(h.ops->byTree["t_00000000000000cc"][0].seq, Seq{1});
   CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());
 }
 

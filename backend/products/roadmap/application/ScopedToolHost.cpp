@@ -1,5 +1,6 @@
 #include "products/roadmap/application/ScopedToolHost.h"
 
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -15,7 +16,9 @@ const std::set<std::string>& crossTreeTools() {
 }
 
 ScopedToolHost::ScopedToolHost(ToolHost& inner, TreeId scope)
-    : inner_(inner), scope_(std::move(scope)) {}
+    : inner_(inner), scope_(std::move(scope)) {
+  for (ToolDeclaration& tool : inner_.declareTools()) byName_.emplace(tool.name(), std::move(tool));
+}
 
 std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
   std::vector<ToolDeclaration> scoped;
@@ -28,6 +31,11 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
                                     const ToolCaller& caller) {
   if (crossTreeTools().find(name) != crossTreeTools().end())
     return ToolResult::failure("tending edits a single tree — " + name + " is out of its reach");
+  // The agent's own arguments are checked, before the forced treeId joins them.
+  const auto declared = byName_.find(name);
+  if (declared != byName_.end())
+    if (std::optional<std::string> unknown = undeclaredArgument(declared->second, arguments))
+      return ToolResult::failure(name + ": " + *unknown);
   // Force the target: whatever treeId the agent supplied (or was steered to supply) is overwritten,
   // so the edit can only ever land on the tree being tended.
   Json::Value scopedArgs = arguments;
