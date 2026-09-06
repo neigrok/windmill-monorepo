@@ -2074,3 +2074,19 @@ frame at font scale 1.0 (`LargestTypeTests`) leaves no room for Material's 48 dp
 twice over. `GymTap.minimum` is 46 dp and every other control on the screen clears it. Either the
 floor admits a chip whose row is not in the reach band, or the two chips share one row. Decide once;
 until then this is the one control in the room below the floor.
+
+**5p · the pricing brief says the static pages are light only, and they are not** → owed by
+`marketing/guidelines/pricing.md` (§1 "light only", §5 "Static pages **light only**", §6 "light
+only"). Every dressed page in `web/public/` (`pricing-preview.html` is an undressed redirect) —
+pricing and refunds among them — reads the visitor's appearance choice off `/boot.js` before first
+paint and dresses in `/chrome.css`'s night tokens when it is dark; the app, the landings and the
+static pages answer one switch, in the account seat's pop-up. The brief's three "light only" lines
+describe a rule the build does not have. Strike them, or restate what the pages must hold in both
+themes.
+
+**5q · the static pages follow the appearance choice and offer no way to make it** → a decision
+owed by the static-page chrome. Every dressed page in `web/public/` dresses in the stored choice,
+but the control lives in the account seat's pop-up, which only the React landings and `/app`
+render; a visitor who lands on pricing or terms first reads the page in the night they chose
+elsewhere and cannot change it there. Either the static chrome grows the same Light · Dark · System
+row, or the pages stay read-only followers and the brief says so.

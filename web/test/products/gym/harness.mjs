@@ -10,7 +10,9 @@ import { goneIds, hiddenIds } from '../../../src/products/gym/withheld.js';
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 
 // Teardown is registered at mount: a thrown assertion would otherwise leave intervals holding the event loop open.
-export function renderHook(t, run) {
+// `context` answers any `useContext` whose provider is not mounted here, since no provider ever is.
+// `useSyncExternalStore` reads the snapshot and never subscribes: a store's change is a `redraw`.
+export function renderHook(t, run, { context = null } = {}) {
   const cells = [];
   const queued = [];
   let cursor = 0;
@@ -60,6 +62,8 @@ export function renderHook(t, run) {
       queued.push(cell, effect);
     },
     useLayoutEffect(effect, deps) { dispatcher.useEffect(effect, deps); },
+    useContext(ctx) { return ctx._currentValue ?? context; },
+    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot(); },
     useDebugValue() {},
   };
 

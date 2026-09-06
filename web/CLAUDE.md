@@ -35,13 +35,30 @@ static shell per landing so a crawler without JavaScript gets that landing's own
 emits `sitemap.xml` from those shells and every page in `public/` — each under the URL its own
 `<link rel="canonical">` names, skipped if its own robots meta says `noindex`. There is no
 `sitemap.xml` in `public/` to edit; the pages are the source. `scripts/staticPageAssets.js` asserts
-the head each static page must carry.
+the head each static page must carry and serves the three files they all link: `/fonts.css`,
+`/chrome.css` (`scripts/staticPageChrome.css` — the family tokens in both themes, so a static page
+never names a colour of its own) and `/boot.js`, the theme stamp.
 
 `scripts/appBoot.js` runs in dev as well as build: it puts one `<style>` and one inline script into
-`<head>` that paint an app room's own ground before the bundle arrives. It reads the room table off
-`src/shell/products.js` and the ground colours out of `src/styles/tokens/palettes.css`, and throws at
-build time if a palette changes shape or a product names a room module that is not there.
-`test/boot.test.mjs` drives the emitted script against a fake document.
+`<head>` that stamp `<html>` before the bundle arrives. An app room is stamped with its brand and
+theme and painted on its own ground in either theme; the brand root and each open product's landing
+are stamped and painted only when the resolved appearance is dark — by day they carry the boot flag
+alone, so their light pixels are untouched — and every other path is left alone. The `<style>` hides
+the no-JS fallback body in an app room only; a landing shell and a static page keep theirs. The
+script reads the room and landing tables off `src/shell/products.js` and the ground colours out of
+`src/styles/tokens/colors.css` and `palettes.css`, and throws at build time if a palette changes
+shape or a product names a room module that is not there. `test/boot.test.mjs` drives the emitted
+scripts against a fake document.
+
+Light or dark is one device preference, `src/shell/appearance.js` — a module-level store under the
+`windmill:appearance` key that `useAppearance` reads through `useSyncExternalStore`, so the switch
+in the account seat's pop-up (`shell/auth/AccountSeat.jsx`) reaches the shell, the landings and the
+other tabs at once. Only the account seat offers it — in the `/app` head and in every landing's
+header, signed in or out; Settings does not, and the static pages in `public/` follow the stored
+choice without a control of their own. The same module carries `paintBrowserChrome` and
+`restoreBrowserChrome`: the shell on every room or theme change, and a landing at night, tell the
+browser's `theme-color` and `color-scheme` metas the ground `<html>` wears, parking what they
+replace in `data-was` and handing it back on unmount.
 
 `vite.config.js` throws at config time unless the roadmap's `DEFAULT_KINDS` / `GENESIS_STAMP` are
 byte-equal to `packages/api-contract/genesis.js` — otherwise a locally-born tree diverges from the

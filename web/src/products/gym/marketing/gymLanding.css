@@ -1,6 +1,11 @@
 @import '../gymTokens.css';
 
-/* The islands wear .gym-skin, so the token block above is the product's own, never a copy. */
+/* The islands wear .gym-skin, so the token block above is the product's own, never a copy. On a night
+   page they stand on the ground they wear, so each climbs to the raised step and takes the strong
+   edge, every cell inside it climbs one more, and the small captions take the dim ink. */
+.landing[data-theme="dark"] .gyw { background: var(--gym-raised); border-color: var(--border-strong); }
+.landing[data-theme="dark"] .gyw :is(.gyInnerCard, .gyWell, .gychip, .gyrep) { background: var(--neutral-300); }
+.landing[data-theme="dark"] .gyCaption { color: var(--gym-ink-dim); }
 
 .gyMoat {
   width: min(720px, 100%);
@@ -21,6 +26,13 @@
   overflow: hidden;
   cursor: pointer;
   text-align: left;
+}
+
+.gyCaption { color: var(--gym-ink-faint); }
+.gyWell {
+  background: var(--gym-sunken);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-lg);
 }
 
 .gyLabel {
@@ -57,6 +69,12 @@
 
 .gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
 .gyck { margin-left: auto; color: var(--set-done); }
+.gyInnerCard {
+  background: var(--gym-surface);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
 .gycard {
   background: var(--gym-canvas);
   border: 1px solid var(--gym-line);

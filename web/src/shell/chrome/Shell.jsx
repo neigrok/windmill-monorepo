@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
 import { useAppearance } from '../useAppearance.js';
+import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 
@@ -75,12 +76,14 @@ export function Shell({ location, neutral = null }) {
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
 
-  // Attributes only: scripts/appBoot.js emits the rule that paints the ground off data-wm-boot.
+  // Attributes, then the browser's chrome: scripts/appBoot.js emits the rule that paints the ground
+  // off data-wm-boot, and the address bar is told that ground on every room or theme change.
   useLayoutEffect(() => {
     const html = document.documentElement;
     html.setAttribute('data-wm-boot', 'app');
     html.setAttribute('data-brand', room.scope.brand);
     html.setAttribute('data-theme', theme);
+    paintBrowserChrome(theme);
   }, [room.scope.brand, theme]);
 
   // Handed back on unmount only: a room switch must not pass through an unstamped frame.
@@ -90,11 +93,7 @@ export function Shell({ location, neutral = null }) {
     html.removeAttribute('data-brand');
     html.removeAttribute('data-theme');
     html.style.removeProperty('--wm-boot-ground');
-    // The boot script parked each meta's original content in `data-was`.
-    for (const name of ['theme-color', 'color-scheme']) {
-      const meta = document.querySelector(`meta[name="${name}"]`);
-      if (meta?.dataset.was) meta.setAttribute('content', meta.dataset.was);
-    }
+    restoreBrowserChrome();
   }, []);
 
   useEffect(() => {

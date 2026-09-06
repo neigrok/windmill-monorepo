@@ -4,8 +4,9 @@
 html { scroll-behavior: smooth; }
 
 /* ---- the frame ---- */
-/* Light always: the frame carries data-brand only, so --color-brand follows the product. */
-.landing { font-family: var(--font-body); }
+/* The frame carries data-brand always and data-theme at night, so the hue follows the product by day and
+   the whole ground does at night; it paints that ground itself, since the room's night is not the html's. */
+.landing { font-family: var(--font-body); background: var(--surface-canvas); min-height: 100vh; }
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 64px); box-sizing: border-box; }
 
 /* ---- nav ---- */

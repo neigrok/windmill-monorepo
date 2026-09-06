@@ -82,7 +82,10 @@ Everything else about a room's appearance stays inside the room.
 ## 6. You & Windmill One
 
 **You** — profile, the plan row, appearance, the one nudge, doors into each app's settings,
-connected tools, sessions and data, sign out. It mirrors the web settings home.
+connected tools, sessions and data, sign out. It mirrors the web settings home, with one
+difference of place: on web, Appearance is not on the settings page but in the account seat's
+pop-up — a Light · Dark · System bar above the menu rows, on `/app` and on every landing, signed in
+or not. The You screen's Appearance row is the phone's mirror of that bar.
 
 **Appearance is the one place light-or-dark is chosen, for the whole app.** Light · Dark ·
 System, System by default. It sets the hub, the switcher, You, Windmill One, every sheet **and

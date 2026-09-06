@@ -12,21 +12,22 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script src="/boot.js"></script>
     <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/chrome.css" />
     <style>
-      /* This page's own type only — the family chrome and the faces arrive on the two sheets
-         linked above, served by scripts/staticPageAssets.js. Light-theme token values from
-         src/styles/tokens/*.css; these pages are light-only. */
+      /* This page's own type only — the family chrome and the faces arrive on the sheets linked
+         above, served by scripts/staticPageAssets.js, and colour is theirs in both themes — /boot.js
+         stamps the visitor's choice on <html> before first paint. */
       .doc { max-width: 560px; padding: 56px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; margin: 0; }
-      .doc p { font-size: 15.5px; line-height: 1.65; color: #6F5F45; margin: 14px 0 0; }
-      .doc strong { color: #211B13; }
-      .doc a { color: #9D5330; }
-      .doc a:hover { color: #7C3F23; }
-      .doc .btn--pri, .doc .btn--pri:hover { color: #FFFFFF; }
+      .doc p { font-size: 15.5px; line-height: 1.65; color: var(--text-secondary); margin: 14px 0 0; }
+      .doc strong { color: var(--text-primary); }
+      .doc a { color: var(--text-link); }
+      .doc a:hover { color: var(--text-link-hover); }
+      .doc .btn--pri, .doc .btn--pri:hover { color: var(--text-on-accent); }
       .act { margin-top: 26px; }
-      .doc .note { font-size: 13px; line-height: 1.6; color: #92805F; margin-top: 16px; }
+      .doc .note { font-size: 13px; line-height: 1.6; color: var(--text-tertiary); margin-top: 16px; }
 
       /* One document, five faces; the face is chosen by <html data-pause>, stamped before first
          paint below. With no JavaScript nothing here shows and the <noscript> line stands in. */

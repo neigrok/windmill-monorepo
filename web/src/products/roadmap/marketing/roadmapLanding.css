@@ -1,22 +1,13 @@
-/* Bridges bare --kind-<hue> names to --accent-<hue>-500 (values from theme.js NODE_COLORS). */
-
-:root {
-  --kind-terracotta: #BC6C42;
-  --kind-olive:      #7D8C43;
-  --kind-gold:       #C4972F;
-  --kind-brick:      #A84E35;
-  --kind-sky:        #5F8494;
-  --kind-plum:       #8D4F83;
-}
-
-/* ---- node vocabulary ---- */
+/* ---- node vocabulary ----
+   A node carries its kind as three custom properties treeScenes sets from theme.js's KIND_CSS: --fill and
+   --ring are the kind's base and ring tokens, --g the base again, mixed down here for the halos. */
 .nd { position: absolute; transform: translate(-50%,-50%); border-radius: 50%; box-sizing: border-box; z-index: 2;
       transition: background-color 280ms var(--ease-standard), border-color 280ms var(--ease-standard),
                   box-shadow 280ms var(--ease-standard), opacity 280ms var(--ease-standard); }
-.nd-dim   { border: 2px solid rgba(var(--g),.32); background: rgba(var(--g),.22); }
+.nd-dim   { border: 2px solid color-mix(in srgb, var(--g) 32%, transparent); background: color-mix(in srgb, var(--g) 22%, transparent); }
 .nd-avail { border: 2.5px solid var(--ring); background: var(--neutral-0); cursor: pointer; }
 .nd-done  { border: 2.5px solid var(--ring); background: var(--fill);
-            box-shadow: 0 0 0 3px rgba(var(--g),.4), 0 0 16px rgba(var(--g),.4); }
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--g) 40%, transparent), 0 0 16px color-mix(in srgb, var(--g) 40%, transparent); }
 .nd--wake    { animation: wmWakeK 480ms var(--ease-soft) 1; }
 .nd--blossom { animation: wmBlossomK 480ms var(--ease-soft) 1; }
 .nd--echo    { animation: wmEchoK 2400ms var(--ease-glow) 1; }
@@ -25,16 +16,16 @@
                      100% { transform: translate(-50%,-50%) scale(1); } }
 @keyframes wmBlossomK {
   0%   { transform: translate(-50%,-50%) scale(1); }
-  45%  { transform: translate(-50%,-50%) scale(1.045); box-shadow: 0 0 0 5px rgba(var(--g),.5), 0 0 26px 6px rgba(var(--g),.5); }
-  100% { transform: translate(-50%,-50%) scale(1); box-shadow: 0 0 0 3px rgba(var(--g),.4), 0 0 16px rgba(var(--g),.4); } }
+  45%  { transform: translate(-50%,-50%) scale(1.045); box-shadow: 0 0 0 5px color-mix(in srgb, var(--g) 50%, transparent), 0 0 26px 6px color-mix(in srgb, var(--g) 50%, transparent); }
+  100% { transform: translate(-50%,-50%) scale(1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--g) 40%, transparent), 0 0 16px color-mix(in srgb, var(--g) 40%, transparent); } }
 @keyframes wmEchoK {
-  0%,100% { box-shadow: 0 0 0 0 rgba(var(--g),0); }
-  25%     { box-shadow: 0 0 0 5px rgba(var(--g),.42), 0 0 26px rgba(var(--g),.42); }
-  50%     { box-shadow: 0 0 0 2px rgba(var(--g),.12), 0 0 8px rgba(var(--g),.12); }
-  66%     { box-shadow: 0 0 0 4px rgba(var(--g),.30), 0 0 18px rgba(var(--g),.30); } }
+  0%,100% { box-shadow: 0 0 0 0 transparent; }
+  25%     { box-shadow: 0 0 0 5px color-mix(in srgb, var(--g) 42%, transparent), 0 0 26px color-mix(in srgb, var(--g) 42%, transparent); }
+  50%     { box-shadow: 0 0 0 2px color-mix(in srgb, var(--g) 12%, transparent), 0 0 8px color-mix(in srgb, var(--g) 12%, transparent); }
+  66%     { box-shadow: 0 0 0 4px color-mix(in srgb, var(--g) 30%, transparent), 0 0 18px color-mix(in srgb, var(--g) 30%, transparent); } }
 @keyframes wmCrownK {
-  0%,100% { box-shadow: 0 0 0 4px rgba(var(--g),.22), 0 0 22px 4px rgba(var(--g),.22); }
-  50%     { box-shadow: 0 0 0 6px rgba(var(--g),.34), 0 0 34px 8px rgba(var(--g),.34); } }
+  0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--g) 22%, transparent), 0 0 22px 4px color-mix(in srgb, var(--g) 22%, transparent); }
+  50%     { box-shadow: 0 0 0 6px color-mix(in srgb, var(--g) 34%, transparent), 0 0 34px 8px color-mix(in srgb, var(--g) 34%, transparent); } }
 .pre { opacity: 0 !important; }
 .ndlabel { position: absolute; transform: translate(-50%,0); font-weight: 700; color: var(--neutral-600);
            font-family: var(--font-body); white-space: nowrap; z-index: 3; transition: opacity 150ms var(--ease-standard); }
@@ -49,8 +40,13 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 .heroStage { position: absolute; left: 50%; top: 0; transform-origin: top center; }
 .labels-off .ndlabel { opacity: 0; }   /* labels hide below 0.8× */
 .scrim-t, .scrim-b { position: absolute; left: 0; right: 0; z-index: 5; pointer-events: none; }
+/* By day the scrim is the family cream at .94 fading to the cream at 0, written as the cream's own
+   value: a colour function built from the token rasterises one bit differently under the labels the
+   band covers. At night it is the room's ground, through the token. */
 .scrim-t { top: 0; height: 64px; background: linear-gradient(to bottom, rgba(249,245,235,.94), rgba(249,245,235,0)); }
 .scrim-b { bottom: 0; height: 108px; background: linear-gradient(to top, rgba(249,245,235,.94), rgba(249,245,235,0)); }
+.landing[data-theme="dark"] .scrim-t { background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-canvas) 94%, transparent), color-mix(in srgb, var(--surface-canvas) 0%, transparent)); }
+.landing[data-theme="dark"] .scrim-b { background: linear-gradient(to top, color-mix(in srgb, var(--surface-canvas) 94%, transparent), color-mix(in srgb, var(--surface-canvas) 0%, transparent)); }
 .plq { position: absolute; left: max(24px, calc(50vw - 616px)); top: 20px; z-index: 6; display: flex; align-items: center; gap: 9px;
        background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 14px;
        padding: 8px 14px 8px 11px; box-shadow: var(--shadow-sm); opacity: 0; transition: opacity 280ms var(--ease-standard); }
@@ -61,12 +57,12 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 .plq .by b { color: var(--text-secondary); }
 .plq .ct { font-family: var(--font-mono); }
 .wmk { position: absolute; right: max(24px, calc(50vw - 616px)); top: 22px; z-index: 6; font-family: var(--font-display);
-       font-size: 14px; font-weight: 800; color: var(--accent-terracotta-500); background: var(--surface-card);
+       font-size: 14px; font-weight: 800; color: var(--color-brand); background: var(--surface-card);
        border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 13px; box-shadow: var(--shadow-xs); }
 .fcta { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 7; display: inline-flex;
         align-items: center; gap: 8px; font-family: var(--font-body); font-size: 14px; font-weight: 800;
         text-decoration: none; color: var(--text-on-accent); background: var(--color-brand); border: none; border-radius: 999px;
-        padding: 12px 22px; cursor: pointer; box-shadow: 0 3px 12px rgba(188,108,66,.35);
+        padding: 12px 22px; cursor: pointer; box-shadow: 0 3px 12px color-mix(in srgb, var(--color-brand) 35%, transparent);
         transition: background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
 /* Outranks global.css's a:hover (0,1,1), which beats a bare .fcta (0,1,0). */
 a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
@@ -74,14 +70,16 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 .fcta:active { transform: translateX(-50%) scale(.97); }
 .fcta--echo { animation: wmCtaEchoK 2400ms var(--ease-glow) 1; }
 @keyframes wmCtaEchoK {
-  0%,100% { box-shadow: 0 3px 12px rgba(188,108,66,.35); }
-  25%     { box-shadow: 0 3px 12px rgba(188,108,66,.35), 0 0 0 6px rgba(188,108,66,.30), 0 0 26px rgba(188,108,66,.30); }
-  66%     { box-shadow: 0 3px 12px rgba(188,108,66,.35), 0 0 0 4px rgba(188,108,66,.20), 0 0 18px rgba(188,108,66,.20); } }
+  0%,100% { box-shadow: 0 3px 12px color-mix(in srgb, var(--color-brand) 35%, transparent); }
+  25%     { box-shadow: 0 3px 12px color-mix(in srgb, var(--color-brand) 35%, transparent), 0 0 0 6px color-mix(in srgb, var(--color-brand) 30%, transparent), 0 0 26px color-mix(in srgb, var(--color-brand) 30%, transparent); }
+  66%     { box-shadow: 0 3px 12px color-mix(in srgb, var(--color-brand) 35%, transparent), 0 0 0 4px color-mix(in srgb, var(--color-brand) 20%, transparent), 0 0 18px color-mix(in srgb, var(--color-brand) 20%, transparent); } }
 .toastp { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--surface-inverse);
           color: var(--neutral-50); font-family: var(--font-body); font-size: 13px; font-weight: 600; padding: 9px 18px;
-          border-radius: 999px; box-shadow: 0 4px 14px rgba(33,27,19,.3); white-space: nowrap; z-index: 10; opacity: 0;
+          border-radius: 999px; box-shadow: 0 4px 14px rgb(var(--shadow-ink) / .3); white-space: nowrap; z-index: 10; opacity: 0;
           transition: opacity 280ms var(--ease-soft); }
 .toastp b { color: var(--accent-gold-400); }
+/* At night the inverse pill would be pale and the gold on it unreadable; it stands as a card instead. */
+.landing[data-theme="dark"] .toastp { background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-strong); }
 .toastp.tin { opacity: 1; }
 
 /* ---- the loop's stage ---- */
@@ -139,5 +137,5 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .nd--crown, .nd--wake, .nd--blossom, .nd--echo, .fcta--echo { animation: none !important; }
-  .nd--crown { box-shadow: 0 0 0 5px rgba(var(--g),.28), 0 0 26px 5px rgba(var(--g),.28) !important; }
+  .nd--crown { box-shadow: 0 0 0 5px color-mix(in srgb, var(--g) 28%, transparent), 0 0 26px 5px color-mix(in srgb, var(--g) 28%, transparent) !important; }
 }

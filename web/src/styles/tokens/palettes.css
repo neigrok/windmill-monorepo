@@ -9,9 +9,9 @@
    `[data-brand="x"]`                    the room's HUE only
    `[data-theme="l|d"][data-brand="x"]`  the room's GROUND as well
 
-   The /app shell stamps BOTH attributes, so a room gets its ground; the marketing landings stamp
-   brand ALONE and take the hue onto the family cream. That is why the ground blocks are
-   theme-gated.
+   The /app shell stamps BOTH attributes, so a room gets its ground; a marketing landing stamps brand
+   alone by day and takes the hue onto the family cream, and adds the theme at night to take the
+   room's ground. That is why the ground blocks are theme-gated.
 
    ── What a room may re-point ─────────────────────────────────
    Its brand hue, and the neutral ramp with the surfaces that read through it, as a whole. Nothing

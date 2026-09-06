@@ -1,8 +1,11 @@
 // Presentational: the caller passes user/status and the handlers. `expired` keeps the ghost seat
-// and voices the lapsed-session line in the menu.
+// and voices the lapsed-session line in the pop-up. Appearance is the one thing the seat reads for
+// itself — a device preference, so the row shows signed out too. The pop-up is a plain popover:
+// the identity, the Appearance radiogroup, then the one menu of rows.
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Avatar } from '../../design-system';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Avatar, SegmentedControl } from '../../design-system';
+import { useAppearance } from '../useAppearance.js';
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -14,6 +17,8 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
   const [woke, setWoke] = useState(false);
   const rootRef = useRef(null);
+  const seatRef = useRef(null);
+  const popoverId = useId();
   const prevStatus = useRef(status);
   const beatStartRef = useRef(0);
   const claimBusyRef = useRef(claimBusy);
@@ -60,10 +65,12 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
     if (status !== 'signed-in') setClaim(null);
   }, [status]);
 
+  // Escape and a press outside both close the pop-up and hand focus back to the seat.
   useEffect(() => {
     if (!open) return undefined;
-    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const dismiss = () => { setOpen(false); seatRef.current?.focus(); };
+    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) dismiss(); };
+    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -127,9 +134,10 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
       )}
 
       <button
+        ref={seatRef}
         type="button"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? popoverId : undefined}
         aria-label={signedIn ? `Account — ${name}` : 'Account'}
         onClick={() => setOpen((v) => !v)}
         onPointerDown={() => setPressed(true)}
@@ -189,12 +197,13 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
 
       {open && (
         <div
-          role="menu"
+          id={popoverId}
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
             right: 0,
-            minWidth: 208,
+            width: 'min(272px, calc(100vw - 24px))',
+            boxSizing: 'border-box',
             padding: 6,
             background: 'var(--surface-card)',
             border: '1px solid var(--border-subtle)',
@@ -221,10 +230,13 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                   </div>
                 </div>
               </div>
-              {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
-              {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
-              <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
-              <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />
+              <AppearanceRow />
+              <div role="menu" aria-label="Account">
+                {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
+                {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
+                <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
+                <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />
+              </div>
               {footer && (
                 <div style={{ padding: '8px 10px 4px', marginTop: 4, borderTop: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', lineHeight: 1.4, color: 'var(--text-tertiary)' }}>
                   {footer}
@@ -238,12 +250,32 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                   Your sign-in expired. Everything's still here — sign in to keep syncing.
                 </div>
               )}
-              <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
-              {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}
+              <AppearanceRow />
+              <div role="menu" aria-label="Account">
+                <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
+                {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}
+              </div>
             </>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const APPEARANCE_OPTIONS = [
+  { value: 'light', label: 'Light', icon: 'sun' },
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'system', label: 'System', icon: 'monitor' },
+];
+
+function AppearanceRow() {
+  const { choice, set } = useAppearance();
+  const labelId = useId();
+  return (
+    <div style={{ padding: '8px 10px 10px', marginBottom: 4, borderBottom: '1px solid var(--border-subtle)' }}>
+      <div id={labelId} style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 6 }}>Appearance</div>
+      <SegmentedControl labelledBy={labelId} options={APPEARANCE_OPTIONS} value={choice} onChange={set} />
     </div>
   );
 }

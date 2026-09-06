@@ -92,7 +92,7 @@ function Moat() {
         <div data-gy="still" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 20 }}>
           <div>
             <div className="gyLabel">Tuesday · week 6</div>
-            <div style={{ marginTop: 12, background: 'var(--gym-sunken)', border: '1px solid var(--gym-line)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+            <div className="gyWell" style={{ marginTop: 12, padding: '6px 14px' }}>
               <SetRow n="1" reps="60 × 8 · warm-up" style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--warmup-ink)' }} />
               <SetRow n="2" reps="90 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
               <SetRow n="3" reps="95 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
@@ -104,7 +104,7 @@ function Moat() {
             <div style={{ marginTop: 12 }}>
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: 'var(--gym-ink)' }}>Squat</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 56, lineHeight: .95, color: 'var(--weight-ink)', marginTop: 8 }}>
-                100<span style={{ fontSize: 16, color: 'var(--gym-ink-faint)', marginLeft: 5 }}>kg</span>
+                100<span className="gyCaption" style={{ fontSize: 16, marginLeft: 5 }}>kg</span>
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 8 }}>last session · 100 × 5 — already in the field</div>
             </div>
@@ -114,12 +114,12 @@ function Moat() {
         <div data-gy="live" style={{ display: 'none', transition: 'opacity 280ms var(--ease-standard)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 19, color: 'var(--gym-ink)' }}>Squat</div>
-            <div data-gy="session" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--gym-ink-faint)' }}>Tuesday · week 6</div>
+            <div data-gy="session" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>Tuesday · week 6</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 14, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 'clamp(48px,8vw,72px)', lineHeight: .92, color: 'var(--weight-ink)' }}>
-                <span data-gy="weight">97.5</span><span style={{ fontSize: 19, color: 'var(--gym-ink-faint)', marginLeft: 6 }}>kg</span>
+                <span data-gy="weight">97.5</span><span className="gyCaption" style={{ fontSize: 19, marginLeft: 6 }}>kg</span>
               </div>
               <div data-gy="note" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 9 }}>last week · 97.5 × 5</div>
               <div data-gy="pr" className="gyFade" style={{ display: 'none', fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--gym-ink-dim)', marginTop: 7 }}>100 × 5 — best yet.</div>
@@ -139,7 +139,7 @@ function Moat() {
               <span data-gy="log" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 22px', borderRadius: 'var(--radius-lg)', background: 'var(--color-brand)', color: 'var(--gym-on-accent)', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14.5, transition: 'opacity 150ms var(--ease-standard)' }}>Log set</span>
             </div>
           </div>
-          <div style={{ marginTop: 18, background: 'var(--gym-sunken)', border: '1px solid var(--gym-line)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+          <div className="gyWell" style={{ marginTop: 18, padding: '6px 14px' }}>
             <SetRow n="1" reps="60 × 8 · warm-up" style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--warmup-ink)' }} />
             <SetRow n="2" reps="90 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
             <SetRow n="3" reps="95 × 5" done style={{ color: 'var(--gym-ink-dim)' }} />
@@ -189,11 +189,11 @@ function LadderStage() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 34, color: 'var(--weight-ink)' }}>
-          <span data-gy="s1w">100</span><span style={{ fontSize: 13, color: 'var(--gym-ink-faint)', marginLeft: 4 }}>kg</span>
+          <span data-gy="s1w">100</span><span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>kg</span>
         </span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--gym-ink-dim)' }}>× <span data-gy="s1r">5</span></span>
       </div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--gym-ink-faint)', textAlign: 'center' }}>
+      <div className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, textAlign: 'center' }}>
         the small step is your program step · the big one is a plate change
       </div>
     </div>
@@ -205,13 +205,13 @@ function RememberedStage() {
   return (
     <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div data-gy="s2card" className="gyRise" style={{ width: '100%', maxWidth: 240, background: 'var(--gym-surface)', border: '1px solid var(--gym-line)', borderRadius: 'var(--radius-lg)', padding: '14px 16px' }}>
+      <div data-gy="s2card" className="gyRise gyInnerCard" style={{ width: '100%', maxWidth: 240 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--gym-ink)' }}>Squat</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--gym-ink-faint)' }}>Tue · week 7</span>
+          <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>Tue · week 7</span>
         </div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 34, color: 'var(--weight-ink)', marginTop: 8 }}>
-          100<span style={{ fontSize: 13, color: 'var(--gym-ink-faint)', marginLeft: 4 }}>kg</span>
+          100<span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>kg</span>
         </div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--target-ink)', marginTop: 6 }}>already in the field</div>
       </div>
@@ -225,7 +225,7 @@ function LineStage() {
     <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--gym-ink-faint)' }}>Squat · e1RM</span>
+        <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase' }}>Squat · e1RM</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--gym-ink-dim)' }}>12 weeks</span>
       </div>
       <svg viewBox="0 0 240 90" width="100%" height="90" style={{ display: 'block' }}>
@@ -233,7 +233,7 @@ function LineStage() {
           fill="none" stroke="var(--color-brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         <circle data-gy="s3dot" cx="232" cy="28" r="3.4" fill="var(--color-brand)" />
       </svg>
-      <div data-gy="s3cap" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--gym-ink-faint)' }}>137.5 → 140 · one quiet line for a PR</div>
+      <div data-gy="s3cap" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>137.5 → 140 · one quiet line for a PR</div>
     </div>
   );
 }
@@ -288,7 +288,7 @@ function ForTheBarbell() {
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15.5, color: 'var(--gym-ink)' }}>{lift.name}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 17, color: 'var(--weight-ink)' }}>
-                {lift.value}<span style={{ fontSize: 10, color: 'var(--gym-ink-faint)', marginLeft: 3 }}>{lift.unit}</span>
+                {lift.value}<span className="gyCaption" style={{ fontSize: 10, marginLeft: 3 }}>{lift.unit}</span>
               </span>
             </div>
             <svg aria-hidden="true" viewBox="0 0 180 44" width="100%" height="44" style={{ display: 'block', marginTop: 10 }}>
@@ -349,8 +349,8 @@ function ConnectedLog() {
           <div style={PANEL_LABEL}>You approve each level</div>
           <div className="gyw gym-skin gycard" data-theme="dark" data-brand="gym">
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>connect · Claude Code</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>gym</span>
+              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>connect · Claude Code</span>
+              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>gym</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
               {GRANT_LEVELS.map((level) => (
@@ -358,12 +358,12 @@ function ConnectedLog() {
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 17, height: 17, borderRadius: 5, border: `1px solid ${level.granted ? 'var(--color-brand)' : 'var(--gym-line-strong)'}`, background: level.granted ? 'var(--color-brand)' : 'transparent', color: 'var(--gym-on-accent)' }}>
                     {level.granted && <Check size={11} strokeWidth={3} />}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: level.granted ? 'var(--gym-ink)' : 'var(--gym-ink-faint)', minWidth: 82 }}>{level.scope}</span>
-                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: level.granted ? 'var(--gym-ink-dim)' : 'var(--gym-ink-faint)' }}>{level.line}</span>
+                  <span className={level.granted ? undefined : 'gyCaption'} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: level.granted ? 'var(--gym-ink)' : undefined, minWidth: 82 }}>{level.scope}</span>
+                  <span className={level.granted ? undefined : 'gyCaption'} style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: level.granted ? 'var(--gym-ink-dim)' : undefined }}>{level.line}</span>
                 </div>
               ))}
             </div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, lineHeight: 1.5, color: 'var(--gym-ink-faint)', marginTop: 14 }}>
+            <div className="gyCaption" style={{ fontFamily: 'var(--font-body)', fontSize: 12, lineHeight: 1.5, marginTop: 14 }}>
               This connection was never granted delete, so it cannot see the three tools that discard a workout,
               end a share link, or ask to remove a routine.
             </div>
@@ -381,7 +381,7 @@ function Exchange() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 18, marginTop: 36 }}>
       <div className="gyw gym-skin gycard" data-theme="dark" data-brand="gym">
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--gym-ink-faint)' }}>
+        <div className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase' }}>
           {EXCHANGE.askedLabel}
         </div>
         <p style={{ margin: '9px 0 0', fontSize: 15, lineHeight: 1.5, color: 'var(--gym-ink)' }}>{EXCHANGE.asked}</p>

@@ -31,38 +31,16 @@
 <link rel="icon" href="/favicon.ico" sizes="32x32" />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<script src="/boot.js"></script>
 <link rel="stylesheet" href="/fonts.css" />
 <link rel="stylesheet" href="/chrome.css" />
 <style>
-  /* Light-theme token values resolved from the Windmill Design System tokens/*.css — the static
-     pages are light-only. This page's own type is below them; the family chrome and the faces
-     arrive on the two sheets linked above, served by scripts/staticPageAssets.js. */
+  /* Colour comes from /chrome.css in both themes; only this page's own type and motion live here.
+     The family chrome and the faces arrive on the sheets linked above (scripts/staticPageAssets.js). */
   :root {
     --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
     --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
-    --neutral-200: #E5D9C0;
-    --surface-canvas: #F9F5EB;
-    --surface-card: #FFFFFF;
-    --surface-hover: #F1EADA;
-    --border-subtle: #E5D9C0;
-    --border-strong: #B29F7B;
-    --text-primary: #211B13;
-    --text-secondary: #6F5F45;
-    --text-tertiary: #92805F;
-    --text-on-accent: #FFFFFF;
-    --text-link: #9D5330;
-    --text-link-hover: #7C3F23;
-    --color-success: #7D8C43;
-    --color-success-bg: #F3F4E4;
-    --color-brand: #BC6C42;
-    --color-brand-hover: #9D5330;
-    --color-brand-soft: #F9EFE9;
-    --accent-terracotta-200: #EAC6B0;
-    --accent-terracotta-400: #D08A5E;
-    --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
-    --shadow-sm: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04);
-    --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
     --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
     --tracking-tight: -0.02em;
   }

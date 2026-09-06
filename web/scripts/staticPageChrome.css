@@ -1,35 +1,98 @@
-/* Chrome for the plain-HTML pages in public/. Light-only, so tokens are resolved to concrete
-   values; the faces arrive on /fonts.css. */
+/* Chrome for the plain-HTML pages in public/. Colour is the family clay in both themes, resolved
+   from the Windmill Design System tokens/*.css (light at :root, night under the data-theme /boot.js
+   stamps on <html>); the faces arrive on /fonts.css. */
+
+:root {
+  --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --neutral-200: #E5D9C0;
+  --surface-canvas: #F9F5EB;
+  --surface-card: #FFFFFF;
+  --surface-sunken: #F1EADA;
+  --surface-hover: #F1EADA;
+  --border-subtle: #E5D9C0;
+  --border-default: #D3C2A0;
+  --border-strong: #B29F7B;
+  --text-primary: #211B13;
+  --text-secondary: #6F5F45;
+  --text-tertiary: #92805F;
+  --text-on-accent: #FFFFFF;
+  --text-link: #9D5330;
+  --text-link-hover: #7C3F23;
+  --color-success: #7D8C43;
+  --color-success-bg: #F3F4E4;
+  --color-brand: #BC6C42;
+  --color-brand-hover: #9D5330;
+  --color-brand-active: #7C3F23;
+  --color-brand-soft: #F9EFE9;
+  --accent-terracotta-200: #EAC6B0;
+  --accent-terracotta-400: #D08A5E;
+  --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
+  --shadow-xs: 0 1px 2px rgba(33, 27, 19, 0.06);
+  --shadow-sm: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04);
+  --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
+}
+html[data-theme="dark"] {
+  --neutral-200: #222224;
+  --surface-canvas: #0B0B0C;
+  --surface-card: #171719;
+  --surface-sunken: #050506;
+  --surface-hover: #222224;
+  --border-subtle: #222224;
+  --border-default: #2E2E32;
+  --border-strong: #4A4A4F;
+  --text-primary: #F2F0EB;
+  --text-secondary: #B4B2AC;
+  --text-tertiary: #7E7C77;
+  --text-on-accent: #1B1408;
+  --text-link: #D08A5E;
+  --text-link-hover: #EAC6B0;
+  --color-success: #9AA859;
+  --color-success-bg: rgba(154, 168, 89, 0.15);
+  --color-brand: #D08A5E;
+  --color-brand-hover: #EAC6B0;
+  --color-brand-active: #BC6C42;
+  --color-brand-soft: rgba(208, 138, 94, 0.20);
+  --accent-terracotta-200: #EAC6B0;
+  --accent-terracotta-400: #D08A5E;
+  --kind-terracotta-glow: rgba(221, 151, 111, 0.8);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.44), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.36);
+}
+/* /boot.js hands the ground over as a custom property so the page paints in its theme before this sheet lands. */
+html[data-wm-boot] { background: var(--surface-canvas, var(--wm-boot-ground)); }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--surface-canvas); color: var(--text-primary); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 64px); }
-.skip { position: fixed; left: -9999px; top: 12px; z-index: 60; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 14px; color: #211B13; text-decoration: none; box-shadow: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05); }
+.skip { position: fixed; left: -9999px; top: 12px; z-index: 60; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 14px; color: var(--text-primary); text-decoration: none; box-shadow: var(--shadow-md); }
 .skip:focus { left: 12px; }
 
 header { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(14px, 2.2vw, 28px); max-width: 1280px; margin: 0 auto; padding: 24px clamp(20px, 5vw, 64px); }
-.wm { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 22px; color: #211B13; text-decoration: none; }
+.wm { font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--text-primary); text-decoration: none; }
 .fam { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(12px, 1.8vw, 24px); font-weight: 700; font-size: 14.5px; }
-.fam a { color: #6F5F45; text-decoration: none; }
-.fam a:hover { color: #211B13; }
-.fam a[aria-current="page"] { color: #BC6C42; }
+.fam a { color: var(--text-secondary); text-decoration: none; }
+.fam a:hover { color: var(--text-primary); }
+.fam a[aria-current="page"] { color: var(--color-brand); }
 .navr { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-size: 14px; font-weight: 700; border: 1px solid transparent; border-radius: 12px; text-decoration: none; cursor: pointer; transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1); }
-.btn--pri { background: #BC6C42; color: #FFFFFF; box-shadow: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04); }
-.btn--pri:hover { background: #9D5330; color: #FFFFFF; }
-.btn--pri:active { background: #7C3F23; transform: scale(0.97); }
-.btn--gho { background: transparent; color: #211B13; }
-.btn--gho:hover { background: #F1EADA; }
-.btn--gho:active { background: #E5D9C0; transform: scale(0.97); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; font-family: var(--font-body); font-size: 14px; font-weight: 700; border: 1px solid transparent; border-radius: 12px; text-decoration: none; cursor: pointer; transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1); }
+.btn--pri { background: var(--color-brand); color: var(--text-on-accent); box-shadow: var(--shadow-sm); }
+.btn--pri:hover { background: var(--color-brand-hover); color: var(--text-on-accent); }
+.btn--pri:active { background: var(--color-brand-active); transform: scale(0.97); }
+.btn--gho { background: transparent; color: var(--text-primary); }
+.btn--gho:hover { background: var(--surface-hover); }
+.btn--gho:active { background: var(--neutral-200); transform: scale(0.97); }
 .btn--lg { gap: 10px; padding: 14px 26px; font-size: 18px; border-radius: 16px; }
 
-footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; max-width: 1280px; margin: 80px auto 0; padding: 32px clamp(20px, 5vw, 64px); border-top: 1px solid #E5D9C0; }
+footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; max-width: 1280px; margin: 80px auto 0; padding: 32px clamp(20px, 5vw, 64px); border-top: 1px solid var(--border-subtle); }
 .fl { display: flex; align-items: baseline; gap: 10px; }
-.fl b { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16px; color: #6F5F45; }
-.fl span { font-size: 14px; color: #92805F; }
+.fl b { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text-secondary); }
+.fl span { font-size: 14px; color: var(--text-tertiary); }
 .fcol { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .fr { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 24px; font-size: 14px; }
-.fr a { color: #92805F; text-decoration: none; }
-.fr a:hover { color: #211B13; }
+.fr a { color: var(--text-tertiary); text-decoration: none; }
+.fr a:hover { color: var(--text-primary); }

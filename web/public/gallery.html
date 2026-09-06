@@ -12,6 +12,7 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script src="/boot.js"></script>
     <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/chrome.css" />
     <meta property="og:type" content="website" />
@@ -31,44 +32,45 @@
     <meta name="twitter:image" content="https://windmill.works/og-image.png" />
     <meta name="twitter:image:alt" content="The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark." />
     <style>
-      /* This page's own type only — the family chrome and the faces arrive on the two sheets
-         linked above, served by scripts/staticPageAssets.js; these pages are light-only.
+      /* This page's own type only — the family chrome and the faces arrive on the sheets linked
+         above, served by scripts/staticPageAssets.js, and colour is theirs in both themes — /boot.js
+         stamps the visitor's choice on <html> before first paint.
          The server (adapters/http/GalleryApi.cpp) fills the fenced block below with one
          <a class="card"> per listed tree; everything else on this page is static. */
       .lede { max-width: 640px; padding: 40px 0 30px; }
       .lede h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
-      .lede p { font-size: 16.5px; line-height: 1.6; color: #6F5F45; margin: 14px 0 0; }
+      .lede p { font-size: 16.5px; line-height: 1.6; color: var(--text-secondary); margin: 14px 0 0; }
 
       .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 20px; padding-bottom: 8px; }
 
-      .card { display: block; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 18px; overflow: hidden; text-decoration: none; box-shadow: 0 1px 2px rgba(33, 27, 19, .05); transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1); }
-      .card:hover { transform: translateY(-2px); border-color: #D3C2A0; box-shadow: 0 4px 18px rgba(33, 27, 19, .14); }
-      .card:focus-visible { outline: 2px solid #BC6C42; outline-offset: 3px; }
+      .card { display: block; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 18px; overflow: hidden; text-decoration: none; box-shadow: 0 1px 2px rgba(33, 27, 19, .05); transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .card:hover { transform: translateY(-2px); border-color: var(--border-default); box-shadow: 0 4px 18px rgba(33, 27, 19, .14); }
+      .card:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 3px; }
 
-      .shot { display: block; position: relative; aspect-ratio: 1200 / 630; background: #F9F5EB; border-bottom: 1px solid #E5D9C0; overflow: hidden; }
+      .shot { display: block; position: relative; aspect-ratio: 1200 / 630; background: var(--surface-canvas); border-bottom: 1px solid var(--border-subtle); overflow: hidden; }
       .shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
       .shot .hue { display: block; position: absolute; left: 0; top: 0; right: 0; height: 4px; }
 
       .body { display: block; padding: 13px 15px 14px; }
-      .ct { display: block; font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16.5px; color: #211B13; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .bar { display: block; height: 6px; border-radius: 999px; background: #E5D9C0; overflow: hidden; margin-top: 11px; }
-      .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #BC6C42, #C4972F); }
-      .meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px; font-weight: 700; color: #6F5F45; }
+      .ct { display: block; font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bar { display: block; height: 6px; border-radius: 999px; background: var(--border-subtle); overflow: hidden; margin-top: 11px; }
+      .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--color-brand), #C4972F); }
+      .meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
       .meta .sep { display: block; width: 3px; height: 3px; border-radius: 50%; background: #C9BCA0; flex: none; }
-      .meta .forks { color: #92805F; }
-      .meta .from { color: #92805F; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .meta .forks { color: var(--text-tertiary); }
+      .meta .from { color: var(--text-tertiary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-      .empty { grid-column: 1 / -1; border: 1px dashed #D3C2A0; border-radius: 18px; padding: 48px 28px; text-align: center; }
-      .empty h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; margin: 0; color: #211B13; }
-      .empty p { font-size: 15px; line-height: 1.65; color: #6F5F45; margin: 10px auto 0; max-width: 430px; }
+      .empty { grid-column: 1 / -1; border: 1px dashed var(--border-default); border-radius: 18px; padding: 48px 28px; text-align: center; }
+      .empty h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; margin: 0; color: var(--text-primary); }
+      .empty p { font-size: 15px; line-height: 1.65; color: var(--text-secondary); margin: 10px auto 0; max-width: 430px; }
       .empty .btn { margin-top: 20px; }
 
-      .how { border-top: 1px solid #E5D9C0; margin-top: 56px; padding-top: 28px; max-width: 640px; }
+      .how { border-top: 1px solid var(--border-subtle); margin-top: 56px; padding-top: 28px; max-width: 640px; }
       .how h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 20px; margin: 0; }
-      .how p { font-size: 15px; line-height: 1.65; color: #6F5F45; margin: 10px 0 0; }
-      .how strong { color: #211B13; }
-      .how a { color: #9D5330; }
-      .how a:hover { color: #7C3F23; }
+      .how p { font-size: 15px; line-height: 1.65; color: var(--text-secondary); margin: 10px 0 0; }
+      .how strong { color: var(--text-primary); }
+      .how a { color: var(--text-link); }
+      .how a:hover { color: var(--text-link-hover); }
 
       @media (prefers-reduced-motion: reduce) {
         .card { transition: none; }

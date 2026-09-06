@@ -4,6 +4,7 @@ import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.js
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { listTrees } from '../persistence/TreeRegistry.js';
 import { track } from '../../../telemetry/beacon.js';
+import { KIND_CSS } from '../theme.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
 import './roadmapLanding.css';
 
@@ -15,15 +16,6 @@ const SECTION_LINKS = [
 ];
 
 const START_CTA = { href: '#/app/start', label: 'Start your tree' };
-
-const KIND_DOT = {
-  terracotta: 'var(--kind-terracotta)',
-  olive: 'var(--kind-olive)',
-  gold: 'var(--kind-gold)',
-  brick: 'var(--kind-brick)',
-  sky: 'var(--kind-sky)',
-  plum: 'var(--kind-plum)',
-};
 
 function tendedAgo(updatedAt) {
   if (updatedAt == null) return null;
@@ -84,7 +76,7 @@ function Hero({ resume }) {
               <a href={`#/app/${resume.id}`}><Button variant="ghost" size="lg">My trees</Button></a>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 8, fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
-              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: KIND_DOT[resume.dominantKind] ?? KIND_DOT.terracotta }} />
+              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: (KIND_CSS[resume.dominantKind] ?? KIND_CSS.terracotta).base }} />
               <span>
                 {name}{' · '}
                 <span style={{ fontFamily: 'var(--font-mono)' }}>{`${resume.done ?? 0}/${resume.total ?? 0}`}</span>
@@ -218,7 +210,7 @@ function AiTools() {
           <div className="aiVerbs">
             {verbs.map(v => (
               <span key={v.label} className="aiVerb">
-                <i style={{ background: KIND_DOT[v.kind] }} aria-hidden="true" />{v.label}
+                <i style={{ background: KIND_CSS[v.kind].base }} aria-hidden="true" />{v.label}
               </span>
             ))}
           </div>
@@ -309,6 +301,7 @@ export function RoadmapLanding() {
 
   return (
     <LandingPage
+      brand="roadmap"
       product="roadmap"
       links={SECTION_LINKS}
       cta={START_CTA}

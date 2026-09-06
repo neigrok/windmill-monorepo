@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
-// Paints an app room's ground before the bundle arrives; a no-op outside /app.
+// Paints a page's ground before the bundle arrives: an app room's own, or the family's on the brand
+// root and the product landings. Every other path is left alone — /t/:id share pages included.
 const GROUND = '--neutral-50';
 const THEMES = ['light', 'dark'];
 // 'clay' is the neutral rooms' brand.
@@ -79,25 +80,58 @@ function readRooms(products) {
     }));
 }
 
-export function bootScript(rooms, grounds, neutral, storageKey) {
-  const table = rooms.map((room) => [room.path, room.brand, room.theme, room.assets]);
-  return `(function(){var d=document.documentElement,p=location.pathname;
-if(p!=='/app'&&p.slice(0,5)!=='/app/')return;
-var R=${JSON.stringify(table)},G=${JSON.stringify(grounds)},b='clay',t=null,a=${JSON.stringify(neutral)};
-for(var i=0;i<R.length;i++){if(p===R[i][0]||p.slice(0,R[i][0].length+1)===R[i][0]+'/'){b=R[i][1];t=R[i][2];a=R[i][3];break}}
-if(!t){var s=null;try{s=localStorage.getItem('${storageKey}')}catch(e){}
-t=(s==='light'||s==='dark')?s:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light')}
-d.setAttribute('data-wm-boot','app');d.setAttribute('data-theme',t);d.setAttribute('data-brand',b);
-var g=G[t+'|'+b];if(g){d.style.setProperty('--wm-boot-ground',g);
-var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('data-was',m.content);m.setAttribute('content',g)}}
-var c=document.querySelector('meta[name="color-scheme"]');if(c){c.setAttribute('data-was',c.content);c.setAttribute('content',t)}
-for(var j=0;j<a.length;j++){var l=document.createElement('link'),u=a[j];
-if(u.slice(-4)==='.css'){l.rel='preload';l.as='style'}else{l.rel='modulepreload'}
-l.crossOrigin='';l.href=u;document.head.appendChild(l)}})();`;
+// The brand root wears clay; an open product's landing wears that product, as its room does.
+export function readLandings(products) {
+  return [
+    { path: '/', brand: 'clay' },
+    ...products
+      .filter((product) => product.shell.status === 'open')
+      .map((product) => ({ path: product.shell.landingHref, brand: product.shell.scope.brand })),
+  ];
 }
 
-// Each rewritten meta keeps what it replaced in `data-was`; the shell hands them back on leaving the room.
-export const BOOT_STYLE = `html[data-wm-boot="app"]{background:var(--surface-canvas,var(--wm-boot-ground))}
+// The ladder appearance.js states, in ES5: an explicit choice, else the device, else light.
+const resolveTheme = (storageKey) => `if(!t){var s=null;try{s=localStorage.getItem('${storageKey}')}catch(e){}
+t=(s==='light'||s==='dark')?s:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light')}`;
+
+// Stamps <html> with what was decided (k = the kind of page, t = theme, b = brand) and tells the
+// browser's own chrome the ground. A landing or a static page by day is stamped as booting and
+// nothing more — the pixels of a landing by day are the pixels it had before any of this existed,
+// and its root stamps nothing by day either. Each rewritten meta keeps what it replaced in `data-was`.
+const STAMP = `d.setAttribute('data-wm-boot',k);if(k!=='app'&&t!=='dark')return;
+d.setAttribute('data-theme',t);d.setAttribute('data-brand',b);
+var g=G[t+'|'+b];if(g){d.style.setProperty('--wm-boot-ground',g);
+var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('data-was',m.content);m.setAttribute('content',g)}}
+var c=document.querySelector('meta[name="color-scheme"]');if(c){c.setAttribute('data-was',c.content);c.setAttribute('content',t)}`;
+
+export function bootScript(rooms, landings, grounds, neutral, storageKey) {
+  const table = rooms.map((room) => [room.path, room.brand, room.theme, room.assets]);
+  const openPages = landings.map((landing) => [landing.path, landing.brand]);
+  return `(function(){var d=document.documentElement,p=location.pathname,k=null,b='clay',t=null,a=[];
+var R=${JSON.stringify(table)},L=${JSON.stringify(openPages)},G=${JSON.stringify(grounds)};
+if(p==='/app'||p.slice(0,5)==='/app/'){k='app';a=${JSON.stringify(neutral)};
+for(var i=0;i<R.length;i++){if(p===R[i][0]||p.slice(0,R[i][0].length+1)===R[i][0]+'/'){b=R[i][1];t=R[i][2];a=R[i][3];break}}}
+else{for(var j=0;j<L.length;j++){if(p===L[j][0]||p===L[j][0]+'/'){k='landing';b=L[j][1];break}}}
+if(!k)return;
+${resolveTheme(storageKey)}
+for(var n=0;n<a.length;n++){var l=document.createElement('link'),u=a[n];
+if(u.slice(-4)==='.css'){l.rel='preload';l.as='style'}else{l.rel='modulepreload'}
+l.crossOrigin='';l.href=u;document.head.appendChild(l)}
+${STAMP}})();`;
+}
+
+// The plain HTML pages in public/ link this as /boot.js (scripts/staticPageAssets.js): every one of
+// them is a neutral page, so it is clay in whichever theme the visitor chose.
+export function staticBootScript(grounds, storageKey) {
+  return `(function(){var d=document.documentElement,k='static',b='clay',t=null,G=${JSON.stringify(grounds)};
+${resolveTheme(storageKey)}
+${STAMP}})();`;
+}
+
+// The ground is a custom-property FALLBACK: an inline background would outlive the room. The no-JS
+// fallback body is hidden in an app room only, where the script that mounts over it is coming; a
+// landing shell or a static page keeps its body on screen.
+export const BOOT_STYLE = `html[data-wm-boot]{background:var(--surface-canvas,var(--wm-boot-ground))}
 html[data-wm-boot="app"] #root>main{display:none}`;
 
 export function appBoot() {
@@ -116,13 +150,14 @@ export function appBoot() {
         const alreadyNamed = [...html.matchAll(/"\/assets\/[^"]+"/g)].map((hit) => hit[0].slice(1, -1));
         const rooms = readRooms(PRODUCTS).map((room) => ({ ...room, assets: assetsFor(ctx.bundle, room.modules, alreadyNamed) }));
         const neutral = assetsFor(ctx.bundle, ['src/shell/chrome/Shell.jsx'], alreadyNamed);
+        const landings = readLandings(PRODUCTS);
 
         return {
           html,
           tags: [
             // End of <head>: the script rewrites metas that do not exist at head-prepend.
             { tag: 'style', children: BOOT_STYLE, injectTo: 'head' },
-            { tag: 'script', children: bootScript(rooms, grounds, neutral, KEY), injectTo: 'head' },
+            { tag: 'script', children: bootScript(rooms, landings, grounds, neutral, KEY), injectTo: 'head' },
           ],
         };
       },

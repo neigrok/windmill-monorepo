@@ -31,7 +31,7 @@ function Hero() {
   return (
     <section>
       <div className="wrap" style={{ paddingTop: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--color-brand-soft)', color: 'var(--lamp-600)', borderRadius: 999, padding: '5px 13px', fontSize: 12.5, fontWeight: 800 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--color-brand-soft)', color: 'var(--color-brand)', borderRadius: 999, padding: '5px 13px', fontSize: 12.5, fontWeight: 800 }}>
           <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-brand)' }} />
           Now open
         </span>
@@ -59,20 +59,10 @@ function NightWindow() {
   const ref = useScene(mountNightWindow);
   return (
     <div className="wrap" style={{ marginTop: 44, display: 'flex', justifyContent: 'center' }}>
-      <div
-        ref={ref}
-        data-theme="dark"
-        data-brand="journal"
-        aria-hidden="true"
-        style={{
-          width: 'min(820px,100%)', background: 'var(--surface-canvas)', border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-2xl)', boxShadow: '0 24px 60px color-mix(in srgb, var(--surface-canvas) 40%, transparent)',
-          padding: 'clamp(24px,4vw,40px) clamp(22px,4.5vw,48px) clamp(28px,4vw,44px)', textAlign: 'left',
-        }}
-      >
+      <div ref={ref} className="jn-moat" data-theme="dark" data-brand="journal" aria-hidden="true">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Thursday · 11:41pm</span>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--lamp-400)', boxShadow: '0 0 0 3px rgba(224,185,114,.16)' }} />
+          <span className="jn-moat-stamp" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase' }}>Thursday · 11:41pm</span>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--lamp-400)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--lamp-400) 16%, transparent)' }} />
         </div>
         <p style={{ fontSize: 16, lineHeight: 1.75, color: 'var(--text-primary)', opacity: .42, margin: '18px 0 0', maxWidth: 600 }}>
           Rain stopped around eight; the street smelled like summer for a minute.
@@ -81,7 +71,7 @@ function NightWindow() {
           <span data-typed>Took the long way home. The kitchen still smelled of coffee, and the light on the counter was worth the extra ten minutes.</span>
           <span className="jn-cursor" />
         </p>
-        <div data-echo style={{ marginTop: 20, maxWidth: 600, background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '15px 17px' }}>
+        <div data-echo className="jn-echo" style={{ marginTop: 20, maxWidth: 600, padding: '15px 17px' }}>
           <div style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>Walked back past the bakery for no reason except the light. Some detours are the point.</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-400)', marginTop: 9 }}>07 JAN 2026 · seven months ago</div>
         </div>
@@ -96,10 +86,10 @@ function WriteScene() {
     <div ref={ref} className="jn-scene" title="Click to replay" aria-hidden="true">
       <div style={STAMP}>Yesterday</div>
       <div style={{ fontSize: 13.5, lineHeight: '22px', color: 'var(--text-primary)', opacity: .45, marginTop: 4 }}>…I could hear what I’d been chewing on all week.</div>
-      <div style={{ ...STAMP, color: 'var(--lamp-600)', marginTop: 16 }}>Today</div>
+      <div className="jn-lamp-ink" style={{ ...STAMP, color: undefined, marginTop: 16 }}>Today</div>
       <div style={{ fontSize: 13.5, lineHeight: '22px', color: 'var(--text-primary)', marginTop: 4, minHeight: 44 }}>
         <span data-typed>Woke early without the alarm.</span>
-        <span style={{ display: 'inline-block', width: 2, height: 14, background: 'var(--lamp-600)', marginLeft: 2, verticalAlign: '-2px' }} />
+        <span className="jn-lamp-bar" style={{ display: 'inline-block', width: 2, height: 14, marginLeft: 2, verticalAlign: '-2px' }} />
       </div>
     </div>
   );
@@ -181,7 +171,7 @@ function HearBackScene() {
       </div>
       <div data-word>
         <div style={{ fontSize: 13, lineHeight: '20px', color: 'var(--text-primary)', marginTop: 14 }}>6 of 7 days · 812 words</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--lamp-600)', marginTop: 10 }}>Close and write</div>
+        <div className="jn-lamp-ink" style={{ fontSize: 12, fontWeight: 700, marginTop: 10 }}>Close and write</div>
       </div>
     </div>
   );
@@ -239,10 +229,10 @@ function SearchSheet() {
           <span style={{ fontSize: 13.5, lineHeight: '21px', color: 'var(--text-primary)' }}>Made the good soup for no occasion.</span>
         </div>
         <div data-hit style={{ display: 'flex', gap: 14, marginTop: 12 }}>
-          <span style={{ width: 56, flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', color: 'var(--lamp-600)', paddingTop: 2 }}>Fri 24</span>
+          <span className="jn-lamp-ink" style={{ width: 56, flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', paddingTop: 2 }}>Fri 24</span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: 'block', fontSize: 14.5, lineHeight: '23px', color: 'var(--text-primary)' }}>Everyone at dinner seemed further along. I kept comparing timelines instead of tasting anything.</span>
-            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-600)', marginTop: 6 }}>close to · everyone</span>
+            <span className="jn-lamp-ink" style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 6 }}>close to · everyone</span>
           </span>
         </div>
         <div style={{ display: 'flex', gap: 14, marginTop: 12, opacity: .38 }}>

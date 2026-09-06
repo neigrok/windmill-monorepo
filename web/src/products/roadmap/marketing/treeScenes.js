@@ -1,13 +1,37 @@
+import { KIND_CSS, isNightFor, sceneTheme } from '../theme.js';
+
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const KIND = {
-  gold:       { f: '#C4972F', r: '#A17822', g: '196,151,47'  },
-  terracotta: { f: '#BC6C42', r: '#9D5330', g: '188,108,66'  },
-  olive:      { f: '#7D8C43', r: '#616E33', g: '125,140,67'  },
-  plum:       { f: '#8D4F83', r: '#6F3B67', g: '141,79,131'  },
-  brick:      { f: '#A84E35', r: '#8A3A26', g: '168,78,53'   },
-  sky:        { f: '#5F8494', r: '#4A6875', g: '95,132,148'  },
-};
-const EDGE_DORMANT = '#D3C2A0', EDGE_LIT = '#9C6B44';
+// A node carries its kind as --kind-* tokens and follows the room by itself. An edge is an SVG stroke
+// with no token to read, so it takes the scene set for the hour its stage sits in, and every mounted
+// scene repaints its edges when that hour changes — through one observer on the document, shared by
+// every scene and gone when the last one unmounts.
+const TRAVELLER_HEAD = '#FFF6E0';
+function edgeInk(element) {
+  const theme = sceneTheme(isNightFor(element));
+  return { dormant: theme.CONNECTOR.inactive, lit: theme.BARK };
+}
+function paintEdge(E, lit) {
+  const ink = edgeInk(E.svg);
+  E.lit = lit;
+  E.base.setAttribute('stroke', lit ? ink.lit : ink.dormant);
+  E.base.setAttribute('stroke-width', lit ? 2.2 : 1.5);
+}
+const hourListeners = new Set();
+let hourObserver = null;
+function watchHour(onChange) {
+  hourListeners.add(onChange);
+  if (!hourObserver) {
+    hourObserver = new MutationObserver(() => hourListeners.forEach((listener) => listener()));
+    hourObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'], subtree: true });
+  }
+  return () => {
+    hourListeners.delete(onChange);
+    if (hourListeners.size > 0) return;
+    hourObserver.disconnect();
+    hourObserver = null;
+  };
+}
+function halo(base, pct) { return `color-mix(in srgb, ${base} ${pct}%, transparent)`; }
 const FORK_IC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="4.6" r="2.5"></circle><circle cx="5.4" cy="19.4" r="2.5"></circle><circle cx="18.6" cy="19.4" r="2.5"></circle><path d="M12 7.1v3.2M12 10.3c0 3-6.6 3.4-6.6 6.6M12 10.3c0 3 6.6 3.4 6.6 6.6"></path></svg>';
 
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h); return Math.abs(h); }
@@ -72,26 +96,26 @@ function buildWorld(stage, o) {
   EDS.forEach(pair => {
     const [s0, s1] = pair, lit = o.states[s0] === 'done';
     const d = qd(P[s0], P[s1], (hashStr(s0 + s1) % 2 ? 1 : -1) * .6);
-    edges[s0 + '-' + s1] = { d, ring: NDS[s1].ring, src: s0, dst: s1,
-      base: sv('path', { class: 'eb', d, fill: 'none', 'stroke-linecap': 'round',
-        stroke: lit ? EDGE_LIT : EDGE_DORMANT, 'stroke-width': lit ? 2.2 : 1.5,
-        opacity: o.pre ? 0 : (lit ? .9 : .8) }, svg), svg };
+    const E = { d, ring: NDS[s1].ring, src: s0, dst: s1, lit,
+      base: sv('path', { class: 'eb', d, fill: 'none', 'stroke-linecap': 'round', opacity: o.pre ? 0 : (lit ? .9 : .8) }, svg), svg };
+    paintEdge(E, lit);
+    edges[s0 + '-' + s1] = E;
   });
   const nodes = {};
   const sizes = o.sizes || [26, 21, 17, 15];
   const lsz = o.labelSizes || [13, 11, 10, 10];
   Object.keys(NDS).forEach(id => {
-    const n = NDS[id], k = KIND[n.k], sz = sizes[n.ring];
+    const n = NDS[id], k = KIND_CSS[n.k], sz = sizes[n.ring];
     const st = o.states[id];
     const nd = el('div', `nd nd-${st}` + (o.pre ? ' pre' : ''), stage);
     nd.dataset.id = id;
     nd.style.cssText = `left:${P[id][0]}px; top:${P[id][1]}px; width:${sz}px; height:${sz}px;` +
-      `--g:${k.g}; --ring:${k.r}; --fill:${k.f};`;
+      `--g:${k.base}; --ring:${k.ring}; --fill:${k.base};`;
     if (n.crown && st === 'done' && !o.pre) {
-      if (PRM) nd.style.boxShadow = `0 0 0 4px rgba(${k.g},.28), 0 0 26px 5px rgba(${k.g},.28)`;
+      if (PRM) nd.style.boxShadow = `0 0 0 4px ${halo(k.base, 28)}, 0 0 26px 5px ${halo(k.base, 28)}`;
       else nd.classList.add('nd--crown');
     }
-    if (n.halo && !o.pre) nd.style.boxShadow = `0 0 0 3px rgba(${k.g},.22), 0 0 14px 3px rgba(${k.g},.2)`;
+    if (n.halo && !o.pre) nd.style.boxShadow = `0 0 0 3px ${halo(k.base, 22)}, 0 0 14px 3px ${halo(k.base, 20)}`;
     const wantLabel = o.labels === 'all' || (Array.isArray(o.labels) && o.labels.includes(id));
     if (wantLabel) {
       const l = el('div', 'ndlabel' + (st === 'dim' ? ' ndlabel--dim' : '') + (o.pre ? ' pre' : ''), stage, n.name);
@@ -103,30 +127,33 @@ function buildWorld(stage, o) {
   return { P, edges, nodes, svg, NDS,
     setSt(id, st) { const nd = nodes[id];
       nd.classList.remove('nd-dim', 'nd-avail', 'nd-done'); nd.classList.add('nd-' + st);
-      if (nd._label) nd._label.classList.toggle('ndlabel--dim', st === 'dim'); } };
+      if (nd._label) nd._label.classList.toggle('ndlabel--dim', st === 'dim'); },
+    repaint() { for (const k in edges) paintEdge(edges[k], edges[k].lit); } };
 }
 
 function travel(K, E, dur, onArrive) {
-  const g = KIND[(E.NDS || ND)[E.src].k].g, f = KIND[(E.NDS || ND)[E.src].k].f;
-  const lit = sv('path', { d: E.d, fill: 'none', stroke: EDGE_LIT, 'stroke-width': 2.2, 'stroke-linecap': 'round' }, E.svg);
+  const k = KIND_CSS[(E.NDS || ND)[E.src].k];
+  const lit = sv('path', { d: E.d, fill: 'none', stroke: edgeInk(E.svg).lit, 'stroke-width': 2.2, 'stroke-linecap': 'round' }, E.svg);
   const len = lit.getTotalLength();
   lit.style.strokeDasharray = `${len} ${len}`; lit.style.strokeDashoffset = len;
-  const halo = sv('circle', { r: 6, fill: `rgba(${g},.35)` }, E.svg);
-  const head = sv('circle', { r: 3, fill: '#FFF6E0', stroke: f, 'stroke-width': 1 }, E.svg);
+  const glow = sv('circle', { r: 6 }, E.svg);
+  glow.style.fill = halo(k.base, 35);
+  const head = sv('circle', { r: 3, fill: TRAVELLER_HEAD, 'stroke-width': 1 }, E.svg);
+  head.style.stroke = k.base;
   const t0 = performance.now(); let fired = false;
   const step = now => {
     const t = Math.min(1, (now - t0) / dur), p = smooth(t);
     lit.style.strokeDashoffset = len * (1 - p);
     const pt = lit.getPointAtLength(len * p);
-    halo.setAttribute('cx', pt.x); halo.setAttribute('cy', pt.y);
+    glow.setAttribute('cx', pt.x); glow.setAttribute('cy', pt.y);
     head.setAttribute('cx', pt.x); head.setAttribute('cy', pt.y);
     if (!fired && p >= .85) { fired = true; onArrive && onArrive(); }
     if (t < 1) K.rafs.push(requestAnimationFrame(step));
-    else { halo.remove(); head.remove(); E.base.setAttribute('stroke', EDGE_LIT); E.base.setAttribute('stroke-width', 2.2); lit.remove(); }
+    else { glow.remove(); head.remove(); paintEdge(E, true); lit.remove(); }
   };
   K.rafs.push(requestAnimationFrame(step));
 }
-function unlight(E) { E.base.setAttribute('stroke', EDGE_DORMANT); E.base.setAttribute('stroke-width', 1.5); E.base.style.opacity = .8; }
+function unlight(E) { paintEdge(E, false); E.base.style.opacity = .8; }
 
 // ---------- HERO: arrival on load, then a self-playing loop — unlock → dim → idle → again. ----------
 const HW = 980, HH = 560;
@@ -162,6 +189,7 @@ export function mountHero(wrap) {
     wrap.classList.toggle('labels-off', s < 0.8);
   };
   const ro = new ResizeObserver(fit); ro.observe(wrap); fit();
+  const unwatchHour = watchHour(() => W && W.repaint());
 
   const io = new IntersectionObserver(en => { visible = en[0].isIntersecting; }, { threshold: .25 });
   io.observe(wrap);
@@ -178,7 +206,7 @@ export function mountHero(wrap) {
     const eB1 = W.edges['b-b1'], eB2 = W.edges['b-b2'];
     if (PRM) {
       W.setSt('b', 'done');
-      [eB1, eB2].forEach(E => { E.base.setAttribute('stroke', EDGE_LIT); E.base.setAttribute('stroke-width', 2.2); });
+      [eB1, eB2].forEach(E => paintEdge(E, true));
       W.setSt('b1', 'avail'); W.setSt('b2', 'avail');
       K.T(460, () => { toast.classList.add('tin'); ct.textContent = '7'; });
       K.T(4460, () => toast.classList.remove('tin'));
@@ -226,8 +254,7 @@ export function mountHero(wrap) {
         K.T(T0 + jit(id), () => { const nd = W.nodes[id]; nd.classList.remove('pre');
           nd._label && nd._label.classList.remove('pre');
           nd.classList.add('nd--wake'); K.T(520, () => nd.classList.remove('nd--wake')); }); });
-      for (const k in W.edges) { if (W.edges[k].ring === d) K.T(T0 - 60, () => W.edges[k].base.style.opacity =
-        W.edges[k].base.getAttribute('stroke') === EDGE_LIT ? .9 : .8); }
+      for (const k in W.edges) { if (W.edges[k].ring === d) K.T(T0 - 60, () => W.edges[k].base.style.opacity = W.edges[k].lit ? .9 : .8); }
     }
     schedule(4600, fire);
   }
@@ -249,7 +276,7 @@ export function mountHero(wrap) {
       autoplay = false;
       clearTimeout(cycleT);
       K.clear();
-      ro.disconnect(); io.disconnect();
+      ro.disconnect(); io.disconnect(); unwatchHour();
       wrap.innerHTML = '';
       wrap.classList.remove('heroWrap', 'labels-off');
       wrap.style.height = '';
@@ -279,8 +306,7 @@ const beatDefs = {
         Object.keys(defs.nodes).forEach(id => { if (defs.nodes[id].ring !== d) return;
           K.T(T0 + jit(id), () => { W.nodes[id].classList.remove('pre');
             W.nodes[id].classList.add('nd--wake'); K.T(520, () => W.nodes[id].classList.remove('nd--wake')); }); });
-        for (const k in W.edges) if (W.edges[k].ring === d) K.T(T0 - 60, () => W.edges[k].base.style.opacity =
-          W.edges[k].base.getAttribute('stroke') === EDGE_LIT ? .9 : .8);
+        for (const k in W.edges) if (W.edges[k].ring === d) K.T(T0 - 60, () => W.edges[k].base.style.opacity = W.edges[k].lit ? .9 : .8);
       }
     },
   },
@@ -335,6 +361,7 @@ export function mountBeat(stage, kind) {
   const fitBeat = () => { stage.style.zoom = Math.min(1, frame.clientWidth / BEAT_W); };
   const ro = new ResizeObserver(fitBeat); ro.observe(frame); fitBeat();
   let W, played = false;
+  const unwatchHour = watchHour(() => W && W.repaint());
   function build(pre) {
     K.clear(); stage.innerHTML = '';
     W = buildWorld(stage, Object.assign({ states: Object.assign({}, defs.rest) }, o, { pre }));
@@ -348,7 +375,7 @@ export function mountBeat(stage, kind) {
   function endState() { // reduced motion: rest at the story's end
     if (kind === 'finish') W.setSt('q', 'done');
     if (kind === 'unlock') { W.setSt('p', 'done'); W.setSt('c1', 'avail'); W.setSt('c2', 'avail');
-      for (const k in W.edges) { W.edges[k].base.setAttribute('stroke', EDGE_LIT); W.edges[k].base.setAttribute('stroke-width', 2.2); } }
+      for (const k in W.edges) paintEdge(W.edges[k], true); }
   }
   const io = new IntersectionObserver(en => {
     if (en[0].isIntersecting && !played) { played = true; play(); }
@@ -357,7 +384,7 @@ export function mountBeat(stage, kind) {
   build(true); io.observe(stage);
   stage.addEventListener('click', play);
   return () => {
-    ro.disconnect(); io.disconnect();
+    ro.disconnect(); io.disconnect(); unwatchHour();
     stage.removeEventListener('click', play);
     K.clear();
     stage.innerHTML = '';
@@ -402,10 +429,9 @@ export function mountThumb(stage, quest) {
   const q = QUESTS[quest];
   const w = mkQuestWorld(quest, q.r1, q.r2, q.hues);
   stage.style.cssText += `position:relative; width:${TH_W}px; height:${TH_H}px;`;
-  buildWorld(stage, { w: TH_W, h: TH_H, s: 1, ox: 0, oy: 0, nodes: w.nodes, edges: w.edges,
+  const W = buildWorld(stage, { w: TH_W, h: TH_H, s: 1, ox: 0, oy: 0, nodes: w.nodes, edges: w.edges,
     states: w.states, sizes: [15, 10, 7, 6], labels: 'none' });
+  const unwatchHour = watchHour(W.repaint);
   // One world, one teardown: unbuild it, or a remount stacks a second world on the first.
-  return () => { stage.innerHTML = ''; stage.removeAttribute('style'); };
+  return () => { unwatchHour(); stage.innerHTML = ''; stage.removeAttribute('style'); };
 }
-
-export { KIND };

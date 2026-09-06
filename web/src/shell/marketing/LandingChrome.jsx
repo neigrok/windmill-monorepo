@@ -1,7 +1,7 @@
 // The chrome every landing wears: wordmark, cross-nav, auth cluster, legal shelf and head. Sign in
 // opens the door in place; a landing never navigates to sign in.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -9,12 +9,15 @@ import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
 import { pendingMagicLink } from '../auth/AuthClient.js';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
 import { PRODUCTS } from '../products.js';
+import { useAppearance } from '../useAppearance.js';
+import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
 import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
 import './landing.css';
 
 export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, children }) {
   const lendDoorSkin = useSignInDoorHost();
+  const { resolved: appearance } = useAppearance();
   const path = product ? PRODUCTS.find((entry) => entry.id === product).landing.href : '/';
 
   // A landing wears its own head while mounted and hands the brand root's back on the way out.
@@ -49,8 +52,28 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
     };
   }, [path]);
 
+  // At night <html> is stamped the way scripts/appBoot.js stamps it — theme, brand, the ground and
+  // the browser's two metas — so a landing reached from a room without a document load is not left
+  // with the cream the Shell handed back on its way out. By day <html> is not touched at all.
+  useLayoutEffect(() => {
+    if (appearance !== 'dark') return undefined;
+    const html = document.documentElement;
+    html.setAttribute('data-theme', 'dark');
+    html.setAttribute('data-brand', brand ?? 'clay');
+    const ground = paintBrowserChrome('dark');
+    if (ground) html.style.setProperty('--wm-boot-ground', ground);
+    return () => {
+      html.removeAttribute('data-theme');
+      html.removeAttribute('data-brand');
+      html.style.removeProperty('--wm-boot-ground');
+      restoreBrowserChrome();
+    };
+  }, [appearance, brand]);
+
+  // By day the frame carries data-brand alone and takes the hue onto the family cream; at night it adds
+  // data-theme, and palettes.css keys the room's ground on the pair.
   return (
-    <div className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined}>
+    <div className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined}>
       <a href="#content" className="skip-link">Skip to content</a>
       <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} />
       <main id="content">{children}</main>
@@ -83,7 +106,8 @@ function LandingNav({ product = null, links = [], cta = null, resume = null, res
 }
 
 // While auth (or the product's `resolving`) is unanswered the slot keeps its box but stays
-// invisible, so nothing flashes signed-out and nothing jumps.
+// invisible, so nothing flashes signed-out and nothing jumps. Signed out, the ghost seat still
+// stands beside the buttons: its pop-up is where the appearance is chosen.
 function NavCluster({ cta, resume, resolving, seat }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
@@ -141,6 +165,12 @@ function NavCluster({ cta, resume, resolving, seat }) {
         <Button variant="ghost" size="sm" onClick={() => openSignInDoor({ onSent: noteLinkSent })}>Sign in</Button>
       )}
       {cta && <a href={cta.href}><Button variant="primary" size="sm">{cta.label}</Button></a>}
+      <AccountSeat
+        status={status}
+        size={28}
+        onSignIn={() => openSignInDoor({ onSent: noteLinkSent })}
+        onSettings={() => { window.location.hash = '#/settings'; }}
+      />
     </div>
   );
 }

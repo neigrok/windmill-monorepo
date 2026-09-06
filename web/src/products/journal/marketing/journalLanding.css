@@ -2,6 +2,29 @@
    week columns, the scene frames. The window of night wears the journal night scope (data-theme +
    data-brand on that one element). */
 
+/* The window of night. On a night page it stands on its own ground, so it climbs one step and takes
+   the strong edge, the echo inside it climbs one more, and its stamp takes the secondary ink. */
+.jn-moat {
+  width: min(820px, 100%);
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--surface-canvas) 40%, transparent);
+  padding: clamp(24px, 4vw, 40px) clamp(22px, 4.5vw, 48px) clamp(28px, 4vw, 44px);
+  text-align: left;
+}
+.jn-moat-stamp { color: var(--text-tertiary); }
+.jn-echo { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+.landing[data-theme="dark"] .jn-moat { background: var(--neutral-200); border-color: var(--border-strong); }
+.landing[data-theme="dark"] .jn-moat-stamp { color: var(--text-secondary); }
+.landing[data-theme="dark"] .jn-echo { background: var(--neutral-300); }
+
+/* The lamp's ink on the family cream is the 600; on the night ground it is the 400, as in the room. */
+.jn-lamp-ink { color: var(--lamp-600); }
+.jn-lamp-bar { background: var(--lamp-600); }
+.landing[data-theme="dark"] .jn-lamp-ink { color: var(--lamp-400); }
+.landing[data-theme="dark"] .jn-lamp-bar { background: var(--lamp-400); }
+
 /* The moat's one continuous motion. */
 .jn-cursor {
   display: inline-block;

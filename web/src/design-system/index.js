@@ -16,6 +16,7 @@ export { Select } from './forms/Select.jsx';
 export { Checkbox } from './forms/Checkbox.jsx';
 export { Radio } from './forms/Radio.jsx';
 export { Switch } from './forms/Switch.jsx';
+export { SegmentedControl } from './forms/SegmentedControl.jsx';
 
 // feedback
 export { Tooltip } from './feedback/Tooltip.jsx';

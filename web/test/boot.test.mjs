@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { readGrounds, bootScript, BOOT_STYLE } from '../scripts/appBoot.js';
+import { readGrounds, readLandings, bootScript, staticBootScript, BOOT_STYLE } from '../scripts/appBoot.js';
 import { PRODUCTS } from '../src/shell/products.js';
 import { KEY } from '../src/shell/appearance.js';
 
@@ -27,11 +27,12 @@ const ROOMS = PRODUCTS
     theme: product.shell.scope.theme ?? null,
     assets: [`/assets/${product.id}.js`, `/assets/${product.id}.css`],
   }));
-const SCRIPT = bootScript(ROOMS, grounds, ['/assets/Shell.js'], KEY);
+const SCRIPT = bootScript(ROOMS, readLandings(PRODUCTS), grounds, ['/assets/Shell.js'], KEY);
+const STATIC = staticBootScript(readGrounds(read('colors.css'), read('palettes.css'), ['clay']), KEY);
 
 // A document just real enough for the boot: the two metas it rewrites, an element that remembers
 // its attributes and inline custom properties, and a head that collects appended links.
-function boot(pathname, { stored = null, prefersDark = false, storageThrows = false } = {}) {
+function boot(pathname, { stored = null, prefersDark = false, storageThrows = false, script = SCRIPT } = {}) {
   const tag = (content) => ({
     content,
     was: null,
@@ -62,7 +63,7 @@ function boot(pathname, { stored = null, prefersDark = false, storageThrows = fa
     window: { matchMedia: (query) => ({ matches: query.includes('dark') && prefersDark }) },
   };
   vm.createContext(context);
-  vm.runInContext(SCRIPT, context);
+  vm.runInContext(script, context);
   return { attributes: html.attributes, ground: html.style.props['--wm-boot-ground'], meta, links };
 }
 
@@ -120,18 +121,94 @@ test('a pinned room boots in its pin, and an unpinned one is left to the device'
   assert.deepEqual(following.map((p) => p.id), ['roadmap', 'journal']);
 });
 
-// index.html is not only the app's document. It is the three landing shells, and it is every
-// /t/:id share page — the backend splices a shared tree's meta into these very bytes. So the boot
-// has exactly one job outside /app: nothing at all, on every shape that is not a room.
-test('the boot leaves every page that is not an app room alone', () => {
-  for (const pathname of ['/', '/journal', '/gym', '/roadmap', '/t/t_abc', '/gallery', '/appfoo', '/apple-touch-icon.png', '/application']) {
+// index.html is not only the app's document. It is every /t/:id share page — the backend splices a
+// shared tree's meta into these very bytes — and every path the router answers with something that
+// is neither a room nor a landing. On those the boot has exactly one job: nothing at all.
+test('the boot leaves every page that is neither a room nor a landing alone', () => {
+  for (const pathname of ['/t/t_abc', '/gallery', '/appfoo', '/apple-touch-icon.png', '/application', '/journal/2026-07-20', '/journalism', '/pricing']) {
     const { attributes, ground, meta, links } = boot(pathname, { prefersDark: true });
-    assert.deepEqual(attributes, {}, `${pathname} was stamped as an app room`);
+    assert.deepEqual(attributes, {}, `${pathname} was stamped`);
     assert.equal(ground, undefined, `${pathname} was given a boot ground`);
     assert.equal(meta['theme-color'].content, '#F9F5EB', `${pathname} had its theme-color rewritten`);
     assert.equal(meta['color-scheme'].content, 'light', `${pathname} had its color-scheme rewritten`);
     assert.deepEqual(links, [], `${pathname} was given preloads`);
   }
+});
+
+// The landings follow the same choice the rooms do — a visitor who chose dark must not be shown a
+// cream hero on the way back to the brand root. The brand root is clay; a product's landing wears
+// the product, as its room does. Nothing is preloaded: the landing shells name their own chunks.
+test('the brand root and every open landing boot dark on their own ground when dark was chosen', () => {
+  const landings = readLandings(PRODUCTS);
+  assert.deepEqual(landings, [
+    { path: '/', brand: 'clay' },
+    { path: '/roadmap', brand: 'roadmap' },
+    { path: '/journal', brand: 'journal' },
+    { path: '/gym', brand: 'gym' },
+  ]);
+  for (const { path, brand } of landings) {
+    for (const pathname of [path, path === '/' ? '/' : `${path}/`]) {
+      const night = boot(pathname, { stored: 'dark' });
+      assert.deepEqual(night.attributes, { 'data-wm-boot': 'landing', 'data-theme': 'dark', 'data-brand': brand }, pathname);
+      assert.equal(night.ground, grounds[`dark|${brand}`], `${pathname} did not boot on its dark ground`);
+      assert.equal(night.meta['theme-color'].content, grounds[`dark|${brand}`]);
+      assert.equal(night.meta['color-scheme'].content, 'dark');
+      assert.deepEqual(night.links, [], `${pathname} was given preloads`);
+    }
+  }
+  assert.equal(boot('/', { stored: null, prefersDark: true }).attributes['data-theme'], 'dark', 'a landing with no stored choice asks the device');
+});
+
+// A landing by day is the landing as it was before the boot existed: its root stamps nothing by
+// day, and neither may <html> — a product brand on <html> in the light would fire that room's
+// light ground (paper, pietra) across the whole page. The boot flag alone is stamped.
+test('a landing by day is flagged as booting and nothing else', () => {
+  for (const { path, brand } of readLandings(PRODUCTS)) {
+    for (const options of [{ stored: 'light', prefersDark: true }, { stored: 'system', prefersDark: false }, { stored: null }]) {
+      const day = boot(path, options);
+      assert.deepEqual(day.attributes, { 'data-wm-boot': 'landing' }, `${path} (${brand}) was stamped by day`);
+      assert.equal(day.ground, undefined, `${path} was given a ground by day`);
+      assert.equal(day.meta['theme-color'].content, '#F9F5EB');
+      assert.equal(day.meta['color-scheme'].content, 'light');
+      assert.equal(day.meta['theme-color'].getAttribute('data-was'), null, 'a meta that was not rewritten must not claim it was');
+    }
+  }
+});
+
+// The plain HTML pages in public/ carry the same ladder as /boot.js (scripts/staticPageAssets.js),
+// with no path table: every one of them is a neutral page, clay when the night was chosen and
+// untouched by day.
+test('a static page boots clay at night, and is only flagged by day', () => {
+  const night = boot('/pricing.html', { stored: 'dark', script: STATIC });
+  assert.deepEqual(night.attributes, { 'data-wm-boot': 'static', 'data-theme': 'dark', 'data-brand': 'clay' });
+  assert.equal(night.ground, grounds['dark|clay']);
+  assert.equal(night.meta['theme-color'].content, grounds['dark|clay']);
+  assert.equal(night.meta['color-scheme'].content, 'dark');
+  const day = boot('/terms.html', { stored: null, prefersDark: false, script: STATIC });
+  assert.deepEqual(day.attributes, { 'data-wm-boot': 'static' });
+  assert.equal(day.ground, undefined);
+  assert.equal(day.meta['theme-color'].content, '#F9F5EB');
+  assert.equal(boot('/privacy.html', { storageThrows: true, prefersDark: true, script: STATIC }).attributes['data-theme'], 'dark');
+});
+
+// Every dressed page links the stamp (pricing-preview.html is an undressed redirect), and the sheet
+// it dresses in answers the stamp with a night: a dark block that really re-points the ground, the
+// ink and the brand, not just a selector with the right name.
+test('every static page links /boot.js and chrome.css carries both themes', () => {
+  const pages = fs.readdirSync(new URL('../public/', import.meta.url)).filter((name) => name.endsWith('.html') && name !== 'pricing-preview.html');
+  const unlinked = pages.filter((page) => !fs.readFileSync(new URL(`../public/${page}`, import.meta.url), 'utf8').includes('<script src="/boot.js"></script>'));
+  assert.deepEqual(unlinked, []);
+  const chrome = fs.readFileSync(new URL('../scripts/staticPageChrome.css', import.meta.url), 'utf8');
+  const night = /html\[data-theme="dark"\]\s*\{([^}]*)\}/.exec(chrome)?.[1] ?? '';
+  const day = /:root\s*\{([^}]*)\}/.exec(chrome)?.[1] ?? '';
+  for (const token of ['--surface-canvas', '--text-primary', '--color-brand']) {
+    const at = (block) => new RegExp(`${token}:\\s*(#[0-9A-Fa-f]{6}|rgba?\\([^)]*\\))`).exec(block)?.[1] ?? null;
+    assert.ok(at(night), `${token} is not declared in the dark block`);
+    assert.ok(at(day), `${token} is not declared at :root`);
+    assert.notEqual(at(night), at(day), `${token} is the same colour by night as by day`);
+  }
+  assert.ok(chrome.includes('html[data-wm-boot] { background: var(--surface-canvas, var(--wm-boot-ground)); }'));
+  assert.equal(/#[0-9A-Fa-f]{6}\b/.test(chrome.slice(chrome.indexOf('html[data-wm-boot]'))), false, 'the chrome rules name a colour of their own instead of a token');
 });
 
 // The sentinels the backend's share-page rewriter keys on, in the file the boot is injected into.
@@ -156,7 +233,7 @@ test('a room claims its own deep paths, and only those', () => {
 });
 
 // Every app room is stamped as one, whatever else it decides.
-test('every app room is flagged as booting', () => {
+test('every app room is flagged as booting, and as a room rather than a landing', () => {
   for (const pathname of ['/app', '/app/roadmap', '/app/journal', '/app/gym', '/app/settings']) {
     assert.equal(boot(pathname).attributes['data-wm-boot'], 'app', `${pathname} was not flagged`);
   }
@@ -225,9 +302,15 @@ test('a room preloads its own assets, and the neutral rooms preload the shell', 
 // win over the stylesheet forever, so switching rooms without a reload would leave the first room's
 // colour welded to <html> behind every room after it.
 test('the pre-CSS ground yields to the token the moment the stylesheet lands', () => {
-  assert.ok(BOOT_STYLE.includes('background:var(--surface-canvas,var(--wm-boot-ground))'));
-  assert.ok(BOOT_STYLE.includes('html[data-wm-boot="app"] #root>main{display:none}'),
-    'the marketing hero is no longer hidden on app rooms, or is being hidden everywhere');
+  assert.ok(BOOT_STYLE.includes('html[data-wm-boot]{background:var(--surface-canvas,var(--wm-boot-ground))}'));
   assert.ok(!/documentElement\.style\.background\s*=/.test(SCRIPT),
     'the boot sets an inline background again, which no stylesheet can take back');
+});
+
+// Only an app room has a bundle coming to mount over the fallback body. A landing shell carries that
+// landing's own body for a crawler without JavaScript, and a static page IS its body; the boot flags
+// both, and must not hide either.
+test('the boot hides the no-JS body in an app room and nowhere else', () => {
+  const hides = [...BOOT_STYLE.matchAll(/([^{}]+)\{[^}]*display:none[^}]*\}/g)].map((hit) => hit[1].trim());
+  assert.deepEqual(hides, ['html[data-wm-boot="app"] #root>main']);
 });
