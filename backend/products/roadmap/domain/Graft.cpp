@@ -6,6 +6,22 @@
 
 namespace wm {
 
+LegendState graftLegend(const Graft& graft, const Hlc& at) {
+  if (graft.document.kinds.empty()) return {};
+  LegendState legend = Legend(graft.document.kinds, at).exportState();
+  for (KindStateEntry& kind : legend.kinds) {
+    const auto omitted = graft.omittedKindRegisters.find(kind.id);
+    if (omitted == graft.omittedKindRegisters.end()) continue;
+    if (omitted->second.count(KindRegister::label)) { kind.label.clear(); kind.labelAt = Hlc{}; }
+    if (omitted->second.count(KindRegister::description)) { kind.description.clear(); kind.descriptionAt = Hlc{}; }
+    if (omitted->second.count(KindRegister::crossBranchExempt)) {
+      kind.crossBranchExempt = false;
+      kind.crossBranchExemptAt = Hlc{};
+    }
+  }
+  return legend;
+}
+
 GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
   std::map<NodeId, std::set<NodeId>> named;  // each re-sent node -> the prerequisites the document names

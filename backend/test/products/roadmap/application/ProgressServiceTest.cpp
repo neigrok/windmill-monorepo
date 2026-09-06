@@ -15,7 +15,7 @@ TEST(progress_records_complete_but_flags_unmet_prerequisites) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
+  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
   CHECK_EQ(outcome.status, ProgressStatus::complete);
   CHECK_FALSE(outcome.prerequisitesMet);
 
@@ -27,8 +27,8 @@ TEST(progress_complete_with_met_prerequisites) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, at(1), 1);
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2), 2);
+  service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, false, at(1), 1);
+  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);
   CHECK(outcome.prerequisitesMet);
 }
 
@@ -36,10 +36,10 @@ TEST(progress_none_clears_the_entry) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::active, at(1), 1);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::active, false, at(1), 1);
   CHECK_EQ(service.progressOf(tid(), uid()).inProgress.count(nid("a")), 1u);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2), 2);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
@@ -49,8 +49,8 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2), 2);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
 
   auto entry = repo.byKey.find(FakeProgressRepository::key(tid(), uid(), nid("a")));
   CHECK(entry != repo.byKey.end());  // the clear is a stored LWW value, not a row delete
@@ -69,11 +69,54 @@ TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(3), 3);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2), 2);  // stale replay
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(3), 3);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);  // stale replay
 
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
   CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
+}
+
+// The marker's word rides the status value: a completion that carried it keeps it, the next mark on
+// the node carries its own word or none, and a stale write cannot smuggle one in.
+TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replaces_it) {
+  FakeProgressRepository repo;
+  ProgressService service(repo);
+
+  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(1), 1);
+  CHECK_EQ(outcome.status, ProgressStatus::complete);
+  CHECK_FALSE(outcome.prerequisitesMet);
+  CHECK(outcome.applied);
+  CHECK(outcome.outOfOrder);
+  CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
+
+  ProgressOutcome stale = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(0), 0);
+  CHECK_FALSE(stale.applied);
+  CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
+
+  ProgressOutcome again = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);
+  CHECK(again.applied);
+  CHECK_FALSE(again.outOfOrder);
+  CHECK_FALSE(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
+}
+
+TEST(progress_batch_carries_the_out_of_order_word_per_write) {
+  FakeProgressRepository repo;
+  ProgressService service(repo);
+
+  std::vector<ProgressOutcome> outcomes = service.setStatuses(
+      tid(), uid(),
+      {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), true},
+       ProgressWrite{nid("r"), ProgressStatus::active, noPrereqs, at(2), false}},
+      2);
+  REQUIRE_EQ(outcomes.size(), 2u);
+  CHECK_FALSE(outcomes[0].prerequisitesMet);
+  CHECK(outcomes[0].outOfOrder);
+  CHECK(outcomes[1].prerequisitesMet);
+  CHECK_FALSE(outcomes[1].outOfOrder);
+
+  Progress progress = service.progressOf(tid(), uid());
+  CHECK(progress.marks.at(nid("a")).outOfOrder);
+  CHECK_FALSE(progress.marks.at(nid("r")).outOfOrder);
 }

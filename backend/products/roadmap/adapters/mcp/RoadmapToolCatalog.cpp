@@ -279,12 +279,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
-        "Which id lists to return. Default {completed, inProgress}; `cleared` (the tombstones a "
+        "Which id lists to return. Default {completed, inProgress, outOfOrder} — `outOfOrder` is the "
+        "subset of `completed` whose set_progress carried outOfOrder:true; `cleared` (the tombstones a "
         "browser reconciles against) is available but rarely useful.",
         progressVocabulary().names());
     tools.push_back(tool("get_progress", Access::read,
-        "The caller's private progress overlay for a roadmap: the node ids that are completed and "
-        "those in progress. Per-user, separate from the shared structure.",
+        "The caller's private progress overlay for a roadmap: the node ids that are completed, those "
+        "in progress, and the completed ones marked as meant out of dependency order. Per-user, "
+        "separate from the shared structure.",
         p, {"treeId"}));
   }
   {
@@ -534,22 +536,32 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     updateFields["nodeId"] = nodeHandle();
     updateFields["id"] = legacyNodeHandle();
     updateFields["status"] = enumStr("active, complete, or none (clear).", kStatuses);
+    updateFields["outOfOrder"] = boolean(
+        "With status complete only: this node is being completed before its prerequisites on purpose. "
+        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
 
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
     p["status"] = enumStr("active, complete, or none (clear).", kStatuses);
+    p["outOfOrder"] = boolean(
+        "With status complete only: this node is being completed before its prerequisites on purpose. "
+        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
     p["updates"] = objArray(
-        "Bulk form: a list of {nodeId, status}. Resolves order internally, so completing a subtree "
-        "out of dependency order no longer misreports prerequisitesMet. Pass this OR a single "
-        "nodeId+status, never both.",
+        "Bulk form: a list of {nodeId, status, outOfOrder?}. Resolves order internally, so completing "
+        "a subtree out of dependency order no longer misreports prerequisitesMet. Pass this OR a "
+        "single nodeId+status, never both.",
         updateFields, {"nodeId", "status"});
     tools.push_back(tool("set_progress", Access::write,
         "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
         "node ids are rejected (no orphan rows). Advisory only — marking complete with unmet "
         "prerequisites still records and reports prerequisitesMet:false, judged against the committed "
-        "batch (not each write's instant).",
+        "batch (not each write's instant). A completion you mean to make before its prerequisites "
+        "carries outOfOrder:true: the word is kept on the mark (get_progress lists it under "
+        "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
+        "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
+        "acknowledged. The next mark on that node, from any surface, replaces the word with its own.",
         p, {"treeId"}));
   }
   {
@@ -578,10 +590,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value kindFields(Json::objectValue);
     kindFields["id"] = cappedStr("The kind id.", kMaxIdLength);
     kindFields["hue"] = enumStr("The kind's hue — unique per kind, at most 6 kinds per tree.", kHues);
-    kindFields["label"] = cappedStr("Optional label.", kMaxKindLabelLength);
-    kindFields["description"] = cappedStr("Optional sorting brief.", kMaxKindDescriptionLength);
-    kindFields["crossBranchExempt"] = boolean("Optional, default false: get_health leaves this kind's edges "
-                                              "out of its cross-branch count.");
+    kindFields["label"] = cappedStr("Optional label. Left out on a kind already in the legend, the label it "
+                                    "has stays; a new kind gets an empty one.", kMaxKindLabelLength);
+    kindFields["description"] = cappedStr("Optional sorting brief. Left out on a kind already in the legend, "
+                                          "the brief it has stays; a new kind gets an empty one.",
+                                          kMaxKindDescriptionLength);
+    kindFields["crossBranchExempt"] = boolean("Optional: get_health leaves this kind's edges out of its "
+                                              "cross-branch count. Left out on a kind already in the legend, "
+                                              "its setting stays; a new kind is not exempt.");
 
     Json::Value progressFields(Json::objectValue);
     progressFields["nodeId"] = nodeHandle();
@@ -591,7 +607,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["nodes"] = objArray("The nodes to import — the shape get_tree returns when you ask it for those "
                           "fields. Pass [] to import only kinds or progress.",
                           nodeFields, {"id"});
-    p["kinds"] = objArray("Optional legend kinds. Omit to leave the legend untouched.",
+    p["kinds"] = objArray("Optional legend kinds, upserted by id: an id already in the legend is reported "
+                          "in kindCollisions and only the fields you send on it change — label, "
+                          "description and crossBranchExempt you leave out keep their values, so a copy of "
+                          "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
+                          "untouched.",
                           kindFields, {"id", "hue"});
     p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "

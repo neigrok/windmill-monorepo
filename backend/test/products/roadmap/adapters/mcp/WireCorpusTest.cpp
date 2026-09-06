@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 6;  // v6: import_subgraph prerequisiteMode/tombstone receipts, get_health crossBranchExempt, batch delete_node/disconnect
+constexpr int kWireCorpusVersion = 7;  // v7: get_progress answers outOfOrder by default
 
 struct Step {
   const char* tool;

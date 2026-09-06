@@ -485,7 +485,7 @@ TEST(ws_subscribe_grafts_the_callers_overlay_alongside_the_structure) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_priv", owner, Visibility::private_);
-  h.progressRepo.setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{900, 0, "r_elsewhere"}, 900);
+  h.progressRepo.setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, false, Hlc{900, 0, "r_elsewhere"}, 900);
 
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner"), conn);
@@ -501,7 +501,7 @@ TEST(ws_subscribe_grafts_no_overlay_to_an_anonymous_visitor) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_pub", owner, Visibility::public_);
-  h.progressRepo.setStatus(TreeId{"t_pub"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{900, 0, "r_a"}, 900);
+  h.progressRepo.setStatus(TreeId{"t_pub"}, owner, NodeId{"root"}, ProgressStatus::complete, false, Hlc{900, 0, "r_a"}, 900);
 
   auto visitor = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), visitor);

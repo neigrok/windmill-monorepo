@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 6,
+  "schemaVersion" : 7,
   "steps" : 
   [
     {
@@ -639,7 +639,8 @@
               "inProgress" : 
               [
                 "render"
-              ]
+              ],
+              "outOfOrder" : []
             },
             "type" : "text"
           }

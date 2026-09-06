@@ -393,6 +393,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
     test/products/roadmap/adapters/json/TreeJsonTest.cpp
     test/products/roadmap/adapters/json/CommandJsonTest.cpp
+    test/products/roadmap/adapters/postgres/PgProgressRepositoryTest.cpp
     test/products/roadmap/adapters/http/ComposeApiTest.cpp
     test/products/roadmap/adapters/http/HttpApiTest.cpp
     test/products/roadmap/adapters/http/SharePageApiTest.cpp

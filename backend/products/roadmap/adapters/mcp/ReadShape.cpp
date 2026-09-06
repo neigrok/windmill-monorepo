@@ -108,7 +108,8 @@ const Vocabulary<KindField>& kindVocabulary() {
 const Vocabulary<ProgressField>& progressVocabulary() {
   static const Vocabulary<ProgressField> vocabulary({{"completed", ProgressField::completed},
                                                      {"inProgress", ProgressField::inProgress},
-                                                     {"cleared", ProgressField::cleared}});
+                                                     {"cleared", ProgressField::cleared},
+                                                     {"outOfOrder", ProgressField::outOfOrder}});
   return vocabulary;
 }
 
@@ -134,7 +135,11 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
     position["y"] = node.position->y;
     n["position"] = position;
   }
-  if (fields.count(NodeField::status)) n["status"] = markOn(context.marks, node.id);
+  if (fields.count(NodeField::status)) {
+    n["status"] = markOn(context.marks, node.id);
+    const auto mark = context.marks.marks.find(node.id);
+    if (mark != context.marks.marks.end() && mark->second.outOfOrder) n["outOfOrder"] = true;
+  }
   if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *node.status;
   if (fields.count(NodeField::state)) n["state"] = std::string(toString(context.states.at(node.id)));
   if (fields.count(NodeField::summary) && !node.description.empty()) n["summary"] = summaryOf(node.description);
@@ -158,6 +163,12 @@ Json::Value projectProgress(const Progress& progress, const ProgressFields& fiel
   if (fields.count(ProgressField::completed)) root["completed"] = idArray(progress.completed);
   if (fields.count(ProgressField::inProgress)) root["inProgress"] = idArray(progress.inProgress);
   if (fields.count(ProgressField::cleared)) root["cleared"] = idArray(progress.cleared);
+  if (fields.count(ProgressField::outOfOrder)) {
+    std::set<NodeId> outOfOrder;
+    for (const auto& [id, mark] : progress.marks)
+      if (mark.outOfOrder && mark.status == ProgressStatus::complete) outOfOrder.insert(id);
+    root["outOfOrder"] = idArray(outOfOrder);
+  }
   return root;
 }
 

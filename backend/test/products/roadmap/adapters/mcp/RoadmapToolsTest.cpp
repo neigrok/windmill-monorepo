@@ -841,7 +841,7 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("a", "none"));
   const Json::Value progress = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(keys(progress), (std::vector<std::string>{"completed", "inProgress"}));
+  CHECK_EQ(keys(progress), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
 }
 
 TEST(mcp_fields_round_trips_every_field_of_a_node) {
@@ -991,7 +991,7 @@ TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   h.call("set_progress", mark("b", "none"));
 
   const Json::Value lean = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "inProgress"}));
+  CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
   REQUIRE_EQ(lean["completed"].size(), 1u);
   CHECK_EQ(lean["completed"][0].asString(), std::string("a"));
 
@@ -1027,7 +1027,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult wrongProgress = h.call("get_progress", progressArgs);
   CHECK(wrongProgress.isError);
   CHECK_EQ(message(wrongProgress),
-           std::string("get_progress: fields[0] \"nodes\" is not one of {completed, inProgress, cleared}"));
+           std::string("get_progress: fields[0] \"nodes\" is not one of {completed, inProgress, cleared, outOfOrder}"));
 }
 
 TEST(mcp_limit_and_cursor_walk_the_whole_set_exactly_once) {
@@ -1877,9 +1877,9 @@ namespace {
 struct ThrowingProgressRepository : FakeProgressRepository {
   bool armed = false;
   bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node, ProgressStatus status,
-                 const Hlc& at, std::uint64_t receivedAtMs) override {
+                 bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
     if (armed) throw std::runtime_error("connect host=db.internal user=windmill password=hunter2: FATAL");
-    return FakeProgressRepository::setStatus(tree, user, node, status, at, receivedAtMs);
+    return FakeProgressRepository::setStatus(tree, user, node, status, outOfOrder, at, receivedAtMs);
   }
 };
 }
@@ -2306,4 +2306,196 @@ TEST(mcp_get_tree_lists_edges_up_to_the_edge_count_alone_and_says_the_count_past
   CHECK_EQ(omitted["edgesOmitted"].asString(),
            std::string("this tree holds 6972 live edges, past the 6000 one reply lists — page get_tree with "
                        "fields [\"id\", \"prerequisites\"] instead."));
+}
+
+namespace {
+
+Json::Value markArgs(const char* nodeId, const char* status) {
+  Json::Value m(Json::objectValue);
+  m["nodeId"] = nodeId;
+  m["status"] = status;
+  return m;
+}
+
+// a -> b, unmarked.
+void chainAB(Harness& h) {
+  h.call("create_node", node("a", "A"));
+  Json::Value b = node("b", "B");
+  b["parentId"] = "a";
+  h.call("create_node", b);
+}
+
+const Json::Value* kindNamed(const Json::Value& kinds, const char* id) {
+  for (const Json::Value& k : kinds)
+    if (k["id"].asString() == id) return &k;
+  return nullptr;
+}
+
+}
+
+// The word rides the mark: the receipt answers it, get_progress lists it, the status projection
+// shows it, the mirror echo carries it, and the next mark without it takes it away.
+TEST(mcp_set_progress_out_of_order_is_acknowledged_kept_and_shown) {
+  Harness h;
+  chainAB(h);
+
+  Json::Value meant = markArgs("b", "complete");
+  meant["outOfOrder"] = true;
+  ToolResult receipt = h.call("set_progress", meant);
+  CHECK_FALSE(receipt.isError);
+  CHECK_EQ(keys(body(receipt)), (std::vector<std::string>{"acknowledged", "nodeId", "prerequisitesMet", "status"}));
+  CHECK_FALSE(body(receipt)["prerequisitesMet"].asBool());
+  CHECK(body(receipt)["acknowledged"].asBool());
+  CHECK_EQ(body(receipt)["status"].asString(), std::string("complete"));
+
+  Json::Value overlay = body(h.call("get_progress", kNoArgs));
+  CHECK_EQ(keys(overlay), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
+  REQUIRE_EQ(overlay["outOfOrder"].size(), 1u);
+  CHECK_EQ(overlay["outOfOrder"][0].asString(), std::string("b"));
+  REQUIRE_EQ(overlay["completed"].size(), 1u);
+
+  Json::Value read(Json::objectValue);
+  read["fields"] = list({"id", "status"});
+  const Json::Value nodes = body(h.call("get_tree", read))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 2u);
+  for (const Json::Value& n : nodes) {
+    if (n["id"].asString() == "b") {
+      CHECK_EQ(n["status"].asString(), std::string("complete"));
+      CHECK(n["outOfOrder"].asBool());
+    } else {
+      CHECK_EQ(n["status"].asString(), std::string("none"));
+      CHECK_FALSE(n.isMember("outOfOrder"));
+    }
+  }
+
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), 1u);
+  CHECK(h.bus.progressBroadcasts.back().marks.marks.at(nid("b")).outOfOrder);
+
+  ToolResult plain = h.call("set_progress", markArgs("b", "complete"));
+  CHECK_EQ(keys(body(plain)), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
+  CHECK_FALSE(body(plain)["prerequisitesMet"].asBool());
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["outOfOrder"].size(), 0u);
+  CHECK_FALSE(h.bus.progressBroadcasts.back().marks.marks.at(nid("b")).outOfOrder);
+}
+
+TEST(mcp_set_progress_bulk_carries_out_of_order_per_update) {
+  Harness h;
+  chainAB(h);
+
+  Json::Value late = markArgs("b", "complete");
+  late["outOfOrder"] = true;
+  Json::Value updates(Json::arrayValue);
+  updates.append(late);
+  updates.append(markArgs("a", "complete"));
+  Json::Value args(Json::objectValue);
+  args["updates"] = updates;
+
+  ToolResult receipt = h.call("set_progress", args);
+  CHECK_FALSE(receipt.isError);
+  const Json::Value results = body(receipt)["results"];
+  REQUIRE_EQ(results.size(), 2u);
+  // Judged against the committed batch, b's prerequisite IS met — the word is still echoed, since it was given.
+  CHECK_EQ(keys(results[0]), (std::vector<std::string>{"acknowledged", "nodeId", "prerequisitesMet", "status"}));
+  CHECK(results[0]["prerequisitesMet"].asBool());
+  CHECK(results[0]["acknowledged"].asBool());
+  CHECK_EQ(keys(results[1]), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
+
+  Json::Value overlay = body(h.call("get_progress", kNoArgs));
+  CHECK_EQ(overlay["completed"].size(), 2u);
+  REQUIRE_EQ(overlay["outOfOrder"].size(), 1u);
+  CHECK_EQ(overlay["outOfOrder"][0].asString(), std::string("b"));
+}
+
+TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing) {
+  Harness h;
+  chainAB(h);
+
+  Json::Value active = markArgs("b", "active");
+  active["outOfOrder"] = true;
+  CHECK_EQ(message(h.call("set_progress", active)),
+           std::string("set_progress: argument \"outOfOrder\" acknowledges completing a node before its "
+                       "prerequisites, so it rides status \"complete\" only, got \"active\""));
+
+  Json::Value typed = markArgs("b", "complete");
+  typed["outOfOrder"] = "yes";
+  CHECK_EQ(message(h.call("set_progress", typed)),
+           std::string("set_progress: argument \"outOfOrder\" must be a boolean, got string"));
+
+  Json::Value cleared = markArgs("a", "none");
+  cleared["outOfOrder"] = true;
+  Json::Value updates(Json::arrayValue);
+  updates.append(markArgs("b", "complete"));
+  updates.append(cleared);
+  Json::Value bulk(Json::objectValue);
+  bulk["updates"] = updates;
+  CHECK_EQ(message(h.call("set_progress", bulk)),
+           std::string("set_progress: argument \"updates[1].outOfOrder\" acknowledges completing a node before "
+                       "its prerequisites, so it rides status \"complete\" only, got \"none\""));
+
+  // A false word is just a completion.
+  Json::Value plain = markArgs("b", "complete");
+  plain["outOfOrder"] = false;
+  CHECK_EQ(keys(body(h.call("set_progress", plain))), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
+
+  Json::Value overlay = body(h.call("get_progress", kNoArgs));
+  CHECK_EQ(overlay["completed"].size(), 1u);
+  CHECK_EQ(overlay["outOfOrder"].size(), 0u);
+  CHECK_EQ(h.bus.progressBroadcasts.size(), 1u);
+}
+
+// A re-sent kind changes only in the fields the batch sends; a new kind without them gets the defaults.
+TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_new_kinds) {
+  Harness h;
+  Json::Value drill = kindArgs("drill", "gold");
+  drill["label"] = "Drill";
+  drill["description"] = "Daily drills";
+  drill["crossBranchExempt"] = true;
+  CHECK_FALSE(h.call("add_kind", drill).isError);
+
+  Json::Value kinds(Json::arrayValue);
+  kinds.append(kindArgs("drill", "gold"));
+  kinds.append(kindArgs("read", "sky"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = Json::Value(Json::arrayValue);
+  args["kinds"] = kinds;
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value receipt = body(result);
+  CHECK_EQ(receipt["kinds"].asInt(), 2);
+  CHECK_EQ(receipt["newKinds"].asInt(), 1);
+  REQUIRE_EQ(receipt["kindCollisions"].size(), 1u);
+  CHECK_EQ(receipt["kindCollisions"][0].asString(), std::string("drill"));
+
+  Json::Value read(Json::objectValue);
+  read["kindFields"] = list({"id", "hue", "label", "description", "crossBranchExempt"});
+  Json::Value legend = body(h.call("get_tree", read))["tree"]["kinds"];
+  REQUIRE_EQ(legend.size(), 2u);
+  const Json::Value* kept = kindNamed(legend, "drill");
+  REQUIRE(kept != nullptr);
+  CHECK_EQ((*kept)["hue"].asString(), std::string("gold"));
+  CHECK_EQ((*kept)["label"].asString(), std::string("Drill"));
+  CHECK_EQ((*kept)["description"].asString(), std::string("Daily drills"));
+  CHECK((*kept)["crossBranchExempt"].asBool());
+  const Json::Value* fresh = kindNamed(legend, "read");
+  REQUIRE(fresh != nullptr);
+  CHECK_EQ((*fresh)["hue"].asString(), std::string("sky"));
+  CHECK_EQ((*fresh)["label"].asString(), std::string(""));
+  CHECK_EQ((*fresh)["description"].asString(), std::string(""));
+  CHECK_FALSE((*fresh)["crossBranchExempt"].asBool());
+
+  // Sent, a field replaces — an empty string and a false included.
+  Json::Value spelled = kindArgs("drill", "gold");
+  spelled["label"] = "Drills";
+  spelled["description"] = "";
+  spelled["crossBranchExempt"] = false;
+  Json::Value again(Json::arrayValue);
+  again.append(spelled);
+  args["kinds"] = again;
+  CHECK_FALSE(h.call("import_subgraph", args).isError);
+  legend = body(h.call("get_tree", read))["tree"]["kinds"];
+  const Json::Value* replaced = kindNamed(legend, "drill");
+  REQUIRE(replaced != nullptr);
+  CHECK_EQ((*replaced)["label"].asString(), std::string("Drills"));
+  CHECK_EQ((*replaced)["description"].asString(), std::string(""));
+  CHECK_FALSE((*replaced)["crossBranchExempt"].asBool());
 }
