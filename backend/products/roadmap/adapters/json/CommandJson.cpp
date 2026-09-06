@@ -44,6 +44,9 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     command.id = id(payload, "id");
     if (payload.isMember("description") && payload["description"].isString())
       command.description = payload["description"].asString();
+    if (payload.isMember("appendDescription") && payload["appendDescription"].isString())
+      command.appendDescription = payload["appendDescription"].asString();
+    if (payload.isMember("icon") && payload["icon"].isString()) command.icon = payload["icon"].asString();
     if (payload.isMember("links")) command.links = linksFromJson(payload["links"]);
     return command;
   }
@@ -138,6 +141,8 @@ Json::Value commandPayload(const Command& command) {
     [&](const AnnotateNode& c) {
       p["id"] = c.id.str();
       if (c.description) p["description"] = *c.description;
+      if (c.appendDescription) p["appendDescription"] = *c.appendDescription;
+      if (c.icon) p["icon"] = *c.icon;
       if (c.links) p["links"] = linksToJson(*c.links);
     },
     [&](const AddEdge& c) { p["from"] = c.from.str(); p["to"] = c.to.str(); },

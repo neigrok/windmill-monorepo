@@ -99,7 +99,7 @@ TEST(validate_rejects_over_long_node_label) {
   LooseGraph g = seeded();
   Legend legend;
   CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), std::string(kMaxNodeLabelLength + 1, 'x')}}),
-           std::optional<std::string>("label is too long (max 200 characters)"));
+           std::optional<std::string>("label would be 201 characters, 1 over the 200 cap"));
   CHECK_FALSE(validate(g, legend, Command{RenameNode{nid("a"), std::string(kMaxNodeLabelLength, 'x')}}).has_value());
 }
 
@@ -261,10 +261,10 @@ TEST(annotate_and_create_bounds_are_enforced) {
   Legend legend;
   std::vector<Link> tooMany(kMaxNodeLinks + 1, Link{"", "u"});
   CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, tooMany}}),
-           std::optional<std::string>("too many links (max 32)"));
+           std::optional<std::string>("links has 33 items, max 32"));
   CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::string(kMaxNodeDescriptionLength + 1, 'x'),
                                                     std::nullopt}}),
-           std::optional<std::string>("description is too long (max 4000 characters)"));
+           std::optional<std::string>("description would be 16001 characters, 1 over the 16000 cap"));
   CHECK_FALSE(validate(g, legend, Command{AnnotateNode{nid("a"), std::string("ok"),
                                                        std::vector<Link>{Link{"L", "u"}}}}).has_value());
 }
@@ -280,7 +280,7 @@ TEST(add_kind_seeds_label_and_description_inline) {
   CHECK_EQ(kind.description, std::string("platform work"));
 
   CHECK_EQ(validate(g, legend, Command{AddKind{kid("x"), NodeColor::gold, std::string(25, 'x'), ""}}),
-           std::optional<std::string>("label is 25 characters, max 24"));
+           std::optional<std::string>("label would be 25 characters, 1 over the 24 cap"));
 }
 
 TEST(prune_dangling_drops_self_and_missing_endpoint_edges_only) {
@@ -342,7 +342,7 @@ TEST(admit_names_the_node_whose_field_is_over_its_cap) {
   std::optional<Admission> refusal = admit(data);
   REQUIRE(refusal.has_value());
   CHECK(refusal->verdict == Admission::Verdict::malformed);
-  CHECK_EQ(refusal->reason, std::string("node \"hull\": description is 4001 characters, max 4000"));
+  CHECK_EQ(refusal->reason, std::string("node \"hull\": description would be 16001 characters, 1 over the 16000 cap"));
 }
 
 // A title is counted in codepoints, exactly as the rename path truncates it.
@@ -355,7 +355,7 @@ TEST(admit_counts_a_title_in_codepoints_not_bytes) {
   over.title += "学";
   std::optional<Admission> refusal = admit(over);
   REQUIRE(refusal.has_value());
-  CHECK_EQ(refusal->reason, std::string("the title is 201 characters, max 200"));
+  CHECK_EQ(refusal->reason, std::string("the title would be 201 characters, 1 over the 200 cap"));
 }
 
 // A graft is judged on what the tree would HOLD: an id already present is an upsert and costs nothing.
@@ -415,7 +415,7 @@ TEST(admit_of_a_frame_refuses_a_node_field_over_its_cap) {
   std::optional<Admission> refusal = admit(graph, frame);
   REQUIRE(refusal.has_value());
   CHECK(refusal->verdict == Admission::Verdict::malformed);
-  CHECK_EQ(refusal->reason, std::string("node \"hull\": label is 201 characters, max 200"));
+  CHECK_EQ(refusal->reason, std::string("node \"hull\": label would be 201 characters, 1 over the 200 cap"));
 }
 
 TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
@@ -426,7 +426,7 @@ TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
 
   std::optional<Admission> refusal = admit(data);
   REQUIRE(refusal.has_value());
-  CHECK_EQ(refusal->reason, std::string("a node id is 20000 characters, max 128"));
+  CHECK_EQ(refusal->reason, std::string("a node id would be 20000 characters, 19872 over the 128 cap"));
 }
 
 // A ceiling refuses growth, not size: trees already past the caps must stay renameable and thinnable.
@@ -561,7 +561,7 @@ TEST(admit_names_the_kind_whose_field_is_over_its_cap) {
   std::optional<Admission> refusal = admit(Legend{}, arriving);
   REQUIRE(refusal.has_value());
   CHECK(refusal->verdict == Admission::Verdict::malformed);
-  CHECK_EQ(refusal->reason, std::string("kind \"craft\": label is 25 characters, max 24"));
+  CHECK_EQ(refusal->reason, std::string("kind \"craft\": label would be 25 characters, 1 over the 24 cap"));
 }
 
 TEST(admit_title_bounds_the_register_a_frame_would_set) {
@@ -569,7 +569,7 @@ TEST(admit_title_bounds_the_register_a_frame_would_set) {
   std::optional<Admission> refusal = admitTitle(std::string(40000, 'x'));
   REQUIRE(refusal.has_value());
   CHECK(refusal->verdict == Admission::Verdict::malformed);
-  CHECK_EQ(refusal->reason, std::string("the title is 40000 characters, max 200"));
+  CHECK_EQ(refusal->reason, std::string("the title would be 40000 characters, 39800 over the 200 cap"));
 }
 
 TEST(describe_kind_writes_only_the_registers_it_carries) {
@@ -591,7 +591,7 @@ TEST(describe_kind_writes_only_the_registers_it_carries) {
   CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt, true}}),
            std::optional<std::string>("no kind \"nope\" in this legend"));
   CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y'), true}}),
-           std::optional<std::string>("description is 81 characters, max 80"));
+           std::optional<std::string>("description would be 81 characters, 1 over the 80 cap"));
 }
 
 TEST(add_kind_seeds_the_exemption_inline) {
@@ -603,4 +603,132 @@ TEST(add_kind_seeds_the_exemption_inline) {
   CHECK_FALSE(legend.view(kid("build"))->crossBranchExempt);
   CHECK_EQ(legend.exportKind(kid("drill"))->crossBranchExemptAt, at(1));
   CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, Hlc{});  // false was never written
+}
+
+TEST(annotate_node_sets_and_clears_the_icon) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "", NodeColor::sky, std::nullopt, at(1));
+  CHECK_EQ(g.nodeView(nid("a"))->icon, std::string(""));
+
+  AnnotateNode setIcon{nid("a")};
+  setIcon.icon = "star";
+  merge(g, legend, Command{setIcon}, at(2));
+  CHECK_EQ(g.nodeView(nid("a"))->icon, std::string("star"));
+  CHECK_EQ(g.exportNode(nid("a"))->iconAt, at(2));
+
+  AnnotateNode clearIcon{nid("a")};
+  clearIcon.icon = "";
+  merge(g, legend, Command{clearIcon}, at(3));
+  CHECK_EQ(g.nodeView(nid("a"))->icon, std::string(""));
+  CHECK_EQ(g.exportNode(nid("a"))->iconAt, at(3));
+
+  AnnotateNode stale{nid("a")};
+  stale.icon = "moon";
+  merge(g, legend, Command{stale}, at(2));  // older than the clear: the register keeps the clear
+  CHECK_EQ(g.nodeView(nid("a"))->icon, std::string(""));
+  CHECK_EQ(g.nodeView(nid("a"))->label, std::string("A"));  // untouched register
+}
+
+TEST(annotate_node_appends_to_the_description_after_a_blank_line) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+
+  AnnotateNode first{nid("a")};
+  first.appendDescription = "first entry";
+  merge(g, legend, Command{first}, at(2));
+  CHECK_EQ(g.nodeView(nid("a"))->description, std::string("first entry"));  // an empty body opens with no leading blank line
+
+  AnnotateNode second{nid("a")};
+  second.appendDescription = "second entry";
+  merge(g, legend, Command{second}, at(3));
+  CHECK_EQ(g.nodeView(nid("a"))->description, std::string("first entry\n\nsecond entry"));
+  CHECK_EQ(g.exportNode(nid("a"))->descriptionAt, at(3));
+
+  AnnotateNode replace{nid("a")};
+  replace.description = "fresh";
+  merge(g, legend, Command{replace}, at(4));
+  CHECK_EQ(g.nodeView(nid("a"))->description, std::string("fresh"));
+}
+
+TEST(annotate_node_refuses_description_and_append_together) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  AnnotateNode both{nid("a")};
+  both.description = "one";
+  both.appendDescription = "two";
+  CHECK_EQ(validate(g, legend, Command{both}),
+           std::optional<std::string>("description and appendDescription are both set — pass one: "
+                                      "description replaces the body, appendDescription joins onto it"));
+}
+
+TEST(annotate_node_holds_the_cap_against_the_appended_result) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.setDescription(nid("a"), std::string(16000, 'x'), at(1));
+
+  AnnotateNode tail{nid("a")};
+  tail.appendDescription = std::string(1179, 'y');  // 16000 + 2 (the blank line) + 1179 = 17181
+  CHECK_EQ(validate(g, legend, Command{tail}),
+           std::optional<std::string>("description would be 17181 characters, 1181 over the 16000 cap"));
+
+  g.setDescription(nid("a"), std::string(15990, 'x'), at(2));
+  AnnotateNode fits{nid("a")};
+  fits.appendDescription = std::string(8, 'y');  // 15990 + 2 + 8 = 16000, exactly the cap
+  CHECK_EQ(validate(g, legend, Command{fits}), std::nullopt);
+}
+
+TEST(a_cap_refusal_names_every_field_over_its_cap) {
+  LooseGraph g;
+  Legend legend;
+  CreateNode wide{nid("n"), std::string(250, 'l'), std::string(65, 'i')};
+  wide.description = std::string(17181, 'd');
+  wide.links = {Link{std::string(201, 'L'), "https://ok"}};
+  CHECK_EQ(validate(g, legend, Command{wide}),
+           std::optional<std::string>(
+               "label would be 250 characters, 50 over the 200 cap; icon would be 65 characters, 1 over the "
+               "64 cap; description would be 17181 characters, 1181 over the 16000 cap; links[0].label would "
+               "be 201 characters, 1 over the 200 cap"));
+
+  AnnotateNode both{nid("n")};
+  both.icon = std::string(65, 'i');
+  both.description = std::string(16001, 'd');
+  CHECK_EQ(validate(g, legend, Command{both}),
+           std::optional<std::string>("icon would be 65 characters, 1 over the 64 cap; description would be "
+                                      "16001 characters, 1 over the 16000 cap"));
+}
+
+TEST(every_cap_counts_code_points_not_bytes) {
+  CHECK_EQ(codePointCount(""), 0u);
+  CHECK_EQ(codePointCount("abc"), 3u);
+  CHECK_EQ(codePointCount("h\xC3\xA9llo"), 5u);             // é is two bytes
+  CHECK_EQ(codePointCount("\xE5\xAD\x97\xE5\xAD\x97"), 2u);  // 字字, six bytes
+  CHECK_EQ(codePointCount("\xF0\x9F\x98\x80"), 1u);          // one emoji, four bytes
+  CHECK_EQ(byteOffsetOfCodePoint("a\xC3\xA9z", 0), 0u);
+  CHECK_EQ(byteOffsetOfCodePoint("a\xC3\xA9z", 1), 1u);
+  CHECK_EQ(byteOffsetOfCodePoint("a\xC3\xA9z", 2), 3u);
+  CHECK_EQ(byteOffsetOfCodePoint("a\xC3\xA9z", 3), std::string::npos);
+
+  LooseGraph g = seeded();
+  Legend legend;
+  std::string grins;
+  for (std::size_t i = 0; i < kMaxNodeLabelLength; ++i) grins += "\xF0\x9F\x98\x80";  // 200 code points, 800 bytes
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), grins}}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{CreateNode{nid("c"), grins, "\xF0\x9F\x98\x80"}}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), grins + "\xF0\x9F\x98\x80"}}),
+           std::optional<std::string>("label would be 201 characters, 1 over the 200 cap"));
+
+  TreeData document;
+  NodeSpec node;
+  node.id = nid("hull");
+  node.label = grins;
+  document.nodes.push_back(std::move(node));
+  CHECK_FALSE(admit(document).has_value());
+
+  std::string cjkTitle;
+  for (std::size_t i = 0; i < kMaxTitleChars; ++i) cjkTitle += "\xE5\xAD\x97";
+  CHECK_FALSE(admitTitle(cjkTitle).has_value());
 }

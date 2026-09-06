@@ -2307,3 +2307,96 @@ TEST(mcp_get_tree_lists_edges_up_to_the_edge_count_alone_and_says_the_count_past
            std::string("this tree holds 6972 live edges, past the 6000 one reply lists — page get_tree with "
                        "fields [\"id\", \"prerequisites\"] instead."));
 }
+
+TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+
+  auto smells = [&] {
+    std::vector<std::string> out;
+    const Json::Value report = body(h.call("get_diagnostics", kNoArgs));
+    for (const Json::Value& smell : report["smells"])
+      out.push_back(smell["node"].asString() + ":" + smell["kind"].asString());
+    return out;
+  };
+  auto icon = [&] {
+    Json::Value args(Json::objectValue);
+    args["fields"] = list({"id", "icon"});
+    return body(h.call("get_tree", args))["tree"]["nodes"][0]["icon"].asString();
+  };
+  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+
+  Json::Value set(Json::objectValue);
+  set["nodeId"] = "a";
+  set["icon"] = "star";
+  const ToolResult setResult = h.call("annotate_node", set);
+  CHECK_FALSE(setResult.isError);
+  CHECK(body(setResult)["applied"].asBool());
+  CHECK_EQ(icon(), std::string("star"));
+  CHECK_EQ(smells(), (std::vector<std::string>{}));
+
+  Json::Value clear(Json::objectValue);
+  clear["nodeId"] = "a";
+  clear["icon"] = "";
+  CHECK_FALSE(h.call("annotate_node", clear).isError);
+  CHECK_EQ(icon(), std::string(""));
+  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+
+  Json::Value over(Json::objectValue);
+  over["nodeId"] = "a";
+  over["icon"] = std::string(65, 'i');
+  CHECK_EQ(message(h.call("annotate_node", over)),
+           std::string("annotate_node: icon would be 65 characters, 1 over the 64 cap"));
+}
+
+TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  auto description = [&] {
+    Json::Value args(Json::objectValue);
+    args["fields"] = list({"id", "description"});
+    return body(h.call("get_tree", args))["tree"]["nodes"][0]["description"].asString();
+  };
+
+  Json::Value first(Json::objectValue);
+  first["nodeId"] = "a";
+  first["appendDescription"] = "first entry";
+  CHECK_FALSE(h.call("annotate_node", first).isError);
+  CHECK_EQ(description(), std::string("first entry"));
+
+  Json::Value second(Json::objectValue);
+  second["nodeId"] = "a";
+  second["appendDescription"] = "second entry";
+  CHECK_FALSE(h.call("annotate_node", second).isError);
+  CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
+
+  Json::Value both(Json::objectValue);
+  both["nodeId"] = "a";
+  both["description"] = "one";
+  both["appendDescription"] = "two";
+  const ToolResult refused = h.call("annotate_node", both);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("annotate_node: \"description\" and \"appendDescription\" are both given — pass one: "
+                       "description replaces the body, appendDescription joins onto it."));
+  CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
+
+  Json::Value nothing(Json::objectValue);
+  nothing["nodeId"] = "a";
+  CHECK_EQ(message(h.call("annotate_node", nothing)),
+           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
+                       "\"appendDescription\", \"icon\", \"links\"."));
+
+  Json::Value tail(Json::objectValue);
+  tail["nodeId"] = "a";
+  tail["appendDescription"] = std::string(16000 - 25 + 1, 'y');  // the body is 25 characters and the blank line 2
+  CHECK_EQ(message(h.call("annotate_node", tail)),
+           std::string("annotate_node: description would be 16003 characters, 3 over the 16000 cap"));
+  CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
+
+  Json::Value fits(Json::objectValue);
+  fits["nodeId"] = "a";
+  fits["appendDescription"] = std::string(16000 - 25 - 2, 'y');
+  CHECK_FALSE(h.call("annotate_node", fits).isError);
+  CHECK_EQ(description().size(), 16000u);
+}

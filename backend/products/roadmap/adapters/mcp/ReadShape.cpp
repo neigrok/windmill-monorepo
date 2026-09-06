@@ -2,6 +2,7 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
+#include "products/roadmap/domain/Command.h"
 
 #include <cstdint>
 
@@ -13,18 +14,6 @@ Json::Value idArray(const std::set<NodeId>& ids) {
   Json::Value array(Json::arrayValue);
   for (const NodeId& id : ids) array.append(id.str());
   return array;
-}
-
-// The byte offset where the code point numbered `codePoints` (zero-based) starts, or npos when
-// the text holds no more than that many. Counts UTF-8 lead bytes, so a multi-byte character is one.
-std::size_t byteOffsetOfCodePoint(const std::string& text, std::size_t codePoints) {
-  std::size_t seen = 0;
-  for (std::size_t i = 0; i < text.size(); ++i) {
-    if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) continue;
-    if (seen == codePoints) return i;
-    ++seen;
-  }
-  return std::string::npos;
 }
 
 std::uint32_t codePointAt(const std::string& text, std::size_t at) {

@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 6;  // v6: import_subgraph prerequisiteMode/tombstone receipts, get_health crossBranchExempt, batch delete_node/disconnect
+constexpr int kWireCorpusVersion = 7;  // v7: annotate_node icon + appendDescription, and its nothing-to-set refusal names all four fields
 
 struct Step {
   const char* tool;
@@ -58,6 +58,8 @@ std::vector<Step> plan() {
                                 array.append(link);
                                 return array;
                               }()}})},
+      {"annotate_node", obj({{"nodeId", "root"}, {"icon", "crown"},
+                             {"appendDescription", "shipped when render and sync are done"}})},
       {"set_progress", obj({{"nodeId", "root"}, {"status", "complete"}})},
       {"set_progress", obj({{"updates", [] {
                                Json::Value array(Json::arrayValue);

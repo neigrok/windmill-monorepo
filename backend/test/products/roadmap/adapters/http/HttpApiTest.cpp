@@ -529,7 +529,7 @@ TEST(put_with_an_oversized_field_is_400_naming_the_node_and_creates_nothing) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"error":"node \"hull\": label is 201 characters, max 200"})"));
+           std::string(R"({"error":"node \"hull\": label would be 201 characters, 1 over the 200 cap"})"));
   CHECK_EQ(h.trees->byId.count("t_00000000000000e2"), std::size_t{0});
 }
 

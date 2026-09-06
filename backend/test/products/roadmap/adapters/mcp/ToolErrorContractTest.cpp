@@ -163,7 +163,7 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   REQUIRE(import != nullptr);
   const Json::Value& arrays = (*import)["inputSchema"]["properties"];
   CHECK_EQ(arrays["nodes"]["items"]["required"][0].asString(), std::string("id"));
-  CHECK_EQ(arrays["nodes"]["items"]["properties"]["description"]["maxLength"].asUInt64(), 4000u);
+  CHECK_EQ(arrays["nodes"]["items"]["properties"]["description"]["maxLength"].asUInt64(), 16000u);
   CHECK_EQ(arrays["kinds"]["items"]["required"][0].asString(), std::string("id"));
   CHECK_EQ(arrays["kinds"]["items"]["required"][1].asString(), std::string("hue"));
   CHECK_EQ(arrays["progress"]["items"]["required"][0].asString(), std::string("nodeId"));
@@ -214,21 +214,71 @@ TEST(mcp_create_node_refuses_the_handle_of_an_existing_node) {
                        "for a NEW kind is \"id\"."));
 }
 
-TEST(mcp_an_over_long_description_names_the_size_and_the_max) {
+TEST(mcp_an_over_long_description_names_the_size_and_the_overage) {
   Harness h;
   h.call("create_node", node("a", "A"));
 
   Json::Value args(Json::objectValue);
   args["nodeId"] = "a";
-  args["description"] = repeat('x', 4613);
+  args["description"] = repeat('x', 17181);
   ToolResult refused = h.call("annotate_node", args);
   CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("annotate_node: description is 4613 characters, max 4000"));
+  CHECK_EQ(message(refused),
+           std::string("annotate_node: description would be 17181 characters, 1181 over the 16000 cap"));
 
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* annotate = toolNamed(catalog, "annotate_node");
   REQUIRE(annotate != nullptr);
-  CHECK_EQ((*annotate)["inputSchema"]["properties"]["description"]["maxLength"].asUInt64(), 4000u);
+  CHECK_EQ((*annotate)["inputSchema"]["properties"]["description"]["maxLength"].asUInt64(), 16000u);
+  CHECK_EQ((*annotate)["inputSchema"]["properties"]["appendDescription"]["maxLength"].asUInt64(), 16000u);
+  CHECK_EQ((*annotate)["inputSchema"]["properties"]["icon"]["maxLength"].asUInt64(), 64u);
+}
+
+TEST(mcp_a_cap_refusal_names_every_field_over_its_cap) {
+  Harness h;
+  Json::Value args(Json::objectValue);
+  args["label"] = repeat('l', 250);
+  args["description"] = repeat('d', 17181);
+  ToolResult refused = h.call("create_node", args);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("create_node: label would be 250 characters, 50 over the 200 cap; description "
+                       "would be 17181 characters, 1181 over the 16000 cap"));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
+}
+
+TEST(mcp_every_cap_counts_code_points_not_bytes) {
+  Harness h;
+  std::string wide;
+  for (int i = 0; i < 200; ++i) wide += "\xF0\x9F\x98\x80";  // 200 × U+1F600, 800 bytes
+  Json::Value args(Json::objectValue);
+  args["id"] = "grin";
+  args["label"] = wide;
+  CHECK_FALSE(h.call("create_node", args).isError);
+  Json::Value fields(Json::objectValue);
+  fields["fields"] = list({"id", "label"});
+  CHECK_EQ(body(h.call("get_tree", fields))["tree"]["nodes"][0]["label"].asString(), wide);
+
+  Json::Value over(Json::objectValue);
+  over["nodeId"] = "grin";
+  over["label"] = wide + "\xF0\x9F\x98\x80";
+  ToolResult refused = h.call("rename_node", over);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("rename_node: label would be 201 characters, 1 over the 200 cap"));
+
+  Json::Value kind(Json::objectValue);
+  kind["id"] = "wide";
+  kind["hue"] = "sky";
+  std::string cjkLabel;
+  for (int i = 0; i < 24; ++i) cjkLabel += "\xE5\xAD\x97";  // 24 characters of 字, 72 bytes: exactly the kind-label cap
+  kind["label"] = cjkLabel;
+  CHECK_FALSE(h.call("add_kind", kind).isError);
+  Json::Value longId(Json::objectValue);
+  longId["from"] = "grin";
+  std::string cjk;
+  for (int i = 0; i < 129; ++i) cjk += "\xE5\xAD\x97";
+  longId["to"] = cjk;
+  CHECK_EQ(message(h.call("connect", longId)), std::string("connect: to is 129 characters, 1 over the 128 cap"));
 }
 
 TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
@@ -295,14 +345,14 @@ TEST(mcp_a_malformed_import_item_names_its_path_and_its_type) {
 
   Json::Value deep(Json::arrayValue);
   Json::Value oversized = node("c", "C");
-  oversized["description"] = repeat('y', 5000);
+  oversized["description"] = repeat('y', 17000);
   deep.append(oversized);
   Json::Value capped(Json::objectValue);
   capped["nodes"] = deep;
   ToolResult refusedCap = h.call("import_subgraph", capped);
   CHECK(refusedCap.isError);
   CHECK_EQ(message(refusedCap),
-           std::string("import_subgraph: nodes[0].description is 5000 characters, max 4000"));
+           std::string("import_subgraph: node \"c\": description would be 17000 characters, 1000 over the 16000 cap"));
 
   Json::Value hue(Json::arrayValue);
   Json::Value kind(Json::objectValue);
@@ -456,7 +506,8 @@ TEST(mcp_a_silent_no_op_is_refused_by_name) {
   ToolResult nothing = h.call("annotate_node", with("nodeId", "a"));
   CHECK(nothing.isError);
   CHECK_EQ(message(nothing),
-           std::string("annotate_node: nothing to set — pass \"description\", \"links\", or both."));
+           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
+                       "\"appendDescription\", \"icon\", \"links\"."));
 
   Json::Value halfPosition(Json::objectValue);
   halfPosition["label"] = "Half";

@@ -93,9 +93,13 @@ tree's title. Prefer it to N× `create_node` + `connect` + `delete_node`.
 
 ## Limits worth knowing
 
-A node's `description` is capped at 4000 characters, its `label` at 200, its `links` at 32
-(url ≤ 2048). A kind's `label` is capped at 24 and its `description` at 80. Every failure names
-the tool, the argument, what you sent and what is legal — read it before retrying.
+A node's `description` is capped at 16000 characters, its `label` at 200, its `icon` at 64, its
+`links` at 32 (url ≤ 2048). A kind's `label` is capped at 24 and its `description` at 80. Every cap
+counts Unicode code points — a CJK character or an emoji is one. `annotate_node`'s
+`appendDescription` adds to the end of a body instead of replacing it, and the cap is held against
+the body the node would then hold. A cap refusal names every field over its cap and by how much
+(`description would be 17181 characters, 1181 over the 16000 cap`), so one retry fits. Every
+failure names the tool, the argument, what you sent and what is legal — read it before retrying.
 )";
 
 }  // namespace
