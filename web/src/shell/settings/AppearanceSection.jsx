@@ -31,8 +31,8 @@ export function AppearanceSection() {
       </div>
       <p style={note}>
         Sets Windmill — this page and every room. Each room answers it in its own colours: roadmap is
-        Tuscany at midday or the embers after it, journal is paper in north light or dusk with one
-        candle. Gym keeps its basalt whichever you pick. “System” follows your device.
+        Tuscany at midday or a near-black night, journal is paper in north light or an ink-dark page
+        with one candle. Gym keeps its night whichever you pick. “System” follows your device.
       </p>
     </Section>
   );

@@ -11,19 +11,16 @@ A line that stops being true is corrected or deleted in the same change that mak
 here, in a guideline, in a brief, or on a board. This ledger is for disagreements being closed,
 not a home for something already known to be wrong.
 
-**F1 · journal's night canvas paints the family warm ramp, not its own cool dusk ramp**
-→ fix toward `palettes.css`.
-`colors.css:168` is a bare `[data-theme="dark"]` selector, and `JournalApp.jsx` stamps `data-theme`
-on `.journal-root` without `data-brand` (that lives on `.wm-shell`). A directly-matching declaration
-beats an inherited one, so inside the canvas that block overwrites the cool dusk ramp `palettes.css`
-hands the shell: `--text-*`, `--border-*` and `--journal-gap` all come up warm brown-cream on a cool
-blue-black ground. Day is unaffected — there is no bare `[data-theme="light"]` block. Two fixes
-work: add `data-brand="journal"` to `.journal-root`, or narrow the selector to
-`:root[data-theme="dark"]`. gym escapes it — `GymApp.jsx` stamps both attributes on one element.
+**F1 · journal's night canvas paints the family warm ramp, not its own cool ink ramp** → built
+2026-09-06, nothing owed. `JournalApp.jsx` stamps `data-brand="journal"` on `.journal-root` beside
+`data-theme`, so inside the canvas the room's own `[data-theme="dark"][data-brand="journal"]` block in
+`palettes.css` outranks the bare `[data-theme="dark"]` block in `colors.css` (`:165`), and `--text-*`,
+`--border-*` and `--journal-gap` all resolve on the cool ink-black `#0B0E16` ground. gym stamps both
+attributes on one element the same way.
 
-**F2 · `journal.css` states the opposite of what the cascade does** → correct or delete.
-The day block's comment reads "Nothing here fires in night, where the dusk ramp's own ink is the
-right one." False per F1.
+**F2 · `journal.css` states the opposite of what the cascade does** → built 2026-09-06, nothing
+owed. The day block's comment says what the cascade does: the sheet comes from the room palette
+through `data-brand`, and the light block pins no ground of its own.
 
 **F3 · `#FBF6EA` is a retired parchment two places still believe in** → fix toward `palettes.css`.
 `journal.css:89` measures its re-pointed lamp steps "on `#FBF6EA`"; the shipped day ground is
@@ -51,13 +48,14 @@ Android takes a staged version: its skin is a compile-time object read at ~560 s
 `LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
 
 **F6 · a focused control inside gym rings iris, not the family's terracotta** → built 2026-08-26,
-nothing owed. The room answers three shared roles for itself, one named block per skin at the head
-of `gym.css` (`:90-110`): `--focus-ring` in iris, `--field-focus-edge` and `--chip-selected-edge` on
+nothing owed. The room answers three shared roles for itself, one named block per skin in
+`gymTokens.css` (`:96-112`): `--focus-ring` in verdigris `rgba(95,205,180,.4)` at night and iris
+`rgba(76,67,116,.4)` in the light skin, `--field-focus-edge` and `--chip-selected-edge` on
 `--color-brand`, beside `--text-on-accent` and `--color-danger`. That is the whole bridge and there
 is no per-component override anywhere else — every other shared role a design-system component reads
 already resolves to gym's palette through `[data-brand="gym"]`, and re-pointing one back at gym's
 alias of it would be a CSS cycle (`--gym-surface` **is** `var(--surface-card)`). The change stays
-inside `.gym-root`, so `shadows.css`'s terracotta ring still rings everywhere else.
+inside `.gym-skin`, so `shadows.css`'s terracotta ring still rings everywhere else.
 
 **F7 · gym asks JetBrains Mono 700/800; only 400/500/600 are loaded** → load the faces or restyle.
 `fonts.js` self-hosts three weights. Gym rules ask 700 or 800 on `--font-mono`, so the browser
@@ -69,39 +67,35 @@ synthesises them, and nothing in the file says the shipped weight is faux.
 blocks; no rule in the repo reads any of the three. The largest numeral that ships is `.gym-fix-kg`
 at 72px.
 
-**F9 · `Avatar.jsx` and `Switch.jsx` hardcode `#fff`** → tokenize.
-`design-system/core/Avatar.jsx` sets `color: '#fff'` for initials; `design-system/forms/Switch.jsx`
-sets the knob `background: '#fff'`. The only un-tokenized colours in the component library.
+**F9 · `Avatar.jsx` and `Switch.jsx` hardcode `#fff`** → built 2026-09-06, nothing owed.
+`design-system/core/Avatar.jsx` inks initials in `--text-on-accent`; `design-system/forms/Switch.jsx`
+paints the knob `--surface-card`.
 
 **F10 · `gym/marketing/gymLanding.css` hand-copies the product token block and has drifted**
-→ fix toward `gym.css`.
-Its `--alarm-ink` is `var(--color-danger)` where the product's is `--accent-brick-300`.
+→ built 2026-09-06, nothing owed. The landing's islands wear `.gym-skin`, so `gymTokens.css` is the
+only declarer and `gymLanding.css` carries no token block of its own.
 
 **F11 · global `a:hover` outranks gym's anchor classes** → fix toward the code.
 `global.css`'s `a:hover` is (0,1,1); `.gym-routine-name`, `.gym-last-name`, the history lines and
 inactive tabs are (0,1,0), so all of them repaint to `--text-link-hover`. The worst case is
-`Build a routine`'s label doing it on top of its own iris-300 fill. This entry is an accessibility
+`Build a routine`'s label doing it on top of its own verdigris-400 fill. This entry is an accessibility
 defect rather than a drift.
 
 **F12 · `palettes.css` mixes colour spaces inside its own hue comments** → state the space.
 "sky 200° / plum 315°" are HSL; "65° from sky" is OKLCH-only; "iris ~265°" matches neither
 (HSL 252, OKLCH 291). A hue angle without its space is not a measurement.
 
-**F13 · the tree canvas can never go dark** → an owner call: pick a side, then make both halves agree.
-`theme.js:69` sets `BACKGROUND.canvas = '#F9F5EB'` and `scene/SkillTreeScene.js` clears the GL
-buffer to it opaquely every frame. `.st-root` reads `--surface-canvas`, which is `#1C1712` in dark,
-and appearance defaults to `'system'` — so every dark-OS visitor gets a cream canvas inside dark
-chrome. Against that cream `.st-brand` flattens to `#403A32` and the loading veil to `#7F7B74`.
-Either the scene learns the theme (and the six kinds need a dark set the GL can read), or dark is
-dropped for this room and the chrome stops claiming it. The Figma file draws Day as the hero.
+**F13 · the tree canvas can never go dark** → built 2026-09-06, nothing owed. `theme.js` holds a
+night set beside its light constants — `sceneTheme(isDark)` hands the scene `#0B0B0C` canvas, `#141416`
+glow and six night kinds — and `scene/SkillTreeScene.js` reads it through `isNightFor(canvas)`,
+re-applying every cached colour from a `MutationObserver` on `data-theme`, so the GL buffer clears to
+the room's own ground in both skins and follows a live flip.
 
 **F14 · `theme.js` says it matches the design system 1:1; in dark it does not**
-→ correct the comment, then decide the values.
-`colors.css` bumps every `--kind-*` to the 400 step in dark; `theme.js` freezes the 500s. So
-`SkillNode.jsx` and `HomeCard.jsx` (CSS vars) use the dark hues while the list workbench, the
-plaque, `NextUp`, `KindLegend`, `StepPanel`, `Minimap` and the whole GL scene use the light ones.
-On the ember card a ready fruit's ring lands at 2.84:1. The comment is the cheap half; the values
-are downstream of F13.
+→ built 2026-09-06, nothing owed. `theme.js` names its module constants the LIGHT set and hands the
+scene the night set through `sceneTheme(isDark)`; the night kind bases (`#D98B5F` terracotta …
+`#B06FA6` plum) are the same values `colors.css`'s dark `--kind-*` declare, so the GL scene and the
+CSS-var consumers paint one palette per skin.
 
 **F15 · two documents say a complete node breathes; the shader says it does not** → delete both claims.
 `theme.js:14` and `web/src/products/roadmap/ARCHITECTURE.md` describe complete as wearing "a breathing
@@ -109,18 +103,17 @@ halo". `scene/NodeBatch.js:224` reads `HALO_STEADY; // no oscillation`. Only the
 breathes. The DOM specimen does animate `wm-pulse-node` when `pulse` is passed; that is opt-in and
 is not the scene.
 
-**F16 · `TreeSwitcher.jsx` invents a third kind palette** → fold into the two that already exist.
-It maps kinds itself rather than reading `NODE_COLORS`: `brick` becomes `var(--color-danger)`
-(which drifts in dark, since the semantic token moves and the kind does not) and `plum` is a bare
-`#8D4F83` literal.
+**F16 · `TreeSwitcher.jsx` invents a third kind palette** → built 2026-09-06, nothing owed. It reads
+`--kind-<name>` for all six kinds, the tokens `colors.css` already flips per skin.
 
-**F17 · the share export wears the family night, not roadmap's room** → fix toward the room.
-`share/palette.js` builds its dark palette from the family neutrals rather than roadmap's ember
-ramp, while the file's own header claims exports can never drift from the app.
+**F17 · the share export wears the family night, not roadmap's room** → built 2026-09-06, nothing
+owed. `share/palette.js` builds its dark kinds from `sceneTheme(true)` — the roadmap night set in
+`theme.js` — and its dark mat from roadmap's night neutrals (`#171719` on the `#0B0B0C` panel), so
+the export cannot drift from the scene.
 
-**F19 · `.st-ticker-item .st-event-obj` hardcodes `#fff` on an inverted surface** → re-point it.
-Dark flips `--surface-inverse` to `#F4EEDF`, a light value. The ticker item sits on it and paints
-its object white, so it is effectively invisible in dark.
+**F19 · `.st-ticker-item .st-event-obj` hardcodes `#fff` on an inverted surface** → built
+2026-09-06, nothing owed. `skilltree.css` inks the object `var(--neutral-0)` and the system avatar a
+14% mix of the same token, so both flip with the inverted surface.
 
 **F20 · three roadmap class names have no CSS anywhere** → delete them or write them.
 `.st-list-bud` and `.st-list-jump-chip` (`list/ListView.jsx`) and `.st-action-lane`
@@ -187,9 +180,9 @@ falls back to the UA default. The keypad's two siblings already carry Nunito, so
 `NewTreeBirth.jsx`); in-app creates use `NEW_NODE_ICON`. A roster step passes `undefined`,
 `Icon.jsx` returns `null`, and `.st-step-glyph` renders as an empty 40px sunken circle on every row.
 
-**F33 · at night, roadmap's ghost icon buttons are cream ink on the cream canvas** → downstream of F13.
-The three ghost `IconButton`s and the zoom glyphs take `--text-primary` (`#F1E9D8` in dark) and have
-no pill of their own, so they sit directly on the GL canvas, which is still `#F9F5EB`.
+**F33 · at night, roadmap's ghost icon buttons are cream ink on the cream canvas** → built
+2026-09-06 with F13, nothing owed. The GL canvas clears to `#0B0B0C` at night, so the three ghost
+`IconButton`s and the zoom glyphs' `--text-primary` (`#F2F0EB`, 17.27:1) sit on the room's own ground.
 
 **F34 · nine journal type declarations have no style in the ramp** → the ramp's owner decides.
 `.je-first .je-ink-passage`, `.journal-talk-state`, `.journal-talk-act`, `.journal-talk-note`,
@@ -658,10 +651,11 @@ all (`fixOf`, `fix.js:97-104`; the server reads exactly that at
 that colour at all** → re-scoped 2026-08-26; Android is built, iOS is the platform's, and what is
 left is one token question for the surfaces that still honour a tint.
 **Android is closed, measured.** The rail carries selection on four channels, not one:
-`GymSkin.ink` `#EDEBF0` selected against `GymSkin.inkFaint` `#8D8896` (**2.91:1**, up from iris's
-1.17:1), a filled glyph against an outlined one per seat, a bold label against a normal one, and the
-indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `TabRail` in `GymRoom.kt`,
-and `railIcon` beneath it.
+`GymSkin.ink` `#F2EFEB` selected against `GymSkin.inkFaint` `#797270` (**4.11:1**; the faint ink
+itself holds 4.11:1 on the canvas and 3.75:1 on the bar's `#1C171C`), a filled glyph against an
+outlined one per seat, a bold label against a normal one, and the indicator on the verdigris wash
+`accentSoft` (`#5FCDB4` at 20% over the bar, 1.50:1, ahead of `lineStrong`'s 1.29:1 on the same
+ground) — `TabRail` in `GymRoom.kt`, `railIcon` beneath it, and `GymRailTests` pinning every number.
 **On iOS the question is not answerable by a token.** Sampled on the shipped build (iPhone 17, iOS
 26.3), the system tab bar paints both labels itself — `#FFFFFF` selected against `#F6F3FA`
 unselected, **1.10:1** — draws its own selection capsule (`#47444A` on `#262328`, 1.62:1), and
@@ -670,8 +664,8 @@ The room therefore applies **no** tint to the TabView: a `.tint` there is an env
 repaints every control in all three tabs and each sheet they raise, buying nothing (`GymRoom.swift`,
 the comment under the TabView). The room's job on that OS is the **symbol**.
 **What remains is the ramp.** No pair in `GymSkin` reaches 3:1 while both members keep 4.5:1 against
-the bar's own ground — the shipped pair is 2.91:1 — so a surface that does honour a tint has no
-passing token to take. Either a brighter selected ink enters the ramp, or 3:1 between two inks stops
+the bar's own ground — the shipped pair separates by 4.11:1, but `inkFaint` holds only 3.75:1 on the
+bar — so a surface that does honour a tint has no passing token to take. Either a brighter selected ink enters the ramp, or 3:1 between two inks stops
 being asked of a control the platform paints.
 
 **1w · `glow/set-done` still carries a Daylight value in the Figma collection** → delete it from the
@@ -1892,15 +1886,15 @@ padding to hold it, so the painted box IS the border box and the band cannot be 
 
 **The rule is never counted toward legibility; the stamp is** — the same doctrine `scales.md` §3 holds
 for a glow. Composited in a browser through the real sRGB pipeline, the way 5b was: night ground
-#040D19, addressed `--lamp-400` #E0B972 **10.54:1** against the unlit `--journal-ink-dim` #8A98AC's
-6.66:1; day ground `--neutral-50` #F7F7F5, addressed `--lamp-200` #6B4D12 **7.26:1** against the unlit
+#0B0E16, addressed `--lamp-400` #E0B972 **10.43:1** against the unlit `--journal-ink-dim` #B6B5B0's
+9.39:1; day ground `--neutral-50` #F7F7F5, addressed `--lamp-200` #6B4D12 **7.26:1** against the unlit
 #74654F's 5.27:1. Day's own `--lamp-400` #986B1E measures 4.39:1 — under the gate AND *lighter* than
 the dim it would replace, so lighting the row with it would have LOWERED its contrast. `--lamp-200` is
 the step 5b already re-inked the tab numeral to, so **lamp-as-text on paper is now one answer in this
 family and not two**. The rule itself is that ink faded: night 42%, day 62% — the alphas differ
-because a wash over paper darkens where a wash over the night lightens — composited to 2.66:1 and
+because a wash over paper darkens where a wash over the night lightens — composited to 2.70:1 and
 2.98:1 raised, 1.99:1 and 2.21:1 at the resting weight the mark actually wears. All four are under 3:1
-deliberately, and far under `.journal-prose` (16.56:1 / 14.73:1). **The designer's own day arithmetic
+deliberately, and far under `.journal-prose` (16.92:1 / 14.73:1). **The designer's own day arithmetic
 in the tie brief was computed against #F9F5EB and is superseded by these; F3's stale-parchment finding
 is the reason, and F3 is still open.**
 

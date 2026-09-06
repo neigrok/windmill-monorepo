@@ -2,7 +2,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
-import { NODE_COLORS, DEFAULT_NODE_COLOR, BACKGROUND, nodeTier, NODE_SIZE } from '../theme.js';
+import { DEFAULT_NODE_COLOR, nodeTier, NODE_SIZE } from '../theme.js';
 
 const POOL_SIZE = 64;
 const LABEL_ZOOM_THRESHOLD = 0.5;
@@ -22,11 +22,11 @@ function rgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function glyphCssColor(color, state) {
-  const family = NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+function glyphCssColor(theme, color, state) {
+  const family = theme.NODE_COLORS[color] ?? theme.NODE_COLORS[DEFAULT_NODE_COLOR];
   if (nodeTier(state) > 0) return `rgb(${rgb(family.soft).join(', ')})`;
   const [br, bg, bb] = rgb(family.base);
-  const [cr, cg, cb] = rgb(BACKGROUND.canvas);
+  const [cr, cg, cb] = rgb(theme.BACKGROUND.canvas);
   const mix = (a, b) => Math.round(b + (a - b) * 0.55);
   return `rgb(${mix(br, cr)}, ${mix(bg, cg)}, ${mix(bb, cb)})`;
 }
@@ -121,8 +121,9 @@ export class LabelOverlay extends NodeOverlay {
 }
 
 export class IconOverlay extends NodeOverlay {
-  constructor(canvas) {
+  constructor(canvas, theme) {
     super(canvas, 'st-icons');
+    this.theme = theme;
     this.markupByName = new Map();
     this.stateById = new Map();
     this.colorById = new Map();
@@ -144,9 +145,18 @@ export class IconOverlay extends NodeOverlay {
 
   setStates(statesMap) {
     for (const [id, state] of statesMap) this.stateById.set(id, state);
+    this.retint();
+  }
+
+  setTheme(theme) {
+    this.theme = theme;
+    this.retint();
+  }
+
+  retint() {
     this.pool.forEach((element, i) => {
       const id = this.assignedId[i];
-      if (id !== null) element.style.color = glyphCssColor(this.colorById.get(id), this.stateById.get(id));
+      if (id !== null) element.style.color = glyphCssColor(this.theme, this.colorById.get(id), this.stateById.get(id));
     });
   }
 
@@ -170,6 +180,6 @@ export class IconOverlay extends NodeOverlay {
 
   render(element, node) {
     element.innerHTML = this.markupByName.get(node.icon) ?? '';
-    element.style.color = glyphCssColor(this.colorById.get(node.id), this.stateById.get(node.id));
+    element.style.color = glyphCssColor(this.theme, this.colorById.get(node.id), this.stateById.get(node.id));
   }
 }

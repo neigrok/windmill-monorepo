@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { Icon } from '../../../../design-system';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 
 function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
@@ -75,7 +75,7 @@ const deleteButton = {
 };
 
 export function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete, onDone, inPanel = false }) {
-  const legendKinds = kinds.length > 0 ? kinds : Object.keys(NODE_COLORS).map((h) => ({ id: h, hue: h }));
+  const legendKinds = kinds.length > 0 ? kinds : Object.keys(KIND_CSS).map((h) => ({ id: h, hue: h }));
   const plural = count === 1 ? '' : 's';
   return (
     <div style={{ ...shellBase, ...(inPanel ? shellInPanel : shellFixed) }} role="group" aria-label={`${count} selected`}>
@@ -98,7 +98,7 @@ export function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, o
                 width: 34,
                 height: 34,
                 borderRadius: '50%',
-                background: (NODE_COLORS[kind.hue] ?? NODE_COLORS[DEFAULT_NODE_COLOR]).base,
+                background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base,
                 boxShadow: kind.hue === ringedKind ? '0 0 0 3px var(--text-primary)' : '0 0 0 1px var(--border-default)',
               }}
             />

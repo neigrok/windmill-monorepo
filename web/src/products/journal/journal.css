@@ -2,14 +2,14 @@
 
 .journal-root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-canvas: #040D19;
-  --surface-card: #0D1824;
+  --surface-canvas: #0B0E16;
+  --surface-card: #161921;
   --lamp-400: #E0B972;
 
-  --journal-ink: #F2ECDE;
-  --journal-ink-dim: #8A98AC;
-  --journal-gap: var(--neutral-300, #3C3223);
-  --journal-energy: var(--accent-olive-400, #9AA859);
+  --journal-ink: #F1F0EC;
+  --journal-ink-dim: #B6B5B0;
+  --journal-gap: var(--neutral-300);
+  --journal-energy: var(--accent-olive-400);
 
   --mood-0: #5E4D2E;
   --mood-1: #6E5A34;
@@ -26,7 +26,7 @@
   /* The scale control's four static edges (scales.md §2.4–§2.6) and the arc's hot core. */
   --journal-swatch-edge: color-mix(in srgb, var(--journal-ink) 34%, transparent);
   --journal-head-ring: color-mix(in srgb, var(--journal-ink) 78%, transparent);
-  --journal-focus: #D5D1C6;   /* ink 88% over the night canvas, flattened: an alpha would let the head's glow through */
+  --journal-focus: #D5D5D2;   /* ink 88% over the night canvas, flattened: an alpha would let the head's glow through */
   --surge-core: #F4F7E2;
 
   --journal-scrim: color-mix(in srgb, #000 46%, transparent);
@@ -49,12 +49,12 @@
      glyph, so the lamp itself clears the gate at every weight (5.5:1 at the heaviest). */
   --je-tab-ink: var(--lamp-400);
   /* THE ADDRESSED PAGE. The date stamp of the one page the margin describes, lifted off
-     --journal-ink-dim. Measured against this block's own ground #040D19: dim #8A98AC 6.66:1, lit
-     --lamp-400 #E0B972 10.54:1 — the warmest AND the brightest date on screen, and contrast moves the
+     --journal-ink-dim. Measured against this block's own ground #0B0E16: dim #B6B5B0 9.39:1, lit
+     --lamp-400 #E0B972 10.43:1 — the warmest AND the brightest date on screen, and contrast moves the
      way lighting something has to. The rule is the same ink faded, and it is NEVER counted toward
-     legibility: at 42% over the ground it composites to #60553E, 2.66:1, deliberately under the gate
+     legibility: at 42% over the ground it composites to #64563D, 2.70:1, deliberately under the gate
      and deliberately inside the tab family's own band (--je-tab-line 0.32, --je-tab-open-line 0.45).
-     The stamp in the panel's head carries the whole of this tie's legibility at 10.54:1. */
+     The stamp in the panel's head carries the whole of this tie's legibility at 10.43:1. */
   --je-addressed: var(--lamp-400);
   --je-tie: color-mix(in srgb, var(--je-addressed) 42%, transparent);
   --je-here-fill: rgba(224, 185, 114, 0.16);
@@ -74,8 +74,8 @@
 
   --journal-ink: #2A2118;
   --journal-ink-dim: #74654F;
-  --journal-gap: var(--neutral-300, #D3C2A0);
-  --journal-energy: var(--accent-olive-500, #7D8C43);
+  --journal-gap: var(--neutral-300);
+  --journal-energy: var(--accent-olive-500);
 
   --mood-0: #EDDFB7;
   --mood-1: #E4CF9C;
@@ -1142,7 +1142,7 @@ a.journal-link:focus-visible {
   padding: 18px 20px;
   border: none;
   background: transparent;
-  color: var(--text-primary, #F3ECDD);
+  color: var(--text-primary);
   font: 400 18px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
   outline: none;
 }
@@ -1166,7 +1166,7 @@ a.journal-link:focus-visible {
 .journal-search-hit:hover { background: color-mix(in srgb, var(--lamp-400) 8%, transparent); }
 .journal-search-quote {
   font: 400 15px/1.5 var(--font-body), 'Nunito', system-ui, sans-serif;
-  color: var(--text-primary, #EFE7D6);
+  color: var(--text-primary);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .journal-search-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
@@ -1971,7 +1971,7 @@ a.journal-link:focus-visible {
   border: 0;
   background: none;
   cursor: pointer;
-  color: var(--journal-ink, #F2ECDE);
+  color: var(--journal-ink);
   font: 500 16px/1.2 var(--font-body), sans-serif;
 }
 .journal-nudge-knob {
@@ -1980,7 +1980,7 @@ a.journal-link:focus-visible {
   width: 42px;
   height: 24px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 30%, transparent);
+  background: color-mix(in srgb, var(--journal-ink-dim) 30%, transparent);
   transition: background var(--duration-base, 280ms) var(--ease-standard);
 }
 .journal-nudge-knob::after {
@@ -1991,7 +1991,7 @@ a.journal-link:focus-visible {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--journal-ink, #F2ECDE);
+  background: var(--journal-ink);
   transition: transform var(--duration-base, 280ms) var(--ease-soft);
 }
 .journal-nudge-toggle.is-on .journal-nudge-knob { background: color-mix(in srgb, var(--lamp-400) 70%, transparent); }
@@ -2001,19 +2001,19 @@ a.journal-link:focus-visible {
   color: var(--lamp-400);
   font: 400 13px/1.5 var(--font-body), sans-serif;
 }
-.journal-nudge-suppressed .journal-nudge-when { margin-top: 0; color: var(--journal-ink, #F2ECDE); font-size: 14px; }
+.journal-nudge-suppressed .journal-nudge-when { margin-top: 0; color: var(--journal-ink); font-size: 14px; }
 .journal-nudge-note {
   margin: 10px 0 0;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 13px/1.5 var(--font-body), sans-serif;
 }
 .journal-nudge-channel { display: flex; gap: 8px; margin-top: 18px; }
 .journal-nudge-chip {
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--journal-ink-dim) 30%, transparent);
   background: none;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 500 13px/1 var(--font-body), sans-serif;
   cursor: pointer;
   transition: border-color var(--duration-fast, 150ms) var(--ease-standard), color var(--duration-fast, 150ms) var(--ease-standard);
@@ -2025,14 +2025,14 @@ a.journal-link:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 13px/1 var(--font-body), sans-serif;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .journal-nudge-snooze:hover,
-.journal-nudge-resume:hover { color: var(--journal-ink, #F2ECDE); }
+.journal-nudge-resume:hover { color: var(--journal-ink); }
 .journal-nudge-resume { color: var(--lamp-400); }
 .journal-nudge-foot {
   margin: 22px 0 0;
@@ -2051,7 +2051,7 @@ a.journal-link:focus-visible {
 .journal-zoom {
   position: fixed;
   inset: 0;
-  background: var(--surface-canvas, #040D19);
+  background: var(--surface-canvas);
   z-index: 55;
   overflow-y: auto;
   padding: 28px max(20px, 6vw) 96px;
@@ -2065,7 +2065,7 @@ a.journal-link:focus-visible {
   margin: 0 auto 24px;
 }
 .journal-zoom-title {
-  color: var(--journal-ink, #F2ECDE);
+  color: var(--journal-ink);
   font: 700 22px/1.2 var(--font-display, 'Baloo 2'), sans-serif;
 }
 .journal-zoom-close {
@@ -2087,7 +2087,7 @@ a.journal-link:focus-visible {
   border-radius: var(--radius-lg, 16px);
 }
 .journal-week-count {
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 13px/1 var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.04em;
   margin-bottom: 16px;
@@ -2113,23 +2113,23 @@ a.journal-link:focus-visible {
   border-radius: 0.5px;
   background: color-mix(in srgb, var(--journal-energy) 45%, transparent);
 }
-.journal-week-bar { width: 3px; height: 100%; border-radius: 1px; background: color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 26%, transparent); }
-.journal-week-bar.is-on { background: var(--journal-energy, #9AA859); }
-.journal-week-dow { color: var(--journal-ink-dim, #8A98AC); font: 400 10px/1 var(--font-mono), ui-monospace, monospace; }
+.journal-week-bar { width: 3px; height: 100%; border-radius: 1px; background: color-mix(in srgb, var(--journal-ink-dim) 26%, transparent); }
+.journal-week-bar.is-on { background: var(--journal-energy); }
+.journal-week-dow { color: var(--journal-ink-dim); font: 400 10px/1 var(--font-mono), ui-monospace, monospace; }
 
 .journal-zoom-grid { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-.journal-zoom-loading { color: var(--journal-ink-dim, #8A98AC); font-style: italic; }
+.journal-zoom-loading { color: var(--journal-ink-dim); font-style: italic; }
 .journal-zoom-unread {
   max-width: 760px;
   margin: 0 auto 14px;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 13px/1.5 var(--font-body), 'Nunito', system-ui, sans-serif;
 }
 .journal-zoom-month { display: flex; align-items: center; gap: 14px; }
 .journal-zoom-mlabel {
   flex: none;
   width: 52px;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 11px/1 var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.08em;
 }
@@ -2138,7 +2138,7 @@ a.journal-link:focus-visible {
   width: 15px;
   height: 15px;
   border-radius: 3px;
-  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--journal-ink-dim) 16%, transparent);
   padding: 0;
   cursor: pointer;
   transition: transform 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
@@ -2202,7 +2202,7 @@ a.journal-link:focus-visible {
 .journal-talk-act:hover { text-decoration: underline; }
 .journal-talk-note {
   margin: 10px 0 0;
-  color: var(--journal-ink-dim, #8A98AC);
+  color: var(--journal-ink-dim);
   font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
 }
 /* Journal has no glows by day: a bloom by night, an ink shadow by day, at the same radius. */

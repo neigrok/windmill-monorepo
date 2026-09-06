@@ -66,11 +66,11 @@ test('the two edges a room may re-hue are tokens, and only gym re-points them', 
   assert.equal(tokens.includes('--chip-selected-edge: var(--accent-terracotta-400);'), true);
 
   // Exactly one room answers them, and it answers them in both skins.
-  const rooms = ['products/gym/gym.css', 'products/roadmap', 'products/journal'];
+  const rooms = ['products/gym/gymTokens.css', 'products/roadmap', 'products/journal'];
   const gym = read(rooms[0]);
   assert.equal((gym.match(/--field-focus-edge: var\(--color-brand\);/g) ?? []).length, 2);
   assert.equal((gym.match(/--chip-selected-edge: var\(--color-brand\);/g) ?? []).length, 2);
-  const bridge = gym.slice(gym.indexOf('/* ── The bridge —'), gym.indexOf('/* Everything below paints'));
+  const bridge = gym.slice(gym.indexOf('/* ── The bridge —'));
   assert.equal(bridge.includes('--field-focus-edge'), true, 'the re-point is in the bridge, not scattered');
   assert.equal(bridge.includes('--chip-selected-edge'), true);
   for (const room of rooms.slice(1)) {

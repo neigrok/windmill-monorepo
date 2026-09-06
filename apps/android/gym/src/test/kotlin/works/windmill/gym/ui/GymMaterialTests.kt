@@ -14,8 +14,9 @@ class GymMaterialTests {
     fun theAccentIsTheSchemesPrimaryAndTheInkOnItIsTheRoomsOwn() {
         assertEquals(GymSkin.accent, scheme.primary)
         assertEquals(GymSkin.onAccent, scheme.onPrimary)
-        // A tonal container Material fills for itself — the rail names its own indicator, because
-        // this wash measures 1.06:1 on the bar and carries no signal (ledger `1v`).
+        // A tonal container Material fills for itself; the rail names it as its indicator by hand,
+        // and this wash measures 1.50:1 on the bar against border-default's 1.29:1 (ledger `1v`,
+        // pinned in GymRailTests).
         assertEquals(GymSkin.accentSoft, scheme.secondaryContainer)
         assertEquals(GymSkin.accent, scheme.onSecondaryContainer)
     }

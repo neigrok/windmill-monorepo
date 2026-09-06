@@ -20,28 +20,34 @@
    recipe in system-architecture §4.
 
    ── The rule behind every block ──────────────────────────────
-   A COOL GROUND CARRIES A WARM LIGHT, OR A WARM GROUND CARRIES A COOL ONE — never two temperatures
-   agreeing. Each room names a place and reads its ground off it, at both hours:
+   A GROUND NEVER AGREES WITH ITS LIGHT: a cool ground carries a warm light, a warm one a cool
+   light, a neutral one whichever hue the room owns. Each room names a place and reads its ground
+   off it, at both hours:
 
-     roadmap   Tuscany at midday    -> embers after sunset
-     journal   paper in north light -> dusk and one candle
-     gym       pietra in the sun    -> basalt at night
+     roadmap   Tuscany at midday    -> the family night: neutral near-black, terracotta lit
+     journal   paper in north light -> ink-cast night and one candle
+     gym       pietra in the sun    -> instrument: plum-black, verdigris lit
 
    A room keeps the vocabulary ON its ground, never the ground: journal re-points the text roles
    inside its canvas to a WARM ink, gym renames every role it paints with (--gym-canvas, --set-done)
-   so no surface reads a raw one. Neither invents a surface. Journal's night is stated a second time
-   inside its own root, byte-identical to the dusk below.
+   so no surface reads a raw one. Neither invents a surface. Journal's night ground is stated a second
+   time inside its own root, byte-identical to the night below.
    ============================================================ */
 
 /* ---- Ramp extensions the rooms are lit with. iris is authored to the recipe (~265°, clear of sky
-        at 200° and plum at 315°, so it can never read as "info"); the 300 steps are the lightest
-        that clear 4.5:1 against --text-on-accent (#1B1408) at label size. ---- */
+        at 200° and plum at 315°, so it can never read as "info") and lights gym's DAY; verdigris
+        (~165°, between olive's 75° and sky's 200°) lights its NIGHT. The 300 steps are the hover steps;
+        each clears 4.5:1 against --text-on-accent (#1B1408) at the figure beside it. ---- */
 :root {
   --accent-plum-300: #C08FB8;   /* on #1B1408 = 6.84:1 */
   --accent-iris-300: #9A90BE;   /* on #1B1408 = 6.18:1 */
-  /* brick's lit step, for a night lifted off black: 5.82 / 5.22 / 4.69 on basalt's canvas, card
-     and raised, where brick-400 falls to 4.44 / 3.98 / 3.58. */
+  /* brick's lit step, for a night lifted off black: 6.53 / 5.95 / 5.33 on the instrument's canvas,
+     card and raised, where brick-400 falls to 4.98 / 4.54 / 4.06. */
   --accent-brick-300: #D08268;
+
+  --accent-verdigris-300: #8FE0CD;   /* on #1B1408 = 11.92:1 */
+  --accent-verdigris-400: #5FCDB4;   /* on #1B1408 = 9.46:1 */
+  --accent-verdigris-500: #3DAE95;   /* on #1B1408 = 6.68:1 */
 
   --accent-iris-50:  #EDEBF3;
   --accent-iris-100: #DBD7E7;
@@ -65,20 +71,20 @@
   --text-link-hover: var(--accent-terracotta-700);
 }
 [data-theme="dark"][data-brand="clay"] {
-  --color-brand: var(--accent-terracotta-500);
-  --color-brand-hover: var(--accent-terracotta-400);
-  --color-brand-active: var(--accent-terracotta-600);
-  --color-brand-soft: rgba(188, 108, 66, 0.18);
+  --color-brand: var(--accent-terracotta-400);
+  --color-brand-hover: var(--accent-terracotta-200);
+  --color-brand-active: var(--accent-terracotta-500);
+  --color-brand-soft: rgba(208, 138, 94, 0.20);
   --text-link: var(--accent-terracotta-400);
-  --text-link-hover: #E7A87B;
+  --text-link-hover: var(--accent-terracotta-200);
 }
 
 /* ============================================================
-   roadmap · Tuscany at midday, and the embers after it
+   roadmap · Tuscany at midday, and the family night after it
    ------------------------------------------------------------
-   Its day is the family palette and does not move. Its night is warm all the way through, lifted
-   off black, with terracotta at its 400 step as the lit thing. A named room rather than the bare
-   default, so clay can stay the FAMILY default.
+   Its day is the family palette and does not move. Its night IS the family night — the neutral
+   near-black ramp colors.css declares, with terracotta at its 400 step as the lit thing. A named
+   room rather than the bare default, so clay can stay the FAMILY default.
    ============================================================ */
 [data-brand="roadmap"] {
   --color-brand: var(--accent-terracotta-500);
@@ -92,26 +98,26 @@
 /* Day: the family cream, unchanged — so there is no light ground block. */
 
 [data-theme="dark"][data-brand="roadmap"] {
-  /* Embers — a hearth, not a hole. */
-  --neutral-0: #272019;
-  --neutral-25: #211A15;
-  --neutral-50: #1C1712;
-  --neutral-100: #322A21;
-  --neutral-200: #3E352A;
-  --neutral-300: #4E4335;
-  --neutral-400: #6A5C48;
-  --neutral-500: #9A8A6E;
-  --neutral-600: #BCAA8A;
-  --neutral-700: #D3C4A6;
-  --neutral-800: #E6DBC4;
-  --neutral-900: #F1E9D8;
+  /* The family night, stated as this room's own so the room reads like every other block. */
+  --neutral-0: #121213;
+  --neutral-25: #0E0E0F;
+  --neutral-50: #0B0B0C;
+  --neutral-100: #171719;
+  --neutral-200: #222224;
+  --neutral-300: #2E2E32;
+  --neutral-400: #4A4A4F;
+  --neutral-500: #7E7C77;
+  --neutral-600: #B4B2AC;
+  --neutral-700: #CFCDC8;
+  --neutral-800: #E3E1DC;
+  --neutral-900: #F2F0EB;
   --surface-canvas: var(--neutral-50);
-  --surface-card: var(--neutral-0);
-  --surface-hover: var(--neutral-100);
-  --surface-sunken: #141009;
-  --surface-overlay: rgba(8, 6, 3, 0.68);
+  --surface-card: var(--neutral-100);
+  --surface-hover: var(--neutral-200);
+  --surface-sunken: #050506;
+  --surface-overlay: rgba(3, 3, 4, 0.72);
 
-  --color-brand: var(--accent-terracotta-400); /* the lit step — 6.5:1 on the ground */
+  --color-brand: var(--accent-terracotta-400); /* the lit step — 7.0:1 on the ground */
   --color-brand-hover: var(--accent-terracotta-200);
   --color-brand-active: var(--accent-terracotta-500);
   --color-brand-soft: rgba(208, 138, 94, 0.20);
@@ -159,26 +165,26 @@
 }
 
 [data-theme="dark"][data-brand="journal"] {
-  /* Dusk and one candle — the cool values tuned in the journal canvas, mapped onto the family's
-     steps in luminance order. */
-  --neutral-50: #040D19;                       /* canvas — the darkest step */
-  --neutral-25: #0B1218;
-  --neutral-0: #0D1824;                        /* card, elevated over canvas */
-  --neutral-100: #152029;
-  --neutral-200: #1C2932;
-  --neutral-300: #26343E;
-  --neutral-400: #32444F;
-  --neutral-500: #4D6472;
-  --neutral-600: #7E94A1;
-  --neutral-700: #A7B9C2;
-  --neutral-800: #C9D7DD;
-  --neutral-900: #E3ECEF;
+  /* Ink-cast night and one candle — the family night with a cool cast in its low steps, warm
+     off-white in its high ones. */
+  --neutral-0: #12141C;
+  --neutral-25: #0E1118;
+  --neutral-50: #0B0E16;                       /* canvas */
+  --neutral-100: #161921;                      /* card, elevated over canvas */
+  --neutral-200: #20232B;
+  --neutral-300: #2B2E38;
+  --neutral-400: #444752;
+  --neutral-500: #737476;
+  --neutral-600: #B6B5B0;
+  --neutral-700: #D0CECB;
+  --neutral-800: #E3E1DE;
+  --neutral-900: #F1F0EC;
 
   --surface-canvas: var(--neutral-50);
-  --surface-card: var(--neutral-0);
-  --surface-hover: var(--neutral-100);
-  --surface-sunken: #020810;
-  --surface-overlay: rgba(2, 6, 12, 0.68);
+  --surface-card: var(--neutral-100);
+  --surface-hover: var(--neutral-200);
+  --surface-sunken: #060910;
+  --surface-overlay: rgba(3, 5, 10, 0.72);
 
   --color-brand: var(--lamp-400);
   --color-brand-hover: var(--lamp-200);
@@ -191,10 +197,11 @@
 }
 
 /* ============================================================
-   gym · pietra and basalt — Tuscan stone, and the giglio on it
+   gym · pietra by day, the instrument by night
    ------------------------------------------------------------
-   Pale stone in the sun, blue-grey stone at night, lit by IRIS. Iris sits 65° from sky, so it can
-   never be read as info, and it is the only vibrant hue in the room.
+   Pale stone in the sun, lit by IRIS (65° from sky, so it can never be read as info). At night a
+   plum-black instrument panel, lit by VERDIGRIS — the one vibrant hue in the room, and the one that
+   is neither a semantic hue nor another product's.
    ============================================================ */
 [data-brand="gym"] {
   --color-brand: var(--accent-iris-600);       /* white on it = 8.9:1 */
@@ -228,35 +235,31 @@
 }
 
 [data-theme="dark"][data-brand="gym"] {
-  /* Basalt — volcanic stone, the same warmth as the day with a violet cast, in iris's own hue
-     neighbourhood at a tenth of its chroma. */
-  --neutral-0: #262329;
-  --neutral-25: #201E23;
-  --neutral-50: #1C1A1E;
-  --neutral-100: #2E2B32;
-  --neutral-200: #39363E;
-  --neutral-300: #48444D;
-  --neutral-400: #605B67;
-  --neutral-500: #8D8896;
-  --neutral-600: #B0ABB8;
-  --neutral-700: #CBC7D2;
-  --neutral-800: #E0DDE5;
-  --neutral-900: #EDEBF0;
+  /* The instrument — the family night with a warm plum cast in its low steps. */
+  --neutral-0: #181216;
+  --neutral-25: #140F13;
+  --neutral-50: #110C10;
+  --neutral-100: #1C171C;
+  --neutral-200: #262126;
+  --neutral-300: #312C32;
+  --neutral-400: #4A454C;
+  --neutral-500: #797270;
+  --neutral-600: #B7B4AF;
+  --neutral-700: #D1CECA;
+  --neutral-800: #E4E1DD;
+  --neutral-900: #F2EFEB;
   --surface-canvas: var(--neutral-50);
-  --surface-card: var(--neutral-0);
-  --surface-hover: var(--neutral-100);
-  --surface-sunken: #141216;
-  --surface-overlay: rgba(10, 8, 12, 0.68);
+  --surface-card: var(--neutral-100);
+  --surface-hover: var(--neutral-200);
+  --surface-sunken: #0C070B;
+  --surface-overlay: rgba(6, 3, 6, 0.72);
 
-  --color-brand: var(--accent-iris-300);       /* 6.18:1 on --text-on-accent */
-  --color-brand-hover: var(--accent-iris-200);
-  --color-brand-active: var(--accent-iris-400);
-  /* The soft fill is iris at its 700, not its 300: gym pairs this fill with --color-brand as the
-     ink on it, and iris-300 on an iris-300 wash measures 3.66:1 over the card. The darkest step
-     gives 5.41 / 4.95 / 4.54 on canvas, card and raised. */
-  --color-brand-soft: rgba(58, 51, 88, 0.22);
-  --text-link: var(--accent-iris-300);
-  --text-link-hover: var(--accent-iris-200);
+  --color-brand: var(--accent-verdigris-400);  /* 9.46:1 on --text-on-accent; 10.04 / 9.15 / 8.19 on canvas, card and raised */
+  --color-brand-hover: var(--accent-verdigris-300);
+  --color-brand-active: var(--accent-verdigris-500);
+  --color-brand-soft: rgba(95, 205, 180, 0.20);
+  --text-link: var(--accent-verdigris-400);
+  --text-link-hover: var(--accent-verdigris-300);
 }
 
 /* ============================================================

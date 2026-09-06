@@ -155,7 +155,7 @@ resolve to nothing. Ledger `F6` closes with it.
 
 **P8 · Android's Material ColorScheme — ruled: the room has its own.** `:gym` declares
 `GymMaterial` (`ui/GymMaterial.kt`), a `darkColorScheme` built from `GymSkin` — primary/secondary =
-iris, onPrimary = canvas ink, surface/background = canvas, `surfaceVariant` and the middle
+verdigris (night), onPrimary = canvas ink, surface/background = canvas, `surfaceVariant` and the middle
 `surfaceContainer`s = the card ground (the two lowest are the canvas, the highest is raised),
 onSurface = ink, onSurfaceVariant = inkFaint, error = brick, `outline` = `lineStrong` (a control's
 edge) and `outlineVariant` = `line` (a divider), `secondaryContainer` = accentSoft (the rail's
@@ -704,8 +704,8 @@ wordless fallback (**P3**,
 §2.3).
 
 **Material You / a wallpaper-derived palette on Android.** `12-native-idiom.md` refuses it: colour in
-this room is a legend, not a brand — gold is a personal record (`GymSkin.kt:35`), iris is an agent
-proposal (`:25`).
+this room is a legend, not a brand — gold is a personal record (`GymSkin.kt:40`), verdigris is an agent
+proposal (`:29`).
 
 **A glow token in a light skin.** Ledger `1w`, `F5`: a token whose mechanism does not exist in a mode
 is deleted from that mode, not dimmed (`gym.css` declares `--set-done-glow` in the dark block only,
@@ -728,7 +728,7 @@ The ledger (`../consistency.md`) is current; this is its gym remainder, placed.
 **Closed by the containers:** `1k` the leading edge, arbitrated by depth and proven (**D1**) · `1l`
 both shell doors in the room's own top chrome · `2i` the refusal strings and the two named bands ·
 `2j` the picker's six and the typed-query cap · `2l` the clear-refusal, refused in place with its
-mirror · `F6` `--focus-ring` in iris inside gym. `1v` is re-scoped rather than closed: Android
+mirror · `F6` `--focus-ring` in the room's own brand inside gym (verdigris at night, iris by day). `1v` is re-scoped rather than closed: Android
 carries selection on four channels and iOS 26 paints the tab bar's labels itself, so what is left is
 a ramp question for surfaces that still honour a tint.
 

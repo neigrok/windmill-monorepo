@@ -67,7 +67,7 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
@@ -1547,9 +1547,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneShare = mobileEditable && tree && tree.nodes.length > 0 ? (
     <LaneButton icon="share" label="Share" onClick={() => setShareOpen(true)} />
   ) : null;
+  // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
+  const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
+  const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
 
   return (
-    <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
+    <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
       <canvas
         ref={canvasRef}
         className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${phone && view !== null ? 'st-canvas--layer' : ''}`}
@@ -1722,7 +1725,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {!readOnly && (
-        <aside className={`st-detail-panel ${composerOpen || selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`}>
           <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
             {composerOpen ? composer : selectedNode ? (
               <StepPanel
@@ -1911,8 +1914,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         </aside>
       )}
 
-      {readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet') && (
-        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${selectedNode ? 'st-detail-panel--open' : ''}`}>
+      {readOnlyDock && (
+        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`}>
           <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
             {readOnlyDetail}
           </div>
@@ -1964,7 +1967,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                     key={kind.id}
                     type="button"
                     className={`st-step-swatch ${kind.hue === ringedKind ? 'st-step-swatch--current' : ''}`}
-                    style={{ background: NODE_COLORS[kind.hue].base }}
+                    style={{ background: KIND_CSS[kind.hue].base }}
                     title={name}
                     aria-label={`Recolour selection to ${name}`}
                     onPointerEnter={() => sceneRef.current?.previewKindSet([...selectedIdsRef.current], kind.hue)}

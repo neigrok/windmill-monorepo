@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Icon } from '../../../../design-system';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 
 const SAFE_TOP = 'max(env(safe-area-inset-top, 0px), 44px)';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -25,8 +25,8 @@ export function MobileChrome({
 }) {
   const [pressed, setPressed] = useState(false);
 
-  const hue = NODE_COLORS[dominantKind] ? dominantKind : DEFAULT_NODE_COLOR;
-  const c = NODE_COLORS[hue];
+  const hue = KIND_CSS[dominantKind] ? dominantKind : DEFAULT_NODE_COLOR;
+  const c = KIND_CSS[hue];
   const total = progress?.total ?? 0;
   const done = progress?.done ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;

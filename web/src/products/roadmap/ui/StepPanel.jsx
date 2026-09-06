@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
-import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
@@ -138,7 +138,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
   const now = Date.now();
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const legendKinds = kinds.length > 0 ? kinds : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
-  const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const chipHue = { '--chip-base': hue.base, '--chip-ring': hue.ring, '--chip-glow': hue.glow };
   const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
 
@@ -343,7 +343,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
               key={kind.id}
               type="button"
               className={`st-step-swatch ${kind.hue === currentKind ? 'st-step-swatch--current' : ''}`}
-              style={{ background: NODE_COLORS[kind.hue].base }}
+              style={{ background: KIND_CSS[kind.hue].base }}
               title={kind.label || cap(kind.hue)}
               aria-label={`Set kind to ${kind.label || cap(kind.hue)}`}
               onPointerEnter={() => onPreviewKind(node.id, kind.hue)}
@@ -385,7 +385,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
-  const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const blocker = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
   const showChip = state === 'complete' || state === 'locked';
 
@@ -428,7 +428,7 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
   const base = { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', padding: '4px 11px', borderRadius: 'var(--radius-full)', fontSize: 'var(--text-sm)', fontWeight: 700, whiteSpace: 'nowrap' };
   if (state === 'complete') {
     return (
-      <span style={{ ...base, background: hue.base, border: `1px solid ${hue.ring}`, color: '#fff' }}>
+      <span style={{ ...base, background: hue.base, border: `1px solid ${hue.ring}`, color: 'var(--text-on-accent)' }}>
         <Icon name="check" size={13} color="#fff" />
         {completedAt ? `Done · ${shortDate(completedAt)}` : 'Done'}
       </span>
@@ -490,7 +490,7 @@ export function SheetRelations({ title, items, onJump }) {
       <div className="st-step-heading">{title}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
         {items.map((item) => {
-          const hue = NODE_COLORS[item.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+          const hue = KIND_CSS[item.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
           const state = item.state ?? (item.complete ? 'complete' : 'locked');
           return (
             <button key={item.id} type="button" style={SHEET_CHIP} onClick={() => onJump?.(item.id)}>

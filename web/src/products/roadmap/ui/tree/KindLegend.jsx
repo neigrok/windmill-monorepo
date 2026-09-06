@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
-import { NODE_COLORS, NODE_COLOR_NAMES } from '../../theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES } from '../../theme.js';
 
 const capHue = (hue) => hue.charAt(0).toUpperCase() + hue.slice(1);
 
@@ -136,7 +136,7 @@ export function KindLegend({
           <span
             key={k.id}
             title={k.label || capHue(k.hue)}
-            style={{ width: 12, height: 12, borderRadius: 'var(--radius-full)', background: NODE_COLORS[k.hue].base }}
+            style={{ width: 12, height: 12, borderRadius: 'var(--radius-full)', background: KIND_CSS[k.hue].base }}
           />
         ))}
       </button>
@@ -205,8 +205,8 @@ export function KindLegend({
                   padding: 0,
                   border: 'none',
                   borderRadius: 'var(--radius-full)',
-                  background: NODE_COLORS[k.hue].base,
-                  boxShadow: `inset 0 0 0 1.5px ${NODE_COLORS[k.hue].ring}`,
+                  background: KIND_CSS[k.hue].base,
+                  boxShadow: `inset 0 0 0 1.5px ${KIND_CSS[k.hue].ring}`,
                   cursor: onRecolor ? 'pointer' : 'default',
                 }}
               />
@@ -245,8 +245,8 @@ export function KindLegend({
                           padding: 0,
                           border: 'none',
                           borderRadius: 'var(--radius-full)',
-                          background: NODE_COLORS[hue].base,
-                          boxShadow: isCurrent ? `0 0 0 2px var(--surface-card), 0 0 0 3.5px ${NODE_COLORS[hue].ring}` : 'none',
+                          background: KIND_CSS[hue].base,
+                          boxShadow: isCurrent ? `0 0 0 2px var(--surface-card), 0 0 0 3.5px ${KIND_CSS[hue].ring}` : 'none',
                           opacity: disabled ? 0.25 : 1,
                           cursor: disabled ? 'not-allowed' : 'pointer',
                         }}

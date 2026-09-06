@@ -1,115 +1,6 @@
-/* Windmill Gym's palette, scoped to .gym-root. Every value derives from the theme's semantic tokens;
-   product meanings get product names (--set-done, --target-ink) so no surface reads a raw ramp index. */
+@import './gymTokens.css';
 
-/* ── Instrument — the room's night, in gym's own vocabulary ── */
-.gym-root[data-theme="dark"] {
-  --gym-on-accent: #1B1408;                      /* dark ink on iris-300 — 6.18:1 */
-  --gym-scrim: var(--surface-overlay);
-  --alarm-fill: var(--accent-brick-500);         /* 500 in both skins: brick-400 cannot carry white */
-  --gym-on-alarm: #FFFFFF;
-
-  --gym-canvas: var(--surface-canvas);
-  --gym-surface: var(--surface-card);
-  --gym-raised: var(--surface-hover);
-  --gym-sunken: var(--surface-sunken);
-  --gym-line: var(--border-subtle);
-  --gym-line-strong: var(--border-default);
-
-  /* Ink. Bright here is the ramp's top step, a warm near-white; pure #FFF the dark theme forbids. */
-  --weight-ink: var(--neutral-900);
-  --gym-ink: var(--text-primary);
-  --gym-ink-dim: var(--text-secondary);
-  --gym-ink-faint: var(--text-tertiary);
-
-  --set-done: var(--color-success);              /* logged */
-  --set-done-soft: var(--color-success-bg);
-  --set-done-glow: rgba(154, 168, 89, 0.8);      /* dark-theme glow depth, per --kind-*-glow */
-  --warmup-ink: var(--neutral-500);              /* does not count toward volume */
-  --unsynced-ink: var(--neutral-500);            /* saved on this device only; the web never is */
-  --target-ink: var(--color-brand);              /* what the plan said */
-  --pr-ink: var(--color-warning);                /* a personal record */
-  --pr-soft: var(--color-warning-bg);
-  --alarm-ink: var(--accent-brick-300);          /* the destructive, the invalid, a failed request */
-  --alarm-soft: var(--color-danger-bg);
-
-  /* The shared type scale stops at 60px, so gym extends it here. */
-  --weight-size: 104px;
-  --weight-leading: 92px;
-  --reps-size: 54px;
-  --readout-size: 15px;
-}
-
-/* ── Daylight ─────────────────────────────────────────────── */
-.gym-root[data-theme="light"] {
-  --gym-on-accent: #FFFFFF;                      /* white on iris-600 — 8.9:1 */
-  --gym-scrim: var(--surface-overlay);
-  --alarm-fill: var(--accent-brick-500);
-  --gym-on-alarm: #FFFFFF;
-
-  --gym-canvas: var(--surface-canvas);
-  --gym-surface: var(--surface-card);
-  --gym-raised: var(--surface-hover);
-  --gym-sunken: var(--surface-sunken);
-  --gym-line: var(--border-subtle);
-  --gym-line-strong: var(--border-default);
-
-  --weight-ink: var(--neutral-900);
-  --gym-ink: var(--text-primary);
-  --gym-ink-dim: var(--text-secondary);
-  --gym-ink-faint: var(--text-tertiary);
-
-  --set-done: var(--color-success);
-  --set-done-soft: var(--color-success-bg);
-  --warmup-ink: var(--neutral-500);
-  --unsynced-ink: var(--neutral-500);
-  --target-ink: var(--color-brand);
-  /* The 600, gold getting lighter and not darker from --color-warning's 500. Computed 3.2:1 against
-     --pr-soft over --surface-card in pietra, under the 4.5 gate, and the ramp has no darker gold: a
-     passing value is a designer's token (ledger F4). Nothing renders this skin while gym pins dark. */
-  --pr-ink: var(--accent-gold-600);
-  --pr-soft: rgba(161, 120, 34, 0.14);
-  --alarm-ink: var(--accent-brick-500);
-  --alarm-soft: var(--color-danger-bg);
-
-  --weight-size: 104px;
-  --weight-leading: 92px;
-  --reps-size: 54px;
-  --readout-size: 15px;
-}
-
-/* ── The bridge — what a design-system component reads, answered in gym's vocabulary ──
-   A component from `design-system/` styles itself with the shared ROLES (--surface-card,
-   --text-primary, --color-brand, --border-*, …). Inside this room those roles already resolve to
-   gym's palette, because .gym-root carries data-brand="gym" and palettes.css re-points them there —
-   which is why no line below re-states a surface, a border, an ink or the brand. Pointing a shared
-   role back at gym's alias of it would also be a CYCLE (--gym-surface is var(--surface-card)) and
-   both properties would resolve to nothing.
-
-   What is left is the handful of roles where the room's answer is genuinely its own. One block per
-   skin, no per-component override anywhere else. */
-.gym-root[data-theme="dark"] {
-  /* The ink gym measured against its own brand fill (6.18:1), not the family's. */
-  --text-on-accent: var(--gym-on-accent);
-  /* One shared role, and gym holds two: an alarm INK and an alarm FILL. A component reads this as
-     ink — a refusal under a field — so the ink is what it gets; gym's destructive fills stay gym's. */
-  --color-danger: var(--alarm-ink);
-  /* Iris, because the room is iris. The family's ring is terracotta and would be the one hue in the
-     room that belongs to another product. The two edges beside it are the same argument: a focused
-     field and a selected chip carry the family's terracotta 400 everywhere else, and that is the one
-     re-point this room makes to them — the change stays inside .gym-root and no other product moves. */
-  --focus-ring: 0 0 0 4px rgba(154, 144, 190, 0.4);
-  --field-focus-edge: var(--color-brand);
-  --chip-selected-edge: var(--color-brand);
-}
-.gym-root[data-theme="light"] {
-  --text-on-accent: var(--gym-on-accent);
-  --color-danger: var(--alarm-ink);
-  --focus-ring: 0 0 0 4px rgba(76, 67, 116, 0.4);
-  --field-focus-edge: var(--color-brand);
-  --chip-selected-edge: var(--color-brand);
-}
-
-/* Everything below paints with the tokens above and stays scoped under .gym-root. */
+/* Everything below paints with the tokens gymTokens.css declares and stays scoped under .gym-root. */
 
 .gym-root {
   position: fixed;
@@ -2088,8 +1979,8 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
 }
 
-/* Bars, never a line, starting at zero: a bar's length is its value. --gym-raised measures 1.11:1 on
-   this card and is invisible, so the quiet bar is iris at 5.25:1 and the loud one gold at 7.58:1. */
+/* Bars, never a line, starting at zero: a bar's length is its value. --gym-raised measures 1.12:1 on
+   this card and is invisible, so the quiet bar is verdigris at 9.15:1 and the loud one gold at 8.64:1. */
 .gym-record-chart {
   margin: 9px 0 0;
   padding: 16px 14px 12px;

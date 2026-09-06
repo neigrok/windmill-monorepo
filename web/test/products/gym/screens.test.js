@@ -1032,11 +1032,12 @@ test('the name counter is gated on the last fifth wherever a name is typed, off 
 
 test('the token bridge: one block per skin, and no shared role pointed back at gym’s alias of it', () => {
   const css = read('gym.css');
-  const start = css.indexOf('/* ── The bridge —');
+  const tokens = read('gymTokens.css');
+  const start = tokens.indexOf('/* ── The bridge —');
   assert.notEqual(start, -1, 'the bridge is a named block, not a scatter of overrides');
-  const bridge = css.slice(start, css.indexOf('/* Everything below paints'));
-  const blocks = bridge.match(/\.gym-root\[data-theme="(dark|light)"\] \{/g) ?? [];
-  assert.deepEqual(blocks, ['.gym-root[data-theme="dark"] {', '.gym-root[data-theme="light"] {']);
+  const bridge = tokens.slice(start);
+  const blocks = bridge.match(/\.gym-skin\[data-theme="(dark|light)"\] \{/g) ?? [];
+  assert.deepEqual(blocks, ['.gym-skin[data-theme="dark"] {', '.gym-skin[data-theme="light"] {']);
   for (const role of ['--text-on-accent: var(--gym-on-accent);', '--color-danger: var(--alarm-ink);', '--focus-ring:']) {
     assert.equal((bridge.match(new RegExp(role.replace(/[-()*+?.\\^$|[\]]/g, '\\$&'), 'g')) ?? []).length, 2, role);
   }
@@ -1044,14 +1045,17 @@ test('the token bridge: one block per skin, and no shared role pointed back at g
   for (const alias of ['--surface-card', '--surface-canvas', '--surface-hover', '--surface-sunken',
     '--text-primary', '--text-secondary', '--text-tertiary', '--color-brand', '--border-subtle',
     '--border-default', '--color-success', '--color-danger-bg']) {
-    assert.equal(bridge.includes(`${alias}:`), false, `${alias} is re-declared inside .gym-root`);
+    assert.equal(bridge.includes(`${alias}:`), false, `${alias} is re-declared inside .gym-skin`);
   }
   // And the one gym token the bridge reads must not read back through it.
-  assert.equal(/--alarm-ink: var\(--color-danger\)/.test(css), false);
-  assert.equal(/--gym-on-accent: var\(/.test(css), false);
-  // Nothing outside the bridge overrides a design-system role for one component.
-  const painted = css.slice(css.indexOf('/* Everything below paints'));
-  assert.equal(/--focus-ring:|--text-on-accent:|--color-danger:/.test(painted), false);
+  assert.equal(/--alarm-ink: var\(--color-danger\)/.test(tokens), false);
+  assert.equal(/--gym-on-accent: var\(/.test(tokens), false);
+  // Nothing outside the bridge overrides a design-system role for one component. The landing takes
+  // the same tokens through the same file, not a copy.
+  assert.equal(/--focus-ring:|--text-on-accent:|--color-danger:/.test(css), false);
+  assert.equal(css.startsWith("@import './gymTokens.css';"), true);
+  assert.equal(read('marketing/gymLanding.css').startsWith("@import '../gymTokens.css';"), true);
+  assert.equal(/--gym-canvas:|--gym-ink:/.test(read('marketing/gymLanding.css')), false, 'the landing copies no token');
 });
 
 test('the picker opens on the six it counted, then the catalogue, and says which is which', () => {
@@ -1089,9 +1093,11 @@ test('the picker opens on the six it counted, then the catalogue, and says which
   assert.equal(/\.gym-picker-group \{[^}]*margin: 14px 0 0;/.test(read('gym.css')), true);
 });
 
-test('Daylight carries no glow token and no black shadow tuned for basalt', () => {
+test('Daylight carries no glow token and no black shadow tuned for the night', () => {
   const css = read('gym.css');
-  const light = css.slice(css.indexOf('.gym-root[data-theme="light"] {'), css.indexOf('/* Everything below paints'));
+  const tokens = read('gymTokens.css');
+  const light = tokens.slice(tokens.indexOf('.gym-skin[data-theme="light"] {'), tokens.indexOf('/* ── The bridge'));
+  assert.ok(light.length > 0, 'the daylight block is gone from gymTokens.css');
   assert.equal(light.includes('--set-done-glow'), false);
   assert.equal(css.includes('.gym-root[data-theme="light"] .gym-live-dot {\n  box-shadow: none;\n}'), true);
   const painted = css.slice(css.indexOf('/* Everything below paints'));

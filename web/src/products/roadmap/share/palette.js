@@ -1,7 +1,8 @@
-// The palette for everything that leaves the app. Light kinds come straight from theme.js; dark is
-// an export-only skin. Per kind: c = fill, rgb = glow, soft = panel edge / dim wash.
+// The palette for everything that leaves the app. The kinds come from theme.js (light: the module
+// constants; dark: the roadmap night set); the mats, inks and edges are this file's own literals.
+// Per kind: c = fill, rgb = glow, soft = panel edge / dim wash (the night wash, never the ring).
 
-import { NODE_COLORS, NODE_COLOR_NAMES } from '../theme.js';
+import { NODE_COLORS, NODE_COLOR_NAMES, sceneTheme } from '../theme.js';
 
 export const KIND_ORDER = NODE_COLOR_NAMES; // terracotta olive gold brick sky plum
 
@@ -22,14 +23,9 @@ function kindsFrom(source) {
 const LIGHT_KINDS = {};
 for (const name of KIND_ORDER) LIGHT_KINDS[name] = { c: NODE_COLORS[name].base, soft: NODE_COLORS[name].soft };
 
-const DARK_KINDS = {
-  terracotta: { c: '#D08A5E', soft: '#7C3F23' },
-  olive:      { c: '#9AA859', soft: '#616E33' },
-  gold:       { c: '#D9B04C', soft: '#A17822' },
-  brick:      { c: '#BF6A50', soft: '#8A3A26' },
-  sky:        { c: '#7FA0AE', soft: '#4A6875' },
-  plum:       { c: '#A8699E', soft: '#6F3B67' },
-};
+const NIGHT = sceneTheme(true);
+const DARK_KINDS = {};
+for (const name of KIND_ORDER) DARK_KINDS[name] = { c: NIGHT.NODE_COLORS[name].base, soft: NIGHT.NODE_COLORS[name].soft };
 
 export const SHARE_PALETTE = {
   light: {
@@ -41,11 +37,11 @@ export const SHARE_PALETTE = {
     kinds: kindsFrom(LIGHT_KINDS),
   },
   dark: {
-    mat: '#17120B', panel: '#0D0B07', edge: '#2E2618',
-    text: '#F4EEDF', sub: '#AE9A75', tert: '#8A785A',
-    track: '#2E2618', bark: '#C07C43', dimEdge: '#3C3223',
-    brand: '#D08A5E', gradA: '#D08A5E', gradB: '#D9B04C',
-    avail: '#10120C', glowOp: 0.62, shadow: '0 4px 18px rgba(0,0,0,.45)',
+    mat: '#171719', panel: NIGHT.BACKGROUND.canvas, edge: '#222224',
+    text: '#F2F0EB', sub: '#B4B2AC', tert: '#7E7C77',
+    track: '#222224', bark: NIGHT.BARK, dimEdge: NIGHT.CONNECTOR.inactive,
+    brand: '#D08A5E', gradA: '#D08A5E', gradB: NIGHT.NODE_COLORS.gold.base,
+    avail: '#050506', glowOp: 0.62, shadow: '0 4px 18px rgba(0,0,0,.45)',
     kinds: kindsFrom(DARK_KINDS),
   },
 };

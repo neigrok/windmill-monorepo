@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { deleteCostLine, progressVerb } from './editorSheet.js';
 
 function cap(hue) {
@@ -47,8 +47,8 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
-  const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
-  const legendKinds = kinds.length > 0 ? kinds : Object.keys(NODE_COLORS).map((h) => ({ id: h, hue: h }));
+  const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const legendKinds = kinds.length > 0 ? kinds : Object.keys(KIND_CSS).map((h) => ({ id: h, hue: h }));
   const progress = progressVerb(state);
   const blocker = state === 'locked' ? prerequisites.find((prerequisite) => !prerequisite.complete)?.label : null;
   const showChip = state === 'complete' || state === 'locked';
@@ -113,7 +113,7 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
         {progress === 'complete' && (
           <button
             type="button"
-            style={{ ...verbBase, background: hue.base, border: `1.5px solid ${hue.ring}`, color: '#fff' }}
+            style={{ ...verbBase, background: hue.base, border: `1.5px solid ${hue.ring}`, color: 'var(--text-on-accent)' }}
             onClick={() => onMarkDone(node.id)}
           >
             <Icon name="check" size={16} color="#fff" />
@@ -150,7 +150,7 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
                 width: 34,
                 height: 34,
                 borderRadius: '50%',
-                background: (NODE_COLORS[kind.hue] ?? NODE_COLORS[DEFAULT_NODE_COLOR]).base,
+                background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base,
                 boxShadow: kind.hue === currentKind ? '0 0 0 3px var(--text-primary)' : '0 0 0 1px var(--border-default)',
               }}
             />

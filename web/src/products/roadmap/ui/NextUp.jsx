@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Icon } from '../../../design-system';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const RETURN_GAP_MS = 12 * 60 * 60 * 1000;
 const AUTO_OPEN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -78,7 +78,7 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
 function StepRow({ entry, node, state, ember = false, onHover, onLeave, onOpen }) {
   if (!node) return null; // deleted while the plan was frozen — the row simply retires
   if (state !== (ember ? 'active' : 'available')) return null; // live state left the tier — silent retirement
-  const hue = NODE_COLORS[node.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const hue = KIND_CSS[node.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   return (
     <button
       type="button"

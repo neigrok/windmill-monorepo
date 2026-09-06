@@ -118,8 +118,8 @@ final class ReviewSheetHostingTests: XCTestCase {
                 if bgr { (r, g, b) = (Int(bytes[at + 2]), Int(bytes[at + 1]), Int(bytes[at])) }
                 else if alphaFirst { (r, g, b) = (Int(bytes[at + 1]), Int(bytes[at + 2]), Int(bytes[at + 3])) }
                 else { (r, g, b) = (Int(bytes[at]), Int(bytes[at + 1]), Int(bytes[at + 2])) }
-                if near(r, g, b, 0x9A90BE) { counts.accent += 1 }
-                if near(r, g, b, 0x2E2B32) { counts.raised += 1 }
+                if near(r, g, b, 0x5FCDB4) { counts.accent += 1 }
+                if near(r, g, b, 0x262126) { counts.raised += 1 }
             }
         }
         return counts
@@ -189,7 +189,7 @@ final class ReviewSheetHostingTests: XCTestCase {
         XCTAssertLessThan(before.accent, 500, "40 rows in a 500pt window: Apply is closed until the end is seen: \(before)")
         XCTAssertGreaterThan(before.raised, 4_000, "a closed Apply draws skin.raised: \(before)")
 
-        let shut = applyRows(of: window, strip: 220, hex: 0x2E2B32)
+        let shut = applyRows(of: window, strip: 220, hex: 0x262126)
 
         let scroll = try XCTUnwrap(scrollView(in: window))
         scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height), animated: false)
@@ -199,7 +199,7 @@ final class ReviewSheetHostingTests: XCTestCase {
 
         // And it opens WHERE IT STOOD. The gate's sentence is drawn in a slot the band keeps in both
         // states, so reading the diff to its end does not move the button under the thumb.
-        XCTAssertEqual(applyRows(of: window, strip: 220, hex: 0x9A90BE), shut,
+        XCTAssertEqual(applyRows(of: window, strip: 220, hex: 0x5FCDB4), shut,
                        "Apply occupies the same rows shut and open")
         window.isHidden = true
     }

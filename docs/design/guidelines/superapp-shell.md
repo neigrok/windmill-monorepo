@@ -66,7 +66,8 @@ own line, and the room you are in reads "you're here".
 ## 5. Each app owns
 
 - Its nav bar, its tabs, and its gestures **below the capsule**.
-- **Its palette** — terracotta on Tuscan earth, the candle on paper or dusk, iris on stone. The
+- **Its palette** — terracotta on Tuscan earth or near-black, the lamp on paper or ink-black, iris on
+  pietra or verdigris on plum-black. The
   shell does not invent a room's colours; it only says *light or dark*, and the room maps that
   onto its own place.
 - **Its own settings.** You lists them and walks you in; it never absorbs them. Per-app
@@ -86,7 +87,7 @@ connected tools, sessions and data, sign out. It mirrors the web settings home.
 **Appearance is the one place light-or-dark is chosen, for the whole app.** Light · Dark ·
 System, System by default. It sets the hub, the switcher, You, Windmill One, every sheet **and
 every room**. A room still owns its *palette* — journal answers dark with its night canvas and
-light with warm paper, gym answers with pietra or basalt — but it does not own the *choice*,
+light with warm paper, gym answers with pietra or plum-black — but it does not own the *choice*,
 and no room carries a theme control of its own. "System" is not a third palette; it is the
 absence of an override.
 

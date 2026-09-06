@@ -184,12 +184,12 @@ const CSS = `
   .wm-cn-wellhead { display:flex; align-items:center; padding:8px 8px 0 12px; }
   .wm-cn-lang { flex:1; font-family:var(--font-mono); font-size:9px; font-weight:700; letter-spacing:.07em; color:var(--neutral-500); }
   .wm-cn-copy { font-family:var(--font-body); font-size:10px; font-weight:800; color:var(--neutral-50);
-                background:rgba(244,238,223,.12); border:none; border-radius:var(--radius-full); padding:5px 13px; cursor:pointer;
+                background:color-mix(in srgb, var(--neutral-50) 12%, transparent); border:none; border-radius:var(--radius-full); padding:5px 13px; cursor:pointer;
                 transition:background 150ms var(--ease-standard), color 150ms var(--ease-standard); }
-  .wm-cn-copy:hover { background:rgba(244,238,223,.22); }
+  .wm-cn-copy:hover { background:color-mix(in srgb, var(--neutral-50) 22%, transparent); }
   .wm-cn-copy.ok { background:var(--accent-olive-500); color:#fff; }
   .wm-cn-pre { margin:0; padding:9px 12px 12px; font-family:var(--font-mono); font-size:11px; line-height:1.65;
-               color:#F4EEDF; white-space:pre-wrap; word-break:break-all; }
+               color:var(--neutral-50); white-space:pre-wrap; word-break:break-all; }
   .wm-cn-cm { color:var(--neutral-500); }
   .wm-cn-hl { color:var(--accent-gold-400); }
 

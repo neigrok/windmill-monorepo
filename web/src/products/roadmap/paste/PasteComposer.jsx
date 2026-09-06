@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KindLegend } from '../ui/tree/KindLegend.jsx';
 import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind } from '../model/Legend.js';
-import { NODE_COLORS } from '../theme.js';
+import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { readComposeStream } from './composeStream.js';
 import { reportError } from '../../../telemetry/beacon.js';
@@ -372,7 +372,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         <div className="pc-chips">
           {parse.kinds.map((kind) => (
             <span key={kind.id} className="pc-chip">
-              <i style={{ background: NODE_COLORS[kind.hue]?.base }} />
+              <i style={{ background: KIND_CSS[kind.hue]?.base }} />
               {kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1)}
             </span>
           ))}

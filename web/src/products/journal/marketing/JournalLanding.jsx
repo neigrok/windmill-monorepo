@@ -54,7 +54,7 @@ function Hero() {
   );
 }
 
-// The moat — the one dark region on the landing, carrying the design system's journal dusk scope.
+// The moat — the one dark region on the landing, carrying the design system's journal night scope.
 function NightWindow() {
   const ref = useScene(mountNightWindow);
   return (
@@ -66,7 +66,7 @@ function NightWindow() {
         aria-hidden="true"
         style={{
           width: 'min(820px,100%)', background: 'var(--surface-canvas)', border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-2xl)', boxShadow: '0 24px 60px rgba(4,13,25,.4)',
+          borderRadius: 'var(--radius-2xl)', boxShadow: '0 24px 60px color-mix(in srgb, var(--surface-canvas) 40%, transparent)',
           padding: 'clamp(24px,4vw,40px) clamp(22px,4.5vw,48px) clamp(28px,4vw,44px)', textAlign: 'left',
         }}
       >

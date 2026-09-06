@@ -32,17 +32,20 @@ class GymRailTests {
     fun testTheSelectedTintIsFarEnoughFromTheUnselectedInkToReadAsADifference() {
         val separation = contrast(GymSkin.ink, GymSkin.inkFaint)
         assertEquals("the room's brightest ink against the faint ink — iOS picked the same token",
-                     2.91, separation, 0.01)
-        assertTrue("the accent is what `1v` refused: 1.17:1 between the two",
-                   contrast(GymSkin.accent, GymSkin.inkFaint) < 1.2)
+                     4.11, separation, 0.01)
+        assertEquals("the accent is what `1v` refused: it separates by half as much",
+                     2.44, contrast(GymSkin.accent, GymSkin.inkFaint), 0.01)
+        assertTrue("the tint must beat the accent, or `1v` reopens on a token move",
+                   separation > contrast(GymSkin.accent, GymSkin.inkFaint))
     }
 
     @Test
     fun testTheIndicatorIsVisibleAgainstTheBarItSitsOn() {
-        assertEquals("border-default on the bar's own ground", 1.63,
-                     contrast(GymSkin.lineStrong, GymSkin.surface), 0.01)
-        assertTrue("the accent wash it replaced read as nothing at all",
-                   contrast(GymSkin.accentSoft.compositeOver(GymSkin.surface), GymSkin.surface) < 1.1)
+        val wash = contrast(GymSkin.accentSoft.compositeOver(GymSkin.surface), GymSkin.surface)
+        val hairline = contrast(GymSkin.lineStrong, GymSkin.surface)
+        assertEquals("the accent wash the indicator sits on, over the bar's own ground", 1.50, wash, 0.01)
+        assertEquals("border-default, which the indicator does not use", 1.29, hairline, 0.01)
+        assertTrue("the wash must stay the more visible of the two, or the indicator moves back", wash > hairline)
     }
 
     // Colour is one channel of four; the glyph is a second, and it may not be the same drawing in

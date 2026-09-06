@@ -67,8 +67,8 @@ function boot(pathname, { stored = null, prefersDark = false, storageThrows = fa
 }
 
 // The whole point of reading palettes.css instead of retyping it. These are the values the design
-// canon names each room by — Tuscany and its embers, paper in north light and dusk, pietra and
-// basalt — and if a palette is tuned and this test is not, it is the TEST that is stale, not the
+// canon names each room by — Tuscany and the family night, paper in north light and the ink-cast
+// night, pietra and the instrument — and if a palette is tuned and this test is not, it is the TEST that is stale, not the
 // boot: re-read the block that moved and change the expectation to what it now says.
 test('every room boots on the ground its own palette block declares', () => {
   assert.deepEqual(grounds, {
@@ -76,10 +76,10 @@ test('every room boots on the ground its own palette block declares', () => {
     'light|roadmap': '#F9F5EB',
     'light|journal': '#F7F7F5',
     'light|gym': '#EBE7E3',
-    'dark|clay': '#0D0B07',
-    'dark|roadmap': '#1C1712',
-    'dark|journal': '#040D19',
-    'dark|gym': '#1C1A1E',
+    'dark|clay': '#0B0B0C',
+    'dark|roadmap': '#0B0B0C',
+    'dark|journal': '#0B0E16',
+    'dark|gym': '#110C10',
   });
 });
 
@@ -110,7 +110,7 @@ test('every open product names a room and a brand with a ground of its own', () 
   assert.deepEqual(wrong, []);
 });
 
-// A room that PINS its skin must boot in it. Gym's instrument is basalt whatever the device prefers,
+// A room that PINS its skin must boot in it. Gym is the instrument whatever the device prefers,
 // and the boot reads that pin from the same registry line the shell does — so the one room where a
 // stored 'light' would be wrong is the one room that never reads it.
 test('a pinned room boots in its pin, and an unpinned one is left to the device', () => {
@@ -196,8 +196,8 @@ test('storage that throws costs the room nothing but the stored choice', () => {
 // its own chrome matches the room instead of the cream it was going to use.
 test('the ground and the chrome agree with the room', () => {
   const { ground, meta } = boot('/app/journal', { stored: 'dark' });
-  assert.equal(ground, '#040D19');
-  assert.equal(meta['theme-color'].content, '#040D19');
+  assert.equal(ground, '#0B0E16');
+  assert.equal(meta['theme-color'].content, '#0B0E16');
   assert.equal(meta['color-scheme'].content, 'dark');
 });
 

@@ -60,7 +60,7 @@ A node's colour comes from its `kind` (one of six palette hues), not its progres
 (`locked | available | active | complete`) is a treatment on that same hue. Gold is a kind, not a
 state.
 
-| Kind | Soft (−200 step) | Base (fill + ring) | Glow |
+| Kind (day) | Soft (−200 step) | Base (fill + ring) | Glow |
 |---|---|---|---|
 | `terracotta` | `#EAC6B0` | `#BC6C42` | `rgba(188,108,66,·)` |
 | `olive` | `#D2DAA5` | `#7D8C43` | `rgba(125,140,67,·)` |
@@ -80,8 +80,22 @@ Treatment (values mirror `SkillNode.jsx`):
 - **complete** — flat base fill, `2px` base ring, halo glow (`0 0 0 4px glow, 0 0 30px glow`),
   on-accent ink icon. Only complete nodes wear a halo.
 
-Dark theme brightens each base to its `-400` step and pushes glow alpha to ~0.8; the tokens live
-under `[data-theme="dark"]` in `tokens/colors.css`.
+By night every kind takes its own four-value set, tuned for the `#0B0B0C` canvas — a brighter base,
+a lighter ring, a recessed soft, and a glow hue that ships at two alphas: `--kind-*-glow` in
+`colors.css` at 0.8 for DOM halos, and the WebGL night set in `theme.js` at 0.50. On-accent ink on
+a night kind fill is `#0B0B0C`.
+
+| Kind (night) | Base | Ring | Soft | Glow |
+|---|---|---|---|---|
+| `terracotta` | `#D98B5F` | `#E2A887` | `#30221B` | `#DD976F` |
+| `olive` | `#9DAF5C` | `#B6C385` | `#25291A` | `#A7B76C` |
+| `gold` | `#D9AE45` | `#E2C274` | `#302816` | `#DDB658` |
+| `brick` | `#C86B50` | `#D6907C` | `#2D1C18` | `#CE7A62` |
+| `sky` | `#7BA6B8` | `#9CBCCA` | `#1F272B` | `#88AFBF` |
+| `plum` | `#B06FA6` | `#C493BC` | `#291D28` | `#B87DAF` |
+
+Night scene literals: canvas `#0B0B0C`, glow `#141416`, connector `#2E2E32` inactive / `#7E7C77`
+active, bark `#6E5D49`, bark-cream `#D9C7A6`.
 
 ### 3.1 Glow (halo)
 

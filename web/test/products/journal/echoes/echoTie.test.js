@@ -552,7 +552,7 @@ const over = (hex, ground, alpha) => {
 const groundOf = (scope) => resolve('--surface-canvas', scope) ?? resolve('--neutral-50', scope);
 
 test('THE LIT ROW MOVES CONTRAST THE RIGHT WAY, in both skins — lighting that dims is not lighting', () => {
-  for (const [theme, expected] of [['dark', { dim: 6.66, lit: 10.54 }], ['light', { dim: 5.27, lit: 7.26 }]]) {
+  for (const [theme, expected] of [['dark', { dim: 9.39, lit: 10.43 }], ['light', { dim: 5.27, lit: 7.26 }]]) {
     const scope = scopeFor(theme);
     const ground = groundOf(scope);
     const dim = contrast(resolve('--journal-ink-dim', scope), ground);

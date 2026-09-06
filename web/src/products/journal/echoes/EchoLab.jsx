@@ -17,7 +17,7 @@ export function EchoLab({ hash = '' }) {
 
   if (asked) return null;
   return (
-    <div className="journal-root" data-theme="dark">
+    <div className="journal-root" data-theme="dark" data-brand="journal">
       <div className="journal-scroll">
         <div className="journal-column">
           <h1 className="journal-month">Echo fixtures</h1>

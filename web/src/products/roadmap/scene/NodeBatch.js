@@ -1,6 +1,6 @@
 // One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 ember, 3 activated.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE, BARK } from '../theme.js';
+import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE } from '../theme.js';
 import { isGrouped } from '../selection/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
@@ -339,7 +339,7 @@ function colorIndex(name) {
 const QUAD = new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]);
 
 export class NodeBatch {
-  constructor(gl) {
+  constructor(gl, theme) {
     this.gl = gl;
     this.count = 0;
     this.idToIndex = new Map();
@@ -355,13 +355,7 @@ export class NodeBatch {
       'uGlow', 'uBase', 'uRing', 'uSoft', 'uCanvas',
       'uIconAtlas', 'uIconCols', 'uIconRows', 'uIconOpacity',
     ]);
-    this.bark = hexRgb(BARK);
-
-    this.glowColors = colorFlat((c) => glowVec(NODE_COLORS[c].glow));
-    this.baseColors = colorFlat((c) => hexRgb(NODE_COLORS[c].base));
-    this.ringColors = colorFlat((c) => hexRgb(NODE_COLORS[c].ring));
-    this.softColors = colorFlat((c) => hexRgb(NODE_COLORS[c].soft));
-    this.canvas = hexRgb(BACKGROUND.canvas);
+    this.setTheme(theme);
 
     this.iconTexture = null;
     this.iconCols = 1;
@@ -679,6 +673,17 @@ export class NodeBatch {
 
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.count);
     gl.bindVertexArray(null);
+  }
+
+  // Colours are uniforms, re-sent every draw, so a theme change needs no buffer rewrite.
+  setTheme(theme) {
+    const kinds = theme.NODE_COLORS;
+    this.bark = hexRgb(theme.BARK);
+    this.glowColors = colorFlat((c) => glowVec(kinds[c].glow));
+    this.baseColors = colorFlat((c) => hexRgb(kinds[c].base));
+    this.ringColors = colorFlat((c) => hexRgb(kinds[c].ring));
+    this.softColors = colorFlat((c) => hexRgb(kinds[c].soft));
+    this.canvas = hexRgb(theme.BACKGROUND.canvas);
   }
 
   dispose() {

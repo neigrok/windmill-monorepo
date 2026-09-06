@@ -182,7 +182,7 @@ final class RoutineScreensHostingTests: XCTestCase {
                 if bgr { (r, g, b) = (Int(bytes[at + 2]), Int(bytes[at + 1]), Int(bytes[at])) }
                 else if alphaFirst { (r, g, b) = (Int(bytes[at + 1]), Int(bytes[at + 2]), Int(bytes[at + 3])) }
                 else { (r, g, b) = (Int(bytes[at]), Int(bytes[at + 1]), Int(bytes[at + 2])) }
-                if abs(r - 0x9A) < 4 && abs(g - 0x90) < 4 && abs(b - 0xBE) < 4 { found += 1 }
+                if abs(r - 0x5F) < 4 && abs(g - 0xCD) < 4 && abs(b - 0xB4) < 4 { found += 1 }
             }
         }
         return found
@@ -252,13 +252,13 @@ final class RoutineScreensHostingTests: XCTestCase {
         let scroll = try XCTUnwrap(scrollView(in: window))
         XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height,
                              "twenty movements fit the window, so nothing here is being scrolled past")
-        let atTheTop = try XCTUnwrap(band(of: 0x9A90BE, in: window), "`Start workout` is not drawn at the top")
+        let atTheTop = try XCTUnwrap(band(of: 0x5FCDB4, in: window), "`Start workout` is not drawn at the top")
         XCTAssertGreaterThan(atTheTop.last - atTheTop.first, 40, "only a sliver of the primary is drawn")
         XCTAssertGreaterThan(atTheTop.last, 460, "the primary is not at the foot of the 500pt window")
 
         scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height), animated: false)
         await pump(20)
-        let atTheEnd = try XCTUnwrap(band(of: 0x9A90BE, in: window), "`Start workout` scrolled away")
+        let atTheEnd = try XCTUnwrap(band(of: 0x5FCDB4, in: window), "`Start workout` scrolled away")
         window.isHidden = true
 
         XCTAssertEqual(atTheEnd.first, atTheTop.first, "the primary moved when the body scrolled")

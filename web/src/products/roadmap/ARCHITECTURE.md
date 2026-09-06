@@ -86,7 +86,10 @@ Root files: `routes.js`, `SkillTreeApp.jsx` (resolves *which* tree before the he
 (`loadTree` / `loadProgress` / `loadActivity`) and `LayoutEngine` (`layout` is synchronous). The C++
 server answers these same shapes: when a field moves, it moves in both.
 
-`theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. A node's look
+`theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. The module
+constants are the light set; `sceneTheme(isDark)` returns the light or night set (`BACKGROUND`,
+`CONNECTOR`, `BARK`, `BARK_CREAM`, `NODE_COLORS`, `CHIP`) and `isNightFor(element)` reads the nearest
+`[data-theme]` ancestor, so a room that pins its own theme wins over the html attribute. A node's look
 is two orthogonal dimensions:
 
 - **kind** — `NODE_COLORS` / `NODE_COLOR_NAMES`: terracotta · olive · gold · brick · sky · plum, each
@@ -193,7 +196,8 @@ fractional-index key), so a load and a live emission project identical pixels.
   `IconAtlas`, every overlay, the `CeremonyDirector`, the `InputController`. Its **rAF loop** advances
   `uTime` and the camera, steps any settle glide, considers the pending auto-frame, repositions every
   overlay on a frame that moved, emits the viewport to `subscribeViewport` listeners (the minimap)
-  and draws the two batches — no throttle.
+  and draws the two batches — no throttle. A `MutationObserver` on `data-theme` re-resolves
+  `sceneTheme` live and re-sends every cached colour (batch uniforms, glyph tints, chip pills).
 
   Motion surface, armed by the React shell and owned by the loop:
   - **arrival** — `setModel` paints the tree dim and hands the director a BFS ring plan from the
@@ -265,8 +269,9 @@ sees the same `TreeData` without threading it through React state. Not a history
 Sharing is a **link**: `ShareDialog` copies the read-only tree URL and, when the tree is yours and
 private, flips it to unlisted on copy. The rest of the package renders the cards and stats.
 
-- `palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. Light is the design system 1:1
-  (kinds from `theme.js`); dark is the export-only night skin.
+- `palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. The kinds come from `theme.js`
+  (light: the module constants; dark: the roadmap night set, its dark soft wash as the soft edge);
+  the mats, inks and edges are the file's own literals.
 - `ShareStats.js` — `from(tree, states)` → `done/total/percent` plus the **dominant kind**: the most
   common kind among *done* nodes, a tie or an empty tree falling to terracotta.
 - `TreePortrait.js` — `treePortraitSvg(model, palette, box, viewBox, options)`: the tree as a

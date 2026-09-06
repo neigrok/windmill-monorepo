@@ -1,7 +1,7 @@
 import React from 'react';
 import { SkillTree } from '../model/SkillTree.js';
 import { RadialLayoutEngine } from '../layout/RadialLayoutEngine.js';
-import { NODE_COLORS, CONNECTOR, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const LOCKED_INK = 0.28;
 const HALO_RADIUS = NODE_SIZE * 1.15;
@@ -20,7 +20,7 @@ export function QuestThumb({ quest }) {
         <line
           key={edge.key}
           x1={edge.x1} y1={edge.y1} x2={edge.x2} y2={edge.y2}
-          stroke={CONNECTOR.inactive} strokeWidth={3} opacity={0.55}
+          stroke="var(--connector-inactive)" strokeWidth={3} opacity={0.55}
         />
       ))}
       <circle className="quest-thumb-halo" cx={scene.root.x} cy={scene.root.y} r={HALO_RADIUS} fill={scene.root.hue.glow} />
@@ -49,7 +49,7 @@ function layoutQuest(quest) {
     id: node.id,
     x: positions.get(node.id).x,
     y: positions.get(node.id).y,
-    hue: NODE_COLORS[node.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR],
+    hue: KIND_CSS[node.color] ?? KIND_CSS[DEFAULT_NODE_COLOR],
     root: index === 0,
   }));
   const edges = tree.edges.map((edge) => ({

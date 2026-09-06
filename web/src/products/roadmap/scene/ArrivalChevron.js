@@ -4,13 +4,12 @@ const EDGE_INSET = 20; // screen px
 const LINGER_MS = 4200; // quiet ms before an unclicked chevron fades
 
 export class ArrivalChevron {
-  constructor(canvas, { onReveal }) {
+  constructor(canvas, { onReveal, theme }) {
     this.pill = document.createElement('div');
     this.pill.style.cssText = [
       'position:absolute', 'left:0', 'top:0', 'z-index:12',
       'display:flex', 'align-items:center', 'gap:5px',
       'padding:5px 10px', 'border-radius:999px',
-      'background:#2A231A', 'color:#F4EFE6',
       'border:1px solid rgba(240,180,41,0.55)',
       'box-shadow:0 0 14px rgba(240,180,41,0.35)',
       'font-size:11px', 'font-weight:600', 'line-height:1', 'white-space:nowrap',
@@ -23,6 +22,7 @@ export class ArrivalChevron {
     this.arrow.textContent = '➤';
     this.arrow.style.cssText = 'display:inline-block;color:#F0B429;font-size:10px;will-change:transform';
     this.pill.append(this.count, this.arrow);
+    this.setTheme(theme);
     this.pill.addEventListener('click', () => {
       const target = this.target;
       this.clear();
@@ -44,6 +44,11 @@ export class ArrivalChevron {
     this.pill.style.pointerEvents = 'auto';
     clearTimeout(this.fadeTimer);
     this.fadeTimer = setTimeout(() => this.clear(), LINGER_MS);
+  }
+
+  setTheme(theme) {
+    this.pill.style.background = theme.CHIP.bg;
+    this.pill.style.color = theme.CHIP.ink;
   }
 
   clear() {

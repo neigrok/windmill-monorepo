@@ -1,32 +1,13 @@
-/* The token block mirrors gym.css's .gym-root[data-theme="dark"]. */
+@import '../gymTokens.css';
 
-.gyw[data-theme="dark"] {
-  --gym-on-accent: #1B1408;
-
-  --gym-canvas: var(--surface-canvas);
-  --gym-surface: var(--surface-card);
-  --gym-raised: var(--surface-hover);
-  --gym-sunken: var(--surface-sunken);
-  --gym-line: var(--border-subtle);
-  --gym-line-strong: var(--border-default);
-
-  --weight-ink: var(--neutral-900);
-  --gym-ink: var(--text-primary);
-  --gym-ink-dim: var(--text-secondary);
-  --gym-ink-faint: var(--text-tertiary);
-
-  --set-done: var(--color-success);
-  --warmup-ink: var(--neutral-500);
-  --target-ink: var(--color-brand);
-  --alarm-ink: var(--color-danger);
-}
+/* The islands wear .gym-skin, so the token block above is the product's own, never a copy. */
 
 .gyMoat {
   width: min(720px, 100%);
   background: var(--gym-canvas);
   border: 1px solid var(--gym-line);
   border-radius: var(--radius-2xl);
-  box-shadow: 0 24px 60px rgba(10, 8, 5, .4);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--surface-canvas) 40%, transparent);
   padding: clamp(22px, 3.5vw, 32px);
   text-align: left;
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Icon, Avatar } from '../../../design-system';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 
 export const VERB_STYLE = {
   started: { icon: 'play', bg: 'var(--accent-gold-500)', fg: '#fff', label: 'Started' },
@@ -62,7 +62,7 @@ export function ObjectLabel({ event, node }) {
   const kind = node.color ?? event.kind ?? DEFAULT_NODE_COLOR;
   return (
     <span className="st-event-obj">
-      <i style={{ background: NODE_COLORS[kind]?.base }} />
+      <i style={{ background: KIND_CSS[kind]?.base }} />
       {label}
     </span>
   );

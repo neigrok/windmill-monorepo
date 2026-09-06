@@ -1,4 +1,5 @@
-// Concrete token values the WebGL scene needs; it cannot read CSS custom properties.
+// Concrete colour values the WebGL scene needs; it cannot read CSS custom properties. The module
+// constants are the LIGHT set; `sceneTheme(isDark)` hands the scene the set for the room it sits in.
 // Per hue: base = fill, ring = border, soft = glyph, glow = halo.
 
 export const NODE_COLORS = {
@@ -12,6 +13,15 @@ export const NODE_COLORS = {
 
 export const NODE_COLOR_NAMES = Object.keys(NODE_COLORS);
 export const DEFAULT_NODE_COLOR = 'terracotta';
+
+// The same four faces for the DOM, as the --kind-* tokens colors.css declares for both hours, so a
+// swatch, chip or dot follows the room's theme the way the scene does. Same shape as NODE_COLORS.
+export const KIND_CSS = Object.fromEntries(NODE_COLOR_NAMES.map((name) => [name, {
+  base: `var(--kind-${name})`,
+  ring: `var(--kind-${name}-ring)`,
+  soft: `var(--kind-${name}-soft)`,
+  glow: `var(--kind-${name}-glow)`,
+}]));
 
 // Tier indices are what the shaders receive; higher = more progress.
 const TIER_LOCKED = 0;
@@ -46,5 +56,45 @@ export const BACKGROUND = {
   canvas: '#F9F5EB',
   glow:   '#F3F4E4',
 };
+
+// CHIP is the inline-styled pill (hover name, arrival chevron): dark on the light canvas, light on the night one.
+export const CHIP = { bg: '#2A231A', ink: '#F4EFE6' };
+
+const NIGHT_NODE_COLORS = {
+  terracotta: { base: '#D98B5F', ring: '#E2A887', soft: '#30221B', glow: 'rgba(221,151,111,0.50)' },
+  olive:      { base: '#9DAF5C', ring: '#B6C385', soft: '#25291A', glow: 'rgba(167,183,108,0.50)' },
+  gold:       { base: '#D9AE45', ring: '#E2C274', soft: '#302816', glow: 'rgba(221,182,88,0.50)' },
+  brick:      { base: '#C86B50', ring: '#D6907C', soft: '#2D1C18', glow: 'rgba(206,122,98,0.50)' },
+  sky:        { base: '#7BA6B8', ring: '#9CBCCA', soft: '#1F272B', glow: 'rgba(136,175,191,0.50)' },
+  plum:       { base: '#B06FA6', ring: '#C493BC', soft: '#291D28', glow: 'rgba(184,125,175,0.50)' },
+};
+
+const LIGHT_SCENE = {
+  BACKGROUND,
+  CONNECTOR: { ...CONNECTOR, active: '#B29F7B' },
+  BARK,
+  BARK_CREAM,
+  NODE_COLORS,
+  CHIP,
+};
+
+const NIGHT_SCENE = {
+  BACKGROUND: { canvas: '#0B0B0C', glow: '#141416' },
+  CONNECTOR: { inactive: '#2E2E32', active: '#7E7C77' },
+  BARK: '#6E5D49',
+  BARK_CREAM: '#D9C7A6',
+  NODE_COLORS: NIGHT_NODE_COLORS,
+  CHIP: { bg: '#F2F0EB', ink: '#0B0B0C' },
+};
+
+export function sceneTheme(isDark) {
+  return isDark ? NIGHT_SCENE : LIGHT_SCENE;
+}
+
+// The scene follows the nearest themed ancestor, so a room that pins its own data-theme wins over the html attribute.
+export function isNightFor(element) {
+  const themed = element.closest('[data-theme]');
+  return !!themed && themed.getAttribute('data-theme') === 'dark';
+}
 
 export const NODE_SIZE = 56; // world units; matches SkillNode default diameter

@@ -36,7 +36,7 @@ export function Switch({ checked, onChange, label }) {
             width: 18,
             height: 18,
             borderRadius: '999px',
-            background: '#fff',
+            background: 'var(--switch-knob)',
             boxShadow: 'var(--shadow-xs)',
             transition: 'left var(--duration-base) var(--ease-soft)',
           }}

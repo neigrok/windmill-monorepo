@@ -5,7 +5,7 @@ import { stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
 import { useViewMode } from '../ui/useViewMode.js';
 import { track } from '../../../telemetry/beacon.js';
-import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
 import { ROSTER } from './roster/index.js';
 
@@ -90,7 +90,7 @@ export function QuestShelf() {
   ].filter(Boolean).join(' ');
 
   const card = (quest) => {
-    const rule = (NODE_COLORS[quest.kinds[0]?.hue] ?? NODE_COLORS[DEFAULT_NODE_COLOR]).base;
+    const rule = (KIND_CSS[quest.kinds[0]?.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base;
     const picked = pickedId === quest.id;
     const seeding = picked && seed?.id === quest.id;
     return (
@@ -113,7 +113,7 @@ export function QuestShelf() {
         <span className="quest-card-chrome quest-card-readout">{quest.nodes.length} steps · {quest.estimate}</span>
         <span className="quest-card-chrome quest-card-dots" aria-hidden="true">
           {quest.kinds.map((kind) => (
-            <span key={kind.id} style={{ background: (NODE_COLORS[kind.hue] ?? NODE_COLORS[DEFAULT_NODE_COLOR]).base }} />
+            <span key={kind.id} style={{ background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base }} />
           ))}
         </span>
       </button>

@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
 import { RadialLayoutEngine } from '../layout/RadialLayoutEngine.js';
-import { NODE_COLORS, CONNECTOR, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const GHOST_CAP = 200;   // past this the preview stops growing — the readout still counts
 const RELAYOUT_MS = 100; // keystrokes coalesce into one layout
@@ -43,11 +43,11 @@ export function GhostSkeleton({ nodes }) {
           className="birth-ghost-piece"
           style={delayOf.has(edge.enterWith) ? { animationDelay: `${delayOf.get(edge.enterWith)}ms` } : undefined}
           x1={edge.x1} y1={edge.y1} x2={edge.x2} y2={edge.y2}
-          stroke={CONNECTOR.inactive} strokeWidth={3} opacity={0.55}
+          stroke="var(--connector-inactive)" strokeWidth={3} opacity={0.55}
         />
       ))}
       {scene.placed.map((node) => {
-        const hue = NODE_COLORS[node.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+        const hue = KIND_CSS[node.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
         return (
           <circle
             key={node.id}

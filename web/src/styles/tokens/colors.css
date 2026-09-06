@@ -78,6 +78,7 @@
   --text-secondary: var(--neutral-600);
   --text-tertiary: var(--neutral-500);
   --text-on-accent: #FFFFFF;
+  --switch-knob: #FFFFFF;             /* the Switch's thumb, on the brand or neutral-300 track */
   --text-link: var(--accent-terracotta-600);
   --text-link-hover: var(--accent-terracotta-700);
 
@@ -105,29 +106,36 @@
   --chip-selected-edge: var(--accent-terracotta-400);
 
   /* ---- Node KINDS: colour comes from a node's kind; its tier (locked / available / active /
-     complete) is treatment only. Kinds + treatments are the whole node colour API. ---- */
+     complete) is treatment only. Kinds + treatments are the whole node colour API. Per kind: the
+     base, a soft wash, a ring and a glow — the same four faces theme.js hands the WebGL scene. ---- */
   --kind-terracotta:      var(--accent-terracotta-500);
   --kind-terracotta-soft: var(--accent-terracotta-200);
+  --kind-terracotta-ring: var(--accent-terracotta-600);
   --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
 
   --kind-olive:      var(--accent-olive-500);
   --kind-olive-soft: var(--accent-olive-200);
+  --kind-olive-ring: var(--accent-olive-600);
   --kind-olive-glow: rgba(125, 140, 67, 0.5);
 
   --kind-gold:      var(--accent-gold-500);
   --kind-gold-soft: var(--accent-gold-200);
+  --kind-gold-ring: var(--accent-gold-600);
   --kind-gold-glow: rgba(196, 151, 47, 0.5);
 
   --kind-brick:      var(--accent-brick-500);
   --kind-brick-soft: var(--accent-brick-200);
+  --kind-brick-ring: var(--accent-brick-600);
   --kind-brick-glow: rgba(168, 78, 53, 0.5);
 
   --kind-sky:      var(--accent-sky-500);
   --kind-sky-soft: var(--accent-sky-200);
+  --kind-sky-ring: var(--accent-sky-600);
   --kind-sky-glow: rgba(95, 132, 148, 0.5);
 
   --kind-plum:      var(--accent-plum-500);
   --kind-plum-soft: var(--accent-plum-200);
+  --kind-plum-ring: var(--accent-plum-600);
   --kind-plum-glow: rgba(141, 79, 131, 0.5);
 
   --connector-inactive: var(--neutral-300);
@@ -158,30 +166,31 @@
    Scope: data-theme="dark" on <html> for the whole app, or on any element to darken just that
    subtree. Light is the default; nothing here fires without data-theme="dark".
 
-   The neutral ramp is re-authored, NOT inverted: low indices stay deep warm surfaces and high
-   indices become warm off-whites, so surface/text tokens that reference the ramp keep working.
+   The neutral ramp is re-authored, NOT inverted: low indices are near-black neutral surfaces and
+   high indices warm off-whites, so surface/text tokens that reference the ramp keep working. This is
+   the FAMILY night — the ground every room stands on unless palettes.css re-points its ramp.
    ============================================================ */
 [data-theme="dark"] {
-  /* ---- Neutrals: warm brown-black surfaces → warm cream text ---- */
-  --neutral-0:   #17120B;  /* elevated card base */
-  --neutral-25:  #14100A;
-  --neutral-50:  #0D0B07;  /* canvas — the near-black backdrop */
-  --neutral-100: #221B12;  /* raised: hover, chips, badges */
-  --neutral-200: #2E2618;  /* pressed / subtle borders */
-  --neutral-300: #3C3223;  /* default borders, dull node body */
-  --neutral-400: #574A35;  /* strong borders, locked node icon */
-  --neutral-500: #8A785A;  /* tertiary text */
-  --neutral-600: #AE9A75;  /* secondary text */
-  --neutral-700: #CDBC97;
-  --neutral-800: #E6DAC1;
-  --neutral-900: #F4EEDF;  /* primary text — warm near-white */
+  /* ---- Neutrals: neutral near-black surfaces → warm off-white text ---- */
+  --neutral-0:   #121213;
+  --neutral-25:  #0E0E0F;
+  --neutral-50:  #0B0B0C;  /* canvas — the near-black backdrop */
+  --neutral-100: #171719;  /* card */
+  --neutral-200: #222224;  /* raised: hover, chips, badges; subtle borders */
+  --neutral-300: #2E2E32;  /* default borders, dull node body */
+  --neutral-400: #4A4A4F;  /* strong borders, locked node icon */
+  --neutral-500: #7E7C77;  /* tertiary text */
+  --neutral-600: #B4B2AC;  /* secondary text */
+  --neutral-700: #CFCDC8;
+  --neutral-800: #E3E1DC;
+  --neutral-900: #F2F0EB;  /* primary text — warm near-white */
 
   /* ---- Surfaces ---- */
   --surface-canvas: var(--neutral-50);
-  --surface-card: var(--neutral-0);
-  --surface-sunken: #0A0805;           /* recessed, darker than canvas */
-  --surface-hover: var(--neutral-100);
-  --surface-overlay: rgba(4, 3, 1, 0.68);
+  --surface-card: var(--neutral-100);
+  --surface-sunken: #050506;           /* recessed, darker than canvas */
+  --surface-hover: var(--neutral-200);
+  --surface-overlay: rgba(3, 3, 4, 0.72);
   --surface-inverse: var(--neutral-900);
 
   /* ---- Borders ---- */
@@ -194,8 +203,9 @@
   --text-secondary: var(--neutral-600);
   --text-tertiary: var(--neutral-500);
   --text-on-accent: #1B1408;           /* dark ink on bright accent fills */
+  --switch-knob: var(--neutral-900);
   --text-link: var(--accent-terracotta-400);
-  --text-link-hover: #E7A87B;
+  --text-link-hover: var(--accent-terracotta-200);
 
   /* ---- Semantic: brighter accents, translucent tinted backgrounds ---- */
   --color-success: var(--accent-olive-400);
@@ -207,41 +217,49 @@
   --color-info: var(--accent-sky-400);
   --color-info-bg: rgba(127, 160, 174, 0.15);
 
-  /* ---- Brand primary ---- */
-  --color-brand: var(--accent-terracotta-500);
-  --color-brand-hover: var(--accent-terracotta-400);
-  --color-brand-active: var(--accent-terracotta-600);
-  --color-brand-soft: rgba(188, 108, 66, 0.18);
+  /* ---- Brand primary: the lit step — 7.0:1 on the canvas, 6.5:1 under --text-on-accent ---- */
+  --color-brand: var(--accent-terracotta-400);
+  --color-brand-hover: var(--accent-terracotta-200);
+  --color-brand-active: var(--accent-terracotta-500);
+  --color-brand-soft: rgba(208, 138, 94, 0.20);
 
-  /* ---- Node kinds: brighter bases + stronger glows so they pop on black ---- */
-  --kind-terracotta:      var(--accent-terracotta-400);
-  --kind-terracotta-soft: var(--accent-terracotta-200);
-  --kind-terracotta-glow: rgba(208, 138, 94, 0.8);
+  /* ---- Node kinds at night: a lit base, a dark soft tint of the same hue, a lighter ring and a glow
+     that pops on black. Authored for the near-black ground, not the day ramp's 400 steps; equal to
+     the night set in theme.js. ---- */
+  --kind-terracotta:      #D98B5F;
+  --kind-terracotta-soft: #30221B;
+  --kind-terracotta-ring: #E2A887;
+  --kind-terracotta-glow: rgba(221, 151, 111, 0.8);
 
-  --kind-olive:      var(--accent-olive-400);
-  --kind-olive-soft: var(--accent-olive-200);
-  --kind-olive-glow: rgba(154, 168, 89, 0.8);
+  --kind-olive:      #9DAF5C;
+  --kind-olive-soft: #25291A;
+  --kind-olive-ring: #B6C385;
+  --kind-olive-glow: rgba(167, 183, 108, 0.8);
 
-  --kind-gold:      var(--accent-gold-400);
-  --kind-gold-soft: var(--accent-gold-200);
-  --kind-gold-glow: rgba(217, 176, 76, 0.8);
+  --kind-gold:      #D9AE45;
+  --kind-gold-soft: #302816;
+  --kind-gold-ring: #E2C274;
+  --kind-gold-glow: rgba(221, 182, 88, 0.8);
 
-  --kind-brick:      var(--accent-brick-400);
-  --kind-brick-soft: var(--accent-brick-200);
-  --kind-brick-glow: rgba(191, 106, 80, 0.8);
+  --kind-brick:      #C86B50;
+  --kind-brick-soft: #2D1C18;
+  --kind-brick-ring: #D6907C;
+  --kind-brick-glow: rgba(206, 122, 98, 0.8);
 
-  --kind-sky:      var(--accent-sky-400);
-  --kind-sky-soft: var(--accent-sky-200);
-  --kind-sky-glow: rgba(127, 160, 174, 0.8);
+  --kind-sky:      #7BA6B8;
+  --kind-sky-soft: #1F272B;
+  --kind-sky-ring: #9CBCCA;
+  --kind-sky-glow: rgba(136, 175, 191, 0.8);
 
-  --kind-plum:      var(--accent-plum-400);
-  --kind-plum-soft: var(--accent-plum-200);
-  --kind-plum-glow: rgba(168, 105, 158, 0.8);
+  --kind-plum:      #B06FA6;
+  --kind-plum-soft: #291D28;
+  --kind-plum-ring: #C493BC;
+  --kind-plum-glow: rgba(184, 125, 175, 0.8);
 
-  --connector-inactive: #33291B;
-  --connector-active: var(--color-bark);
+  --connector-inactive: #2E2E32;
+  --connector-active: #7E7C77;         /* the lit branch, equal to the WebGL night set in theme.js */
 
-  /* ---- Nature motif: lit ember branches so active paths glow orange ---- */
+  /* ---- Nature motif: lit ember bark for the editing chrome ("+" affordance, connect rings) ---- */
   --color-bark: #C07C43;
   --color-bark-dry: var(--neutral-300);
   --color-bark-shadow: #8A5228;

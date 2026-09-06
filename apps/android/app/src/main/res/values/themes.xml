@@ -3,6 +3,6 @@
     <!-- The room draws edge to edge on every version, so the bar colours are the system's and the
          window only needs a ground behind the first frame. -->
     <style name="Theme.Windmill" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#1C1A1E</item>
+        <item name="android:windowBackground">#110C10</item>
     </style>
 </resources>

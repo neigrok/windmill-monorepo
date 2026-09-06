@@ -5,12 +5,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
 
 const KIND_HUE = {
-  terracotta: 'var(--accent-terracotta-500)',
-  olive: 'var(--accent-olive-500)',
-  gold: 'var(--accent-gold-500)',
-  sky: 'var(--accent-sky-500)',
-  brick: 'var(--color-danger)',
-  plum: '#8D4F83',
+  terracotta: 'var(--kind-terracotta)',
+  olive: 'var(--kind-olive)',
+  gold: 'var(--kind-gold)',
+  sky: 'var(--kind-sky)',
+  brick: 'var(--kind-brick)',
+  plum: 'var(--kind-plum)',
 };
 
 function hueOf(kind) {

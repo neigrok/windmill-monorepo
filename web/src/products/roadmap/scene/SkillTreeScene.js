@@ -1,5 +1,5 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
-import { BACKGROUND, NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR } from '../theme.js';
+import { NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -57,14 +57,15 @@ export class SkillTreeScene {
     this.gl = gl;
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    this.clearColor = hexRgb(BACKGROUND.canvas);
+    this.theme = sceneTheme(isNightFor(canvas));
+    this.clearColor = hexRgb(this.theme.BACKGROUND.canvas);
 
     this.camera = new Camera2D();
-    this.nodeBatch = new NodeBatch(gl);
-    this.connectorBatch = new ConnectorBatch(gl);
+    this.nodeBatch = new NodeBatch(gl, this.theme);
+    this.connectorBatch = new ConnectorBatch(gl, this.theme);
     this.labelOverlay = new LabelOverlay(canvas);
-    this.iconOverlay = new IconOverlay(canvas);
-    this.hoverLabel = new HoverLabel(canvas);
+    this.iconOverlay = new IconOverlay(canvas, this.theme);
+    this.hoverLabel = new HoverLabel(canvas, this.theme);
     this.affordanceLayer = null;
     this.edgeChrome = null;
     this.marqueeOverlay = null;
@@ -87,6 +88,10 @@ export class SkillTreeScene {
         onReconnectStart: (edge, end, event) => this.affordanceLayer.connectGesture.startReconnect(edge, end, event),
       });
     }
+
+    // The room's data-theme can flip live (the appearance setting, or a room that pins its own); every cached colour follows.
+    this.themeObserver = new MutationObserver(() => this.applyTheme());
+    this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'], subtree: true });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
@@ -136,6 +141,7 @@ export class SkillTreeScene {
     this.notePointer = () => { this.lastInputAt = this.elapsedSeconds; };
     canvas.addEventListener('pointermove', this.notePointer, { passive: true });
     this.arrivalChevron = new ArrivalChevron(canvas, {
+      theme: this.theme,
       onReveal: (x, y) => {
         this.pendingFrame = null;
         this.director.yieldToInput();
@@ -726,6 +732,7 @@ export class SkillTreeScene {
     this.input.unbind();
     clearTimeout(this.panSettleTimer);
     this.motionQuery.removeEventListener('change', this.applyMotion);
+    this.themeObserver.disconnect();
     this.canvas.removeEventListener('pointermove', this.notePointer);
     this.nodeBatch.dispose();
     this.connectorBatch.dispose();
@@ -737,6 +744,20 @@ export class SkillTreeScene {
     this.edgeChrome?.dispose();
     this.marqueeOverlay?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
+  }
+
+  // ---- theme ------------------------------------------------------------
+
+  applyTheme() {
+    const theme = sceneTheme(isNightFor(this.canvas));
+    if (theme === this.theme) return;
+    this.theme = theme;
+    this.clearColor = hexRgb(theme.BACKGROUND.canvas);
+    this.nodeBatch.setTheme(theme);
+    this.connectorBatch.setTheme(theme);
+    this.iconOverlay.setTheme(theme);
+    this.hoverLabel.setTheme(theme);
+    this.arrivalChevron.setTheme(theme);
   }
 
   // ---- render loop ------------------------------------------------------

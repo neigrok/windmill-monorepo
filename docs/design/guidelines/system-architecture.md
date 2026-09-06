@@ -74,23 +74,34 @@ HUE     ≥40° from every existing accent, and clear of sky (200°) and brick (
 PROOF   600 on its own 50 ≥ 4.5:1 (the hue as text on a light surface)
         white on 500 ≥ 4.5:1 — CTA labels here are 12–14px bold, which WCAG
         still counts as body text, so 3:1 is not enough
-        dark brand = the LIGHTEST ramp step that clears 4.5:1 against
-        --text-on-accent (#1B1408): clay 400 · plum 300 · iris 300
+        dark brand = the ramp's 400 step, chosen as the room's light: terracotta
+        400 #D08A5E (6.50:1) · lamp 400 #E0B972 (9.87:1) · verdigris 400 #5FCDB4
+        (9.46:1), each against --text-on-accent (#1B1408); the lighter 200/300
+        steps are hover, not brand (iris is gym's LIGHT brand only)
 ```
 
 ## 4a. Grounds — each product names a place
 
 Each product owns its ground, in both skins. Name the place before the hue.
 
-- **Roadmap · Tuscany at midday** — the family cream with terracotta, brick, plum, gold, sky
-  and olive on it. The palette the whole system was derived from.
-- **Journal · paper in north light, dusk with one candle** — the cool dusk ramp with one warm
-  lamp on it.
-- **Gym · pietra in the sun, basalt at night.**
+- **Roadmap · Tuscany at midday, the same hills after dark** — the family cream with terracotta,
+  brick, plum, gold, sky and olive on it; by night a neutral near-black (`#0B0B0C` canvas,
+  `#171719` cards) with terracotta-400 as the light. The palette the whole system was derived
+  from, and the night that clay shares.
+- **Journal · paper in north light, ink-black with one lamp** — by night a cool ink-black
+  (`#0B0E16` canvas, `#161921` cards) with one warm lamp on it.
+- **Gym · pietra in the sun, plum-black with a signal at night** — by night a warm plum-black
+  (`#110C10` canvas, `#1C171C` cards) with the cool verdigris `#5FCDB4` on it — 10.04:1 on the
+  canvas, `#1B1408` ink 9.46:1 on it.
+
+Three grounds by night — roadmap and clay neutral, journal cool, gym warm. A tinted ground carries
+a light of the opposite temperature (journal's cool ink-black under a warm lamp, gym's warm plum-black
+under cool verdigris); a neutral ground takes either, and roadmap's takes warm terracotta.
 
 ```
-TEMPERATURE   a cool ground carries a warm light, or a warm ground carries a cool
-              one. NEVER two temperatures agreeing.
+TEMPERATURE   a cool ground carries a warm light, a warm ground carries a cool
+              one, a neutral ground carries either. NEVER a tinted ground and its
+              light agreeing.
 PLACE         name the place before the hue. A ground with no place behind it has
               no way to be judged and no way to be defended.
 SHADOW        the ground is not only the canvas. Put the hue where the light would
@@ -108,7 +119,8 @@ GATES         §4's contrast gates hold on the new ground: primary text ≥ 12:1
               tertiary ≥ 4.5:1, brand-as-fill ≥ 4.5:1 against its own on-accent
               ink, brand-as-TEXT ≥ 4.5:1 on the ground (use the 600 step, §2).
               Measured from pixels, not assumed.
-DEFAULT       clay keeps the family cream and the family night, and is what every
+DEFAULT       clay keeps the family cream and the family night (roadmap's neutral
+              near-black), and is what every
               surface belonging to no product stands on: the brand root, marketing,
               every specimen. It never moves when a product's room does.
 ```
@@ -119,16 +131,17 @@ no half-measure, no brand tint mixed into the shared ramp.
 The family is therefore type, spacing, radii, shadows, motion, voice, the semantic bindings,
 and this section's rules — not the warm ramp.
 
-### The two grandfathered tertiaries
+### The three grandfathered tertiaries
 
-Two ramps do not clear the tertiary gate:
+Three ramps do not clear the tertiary gate:
 
 | ramp | `--text-tertiary` | on canvas | measured |
 |---|---|---|---|
 | family cream (`:root`, clay) | `#92805F` | `#F9F5EB` | **3.52:1** |
-| journal's dusk | `#4D6472` | `#040D19` | **3.14:1** |
+| journal's night | `#737476` | `#0B0E16` | **4.12:1** |
+| gym's night | `#797270` | `#110C10` | **4.11:1** |
 
-They stay, and they carry a usage rule that is not optional: at these two values
+They stay, and they carry a usage rule that is not optional: at these three values
 `--text-tertiary` is **non-essential ink only** — timestamps, units, meta, disabled states. It
 may not carry navigation, labels, or anything a person has to read to use the room. The /app
 shell's nav and tab labels use `--text-secondary` for this reason.

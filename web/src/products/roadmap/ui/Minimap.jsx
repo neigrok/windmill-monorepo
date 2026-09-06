@@ -1,16 +1,16 @@
-// The dots redraw only when nodes/states/bounds change; the viewport rectangle tracks the camera
-// every frame through `subscribeViewport`, never through React.
+// The dots redraw only when nodes/states/bounds/theme change; the viewport rectangle tracks the camera
+// every frame through `subscribeViewport`, never through React. A canvas cannot read CSS tokens, so the
+// palette is the scene's own set for the nearest themed ancestor, re-read when any data-theme flips.
 
-import React, { useEffect, useRef } from 'react';
-import { NODE_COLORS, DEFAULT_NODE_COLOR, nodeTier } from '../theme.js';
+import React, { useEffect, useRef, useState } from 'react';
+import { DEFAULT_NODE_COLOR, nodeTier, sceneTheme, isNightFor } from '../theme.js';
 
 const WIDTH = 168;
 const HEIGHT = 128;
 const PADDING = 10;
-const VIEWPORT_STROKE = NODE_COLORS.terracotta.base;
 
-function dotColor(color, state) {
-  const family = NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+function dotColor(palette, color, state) {
+  const family = palette[color] ?? palette[DEFAULT_NODE_COLOR];
   return nodeTier(state) === 0 ? family.soft : family.base;
 }
 
@@ -34,6 +34,16 @@ function hasArea(bounds) {
 export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
   const dotsRef = useRef(null);
   const viewRef = useRef(null);
+  const [night, setNight] = useState(false);
+
+  useEffect(() => {
+    const read = () => setNight(isNightFor(dotsRef.current));
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'], subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  const theme = sceneTheme(night);
 
   useEffect(() => {
     const ctx = dotsRef.current.getContext('2d');
@@ -44,12 +54,12 @@ export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
     nodes.forEach((node) => {
       const state = states.get(node.id) ?? node.state;
       const [px, py] = toScreen(node.x, node.y);
-      ctx.fillStyle = dotColor(node.color, state);
+      ctx.fillStyle = dotColor(theme.NODE_COLORS, node.color, state);
       ctx.beginPath();
       ctx.arc(px, py, 1.6, 0, Math.PI * 2);
       ctx.fill();
     });
-  }, [nodes, states, bounds]);
+  }, [nodes, states, bounds, theme]);
 
   useEffect(() => {
     if (!subscribeViewport || !hasArea(bounds)) return;
@@ -61,11 +71,11 @@ export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
       if (!hasArea(viewport)) return;
       const [vx0, vy0] = toScreen(viewport.minX, viewport.minY);
       const [vx1, vy1] = toScreen(viewport.maxX, viewport.maxY);
-      ctx.strokeStyle = VIEWPORT_STROKE;
+      ctx.strokeStyle = theme.NODE_COLORS.terracotta.base;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(vx0, vy0, Math.max(1, vx1 - vx0), Math.max(1, vy1 - vy0));
     });
-  }, [subscribeViewport, bounds]);
+  }, [subscribeViewport, bounds, theme]);
 
   function handleClick(event) {
     if (!hasArea(bounds)) return;

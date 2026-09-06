@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
-import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
 import { filterOutline, kindOptions, gateOf } from './explore.js';
@@ -37,7 +37,7 @@ const BLUR_COMMIT_MS = 140;
 const STATE_WORDS = { done: 'done', ready: 'ready', active: 'in progress', locked: 'locked' };
 
 export function hueOf(color) {
-  return NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  return KIND_CSS[color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
 }
 
 export function hueVars(hue) {

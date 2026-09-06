@@ -30,7 +30,7 @@ export function Avatar({ name, src, size = 36 }) {
         height: size,
         borderRadius: '999px',
         background: bg,
-        color: '#fff',
+        color: 'var(--text-on-accent)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

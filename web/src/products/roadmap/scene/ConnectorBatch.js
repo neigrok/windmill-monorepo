@@ -1,6 +1,6 @@
 // Every edge tessellated once into a bézier ribbon, merged into one buffer and drawn in a single call. setStates rewrites only the aActive / aGrowStart floats, never vertex positions.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE, BARK_CREAM } from '../theme.js';
+import { NODE_COLOR_NAMES, isDone, NODE_SIZE } from '../theme.js';
 import { edgeKey } from './edgeKey.js';
 
 const SEGMENTS = 14;
@@ -15,7 +15,6 @@ const MAX_TRAVEL = 0.62; // seconds
 const ALREADY_GROWN = -1000;
 const VERTS_PER_EDGE = (SEGMENTS + 1) * 2;
 const NC = NODE_COLOR_NAMES.length;
-const HOVER_COLOR = '#B29F7B';
 
 // Matches NodeBatch's disc edge (0.84 of its half-size): edges stop at the rim, not the centre.
 const NODE_RADIUS = NODE_SIZE * 0.42;
@@ -223,17 +222,14 @@ export function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfW
 }
 
 export class ConnectorBatch {
-  constructor(gl) {
+  constructor(gl, theme) {
     this.gl = gl;
     this.indexCount = 0;
     this.edges = [];
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, ['uResolution', 'uCamera', 'uZoom', 'uTime', 'uGrowDuration', 'uMotion', 'uColorInactive', 'uColorHot', 'uBarkCream', 'uEdgeColor']);
-    this.colorInactive = hexRgb(CONNECTOR.inactive);
-    this.colorHot = hexRgb(HOVER_COLOR);
-    this.barkCream = hexRgb(BARK_CREAM);
-    this.edgeColors = new Float32Array(NODE_COLOR_NAMES.flatMap((c) => hexRgb(NODE_COLORS[c].base)));
+    this.setTheme(theme);
     this.hoveredEdge = -1;
 
     this.vao = gl.createVertexArray();
@@ -499,6 +495,14 @@ export class ConnectorBatch {
     gl.uniform3fv(this.u.uEdgeColor, this.edgeColors);
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
+  }
+
+  // Colours are uniforms, re-sent every draw, so a theme change needs no buffer rewrite.
+  setTheme(theme) {
+    this.colorInactive = hexRgb(theme.CONNECTOR.inactive);
+    this.colorHot = hexRgb(theme.CONNECTOR.active);
+    this.barkCream = hexRgb(theme.BARK_CREAM);
+    this.edgeColors = new Float32Array(NODE_COLOR_NAMES.flatMap((c) => hexRgb(theme.NODE_COLORS[c].base)));
   }
 
   dispose() {

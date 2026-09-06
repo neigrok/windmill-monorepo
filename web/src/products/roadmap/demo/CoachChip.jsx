@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
-import { NODE_COLORS, DEFAULT_NODE_COLOR, NODE_SIZE } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE } from '../theme.js';
 
 const ARRIVAL_SETTLE_MS = 1200;
 const IDLE_MS = 800;            // pointer-quiet required before mounting
@@ -26,7 +26,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
 
   const reduced = prefersReducedMotion();
   const node = scene?.nodesById?.get(nodeId) ?? null;
-  const hue = NODE_COLORS[node?.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const hue = KIND_CSS[node?.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
 
   // Idempotent: every retire path may call it.
   const retire = useCallback(() => {

@@ -20,25 +20,27 @@ import androidx.compose.ui.unit.sp
 // The room palette, mirrored BY HAND from apps/ios GymSkin.swift and the web tokens. There is ONE
 // skin and it is dark.
 object GymSkin {
-    val canvas = Color(0xFF1C1A1E)          // neutral-50
-    val surface = Color(0xFF262329)         // neutral-0, elevated over the canvas
-    val raised = Color(0xFF2E2B32)          // neutral-100
-    val line = Color(0xFF39363E)            // neutral-200 · border-subtle
-    val lineStrong = Color(0xFF48444D)      // neutral-300 · border-default
-    val accent = Color(0xFF9A90BE)          // iris-300
-    val onAccent = Color(0xFF1B1408)        // ink on the accent fill — 6.18:1 on iris-300
-    // Iris at its darkest step at 22%: iris-300 on an iris-300 wash measures only 3.66:1.
-    val accentSoft = Color(0x383A3358)
-    val ink = Color(0xFFEDEBF0)
-    val inkDim = Color(0xFFB0ABB8)          // neutral-600
-    val inkFaint = Color(0xFF8D8896)        // neutral-500 — 5.01:1 on the canvas
-    val weightInk = Color(0xFFEDEBF0)       // neutral-900
-    val targetInk = Color(0xFF9A90BE)       // iris-300
+    val canvas = Color(0xFF110C10)          // neutral-50
+    val surface = Color(0xFF1C171C)         // neutral-100 · card, elevated over the canvas
+    val raised = Color(0xFF262126)          // neutral-200
+    val sunken = Color(0xFF0C070B)          // below the canvas
+    val line = Color(0xFF262126)            // neutral-200 · border-subtle
+    val lineStrong = Color(0xFF312C32)      // neutral-300 · border-default
+    val accent = Color(0xFF5FCDB4)          // verdigris-400
+    val accentHover = Color(0xFF8FE0CD)     // verdigris-300
+    val accentPressed = Color(0xFF3DAE95)   // verdigris-500
+    val onAccent = Color(0xFF1B1408)        // ink on the accent fill — 9.46:1 on verdigris
+    val accentSoft = Color(0x335FCDB4)      // verdigris at 20% — verdigris on the wash measures 6.87:1 over the canvas, 6.11:1 over the surface
+    val ink = Color(0xFFF2EFEB)             // neutral-900
+    val inkDim = Color(0xFFB7B4AF)          // neutral-600
+    val inkFaint = Color(0xFF797270)        // neutral-500 — 4.11:1 on the canvas
+    val weightInk = Color(0xFFF2EFEB)       // neutral-900
+    val targetInk = Color(0xFF5FCDB4)       // verdigris-400
     val setDone = Color(0xFF9AA859)         // olive-400
     val prInk = Color(0xFFD9B04C)           // gold-400
     val prSoft = Color(0x26D9B04C)          // gold-400 at 15%
-    val warmupInk = Color(0xFF8D8896)
-    val unsyncedInk = Color(0xFF8D8896)
+    val warmupInk = Color(0xFF797270)
+    val unsyncedInk = Color(0xFF797270)
     val alarmInk = Color(0xFFD08268)        // brick-300
 }
 

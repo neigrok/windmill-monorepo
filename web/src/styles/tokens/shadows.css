@@ -1,5 +1,7 @@
 :root {
-  /* Soft, warm-tinted ambient shadows — never pure black */
+  /* Soft, warm-tinted ambient shadows — never pure black. --shadow-ink is the tint as bare rgb channels,
+     for a one-off shadow written as rgb(var(--shadow-ink) / a). */
+  --shadow-ink: 33 27 19;
   --shadow-xs: 0 1px 2px rgba(33, 27, 19, 0.06);
   --shadow-sm: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04);
   --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
@@ -16,6 +18,7 @@
 
 /* Dark: ambient shadows go near-black and deeper; the glows intensify via the node-glow tokens. */
 [data-theme="dark"] {
+  --shadow-ink: 0 0 0;
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.44), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.36);

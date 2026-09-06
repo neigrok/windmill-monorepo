@@ -58,7 +58,7 @@ against the track bed. `.journal-zoom-cell.is-written` must stop dropping its bo
 two is always doing the work, and which one changes across the ramp. Measured on the built strip,
 night's ring runs 3.31:1 against the fill at v=0 down to **1.21:1 at v=10** (day 4.81 → 1.83), while
 ring-vs-bed climbs 6.04 → 13.65. That is the intended trade: at the ceiling a `mood-10` head is
-17.9:1 on the night canvas and separates itself, so the ring is cosmetic there; at the floor the
+11.6:1 on the night canvas and separates itself, so the ring is cosmetic there; at the floor the
 ring is the only thing working. One colour cannot serve both ends. *This read "carried by its ring
 at every value in both themes" until a render sampled the whole ramp — a universal asserted from one
 cell, which is §8's error in its purest form.*
@@ -77,8 +77,8 @@ Both edges are **ink** mixes — never lamp, never the value.
 
 | Token | Night | Day |
 |---|---|---|
-| `--journal-swatch-edge` — unset head, day pip, week square, year cell | ink 34% → `#55595C`, 2.76:1 vs canvas | ink 46% → `#99958F`, 2.78:1 vs canvas |
-| `--journal-head-ring` — the set head, always | ink **78%** → `#BEBBB3` · **10.17:1** vs canvas · 7.75 vs bed · **4.25 vs a `mood-0` fill** | ink 68% → `#6C655F` · **5.34:1** vs canvas · 4.22 vs bed · **4.32 vs a `mood-0` fill** |
+| `--journal-swatch-edge` — unset head, day pip, week square, year cell | ink 34% → `#595B5F`, 2.84:1 vs canvas | ink 46% → `#99958F`, 2.78:1 vs canvas |
+| `--journal-head-ring` — the set head, always | ink **78%** → `#BEBEBD` · **10.37:1** vs canvas · **4.38 vs a `mood-0` fill** | ink 68% → `#6C655F` · **5.34:1** vs canvas · 4.22 vs bed · **4.32 vs a `mood-0` fill** |
 
 Night's ring was `ink 55%` until a build measured it on composited pixels: fine against the canvas
 and the bed, but only **2.29:1 against the `mood-0` fill it exists to separate from**. **The fill is
@@ -96,7 +96,7 @@ authored once. **A glow is never counted toward legibility in either theme**; th
 legibility.
 
 **Focus never touches the head.** The ring is two-tone with a **ground-coloured 2px spacer** between
-it and the head, so the outer ring is only ever judged against the canvas — 12.78:1 night, 10.24:1
+it and the head, so the outer ring is only ever judged against the canvas — 13.12:1 night, 10.24:1
 day, identical at every value. `0 0 0 4px` is a *spread*: the ink band is 2px thick, spanning
 2→4px from the head's edge (phone `0 0 0 5px`, a 3px band). Anything that must clear the focus ring
 clears that 2→4px band.

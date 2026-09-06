@@ -15,7 +15,7 @@ import works.windmill.platform.design.WindmillFont
 // (`GymSkin.prInk`), so a Material control taking the brand's primary would say `record` on a
 // Switch. Gold is therefore absent from the scheme and stays painted by hand where a PR is.
 //
-// Dynamic colour is a refusal rather than an omission: colour here is a legend — iris says the agent
+// Dynamic colour is a refusal rather than an omission: colour here is a legend — verdigris says the agent
 // proposed it, olive says logged, brick says this destroys something — and a wallpaper cannot
 // recolour a legend.
 @Composable

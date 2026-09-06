@@ -76,6 +76,7 @@ export function JournalApp({ hash }) {
       className={'journal-root' + (echoes.marginOpen ? ' has-margin' : '') + (sheetPage ? ' is-sheeted' : '')}
       ref={lendDoorSkin}
       data-theme={theme}
+      data-brand="journal"
     >
       <Canvas
         focusDate={focusDate}

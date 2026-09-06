@@ -37,14 +37,14 @@ export function GymApp({ hash, inShell = false }) {
   // The token is the whole credential; this early return must stay below every hook.
   if (sharedToken) {
     return (
-      <div className="gym-root" data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
+      <div className="gym-root gym-skin" data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
         <SharedSession token={sharedToken} />
       </div>
     );
   }
 
   return (
-    <div className="gym-root" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
+    <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
       {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
       {status === 'ghost' && (
         <>

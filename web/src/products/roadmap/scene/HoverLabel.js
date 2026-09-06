@@ -5,16 +5,16 @@ const NODE_RADIUS = NODE_SIZE * 0.42;
 const LABEL_GAP = 10; // screen px
 
 export class HoverLabel {
-  constructor(canvas) {
+  constructor(canvas, theme) {
     this.pill = document.createElement('div');
     this.pill.style.cssText = [
       'position:absolute', 'left:0', 'top:0', 'z-index:12',
       'padding:4px 9px', 'border-radius:8px',
-      'background:#2A231A', 'color:#F4EFE6',
       'font-size:11px', 'font-weight:600', 'line-height:1.3', 'white-space:nowrap',
       'opacity:0', 'pointer-events:none',
       'transition:opacity 150ms ease', 'will-change:transform,opacity',
     ].join(';');
+    this.setTheme(theme);
     canvas.parentElement.appendChild(this.pill);
     this.nodesById = new Map();
     this.hoveredId = null;
@@ -23,6 +23,11 @@ export class HoverLabel {
   setModel(renderModel) {
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
     this.setHovered(null);
+  }
+
+  setTheme(theme) {
+    this.pill.style.background = theme.CHIP.bg;
+    this.pill.style.color = theme.CHIP.ink;
   }
 
   setHovered(id) {
