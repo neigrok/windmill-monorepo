@@ -30,7 +30,9 @@ constexpr std::size_t kMaxTombstones = 500;
 
 // The most description text one import_subgraph call may carry across nodes[], in bytes: each
 // description is legal on its own, but the graft is one frame every subscriber receives whole.
-constexpr std::size_t kMaxImportDescriptionBytes = 8 * 1024 * 1024;
+// It sits under the 8 MB HTTP body limit (platform/infra/main.cpp) so the named refusal is
+// reachable over the wire instead of a bare 413.
+constexpr std::size_t kMaxImportDescriptionBytes = 6 * 1024 * 1024;
 
 // Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
 // grant level that reaches it. Byte-pinned by the wire corpus test.

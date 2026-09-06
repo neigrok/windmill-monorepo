@@ -79,7 +79,8 @@ caller who overran several fixes them in one round trip; `annotate_node {appendD
 judged on the body the node would then hold. Two byte budgets sit above the character caps: a
 `get_tree` / `find_nodes` page carrying `description` ends at 4 MB of serialized nodes and says
 `pageBytes` beside `nextCursor` when that is what ended it (`ReadShape::projectPage`), and one
-`import_subgraph` call carries at most 8 MB of description text (`kMaxImportDescriptionBytes`).
+`import_subgraph` call carries at most 6 MB of description text (`kMaxImportDescriptionBytes`,
+under the 8 MB HTTP body limit so the refusal is a named sentence, not a bare 413).
 An edit of one node — `annotate_node`, `rename_node`, `set_node_color`, `move_node` — names a
 present node or is refused with `no node in this tree is named "x"`, the sentence `delete_node`
 and `set_progress` use.

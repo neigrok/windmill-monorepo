@@ -670,7 +670,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
         "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
         "nodes and edges the tombstones took. Pass dryRun to preview all of that and change nothing. "
-        "One call carries at most 8 MB of description text across nodes[] (each description is still "
+        "One call carries at most 6 MB of description text across nodes[] (each description is still "
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
         "split a bigger import. This collapses hundreds of create/connect/delete calls into one.",
         p, {"treeId", "nodes"}));

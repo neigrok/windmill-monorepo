@@ -2754,11 +2754,11 @@ TEST(mcp_a_page_carrying_descriptions_ends_at_the_byte_budget_and_says_so) {
 // receives entire, so the cap is on the batch, and the refusal names the size.
 TEST(mcp_import_subgraph_refuses_more_description_text_than_one_call_may_carry) {
   Harness h;
-  ToolResult refused = h.call("import_subgraph", describedImport(525, std::string(16000, 'd')));  // 8400000 bytes
+  ToolResult refused = h.call("import_subgraph", describedImport(400, std::string(16000, 'd')));  // 6400000 bytes
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("import_subgraph: nodes carries 8400000 bytes of description text, 11392 over the "
-                       "8388608-byte cap one call may carry — split the import"));
+           std::string("import_subgraph: nodes carries 6400000 bytes of description text, 108544 over the "
+                       "6291456-byte cap one call may carry — split the import"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
   CHECK(h.bus.subgraphBroadcasts.empty());
 

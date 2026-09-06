@@ -144,7 +144,7 @@ door with `<field> is not valid UTF-8` — `isValidUtf8` runs before any cap is 
 field including ids and edge endpoints, so a byte sequence Postgres would reject never reaches a
 live room. The MCP surface adds two byte budgets on top: a `get_tree`/`find_nodes` page carrying
 `description` ends at 4 MB of serialized nodes (the reply says `pageBytes` beside `nextCursor`),
-and one `import_subgraph` call carries at most 8 MB of description text.
+and one `import_subgraph` call carries at most 6 MB of description text, under the 8 MB HTTP body limit.
 
 | Bound | Value |
 | --- | --- |
