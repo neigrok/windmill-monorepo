@@ -83,16 +83,42 @@ Everything else about a room's appearance stays inside the room.
 
 **You** — profile, the plan row, appearance, the one nudge, doors into each app's settings,
 connected tools, sessions and data, sign out. It mirrors the web settings home, with one
-difference of place: on web, Appearance is not on the settings page but in the account seat's
-pop-up — a Light · Dark · System bar above the menu rows, on `/app` and on every landing, signed in
-or not. The You screen's Appearance row is the phone's mirror of that bar.
+difference of place: on web, Appearance is not on the settings page. On `/app` it is in the
+account seat's pop-up — a Light · Dark · System bar above the menu rows. On every marketing page
+— the four landings and the dressed static pages — it is a two-segment Light · Dark toggle at the
+head of the nav's right cluster, and the seat's pop-up there draws no Appearance row. The You screen's Appearance row is the
+phone's mirror of the seat's bar.
 
-**Appearance is the one place light-or-dark is chosen, for the whole app.** Light · Dark ·
-System, System by default. It sets the hub, the switcher, You, Windmill One, every sheet **and
-every room**. A room still owns its *palette* — journal answers dark with its night canvas and
-light with warm paper, gym answers with pietra or verdigris-grey stone — but it does not own the *choice*,
-and no room carries a theme control of its own. "System" is not a third palette; it is the
-absence of an override.
+**Appearance is chosen in one place per page, for the whole app.** Light · Dark · System,
+System by default. It sets the hub, the switcher, You, Windmill One, every sheet, **every room**
+and every marketing page. A room still owns its *palette* — journal answers dark with its night
+canvas and light with warm paper, gym answers with pietra or verdigris-grey stone — but it does
+not own the *choice*, and no room carries a theme control of its own; a landing is not a room,
+and its nav toggle is the one control on that page. "System" is not a third palette; it is the
+absence of an override. One stored choice (`windmill:appearance`) feeds every web page; the
+seat's bar and the nav toggle read and write the same key.
+
+**The marketing-page toggle.** A visitor who lands on pricing or terms first can choose there,
+without an account and without opening a pop-up.
+
+- **Where.** The first item in the nav's right cluster, on every marketing page: the order is
+  the Light · Dark toggle, Sign in, the CTA, then the seat where one exists — the signed-in avatar
+  or the ghost seat. On a landing that is `LandingChrome.jsx`'s cluster; on a dressed static page
+  it is `.navr`'s first child, a box reserved in the HTML so the deferred script that fills it
+  causes no layout shift. Never anywhere else on the page.
+- **Shape.** The design-system `SegmentedControl` look: a 32px pill track on the secondary
+  surface with a sliding filled thumb; two segments, each an icon with a one-word label — sun ·
+  *Light*, moon · *Dark*. Under 480px the labels hide and the icons stand alone, the words kept
+  as `aria-label`. Token-valued only, no literal colours, so it dresses with the page.
+- **What it says.** A `radiogroup` named *Appearance*. The checked segment is the *resolved*
+  appearance: with nothing stored it reads the system's side and moves when the system flips.
+  No option is chosen by default; the page follows the system until the reader picks one.
+- **What it does.** Picking a segment stores `light` or `dark` under the one key and repaints at
+  once — `<html data-theme>` and the browser-chrome metas — on this tab and every open tab.
+  Picking the segment already checked changes nothing visible but still stores the value: a
+  page that was following the system now holds an explicit choice. There is no System segment;
+  the way back to following the system is the seat's bar on `/app`.
+- **Keys.** Arrow keys move between the two segments, as in the seat's bar.
 
 **State the scheme twice: once as the window's `preferredColorScheme`, once as an environment
 override down the tree.** `preferredColorScheme` travels *up* to the window — it flips the

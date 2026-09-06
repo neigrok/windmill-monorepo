@@ -138,10 +138,10 @@ game metaphor entirely** — nothing is unlocked, earned, or planted here.
 | The night skin — the surfaces the canvas floats on | the product, `web/src/products/journal/journal.css`, scoped to `.journal-root[data-theme]` |
 
 - **Light or dark is not journal's choice**, on either surface. One Appearance setting —
-  Light · Dark · System — chooses for the whole app (native: You; web: Account settings), and
-  journal maps it onto its own palette: dark is the night canvas, light is the warm parchment.
-  On web the choice scopes to the app surface (`/app`), never to the landings, which stay warm
-  cream.
+  Light · Dark · System — chooses for the whole app (native: You; web: the account seat's bar on
+  `/app`, the nav's Light · Dark toggle on a marketing page — `guidelines/superapp-shell.md` §6),
+  and journal maps it onto its own palette: dark is the night canvas, light is the warm
+  parchment. The journal landing follows the same choice.
 - **Journal owns its surface by overriding role tokens inside its own scope**, not by
   re-pointing the family's ramp. `.journal-root[data-theme='dark']` sets `--surface-canvas`
   and `--surface-card` directly, so the design system's ramps still resolve inside it while

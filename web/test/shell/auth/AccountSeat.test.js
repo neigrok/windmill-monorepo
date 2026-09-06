@@ -1,4 +1,4 @@
-// The seat's pop-up, opened and rendered to the leaf: the Appearance radiogroup is there for a
+// The seat's pop-up, opened and rendered to the leaf: by default the Appearance radiogroup is there for a
 // visitor and a member alike, the rows below it are the one menu, and Escape hands focus back.
 
 import test from 'node:test';
@@ -45,7 +45,7 @@ async function openSeat(t, props) {
 function shape(popover) {
   const inside = elementsOf(popover.props.children);
   const group = inside.find((each) => each.props.role === 'radiogroup');
-  const label = inside.find((each) => each.props.id === group?.props['aria-labelledby']);
+  const label = group ? inside.find((each) => each.props.id === group.props['aria-labelledby']) : null;
   const menus = inside.filter((each) => each.props.role === 'menu');
   return {
     popoverRole: popover.props.role ?? null,
@@ -101,4 +101,27 @@ test('Escape and a press outside both close the pop-up and hand focus back to th
     assert.deepEqual(dom.listening(), [], 'the closed pop-up still listens to the document');
     view.unmount();
   }
+});
+
+test('with `appearance` false the pop-up draws no Appearance row, signed out or in', async (t) => {
+  browser();
+  const user = { name: 'Ada Lovelace', email: 'ada@example.com' };
+  const ghost = await openSeat(t, { status: 'ghost', user: null, appearance: false, onSignIn() {}, onSettings() {} });
+  assert.deepEqual(shape(ghost.popover), {
+    popoverRole: null,
+    width: 'min(272px, calc(100vw - 24px))',
+    label: null,
+    radios: [],
+    menus: [['Sign in', 'Settings']],
+    order: ['menu'],
+  });
+  const member = await openSeat(t, { status: 'signed-in', user, appearance: false, onSettings() {}, onSignOut() {} });
+  assert.deepEqual(shape(member.popover), {
+    popoverRole: null,
+    width: 'min(272px, calc(100vw - 24px))',
+    label: null,
+    radios: [],
+    menus: [['Account settings', 'Sign out']],
+    order: ['menu'],
+  });
 });

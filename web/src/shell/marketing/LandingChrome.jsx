@@ -5,6 +5,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
+import { AppearanceToggle } from './AppearanceToggle.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
 import { pendingMagicLink } from '../auth/AuthClient.js';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
@@ -105,9 +106,11 @@ function LandingNav({ product = null, links = [], cta = null, resume = null, res
   );
 }
 
-// While auth (or the product's `resolving`) is unanswered the slot keeps its box but stays
-// invisible, so nothing flashes signed-out and nothing jumps. Signed out, the ghost seat still
-// stands beside the buttons: its pop-up is where the appearance is chosen.
+// The Light · Dark toggle opens the cluster in every state — it does not wait on auth — and on a
+// landing it is the one place appearance is chosen, so the seat's pop-up draws no Appearance row
+// here. While auth (or the product's `resolving`) is unanswered the buttons keep their box but stay
+// invisible, so nothing flashes signed-out; only the seat is absent until the answer comes. Signed
+// out, the ghost seat still stands beside the buttons.
 function NavCluster({ cta, resume, resolving, seat }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
@@ -125,9 +128,12 @@ function NavCluster({ cta, resume, resolving, seat }) {
 
   if (status === 'loading' || resolving) {
     return (
-      <div className="landing-cluster" style={{ visibility: 'hidden' }} aria-hidden="true">
-        <Button variant="ghost" size="sm">Sign in</Button>
-        {cta && <Button variant="primary" size="sm">{cta.label}</Button>}
+      <div className="landing-cluster">
+        <AppearanceToggle />
+        <span style={{ display: 'contents', visibility: 'hidden' }} aria-hidden="true">
+          <Button variant="ghost" size="sm">Sign in</Button>
+          {cta && <Button variant="primary" size="sm">{cta.label}</Button>}
+        </span>
       </div>
     );
   }
@@ -136,11 +142,13 @@ function NavCluster({ cta, resume, resolving, seat }) {
     const verb = resume ?? cta;
     return (
       <div className="landing-cluster">
+        <AppearanceToggle />
         {verb && <a href={verb.href}><Button variant="primary" size="sm">{verb.label}</Button></a>}
         <AccountSeat
           user={user}
           status={status}
           size={28}
+          appearance={false}
           footer={seat?.note}
           mine={seat && verb ? { label: seat.label, count: seat.count ?? null, onSelect: () => { window.location.href = verb.href; } } : undefined}
           onSettings={() => { window.location.hash = '#/settings'; }}
@@ -152,6 +160,7 @@ function NavCluster({ cta, resume, resolving, seat }) {
 
   return (
     <div className="landing-cluster">
+      <AppearanceToggle />
       {pendingLink ? (
         <button
           type="button"
@@ -168,6 +177,7 @@ function NavCluster({ cta, resume, resolving, seat }) {
       <AccountSeat
         status={status}
         size={28}
+        appearance={false}
         onSignIn={() => openSignInDoor({ onSent: noteLinkSent })}
         onSettings={() => { window.location.hash = '#/settings'; }}
       />

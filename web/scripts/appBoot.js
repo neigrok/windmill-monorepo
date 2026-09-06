@@ -90,8 +90,9 @@ export function readLandings(products) {
   ];
 }
 
-// The ladder appearance.js states, in ES5: an explicit choice, else the device, else light.
-const resolveTheme = (storageKey) => `if(!t){var s=null;try{s=localStorage.getItem('${storageKey}')}catch(e){}
+// The ladder appearance.js states, in ES5: an explicit choice, else the device, else light. Shared with
+// scripts/staticAppearance.js, so the static pages' toggle reads the same rungs the boot does.
+export const resolveTheme = (storageKey) => `if(!t){var s=null;try{s=localStorage.getItem('${storageKey}')}catch(e){}
 t=(s==='light'||s==='dark')?s:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light')}`;
 
 // Stamps <html> with what was decided (k = the kind of page, t = theme, b = brand) and tells the

@@ -1,7 +1,8 @@
 // Presentational: the caller passes user/status and the handlers. `expired` keeps the ghost seat
 // and voices the lapsed-session line in the pop-up. Appearance is the one thing the seat reads for
-// itself — a device preference, so the row shows signed out too. The pop-up is a plain popover:
-// the identity, the Appearance radiogroup, then the one menu of rows.
+// itself — a device preference, so the row shows signed out too — unless `appearance` is false: a
+// landing chooses it in the nav's own toggle instead. The pop-up is a plain popover: the identity,
+// the Appearance radiogroup, then the one menu of rows.
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Avatar, SegmentedControl } from '../../design-system';
@@ -11,7 +12,7 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row.
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy }) {
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy, appearance = true }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -230,7 +231,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                   </div>
                 </div>
               </div>
-              <AppearanceRow />
+              {appearance && <AppearanceRow />}
               <div role="menu" aria-label="Account">
                 {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
                 {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
@@ -250,7 +251,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                   Your sign-in expired. Everything's still here — sign in to keep syncing.
                 </div>
               )}
-              <AppearanceRow />
+              {appearance && <AppearanceRow />}
               <div role="menu" aria-label="Account">
                 <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
                 {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}

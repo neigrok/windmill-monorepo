@@ -35,9 +35,11 @@ static shell per landing so a crawler without JavaScript gets that landing's own
 emits `sitemap.xml` from those shells and every page in `public/` — each under the URL its own
 `<link rel="canonical">` names, skipped if its own robots meta says `noindex`. There is no
 `sitemap.xml` in `public/` to edit; the pages are the source. `scripts/staticPageAssets.js` asserts
-the head each static page must carry and serves the three files they all link: `/fonts.css`,
+the head each static page must carry and serves the four files they all link: `/fonts.css`,
 `/chrome.css` (`scripts/staticPageChrome.css` — the family tokens in both themes, so a static page
-never names a colour of its own) and `/boot.js`, the theme stamp.
+never names a colour of its own), `/boot.js`, the theme stamp, and `/appearance.js`
+(`scripts/staticAppearance.js`) — the same Light · Dark toggle the landings carry, mounted first in
+the nav's `.navr`, stamping `<html>` and repainting the metas itself since no bundle ever arrives.
 
 `scripts/appBoot.js` runs in dev as well as build: it puts one `<style>` and one inline script into
 `<head>` that stamp `<html>` before the bundle arrives. An app room is stamped with its brand and
@@ -51,14 +53,17 @@ shape or a product names a room module that is not there. `test/boot.test.mjs` d
 scripts against a fake document.
 
 Light or dark is one device preference, `src/shell/appearance.js` — a module-level store under the
-`windmill:appearance` key that `useAppearance` reads through `useSyncExternalStore`, so the switch
-in the account seat's pop-up (`shell/auth/AccountSeat.jsx`) reaches the shell, the landings and the
-other tabs at once. Only the account seat offers it — in the `/app` head and in every landing's
-header, signed in or out; Settings does not, and the static pages in `public/` follow the stored
-choice without a control of their own. The same module carries `paintBrowserChrome` and
-`restoreBrowserChrome`: the shell on every room or theme change, and a landing at night, tell the
-browser's `theme-color` and `color-scheme` metas the ground `<html>` wears, parking what they
-replace in `data-was` and handing it back on unmount.
+`windmill:appearance` key that `useAppearance` reads through `useSyncExternalStore`, so a switch
+reaches the shell, the landings and the other tabs at once. Two controls offer it: in the `/app`
+head the account seat's pop-up (`shell/auth/AccountSeat.jsx`) carries Light · Dark · System; on
+every landing, signed in or out, the nav's `shell/marketing/AppearanceToggle.jsx` carries Light ·
+Dark right before the seat, whose pop-up draws no Appearance row there (`appearance={false}`) — the
+checked segment is the resolved appearance, so with nothing stored it follows the device, and a
+pick is an explicit choice with no way back to System short of the app's seat. Settings does not
+offer it; a static page in `public/` carries the same nav toggle through `/appearance.js`. The same
+module carries `paintBrowserChrome` and `restoreBrowserChrome`: the shell on every room or theme
+change, and a landing at night, tell the browser's `theme-color` and `color-scheme` metas the
+ground `<html>` wears, parking what they replace in `data-was` and handing it back on unmount.
 
 `vite.config.js` throws at config time unless the roadmap's `DEFAULT_KINDS` / `GENESIS_STAMP` are
 byte-equal to `packages/api-contract/genesis.js` — otherwise a locally-born tree diverges from the

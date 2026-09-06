@@ -207,9 +207,9 @@ after an echo-trail hop, where floating is plausibly the intent.
 
 **0g · gym's landing opens many dark windows, not one** → a designer call; direction of fix is 00-README.
 The chrome rule reads: a product may open a window of its own skin inside the moat, but the page
-around it stays the family's warm cream. `/gym` opens a `[data-theme="dark"]` region for the moat,
-each beat stage and each proof card, against `/journal`'s one. The frame is light on both, so the
-rule holds literally, but the result is a dark page with cream gutters. Either the rule means one
+around it stays the family's ground. `/gym` opens a `[data-theme="dark"]` region for the moat,
+each beat stage and each proof card, against `/journal`'s one. In the light appearance the frame
+is cream on both, so the rule holds literally, but the result is a dark page with cream gutters. Either the rule means one
 window and gym's beats come up to daylight, or 00-README should say it means any window the
 product's skin genuinely owns.
 
@@ -2075,18 +2075,19 @@ twice over. `GymTap.minimum` is 46 dp and every other control on the screen clea
 floor admits a chip whose row is not in the reach band, or the two chips share one row. Decide once;
 until then this is the one control in the room below the floor.
 
-**5p · the pricing brief says the static pages are light only, and they are not** → owed by
-`marketing/guidelines/pricing.md` (§1 "light only", §5 "Static pages **light only**", §6 "light
-only"). Every dressed page in `web/public/` (`pricing-preview.html` is an undressed redirect) —
-pricing and refunds among them — reads the visitor's appearance choice off `/boot.js` before first
-paint and dresses in `/chrome.css`'s night tokens when it is dark; the app, the landings and the
-static pages answer one switch, in the account seat's pop-up. The brief's three "light only" lines
-describe a rule the build does not have. Strike them, or restate what the pages must hold in both
-themes.
+**5p · the pricing brief says the static pages are light only, and they are not** → built
+2026-09-06 in the brief, nothing owed. `marketing/guidelines/pricing.md` no longer says "light
+only" anywhere: §1 and §6 say the pricing and refunds pages dress in the visitor's Appearance
+choice like every dressed page in `web/public/` and must read in both, and §5's "Static pages
+light only" line is gone. That is what the build does — every dressed page reads the choice off
+`/boot.js` before first paint and dresses in `/chrome.css`'s night tokens when it is dark.
 
-**5q · the static pages follow the appearance choice and offer no way to make it** → a decision
-owed by the static-page chrome. Every dressed page in `web/public/` dresses in the stored choice,
-but the control lives in the account seat's pop-up, which only the React landings and `/app`
-render; a visitor who lands on pricing or terms first reads the page in the night they chose
-elsewhere and cannot change it there. Either the static chrome grows the same Light · Dark · System
-row, or the pages stay read-only followers and the brief says so.
+**5q · the static pages follow the appearance choice and offer no way to make it** → built
+2026-09-06. Every marketing page — the four React landings and every dressed static page — carries
+a two-segment Light · Dark toggle as the first item of the nav's right cluster (toggle, Sign in,
+CTA, seat): `AppearanceToggle.jsx` in `web/src/shell/marketing/` on the landings, and on the static
+pages `/appearance.js`, emitted from `web/scripts/staticAppearance.js` through the asset map whose
+config-time gate makes every dressed page link it and open `.navr` with the reserved box. The
+seat's pop-up on a landing draws no Appearance row; `/app` keeps the seat's Light · Dark · System
+bar. Spec in `guidelines/superapp-shell.md` §6 (*The marketing-page toggle*); the landing
+skeleton's nav row in `marketing/briefs-landings/00-README.md` names it.

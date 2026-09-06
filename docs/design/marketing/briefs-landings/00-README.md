@@ -10,7 +10,7 @@ Every product landing fills all nine.
 
 | # | Role | Fixed across the family | The product's own |
 |---|------|------------------------|-------------------|
-| 1 | Nav | wordmark → brand root; cross-nav (Roadmap · Journal · Gym · Pricing); auth cluster (resolving slot keeps its box; link-sent chip; signed-in seat) | primary CTA verb |
+| 1 | Nav | wordmark → brand root; cross-nav (Roadmap · Journal · Gym · Pricing); right cluster in order: Light · Dark appearance toggle first (`../../guidelines/superapp-shell.md` §6), then the auth cluster (resolving slot keeps its box; link-sent chip; Sign in; CTA; signed-in seat or ghost seat) | primary CTA verb |
 | 2 | Hero | status badge · H1 claim · one concrete-uses sub · primary + secondary CTA · trust line · the moat band beneath | the claim, the voice, the moat's content and skin |
 | 3 | The loop | 01/02/03, each a small live replayable scene + title + two lines | the product's core loop |
 | 4 | Proof | one section of evidence with real numbers and honest attribution | quests · search specimen · the movement shelf |
@@ -33,10 +33,12 @@ vocabulary — never a screenshot, never stock, never a static illustration.
 
 ## Chrome and register
 
-Page chrome is light for all three. A product may open a window of its own skin inside the
-moat; the page around that window stays the family's warm cream. Type scale, 96px section
-starts, the eyebrow/sectionTitle/sectionSub pattern, 744/1024 breakpoints, sentence case and
-no emoji are fixed.
+Page chrome follows the one Appearance choice — light on the family's warm cream, dark on the
+family's near-black — chosen on the page itself by the nav's Light · Dark toggle and stored for
+the whole app (`../../guidelines/superapp-shell.md` §6). A product may open a window of its own
+skin inside the moat; the page around that window stays the family's ground. Type scale, 96px
+section starts, the eyebrow/sectionTitle/sectionSub pattern, 744/1024 breakpoints, sentence case
+and no emoji are fixed.
 
 - Roadmap: ceremony and unlocking — the game metaphor at full volume.
 - Journal: quiet and warm — zero game metaphor, and no kind colours (journal has no kinds).

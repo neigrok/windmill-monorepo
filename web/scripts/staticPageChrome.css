@@ -6,6 +6,7 @@
   --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
   --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --text-xs: 12px;
   --neutral-200: #E5D9C0;
   --surface-canvas: #F9F5EB;
   --surface-card: #FFFFFF;
@@ -26,9 +27,11 @@
   --color-brand-hover: #9D5330;
   --color-brand-active: #7C3F23;
   --color-brand-soft: #F9EFE9;
+  --accent-terracotta-100: #F3DFD2;
   --accent-terracotta-200: #EAC6B0;
   --accent-terracotta-400: #D08A5E;
   --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
+  --focus-ring: 0 0 0 4px var(--accent-terracotta-100);
   --shadow-xs: 0 1px 2px rgba(33, 27, 19, 0.06);
   --shadow-sm: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04);
   --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
@@ -57,6 +60,7 @@ html[data-theme="dark"] {
   --accent-terracotta-200: #EAC6B0;
   --accent-terracotta-400: #D08A5E;
   --kind-terracotta-glow: rgba(221, 151, 111, 0.8);
+  --focus-ring: 0 0 0 4px rgba(208, 138, 94, 0.4);
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.44), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.36);
@@ -96,3 +100,19 @@ footer { display: flex; align-items: flex-start; justify-content: space-between;
 .fr { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 24px; font-size: 14px; }
 .fr a { color: var(--text-tertiary); text-decoration: none; }
 .fr a:hover { color: var(--text-primary); }
+
+/* The Light · Dark toggle: an empty box each page carries first in .navr, which /appearance.js fills —
+   the design-system SegmentedControl look, 32px tall, the checked segment the resolved appearance;
+   every colour a token. The min-width is the filled pill's own width at each break, so the deferred
+   mount moves nothing. */
+.wm-appearance { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; min-width: 138px; height: 32px; padding: 2px; border-radius: 999px; background: var(--surface-sunken); font-family: var(--font-body); }
+.wm-appearance-thumb { position: absolute; top: 2px; left: 2px; width: calc((100% - 6px) / 2); height: 28px; border-radius: 999px; background: var(--surface-card); border: 1px solid var(--border-subtle); box-shadow: var(--shadow-xs); transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1); }
+.wm-appearance[data-resolved="dark"] .wm-appearance-thumb { transform: translateX(calc(100% + 2px)); }
+.wm-appearance-segment { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 28px; padding: 0 10px 0 8px; border: none; border-radius: 999px; background: transparent; outline: none; color: var(--text-tertiary); font-family: inherit; font-size: var(--text-xs); font-weight: 700; line-height: 1; cursor: pointer; transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1); }
+.wm-appearance-segment:hover { background: var(--surface-hover); color: var(--text-secondary); }
+.wm-appearance-segment[aria-checked="true"] { color: var(--text-primary); }
+.wm-appearance-segment[aria-checked="true"]:hover { background: transparent; }
+.wm-appearance-segment[aria-checked="true"] svg { color: var(--text-link); }
+.wm-appearance-segment:focus-visible { box-shadow: var(--focus-ring); }
+@media (max-width: 479px) { .wm-appearance { min-width: 70px; } .wm-appearance-word { display: none; } .wm-appearance-segment { padding: 0 9px; } }
+@media (prefers-reduced-motion: reduce) { .wm-appearance-thumb, .wm-appearance-segment { transition: none; } }

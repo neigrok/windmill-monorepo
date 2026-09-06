@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
 import { Icon } from '../Icon.jsx';
 
-// A three-or-so-way choice drawn as one bar: `options` are `{ value, label, icon? }`, `value` the
-// chosen one. A radiogroup for the keyboard — arrows move the choice, one tab stop for the bar —
-// and the chosen segment's card slides between them unless motion is reduced. The bar is named by
-// `label`, or by the element `labelledBy` points at. A value no option carries checks nothing.
+// A two-or-three-way choice drawn as one bar: `options` are `{ value, label, icon?, ariaLabel? }`,
+// `value` the chosen one. A radiogroup for the keyboard — arrows move the choice, one tab stop for
+// the bar — and the chosen segment's card slides between them unless motion is reduced. The bar is
+// named by `label`, or by the element `labelledBy` points at; a segment is named by its `label`
+// text unless `ariaLabel` names it, for a label the caller hides at some width. A value no option
+// carries checks nothing.
 export function SegmentedControl({ label, labelledBy, options, value, onChange }) {
   const buttons = useRef([]);
   const index = options.findIndex((option) => option.value === value);
@@ -49,6 +51,7 @@ export function SegmentedControl({ label, labelledBy, options, value, onChange }
             type="button"
             role="radio"
             aria-checked={checked}
+            aria-label={option.ariaLabel}
             tabIndex={checked || (index < 0 && i === 0) ? 0 : -1}
             onClick={() => onChange?.(option.value)}
             onKeyDown={(event) => move(event, i)}

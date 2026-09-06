@@ -13,7 +13,9 @@ no surface offers a checkout and none can complete. Windmill One is held only by
 owner list names; the gated features stay shut for everyone else, and the pricing page says so
 on its own plan card.
 
-Shippable pages: `web/public/pricing.html` + `web/public/refunds.html`, light only. The
+Shippable pages: `web/public/pricing.html` + `web/public/refunds.html`, dressed in the visitor's
+Appearance choice like every static page (the nav's Light · Dark toggle,
+`../../guidelines/superapp-shell.md` §6) and legible in both. The
 in-app meter and the out-of-allowance pause are specified in
 `../../roadmap/guidelines/tending.md` §6 and the settings usage row. Settings carries **no
 Plan section** while nothing can be bought — naming a tier nobody can buy is an advertisement,
@@ -71,14 +73,13 @@ Register: never scare, never gate (`../../roadmap/guidelines/honesty.md`).
 - The **30-day money-back guarantee** on the subscription, visible where money is asked.
 - **Refunds / Terms / Privacy** reachable from navigation, in the shared footer across the
   marketing family + landing nav.
-- Prices **USD before tax**; **Paddle is seller of record**; the receipt says Paddle. Static
-  pages **light only**.
+- Prices **USD before tax**; **Paddle is seller of record**; the receipt says Paddle.
 - Cancellation is by email to `hello@windmill.works`; self-serve cancellation from Settings is
   not built, and the page says so rather than implying a button that doesn't exist.
 
 ## 6. The page — free-first, meter-forward
 
-`windmill.works/pricing`, built from the terms/privacy static shell, light only:
+`windmill.works/pricing`, built from the terms/privacy static shell, in both appearances:
 
 1. **Hero — "Windmill is free."** The header never leads with payment. The sub carries the
    whole truth — all three rooms free, the AI's work is the one paid thing, 30 tendings a

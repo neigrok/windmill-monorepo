@@ -26,6 +26,15 @@ html { scroll-behavior: smooth; }
 
 .landing-cluster { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
+/* The Light · Dark bar before the seat: the design-system bar, one step taller to sit with the buttons. */
+.landing-appearance { display: inline-flex; flex: none; }
+.landing-appearance .wm-segmented { height: 32px; }
+.landing-appearance .wm-segmented-thumb, .landing-appearance .wm-segmented-segment { height: 28px; }
+@media (max-width: 479px) {
+  .landing-appearance-word { display: none; }
+  .landing-appearance .wm-segmented-segment { padding: 0 9px; }
+}
+
 .landing-linksent {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
   border: 1px solid var(--border-subtle); border-radius: var(--radius-full);
