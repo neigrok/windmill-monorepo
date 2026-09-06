@@ -175,7 +175,7 @@ treated as internal and is not limited.
 | read | `get_tree` | title + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed / in-progress node ids, and the completed ones marked `outOfOrder` |
+| read | `get_progress` | the caller's completed / in-progress node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
@@ -272,7 +272,9 @@ handshake `instructions` say so.
   colliding kind is replaced only in the registers the batch sends: `label`, `description` and
   `crossBranchExempt` left out keep the value the legend holds, because the graft stamps an
   omitted register unset (`Graft::omittedKindRegisters`, `graftLegend`) and no stored stamp loses
-  to that; a new kind's omitted register lands as its default. A re-sent
+  to that; a new kind's omitted register lands as its default. Legend order is treated the same
+  way — rank is never on the wire, so a colliding kind keeps its place and a new kind lands after
+  the last one, in batch order. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every

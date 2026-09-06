@@ -179,7 +179,7 @@ TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new
   graft.omittedKindRegisters[KindId{"read"}] = {KindRegister::label, KindRegister::description,
                                                 KindRegister::crossBranchExempt};
 
-  const LegendState frame = graftLegend(graft, at(5));
+  const LegendState frame = graftLegend(legend, graft, at(5));
   REQUIRE_EQ(frame.kinds.size(), 2u);
   for (const KindStateEntry& kind : frame.kinds) {
     CHECK_EQ(kind.hueAt, at(5));
@@ -203,13 +203,47 @@ TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new
   // A register the document does carry lands at the graft's stamp, an empty string included.
   Graft spelled;
   spelled.document.kinds = {{KindId{"build"}, NodeColor::sky, "Builds", "", false}};
-  legend.join(graftLegend(spelled, at(6)));
+  legend.join(graftLegend(legend, spelled, at(6)));
   const Kind renamed = *legend.view(KindId{"build"});
   CHECK_EQ(renamed.label, std::string("Builds"));
   CHECK_EQ(renamed.description, std::string(""));
   CHECK_FALSE(renamed.crossBranchExempt);
 }
 
+// Rank is never on the wire, so a colliding kind's rank is stamped unset and the legend keeps its
+// order; new kinds land after the last present one, in document order rather than id order — what
+// addKind would do for each in turn.
+TEST(graft_legend_keeps_a_colliding_kinds_rank_and_appends_a_new_kind_after_the_last) {
+  Legend legend({{KindId{"a"}, NodeColor::terracotta}, {KindId{"b"}, NodeColor::olive}, {KindId{"c"}, NodeColor::gold}},
+                at(1));
+
+  Graft graft;
+  graft.document.kinds = {{KindId{"c"}, NodeColor::gold}, {KindId{"y"}, NodeColor::plum}, {KindId{"x"}, NodeColor::sky}};
+  const LegendState frame = graftLegend(legend, graft, at(5));
+  REQUIRE_EQ(frame.kinds.size(), 3u);
+  for (const KindStateEntry& kind : frame.kinds) {
+    if (kind.id == KindId{"c"}) {
+      CHECK_FALSE(kind.rankAt.isSet());
+      CHECK_EQ(kind.rank, 0.0);
+    } else {
+      CHECK_EQ(kind.rankAt, at(5));
+      CHECK_EQ(kind.rank, kind.id == KindId{"y"} ? 3.0 : 4.0);
+    }
+  }
+
+  legend.join(frame);
+  CHECK_EQ(legend.orderedIds(),
+           (std::vector<KindId>{KindId{"a"}, KindId{"b"}, KindId{"c"}, KindId{"y"}, KindId{"x"}}));
+
+  // A kind removed earlier is not held, so a re-sent id lands last, like addKind on the same id.
+  legend.removeKind(KindId{"a"}, at(6));
+  Graft revived;
+  revived.document.kinds = {{KindId{"a"}, NodeColor::terracotta}};
+  legend.join(graftLegend(legend, revived, at(7)));
+  CHECK_EQ(legend.orderedIds(),
+           (std::vector<KindId>{KindId{"b"}, KindId{"c"}, KindId{"y"}, KindId{"x"}, KindId{"a"}}));
+}
+
 TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
-  CHECK(graftLegend(Graft{}, at(1)) == LegendState{});
+  CHECK(graftLegend(Legend{}, Graft{}, at(1)) == LegendState{});
 }

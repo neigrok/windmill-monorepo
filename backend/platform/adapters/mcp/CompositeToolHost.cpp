@@ -65,8 +65,7 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
     // Not scope-gated: the caller already knows the name, and the sentence names what took over.
     const auto retired = retired_.find(name);
     if (retired != retired_.end()) return ToolResult::failure(name + ": " + retired->second.sentence);
-    return ToolResult::failure(name + ": no such tool on this server — call tools/list for the whole "
-                                      "surface.");
+    return ToolResult::failure(name + ": " + noSuchToolSentence());
   }
 
   const Registered& tool = tools_[entry->second];

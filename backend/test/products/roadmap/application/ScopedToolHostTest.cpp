@@ -21,7 +21,8 @@ struct RecordingToolHost : ToolHost {
 
   std::vector<ToolDeclaration> declareTools() const override {
     std::vector<ToolDeclaration> tools;
-    for (const char* name : {"get_tree", "create_node", "delete_tree", "list_trees", "create_tree"}) {
+    for (const char* name : {"get_tree", "create_node", "rename_node", "import_subgraph", "delete_tree", "list_trees",
+                             "create_tree"}) {
       Json::Value entry(Json::objectValue);
       entry["name"] = name;
       tools.push_back(ToolDeclaration{entry, "roadmap", Access::write});
@@ -80,6 +81,12 @@ std::vector<std::string> toolNames(const std::vector<ToolDeclaration>& tools) {
   return names;
 }
 
+Json::Value with_tree() {
+  Json::Value args(Json::objectValue);
+  args["treeId"] = "t_target";
+  return args;
+}
+
 // A tend runs as the account on itself, so the grant is never what narrows it — one tree is.
 ToolCaller tender(const char* user) { return ToolCaller{UserId{user}, ToolScope::everything()}; }
 
@@ -116,6 +123,18 @@ TEST(scoped_tool_host_refuses_a_cross_tree_tool_without_reaching_the_inner_host)
   ScopedToolHost scoped(inner, TreeId{"t_target"});
   const ToolResult deleted = scoped.callTool("delete_tree", Json::Value(Json::objectValue), tender("u1"));
   CHECK(deleted.isError);
+  CHECK_EQ(inner.calls.size(), std::size_t{0});
+}
+
+// The same sentence CompositeToolHost gives a name outside the whole server, since a tend's agent
+// reads the catalog it was handed and nothing behind it — retired names included.
+TEST(scoped_tool_host_refuses_a_name_outside_its_catalog_with_the_composites_sentence) {
+  RecordingToolHost inner;
+  ScopedToolHost scoped(inner, TreeId{"t_target"});
+  const ToolResult unknown = scoped.callTool("frobnicate", with_tree(), tender("u1"));
+  CHECK(unknown.isError);
+  CHECK_EQ(message(unknown),
+           std::string("frobnicate: no such tool on this server — call tools/list for the whole surface."));
   CHECK_EQ(inner.calls.size(), std::size_t{0});
 }
 

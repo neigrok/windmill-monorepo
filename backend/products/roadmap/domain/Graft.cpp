@@ -6,10 +6,18 @@
 
 namespace wm {
 
-LegendState graftLegend(const Graft& graft, const Hlc& at) {
+LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
   if (graft.document.kinds.empty()) return {};
+  std::map<KindId, double> appended;  // a new kind's place after the legend's last, in document order
+  const double base = current.nextRank();
+  for (const Kind& kind : graft.document.kinds)
+    if (!current.has(kind.id)) appended.emplace(kind.id, base + static_cast<double>(appended.size()));
+
   LegendState legend = Legend(graft.document.kinds, at).exportState();
   for (KindStateEntry& kind : legend.kinds) {
+    const auto place = appended.find(kind.id);
+    kind.rank = place == appended.end() ? 0 : place->second;
+    kind.rankAt = place == appended.end() ? Hlc{} : at;
     const auto omitted = graft.omittedKindRegisters.find(kind.id);
     if (omitted == graft.omittedKindRegisters.end()) continue;
     if (omitted->second.count(KindRegister::label)) { kind.label.clear(); kind.labelAt = Hlc{}; }

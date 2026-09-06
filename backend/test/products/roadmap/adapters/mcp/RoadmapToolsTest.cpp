@@ -2537,6 +2537,66 @@ TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing)
 }
 
 // A re-sent kind changes only in the fields the batch sends; a new kind without them gets the defaults.
+// Rank is never on the wire, so a re-sent kind keeps its place and the frame every replica joins
+// stamps its rank unset; new kinds land after the last one, in batch order rather than id order.
+TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_a_new_one) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", kindArgs("a", "gold")).isError);
+  CHECK_FALSE(h.call("add_kind", kindArgs("b", "sky")).isError);
+  CHECK_FALSE(h.call("add_kind", kindArgs("c", "plum")).isError);
+
+  Json::Value kinds(Json::arrayValue);
+  kinds.append(kindArgs("c", "plum"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = Json::Value(Json::arrayValue);
+  args["kinds"] = kinds;
+  CHECK_FALSE(h.call("import_subgraph", args).isError);
+
+  Json::Value legend = body(h.call("get_tree", Json::Value(Json::objectValue)))["tree"]["kinds"];
+  REQUIRE_EQ(legend.size(), 3u);
+  CHECK_EQ(legend[0]["id"].asString(), std::string("a"));
+  CHECK_EQ(legend[1]["id"].asString(), std::string("b"));
+  CHECK_EQ(legend[2]["id"].asString(), std::string("c"));
+
+  const Subgraph& frame = h.bus.subgraphBroadcasts.back().subgraph;
+  REQUIRE_EQ(frame.legend.kinds.size(), 1u);
+  CHECK_EQ(frame.legend.kinds[0].id, KindId{"c"});
+  CHECK(frame.legend.kinds[0].hueAt.isSet());
+  CHECK_FALSE(frame.legend.kinds[0].rankAt.isSet());
+
+  Json::Value more(Json::arrayValue);
+  more.append(kindArgs("b", "sky"));
+  more.append(kindArgs("y", "olive"));
+  more.append(kindArgs("x", "terracotta"));
+  args["kinds"] = more;
+  CHECK_FALSE(h.call("import_subgraph", args).isError);
+  legend = body(h.call("get_tree", Json::Value(Json::objectValue)))["tree"]["kinds"];
+  REQUIRE_EQ(legend.size(), 5u);
+  CHECK_EQ(legend[0]["id"].asString(), std::string("a"));
+  CHECK_EQ(legend[1]["id"].asString(), std::string("b"));
+  CHECK_EQ(legend[2]["id"].asString(), std::string("c"));
+  CHECK_EQ(legend[3]["id"].asString(), std::string("y"));
+  CHECK_EQ(legend[4]["id"].asString(), std::string("x"));
+}
+
+// The description and the field doc say the same thing about outOfOrder: it is the subset of
+// completed whose set_progress carried the flag, met prerequisites or not.
+TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag) {
+  Harness h;
+  for (const ToolDeclaration& tool : h.tools.declareTools()) {
+    if (tool.name() != "get_progress") continue;
+    CHECK_EQ(tool.descriptor["description"].asString(),
+             std::string("The caller's private progress overlay for a roadmap: the node ids that are "
+                         "completed, those in progress, and outOfOrder — the subset of completed whose "
+                         "set_progress carried outOfOrder:true. Per-user, separate from the shared "
+                         "structure."));
+    const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
+    CHECK(fields.find("the subset of `completed` whose set_progress carried outOfOrder:true") != std::string::npos);
+    return;
+  }
+  CHECK(false);
+}
+
 TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_new_kinds) {
   Harness h;
   Json::Value drill = kindArgs("drill", "gold");

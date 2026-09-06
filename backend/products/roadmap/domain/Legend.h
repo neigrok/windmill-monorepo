@@ -72,6 +72,9 @@ public:
   // One kind's full CRDT state, for sparse persistence. nullopt for a never-seen id.
   std::optional<KindStateEntry> exportKind(const KindId& id) const;
 
+  // One past the highest present rank: where addKind lands a kind, and where a graft lands a new one.
+  double nextRank() const;
+
 private:
   struct KindRecord {
     ElementSet life;
@@ -81,8 +84,6 @@ private:
     Lww<bool> crossBranchExempt;
     Lww<double> rank;
   };
-
-  double nextRank() const;
 
   std::map<KindId, KindRecord> kinds_;
 };

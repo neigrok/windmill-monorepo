@@ -93,7 +93,7 @@ Seq TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserI
   frame.actor = at.actor;
   frame.intent = SubgraphIntent::graft;
   frame.graph = graftState(graph_, incoming, at);
-  frame.legend = graftLegend(incoming, at);
+  frame.legend = graftLegend(legend_, incoming, at);
   return joinSubgraph(frame, actor).value_or(head_);
 }
 

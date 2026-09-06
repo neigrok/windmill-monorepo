@@ -286,8 +286,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         progressVocabulary().names());
     tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed, those "
-        "in progress, and the completed ones marked as meant out of dependency order. Per-user, "
-        "separate from the shared structure.",
+        "in progress, and outOfOrder — the subset of completed whose set_progress carried "
+        "outOfOrder:true. Per-user, separate from the shared structure.",
         p, {"treeId"}));
   }
   {

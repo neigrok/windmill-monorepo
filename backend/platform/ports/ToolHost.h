@@ -93,6 +93,12 @@ struct ToolDeclaration {
   }
 };
 
+// The one refusal a name no live catalog declares gets, wherever the gate stands: the composite
+// for the whole server, and a scoped host for the catalog it was handed.
+inline std::string noSuchToolSentence() {
+  return "no such tool on this server — call tools/list for the whole surface.";
+}
+
 // A retired tool name and the answer an agent calling it should read; `replacement` is empty when
 // nothing took over.
 struct ToolRetirement {
