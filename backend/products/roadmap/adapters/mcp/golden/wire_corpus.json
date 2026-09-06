@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 6,
+  "schemaVersion" : 7,
   "steps" : 
   [
     {
@@ -243,6 +243,29 @@
           {
             "text" : 
             {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "root",
+              "introducedDiagnostics" : [],
+              "seq" : 10
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 10,
+      "tool" : "annotate_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
               "nodeId" : "root",
               "prerequisitesMet" : true,
               "status" : "complete"
@@ -253,7 +276,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 10,
+      "step" : 11,
       "tool" : "set_progress"
     },
     {
@@ -284,7 +307,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 11,
+      "step" : 12,
       "tool" : "set_progress"
     },
     {
@@ -308,7 +331,7 @@
               "nodeCollisions" : [],
               "nodes" : 2,
               "prerequisiteMode" : "merge",
-              "seq" : 10,
+              "seq" : 11,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -321,7 +344,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 12,
+      "step" : 13,
       "tool" : "import_subgraph"
     },
     {
@@ -359,7 +382,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 13,
+      "step" : 14,
       "tool" : "import_subgraph"
     },
     {
@@ -395,7 +418,7 @@
               [
                 "ghost"
               ],
-              "seq" : 11,
+              "seq" : 12,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -408,7 +431,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 14,
+      "step" : 15,
       "tool" : "import_subgraph"
     },
     {
@@ -419,13 +442,18 @@
           {
             "text" : 
             {
-              "count" : 1,
+              "count" : 2,
               "nodes" : 
               [
                 {
                   "color" : "sky",
                   "id" : "render",
                   "label" : "Renderer Core"
+                },
+                {
+                  "color" : "gold",
+                  "id" : "root",
+                  "label" : "Ship v1"
                 }
               ]
             },
@@ -435,7 +463,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 15,
+      "step" : 16,
       "tool" : "find_nodes"
     },
     {
@@ -467,7 +495,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 16,
+      "step" : 17,
       "tool" : "find_nodes"
     },
     {
@@ -479,7 +507,7 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 11,
+              "seq" : 12,
               "tree" : 
               {
                 "id" : "t",
@@ -532,8 +560,8 @@
                   },
                   {
                     "color" : "gold",
-                    "description" : "the crown of the tree",
-                    "icon" : "",
+                    "description" : "the crown of the tree\n\nshipped when render and sync are done",
+                    "icon" : "crown",
                     "id" : "root",
                     "label" : "Ship v1",
                     "links" : 
@@ -551,7 +579,7 @@
                     "prerequisites" : [],
                     "state" : "complete",
                     "status" : "complete",
-                    "summary" : "the crown of the tree"
+                    "summary" : "the crown of the tree\n\nshipped when render and sync are done"
                   },
                   {
                     "color" : "plum",
@@ -575,7 +603,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 17,
+      "step" : 18,
       "tool" : "get_tree"
     },
     {
@@ -606,10 +634,6 @@
                 },
                 {
                   "kind" : "empty-icon",
-                  "node" : "root"
-                },
-                {
-                  "kind" : "empty-icon",
                   "node" : "sync"
                 }
               ]
@@ -620,7 +644,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 18,
+      "step" : 19,
       "tool" : "get_diagnostics"
     },
     {
@@ -647,7 +671,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 19,
+      "step" : 20,
       "tool" : "get_progress"
     },
     {
@@ -672,7 +696,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 20,
+      "step" : 21,
       "tool" : "get_health"
     },
     {
@@ -688,7 +712,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 22,
       "tool" : "set_progress"
     },
     {
@@ -697,14 +721,14 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass \"description\", \"links\", or both.",
+            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\".",
             "type" : "text"
           }
         ],
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 22,
+      "step" : 23,
       "tool" : "annotate_node"
     }
   ]

@@ -41,10 +41,15 @@ std::string writeRefusalSentence(WriteRefusal refusal) {
   return std::string(truthOf(refusal)) + ". Call list_trees to see the roadmaps you own.";
 }
 
+// A minted id is the server's own choice, so it is held under kMaxIdLength with room for the
+// "-N" a collision appends — a long label never refuses its own node by way of the id.
+constexpr std::size_t kMaxSlugLength = kMaxIdLength - 8;
+
 std::string slugify(const std::string& label) {
   std::string out;
   bool dash = false;
   for (unsigned char c : label) {
+    if (out.size() == kMaxSlugLength) break;
     if (std::isalnum(c)) {
       out += static_cast<char>(std::tolower(c));
       dash = false;
@@ -85,22 +90,22 @@ bool namesAnExistingKind(const std::string& tool) {
          tool == "recolor_kind";
 }
 
-// `prefix` is blank at the top level and "nodes[3]." inside a list.
+// `prefix` is blank at the top level and "nodes[3]." inside a list. A node's label, icon and
+// description are typed here and capped by the domain — validate() for a command, admit() for a
+// graft — whose one sentence names every field over its cap and, for an append, the body the node
+// would hold.
 std::optional<std::string> checkAnnotation(const Json::Value& node, const std::string& prefix) {
-  if (std::optional<std::string> bad =
-          optionalString(node["description"], prefix + "description", kMaxNodeDescriptionLength))
+  if (std::optional<std::string> bad = optionalString(node["description"], prefix + "description"))
     return bad;
   return optionalLinks(node["links"], prefix + "links");
 }
 
-// The graft path never runs the domain's validate(), so the caps are checked here or nowhere.
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
     return bad;
-  if (std::optional<std::string> bad = optionalString(node["label"], path + ".label", kMaxNodeLabelLength))
-    return bad;
-  if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon", kMaxIconLength)) return bad;
+  if (std::optional<std::string> bad = optionalString(node["label"], path + ".label")) return bad;
+  if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["seedStatus"], path + ".seedStatus", kStatuses))
     return bad;
@@ -142,11 +147,9 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (!args[kNodeHandle.published].isNull())
       return "\"nodeId\" names a node that already exists — the id you propose for a NEW node "
              "is \"id\", and is minted from the label when you omit it.";
-    if (std::optional<std::string> bad =
-            requireString(args["label"], "label", Empty::rejected, kMaxNodeLabelLength))
-      return bad;
+    if (std::optional<std::string> bad = requireString(args["label"], "label", Empty::rejected)) return bad;
     if (std::optional<std::string> bad = optionalString(args["id"], "id", kMaxIdLength)) return bad;
-    if (std::optional<std::string> bad = optionalString(args["icon"], "icon", kMaxIconLength)) return bad;
+    if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
     if (std::optional<std::string> bad = optionalStrings(args["prerequisites"], "prerequisites", kMaxIdLength))
       return bad;
@@ -159,12 +162,19 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     return checkAnnotation(args, "");
   }
   if (tool == "annotate_node") {
-    if (args["description"].isNull() && args["links"].isNull())
-      return "nothing to set — pass \"description\", \"links\", or both.";
+    if (args["description"].isNull() && args["appendDescription"].isNull() && args["icon"].isNull() &&
+        args["links"].isNull())
+      return "nothing to set — pass at least one of \"description\", \"appendDescription\", \"icon\", "
+             "\"links\".";
+    if (!args["description"].isNull() && !args["appendDescription"].isNull())
+      return "\"description\" and \"appendDescription\" are both given — pass one: description "
+             "replaces the body, appendDescription joins onto it.";
+    if (std::optional<std::string> bad = optionalString(args["appendDescription"], "appendDescription"))
+      return bad;
+    if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
     return checkAnnotation(args, "");
   }
-  if (tool == "rename_node")
-    return requireString(args["label"], "label", Empty::allowed, kMaxNodeLabelLength);
+  if (tool == "rename_node") return requireString(args["label"], "label", Empty::allowed);
   if (tool == "set_node_color") return requireOneOf(args["color"], "color", kHues);
   if (tool == "move_node") {
     if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;

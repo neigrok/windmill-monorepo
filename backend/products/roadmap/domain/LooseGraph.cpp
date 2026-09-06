@@ -104,6 +104,10 @@ void LooseGraph::setLabel(const NodeId& id, const std::string& label, const Hlc&
   nodes_[id].label.merge(label, at);
 }
 
+void LooseGraph::setIcon(const NodeId& id, const std::string& icon, const Hlc& at) {
+  nodes_[id].icon.merge(icon, at);
+}
+
 void LooseGraph::setColor(const NodeId& id, NodeColor color, const Hlc& at) {
   nodes_[id].color.merge(color, at);
 }
@@ -145,6 +149,12 @@ bool LooseGraph::isTombstoned(const NodeId& id) const {
 bool LooseGraph::edgePresent(const NodeId& from, const NodeId& to) const {
   auto it = edges_.find(Edge{from, to});
   return it != edges_.end() && it->second.present();
+}
+
+std::string LooseGraph::descriptionOf(const NodeId& id) const {
+  const auto record = nodes_.find(id);
+  if (record == nodes_.end()) return "";
+  return record->second.description.value;
 }
 
 std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {

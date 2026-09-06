@@ -47,6 +47,7 @@ public:
                   const std::optional<std::string>& status = std::nullopt);
   void deleteNode(const NodeId& id, const Hlc& at);
   void setLabel(const NodeId& id, const std::string& label, const Hlc& at);
+  void setIcon(const NodeId& id, const std::string& icon, const Hlc& at);
   void setColor(const NodeId& id, NodeColor color, const Hlc& at);
   void setPosition(const NodeId& id, const Vec2& position, const Hlc& at);
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
@@ -61,6 +62,8 @@ public:
   bool isTombstoned(const NodeId& id) const;
   bool edgePresent(const NodeId& from, const NodeId& to) const;
   std::optional<NodeSpec> nodeView(const NodeId& id) const;
+  // The one register an append reads, without the edge scan nodeView pays; "" for a never-seen id.
+  std::string descriptionOf(const NodeId& id) const;
 
   // Present nodes currently painted `color`: the repaint set for a RecolorKind, and the guard
   // blocking removal of a kind whose hue is still worn.

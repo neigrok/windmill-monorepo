@@ -332,7 +332,7 @@ TEST(create_with_an_oversized_field_is_400_naming_the_node_and_plants_nothing) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ((*response->getJsonObject())["error"].asString(),
-           std::string("node \"hull\": description is 4001 characters, max 4000"));
+           std::string("node \"hull\": description would be 16001 characters, 1 over the 16000 cap"));
   CHECK_EQ(h.trees.byId.size(), std::size_t{0});
 }
 

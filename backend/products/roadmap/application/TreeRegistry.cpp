@@ -95,17 +95,10 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (start == std::string::npos) return Renaming::blankTitle;
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
 
-  // A name, not a payload. Truncate — never reject — to kMaxTitleChars (domain/Command.h), counted
-  // as UTF-8 codepoints so the cut can never split a sequence.
-  std::size_t seen = 0;
-  for (std::size_t i = 0; i < trimmed.size(); ++i) {
-    if ((static_cast<unsigned char>(trimmed[i]) & 0xC0) == 0x80) continue;  // continuation byte
-    if (seen == kMaxTitleChars) {
-      trimmed.resize(i);
-      break;
-    }
-    ++seen;
-  }
+  // A name, not a payload. Truncate — never reject — to kMaxTitleChars (domain/Command.h), on the
+  // code-point reading every cap shares, so the cut can never split a sequence.
+  const std::size_t cut = byteOffsetOfCodePoint(trimmed, kMaxTitleChars);
+  if (cut != std::string::npos) trimmed.resize(cut);
 
   // The strand serializes the rename against the tree's socket frames, so the owner check, the title
   // op and the persist form one uninterrupted step.

@@ -120,19 +120,21 @@ op, so replaying the log tail reproduces the whole edit; an empty list mints not
 
 ### Bounds
 
-Declared once in `domain/Command.h` and published as `maxLength` by the MCP surface.
+Declared once in `domain/Command.h` and published as `maxLength` by the MCP surface. Every length
+is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
+names each field over its cap and by how much.
 
 | Bound | Value |
 | --- | --- |
-| id length | 128 bytes |
-| node label | 200 bytes |
-| icon token | 64 bytes |
-| node description | 4000 bytes |
-| links per node | 32 (label 200 B, url 2048 B) |
+| id length | 128 characters |
+| node label | 200 characters |
+| icon token | 64 characters |
+| node description | 16000 characters (an `AnnotateNode` append is held to the joined body) |
+| links per node | 32 (label 200, url 2048 characters) |
 | present nodes per tree | 10000 |
 | present edges per tree | 20000 |
-| tree title | 200 chars |
-| legend kinds | 6 (label 24 B, description 80 B) |
+| tree title | 200 characters |
+| legend kinds | 6 (label 24, description 80 characters) |
 
 `validate()` judges a single command; `admit()` judges arrivals that mint no command — a posted
 document, an MCP graft, a client lattice frame. `admit` returns `Admission{verdict ∈ {tooLarge,

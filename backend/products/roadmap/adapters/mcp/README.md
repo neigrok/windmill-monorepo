@@ -58,14 +58,20 @@ sentence.
 
 ```
 rename_node: missing required argument "nodeId". Call get_tree with fields ["id","label"] to list the ids this tree has.
-annotate_node: description is 4613 characters, max 4000
+annotate_node: description would be 17181 characters, 1181 over the 16000 cap
+create_node: label would be 250 characters, 50 over the 200 cap; description would be 17181 characters, 1181 over the 16000 cap
 import_subgraph: nodes[0] must be an object, got string. Each item is a JSON object, not a JSON-encoded string.
 set_progress: status "finished" is not one of {active, complete, none}
 ```
 
 The checks live in `ToolArgs.{h,cpp}`. `RoadmapTools::callTool` stamps the tool name exactly once
 and catches, so a malformed argument fails its own call rather than the whole HTTP request. Every
-cap a tool enforces is published as `maxLength` / `maxItems` in its `inputSchema`.
+cap a tool enforces is published as `maxLength` / `maxItems` in its `inputSchema`, and every
+length cap counts Unicode code points (`codePointCount`, `domain/Command.h`) — the published
+`maxLength` is what a CJK or emoji string is held to. A node's label, icon and description are
+capped by the domain — `validate()` for a command, `admit()` for a graft — in one sentence that
+names every field over its cap and by how much, so a caller who overran several fixes them in one
+round trip; `annotate_node {appendDescription}` is judged on the body the node would then hold.
 
 ## Handles
 
@@ -169,7 +175,7 @@ treated as internal and is not limited.
 | read | `get_progress` | the caller's completed / in-progress node ids |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
-| edit | `annotate_node` | set a node's `description` and/or `links` |
+| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |

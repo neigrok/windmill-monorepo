@@ -785,7 +785,7 @@ TEST(ws_a_frame_with_an_oversized_title_is_rejected_and_joins_nothing) {
 
   REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
-  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the title is 40000 characters, max 200"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the title would be 40000 characters, 39800 over the 200 cap"));
   std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
   CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->title().value, std::string("Tree"));
 }
@@ -812,7 +812,7 @@ TEST(ws_a_malformed_field_is_rejected_as_bad_frame_not_as_a_full_tree) {
 
   REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
-  CHECK_EQ(rejectReason(conn->sent[0]), std::string("a node id is 129 characters, max 128"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("a node id would be 129 characters, 1 over the 128 cap"));
 }
 
 TEST(ws_a_visibility_flip_drops_the_reader_it_locks_out) {

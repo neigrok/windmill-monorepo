@@ -23,7 +23,8 @@ std::string at(const std::string& path, Json::ArrayIndex index) {
 }
 
 std::string tooLong(const std::string& path, std::size_t given, std::size_t limit) {
-  return path + " is " + std::to_string(given) + " characters, max " + std::to_string(limit);
+  return path + " is " + std::to_string(given) + " characters, " + std::to_string(given - limit) +
+         " over the " + std::to_string(limit) + " cap";
 }
 
 std::string set(const std::vector<const char*>& legal) {
@@ -89,7 +90,8 @@ std::optional<std::string> optionalString(const Json::Value& value, const std::s
                                           std::size_t limit) {
   if (value.isNull()) return std::nullopt;
   if (!value.isString()) return wrongType(path, "a string", value);
-  if (limit > 0 && value.asString().size() > limit) return tooLong(path, value.asString().size(), limit);
+  const std::size_t characters = codePointCount(value.asString());
+  if (limit > 0 && characters > limit) return tooLong(path, characters, limit);
   return std::nullopt;
 }
 

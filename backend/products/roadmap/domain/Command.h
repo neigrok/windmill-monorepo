@@ -15,20 +15,27 @@
 namespace wm {
 
 // Admission bounds, enforced by validate() for a single command and admit() for a graph that
-// arrives whole, and published as `maxLength` by the surfaces that take them.
-constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
-constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
-constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
-constexpr std::size_t kMaxNodeDescriptionLength = 4000; // node annotation body length in bytes
-constexpr std::size_t kMaxNodeLinks = 32;               // external references per node
-constexpr std::size_t kMaxLinkLabelLength = 200;        // a link's display-text length in bytes
-constexpr std::size_t kMaxLinkUrlLength = 2048;         // a link's url length in bytes
-constexpr std::size_t kMaxNodes = 10000;                // present nodes admitted per tree
-constexpr std::size_t kMaxEdges = 20000;                // present edges admitted per tree
-constexpr std::size_t kMaxTitleChars = 200;             // a roadmap's name (TreeRegistry truncates)
-constexpr std::size_t kMaxKinds = 6;                    // legend kinds per tree (one per hue)
-constexpr std::size_t kMaxKindLabelLength = 24;         // a legend kind's label length in bytes
-constexpr std::size_t kMaxKindDescriptionLength = 80;   // a kind's sorting brief, in bytes
+// arrives whole, and published as `maxLength` by the surfaces that take them. Every length is
+// counted in characters — Unicode code points, by codePointCount() — never bytes.
+constexpr std::size_t kMaxIdLength = 128;                // node / tree id
+constexpr std::size_t kMaxNodeLabelLength = 200;         // node display label
+constexpr std::size_t kMaxIconLength = 64;               // node icon token
+constexpr std::size_t kMaxNodeDescriptionLength = 16000; // node annotation body
+constexpr std::size_t kMaxNodeLinks = 32;                // external references per node
+constexpr std::size_t kMaxLinkLabelLength = 200;         // a link's display text
+constexpr std::size_t kMaxLinkUrlLength = 2048;          // a link's url
+constexpr std::size_t kMaxNodes = 10000;                 // present nodes admitted per tree
+constexpr std::size_t kMaxEdges = 20000;                 // present edges admitted per tree
+constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (TreeRegistry truncates)
+constexpr std::size_t kMaxKinds = 6;                     // legend kinds per tree (one per hue)
+constexpr std::size_t kMaxKindLabelLength = 24;          // a legend kind's label
+constexpr std::size_t kMaxKindDescriptionLength = 80;    // a kind's sorting brief
+
+// The one reading of "characters" every cap is held to: UTF-8 code points, so a CJK character or
+// an emoji counts once. byteOffsetOfCodePoint is where code point `index` (zero-based) starts, or
+// npos when the text holds no more than `index` of them — the cut a truncation makes.
+std::size_t codePointCount(const std::string& utf8);
+std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index);
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };
@@ -44,10 +51,15 @@ struct CreateNode {
   std::vector<Link> links;
 };
 // Set a node's free annotation. Each field is optional: a nullopt leaves that register untouched.
+// `description` replaces the body; `appendDescription` joins onto it after a blank line (or opens
+// it when it is empty) — a command carries one of the two at most, and the cap is held against the
+// body the node would then have. An empty `icon` clears it.
 struct AnnotateNode {
   NodeId id;
   std::optional<std::string> description;
   std::optional<std::vector<Link>> links;
+  std::optional<std::string> icon;
+  std::optional<std::string> appendDescription;
 };
 struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };

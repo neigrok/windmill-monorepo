@@ -15,10 +15,40 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 std::string quoted(const std::string& value) { return "\"" + value + "\""; }
 
-std::optional<std::string> countedOver(const std::string& what, std::size_t size, std::size_t limit) {
-  if (size <= limit) return std::nullopt;
-  return what + " is " + std::to_string(size) + " characters, max " + std::to_string(limit);
+std::string appendedTo(const std::string& body, const std::string& tail) {
+  if (body.empty()) return tail;
+  return body + "\n\n" + tail;
 }
+
+// Every field a command or an arriving document overflows, named in ONE sentence — each clause
+// says the size the field would have, how far over it is, and the cap — so a caller who overran
+// several caps fixes them all in one round trip.
+struct Overages {
+  std::vector<std::string> clauses;
+
+  void note(const std::string& field, const std::string& value, std::size_t cap) {
+    const std::size_t size = codePointCount(value);
+    if (size <= cap) return;
+    clauses.push_back(field + " would be " + std::to_string(size) + " characters, " +
+                      std::to_string(size - cap) + " over the " + std::to_string(cap) + " cap");
+  }
+  void noteLinks(const std::vector<Link>& links) {
+    if (links.size() > kMaxNodeLinks)
+      clauses.push_back("links has " + std::to_string(links.size()) + " items, max " +
+                        std::to_string(kMaxNodeLinks));
+    for (std::size_t i = 0; i < links.size(); ++i) {
+      const std::string item = "links[" + std::to_string(i) + "]";
+      note(item + ".url", links[i].url, kMaxLinkUrlLength);
+      note(item + ".label", links[i].label, kMaxLinkLabelLength);
+    }
+  }
+  std::optional<std::string> sentence() const {
+    if (clauses.empty()) return std::nullopt;
+    std::string out = clauses[0];
+    for (std::size_t i = 1; i < clauses.size(); ++i) out += "; " + clauses[i];
+    return out;
+  }
+};
 
 // Every per-node bound admit() enforces, wherever the node arrived from. An over-long id is never
 // quoted back: echoing it would make the refusal as expensive as the request.
@@ -26,23 +56,16 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
                                            const std::string& description, const std::vector<Link>& links,
                                            const std::optional<Vec2>& position) {
   if (id.empty()) return "a node has an empty id";
-  if (id.str().size() > kMaxIdLength)
-    return "a node id is " + std::to_string(id.str().size()) + " characters, max " +
-           std::to_string(kMaxIdLength);
+  Overages idOver;
+  idOver.note("a node id", id.str(), kMaxIdLength);
+  if (std::optional<std::string> bad = idOver.sentence()) return bad;
   const std::string named = "node " + quoted(id.str()) + ": ";
-  if (std::optional<std::string> bad = countedOver("label", label.size(), kMaxNodeLabelLength))
-    return named + *bad;
-  if (std::optional<std::string> bad = countedOver("icon", icon.size(), kMaxIconLength)) return named + *bad;
-  if (std::optional<std::string> bad = countedOver("description", description.size(), kMaxNodeDescriptionLength))
-    return named + *bad;
-  if (links.size() > kMaxNodeLinks)
-    return named + "carries " + std::to_string(links.size()) + " links, max " + std::to_string(kMaxNodeLinks);
-  for (const Link& link : links) {
-    if (std::optional<std::string> bad = countedOver("a link url", link.url.size(), kMaxLinkUrlLength))
-      return named + *bad;
-    if (std::optional<std::string> bad = countedOver("a link label", link.label.size(), kMaxLinkLabelLength))
-      return named + *bad;
-  }
+  Overages over;
+  over.note("label", label, kMaxNodeLabelLength);
+  over.note("icon", icon, kMaxIconLength);
+  over.note("description", description, kMaxNodeDescriptionLength);
+  over.noteLinks(links);
+  if (std::optional<std::string> bad = over.sentence()) return named + *bad;
   if (position && !(std::isfinite(position->x) && std::isfinite(position->y)))
     return named + "position is not finite";
   return std::nullopt;
@@ -52,14 +75,14 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
 std::optional<std::string> kindFieldBounds(const KindId& id, const std::string& label,
                                            const std::string& description) {
   if (id.empty()) return "a kind has an empty id";
-  if (id.str().size() > kMaxIdLength)
-    return "a kind id is " + std::to_string(id.str().size()) + " characters, max " +
-           std::to_string(kMaxIdLength);
+  Overages idOver;
+  idOver.note("a kind id", id.str(), kMaxIdLength);
+  if (std::optional<std::string> bad = idOver.sentence()) return bad;
   const std::string named = "kind " + quoted(id.str()) + ": ";
-  if (std::optional<std::string> bad = countedOver("label", label.size(), kMaxKindLabelLength))
-    return named + *bad;
-  if (std::optional<std::string> bad = countedOver("description", description.size(), kMaxKindDescriptionLength))
-    return named + *bad;
+  Overages over;
+  over.note("label", label, kMaxKindLabelLength);
+  over.note("description", description, kMaxKindDescriptionLength);
+  if (std::optional<std::string> bad = over.sentence()) return named + *bad;
   return std::nullopt;
 }
 
@@ -79,6 +102,23 @@ std::optional<Admission> growthWithin(std::size_t nodesBefore, std::size_t nodes
 }
 }
 
+std::size_t codePointCount(const std::string& utf8) {
+  std::size_t count = 0;
+  for (char byte : utf8)
+    if ((static_cast<unsigned char>(byte) & 0xC0) != 0x80) ++count;
+  return count;
+}
+
+std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index) {
+  std::size_t seen = 0;
+  for (std::size_t i = 0; i < utf8.size(); ++i) {
+    if ((static_cast<unsigned char>(utf8[i]) & 0xC0) == 0x80) continue;
+    if (seen == index) return i;
+    ++seen;
+  }
+  return std::string::npos;
+}
+
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at) {
   std::visit(overloaded{
     [&](const RenameNode& c) { graph.setLabel(c.id, c.label, at); },
@@ -91,7 +131,10 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       for (const NodeId& prereq : c.prerequisites) graph.addEdge(prereq, c.id, at);
     },
     [&](const AnnotateNode& c) {
+      if (c.icon) graph.setIcon(c.id, *c.icon, at);
       if (c.description) graph.setDescription(c.id, *c.description, at);
+      if (c.appendDescription)
+        graph.setDescription(c.id, appendedTo(graph.descriptionOf(c.id), *c.appendDescription), at);
       if (c.links) graph.setLinks(c.id, *c.links, at);
     },
     [&](const AddEdge& c) { graph.addEdge(c.from, c.to, at); },
@@ -137,27 +180,19 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command) {
   auto idBounds = [](const NodeId& id) -> std::optional<std::string> {
     if (id.empty()) return "node id is empty";
-    if (id.str().size() > kMaxIdLength) return "node id is too long (max 128 characters)";
-    return std::nullopt;
-  };
-  auto annotationBounds = [](const std::string* description,
-                             const std::vector<Link>* links) -> std::optional<std::string> {
-    if (description && description->size() > kMaxNodeDescriptionLength)
-      return "description is too long (max 4000 characters)";
-    if (!links) return std::nullopt;
-    if (links->size() > kMaxNodeLinks) return "too many links (max 32)";
-    for (const Link& link : *links) {
-      if (link.url.size() > kMaxLinkUrlLength) return "a link url is too long (max 2048 characters)";
-      if (link.label.size() > kMaxLinkLabelLength) return "a link label is too long (max 200 characters)";
-    }
-    return std::nullopt;
+    Overages over;
+    over.note("node id", id.str(), kMaxIdLength);
+    return over.sentence();
   };
   return std::visit(overloaded{
     [&](const CreateNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
-      if (c.label.size() > kMaxNodeLabelLength) return "label is too long (max 200 characters)";
-      if (c.icon.size() > kMaxIconLength) return "icon is too long (max 64 characters)";
-      if (auto bad = annotationBounds(&c.description, &c.links)) return bad;
+      Overages over;
+      over.note("label", c.label, kMaxNodeLabelLength);
+      over.note("icon", c.icon, kMaxIconLength);
+      over.note("description", c.description, kMaxNodeDescriptionLength);
+      over.noteLinks(c.links);
+      if (auto bad = over.sentence()) return bad;
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";
       if (!graph.hasNode(c.id) && graph.presentNodeCount() >= kMaxNodes)
@@ -167,12 +202,23 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     },
     [&](const AnnotateNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
-      return annotationBounds(c.description ? &*c.description : nullptr, c.links ? &*c.links : nullptr);
+      if (c.description && c.appendDescription)
+        return "description and appendDescription are both set — pass one: description replaces "
+               "the body, appendDescription joins onto it";
+      Overages over;
+      if (c.icon) over.note("icon", *c.icon, kMaxIconLength);
+      if (c.description) over.note("description", *c.description, kMaxNodeDescriptionLength);
+      if (c.appendDescription)
+        over.note("description", appendedTo(graph.descriptionOf(c.id), *c.appendDescription),
+                  kMaxNodeDescriptionLength);
+      if (c.links) over.noteLinks(*c.links);
+      return over.sentence();
     },
     [&](const RenameNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
-      if (c.label.size() > kMaxNodeLabelLength) return "label is too long (max 200 characters)";
-      return std::nullopt;
+      Overages over;
+      over.note("label", c.label, kMaxNodeLabelLength);
+      return over.sentence();
     },
     [&](const RepositionNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
@@ -201,17 +247,15 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     },
     [&](const RenameKind& c) -> std::optional<std::string> {
       if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
-      if (c.label.size() > kMaxKindLabelLength)
-        return "label is " + std::to_string(c.label.size()) + " characters, max " +
-               std::to_string(kMaxKindLabelLength);
-      return std::nullopt;
+      Overages over;
+      over.note("label", c.label, kMaxKindLabelLength);
+      return over.sentence();
     },
     [&](const DescribeKind& c) -> std::optional<std::string> {
       if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
-      if (c.description && c.description->size() > kMaxKindDescriptionLength)
-        return "description is " + std::to_string(c.description->size()) + " characters, max " +
-               std::to_string(kMaxKindDescriptionLength);
-      return std::nullopt;
+      Overages over;
+      if (c.description) over.note("description", *c.description, kMaxKindDescriptionLength);
+      return over.sentence();
     },
     [&](const AddKind& c) -> std::optional<std::string> {
       if (legend.has(c.id)) return "kind " + quoted(c.id.str()) + " already exists in this legend";
@@ -221,13 +265,10 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (std::optional<KindId> owner = legend.ownerOf(c.hue))
         return "hue " + quoted(std::string(toString(c.hue))) + " already belongs to kind " +
                quoted(owner->str()) + " — a hue names one kind, so pick a free one";
-      if (c.label.size() > kMaxKindLabelLength)
-        return "label is " + std::to_string(c.label.size()) + " characters, max " +
-               std::to_string(kMaxKindLabelLength);
-      if (c.description.size() > kMaxKindDescriptionLength)
-        return "description is " + std::to_string(c.description.size()) + " characters, max " +
-               std::to_string(kMaxKindDescriptionLength);
-      return std::nullopt;
+      Overages over;
+      over.note("label", c.label, kMaxKindLabelLength);
+      over.note("description", c.description, kMaxKindDescriptionLength);
+      return over.sentence();
     },
     [&](const RemoveKind& c) -> std::optional<std::string> {
       std::optional<NodeColor> hue = legend.hueOf(c.id);
@@ -256,13 +297,9 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
 }
 
 std::optional<Admission> admitTitle(const std::string& title) {
-  // Counted as UTF-8 codepoints: kMaxTitleChars counts characters, and rename truncates on the same
-  // reading.
-  std::size_t characters = 0;
-  for (char byte : title)
-    if ((static_cast<unsigned char>(byte) & 0xC0) != 0x80) ++characters;
-  if (std::optional<std::string> bad = countedOver("the title", characters, kMaxTitleChars))
-    return Admission{Admission::Verdict::malformed, *bad};
+  Overages over;
+  over.note("the title", title, kMaxTitleChars);
+  if (std::optional<std::string> bad = over.sentence()) return Admission{Admission::Verdict::malformed, *bad};
   return std::nullopt;
 }
 

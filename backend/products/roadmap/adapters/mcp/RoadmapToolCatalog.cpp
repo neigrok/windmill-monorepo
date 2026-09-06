@@ -256,7 +256,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
-        "edit that forms a cycle still succeeds — this is how you find and fix it.",
+        "edit that forms a cycle still succeeds — this is how you find and fix it. An `empty-icon` "
+        "smell clears with `annotate_node {nodeId, icon}`.",
         p, {"treeId"}));
   }
   {
@@ -348,13 +349,21 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
-    p["description"] = cappedStr("The annotation body (omit to leave it unchanged).",
+    p["description"] = cappedStr("The annotation body — replaces what the node has (omit to leave it unchanged).",
                                  kMaxNodeDescriptionLength);
+    p["appendDescription"] = cappedStr(
+        "Text to add to the END of the existing body, after a blank line — a running log grows "
+        "without resending it. The cap is on the body the node would then hold. Not with `description`.",
+        kMaxNodeDescriptionLength);
+    p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
     tools.push_back(tool("annotate_node", Access::write,
-        "Set a node's free annotation: its `description` and/or `links`. Each field is optional — an "
-        "omitted field is left untouched; `links` replaces the whole set when given — but at least "
-        "one must be given.",
+        "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
+        "existing body instead of replacing it — send one of the two), its `icon`, and/or `links`. "
+        "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
+        "when given — but at least one must be given. This is the verb that sets or clears an icon "
+        "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
+        "cap counts Unicode code points, and a refusal names each field over its cap and by how much.",
         p, {"treeId", "nodeId"}));
   }
   {
