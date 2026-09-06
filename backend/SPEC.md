@@ -47,7 +47,7 @@ serves; geometry is entirely client-side.
 ### Progress
 
 Private, per user, per tree — outside the lattice and outside the op log. A `Progress` holds a
-`ProgressMark {status, at, markedAt}` per node plus the projected `completed` / `inProgress` /
+`ProgressMark {status, at, markedAt, outOfOrder}` per node plus the projected `completed` / `inProgress` /
 `cleared` sets; `record` is the only way in, so the sets cannot drift from the registers.
 `ProgressStatus ∈ {none, active, complete}`; **`none` is a value, not a row delete**, so a clear
 converges across devices and a stale mark cannot resurrect it. `markedAt` is the server clock at
@@ -56,7 +56,10 @@ beside it orders writes and is never served back as a time.
 
 One status per node is structural. "Complete only when every prerequisite is complete" is
 advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
-can warn. Progress therefore never depends on the tree being a valid DAG.
+can warn. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
+value under the same stamp, so a later mark on the node carries its own word or none. Only the MCP
+`set_progress` sets it today — a socket `progress` frame lands it false. Progress therefore never
+depends on the tree being a valid DAG.
 
 ## Convergence
 
@@ -272,7 +275,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
-| `node_progress` | per-user private overlay — status, `hlc`, `stamp_ms`, `stamp_counter` |
+| `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |
 
 Rules:

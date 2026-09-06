@@ -446,9 +446,17 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
+// One mark as the caller asked for it. `outOfOrder` is their word that completing the node before
+// its prerequisites is meant; it lands on the row beside the status.
+struct RequestedMark {
+  NodeId node;
+  ProgressStatus status;
+  bool outOfOrder = false;
+};
+
 std::optional<std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
-    Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
+    Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested,
     bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
   // Both out-params are set at entry, so an early return still leaves them as empty arrays.
   results = Json::Value(Json::arrayValue);
@@ -460,9 +468,10 @@ std::optional<std::string> applyProgressBatch(
     // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
     if (!room || !canRead(user, room->owner(), room->visibility()))
       return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
-    for (const auto& [node, status] : requested) {
-      if (!room->hasNode(node)) { skipped.append(node.str()); continue; }
-      marks.push_back({node, status, room->prerequisitesOf(node), room->nextStamp(clock.nowMs())});
+    for (const RequestedMark& mark : requested) {
+      if (!room->hasNode(mark.node)) { skipped.append(mark.node.str()); continue; }
+      marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
+                       mark.outOfOrder});
     }
     // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
     if (rejectUnknown && !skipped.empty()) {
@@ -478,15 +487,31 @@ std::optional<std::string> applyProgressBatch(
   // One echo for the whole batch, not one frame per node.
   Progress recorded;
   for (std::size_t i = 0; i < marks.size(); ++i)
-    if (outcomes[i].applied) recorded.record(marks[i].node, ProgressMark{marks[i].status, marks[i].at, receivedAtMs});
+    if (outcomes[i].applied)
+      recorded.record(marks[i].node, ProgressMark{marks[i].status, marks[i].at, receivedAtMs, marks[i].outOfOrder});
   bus.broadcastProgress(tree, user, recorded);
   for (std::size_t i = 0; i < marks.size(); ++i) {
     Json::Value row(Json::objectValue);
     row["nodeId"] = marks[i].node.str();
     row["status"] = progressStatusName(outcomes[i].status);
     row["prerequisitesMet"] = outcomes[i].prerequisitesMet;
+    // Only a mark that carried the word answers it: prerequisitesMet:false alone is an inversion
+    // nobody acknowledged.
+    if (outcomes[i].outOfOrder) row["acknowledged"] = true;
     results.append(row);
   }
+  return std::nullopt;
+}
+
+// `outOfOrder` is a word about a completion, so it rides only a `complete` status.
+std::optional<std::string> readOutOfOrder(const Json::Value& update, const std::string& path,
+                                          ProgressStatus status, bool& outOfOrder) {
+  const std::string key = path.empty() ? "outOfOrder" : path + ".outOfOrder";
+  if (std::optional<std::string> bad = optionalBool(update["outOfOrder"], key)) return bad;
+  outOfOrder = update["outOfOrder"].asBool();
+  if (outOfOrder && status != ProgressStatus::complete)
+    return "argument \"" + key + "\" acknowledges completing a node before its prerequisites, so it rides " +
+           "status \"complete\" only, got \"" + progressStatusName(status) + "\"";
   return std::nullopt;
 }
 
@@ -503,7 +528,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
         "pass a single \"nodeId\"+\"status\" or an \"updates\" batch, not both — the single mark "
         "would be dropped.");
 
-  std::vector<std::pair<NodeId, ProgressStatus>> requested;
+  std::vector<RequestedMark> requested;
   if (bulk) {
     if (std::optional<std::string> bad = requireObjects(args["updates"], "updates"))
       return ToolResult::failure(*bad);
@@ -515,7 +540,11 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
       if (std::optional<std::string> bad =
               requireOneOf(args["updates"][i]["status"], row + ".status", kStatuses))
         return ToolResult::failure(*bad);
-      requested.emplace_back(NodeId{node}, *parseProgressStatus(args["updates"][i]["status"].asString()));
+      const ProgressStatus status = *parseProgressStatus(args["updates"][i]["status"].asString());
+      bool outOfOrder = false;
+      if (std::optional<std::string> bad = readOutOfOrder(args["updates"][i], row, status, outOfOrder))
+        return ToolResult::failure(*bad);
+      requested.push_back({NodeId{node}, status, outOfOrder});
     }
     if (requested.empty()) return ToolResult::failure("argument \"updates\" is an empty list — pass "
                                                       "at least one {nodeId, status} to mark.");
@@ -525,7 +554,11 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
       return ToolResult::failure(*bad);
     if (std::optional<std::string> bad = requireOneOf(args["status"], "status", kStatuses))
       return ToolResult::failure(*bad);
-    requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
+    const ProgressStatus status = *parseProgressStatus(args["status"].asString());
+    bool outOfOrder = false;
+    if (std::optional<std::string> bad = readOutOfOrder(args, "", status, outOfOrder))
+      return ToolResult::failure(*bad);
+    requested.push_back({NodeId{node}, status, outOfOrder});
   }
 
   Json::Value results, skipped;
@@ -537,7 +570,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     out["results"] = results;
     return ToolResult::json(out);
   }
-  return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet}
+  return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet, acknowledged?}
 }
 
 // `"a", "b", "c"` — every offender in one sentence, so one round-trip fixes the batch.
@@ -678,6 +711,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     auto seed = seeds.find(node.id.str());
     if (seed != seeds.end()) node.status = seed->second;
   }
+  // A field the batch leaves off a kind is not sent blank: the graft stamps that register unset, so a
+  // kind already in the legend keeps its value and a new one lands with the default.
+  for (const Json::Value& kind : args["kinds"]) {
+    std::set<KindRegister>& omitted = graft.omittedKindRegisters[KindId{kind["id"].asString()}];
+    if (kind["label"].isNull()) omitted.insert(KindRegister::label);
+    if (kind["description"].isNull()) omitted.insert(KindRegister::description);
+    if (kind["crossBranchExempt"].isNull()) omitted.insert(KindRegister::crossBranchExempt);
+  }
   const bool replace = args["prerequisiteMode"].asString() == "replace";
   graft.prerequisites = replace ? PrerequisiteMode::replace : PrerequisiteMode::merge;
   for (const Json::Value& id : args["tombstone"]) graft.tombstones.emplace_back(id.asString());
@@ -770,7 +811,7 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
       Progress overlay = progress.progressOf(tree, actor);
       for (const NodeId& node : footprint.tombstonedNodes) {
         if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
-        progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+        progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
       }
     } catch (const std::exception&) { /* the graft stands; the marks on what it deleted simply didn't clear */ }
     out["imported"] = true;
@@ -781,11 +822,11 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
     return grafted;
 
-  std::vector<std::pair<NodeId, ProgressStatus>> requested;
+  std::vector<RequestedMark> requested;
   for (const Json::Value& u : args["progress"]) {
     const Json::Value& handle =
         u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
-    requested.emplace_back(NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()));
+    requested.push_back({NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()), false});
   }
   if (!requested.empty()) {
     // The graft has committed: a throw from the best-effort overlay must not reach callTool's catch.
@@ -823,7 +864,7 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
       registry.persist(tree);
     }
     for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
 
     Json::Value out(Json::objectValue);
     out["prunedEdges"] = prunedEdges;
@@ -911,7 +952,7 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const 
     Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
     registry.persist(tree);
     for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());

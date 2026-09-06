@@ -156,13 +156,15 @@ create table if not exists tree_ops (
 );
 
 -- Per-user private progress, LWW per node. `status` is a stamped value including 'none' — a clear
--- is a value, never a row delete. (`stamp_ms`, `stamp_counter`) is the HLC split for numeric LWW and
--- is unique per write to a tree.
+-- is a value, never a row delete. `out_of_order` rides the same stamp: the marker's word that a
+-- completion before its prerequisites was meant. (`stamp_ms`, `stamp_counter`) is the HLC split
+-- for numeric LWW and is unique per write to a tree.
 create table if not exists node_progress (
   tree_id       text not null,
   user_id       text not null,
   node_id       text not null,
   status        text not null,
+  out_of_order  boolean not null default false,
   hlc           text not null default '',
   stamp_ms      bigint not null default 0,
   stamp_counter bigint not null default 0,
@@ -171,6 +173,7 @@ create table if not exists node_progress (
 );
 alter table node_progress add column if not exists stamp_ms bigint not null default 0;
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
+alter table node_progress add column if not exists out_of_order boolean not null default false;
 
 -- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
 

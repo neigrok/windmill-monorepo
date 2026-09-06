@@ -47,8 +47,11 @@ every missing id named, nothing applied.
 ## 4. `set_progress` is advisory, `status` is yours, and `state` is derived for you
 
 Marking a node complete whose prerequisites are unmet still records the mark and answers
-`prerequisitesMet: false` — it never fails. What it does refuse is an id the tree does not hold,
-so no orphan rows are born. Progress is per-caller and private; structure is shared.
+`prerequisitesMet: false` — it never fails. When that inversion is meant, send `outOfOrder: true`
+with the completion: the word is kept on the mark and the receipt answers `acknowledged: true`
+beside it, so `prerequisitesMet: false` alone always means an inversion nobody acknowledged. What
+it does refuse is an id the tree does not hold, so no orphan rows are born. Progress is
+per-caller and private; structure is shared.
 
 The same word means the same thing on every read: ask `get_tree` or `find_nodes` for the `status`
 field and each node answers YOUR mark — `active`, `complete` or `none`, always present, never

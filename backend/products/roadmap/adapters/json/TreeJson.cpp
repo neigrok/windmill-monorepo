@@ -129,6 +129,7 @@ Json::Value toJson(const Progress& progress) {
     row["status"] = progressStatusName(mark.status);
     row["at"] = toString(mark.at);
     row["markedAt"] = Json::UInt64{mark.markedAt};
+    if (mark.outOfOrder) row["outOfOrder"] = true;
     marks.append(row);
   }
   Json::Value root(Json::objectValue);

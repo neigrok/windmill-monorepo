@@ -18,7 +18,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT node_id, status, hlc, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "SELECT node_id, status, out_of_order, hlc, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM node_progress WHERE tree_id = $1 AND user_id = $2",
       tree.str(), user.str());
 
@@ -30,6 +30,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
     // The server's own clock, not the marking device's: the HLC beside it orders writes but cannot
     // be asserted back to a reader as a time.
     mark.markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    mark.outOfOrder = row["out_of_order"].as<bool>();
     progress.record(NodeId{row["node_id"].as<std::string>()}, mark);
   }
   return progress;
@@ -57,19 +58,20 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
 }
 
 bool PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                                     ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) {
+                                     ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
   // A clear ('none') is a stamped value, not a row delete, so a stale mark can never resurrect
   // the node. The upsert lands only when the incoming stamp strictly beats the stored one.
   pqxx::result result = txn.exec_params(
-      "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter, updated_at) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8 / 1000.0)) "
-      "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, hlc = EXCLUDED.hlc, "
+      "INSERT INTO node_progress (tree_id, user_id, node_id, status, out_of_order, hlc, stamp_ms, stamp_counter, updated_at) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9 / 1000.0)) "
+      "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, "
+      "out_of_order = EXCLUDED.out_of_order, hlc = EXCLUDED.hlc, "
       "stamp_ms = EXCLUDED.stamp_ms, stamp_counter = EXCLUDED.stamp_counter, updated_at = EXCLUDED.updated_at "
       "WHERE (EXCLUDED.stamp_ms, EXCLUDED.stamp_counter) > (node_progress.stamp_ms, node_progress.stamp_counter)",
-      tree.str(), user.str(), node.str(), progressStatusName(status), hlcText(at),
+      tree.str(), user.str(), node.str(), progressStatusName(status), outOfOrder, hlcText(at),
       static_cast<long long>(at.physicalMs), static_cast<long long>(at.counter),
       static_cast<long long>(receivedAtMs));
   txn.commit();

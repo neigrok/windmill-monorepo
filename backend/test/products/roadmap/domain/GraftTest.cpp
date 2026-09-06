@@ -166,3 +166,50 @@ TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
   swaps.tombstones = {nid("n0")};
   CHECK_FALSE(admit(g, swaps).has_value());
 }
+
+// A register the document leaves off a kind is stamped unset, so the join keeps what the legend
+// holds; a new kind's omitted register lands as its default. Hue always lands.
+TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new_kind) {
+  Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make", true}}, at(1));
+
+  Graft graft;
+  graft.document.kinds = {{KindId{"build"}, NodeColor::sky}, {KindId{"read"}, NodeColor::olive}};
+  graft.omittedKindRegisters[KindId{"build"}] = {KindRegister::label, KindRegister::description,
+                                                 KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"read"}] = {KindRegister::label, KindRegister::description,
+                                                KindRegister::crossBranchExempt};
+
+  const LegendState frame = graftLegend(graft, at(5));
+  REQUIRE_EQ(frame.kinds.size(), 2u);
+  for (const KindStateEntry& kind : frame.kinds) {
+    CHECK_EQ(kind.hueAt, at(5));
+    CHECK_FALSE(kind.labelAt.isSet());
+    CHECK_FALSE(kind.descriptionAt.isSet());
+    CHECK_FALSE(kind.crossBranchExemptAt.isSet());
+  }
+
+  legend.join(frame);
+  const Kind build = *legend.view(KindId{"build"});
+  CHECK_EQ(build.hue, NodeColor::sky);
+  CHECK_EQ(build.label, std::string("Build"));
+  CHECK_EQ(build.description, std::string("Things you make"));
+  CHECK(build.crossBranchExempt);
+  const Kind read = *legend.view(KindId{"read"});
+  CHECK_EQ(read.hue, NodeColor::olive);
+  CHECK_EQ(read.label, std::string(""));
+  CHECK_EQ(read.description, std::string(""));
+  CHECK_FALSE(read.crossBranchExempt);
+
+  // A register the document does carry lands at the graft's stamp, an empty string included.
+  Graft spelled;
+  spelled.document.kinds = {{KindId{"build"}, NodeColor::sky, "Builds", "", false}};
+  legend.join(graftLegend(spelled, at(6)));
+  const Kind renamed = *legend.view(KindId{"build"});
+  CHECK_EQ(renamed.label, std::string("Builds"));
+  CHECK_EQ(renamed.description, std::string(""));
+  CHECK_FALSE(renamed.crossBranchExempt);
+}
+
+TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
+  CHECK(graftLegend(Graft{}, at(1)) == LegendState{});
+}

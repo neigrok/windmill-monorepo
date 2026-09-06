@@ -9,11 +9,13 @@
 namespace wm {
 
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
-// the caller is told so it can warn.
+// the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
+// can tell a meant inversion from an unnoticed one.
 struct ProgressOutcome {
   ProgressStatus status;
   bool prerequisitesMet;
   bool applied = true;  // false when a strictly-later stamp already stood and this write lost
+  bool outOfOrder = false;
 };
 
 // Carries the stamp the marking replica minted. Distinct from domain `ProgressMark`, which is the
@@ -23,6 +25,7 @@ struct ProgressWrite {
   ProgressStatus status;
   std::vector<NodeId> prerequisites;
   Hlc at;
+  bool outOfOrder = false;
 };
 
 // Writes a user's private progress overlay. P2 (active/complete exclusivity) is structural — one
@@ -33,8 +36,8 @@ public:
   explicit ProgressService(ProgressRepository& repo);
 
   ProgressOutcome setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,
-                            const UserId& user, const NodeId& node, ProgressStatus status, const Hlc& at,
-                            std::uint64_t receivedAtMs);
+                            const UserId& user, const NodeId& node, ProgressStatus status, bool outOfOrder,
+                            const Hlc& at, std::uint64_t receivedAtMs);
 
   // Each advisory is judged against the committed final overlay, so completing a subtree out of
   // dependency order yields no spurious prerequisitesMet:false. Outcomes follow the marks' order.

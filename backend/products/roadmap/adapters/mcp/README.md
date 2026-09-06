@@ -175,7 +175,7 @@ treated as internal and is not limited.
 | read | `get_tree` | title + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed / in-progress node ids |
+| read | `get_progress` | the caller's completed / in-progress node ids, and the completed ones marked `outOfOrder` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
@@ -186,7 +186,7 @@ treated as internal and is not limited.
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
-| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
+| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Edits return
@@ -268,7 +268,11 @@ handshake `instructions` say so.
 - **`import_subgraph`** takes the JSON `get_tree` returns (`{title?, nodes[], kinds[]}`, plus an
   optional `progress[]`) and applies it in **one** op via the subgraph CRDT graft path. It is
   **upsert by id**: an incoming id already present is overwritten and reported in
-  `nodeCollisions`/`kindCollisions`; a new id is added. Scalar fields are LWW-replaced; a re-sent
+  `nodeCollisions`/`kindCollisions`; a new id is added. A node's scalar fields are LWW-replaced. A
+  colliding kind is replaced only in the registers the batch sends: `label`, `description` and
+  `crossBranchExempt` left out keep the value the legend holds, because the graft stamps an
+  omitted register unset (`Graft::omittedKindRegisters`, `graftLegend`) and no stored stamp loses
+  to that; a new kind's omitted register lands as its default. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
@@ -294,7 +298,14 @@ handshake `instructions` say so.
   ids and reads the footprint back for the receipt.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
-  correctly. Unknown node ids are rejected, so no orphan overlay rows are created.
+  correctly. Unknown node ids are rejected, so no orphan overlay rows are created. A completion
+  meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, with
+  `status: complete` only): the word is stored on the row beside the status, under the same stamp,
+  so the next mark on that node from any surface replaces it; the receipt answers
+  `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
+  `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
+  node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
+  acknowledged.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a

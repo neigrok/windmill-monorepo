@@ -663,7 +663,8 @@
               "inProgress" : 
               [
                 "render"
-              ]
+              ],
+              "outOfOrder" : []
             },
             "type" : "text"
           }

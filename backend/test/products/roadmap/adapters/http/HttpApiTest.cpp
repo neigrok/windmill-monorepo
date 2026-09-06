@@ -329,7 +329,7 @@ TEST(get_activity_unlisted_is_readable_by_anyone) {
 TEST(get_progress_shows_the_owners_journey_to_an_anonymous_visitor) {
   Harness h;
   h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
-  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "owner"}, 2);
+  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}, 2);
 
   drogon::HttpResponsePtr anon = sendGetProgress(h.api, "", "t_shared");
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
@@ -340,8 +340,8 @@ TEST(get_progress_shows_the_same_journey_to_owner_and_stranger) {
   Harness h;
   UserId me = h.signIn("s-me", "me@example.com");
   h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_);
-  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "owner"}, 2);
-  h.progress->setStatus(TreeId{"t_shared"}, me, NodeId{"root"}, ProgressStatus::none, Hlc{2, 0, "me"}, 2);
+  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}, 2);
+  h.progress->setStatus(TreeId{"t_shared"}, me, NodeId{"root"}, ProgressStatus::none, false, Hlc{2, 0, "me"}, 2);
 
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-me", "t_shared")), std::string("root"));
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "", "t_shared")), std::string("root"));
@@ -352,7 +352,7 @@ TEST(get_progress_of_a_private_tree_is_404_for_a_non_owner_and_200_for_its_owner
   UserId owner = h.signIn("s-owner", "owner-acct@example.com");
   h.signIn("s-other", "other@example.com");
   h.seed("t_priv", "Secret", owner, Visibility::private_);
-  h.progress->setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "o"}, 2);
+  h.progress->setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "o"}, 2);
 
   CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(sendGetProgress(h.api, "", "t_priv")->getStatusCode(), drogon::k404NotFound);

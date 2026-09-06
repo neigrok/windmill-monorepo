@@ -210,7 +210,7 @@ struct FakeOgVideoRepository : OgVideoRepository {
 };
 
 struct FakeProgressRepository : ProgressRepository {
-  struct Entry { ProgressStatus status; Hlc at; };
+  struct Entry { ProgressStatus status; Hlc at; bool outOfOrder = false; };
   std::map<std::string, Entry> byKey;
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
@@ -224,18 +224,18 @@ struct FakeProgressRepository : ProgressRepository {
       if (k.rfind(prefix, 0) != 0) continue;
       // The fake dates a mark by the stamp it arrived with; a real store answers with its OWN receipt instant, so tests that care about the difference must use the real repository.
       progress.record(NodeId{k.substr(prefix.size())},
-                      ProgressMark{entry.status, entry.at, entry.at.physicalMs});
+                      ProgressMark{entry.status, entry.at, entry.at.physicalMs, entry.outOfOrder});
     }
     return progress;
   }
 
   bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                 ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) override {
+                 ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
     (void)receivedAtMs;
     std::string k = key(tree, user, node);
     auto it = byKey.find(k);
     if (it != byKey.end() && !(at > it->second.at)) return false;
-    byKey[k] = Entry{status, at};
+    byKey[k] = Entry{status, at, outOfOrder};
     return true;
   }
 

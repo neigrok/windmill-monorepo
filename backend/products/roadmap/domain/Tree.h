@@ -156,10 +156,13 @@ struct TreeData {
 
 // `at` is the stamp that won this register, and the only thing that decides what wins. `markedAt`
 // is when the SERVER recorded it, and is the only one of the two that may be shown to a person.
+// `outOfOrder` is the marker's word that completing this node before its prerequisites was meant;
+// it is part of the status value, so the next mark on the node carries its own word or none.
 struct ProgressMark {
   ProgressStatus status = ProgressStatus::none;
   Hlc at;
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
+  bool outOfOrder = false;
 };
 
 // `record` is the only way in, so the id sets can never drift from the registers they project.

@@ -158,3 +158,21 @@ TEST(legend_state_round_trips_the_exemption_with_its_stamp) {
   CHECK_FALSE(stale.crossBranchExempt);
   CHECK_EQ(stale.crossBranchExemptAt, Hlc{});
 }
+
+// The marker's word rides the register only when it was given: a mark without it stays the shape
+// every client already reads.
+TEST(the_out_of_order_word_rides_a_progress_register_only_when_set) {
+  Progress progress;
+  progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(500, "r_phone"), 1700000000000ull, true});
+  progress.record(nid("b"), ProgressMark{ProgressStatus::complete, at(600, "r_tab"), 1700000600000ull, false});
+
+  Json::Value root = toJson(progress);
+
+  REQUIRE_EQ(root["marks"].size(), 2u);
+  CHECK_EQ(root["marks"][0]["node"].asString(), std::string("a"));
+  CHECK(root["marks"][0]["outOfOrder"].asBool());
+  CHECK_EQ(root["marks"][0].getMemberNames(),
+           (std::vector<std::string>{"at", "markedAt", "node", "outOfOrder", "status"}));
+  CHECK_EQ(root["marks"][1]["node"].asString(), std::string("b"));
+  CHECK_EQ(root["marks"][1].getMemberNames(), (std::vector<std::string>{"at", "markedAt", "node", "status"}));
+}
