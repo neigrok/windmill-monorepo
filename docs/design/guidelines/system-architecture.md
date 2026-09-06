@@ -90,18 +90,20 @@ Each product owns its ground, in both skins. Name the place before the hue.
   from, and the night that clay shares.
 - **Journal · paper in north light, ink-black with one lamp** — by night a cool ink-black
   (`#0B0E16` canvas, `#161921` cards) with one warm lamp on it.
-- **Gym · pietra in the sun, plum-black with a signal at night** — by night a warm plum-black
-  (`#110C10` canvas, `#1C171C` cards) with the cool verdigris `#5FCDB4` on it — 10.04:1 on the
-  canvas, `#1B1408` ink 9.46:1 on it.
+- **Gym · pietra in the sun, verdigris-grey stone with a signal at night** — by night a
+  verdigris-grey stone (`#0B1111` canvas, `#161C1D` cards) with the cool verdigris `#5FCDB4` on
+  it — 9.87:1 on the canvas, `#1B1408` ink 9.46:1 on it.
 
-Three grounds by night — roadmap and clay neutral, journal cool, gym warm. A tinted ground carries
-a light of the opposite temperature (journal's cool ink-black under a warm lamp, gym's warm plum-black
-under cool verdigris); a neutral ground takes either, and roadmap's takes warm terracotta.
+Three grounds by night — roadmap and clay neutral, journal cool, gym cool in its own hue. A tinted
+ground carries either a light of the opposite temperature (journal's cool ink-black under a warm lamp)
+or its own hue lit (gym's verdigris-grey stone under verdigris); a neutral ground takes either, and
+roadmap's takes warm terracotta.
 
 ```
-TEMPERATURE   a cool ground carries a warm light, a warm ground carries a cool
-              one, a neutral ground carries either. NEVER a tinted ground and its
-              light agreeing.
+TEMPERATURE   a tinted ground carries a light of the opposite temperature, or is
+              its own light's hue greyed down to stone (gym's night); a neutral
+              ground carries either. NEVER a tinted ground and a SECOND hue
+              agreeing with it.
 PLACE         name the place before the hue. A ground with no place behind it has
               no way to be judged and no way to be defended.
 SHADOW        the ground is not only the canvas. Put the hue where the light would
@@ -139,7 +141,7 @@ Three ramps do not clear the tertiary gate:
 |---|---|---|---|
 | family cream (`:root`, clay) | `#92805F` | `#F9F5EB` | **3.52:1** |
 | journal's night | `#737476` | `#0B0E16` | **4.12:1** |
-| gym's night | `#797270` | `#110C10` | **4.11:1** |
+| gym's night | `#727771` | `#0B1111` | **4.17:1** |
 
 They stay, and they carry a usage rule that is not optional: at these three values
 `--text-tertiary` is **non-essential ink only** — timestamps, units, meta, disabled states. It

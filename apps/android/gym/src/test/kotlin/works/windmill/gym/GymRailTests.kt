@@ -32,9 +32,9 @@ class GymRailTests {
     fun testTheSelectedTintIsFarEnoughFromTheUnselectedInkToReadAsADifference() {
         val separation = contrast(GymSkin.ink, GymSkin.inkFaint)
         assertEquals("the room's brightest ink against the faint ink — iOS picked the same token",
-                     4.11, separation, 0.01)
+                     4.01, separation, 0.01)
         assertEquals("the accent is what `1v` refused: it separates by half as much",
-                     2.44, contrast(GymSkin.accent, GymSkin.inkFaint), 0.01)
+                     2.37, contrast(GymSkin.accent, GymSkin.inkFaint), 0.01)
         assertTrue("the tint must beat the accent, or `1v` reopens on a token move",
                    separation > contrast(GymSkin.accent, GymSkin.inkFaint))
     }
@@ -43,8 +43,8 @@ class GymRailTests {
     fun testTheIndicatorIsVisibleAgainstTheBarItSitsOn() {
         val wash = contrast(GymSkin.accentSoft.compositeOver(GymSkin.surface), GymSkin.surface)
         val hairline = contrast(GymSkin.lineStrong, GymSkin.surface)
-        assertEquals("the accent wash the indicator sits on, over the bar's own ground", 1.50, wash, 0.01)
-        assertEquals("border-default, which the indicator does not use", 1.29, hairline, 0.01)
+        assertEquals("the accent wash the indicator sits on, over the bar's own ground", 1.52, wash, 0.01)
+        assertEquals("border-default, which the indicator does not use", 1.30, hairline, 0.01)
         assertTrue("the wash must stay the more visible of the two, or the indicator moves back", wash > hairline)
     }
 
@@ -59,8 +59,12 @@ class GymRailTests {
     }
 }
 
-private fun Color.compositeOver(ground: Color): Color = Color(
-    red = red * alpha + ground.red * (1 - alpha),
-    green = green * alpha + ground.green * (1 - alpha),
-    blue = blue * alpha + ground.blue * (1 - alpha),
-)
+// Composited the way the bar is painted: per channel, then quantized to 8 bits.
+private fun Color.compositeOver(ground: Color): Color {
+    fun channel(top: Float, under: Float) = (top * alpha + under * (1 - alpha)) * 255f
+    return Color(
+        red = Math.round(channel(red, ground.red)),
+        green = Math.round(channel(green, ground.green)),
+        blue = Math.round(channel(blue, ground.blue)),
+    )
+}

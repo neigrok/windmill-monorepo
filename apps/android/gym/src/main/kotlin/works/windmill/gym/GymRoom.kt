@@ -1018,12 +1018,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 // past a hairline now rides each root's top bar instead.
 //
 // Selection is carried on four channels, not on one colour (ledger `1v`). The tint is the room's
-// BRIGHTEST ink, not its accent: verdigris `#5FCDB4` against the faint ink `#797270` separates by 2.44:1
-// and a lifter cannot tell which tab they are on, while `#F2EFEB` against the same faint ink is
-// 4.11:1 — the same token iOS picked, so the two phones close `1v` on one token. Beneath that: a
+// BRIGHTEST ink, not its accent: verdigris `#5FCDB4` against the faint ink `#727771` separates by 2.37:1
+// and a lifter cannot tell which tab they are on, while `#F1F0EB` against the same faint ink is
+// 4.01:1 — the same token iOS picked, so the two phones close `1v` on one token. Beneath that: a
 // filled glyph selected against an outlined one, a bold label against a normal one, and the
-// indicator on the verdigris wash `accentSoft` (`#5FCDB4` at 20% over the bar's `#1C171C`, 1.50:1;
-// `lineStrong` `#312C32` on the same bar would measure 1.29:1, and GymRailTests pins both).
+// indicator on the verdigris wash `accentSoft` (`#5FCDB4` at 20% over the bar's `#161C1D`, 1.52:1;
+// `lineStrong` `#2A3133` on the same bar would measure 1.30:1, and GymRailTests pins both).
 @Composable
 private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
     NavigationBar(containerColor = GymSkin.surface, tonalElevation = 0.dp) {

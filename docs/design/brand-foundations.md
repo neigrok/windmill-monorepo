@@ -43,7 +43,7 @@ Windmill · Design System Figma file, and the shipped values are `web/src/styles
   redefined under that scope, all components adapt with no per-component work. Dark is a neutral
   near-black night (`#0B0B0C` canvas, `#171719` cards): slightly-elevated cards, warm off-white
   text, terracotta-400 as the brand step, and intensified glows. Each product room lights its own
-  night under the same rules — journal a cool ink-black, gym a warm plum-black.
+  night under the same rules — journal a cool ink-black, gym a verdigris-grey stone.
 - **Type**: two families. **Baloo 2** (rounded, bold, high personality) for display — page
   headers, big numbers. **Nunito** (rounded, readable) for body/UI text. **JetBrains Mono**
   for count readouts ("6/17 done") and item IDs only — never for prose.

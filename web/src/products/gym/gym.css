@@ -1980,7 +1980,7 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 
 /* Bars, never a line, starting at zero: a bar's length is its value. --gym-raised measures 1.12:1 on
-   this card and is invisible, so the quiet bar is verdigris at 9.15:1 and the loud one gold at 8.64:1. */
+   this card and is invisible, so the quiet bar is verdigris at 8.93:1 and the loud one gold at 8.43:1. */
 .gym-record-chart {
   margin: 9px 0 0;
   padding: 16px 14px 12px;

@@ -651,11 +651,11 @@ all (`fixOf`, `fix.js:97-104`; the server reads exactly that at
 that colour at all** → re-scoped 2026-08-26; Android is built, iOS is the platform's, and what is
 left is one token question for the surfaces that still honour a tint.
 **Android is closed, measured.** The rail carries selection on four channels, not one:
-`GymSkin.ink` `#F2EFEB` selected against `GymSkin.inkFaint` `#797270` (**4.11:1**; the faint ink
-itself holds 4.11:1 on the canvas and 3.75:1 on the bar's `#1C171C`), a filled glyph against an
-outlined one per seat, a bold label against a normal one, and the indicator on the verdigris wash
-`accentSoft` (`#5FCDB4` at 20% over the bar, 1.50:1, ahead of `lineStrong`'s 1.29:1 on the same
-ground) — `TabRail` in `GymRoom.kt`, `railIcon` beneath it, and `GymRailTests` pinning every number.
+`GymSkin.ink` `#F1F0EB` selected against `GymSkin.inkFaint` `#727771` (**4.01:1**; the faint ink
+itself holds 4.17:1 on the canvas `#0B1111` and 3.77:1 on the bar's `#161C1D`), a filled glyph
+against an outlined one per seat, a bold label against a normal one, and the indicator on the
+verdigris wash `accentSoft` (`#5FCDB4` at 20% over the bar, 1.52:1, ahead of `lineStrong`'s 1.30:1
+on the same ground) — `TabRail` in `GymRoom.kt`, `railIcon` beneath it, and `GymRailTests` pinning every number.
 **On iOS the question is not answerable by a token.** Sampled on the shipped build (iPhone 17, iOS
 26.3), the system tab bar paints both labels itself — `#FFFFFF` selected against `#F6F3FA`
 unselected, **1.10:1** — draws its own selection capsule (`#47444A` on `#262328`, 1.62:1), and

@@ -154,7 +154,7 @@ struct MovementList: View {
                 if let create = options.create {
                     // The room's own primary chrome rather than `.borderedProminent`, which fills
                     // itself with the ambient tint and then paints its OWN label colour over it —
-                    // a pairing nothing in this room controls. `onAccent` on `accent` is 6.18:1.
+                    // a pairing nothing in this room controls. `onAccent` on `accent` is 9.46:1.
                     Button { onCreate(query.trimmingCharacters(in: .whitespacesAndNewlines)) } label: {
                         Text(create)
                             .font(WindmillFont.body(16, .semibold))

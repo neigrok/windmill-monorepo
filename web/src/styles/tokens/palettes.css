@@ -20,13 +20,13 @@
    recipe in system-architecture §4.
 
    ── The rule behind every block ──────────────────────────────
-   A GROUND NEVER AGREES WITH ITS LIGHT: a cool ground carries a warm light, a warm one a cool
-   light, a neutral one whichever hue the room owns. Each room names a place and reads its ground
-   off it, at both hours:
+   A GROUND NEVER AGREES WITH A SECOND HUE: a cool ground carries a warm light, a warm one a cool
+   light, a neutral one whichever hue the room owns — or the ground is its own light's hue greyed
+   down to stone. Each room names a place and reads its ground off it, at both hours:
 
      roadmap   Tuscany at midday    -> the family night: neutral near-black, terracotta lit
      journal   paper in north light -> ink-cast night and one candle
-     gym       pietra in the sun    -> instrument: plum-black, verdigris lit
+     gym       pietra in the sun    -> instrument: verdigris-grey stone, verdigris lit
 
    A room keeps the vocabulary ON its ground, never the ground: journal re-points the text roles
    inside its canvas to a WARM ink, gym renames every role it paints with (--gym-canvas, --set-done)
@@ -41,8 +41,8 @@
 :root {
   --accent-plum-300: #C08FB8;   /* on #1B1408 = 6.84:1 */
   --accent-iris-300: #9A90BE;   /* on #1B1408 = 6.18:1 */
-  /* brick's lit step, for a night lifted off black: 6.53 / 5.95 / 5.33 on the instrument's canvas,
-     card and raised, where brick-400 falls to 4.98 / 4.54 / 4.06. */
+  /* brick's lit step, for a night lifted off black: 6.42 / 5.81 / 5.17 on the instrument's canvas,
+     card and raised, where brick-400 falls to 4.89 / 4.43 / 3.94. */
   --accent-brick-300: #D08268;
 
   --accent-verdigris-300: #8FE0CD;   /* on #1B1408 = 11.92:1 */
@@ -200,8 +200,8 @@
    gym · pietra by day, the instrument by night
    ------------------------------------------------------------
    Pale stone in the sun, lit by IRIS (65° from sky, so it can never be read as info). At night a
-   plum-black instrument panel, lit by VERDIGRIS — the one vibrant hue in the room, and the one that
-   is neither a semantic hue nor another product's.
+   verdigris-grey stone instrument panel, lit by VERDIGRIS — the one vibrant hue in the room, and the
+   one that is neither a semantic hue nor another product's.
    ============================================================ */
 [data-brand="gym"] {
   --color-brand: var(--accent-iris-600);       /* white on it = 8.9:1 */
@@ -235,26 +235,27 @@
 }
 
 [data-theme="dark"][data-brand="gym"] {
-  /* The instrument — the family night with a warm plum cast in its low steps. */
-  --neutral-0: #181216;
-  --neutral-25: #140F13;
-  --neutral-50: #110C10;
-  --neutral-100: #1C171C;
-  --neutral-200: #262126;
-  --neutral-300: #312C32;
-  --neutral-400: #4A454C;
-  --neutral-500: #797270;
-  --neutral-600: #B7B4AF;
-  --neutral-700: #D1CECA;
-  --neutral-800: #E4E1DD;
-  --neutral-900: #F2EFEB;
+  /* The instrument — the family night with a verdigris-grey cast: the stone the light is cut from,
+     so the ground and its light share one hue and the low steps read as one material. */
+  --neutral-0: #111817;
+  --neutral-25: #0E1414;
+  --neutral-50: #0B1111;
+  --neutral-100: #161C1D;
+  --neutral-200: #202627;
+  --neutral-300: #2A3133;
+  --neutral-400: #444A4D;
+  --neutral-500: #727771;
+  --neutral-600: #B6B5AF;
+  --neutral-700: #CFCFCA;
+  --neutral-800: #E2E2DD;
+  --neutral-900: #F1F0EB;
   --surface-canvas: var(--neutral-50);
   --surface-card: var(--neutral-100);
   --surface-hover: var(--neutral-200);
-  --surface-sunken: #0C070B;
-  --surface-overlay: rgba(6, 3, 6, 0.72);
+  --surface-sunken: #060C0C;
+  --surface-overlay: rgba(3, 6, 6, 0.72);
 
-  --color-brand: var(--accent-verdigris-400);  /* 9.46:1 on --text-on-accent; 10.04 / 9.15 / 8.19 on canvas, card and raised */
+  --color-brand: var(--accent-verdigris-400);  /* 9.46:1 on --text-on-accent; 9.87 / 8.93 / 7.95 on canvas, card and raised */
   --color-brand-hover: var(--accent-verdigris-300);
   --color-brand-active: var(--accent-verdigris-500);
   --color-brand-soft: rgba(95, 205, 180, 0.20);

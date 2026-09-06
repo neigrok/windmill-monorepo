@@ -80,7 +80,7 @@ test('every room boots on the ground its own palette block declares', () => {
     'dark|clay': '#0B0B0C',
     'dark|roadmap': '#0B0B0C',
     'dark|journal': '#0B0E16',
-    'dark|gym': '#110C10',
+    'dark|gym': '#0B1111',
   });
 });
 
