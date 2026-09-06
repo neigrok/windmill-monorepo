@@ -26,18 +26,13 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
                      completedAtMs: 1_754_308_920_000)]
     }
 
-    private func doors() -> CoachDoors {
-        CoachDoors(base: URL(string: "https://windmill.works")!,
-                   mint: { .failure(.noAnswer) },
-                   revoke: { nil })
-    }
-
-    private func host(_ finished: FinishedSession, failure: String?,
-                      settling: Bool = true) async -> UIWindow {
+    private func host(_ finished: FinishedSession, failure: String?, settling: Bool = true,
+                      onShareWithCoach: (() -> Void)? = nil) async -> UIWindow {
         let screen = FinishScreen(finished: finished,
                                   catalog: [Exercise(id: "back-squat", name: "Back Squat")],
-                                  kept: false, coach: doors(), failure: failure,
-                                  onKeepRoutine: { _ in }, onDiscard: {}, onDone: {})
+                                  kept: false, failure: failure,
+                                  onKeepRoutine: { _ in }, onShareWithCoach: onShareWithCoach,
+                                  onDone: {})
             .environment(\.gymSkin, GymSkin.instrument)
             .environment(\.colorScheme, .dark)
         let controller = UIHostingController(rootView: screen)
@@ -79,5 +74,27 @@ final class FinishSheetRefusalHostingTests: XCTestCase {
         let first = alarmPixels(of: await host(closed, failure: nil, settling: false))
 
         XCTAssertEqual(first, 0, "the sheet refuses the empty name before its own name has landed")
+    }
+
+    // `Share with Coach` is the receipt's one full-strength button, painted in the accent; on a
+    // session with a routine nothing else on the sheet is. Handed no closure — signed out, or no
+    // Coach on this deployment — the sheet paints none of it and puts nothing in its place, on the
+    // slight branch as on the ordinary one.
+    func testThePrimaryIsPaintedOnlyWhenTheRoomHandsItAClosure() async {
+        let session = Session(id: "ses_1", startedAtMs: 1_754_308_320_000,
+                              finishedAtMs: 1_754_312_040_000, routineId: "rt_1")
+        let slight = Review(stats: Review.Stats(durationMs: 660_000, workingSets: 2), slight: true)
+        for review in [nil, slight] {
+            let closed = FinishedSession(session: session, sets: working(), review: review, isFirst: false)
+            XCTAssertFalse(closed.offersRoutine, "this fixture paints the accent on the keep card too")
+
+            let unreachable = accentPixels(of: await host(closed, failure: nil))
+            let reachable = accentPixels(of: await host(closed, failure: nil, onShareWithCoach: {}))
+
+            XCTAssertLessThan(unreachable, 50, "slight \(closed.slight): something stands in the primary's place")
+            XCTAssertGreaterThan(reachable, unreachable + 5_000,
+                                 "slight \(closed.slight): the primary was not painted "
+                                 + "(unreachable \(unreachable) · reachable \(reachable))")
+        }
     }
 }

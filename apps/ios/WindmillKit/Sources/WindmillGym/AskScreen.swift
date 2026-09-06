@@ -1,13 +1,14 @@
 import SwiftUI
 import WindmillPlatform
 
+// `ask` is the room's one send path (`GymRoom.ask`): the composer, the retry and the finish receipt's
+// first question all go through it, so nothing here settles an exchange or reads a refusal's flags.
 struct AskDoors {
-    let send: (_ thread: String, _ question: String) async -> Result<AskAnswer, AskRefusal>
+    let ask: (_ question: String, _ replacing: String?) -> Void
     let openThreads: () -> Void
     let openNotes: () -> Void
     let connect: () -> Void
     let openProposal: (String) -> Void
-    let absent: () -> Void
 }
 
 struct AskScreen: View {
@@ -21,7 +22,6 @@ struct AskScreen: View {
 
     @Environment(\.gymSkin) private var skin
     @State private var question = ""
-    @State private var sending = false
     @State private var minted: [String: Proposal] = [:]
     // Exchanges whose step list is open; the receipt above it is drawn either way.
     @State private var opened: Set<String> = []
@@ -47,6 +47,8 @@ struct AskScreen: View {
             composer
         }
         .task { await readMinted() }
+        // The room settles the exchanges; an answer that lands carries the proposals to read.
+        .onChange(of: conversation.exchanges) { _, _ in Task { await readMinted() } }
         // A receipt is a settled proposal: the card under it redraws from the log.
         .onChange(of: receipts) { _, _ in Task { await readMinted() } }
         .onChange(of: undecided) { _, _ in Task { await readMinted() } }
@@ -270,7 +272,7 @@ struct AskScreen: View {
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
             if why.mayRetry {
-                Button { Task { await ask(exchange.question, replacing: exchange.id) } } label: {
+                Button { doors.ask(exchange.question, exchange.id) } label: {
                     Text("Try again")
                         .font(WindmillFont.body(14, .semibold))
                         .foregroundStyle(skin.inkDim)
@@ -279,7 +281,7 @@ struct AskScreen: View {
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                             .strokeBorder(skin.lineStrong, lineWidth: 1))
                 }
-                .disabled(sending)
+                .disabled(conversation.waiting)
             }
         }
         .padding(WindmillSpace.x3)
@@ -359,7 +361,7 @@ struct AskScreen: View {
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
                     .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
-                Button { Task { await ask(question, replacing: nil) } } label: {
+                Button(action: send) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 19, weight: .bold))
                         .foregroundStyle(skin.onAccent)
@@ -380,41 +382,13 @@ struct AskScreen: View {
     }
 
     private var canSend: Bool {
-        !sending && Ask.question(from: question) != nil
+        !conversation.waiting && Ask.question(from: question) != nil
     }
 
-    private func ask(_ asked: String, replacing id: String?) async {
-        guard !sending, let text = Ask.question(from: asked) else { return }
-        sending = true
-        defer { sending = false }
-
-        let standing = id.flatMap { known in conversation.exchanges.firstIndex { $0.id == known } }
-        let asking: String
-        if let standing {
-            conversation.exchanges[standing].outcome = .waiting
-            asking = conversation.exchanges[standing].id
-        } else {
-            let fresh = AskExchange(question: text)
-            conversation.exchanges.append(fresh)
-            question = ""
-            asking = fresh.id
-        }
-
-        switch await doors.send(conversation.threadId, text) {
-        case .success(let answer):
-            settle(asking, .answered(answer))
-            await readMinted()
-        case .failure(let why):
-            settle(asking, .refused(why))
-            if why.opensAFreshThread { conversation.openAFreshThread() }
-            if why.closesTheDoor { doors.absent() }
-        }
-    }
-
-    // Found by id, never by index: the room may have been left and re-entered under the await.
-    private func settle(_ id: String, _ outcome: AskExchange.Outcome) {
-        guard let landed = conversation.exchanges.firstIndex(where: { $0.id == id }) else { return }
-        conversation.exchanges[landed].outcome = outcome
+    private func send() {
+        guard canSend else { return }
+        doors.ask(question, nil)
+        question = ""
     }
 
     private func readMinted() async {

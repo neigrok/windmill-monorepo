@@ -75,10 +75,12 @@ own toolbar; the logger does too, with Finish beside the seat, because a live se
 tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
 that the session is closed, so dismissing it leaves the lifter in the workout they finished.
 Dismissing writes nothing — the session was saved before the sheet appeared — so the one way out is a
-toolbar `Done`, drawn in every state but the session that ended early, where `Keep it` is already the
-affirmative half of a decided pair. The card's two writes are its own: `Save routine`, whose refusal is
-drawn under it because the sheet covers the room's line, and `Discard session`, which empties the sheet
-before its nine-second window starts and so is refused on that line rather than on this one. The
+toolbar `Done`, drawn in every state. The receipt's one primary is `Share with Coach`, drawn only when
+Coach can be reached (signed in, and Coach on this deployment): it takes the sheet down, opens a fresh
+conversation on the Coach tab and sends `Check my last session.` through the room's one send path
+(`GymRoom.ask`), so the thread is titled by it and every refusal is drawn as usual. The card's one
+write is its own: `Save routine`, whose refusal is drawn under it because the sheet covers the room's
+line. `Discard session` is the session detail page's and the log row's, never the receipt's. The
 rack's keypad and ladder stay where they are, and the fix sheet raises that same keypad off its
 weight numeral and its rep count, because a correction at the rack is one-handed too; the routine
 target sheet is three typed fields (`TargetEntry`), whose bands are the routine's — sets 1–20,

@@ -172,6 +172,33 @@ public struct AskConversation: Equatable, Sendable {
         threadId = Ask.mintThreadId()
     }
 
+    // The exchange is on screen, waiting, BEFORE anything goes out: a retry puts its own exchange
+    // back to waiting, a new question appends one. Answers with the id the send settles under.
+    public mutating func open(_ question: String, replacing id: String?) -> String {
+        if let standing = id.flatMap({ known in exchanges.firstIndex { $0.id == known } }) {
+            exchanges[standing].outcome = .waiting
+            return exchanges[standing].id
+        }
+        let fresh = AskExchange(question: question)
+        exchanges.append(fresh)
+        return fresh.id
+    }
+
+    // Found by id, never by index: the conversation may have moved on under the await, and an
+    // exchange that is no longer here settles nothing. Answers whether it landed, because a refusal
+    // that would re-mint the thread must not re-mint a conversation the exchange was never part of.
+    @discardableResult
+    public mutating func settle(_ id: String, _ outcome: AskExchange.Outcome) -> Bool {
+        guard let landed = exchanges.firstIndex(where: { $0.id == id }) else { return false }
+        exchanges[landed].outcome = outcome
+        return true
+    }
+
+    // One question in flight at a time; the composer and the retry are grey while it is.
+    public var waiting: Bool {
+        exchanges.contains { $0.outcome == .waiting }
+    }
+
     // The refusal that took the composer down, if the last question met one: the cap-reached state stands
     // until a new conversation opens, and it says the words that refusal carried.
     public var cappedRefusal: AskRefusal? {

@@ -303,18 +303,17 @@ final class RoomUndoWindowUITests: XCTestCase {
 
     private func finishAndKeep() {
         app.navigationBars.buttons["Finish"].tap()
-        XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20)
-                      || app.staticTexts["Ended early"].exists,
+        XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20)
+                      || app.staticTexts["Ended early."].exists,
                       "the finish sheet never presented")
-        let keep = ["Keep it", "Done"]
-            .map { app.buttons[$0] }
-            .first { $0.exists }
-        XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")
-        keep?.tap()
+        // Dismissal is the toolbar `Done` on every state; nothing on the receipt writes or decides.
+        let done = app.navigationBars.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10), "the finish sheet drew no way out")
+        done.tap()
         // Named by the sheet's own head: the session review screen underneath draws a
         // `Discard session` of its own now (Law 1), so that button no longer means "the sheet".
-        XCTAssertFalse(app.staticTexts["Session finished"].exists
-                       || app.staticTexts["Ended early"].exists,
+        XCTAssertFalse(app.staticTexts["Well done."].exists
+                       || app.staticTexts["Ended early."].exists,
                        "the finish sheet is still up")
     }
 

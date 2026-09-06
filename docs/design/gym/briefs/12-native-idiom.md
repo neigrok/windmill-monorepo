@@ -26,9 +26,9 @@ scrim that writes is the one stroke a lifter cannot see coming.
 **The finish is a sheet on both phones** — iOS's `.sheet`, Android's `ModalBottomSheet` — raised over
 the session it just closed, and it is one statement about two surfaces rather than two conventions
 (`16-the-workout.md`). Because back, the scrim and the handle already dismiss a sheet, the only
-dismissal drawn for it is iOS's toolbar `Done`; Android draws none of its own, and on a session that
-ended early `Keep it` is the affirmative half of a decided pair rather than a way out, so neither
-phone draws a dismissal beside it. And because a sheet covers the room's bottom bar, a refusal raised
+dismissal drawn for it is iOS's toolbar `Done`, on every state; Android draws none of its own. The
+sheet's one full-strength button is `Share with Coach`, a hand-off rather than a way out, drawn only
+where Coach can be reached. And because a sheet covers the room's bottom bar, a refusal raised
 by a control **on** a standing sheet — the receipt's keep-as-routine — is drawn inside it, under that
 control, not in the band every other refusal in the room lands in. That is the rule for a sheet that
 stays up to hear the answer. A sheet that is not there when the answer comes hands its refusal back to
@@ -193,7 +193,8 @@ A token whose mechanism does not exist in a mode should not be given a value in 
 token is **deleted** from the light block rather than dimmed.
 
 The room's identity does not live in its darkness. It lives in the density, the tabular numerals, the
-one vibrant hue, and the refusal to congratulate you — all of which survive a light ground.
+one vibrant hue, and the one congratulation it makes, on the finish receipt alone — all of which
+survive a light ground.
 
 **Android takes a staged ruling.** Its skin is a compile-time object read at several hundred sites,
 the flag that would carry light or dark has no producer anywhere in the app, and Android has no

@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Against
 import works.windmill.gym.domain.AgainstMovement
-import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PersonalRecord
@@ -50,15 +49,10 @@ import works.windmill.platform.design.WindmillSpace
 
 // Everything here RENDERS the `Review` the domain computed and nothing here computes one.
 object Finish {
-    // The one act, said the same way at all three of its doors — the finish screen's slight
-    // session, the log row's long press, and the session review screen. Read from here by each of
-    // them so three spellings of one act cannot drift apart.
+    // The one act, said the same way at both of its doors — the log row's long press and the
+    // session review screen. Read from here by each of them so two spellings of one act cannot
+    // drift apart. The receipt draws no discard: being finished with it is the sheet coming down.
     const val discard = "Discard session"
-
-    // And its answer, on the one state that asks the question. The receipt is a sheet, so being
-    // finished with it is the sheet coming down and needs no button of its own — the only
-    // affirmative left on this screen is the half of a decided pair that `discard` is the other of.
-    const val keepIt = "Keep it"
 
     // What the receipt says once the log has taken the routine. The form is gone by then, so this is
     // the whole of the answer.
@@ -74,7 +68,9 @@ object Finish {
 
     fun head(startedAtMs: Long, finishedAtMs: Long, routine: String?, slight: Boolean, first: Boolean): Head =
         Head(
-            title = if (slight) "Ended early" else "Session finished",
+            // A congratulation on two sets would be a small lie, so a slight session keeps its
+            // plain title.
+            title = if (slight) "Ended early." else "Well done.",
             subtitle = routine ?: if (first) "Your first session" else "No routine",
             at = "${Readout.day(startedAtMs)} · ${Readout.time(startedAtMs)} – ${Readout.time(finishedAtMs)}",
         )
@@ -147,6 +143,14 @@ object Finish {
     }
 
     private fun top(effort: Effort): String = top(effort.sets, effort.reps, effort.weightKg)
+}
+
+// The receipt's one primary and the line under it. The question is the whole of what is sent: no
+// session id rides with it, because Coach reads the log newest first and finds the workout itself.
+object FinishCoach {
+    const val action = "Share with Coach"
+    const val caption = "Sends Coach one line — “Check my last session.” — and opens the answer."
+    const val question = "Check my last session."
 }
 
 // The sets travel with it because the log has let go of them by now.
@@ -269,16 +273,16 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
 // The body of the sheet the room presents over the session it just closed (16-the-workout). It owns
 // its own scroll, because a sheet that cannot scroll cannot be finished, and its own refusal line,
 // because a sheet covers the room's bottom bar. `failure` defaults to nothing so a caller that has
-// no refusal to draw names none.
+// no refusal to draw names none. `onShareWithCoach` is null where Coach cannot be reached — signed
+// out, or a deployment without one — and then nothing stands in the primary's place. Every way out
+// of the receipt is the sheet coming down: back, the scrim, or the handle.
 @Composable
 fun FinishScreen(
     finished: FinishedSession,
     catalog: List<Exercise>,
     kept: Boolean,
-    coach: CoachDoors,
     onKeepRoutine: (String) -> Unit,
-    onDiscard: () -> Unit,
-    onDone: () -> Unit,
+    onShareWithCoach: (() -> Unit)? = null,
     failure: String? = null,
 ) {
     val head = Finish.head(
@@ -300,7 +304,7 @@ fun FinishScreen(
             .padding(horizontal = WindmillSpace.x5)
             .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
     ) {
-        // The title lives in the content and not in a bar above it: `Ended early` is the whole of
+        // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
             Text(head.title, style = WindmillFont.display(24), color = GymSkin.ink)
@@ -309,6 +313,9 @@ fun FinishScreen(
         }
 
         ReviewReadout(finished.review, catalog)
+
+        // Drawn on the slight branch too: a short session is exactly the one worth a second opinion.
+        onShareWithCoach?.let { ShareWithCoach(it) }
 
         if (finished.offersRoutine) {
             // The keep is the one thing this receipt does that writes, so it is the one thing the
@@ -324,12 +331,24 @@ fun FinishScreen(
                 KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, failure)
             }
         }
+    }
+}
 
-        if (!finished.slight) {
-            CoachShareCard(coach, finished.session.id)
-        }
-
-        Actions(finished, onDiscard, onDone)
+// The one full-strength button on the receipt, and one sentence under it saying exactly what the
+// tap sends. The link card is NOT here: two share verbs on one receipt are two meanings, and the
+// link keeps its doors on the session page and the log row.
+@Composable
+private fun ShareWithCoach(onShareWithCoach: () -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        PrimaryButton(FinishCoach.action, onClick = onShareWithCoach)
+        Text(
+            FinishCoach.caption,
+            style = GymType.numeral(12).copy(lineHeight = 17.sp),
+            color = GymSkin.inkDim,
+        )
     }
 }
 
@@ -411,37 +430,6 @@ private fun KeepAsRoutine(
                 // The alarm ink is for a write that failed. An empty name is neither destructive nor
                 // invalid — nothing was sent — so the unfinished form takes the faint ink.
                 color = if (missing != null) GymSkin.inkFaint else GymSkin.alarmInk,
-            )
-        }
-    }
-}
-
-// The slight session is the only state that asks a question, so it is the only one that draws an
-// answer: every other way out of the receipt is the sheet coming down — back, the scrim, or the
-// handle — and a `Done` under it would be a second dismissal beside one the platform already draws.
-//
-// Discard asks nothing. A destructive act gets an UNDO, not a dialog (13-gestures Law 2): the
-// session is withheld for nine seconds with nothing sent, and the sheet leaves at once because the
-// delete has already happened as far as the lifter is concerned.
-@Composable
-private fun Actions(finished: FinishedSession, onDiscard: () -> Unit, onDone: () -> Unit) {
-    if (!finished.slight) return
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        PrimaryButton(Finish.keepIt, onClick = onDone)
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(role = Role.Button, onClick = onDiscard),
-        ) {
-            Text(
-                Finish.discard,
-                style = WindmillFont.body(16, FontWeight.SemiBold),
-                color = GymSkin.alarmInk,
             )
         }
     }

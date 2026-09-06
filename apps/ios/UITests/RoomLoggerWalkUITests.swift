@@ -84,12 +84,12 @@ final class RoomLoggerWalkUITests: XCTestCase {
 
     private func finishAndKeep() {
         app.navigationBars.buttons["Finish"].tap()
-        XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20)
-                      || app.staticTexts["Ended early"].exists,
+        XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20)
+                      || app.staticTexts["Ended early."].exists,
                       "the finish sheet never presented")
-        let keep = ["Keep it", "Done"]
-            .map { app.buttons[$0] }
-            .first { $0.exists }
-        keep?.tap()
+        // Dismissal is the toolbar `Done` on every state; nothing on the receipt writes or decides.
+        let done = app.navigationBars.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10), "the finish sheet drew no way out")
+        done.tap()
     }
 }

@@ -22,6 +22,8 @@ public struct GymRoom: View {
     // A refusal raised BY the finish sheet belongs inside it: the room's own note line is drawn on the
     // stack underneath, which a `.large` sheet covers, and a refusal nobody can read is a silent death.
     @State private var finishFailure: String?
+    // Set by the receipt's `Share with Coach` and cleared when the sheet is down: one hand-off per receipt.
+    @State private var handingToCoach = false
     @State private var tab: Tab = .routines
     // One path per tab, all three owned here. A TabView keeps every tab mounted, so a stack is never
     // read for a tab that is not on screen — see `stackDepth`.
@@ -162,11 +164,12 @@ public struct GymRoom: View {
             }
             // Over the session it closed. Dismissing it leaves the lifter in the workout they finished
             // — and takes the refusal with it, however the sheet went, an interactive swipe included.
-            .sheet(item: $finished, onDismiss: { finishFailure = nil }) { closed in
+            .sheet(item: $finished, onDismiss: { finishFailure = nil; handingToCoach = false }) { closed in
                 FinishScreen(finished: closed, catalog: store.catalog, kept: keptRoutine,
-                             coach: doors(to: closed.session.id), failure: finishFailure,
+                             failure: finishFailure,
                              onKeepRoutine: { name in Task { await keep(closed.sets, as: name) } },
-                             onDiscard: { discard(closed.session) },
+                             // Drawn on the one predicate the Coach tab root mounts its screen on.
+                             onShareWithCoach: coachReachable ? shareWithCoach : nil,
                              onDone: { finished = nil })
                     .presentationBackground(skin.canvas)
                     .presentationDetents([.large])
@@ -409,15 +412,23 @@ public struct GymRoom: View {
                           onBodyweight: { look(at: .bodyweight) },
                           share: { doors(to: $0) }, discard: discard(_:), say: { note = $0 })
             case .ask:
-                if !account.isSignedIn {
-                    AskSignedOutStance(onSignIn: { shell.openYou() })
-                } else if !askOnThisDeployment {
-                    AskAbsentStance(onNotes: { look(at: .notes) })
-                } else {
+                if coachReachable {
                     AskScreen(store: store, conversation: $conversation, doors: askDoors,
                               receipts: receipts, undecided: undecided)
+                } else if !account.isSignedIn {
+                    AskSignedOutStance(onSignIn: { shell.openYou() })
+                } else {
+                    AskAbsentStance(onNotes: { look(at: .notes) })
                 }
         }
+    }
+
+    // Signed in, and Coach on this deployment: the Coach tab mounts its screen on this and nothing
+    // else, and the finish receipt draws `Share with Coach` on the same answer. An open session is
+    // not part of it — the logger replaces the tabs while one is open, and the receipt rises only
+    // once the session is closed.
+    private var coachReachable: Bool {
+        account.isSignedIn && askOnThisDeployment
     }
 
     // Zero whenever the stacks are not what is on screen, so the shell's leading edge means home there,
@@ -466,17 +477,57 @@ public struct GymRoom: View {
     }
 
     private var askDoors: AskDoors {
+        AskDoors(ask: ask(_:replacing:),
+                 openThreads: { look(at: .threads) },
+                 openNotes: { look(at: .notes) },
+                 connect: { look(at: .connect) },
+                 openProposal: review)
+    }
+
+    // The one send path, the room's rather than the screen's so that the finish receipt can open a
+    // conversation on a first question: the thread is titled by its first message, the four-per-thread
+    // and ten-per-day ceilings apply, and every refusal is drawn by the exchange, whichever door asked.
+    // The exchange is placed waiting BEFORE the task starts, so it is on screen the instant the tab is.
+    private func ask(_ asked: String, replacing id: String?) {
+        guard !conversation.waiting, let text = Ask.question(from: asked) else { return }
+        let asking = conversation.open(text, replacing: id)
+        let thread = conversation.threadId
         let gym = GymApi(api: account.api)
-        return AskDoors(
-            send: { thread, question in
-                do { return .success(try await gym.ask(question, in: thread)) }
-                catch { return .failure(AskRefusal(error)) }
-            },
-            openThreads: { look(at: .threads) },
-            openNotes: { look(at: .notes) },
-            connect: { look(at: .connect) },
-            openProposal: review,
-            absent: { askOnThisDeployment = false })
+        Task {
+            do {
+                conversation.settle(asking, .answered(try await gym.ask(text, in: thread)))
+            } catch {
+                let why = AskRefusal(error)
+                // A fresh thread is this conversation's answer to a full one; a refusal for an
+                // exchange the lifter has since left behind says nothing about the one on screen.
+                // No Coach on this deployment is true of the room, so it lands either way.
+                let landed = conversation.settle(asking, .refused(why))
+                if landed, why.opensAFreshThread { conversation.openAFreshThread() }
+                if why.closesTheDoor { askOnThisDeployment = false }
+            }
+        }
+    }
+
+    // The same reset the thread list's door performs, then the tab.
+    private func askSomethingNew() {
+        conversation = AskConversation()
+        note = nil
+        paths[.ask] = []
+        tab = .ask
+    }
+
+    // The receipt's primary, in this order: the sheet comes down, a fresh conversation opens on the
+    // Coach tab, and the one line goes out through `ask`. Nothing else is sent — no session id; Coach
+    // reads the log newest first and finds the workout itself. The closed session stays pushed on the
+    // log tab exactly as `close()` left it, so leaving Coach for the log lands on the workout.
+    // Once per receipt: the sheet stays tappable while it animates down, and a second tap would reset
+    // the conversation just opened and send the line again under a second thread.
+    private func shareWithCoach() {
+        guard !handingToCoach else { return }
+        handingToCoach = true
+        finished = nil
+        askSomethingNew()
+        ask(FinishCoach.question, replacing: nil)
     }
 
     // Account-only, straight to the log: no device copy, no claim slot.
@@ -516,12 +567,7 @@ public struct GymRoom: View {
             delete: { thread in withholdDelete(of: thread, through: gym) },
             openThread: { look(at: .thread($0)) },
             openProposal: review,
-            askSomethingNew: {
-                conversation = AskConversation()
-                note = nil
-                paths[.ask] = []
-                tab = .ask
-            })
+            askSomethingNew: askSomethingNew)
     }
 
     private func openConnect() {
@@ -662,10 +708,9 @@ public struct GymRoom: View {
 
     private func discard(_ session: Session) {
         note = nil
-        finishFailure = nil
-        finished = nil
-        // Reached from the finish sheet and from the log row's menu. Either way the screen under it
-        // may be the session that is on its way out, so the log stack goes back to its root.
+        // Reached from the session detail page and from the log row's menu, never from the finish
+        // receipt. Either way the screen on top may be the session that is on its way out, so the
+        // log stack goes back to its root.
         paths[.log] = []
         Task {
             await withheld.hold(Withheld(

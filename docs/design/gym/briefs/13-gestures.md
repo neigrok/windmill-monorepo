@@ -519,10 +519,10 @@ and it is not the unrecoverable tap the gate refused.
 
 **Law 1 then asks for a drawn door beside it, and both phones have one.** iOS draws `Discard
 session` on the past-session screen, unconditionally (`SessionScreen.swift:153`, the control at
-`:184-190`), and Android now does the same (`SessionScreen.kt:172`, `:265-279`). On Android the
-three doors — that screen, the finish receipt's slight-session stance (`Actions` in
-`ui/FinishScreen.kt`) and this long press — run through one act (`GymRoom.discard`) and print one
-constant (`FinishScreen.kt:56`), so three spellings of the act cannot drift apart. The web is
+`:184-190`), and Android does the same (`SessionScreen.kt:172`, `:265-279`). Those are the phones'
+two doors — that screen and this long press; the finish receipt draws none (`16-the-workout.md`) —
+and on Android both run through one act (`GymRoom.discard`) and print one constant
+(`Finish.discard` in `ui/FinishScreen.kt`), so two spellings of the act cannot drift apart. The web is
 outside this law, having no gesture at all, and it draws the door anyway: `Discard session` on every
 finished session's detail (`SessionDetail` in `Log.jsx`), through the same withheld window as every
 other web delete, and on the finish screen's slight branch (`ShortSession` in `Finish.jsx`). The

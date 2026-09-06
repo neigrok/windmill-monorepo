@@ -365,6 +365,10 @@ connected agent reads notes whether or not this Windmill carries Coach.
 
 **The title is the first message, verbatim**, written once. Nothing in this product summarises what a
 lifter typed — no auto-title, no folders, no pinning. The outcome chip is derived, never stored.
+The finish receipt's `Share with Coach` is one such first message: it opens a fresh conversation and
+sends *Check my last session.* through the send path a typed question takes, so that sentence is the
+thread's title verbatim and the receipt's caption promises exactly what the title will read
+(`16-the-workout.md`). The lifter's tap sent it, so Coach has still not spoken first.
 Deleting a conversation deletes the conversation and not its consequence: a change that was applied
 still says it came from Coach.
 

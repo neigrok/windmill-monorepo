@@ -7,6 +7,17 @@ import UIKit
 // 1: a 12.5pt line drawn at 1x is all antialiasing and hits its own colour exactly nowhere.
 @MainActor
 func alarmPixels(of window: UIWindow) -> Int {
+    inkPixels(of: window, near: (0xD0, 0x82, 0x68))
+}
+
+// The accent (`GymSkin.instrument.accent`, verdigris #5FCDB4): the fill of a primary button.
+@MainActor
+func accentPixels(of window: UIWindow) -> Int {
+    inkPixels(of: window, near: (0x5F, 0xCD, 0xB4))
+}
+
+@MainActor
+func inkPixels(of window: UIWindow, near ink: (r: Int, g: Int, b: Int)) -> Int {
     let format = UIGraphicsImageRendererFormat()
     format.scale = 3
     let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
@@ -26,7 +37,7 @@ func alarmPixels(of window: UIWindow) -> Int {
             if bgr { (r, g, b) = (Int(bytes[at + 2]), Int(bytes[at + 1]), Int(bytes[at])) }
             else if alphaFirst { (r, g, b) = (Int(bytes[at + 1]), Int(bytes[at + 2]), Int(bytes[at + 3])) }
             else { (r, g, b) = (Int(bytes[at]), Int(bytes[at + 1]), Int(bytes[at + 2])) }
-            if abs(r - 0xD0) < 10 && abs(g - 0x82) < 10 && abs(b - 0x68) < 10 { lit += 1 }
+            if abs(r - ink.r) < 10 && abs(g - ink.g) < 10 && abs(b - ink.b) < 10 { lit += 1 }
         }
     }
     return lit

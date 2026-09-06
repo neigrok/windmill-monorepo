@@ -37,8 +37,8 @@ one you never want to hit by accident with a wet thumb.
 
 ## Finish becomes a sheet over the session it finished
 
-The screen owns a major offer (*keep this as a routine*) and a destructive door (*discard session*),
-and it must not be a dead end while it does.
+The receipt owns a major offer (*keep this as a routine*) and, on the phones, one hand-off (*Share
+with Coach*), and it must not be a dead end while it does.
 
 > **It is a sheet presented over the session it just closed.** Dismissing it leaves you in the
 > workout you finished, which is where you wanted to be.
@@ -59,23 +59,52 @@ slight and ordinary alike, and above the retry line on a failed read;
 still running, which draws its one quiet line and no back, because it is not yet a place to be sent
 back from.
 
+**The head is the one congratulation the room makes.** On both phones the receipt opens *Well done.*
+on an ordinary session and *Ended early.* on a slight one — fewer than four working sets — because a
+congratulation on two sets would be a small lie. The subtitle and the *when* line say what was done
+and when; the readout under them is the same readout on every state, and the PR line inside it stays
+the one loud line (`01-context.md`). The web's review screen keeps its own head, since it reviews a
+past workout rather than ending a live one.
+
+**One primary, and it is a hand-off: `Share with Coach`.** Drawn on both branches directly under the
+readout, as the receipt's only full-strength button — `skin.accent` on iOS, `PrimaryButton` on
+Android — with one caption in the secondary ink beneath it, the same bytes on both phones: *Sends
+Coach one line — “Check my last session.” — and opens the answer.* It names the room, which is the
+only thing the word *coach* names here (`01-context.md`); the link a lifter hands a human coach is
+*Share this workout*, and **that card is not on the receipt** — it stays on the session detail page
+and in the log row's long press, because two share verbs on one receipt is the two-meanings
+confusion the room refuses. The primary is drawn only when Coach can be reached — signed in, and
+Coach present on this deployment, the same predicate the Coach tab's root reads — and when it
+cannot, nothing stands in its place: the receipt is the head, the readout, the routine offer and the
+dismissal.
+
+**Tapping it is one tap, and it keeps every rule Coach already has.** The receipt comes down first;
+the room opens a fresh conversation — the reset *Ask something new* performs — and switches to the
+Coach tab; then it sends *Check my last session.*, exact bytes, through the same send path a typed
+question takes. So the thread's title is that sentence verbatim (`09-coach.md` Threads), the
+four-per-thread and ten-per-day ceilings apply, and every refusal is drawn by the exchange the
+lifter already knows — the waiting state stands the instant the tab shows, not when the answer
+lands. Nothing else rides along: no session id, since Coach's own `list_sessions` reads newest
+first and the agent finds the workout itself. Coach still does not speak first — the lifter's tap
+sent the line. On iOS the closed session stays pushed on the log tab's own stack, so leaving Coach
+for the log lands on the workout; Android keeps one stack for every tab, so the hand-off's reset pops
+it and the log lands on its list, the finished workout in the top row.
+
 **Exactly one dismissal per state, in the platform's own words.** On iOS it is a toolbar `Done` in
-`.confirmationAction`, beside the drag indicator the sheet already declares — nothing here writes, so
-it is a toolbar action rather than a second commitment in the reach band (`12-native-idiom.md`). A
-top corner is where `../../guidelines/thumb-reach.md` §2 forbids an action, and this is the exception
-that section names itself: dismissing a receipt is a door taken sitting down after the workout, never
-one needed mid-set, and the sheet keeps its swipe in the reach band besides. On Android nothing is
-drawn for it: the sheet comes down by back, the scrim or the handle. **iOS suppresses its `Done` on
-the slight branch**, where `Keep it` is the affirmative half of a decided Keep/Discard pair rather
-than a way out — Android's `Keep it` is the same act and neither phone draws a dismissal beside it,
-because a second full-strength button there is the failure §3.2 names. **The web's ordinary state
-draws none — the head back is the way out — and its slight branch keeps `Keep it`**
-(`.gym-short-keep` in `Finish.jsx`), which is why the head back had to serve both branches: that
-foot leaves for the routines home, so without a back the state reviewing a session had no route to
-the session. Its *Just keep the session* is not a dismissal either — it declines the routine offer
-in place, without leaving — which is why that spelling stays on the one surface whose finish is not
-a sheet. **`Keep it` is therefore one act with two destinations** — dismissed in place on the phones,
-navigated away from on the web — which nothing here decides yet (ledger `4d`).
+`.confirmationAction`, beside the drag indicator the sheet already declares, drawn on every state,
+slight and ordinary alike — nothing here writes, so it is a toolbar action rather than a second
+commitment in the reach band (`12-native-idiom.md`). A top corner is where
+`../../guidelines/thumb-reach.md` §2 forbids an action, and this is the exception that section names
+itself: dismissing a receipt is a door taken sitting down after the workout, never one needed
+mid-set, and the sheet keeps its swipe in the reach band besides. On Android nothing is drawn for
+it: the sheet comes down by back, the scrim or the handle. **The web's ordinary state draws none —
+the head back is the way out — and its slight branch draws `Keep it`** (`.gym-short-keep` in
+`Finish.jsx`), an anchor that leaves for the routines home, which is why the head back had to serve
+both branches: without it the state reviewing a session had no route to the session. Its *Just keep
+the session* is not a dismissal either — it declines the routine offer in place, without leaving —
+which is why that spelling stays on the one surface whose finish is not a sheet. **The phones draw
+no `Keep it` in any state**: keeping the workout is what finishing did, and a receipt is not asked
+to say so twice (ledger `4d`).
 
 **A sheet covers the room's bottom bar, so the receipt says its own refusals while it stands.**
 `FinishScreen` takes a `failure` on both phones and draws it under the control that raised it — the
@@ -103,11 +132,14 @@ editor's Save already had — `keepingRoutine` next to `savingRoutine` in each r
 returns early while `saving` and holds one minted id in a ref for the whole card, so its second press
 is a replay even if it lands.
 
-The offer and the destructive door keep their places inside it. **Discard asks nothing.** It withholds
-the session for the same nine seconds every other delete in the room is held for, puts the transient's
-*Undo* beside it, and sends nothing until the clock closes — so the confirmation dialog and the
-sentence *There is no undoing it.* are gone from all three surfaces. A question in front of an act
-that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
+**The offer keeps its place inside it**, under the primary: the keep-as-routine card, and *Kept as
+{name}.* where its form stood. **No discard stands on the phones' receipt.** The destructive door
+lives on the session the sheet comes down onto — `Discard session` on the session detail page and
+in the log row's long press (`13-gestures.md`) — and the web's slight branch draws its own. **Discard
+asks nothing**, wherever it is drawn. It withholds the session for the same nine seconds every other
+delete in the room is held for, puts the transient's *Undo* beside it, and sends nothing until the
+clock closes — so no confirmation dialog and no *There is no undoing it.* exist on any surface. A
+question in front of an act that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
 
 ## The rest reading counts up
 

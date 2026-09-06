@@ -10,17 +10,19 @@ final class FinishTests: XCTestCase {
     private let started: Int64 = 1_754_308_320_000     // Tue 4 Aug 2025, 18:12 local
     private var finished: Int64 { started + 3_720_000 }
 
-    func testAFinishedSessionIsTitledByItsRoutineAndAShortOneByItsEndingEarly() {
+    // The head congratulates, and a short one does not: a congratulation on two sets would be a
+    // small lie. Both titles are Android's to the byte, stop included.
+    func testAFinishedSessionIsCongratulatedAndAShortOneIsNot() {
         let ordinary = Finish.head(startedAtMs: started, finishedAtMs: finished,
                                    routine: "Legs", slight: false, first: false)
-        XCTAssertEqual(ordinary.title, "Session finished")
+        XCTAssertEqual(ordinary.title, "Well done.")
         XCTAssertEqual(ordinary.subtitle, "Legs")
         XCTAssertEqual(ordinary.when,
                        "\(Readout.day(started)) · \(Readout.time(started)) – \(Readout.time(finished))")
 
         let short = Finish.head(startedAtMs: started, finishedAtMs: finished,
                                 routine: "Pull A", slight: true, first: false)
-        XCTAssertEqual(short.title, "Ended early", "a short session is asked about, never congratulated")
+        XCTAssertEqual(short.title, "Ended early.", "a short session is never congratulated")
         XCTAssertEqual(short.subtitle, "Pull A")
     }
 
@@ -231,13 +233,15 @@ final class FinishTests: XCTestCase {
     }
 
     private static var source: String {
-        get throws {
-            let file = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-                .appendingPathComponent("Sources/WindmillGym/FinishScreen.swift")
-            return try String(contentsOf: file, encoding: .utf8)
-        }
+        get throws { try gymSource("FinishScreen.swift") }
     }
+}
+
+func gymSource(_ file: String) throws -> String {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Sources/WindmillGym/\(file)")
+    return try String(contentsOf: url, encoding: .utf8)
 }
 
 final class DiscardTests: XCTestCase {
@@ -247,6 +251,97 @@ final class DiscardTests: XCTestCase {
         XCTAssertEqual(Finish.Discard.action, "Discard session")
         XCTAssertEqual(WithheldWords.session, "Session deleted.")
         XCTAssertEqual(WithheldWords.undo, "Undo")
+    }
+
+    // The receipt itself carries no discard and no `Keep it`: the session detail page and the log
+    // row's menu draw the discard, so the gesture still has a drawn door beside it (Law 1).
+    func testTheReceiptDrawsNeitherHalfOfTheOldDecidedPair() throws {
+        let screen = try gymSource("FinishScreen.swift")
+        XCTAssertFalse(screen.contains("\"Keep it\""))
+        XCTAssertFalse(screen.contains("Finish.Discard.action, action:"),
+                       "the receipt draws a discard of its own again")
+        XCTAssertTrue(try gymSource("SessionScreen.swift").contains("Finish.Discard.action"),
+                      "the session detail page is where the discard is drawn")
+    }
+}
+
+// The receipt's one primary hands the closed workout to Coach. The bytes are Android's exactly, the
+// caption's quotes are canon's typographic ones, and the question carries its period: the thread is
+// titled by it verbatim.
+final class FinishCoachTests: XCTestCase {
+    func testTheFourConstantsAreTheOnesBothPhonesPin() {
+        XCTAssertEqual(FinishCoach.action, "Share with Coach")
+        XCTAssertEqual(FinishCoach.caption,
+                       "Sends Coach one line — “Check my last session.” — and opens the answer.")
+        XCTAssertEqual(FinishCoach.question, "Check my last session.")
+        XCTAssertEqual(Finish.head(startedAtMs: 0, finishedAtMs: 0, routine: nil,
+                                   slight: false, first: false).title, "Well done.")
+        XCTAssertEqual(Finish.head(startedAtMs: 0, finishedAtMs: 0, routine: nil,
+                                   slight: true, first: false).title, "Ended early.")
+    }
+
+    func testTheCaptionQuotesTheQuestionItSendsAndNothingElseNamesASessionId() {
+        XCTAssertTrue(FinishCoach.caption.contains("“\(FinishCoach.question)”"))
+        XCTAssertFalse(FinishCoach.question.contains("ses_"), "no session id travels with the line")
+        XCTAssertFalse(FinishCoach.caption.contains("\""), "straight quotes are not canon's")
+    }
+
+    // The tap is a sequence of the room's own `@State` writes, which no harness can host, so the
+    // order is pinned off the source: the sheet comes down, the same reset the thread list's door
+    // performs, and then the one line through the room's ONE send path. The question is placed
+    // waiting before the task starts (`AskConversation.open`, proved in `AskConversationTests`), so
+    // the Coach tab shows it the instant it shows at all.
+    func testTheTapDismissesThenResetsThenSendsTheOneLineThroughTheOneSendPath() throws {
+        let room = try gymSource("GymRoom.swift")
+        let handler = try XCTUnwrap(room.range(of: "private func shareWithCoach() {"),
+                                    "the receipt's primary has no handler in the room")
+        let dismiss = try XCTUnwrap(room.range(of: "finished = nil", range: handler.upperBound..<room.endIndex))
+        let reset = try XCTUnwrap(room.range(of: "askSomethingNew()", range: dismiss.upperBound..<room.endIndex))
+        let send = try XCTUnwrap(room.range(of: "ask(FinishCoach.question, replacing: nil)",
+                                            range: reset.upperBound..<room.endIndex))
+        XCTAssertLessThan(dismiss.lowerBound, reset.lowerBound)
+        XCTAssertLessThan(reset.lowerBound, send.lowerBound)
+
+        let fresh = try XCTUnwrap(room.range(of: "private func askSomethingNew() {"))
+        for line in ["conversation = AskConversation()", "paths[.ask] = []", "tab = .ask"] {
+            XCTAssertNotNil(room.range(of: line, range: fresh.upperBound..<send.lowerBound),
+                            "the reset the receipt reuses no longer \(line)")
+        }
+
+        XCTAssertEqual(room.components(separatedBy: "gym.ask(").count, 2,
+                       "the wire is reached from exactly one place in the room")
+        XCTAssertFalse(try gymSource("AskScreen.swift").contains("gym.ask("),
+                       "the screen sends nothing of its own; it asks the room to")
+        XCTAssertFalse(try gymSource("AskScreen.swift").contains("closesTheDoor"),
+                       "refusal handling lives on the one send path, not in the screen too")
+    }
+
+    // Drawn only when Coach can be reached, and "reached" is spelled once in the room: the Coach tab
+    // mounts its screen on `coachReachable` and the receipt draws its primary on the same name, so
+    // the two cannot drift. When it cannot be reached, nothing stands in its place.
+    func testThePrimaryAndTheCoachTabReadOnePredicate() throws {
+        let room = try gymSource("GymRoom.swift")
+        let sheet = try XCTUnwrap(room.range(of: ".sheet(item: $finished"))
+        XCTAssertNotNil(room.range(of: "onShareWithCoach: coachReachable ? shareWithCoach : nil",
+                                   range: sheet.upperBound..<room.endIndex))
+
+        let tab = try XCTUnwrap(room.range(of: "case .ask:\n                if coachReachable {\n"))
+        XCTAssertNotNil(room.range(of: "AskScreen(store: store, conversation: $conversation",
+                                   range: tab.upperBound..<room.endIndex))
+        XCTAssertNotNil(room.range(of: "private var coachReachable: Bool {\n        account.isSignedIn && askOnThisDeployment\n    }"))
+    }
+
+    // The sheet stays tappable while it animates down, so the hand-off is one-shot per receipt:
+    // armed on the tap, cleared only when the sheet is down.
+    func testASecondTapWhileTheSheetIsComingDownHandsOffNothing() throws {
+        let room = try gymSource("GymRoom.swift")
+        let handler = try XCTUnwrap(room.range(of: "private func shareWithCoach() {"))
+        let guarded = try XCTUnwrap(room.range(of: "guard !handingToCoach else { return }",
+                                               range: handler.upperBound..<room.endIndex))
+        let armed = try XCTUnwrap(room.range(of: "handingToCoach = true", range: guarded.upperBound..<room.endIndex))
+        XCTAssertNotNil(room.range(of: "finished = nil", range: armed.upperBound..<room.endIndex))
+        XCTAssertTrue(room.contains("onDismiss: { finishFailure = nil; handingToCoach = false }"),
+                      "the flag is cleared when the sheet is down and nowhere earlier")
     }
 }
 
@@ -281,7 +376,7 @@ final class FinishedSessionTests: XCTestCase {
         XCTAssertFalse(ended.offersRoutine,
                        "too slight to say anything about is too slight to keep as a routine")
         XCTAssertEqual(Finish.head(startedAtMs: 1_000, finishedAtMs: 900_000, routine: nil,
-                                   slight: ended.slight, first: ended.isFirst).title, "Ended early")
+                                   slight: ended.slight, first: ended.isFirst).title, "Ended early.")
     }
 
     func testWithoutAReviewASessionIsNeverCalledShort() {

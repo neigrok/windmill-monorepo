@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
@@ -19,7 +20,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Against
-import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
@@ -43,17 +43,17 @@ class FinishTests {
     private val finished = started + 3_720_000L
 
     @Test
-    fun aFinishedSessionIsTitledByItsRoutineAndAShortOneByItsEndingEarly() {
+    fun aFinishedSessionIsCongratulatedAndAShortOneIsNot() {
         val ordinary = Finish.head(startedAtMs = started, finishedAtMs = finished,
                                    routine = "Legs", slight = false, first = false)
-        assertEquals("Session finished", ordinary.title)
+        assertEquals("Well done.", ordinary.title)
         assertEquals("Legs", ordinary.subtitle)
         assertEquals("${Readout.day(started)} · ${Readout.time(started)} – ${Readout.time(finished)}",
                      ordinary.at)
 
         val short = Finish.head(startedAtMs = started, finishedAtMs = finished,
                                 routine = "Pull A", slight = true, first = false)
-        assertEquals("a short session is asked about, never congratulated", "Ended early", short.title)
+        assertEquals("a congratulation on two sets would be a small lie", "Ended early.", short.title)
         assertEquals("Pull A", short.subtitle)
     }
 
@@ -295,7 +295,7 @@ class FinishedSessionTests {
         assertTrue(ended.slight)
         assertFalse("too slight to say anything about is too slight to keep as a routine",
                     ended.offersRoutine)
-        assertEquals("Ended early",
+        assertEquals("Ended early.",
                      Finish.head(startedAtMs = 1_000, finishedAtMs = 900_000, routine = null,
                                  slight = ended.slight, first = ended.isFirst).title)
     }
@@ -313,7 +313,7 @@ class FinishedSessionTests {
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
-class DiscardConfirmationTests {
+class ShareWithCoachTests {
     @get:Rule
     val compose = createComposeRule()
 
@@ -327,63 +327,102 @@ class DiscardConfirmationTests {
         isFirst = false,
     )
 
-    private val doors = CoachDoors(
-        origin = "https://windmill.works",
-        mint = { error("never minted on a short session") },
-        revoke = { error("never revoked on a short session") },
+    private val ordinary = FinishedSession(
+        session = Session(id = "ses_2", startedAtMs = 1_000, finishedAtMs = 3_600_000),
+        sets = short.sets,
+        review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
+        isFirst = false,
     )
 
-    // A destructive act gets an UNDO, not a confirmation (13-gestures Law 2). The tap discards on the
-    // spot — nothing is on the wire for nine seconds — and the dialog that used to stand between,
-    // along with the sentence that said the discard could not be undone, is gone with it.
-    @Test
-    fun aDiscardTakesEffectOnTheTapAndNoDialogStandsBetween() {
-        var discarded = 0
-        var done = 0
+    // One composition per test, redrawn off state: a test walks both branches through it.
+    private val shown = mutableStateOf(ordinary)
+    private val shared = mutableStateOf(0)
+    private val reachable = mutableStateOf(true)
+
+    private fun receipt() {
         compose.setContent {
             FinishScreen(
-                finished = short,
+                finished = shown.value,
                 catalog = catalog,
                 kept = false,
-                coach = doors,
                 onKeepRoutine = {},
-                onDiscard = { discarded += 1 },
-                onDone = { done += 1 },
+                onShareWithCoach = if (reachable.value) { { shared.value += 1 } } else null,
             )
         }
-
-        compose.onNodeWithText("Discard session").performScrollTo().performClick()
-        compose.runOnIdle {
-            assertEquals("one tap, and the window it opens is the room's", 1, discarded)
-            assertEquals(0, done)
-        }
-        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
-        compose.onNodeWithText("Discarding deletes the session and its sets. There is no undoing it.")
-            .assertDoesNotExist()
     }
 
-    // One act, one spelling. `Keep it` is read from `Finish` beside the `Discard session` it is the
-    // other half of, and it is the only affirmative anywhere on the receipt — the ordinary way out is
-    // the sheet coming down.
-    @Test
-    fun theSlightSessionsAffirmativeIsSaidOnceAndFromTheSameShelfAsItsRefusal() {
-        compose.setContent {
-            FinishScreen(
-                finished = short,
-                catalog = catalog,
-                kept = false,
-                coach = doors,
-                onKeepRoutine = {},
-                onDiscard = {},
-                onDone = {},
-            )
-        }
+    private fun show(finished: FinishedSession) {
+        compose.runOnIdle { shown.value = finished }
+        compose.waitForIdle()
+    }
 
-        assertEquals("Keep it", Finish.keepIt)
-        compose.onAllNodesWithText(Finish.keepIt).assertCountEquals(1)
-        compose.onAllNodesWithText(Finish.discard).assertCountEquals(1)
-        compose.onNodeWithText("Done").assertDoesNotExist()
-        compose.onNodeWithText("Just keep the session").assertDoesNotExist()
+    // The bytes are pinned: the caption names the exact line the tap sends, so the two cannot drift.
+    @Test
+    fun theFourStringsAreTheContractsBytes() {
+        assertEquals("Share with Coach", FinishCoach.action)
+        assertEquals("Sends Coach one line — “Check my last session.” — and opens the answer.",
+                     FinishCoach.caption)
+        assertEquals("Check my last session.", FinishCoach.question)
+        assertEquals("Well done.",
+                     Finish.head(startedAtMs = 1_000, finishedAtMs = 3_600_000, routine = null,
+                                 slight = false, first = false).title)
+        assertEquals("Ended early.",
+                     Finish.head(startedAtMs = 1_000, finishedAtMs = 660_000, routine = null,
+                                 slight = true, first = false).title)
+    }
+
+    // One primary, one caption, on BOTH branches — the short session is exactly the one worth a
+    // second opinion — and the tap reaches the room once.
+    @Test
+    fun theOnePrimaryStandsOnBothBranchesAndReachesTheRoomOnce() {
+        receipt()
+        listOf(ordinary, short).forEachIndexed { taps, finished ->
+            show(finished)
+            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
+            compose.onNodeWithText(FinishCoach.caption).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
+            compose.runOnIdle { assertEquals(finished.session.id, taps + 1, shared.value) }
+        }
+    }
+
+    // Where Coach cannot be reached nothing stands in the primary's place: the receipt is the head,
+    // the readout, the optional routine card, and the dismissal the platform draws.
+    @Test
+    fun withoutCoachNothingStandsWhereThePrimaryWould() {
+        reachable.value = false
+        receipt()
+        listOf(ordinary, short).forEach { finished ->
+            show(finished)
+            compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
+            compose.onNodeWithText(FinishCoach.caption).assertDoesNotExist()
+            compose.onNodeWithText("Sign in").assertDoesNotExist()
+        }
+    }
+
+    // The receipt decides nothing and shares nothing but the one line: no Keep it / Discard pair
+    // on the slight branch, no dismissal of its own, and no link card — that one keeps its doors on
+    // the session page and the log row, because two share verbs on one receipt are two meanings.
+    @Test
+    fun theReceiptDrawsNeitherTheDecidedPairNorTheLinkCard() {
+        receipt()
+        listOf(ordinary, short).forEach { finished ->
+            show(finished)
+            compose.onNodeWithText("Keep it").assertDoesNotExist()
+            compose.onNodeWithText(Finish.discard).assertDoesNotExist()
+            compose.onNodeWithText("Done").assertDoesNotExist()
+            compose.onNodeWithText("Just keep the session").assertDoesNotExist()
+            compose.onNodeWithText("Share this workout").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun theTitleCongratulatesAnOrdinarySessionAndNotAShortOne() {
+        receipt()
+        compose.onNodeWithText("Well done.").assertIsDisplayed()
+
+        show(short)
+        compose.onNodeWithText("Ended early.").assertIsDisplayed()
+        compose.onNodeWithText("Well done.").assertDoesNotExist()
     }
 }
 
@@ -406,25 +445,28 @@ class KeepAsRoutineTests {
         isFirst = false,
     )
 
-    private val doors = CoachDoors(
-        origin = "https://windmill.works",
-        mint = { error("no link is minted here") },
-        revoke = { error("no link is revoked here") },
-    )
-
     private fun card(failure: String? = null, kept: Boolean = false) {
         compose.setContent {
             FinishScreen(
                 finished = ordinary,
                 catalog = catalog,
                 kept = kept,
-                coach = doors,
                 onKeepRoutine = {},
-                onDiscard = {},
-                onDone = {},
+                onShareWithCoach = {},
                 failure = failure,
             )
         }
+    }
+
+    // The primary is the receipt's one full-strength button and it stands directly under the
+    // readout; the routine card, the one thing that writes, sits below it.
+    @Test
+    fun theRoutineCardSitsBelowShareWithCoach() {
+        card()
+        assertTrue(
+            compose.onNodeWithText("Keep this as a routine").fetchSemanticsNode().positionInRoot.y >
+                compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().positionInRoot.y,
+        )
     }
 
     // The form goes when the log takes the routine, and a sentence stands where it was: the receipt

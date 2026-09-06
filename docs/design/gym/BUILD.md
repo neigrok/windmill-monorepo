@@ -742,9 +742,9 @@ everywhere now — leaving the room, to the background or for good, abandons wha
 surfaces (`WithheldWindow.abandon`, `TrainingStore.abandonWithheld`, the room's unmount effect in
 `useTrainingLog.js`), so
 *swipe · switch apps · come back* costs a row nothing · `2t` Android's past-session screen draws
-`Discard session` (`SessionScreen.kt:172`, `:265-279`), so its three doors — review screen, finish
-receipt, long press — run through one act (`GymRoom.discard`) and one constant
-(`FinishScreen.kt:56`), and no gesture is the only path.
+`Discard session` (`SessionScreen.kt:172`, `:265-279`), so its two doors — review screen and long
+press — run through one act (`GymRoom.discard`) and one constant (`Finish.discard`), and no gesture
+is the only path.
 
 **Owed a build, opened by closing those two:** `2y` a set's delete is durable on iOS, where it rides
 `SetQueue` on disk with its own held-until instant, and abandoned on Android, where it sits in the
@@ -800,9 +800,8 @@ conversation rows, whose wire carries no intent for any client to read · `3s` t
 sharing one bottom band on iOS under a rule that names two · `3u` the web's routines-home card saying
 how much nowhere · `3w` a sign-out that does not clear this device's copy of the program on Android ·
 `3x` a hardcoded out-of-reach literal on `domain/Thread.kt`, the last of the kind the routine history
-block shed · `3z` *tap to rename* drawn on one finish card of three · `4d` `Keep it` dismissing the
-receipt in place on the phones and navigating away from it on the web, with nothing in canon
-deciding which · `4e` iOS's guard against a double keep having no seam a pin could use · `4l` the notes cap saying *delete one* over a list a delete is already
+block shed · `3z` *tap to rename* drawn on one finish card of three · `4e` iOS's guard against a
+double keep having no seam a pin could use · `4l` the notes cap saying *delete one* over a list a delete is already
 leaving, on all three · `4g` the cap-reached sentence pinned on iOS and read inside the scroller on
 Android, both halves measured and neither shape ruled · `4j` Android's type answering the system's
 text size where iOS's fixed point sizes and the web's all-`px` stylesheet answer nothing, which is
@@ -1166,8 +1165,7 @@ which is why its block sits here and why six of the entries below closed in it.
   field keeps its 44px height, its border, its ground, its focus edge and
   `aria-label="Routine name"`. *Just keep the session* **stays on the web**: it declines the routine
   offer in place rather than leaving, which is a different act. **iOS:** a toolbar `Done` in `.confirmationAction`
-  replaces the card's *Just keep the session* and the drawn *Done*, suppressed on the slight branch
-  where `Keep it` is already the affirmative half of a decided pair; `head.title` stays in the
+  is the sheet's one dismissal, on every state; `head.title` stays in the
   content; and the room's finish `.sheet` carries an `onDismiss` clearing `finishFailure`, so a
   refusal cannot outlive an interactive swipe-down. **Android:** `FinishScreen` is the room's
   `ModalBottomSheet` over the session it closed, and it carried all six mandatory items — a
@@ -1175,9 +1173,9 @@ which is why its block sits here and why six of the entries below closed in it.
   onto it, `head.title` moved into the sheet content so *Ended early* survives, `close()` pushing
   `Away.Session` **before** presenting so a dismissal lands on the workout that was finished,
   `railStands` and `backMeans` both losing their `finished` argument in the same change as
-  `GymBackTests` (with `BackMeans.Nothing` deleted outright), `FinishScreen`'s own `verticalScroll`
-  carried into the sheet body, and the slight branch's affirmative hoisted to `Finish.keepIt` beside
-  `Finish.discard`. **All three:** *Name it to save it.* is drawn under the inert `Save routine` on
+  `GymBackTests` (with `BackMeans.Nothing` deleted outright), and `FinishScreen`'s own `verticalScroll`
+  carried into the sheet body. The receipt's head, its `Share with Coach` primary and its missing
+  `Keep it` are `16-the-workout.md`'s. **All three:** *Name it to save it.* is drawn under the inert `Save routine` on
   the finish card, on the **empty name only** — never while the write is in flight, where it would
   name a cause that is not the one holding the button — and it is one constant per surface with no
   fourth copy (`NAME_IT_TO_SAVE_IT` lifted out of the web's literal, `RoutineDraft.nameItToSaveIt`,
@@ -1376,9 +1374,9 @@ which is why its block sits here and why six of the entries below closed in it.
 - **Six S2a found and did not build**, each recorded rather than fixed. *tap to rename* now reads on
   one finish card of three, the web having dropped it and Android never having drawn it (`3z`).
   Two of the six were rulings S3 then built: the ink for *Name it to save it.* (`4a`) and the finish
-  card's name cap (`4c`), both described under **What S3 landed** below. `Keep it` is one act with
-  two destinations: dismissed in place on the phones, navigated
-  away from on the web, and nothing in canon decides it (`4d`). iOS's new guard against a double keep
+  card's name cap (`4c`), both described under **What S3 landed** below. `Keep it` stands on the
+  web's slight branch alone, an anchor for the routines home; the phones draw none (`4d`, closed).
+  iOS's new guard against a double keep
   has no seam a pin can use, and the pin that was written passed with the guard deleted (`4e`). And
   iOS's movement picker trims a search in `.whitespaces` where the create step it opens trims in
   `.whitespacesAndNewlines` — CR-C's shape one layer milder, on a screen this wave did not own (`4f`).
@@ -1725,7 +1723,7 @@ Everything below is a ledger entry, and `../consistency.md` carries each one's e
   an injectable store on `GymRoom` or a launch argument that slows the write) · `5m` (iOS's logger
   follows the Android shape N2 ruled — the kind menu, the last-time chip, the clocks row, the pill
   strip, the pinned dots, the equal ladder, `Log set` with no echo).
-- **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` · `4d` ·
+- **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` ·
   `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l`. Two of
   them are not gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer
   a reader's own text size at all, and `3w` is device residue, whose direction belongs to the

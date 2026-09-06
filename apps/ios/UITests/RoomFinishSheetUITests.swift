@@ -48,16 +48,20 @@ final class RoomFinishSheetUITests: XCTestCase {
         app.navigationBars.buttons["Finish"].tap()
 
         // Presented only after the close reported the session closed, and over the session itself.
-        XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20)
-                      || app.staticTexts["Ended early"].exists,
+        XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20)
+                      || app.staticTexts["Ended early."].exists,
                       "the finish sheet never presented")
-        // The sheet stands OVER the session review screen, which draws a `Discard session` of its
-        // own now (Law 1) — so the sheet's is named by the one a thumb can actually reach.
-        let discard = app.buttons.matching(identifier: "Discard session")
-            .allElementsBoundByIndex.first { $0.isHittable }
-        XCTAssertNotNil(discard, "the sheet lost its destructive door")
+        // The receipt carries no discard and no `Keep it` on any state: the sheet comes down on its
+        // toolbar `Done`, onto the session detail page, which is where the discard is drawn (Law 1).
+        XCTAssertFalse(app.buttons["Keep it"].exists, "the receipt drew the old decided pair")
+        XCTAssertFalse(app.buttons["Share with Coach"].exists,
+                       "signed out, Coach cannot be reached, so the receipt must not offer it")
+        app.navigationBars.buttons["Done"].tap()
+        let discard = app.buttons["Discard session"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 20),
+                      "the sheet did not leave the lifter on the session it closed")
 
-        discard?.tap()
+        discard.tap()
         // A confirmation on an act that HAS an undo is a tap that buys nothing, so the dialog is gone
         // and the nine-second window took its place (`13-gestures.md` Law 2).
         XCTAssertFalse(app.staticTexts["Discard this session?"].exists,
@@ -69,16 +73,12 @@ final class RoomFinishSheetUITests: XCTestCase {
         // The sheet stood over a session on its way out, so the room unwinds to the log's root.
         XCTAssertTrue(app.navigationBars["The log"].waitForExistence(timeout: 20),
                       "the room did not land back on the log after a discard")
-        XCTAssertFalse(app.buttons["Discard session"].exists, "the finish sheet is still up")
-
         // Nothing reaches the shelf until the window closes, and this test leaves nothing standing.
         waitOutTheWindow()
     }
 
-    // Exactly one dismissal per state. An ordinary session’s sheet carries a toolbar `Done` and
-    // nothing else — the card’s `Just keep the session` and the drawn `Done` are both off it — while a
-    // session that ended early keeps `Keep it`, the affirmative half of a decided pair, and draws no
-    // toolbar action at all.
+    // Exactly one dismissal, on every state: the toolbar `Done`. The card’s `Just keep the session`
+    // and the drawn `Done` are both off it, and the slight session’s `Keep it` is gone with its pair.
     //
     // Four working sets is what makes a session ordinary (`LocalLog.slightWorkingSets`), and a session
     // with no routine and a working set in it is the one the keep-as-routine card is offered on — so
@@ -94,20 +94,19 @@ final class RoomFinishSheetUITests: XCTestCase {
         logWorkingSets(4)
 
         app.navigationBars.buttons["Finish"].tap()
-        XCTAssertTrue(app.staticTexts["Session finished"].waitForExistence(timeout: 20),
+        XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20),
                       "four working sets did not close as an ordinary session")
 
         let done = app.navigationBars.buttons["Done"]
         XCTAssertTrue(done.waitForExistence(timeout: 10), "the sheet drew no way out of its own")
         XCTAssertFalse(app.buttons["Just keep the session"].exists,
                        "the keep-as-routine card still draws a second dismissal")
-        XCTAssertFalse(app.buttons["Keep it"].exists,
-                       "the ordinary session drew the slight session’s affirmative")
+        XCTAssertFalse(app.buttons["Keep it"].exists, "the receipt drew the old decided pair")
         XCTAssertTrue(app.buttons["Save routine"].exists,
                       "this session was never offered as a routine, so the state is not the one under test")
 
         done.tap()
-        XCTAssertFalse(app.staticTexts["Session finished"].exists, "the toolbar Done dismissed nothing")
+        XCTAssertFalse(app.staticTexts["Well done."].exists, "the toolbar Done dismissed nothing")
 
         discardTheKeptSession()
     }

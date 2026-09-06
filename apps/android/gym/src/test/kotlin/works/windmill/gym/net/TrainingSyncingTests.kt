@@ -181,6 +181,8 @@ internal class FakeTraining : TrainingSyncing {
     var onFinish: suspend () -> Unit = {}
     // Held open to keep an apply IN FLIGHT while the sheet is read.
     var onApply: suspend () -> Unit = {}
+    // Held open to keep an ask IN FLIGHT while the exchange is read waiting.
+    var onAsk: suspend () -> Unit = {}
     var onAppend: suspend (SetWrite) -> Unit = {}
 
     val appended = mutableListOf<SetWrite>()
@@ -535,6 +537,7 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun ask(question: AskQuestion): AskAnswer {
         calls.add("ask")
         asked.add(question)
+        onAsk()
         reachable()
         refuseAsk?.let { throw it }
         if (answers.isEmpty()) {

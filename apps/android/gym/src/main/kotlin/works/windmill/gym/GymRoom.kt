@@ -86,6 +86,7 @@ import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
 import works.windmill.gym.ui.AskSignedOutStance
 import works.windmill.gym.ui.BodyweightScreen
+import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
@@ -244,6 +245,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     var finished by remember { mutableStateOf<FinishedSession?>(null) }
     var finishFailure by remember { mutableStateOf<String?>(null) }
     val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Whether the receipt is on its way down, so a second tap during the descent is one tap.
+    var closingFinish by remember { mutableStateOf(false) }
     // A stack, not a slot: one pushed screen can reach another. NOT saved, so no screen is drawn
     // over a store that has not read the disk yet. The activity handles rotation itself
     // (`configChanges` in the manifest), so a recreation here means the process was reclaimed.
@@ -329,9 +332,16 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     // Whatever the door does next waits for the sheet to be off, or the room's own chrome redraws
-    // itself under a sheet that is still coming down.
+    // itself under a sheet that is still coming down. ONE descent at a time, and the continuation
+    // only on a descent that finished: a second `hide()` cancels the first through the sheet's own
+    // mutex, and a cancelled job completes too — so without both guards a double tap would run the
+    // door's continuation twice, the second wiping what the first had just begun.
     fun closeFinish(then: () -> Unit = {}) {
-        scope.launch { finishSheet.hide() }.invokeOnCompletion {
+        if (closingFinish) return
+        closingFinish = true
+        scope.launch { finishSheet.hide() }.invokeOnCompletion { cause ->
+            closingFinish = false
+            if (cause != null) return@invokeOnCompletion
             finished = null
             finishFailure = null
             then()
@@ -560,12 +570,11 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         }
     }
 
-    // THE act, behind all three of its doors: the finish receipt, the log row's long press and the
-    // session review screen. A withheld delete and not a dialog — Law 2 gives a destructive act an
-    // undo, never a confirmation. Nothing is told for nine seconds, so the screen leaves at once and
-    // the row is off the log while the window is open. A review screen for a session the room no
-    // longer has cannot stand, so it goes with it; the receipt is taken down by the door that
-    // raised this, because a sheet comes down on its own animation.
+    // THE act, behind both of its doors: the log row's long press and the session review screen. A
+    // withheld delete and not a dialog — Law 2 gives a destructive act an undo, never a
+    // confirmation. Nothing is told for nine seconds, so the screen leaves at once and the row is
+    // off the log while the window is open. A review screen for a session the room no longer has
+    // cannot stand, so it goes with it.
     fun discard(sessionId: String) {
         note = null
         store.withhold(Deletion.Session(sessionId))
@@ -756,12 +765,30 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 finished = ended,
                 catalog = store.catalog,
                 kept = keptRoutine,
-                coach = coach,
                 onKeepRoutine = { name -> keep(ended.sets, name) },
-                // Behind the sheet's own exit: the pop this runs takes the workout out from under
-                // the receipt, and the rail would come back up through a sheet still descending.
-                onDiscard = { closeFinish { discard(ended.session.id) } },
-                onDone = { closeFinish() },
+                // Offered only where Coach itself is: an account, and a deployment that has one.
+                // Behind the sheet's own exit, because the tab switch redraws the rail and it would
+                // come back up through a sheet still descending. Then a FRESH conversation, and the
+                // one line through the same send a typed question takes — so the thread is titled
+                // by it, the ceilings count it, and every refusal is drawn by the exchange itself.
+                // Behind an ask still in flight nothing is reset and nothing is sent: `ask` would
+                // drop the line on the floor, so the tap lands on the Coach tab where the stalled
+                // exchange is already drawn waiting.
+                onShareWithCoach = if (account.isSignedIn && !askAbsent) {
+                    {
+                        closeFinish {
+                            if (asking) {
+                                away = emptyList()
+                                tab = Tab.Coach
+                                return@closeFinish
+                            }
+                            askSomethingNew()
+                            ask(from = emptyList(), question = FinishCoach.question)
+                        }
+                    }
+                } else {
+                    null
+                },
                 failure = finishFailure,
             )
         }

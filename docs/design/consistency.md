@@ -895,12 +895,12 @@ only way to reach an action, and `Discard session` joined the log row's long pre
 the review screen still drawing it. iOS draws it on every past session, unconditionally
 (`SessionScreen.swift:153`, the control at `:184-190`), and Android's past-session screen now draws
 it too: `SessionScreen` takes `onDiscard` (`SessionScreen.kt:172`) and draws the control under the
-share card (`:265-279`). **Three doors, one act, one constant** on that surface. The review screen,
-the finish receipt's slight-session stance (`Actions` in `ui/FinishScreen.kt`) and the log row's
-long press (`LogScreen.kt:279-340`, its hand-declared accessibility action at `:313-316`) all call
-`GymRoom.discard` (`GymRoom.kt`), which withholds a `Deletion.Session` like every other
-delete, and all three print `Finish.discard` (`FinishScreen.kt:56`) rather than their own spelling of
-it. The confirmation is gone from all of them: an act with an undo does not get a dialog. The web is
+share card (`:265-279`). **Two doors, one act, one constant** on that surface. The review screen and
+the log row's long press (`LogScreen.kt:279-340`, its hand-declared accessibility action at
+`:313-316`) both call `GymRoom.discard` (`GymRoom.kt`), which withholds a `Deletion.Session` like
+every other delete, and both print `Finish.discard` (`ui/FinishScreen.kt`) rather than their own
+spelling of it; the finish receipt draws no discard (`gym/briefs/16-the-workout.md`). The
+confirmation is gone from both: an act with an undo does not get a dialog. The web is
 not part of this entry — it draws no gesture at all, so Law 1 was never at stake there; the door it
 draws instead is `3c`.
 
@@ -1348,15 +1348,15 @@ on, and the finish card mints one in passing on a receipt, so drawing it there w
 programme whose subject is removing it. Recorded in `gym/briefs/15-the-routine.md` and in a comment
 beside each of the three fields, so a later wave does not read the gap as drift.
 
-**4d · `Keep it` is one act with two destinations** → a ruling owed, not a defect found. On the slight
-branch both phones draw it as the affirmative half of a decided Keep/Discard pair and it **dismisses
-the receipt in place**, leaving the lifter on the session they just finished (`Finish.keepIt` →
-`onDone` in `ui/FinishScreen.kt`; `Button("Keep it", action: onDone)` in `FinishScreen.swift`). The
-web draws the same two words as an anchor — `<a className="gym-short-keep" href="#/gym">` in
-`Finish.jsx` — so keeping a workout **leaves** the receipt for the routines home. That foot is why
-the web's head back had to serve both branches, so the difference is load-bearing rather than
-cosmetic, and nothing in `gym/briefs/16-the-workout.md` decides it. Either the web's `Keep it` stops
-navigating, or canon says a receipt is a place the affirmative leaves and the phones are the odd ones.
+**4d · `Keep it` is one act with two destinations** → ruled 2026-09-06, nothing owed. The phones
+draw no `Keep it` in any state: keeping the workout is what finishing did, so the receipt's
+affirmative is the finish itself, its one primary is the `Share with Coach` hand-off, and its
+dismissal is iOS's toolbar `Done` on every state and Android's back, scrim or handle. The web's
+slight branch keeps its own `Keep it` — `<a className="gym-short-keep" href="#/gym">` in
+`Finish.jsx` — an anchor that leaves for the routines home, on the one surface whose finish is a
+screen rather than a sheet and so a place the affirmative can leave; that foot is why the web's head
+back serves both branches. One act, one destination per surface, both recorded in
+`gym/briefs/16-the-workout.md`.
 
 **4e · iOS's guard against a double keep is in the tree and nothing pins it** → a seam owed before a
 pin can exist. `GymRoom.swift`'s `keep(_:as:)` now opens with `guard !keepingRoutine`, the same shape

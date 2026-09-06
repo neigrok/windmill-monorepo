@@ -68,7 +68,8 @@ Do not use: workout *template* (it is a routine), *tracker*, *fitness*, XP, leve
 coach is **"Share this workout"** and carries the word nowhere. Two meanings of one word on one
 surface is a confusion this room does not ship — and *session* could not take the job either, since
 Windmill already ships a user-facing session in the account, and this file uses the word for one
-visit to the gym.
+visit to the gym. The finish receipt's primary, **"Share with Coach"**, names the room and nothing
+else, which is why the human-coach link is not drawn beside it (`16-the-workout.md`).
 
 Naming the room Coach buys it no personality: no encouragement, no grade, no streak, and it does not
 speak first. `09-coach.md` holds what Coach is and what it refuses.
@@ -76,6 +77,9 @@ speak first. `09-coach.md` holds what Coach is and what it refuses.
 ## The feeling
 
 Roadmap is ceremony and unlocking. Journal is quiet and warm. Gym is matter-of-fact — a tool that
-respects that you are tired and holding a bar. Calm, dense, legible at arm's length, and completely
-uninterested in congratulating you. The one moment allowed to be loud is a genuine PR, and it gets
-one line.
+respects that you are tired and holding a bar. Calm, dense, legible at arm's length, and not in the
+business of cheering you on. The room makes exactly one congratulation, and it is the finish
+receipt's head on the phones — *Well done.* over the workout just closed, *Ended early.* when it was
+slight — and the one line allowed to be loud inside it is a genuine PR, which gets one line
+(`16-the-workout.md`). Everywhere else the room is matter-of-fact: no grade, no streak, no
+encouragement.

@@ -30,14 +30,17 @@ public enum Finish {
 
     // Discarding is withheld for nine seconds and taken back on the room's transient, so it asks
     // nothing first: a confirmation on an act that has an undo is a tap that buys nothing
-    // (`13-gestures.md` Law 2). Nothing here may say it cannot be undone, because it can.
+    // (`13-gestures.md` Law 2). Nothing here may say it cannot be undone, because it can. Drawn on
+    // the session detail page and the log row's menu; the receipt itself carries no discard.
     public enum Discard {
         public static let action = "Discard session"
     }
 
+    // The head congratulates an ordinary session. A slight one keeps `Ended early.`: a congratulation
+    // on two sets would be a small lie. Android's bytes exactly (`ui/FinishScreen.kt`).
     public static func head(startedAtMs: Int64, finishedAtMs: Int64, routine: String?,
                             slight: Bool, first: Bool) -> Head {
-        Head(title: slight ? "Ended early" : "Session finished",
+        Head(title: slight ? "Ended early." : "Well done.",
              subtitle: routine ?? (first ? "Your first session" : "No routine"),
              when: "\(Readout.day(startedAtMs)) · \(Readout.time(startedAtMs)) – \(Readout.time(finishedAtMs))")
     }
@@ -126,6 +129,16 @@ public enum Finish {
     private static func top(_ effort: Against.Effort) -> String {
         top(effort.sets, effort.reps, effort.weightKg)
     }
+}
+
+// The receipt's one primary: it hands the closed workout to Coach by sending ONE line through the
+// same path a typed question takes, so the thread is titled by it, the ceilings apply and every
+// refusal is drawn as usual. No session id travels with it — Coach's `list_sessions` is newest
+// first, and the agent finds the workout itself. Android's bytes exactly (`Finish.kt` `FinishCoach`).
+public enum FinishCoach {
+    public static let action = "Share with Coach"
+    public static let caption = "Sends Coach one line — “Check my last session.” — and opens the answer."
+    public static let question = "Check my last session."
 }
 
 // The sets travel with it: the queue drops a delivered row the moment its session closes.
@@ -235,14 +248,14 @@ struct FinishScreen: View {
     let catalog: [Exercise]
     // Answered by the room after the log said so, never on the tap.
     let kept: Bool
-    let coach: CoachDoors
     // A refusal from `keep`, drawn HERE under the button that raised it, because this sheet covers
-    // the room's own note line. A discard never reaches this slot: it empties the sheet before the
-    // nine-second window even starts, so its refusal lands on the room's line, where the sheet is
-    // no longer in the way.
+    // the room's own note line. It is the receipt's only write, so the only refusal that can land here.
     let failure: String?
     let onKeepRoutine: (String) -> Void
-    let onDiscard: () -> Void
+    // Nil when Coach cannot be reached — signed out, or no Coach on this deployment — and then
+    // nothing stands in the primary's place: the receipt is the head, the readout, the optional
+    // routine card and the dismissal.
+    let onShareWithCoach: (() -> Void)?
     let onDone: () -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -251,16 +264,15 @@ struct FinishScreen: View {
     // lifter for something they have not touched.
     @State private var routineName: String
 
-    init(finished: FinishedSession, catalog: [Exercise], kept: Bool, coach: CoachDoors,
-         failure: String?, onKeepRoutine: @escaping (String) -> Void,
-         onDiscard: @escaping () -> Void, onDone: @escaping () -> Void) {
+    init(finished: FinishedSession, catalog: [Exercise], kept: Bool, failure: String?,
+         onKeepRoutine: @escaping (String) -> Void, onShareWithCoach: (() -> Void)?,
+         onDone: @escaping () -> Void) {
         self.finished = finished
         self.catalog = catalog
         self.kept = kept
-        self.coach = coach
         self.failure = failure
         self.onKeepRoutine = onKeepRoutine
-        self.onDiscard = onDiscard
+        self.onShareWithCoach = onShareWithCoach
         self.onDone = onDone
         _routineName = State(initialValue: Readout.weekday(finished.session.startedAtMs))
     }
@@ -275,7 +287,7 @@ struct FinishScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: WindmillSpace.x5) {
                     // The title stays in the content and never becomes the bar's: it is the largest
-                    // thing on the screen, and `Ended early` is the whole salience of a slight session.
+                    // thing on the screen, and `Ended early.` is the whole salience of a slight session.
                     VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                         Text(head.title)
                             .font(WindmillFont.display(30))
@@ -289,6 +301,11 @@ struct FinishScreen: View {
                     }
 
                     ReviewReadout(review: finished.review, catalog: catalog)
+
+                    // On both branches, the slight one included: the receipt's single full-strength
+                    // button. The share LINK card is not here — it stays on the session detail page
+                    // and the log row's menu, because two share verbs on one receipt are two meanings.
+                    if let onShareWithCoach { shareWithCoach(onShareWithCoach) }
 
                     if finished.offersRoutine {
                         // The keep is the one thing this receipt does that writes, so it is the one
@@ -304,9 +321,6 @@ struct FinishScreen: View {
                         }
                     }
 
-                    if !finished.slight { CoachShareCard(doors: coach) }
-
-                    actions
                 }
                 .padding(.horizontal, WindmillSpace.x5)
                 .padding(.top, WindmillSpace.x4)
@@ -314,21 +328,32 @@ struct FinishScreen: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Exactly one dismissal per state. Dismissing writes nothing — the session was closed
-                // and saved before the sheet appeared, and the two controls that DO write are the
-                // card's — so it is a toolbar action beside the drag indicator rather than a
+                // Exactly one dismissal, on every state. Dismissing writes nothing — the session was
+                // closed and saved before the sheet appeared, and the one control that DOES write is
+                // the card's — so it is a toolbar action beside the drag indicator rather than a
                 // full-strength button in the reach band (`12-native-idiom.md`). A receipt is read
                 // sitting down after the workout and never reached for mid-set, which is the
                 // destination `thumb-reach.md` §2 exempts from its top-corner rule, and the swipe
-                // stays in the thumb band besides. The slight branch draws none: `Keep it` is
-                // already the affirmative half of a decided pair, and a second one beside it is the
-                // two-buttons failure `thumb-reach.md` §3.2 names.
-                if !finished.slight {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done", action: onDone)
-                    }
+                // stays in the thumb band besides.
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDone)
                 }
             }
+        }
+    }
+
+    private func shareWithCoach(_ action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+            Button(FinishCoach.action, action: action)
+                .font(WindmillFont.body(17, .bold))
+                .foregroundStyle(skin.onAccent)
+                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+            Text(FinishCoach.caption)
+                .font(GymType.numeral(12))
+                .foregroundStyle(skin.inkDim)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -404,27 +429,6 @@ struct FinishScreen: View {
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(skin.accent, lineWidth: 1))
-    }
-
-    // The slight session's decided pair, and the only actions the content draws: dismissing is the
-    // toolbar's. The session leaves the log at once and the transient carries the way back for nine
-    // seconds.
-    @ViewBuilder
-    private var actions: some View {
-        if finished.slight {
-            VStack(spacing: WindmillSpace.x3) {
-                Button("Keep it", action: onDone)
-                    .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-
-                Button(Finish.Discard.action, action: onDiscard)
-                    .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.alarmInk)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-            }
-        }
     }
 
     private var unnamed: Bool { !RoutineDraft.isNamed(routineName) }

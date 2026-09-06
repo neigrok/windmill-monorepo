@@ -41,8 +41,8 @@ final class AskScreenHostingTests: XCTestCase {
                       sync: { _ in sync })
     }
 
-    private let doors = AskDoors(send: { _, _ in .failure(AskRefusal(line: "no")) },
-                                 openThreads: {}, openNotes: {}, connect: {}, openProposal: { _ in }, absent: {})
+    private let doors = AskDoors(ask: { _, _ in }, openThreads: {}, openNotes: {}, connect: {},
+                                 openProposal: { _ in })
 
     private func conversation(refused: AskRefusal) -> AskConversation {
         AskConversation(threadId: "thr_abcdefgh",

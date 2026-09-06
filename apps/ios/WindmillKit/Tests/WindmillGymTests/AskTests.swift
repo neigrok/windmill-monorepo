@@ -170,6 +170,70 @@ final class AskConversationTests: XCTestCase {
         XCTAssertEqual(Ask.question(from: "next?"), "next?")
         XCTAssertEqual(conversation.exchanges.count, 1)
     }
+
+    // The exchange stands waiting the moment it is opened, before anything goes out — which is what
+    // lets the finish receipt land on a Coach tab already showing its question rather than an empty room.
+    func testOpeningAQuestionPutsItOnScreenWaitingBeforeAnythingIsSent() {
+        var conversation = AskConversation()
+
+        let asking = conversation.open("why did bench stall", replacing: nil)
+
+        XCTAssertEqual(conversation.exchanges.map(\.question), ["why did bench stall"])
+        XCTAssertEqual(conversation.exchanges[0].outcome, .waiting)
+        XCTAssertEqual(conversation.exchanges[0].id, asking)
+        XCTAssertTrue(conversation.waiting)
+    }
+
+    func testARetryPutsItsOwnExchangeBackToWaitingRatherThanAppendingASecondOne() {
+        let refused = AskExchange(id: "x1", question: "q",
+                                  outcome: .refused(AskRefusal(line: "no", mayRetry: true)))
+        var conversation = AskConversation(exchanges: [refused])
+
+        XCTAssertEqual(conversation.open("q", replacing: "x1"), "x1")
+
+        XCTAssertEqual(conversation.exchanges.count, 1)
+        XCTAssertEqual(conversation.exchanges[0].outcome, .waiting)
+    }
+
+    func testSettlingFindsTheExchangeByIdAndAnExchangeThatIsGoneSettlesNothing() {
+        var conversation = AskConversation()
+        let asking = conversation.open("q", replacing: nil)
+        let answer = AskAnswer(answer: "a.", read: ReadTally(sets: 1, sessions: 1, weeks: 1))
+
+        conversation.settle(asking, .answered(answer))
+        XCTAssertEqual(conversation.exchanges[0].outcome, .answered(answer))
+        XCTAssertFalse(conversation.waiting)
+
+        var fresh = AskConversation()
+        XCTAssertFalse(fresh.settle(asking, .refused(AskRefusal(line: "late"))))
+        XCTAssertEqual(fresh.exchanges, [], "an answer to a conversation that was left lands nowhere")
+    }
+
+    // Finish → Share with Coach resets the conversation while an older question may still be out.
+    // A late 409 for THAT exchange asks for a fresh thread — of a conversation it is no longer part
+    // of. The room re-mints only on a settle that landed, so the live thread keeps its id and the
+    // on-screen conversation is not split across two server threads.
+    func testALateRefusalForADroppedExchangeDoesNotReMintTheLiveThread() {
+        var conversation = AskConversation()
+        let stale = conversation.open("older question", replacing: nil)
+
+        conversation = AskConversation()
+        let live = conversation.open(FinishCoach.question, replacing: nil)
+        let thread = conversation.threadId
+
+        let why = AskRefusal(line: Ask.threadCeiling, mayRetry: true, opensAFreshThread: true)
+        let landed = conversation.settle(stale, .refused(why))
+        if landed, why.opensAFreshThread { conversation.openAFreshThread() }
+
+        XCTAssertFalse(landed)
+        XCTAssertEqual(conversation.threadId, thread, "a stale refusal re-minted the live thread")
+        XCTAssertEqual(conversation.exchanges.map(\.id), [live])
+        XCTAssertEqual(conversation.exchanges[0].outcome, .waiting)
+
+        XCTAssertTrue(conversation.settle(live, .refused(why)))
+        if why.opensAFreshThread { conversation.openAFreshThread() }
+        XCTAssertNotEqual(conversation.threadId, thread, "the live exchange's own refusal still re-mints")
+    }
 }
 
 final class AskDoorTests: XCTestCase {
