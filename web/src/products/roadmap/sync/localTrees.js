@@ -12,7 +12,6 @@ import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
 import { LegendStore } from '../persistence/LegendStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
-import { ShareLedger } from '../persistence/ShareLedger.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 
 // t_ + 16 lowercase hex — the server's own id shape, so the id survives the claim.
@@ -124,13 +123,13 @@ export async function renameLocalTree(treeId, title) {
 // No server call, ever. The caller must close any live session first, or its pagehide flush
 // resurrects the blob.
 export async function deleteLocalTree(treeId) {
+  clearShareResidue();
   await new SyncStore().clear(treeId).catch(() => {});
   new ProgressStore().clear(treeId);
   new WorkspaceStore().clear(treeId);
   new LegendStore().clear(treeId);
   new ReturnLedger().clear(treeId);
   new MilestoneLedger().clear(treeId);
-  new ShareLedger().clear(treeId);
   new LocalTreeRegistry().remove(treeId);
   new PlaceStore().forget(treeId); // a dead last-place dead-ends the next magic-link landing
 }
@@ -139,6 +138,7 @@ export async function deleteLocalTree(treeId) {
 // device-index rows, their per-tree stores and blobs, and residue whose index row is gone.
 // Anonymous rows stay — that work follows whoever signs in next.
 export async function forgetDeviceTrees() {
+  clearShareResidue();
   const registry = new LocalTreeRegistry();
   const anonymous = new Set(registry.list(null).map((tree) => tree.id));
   for (const treeId of Object.keys(registry.entries())) {
@@ -149,7 +149,7 @@ export async function forgetDeviceTrees() {
   const blobs = await store.treeIds().catch(() => []);
   for (const treeId of blobs) if (!anonymous.has(treeId)) await store.clear(treeId).catch(() => {});
 
-  for (const PerTreeStore of [ProgressStore, WorkspaceStore, LegendStore, ReturnLedger, MilestoneLedger, ShareLedger]) {
+  for (const PerTreeStore of [ProgressStore, WorkspaceStore, LegendStore, ReturnLedger, MilestoneLedger]) {
     const perTree = new PerTreeStore();
     for (const treeId of perTree.treeIds()) if (!anonymous.has(treeId)) perTree.clear(treeId);
   }
@@ -177,4 +177,16 @@ export async function moveLocalTree(fromId, toId) {
     }
   }
   new LocalTreeRegistry().move(fromId, toId);
+}
+
+function clearShareResidue() {
+  try {
+    const storage = window.localStorage;
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    for (const key of keys) {
+      if (key?.startsWith('windmill:shared:') || key === 'windmill:card:unit' || key === 'windmill:card:ledger') {
+        storage.removeItem(key);
+      }
+    }
+  } catch {}
 }

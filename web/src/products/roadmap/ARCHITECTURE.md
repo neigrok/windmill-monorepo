@@ -8,8 +8,7 @@ direct-manipulation editing, live sync across one account's own devices, and a p
 Writes are owner-only (`canWrite`, `backend/platform/domain/Access.h`): a second account can watch a
 shared tree, never edit it.
 
-Dependencies beyond React: `lucide-react` (through the design system's `Icon`), `mediabunny` (share
-video), `@fontsource` woff2 embedded into exported cards.
+Dependencies beyond React: `lucide-react` (through the design system's `Icon`).
 
 The shell reaches this package through `routes.js` and the product registry alone (`web/CLAUDE.md`).
 Nothing here may import another product; `test/shell-boundaries.test.mjs` enforces it.
@@ -48,9 +47,9 @@ The six marked **↓** have a section of their own below.
 | `layout/` | The one layout engine — radial, synchronous, deterministic. **↓** |
 | `scene/` | The WebGL2 renderer, its DOM overlays and pointer tools. **↓** |
 | `sync/` | The client half of the graph CRDT, both lanes: shared structure, private progress, gestures, socket, IndexedDB. **↓** |
-| `share/` | Everything that leaves the app: the link, the cards, the video, the offers. **↓** |
+| `share/` | Public-link sharing and the in-product gallery portraits. **↓** |
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
-| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (workspaces, legend, last place, return/milestone/share baselines, view prefs). |
+| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (workspaces, legend, last place, return/milestone baselines, view prefs). |
 | `ui/` | Desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, Next-up ranking, honesty chrome. |
 | `ui/tree/` | The step's components — kind legend, checklist, workspace body — the two hooks over their pure models (`useLegend` · `useWorkspace`), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the DOM reference implementation of the tree metaphor. |
 | `ui/mobile/` | Phone/tablet surfaces: bottom sheets, editor sheet, aim + bulk bars, action lane, read-only chrome, fork door. |
@@ -266,53 +265,16 @@ sees the same `TreeData` without threading it through React state. Not a history
 
 ## `share/`
 
-Sharing is a **link**: `ShareDialog` copies the read-only tree URL and, when the tree is yours and
-private, flips it to unlisted on copy. The rest of the package renders the cards and stats.
+`ShareDialog.jsx` publishes an owner's roadmap as public before copying its `/t/:id` URL.
+The explicit action discloses that anyone can view and fork it and that it can appear in the public
+gallery. Visibility changes wait for server success; failures stay visible and retryable. Existing
+public visitors copy the link without a mutation. Clipboard failures leave the published link
+selectable for manual copying. Owners can make a shared roadmap private again.
 
-- `palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. The kinds come from `theme.js`
-  (light: the module constants; dark: the roadmap night set, its dark soft wash as the soft edge);
-  the mats, inks and edges are the file's own literals.
-- `ShareStats.js` — `from(tree, states)` → `done/total/percent` plus the **dominant kind**: the most
-  common kind among *done* nodes, a tie or an empty tree falling to terracotta.
-- `TreePortrait.js` — `treePortraitSvg(model, palette, box, viewBox, options)`: the tree as a
-  standalone SVG string built from the `RenderModel`, self-contained (own xmlns, unique filter ids,
-  no text or urls) so it rasterizes inside an `<img>`. `options = {lit}` opens the **period ink** — a
-  four-tier ladder plus the rule that draws the edge INTO each new step in that step's own kind at
-  full alpha. An empty set writes nothing, so the default markup stays byte-identical.
-- `ogCard.js` — the unfurl postcard: `buildOgCardSvg` plus the recipe its siblings share — `POSTCARD`
-  (the 2400×1260 measures), `paddedGlowBox` / `clampViewBox` (the glow-inclusive fit), the
-  `ellipsize` / `escapeXml` text guards. `paddedGlowBox(model, {steady:true})` measures every node as
-  if lit, so a card in a series does not shift frame as the tree fills. `rasterize.js` turns a card
-  into a PNG with fonts embedded as base64 — an `<img>`-drawn SVG cannot reach the page's faces.
-- `progressCard.js` — the recurring post: the same postcard in period ink on the steady frame, its
-  strip hue the **dominant kind among the new steps**.
-- `progressPeriod.js` — the period math, pure: `ProgressPeriod` (counted from the tree's planting
-  time, **never the calendar week** — "Week 3" or "Day 17" by the reader's choice, `Update #N` when
-  the server has no planting stamp), `newThisPeriod`, and `ledgerDeltas` (one tick per elapsed
-  period, each the stamp of the card *published* in it, never a device-local completion time).
-- `progressOffer.js` — `considerProgressShare(…)`: the card rides the RETURN, not a completion — the
-  first open after a period closes, once per period, never on the first period, never twice, never
-  without a card already posted. Two declines in a row retire it for that tree, permanently and
-  silently. Its baseline is `persistence/ShareLedger.js`, written **only when a share happens**.
-- `shareVideoFrame.js` · `captureShareVideo.js` — the animated loop's frames as SVG, encoded to a
-  short seamless mp4 in the owner's browser. Best-effort by contract: every path returns null where
-  WebCodecs is absent, and a final decode probe makes a malformed encode fall back to the still.
-- `ogUpload.js` — `uploadOgImage` / `uploadOgVideo`: one guarded PUT behind two named doors, with the
-  backend's 3 MB cap stated once. Fire-and-forget: a failed upload must never break sharing.
-- `ShareDialog.jsx` — two segments: the LINK (the copy above, its honest reach line and the
-  gallery-listing consent), then `ProgressCardSegment.jsx`, the period's POST — the drawn card,
-  Download / Copy / the OS sheet, the Week/Day segmented control and the ledger toggle (both
-  remembered per tree in `ViewPrefs`). It is also the door back for anyone the offer retired.
-- `GalleryCard.jsx` — the in-product card: no mat, same kind rule and title/readout. Presentational.
-- `weekOfferGate.js` — `WeekOfferGate`: arm / follow / drop over a clock and a `ceremonyBusy` probe.
-  The offer is armed during the load and fires from the scene's one toast sink 120ms after the
-  ceremony that closes the open. A 2600ms cap fires it anyway, but only after asking `ceremonyBusy()`
-  (the director's `busy()`, live or pending) whether a ceremony is still coming — it stands aside for
-  up to three deferrals. A milestone landing in the same window drops the ask rather than queueing it.
-- `useWeekOffer.js` — the director over all of the above: the share ledger, the two cards' pixels
-  (one raster cached), the week segment the sheet renders, the offer's conduct. `SkillTreeView` holds
-  only the triggers — `considerWeekOffer` at the end of the load, `followCeremony` from the scene's
-  toast sink, `dropWeekOffer` from the milestone beat and the load's teardown.
+- `palette.js` — light and dark gallery colours and kind order.
+- `ShareStats.js` — completed/total/percent and the dominant completed kind, used by the tree UI.
+- `TreePortrait.js` — standalone SVG portraits from the render model for in-product displays.
+- `GalleryCard.jsx` — the presentational gallery card with its portrait, title and readout.
 
 ## `SkillTreeView.jsx` + overlay UI
 
@@ -325,7 +287,7 @@ projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, 
 `scene.setSelection` effect keeps the canvas chrome in step with React.
 
 Its controllers are hooks, each over the pure model or feature package it drives:
-`ui/tree/useLegend.js`, `ui/tree/useWorkspace.js`, `share/useWeekOffer.js`, `activity/useActivity.js`.
+`ui/tree/useLegend.js`, `ui/tree/useWorkspace.js`, `activity/useActivity.js`.
 
 Wires:
 

@@ -119,9 +119,10 @@ live blur filter.
 ## 5. Layout
 
 Layout is deterministic: identical input graph ⇒ identical layout; sort children by `id` before
-allocating. Manual per-node nudges override it (`applyNudges`). **The share portrait always renders
-the tree's own canvas positions** — mode follows the tree, never the surface, so a tweet, the gallery
-card and the live page match.
+allocating. Manual per-node nudges override it (`applyNudges`). **A live gallery SVG portrait must
+render the tree's own canvas positions** — mode follows the tree, never the surface. Social link
+previews use stored assets or a generic fallback and need not match the live page
+(`og-tree-cards.md`); sharing performs no image capture or upload.
 
 ### 5.1 Radial
 

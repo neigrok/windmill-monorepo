@@ -1,12 +1,8 @@
 // Per-tree, per-device view preferences. One localStorage slot each, a { [treeId]: value } map;
 // a broken slot reads as empty. None of it syncs.
 
-import { WEEK_UNIT, DAY_UNIT } from '../share/progressPeriod.js';
-
 const LAST_VIEW_KEY = 'windmill:view:last';
 const FOLDED_KEY = 'windmill:view:folded';
-const CARD_UNIT_KEY = 'windmill:card:unit';
-const CARD_LEDGER_KEY = 'windmill:card:ledger';
 
 export class ViewPrefs {
   constructor(storage = window.localStorage) {
@@ -33,27 +29,6 @@ export class ViewPrefs {
     const map = this.readMap(FOLDED_KEY);
     map[treeId] = headIds;
     this.writeMap(FOLDED_KEY, map);
-  }
-
-  cardUnit(treeId) {
-    return this.readMap(CARD_UNIT_KEY)[treeId] === DAY_UNIT ? DAY_UNIT : WEEK_UNIT;
-  }
-
-  setCardUnit(treeId, unit) {
-    const map = this.readMap(CARD_UNIT_KEY);
-    map[treeId] = unit === DAY_UNIT ? DAY_UNIT : WEEK_UNIT;
-    this.writeMap(CARD_UNIT_KEY, map);
-  }
-
-  // Defaults on when the slot is absent.
-  cardLedger(treeId) {
-    return this.readMap(CARD_LEDGER_KEY)[treeId] !== false;
-  }
-
-  setCardLedger(treeId, on) {
-    const map = this.readMap(CARD_LEDGER_KEY);
-    map[treeId] = !!on;
-    this.writeMap(CARD_LEDGER_KEY, map);
   }
 
   readMap(key) {

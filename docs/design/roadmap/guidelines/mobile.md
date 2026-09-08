@@ -187,11 +187,11 @@ gaps must exceed the overhang, not merely look airy.
 ## 10. Share surfaces
 - **Share is a verb, so it lives in the action lane** — a ≥44px button in the lane's **right**
   slot, the owner's twin of the visitor's Fork pill. Centre stays Fork / the Tend bar; the
-  sticky head stays identity-only. It opens the same share sheet desktop opens, and it is the
-  standing door the week-card offer needs (`og-progress-card.md`).
+  sticky head stays identity-only. It opens the publish-and-link sheet (`sharing.md`).
 - **Fork is a persistent button below 1024** — there is no hover to reveal it.
-- **The week card posts through `navigator.share`** with the PNG attached; Download / Copy is
-  the desktop form of the same sheet.
+- **Publish and copy link** requires the gallery disclosure and server confirmation before a public
+  link is available. **Copy link** is the public-state action, including for visitors. No image
+  or video attachment, Download action, or Week/Day control belongs in the sheet.
 - **Offer and announcement toasts sit in the top transient lane**, under the plaque; **undo
   keeps the undo lane.** A transient you can lose (undo, 4s) sits in the thumb's lane; an
   invitation you can accept later sits at the top, off the verb rail. Neither stacks with a

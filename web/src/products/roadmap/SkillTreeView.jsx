@@ -30,7 +30,6 @@ import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
-import { useWeekOffer } from './share/useWeekOffer.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { planNextUp } from './ui/nextUpPlan.js';
@@ -395,22 +394,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     setToast(null);
   }, []);
 
-  const {
-    publishOgImage, publishOgImageRef, weekSegment,
-    forgetPeriod, openPeriod, considerWeekOffer, followCeremony, dropWeekOffer, clearShareLedger,
-  } = useWeekOffer({
-    treeId, tree, states, shareStats, layoutPositions, viewPrefs,
-    completed, completedAt, completedRef,
-    treeMine, shared, demo, demotion, demotedRef,
-    showToast, setShareOpen,
-    ceremonyBusy: () => sceneRef.current?.ceremonyBusy() ?? false,
-  });
-
-  const speakCeremony = useCallback((message, options) => {
-    showToast(message, options);
-    followCeremony();
-  }, [showToast, followCeremony]);
-
   const [tendingEnabled, setTendingEnabled] = useState(false);
   const [tendOpen, setTendOpen] = useState(false);
   useEffect(() => {
@@ -477,11 +460,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       clearLegendStore(seedRef.current.id);
       returnLedger.clear(seedRef.current.id);
       milestoneLedger.clear(seedRef.current.id);
-      clearShareLedger(seedRef.current.id);
     }
     cancelAllAutoCompletes();
     setReloadKey((key) => key + 1);
-  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes, clearShareLedger]);
+  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes]);
 
   // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
   const syncStructure = useCallback(() => {
@@ -803,7 +785,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         else closeActivity();
       },
       onNodeHover: (id) => setHoveredId(id),
-      onCeremonyToast: speakCeremony,
+      onCeremonyToast: showToast,
       ...editing,
     });
     if (plantedQuestRef.current === null) plantedQuestRef.current = consumeSessionFlag(PLANTED_QUEST_KEY);
@@ -823,7 +805,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, speakCeremony, handlePanStateChange, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
+  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
 
   useEffect(() => {
     const onKey = (event) => {
@@ -943,7 +925,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(null);
     setTreeVisibility(null);
     setTreeMine(false);
-    forgetPeriod();
     repoRef.current = null;
 
     async function loadTree() {
@@ -990,7 +971,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       editorRef.current = new TreeEditor(treeData);
       seedRef.current = seed;
       repoRef.current = repo;
-      openPeriod(seed.createdAt ?? 0);
       completedRef.current = new Set(overlay.completed);
       inProgressRef.current = new Set(overlay.inProgress);
       seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
@@ -1026,8 +1006,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         }
       }
 
-      considerWeekOffer(seed, { completed: overlay.completed, states, completedAt: overlay.completedAt });
-
       // Read-only views never enter the device index, so the claim path can't adopt a visited tree.
       collabRef.current?.close();
       peersRef.current.clear();
@@ -1057,7 +1035,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => {
       cancelled = true;
       clearTimeout(autoOpenTimer);
-      dropWeekOffer();
       cancelNextUpSelect();
       collabRef.current?.close();
       collabRef.current = null;
@@ -1362,10 +1339,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     const announcement = milestoneAnnouncement(fresh);
     if (!announcement) return null;
     for (const milestone of fresh) milestoneLedger.markOffered(treeId, milestone.id);
-    dropWeekOffer();
     return {
       summary: announcement.summary,
-      action: { label: announcement.label, run: () => { publishOgImageRef.current?.(); setShareOpen(true); } },
+      action: { label: announcement.label, run: () => setShareOpen(true) },
     };
   }
 
@@ -2031,13 +2007,13 @@ export function SkillTreeView({ treeId, demo = false }) {
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} />
 
       <ShareDialog
+        key={treeId}
+        treeId={treeId}
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         visibility={treeVisibility}
         mine={treeMine}
-        onShareLink={publishOgImage}
         onStanceChange={setTreeVisibility}
-        weekSegment={weekSegment}
       />
 
       {loading && !loadError && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}

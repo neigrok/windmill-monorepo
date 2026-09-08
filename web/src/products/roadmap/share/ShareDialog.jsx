@@ -1,165 +1,117 @@
-// The Share surface, in two segments: the first shares the tree — a copyable URL and its sharing
-// stance, with the unfurl card published in the background via onShareLink — and the second shares
-// this week of the tree as a picture. The three stances are two decisions: private→unlisted is
-// reach, and copying the link makes it; unlisted→public is listing, a separate consent, and only it
-// puts a tree in /gallery.
-
 import React, { useEffect, useRef, useState } from 'react';
-import { Dialog, Button, Switch } from '../../../design-system';
+import { Dialog, Button } from '../../../design-system';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { track } from '../../../telemetry/beacon.js';
-import { ProgressCardSegment } from './ProgressCardSegment.jsx';
 
-// `stance` is the caller's; every flip made here is reported back through onStanceChange rather
-// than mirrored in local state.
-export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onStanceChange, weekSegment = null }) {
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false); // clipboard denied — the link is still selectable
-  const copiedTimer = useRef(null);
+export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const pending = useRef(false);
+  const mounted = useRef(false);
   const urlRef = useRef(null);
+  const shareUrl = treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
+  const reachable = visibility === 'public' || visibility === 'unlisted';
+  const publish = mine && visibility !== 'public';
 
-  const stance = visibility ?? null;
-  const treeId = treeIdFromHash(window.location.hash);
-  // The indexable share URL: a shared tree lives at /t/:id; the #/t/:id hash works too.
-  const shareUrl = treeId ? `${window.location.origin}/t/${treeId}` : null;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  useEffect(() => {
+    setMessage('');
+    setError('');
+  }, [open, treeId]);
 
-  async function handleCopyLink() {
-    if (!(await copyText(shareUrl))) {
-      // Clipboard blocked: select the link so the reader can copy it by hand.
-      urlRef.current?.select();
-      setCopyFailed(true);
-      clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setCopyFailed(false), 2500);
+  async function handleShare() {
+    if (pending.current || !shareUrl || (!mine && !reachable)) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      if (publish) {
+        await setVisibility(treeId, 'public');
+        if (!mounted.current) return;
+        onStanceChange?.('public');
+      }
+    } catch (failure) {
+      if (!mounted.current) return;
+      setError(`${failure.message || 'Could not publish the roadmap'}. Try again.`);
+      pending.current = false;
+      setBusy(false);
       return;
     }
-    track('link_copy', {});
-    setCopyFailed(false);
-    setLinkCopied(true);
-    clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setLinkCopied(false), 1500);
-    // A private tree is owner-only on the server, so the owner's copy flips it to unlisted.
-    // Guarded on mine + private; a failed flip leaves the stance private.
-    let shareable = mine && (stance === 'unlisted' || stance === 'public');
-    if (mine && stance === 'private') {
-      try {
-        await setVisibility(treeId, 'unlisted');
-        onStanceChange?.('unlisted');
-        shareable = true;
-      } catch { /* keep the private stance — no false promise of reach */ }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      if (!mounted.current) return;
+      track('link_copy', {});
+      setMessage('Link copied.');
+    } catch {
+      if (!mounted.current) return;
+      urlRef.current?.select();
+      setError('Could not copy the link. Select the link to copy it manually, or try again.');
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
     }
-    // Publishes the unfurl image, un-awaited, so it never delays or breaks the copy.
-    if (shareable) onShareLink?.();
   }
 
-  // The owner's reverse: lock the tree back to owner-only.
   async function handleMakePrivate() {
+    if (pending.current || !mine || !shareUrl) return;
+    pending.current = true;
+    setBusy(true);
+    setMessage('');
+    setError('');
     try {
       await setVisibility(treeId, 'private');
+      if (!mounted.current) return;
       onStanceChange?.('private');
-    } catch { /* leave the stance as it stands */ }
-  }
-
-  // The listing consent: reach doesn't move, this only decides whether the tree appears on the
-  // public wall. A failed flip leaves the switch where the server is.
-  async function handleListed(next) {
-    try {
-      await setVisibility(treeId, next ? 'public' : 'unlisted');
-      onStanceChange?.(next ? 'public' : 'unlisted');
-      track('gallery_listing', { listed: next });
-    } catch { /* the switch springs back — never claim a listing the server didn't take */ }
+      setMessage('Roadmap is private. Only you can view it.');
+    } catch (failure) {
+      if (!mounted.current) return;
+      setError(`${failure.message || 'Could not make the roadmap private'}. Try again.`);
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Share roadmap" width={640} footer={null}>
-      {shareUrl ? (
-        <div key="link">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null}>
+      {!shareUrl ? <p>This roadmap has no shareable link yet.</p> : (
+        <div>
+          <p>
+            {publish
+              ? 'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'
+              : visibility === 'public'
+                ? 'This roadmap is public. Anyone can view and fork it, and it can appear in the public gallery.'
+                : reachable ? 'Anyone with this link can view and fork this roadmap.' : 'This roadmap is private. Only its owner can publish it.'}
+          </p>
+          {reachable && (
             <input
               ref={urlRef}
               readOnly
               value={shareUrl}
-              onFocus={(e) => e.target.select()}
+              onFocus={(event) => event.target.select()}
               aria-label="Shareable link"
-              style={{
-                flex: '1 1 auto',
-                minWidth: 0,
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-lg)',
-                border: '1.5px solid var(--border-default)',
-                background: 'var(--surface-card)',
-                fontFamily: 'var(--font-mono)',
-                // 16px, not smaller: iOS zooms the page into any focused input under that size.
-                fontSize: 'var(--text-base)',
-                color: 'var(--text-secondary)',
-                outline: 'none',
-                textOverflow: 'ellipsis',
-              }}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 14px', marginBottom: 12,
+                borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--border-default)',
+                background: 'var(--surface-card)', color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-base)' }}
             />
-            <Button variant="secondary" onClick={handleCopyLink}>{linkCopied ? 'Copied' : copyFailed ? 'Press ⌘C' : 'Copy link'}</Button>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <Button variant="secondary" disabled={busy || (!mine && !reachable)} onClick={handleShare}>
+              {busy ? 'Please wait…' : publish ? 'Publish and copy link' : 'Copy link'}
+            </Button>
+            {mine && reachable && <Button variant="ghost" disabled={busy} onClick={handleMakePrivate}>Make private</Button>}
           </div>
-
-          {(stance === 'unlisted' || stance === 'public') && (
-            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
-              <span>Anyone with this link can view.</span>
-              {mine && (
-                <button
-                  type="button"
-                  onClick={handleMakePrivate}
-                  style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }}
-                >
-                  Make private
-                </button>
-              )}
-            </div>
-          )}
-
-          {mine && (stance === 'unlisted' || stance === 'public') && (
-            <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
-              <Switch checked={stance === 'public'} onChange={handleListed} label="List in the public gallery" />
-              <div style={{ marginTop: 6, fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', lineHeight: 1.55, color: 'var(--text-tertiary)' }}>
-                Puts it on <a href="/gallery" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>the gallery</a> for strangers to browse and fork. Nothing else changes — it shows exactly what your link already shows. Switch it off to unlist it again.
-              </div>
-            </div>
-          )}
-
+          {message && <p role="status">{message}</p>}
+          {error && <p role="alert">{error}</p>}
         </div>
-      ) : (
-        <div key="link" style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>This roadmap has no shareable link yet.</div>
       )}
-
-      {/* The week's post: present for an owner of an editable tree, null otherwise. */}
-      {weekSegment && <ProgressCardSegment {...weekSegment} />}
     </Dialog>
   );
-}
-
-function treeIdFromHash(hash) {
-  const path = hash.split('?')[0];
-  for (const prefix of ['#/t/', '#/app/']) {
-    if (!path.startsWith(prefix)) continue;
-    const id = path.slice(prefix.length);
-    if (id && id !== 'new') return id;
-  }
-  return null;
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    let copied = false;
-    try { copied = document.execCommand('copy'); } catch { copied = false; }
-    area.remove();
-    return copied;
-  }
 }

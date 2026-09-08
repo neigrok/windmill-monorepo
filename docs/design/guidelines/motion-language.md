@@ -161,10 +161,8 @@ Easings (`tokens/motion.css`): `--ease-soft cubic-bezier(0.16,1,0.3,1)` ·
 | **#3 paste arrival** | camera fit → root wakes + crown ignites → rings enter on the cadence (wake per ring, dormant edges fade in with their ring) → toast ("Roadmap planted · N steps") |
 | **#4 first unlock** | camera (only if off-frame) → complete full-bloom → travels → children wake → pulse ×2 on frontier → toast |
 | **#9 unlock ceremony** | the full sentence; may add flourish only within the ceilings above |
-| **#14 share artifact** | replays the arrival cascade verbatim — same constants, same identity |
-| **milestone share offer** | ceremony #9 verbatim; the finished limb (a root-child's whole subtree) shares one pulse ×2, and the toast carries one action ("Share the moment", hold 6000ms, once per milestone ever) |
+| **milestone share offer** | ceremony #9 verbatim; the finished limb (a root-child's whole subtree) shares one pulse ×2, and any Share action opens the public-link dialog (`roadmap/guidelines/sharing.md`); no image or video is exported |
 | **welcome-back recap** | on reopen with unseen completions (≥12h): camera fit → the unseen completions re-bloom in real order on the cadence, travels waking edges → frontier pulse ×2 → the Next panel enters (no toast) |
-| **#19 per-tree share video** | the #14 cascade rasterized to a ~3s **muted loop**: hold → exhale (opacity-only) → grow → settle. Frame 0 == frame N so it loops seamless; every transient is windowed to 0 at the cut. Whole-tree grow, never a per-unlock clip. Spec: `roadmap/guidelines/og-share-video.md` |
 
 Owning specs refine content (copy, targets), never the physics: durations, easings, ceilings
 and reduced-motion mappings come from here.

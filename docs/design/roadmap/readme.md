@@ -30,9 +30,8 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 | editing §08 | multi-selection (marquee, grouped set, action bar) | `guidelines/multi-select.md` |
 | shortcuts | keyboard-shortcuts overlay | `guidelines/keyboard-shortcuts.md` |
 | gallery | the public wall + the in-product browse shelf | `guidelines/gallery.md` |
-| X2 · og-tree | per-tree unfurl card | `guidelines/og-tree-cards.md` |
-| X2 · og-video | per-tree share video (~3s loop) | `guidelines/og-share-video.md` |
-| X2 · og-progress | the recurring week-N progress card | `guidelines/og-progress-card.md` |
+| X2 · share | explicit publication and public link | `guidelines/sharing.md` |
+| X2 · preview | stored/fallback link previews and live gallery portraits | `guidelines/og-tree-cards.md` |
 | tending | the in-tree agent | `guidelines/tending.md` |
 | — | the tree canvas geometry contract | `guidelines/tree-layout-contract.md` |
 | — | the activity feed | `guidelines/event-log.md` |
@@ -50,8 +49,8 @@ DAG editing.
 
 The canvas lays out radially from a centered root: each node sits on the ring for its trunk
 depth, at the center of an angular wedge, wedges split among children by subtree leaf count.
-The share portrait always uses the tree's own canvas positions, so a tweet, the gallery and the
-live page match.
+A live gallery SVG portrait must use the tree's own canvas positions. Social link previews can
+be stored or generic and are not guaranteed to match the live page (`guidelines/og-tree-cards.md`).
 
 Connectors are stroked bezier curves, even-width with a gentle stable bend; a branch that starts
 in a **done** node lights up in that node's colour (no glow), otherwise it stays a thin muted

@@ -106,10 +106,19 @@ is not the scene.
 **F16 · `TreeSwitcher.jsx` invents a third kind palette** → built 2026-09-06, nothing owed. It reads
 `--kind-<name>` for all six kinds, the tokens `colors.css` already flips per skin.
 
-**F17 · the share export wears the family night, not roadmap's room** → built 2026-09-06, nothing
-owed. `share/palette.js` builds its dark kinds from `sceneTheme(true)` — the roadmap night set in
-`theme.js` — and its dark mat from roadmap's night neutrals (`#171719` on the `#0B0B0C` panel), so
-the export cannot drift from the scene.
+**F17 · roadmap sharing and portrait delivery** → sharing canon is
+`roadmap/guidelines/sharing.md`: **Publish and copy link** awaits server-confirmed public visibility
+before copying; public visitors copy without mutation. Both disclosures say **can appear** in the
+public gallery. Retryable publish and clipboard errors are separate states. No PNG/week/day/video
+sharing or client OG capture/upload belongs in the flow. `og-tree-cards.md` distinguishes live
+in-product SVG portraits from the stored-image/generic backend preview fallback.
+
+Figma: Roadmap `HM4d8YWzJZg5clVRJKNuDr`, Public page `59:2`, share-state board `99:2`; gallery
+copy `63:9` and portrait-delivery note `59:94`. The board composes the shared Dialog and Button
+vocabulary, with a full-width URL above actions, owner-only **Make private**, and exact UI copy.
+Structure observation: one share-state contract replaces separate export specs; preview delivery
+has its own small spec because it can remain stale independently of publication. Runtime checks
+belong to the implementation owner; this design pass verifies documents and Figma only.
 
 **F19 · `.st-ticker-item .st-event-obj` hardcodes `#fff` on an inverted surface** → built
 2026-09-06, nothing owed. `skilltree.css` inks the object `var(--neutral-0)` and the system avatar a

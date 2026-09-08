@@ -8,12 +8,12 @@ own** tree is editable on phone and tablet too (§13).
 Motion physics come from `motion-language.md`; this doc places beats, never redefines them.
 `mobile.md` owns the phone's two view models (tree = portrait, list = workbench) and the input layer
 under them. This doc is canon for the canvas view and its chrome. Identity pieces (kind rule,
-plaque, readout) are shared with the share cards, so a share image and its live page are the same
-object.
+plaque, readout) belong to the live roadmap and gallery card anatomy. Social previews can be
+stored or generic (`og-tree-cards.md`).
 
 > The tree is the page. A visitor lands inside the artifact, not inside product furniture. Chrome
-> floats on the canvas, yields to the finger, and is selection-gated. Each page has exactly one
-> verb: **Fork**.
+> floats on the canvas, yields to the finger, and is selection-gated. The primary
+> verb is **Fork**; **Share** provides the existing public link without mutation (`sharing.md`).
 
 ---
 
@@ -124,8 +124,8 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
   The in-product public surface is `/browse` and keeps this grid.
 - **Order chips, not tabs:** Popular · New · Finished. One scroll, re-sorted. Search is a quiet icon
   until asked for.
-- **Thumbs are real renders at the share crop** — the same frame recipe as the OG image, so a tree
-  looks identical in a tweet, in the gallery, and on its own page.
+- **Portrait delivery follows `og-tree-cards.md`** — in-product SVGs use the live model; the
+  server wall and social preview use an existing stored image or generic fallback.
 - **Forked trees carry lineage** in the author row.
 - **No vanity numbers** (forks, views, likes). Cards show progress and recency only.
 

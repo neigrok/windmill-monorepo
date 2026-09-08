@@ -7,8 +7,8 @@ The launch-specific decision record. `PRODUCT_LOG.md` is the running strategy na
 The individual's experience is permanently free. Money appears only where stakes and volume do.
 
 **Free, no card:** unlimited trees and nodes · the whole editor (kinds, layout, reorder, progress,
-the unlock ceremony) · unlimited deterministic paste-import · public and unlisted sharing · unfurl
-cards · fork in and out · all nine quests · export · mobile · the playable demo and anonymous
+the unlock ceremony) · unlimited deterministic paste-import · explicit publication and public-link sharing · stored or generic link
+previews · fork in and out · all nine quests · export · mobile · the playable demo and anonymous
 creation · the MCP server and API keys.
 
 **Paid:** the canonical spec is `docs/design/marketing/guidelines/pricing.md`. Visibility is never
@@ -67,14 +67,13 @@ Product Hunt waits for testimonials and real trees.
 
 ## The share loop — what has to be true
 
-The tree is about *them* (their goal, their progress, their handle — our branding small); it is
-legible at thumbnail size (a rendered poster, not a canvas screenshot); the prompt fires at the
-moment of pride (right after an unlock); the recipient can fork in one click without signing up;
-and it is not embarrassing to share (nudge after a completeness threshold).
+The shared URL opens the live roadmap. The owner chooses **Publish and copy link** after a public
+and gallery disclosure; publication must be confirmed by the server before copy or success.
+Existing public visitors copy without mutation. Publication and clipboard failures remain retryable.
 
-Highest-leverage build still open: an auto-generated ~3-second looping video of the unlock ceremony
-attached to every shared tree. X, Reddit and Discord all autoplay video; a static OG image throws
-away the one thing that moves.
+Sharing has no PNG, week/day card, client OG capture/upload, or video export. `/og/<id>.png` serves
+an existing stored image or falls back to the generic preview; sharing does not refresh it. The
+in-app unlock ceremony remains part of the live roadmap experience.
 
 ## Do not
 

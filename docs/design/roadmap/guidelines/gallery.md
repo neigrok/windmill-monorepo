@@ -3,15 +3,16 @@
 The share loop's repeat-discovery surface: a wall of **public** trees a stranger can browse
 after arriving from one shared link.
 
-## 1. Three stances, two decisions
+## 1. One explicit publication
 
-- **private → unlisted is reach.** Copying the link makes it.
-- **unlisted → public is listing.** "And put my plan where strangers browse" — a separate
-  switch in the share dialog, below the reach line, taken back as easily as it's given.
+**Share → Publish and copy link** is the owner's deliberate publication action. Before it, show:
+“Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.” Opening the sheet does not
+publish. Await server-confirmed public visibility before providing or copying the public link.
+Failures remain retryable; `sharing.md` owns the state and copy contract.
 
-They read identically to anyone holding the link and each earns its own yes. **Nothing else
-in the product may set a tree public.** When the listing switch flips on, the dialog says
-where the tree went ("Listed at windmill.works/gallery", with the link).
+Sharing has no separate gallery switch or unlisted-link step. Existing public visitors copy the
+link without changing visibility. Public visibility permits gallery discovery subject to §6;
+confirmation must not promise placement for an ineligible tree.
 
 ## 2. Where it lives
 
@@ -26,7 +27,7 @@ where the tree went ("Listed at windmill.works/gallery", with the link).
   plans over writing yours.
 - **The door is the last row of the TreeSwitcher**, behind a rule, labelled **"Planted in
   public →"**. No count on it.
-- **The second door is the listing confirmation** (§1) — the highest-intent moment there
+- **The second door is the publication confirmation** (§1) — the highest-intent moment there
   is.
 - **Never the first-run quest shelf** (`#/app/start`). A first-run user needs a seed
   packet, not a stranger's plan.
@@ -35,9 +36,11 @@ where the tree went ("Listed at windmill.works/gallery", with the link).
 
 ## 3. `/browse`'s differences from the wall — and only these
 
-- **Same card, exactly** — the frame, kind rule, the tree's own OG portrait as the thumb,
+- **Same card anatomy** — the frame, kind rule, portrait slot,
   `n/m`, fork count. *Exactly* means the frame and its parts, **not an author byline**: the
-  card carries the wall's meta line (progress + recency) and no name (§6).
+  card carries the wall's meta line (progress + recency) and no name (§6). The in-product
+  portrait may be a live SVG; the server wall uses a stored OG image or generic fallback
+  (`og-tree-cards.md`).
 - **It knows you:** your listed trees wear *Listed by you*; anything you've forked wears
   *Forked* and can't be forked twice by accident. Your own card offers no fork and opens at
   `#/app/:id`; everyone else's opens at `/t/:id`.
@@ -90,8 +93,7 @@ arrival   150ms cross-fade · no rise, no pop, no stagger
     becomes a free ranking bump.
 - **No author name.** The wall exhibits the tree. A fork keeps its lineage as **"A fork of
   *{tree}*"** — the tree, never the person, matching the unfurl's attribution.
-- **The empty state says why it's bare** ("listing is a deliberate choice — yours could be
-  the first"), never reads as an error, and keeps "How a tree gets here" beneath it.
+- **The empty state says why it's bare** ("No public roadmaps yet"), never reads as an error, and keeps "How a tree gets here" beneath it.
 
 ## 7. Never
 
