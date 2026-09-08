@@ -93,7 +93,35 @@ export const roadmapRoutes = {
     Component: RoadmapLanding,
     preload: importRoadmapLanding,
     tagline: 'Map what you’re learning',
-    summary: 'Author a learning path as an RPG skill tree — real prerequisites, ownership gates lifetimes, fundamentals gate frameworks. Grow it one checked-off node at a time.',
+    root: {
+      platforms: 'Web',
+      // Both scenes arrive in this product's chunk, so their own sheet cannot hold the space they
+      // are about to take on the brand root — the shell's does, from the first paint, out of these.
+      // Each is a world zoom-fitted to the frame the shell hands it (--rootScene-frame) with the
+      // caption standing under it: the 560×370 glimpse at .6607 of the frame, the 600×480 section
+      // tree at .8, and a pixel of slack over each so the reserve is never the shorter of the two.
+      reserve: {
+        band: 'calc(0.6607 * var(--rootScene-frame) + 24px)',
+        section: 'calc(0.8 * var(--rootScene-frame) + 31px)',
+      },
+      band: {
+        title: 'Map what you’re learning as a skill tree.',
+        sub: 'Real prerequisites, one checked-off node at a time. No account needed to begin.',
+      },
+      section: {
+        title: 'Your learning, drawn as a skill tree.',
+        sub: 'Author a path with real prerequisites. Each node unlocks when the ones before it are done, and the tree animates as you grow.',
+        trust: 'No account needed. Your first tree lives in the browser.',
+        cta: { href: '#/app/start', label: 'Start your tree' },
+        proof: [
+          { title: 'Real prerequisites', copy: 'A step opens only when the steps before it are done.' },
+          { title: 'Begins without sign-up', copy: 'The first tree is yours in the browser. An account keeps it.' },
+          { title: 'Share one link', copy: 'Anyone can read it. Forks keep their own progress.' },
+        ],
+      },
+      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapGlimpse }))),
+      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapIllustration }))),
+    },
   },
   shell: {
     room: '/app/roadmap',

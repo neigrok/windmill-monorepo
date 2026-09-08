@@ -16,7 +16,8 @@ import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
 import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
 import './landing.css';
 
-export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, children }) {
+// `anchored` is the brand root's: its product links scroll to that product's section on the same page.
+export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, anchored = false, children }) {
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
   const path = product ? PRODUCTS.find((entry) => entry.id === product).landing.href : '/';
@@ -76,24 +77,26 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
   return (
     <div className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined}>
       <a href="#content" className="skip-link">Skip to content</a>
-      <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} />
+      <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} anchored={anchored} />
       <main id="content">{children}</main>
       <LandingFooter />
     </div>
   );
 }
 
-function LandingNav({ product = null, links = [], cta = null, resume = null, resolving = false, seat = null }) {
+function LandingNav({ product = null, links = [], cta = null, resume = null, resolving = false, seat = null, anchored = false }) {
   return (
     <header className="landing-header">
       <a className="landing-wordmark" href="/">Windmill</a>
       <nav className="navlinks" aria-label="Primary">
         {links.map((link) => <a key={link.href} className="navlinks-page" href={link.href}>{link.label}</a>)}
         {links.length > 0 && <span className="navlinks-divider" aria-hidden="true" />}
+        {/* The anchored root draws a band only for an open product, so only an open product has an
+            anchor to reach; a closed one keeps its own landing as its destination. */}
         {PRODUCTS.map((entry) => (
           <a
             key={entry.id}
-            href={entry.landing.href}
+            href={anchored && entry.shell.status === 'open' ? `#${entry.id}` : entry.landing.href}
             aria-current={entry.id === product ? 'page' : undefined}
           >
             {entry.label}
@@ -173,7 +176,7 @@ function NavCluster({ cta, resume, resolving, seat }) {
       ) : (
         <Button variant="ghost" size="sm" onClick={() => openSignInDoor({ onSent: noteLinkSent })}>Sign in</Button>
       )}
-      {cta && <a href={cta.href}><Button variant="primary" size="sm">{cta.label}</Button></a>}
+      {cta && <Button variant="primary" size="sm" href={cta.href}>{cta.label}</Button>}
       <AccountSeat
         status={status}
         size={28}

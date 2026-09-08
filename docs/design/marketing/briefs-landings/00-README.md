@@ -4,6 +4,33 @@ Three product landings — roadmap, journal, gym — share one skeleton and one 
 Each is built under `web/src/products/<product>/marketing/`; the shared chrome and the brand
 root's own landing are in `web/src/shell/marketing/`.
 
+## The brand root
+
+`windmill.works/` is `web/src/shell/marketing/BrandLanding.jsx`: product-neutral, it lays out
+the page and reads every word and scene off each product's `landing.root` in its `routes.js`
+(`platforms`, `band`, `section` with its CTA, trust line and exactly three proof cards, and the
+two lazy scenes `Glimpse` and `Illustration`, drawn in
+`web/src/products/<product>/marketing/RootScenes.jsx`). Top to bottom:
+
+1. Nav — the family chrome with the product links as same-page anchors (`#roadmap`, `#journal`,
+   `#gym`) and one primary "Start free".
+2. Hero — three full-width bands in registry order, each on its product's own palette by day and
+   by night: eyebrow with a brand dot, headline, sub, glimpse card, and a "See <product> ↓" link
+   to that product's section.
+3. Separator beat — `Windmill · Three tools. One account.` between subtle rules, the wordmark in
+   the family brand colour.
+4. One section per product, again on its palette: eyebrow, headline, sub, primary CTA and trust
+   line, the illustration beside it (sides alternate down the page), then the three proof cards.
+5. Footer — the family's.
+
+Every composed specimen carries the `.composed` caption ("Composed tree" / "Composed page" /
+"Composed session"). Each of the six scenes is a `<figure>` whose stage is `aria-hidden` and whose
+caption is the `<figcaption>` outside that stage: the specimen is decoration a screen reader is
+spared, and the caption is what it is told instead — so a fabricated page or session is never
+announced as the site's own words, and the disclaimer is never hidden with the thing it
+disclaims. The page's one infinite animation is the crown on the roadmap section's tree; every
+other scene is static or finite.
+
 ## The nine roles
 
 Every product landing fills all nine.

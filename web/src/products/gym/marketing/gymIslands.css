@@ -1,0 +1,33 @@
+@import '../gymTokens.css';
+
+/* The parts every gym island is built from, wherever it stands: the landing's moat and loop stages
+   (gymLanding.css) and the brand root's two scenes (gymRootScenes.css). Both sheets import this one,
+   so a part has a single home and the root pulls only the parts it draws.
+
+   The islands wear .gym-skin, so the token import above is the product's own palette, never a copy.
+   On a night page an island stands on the ground it wears: it climbs to the raised step and takes the
+   strong edge, every cell inside it climbs one more, and the small captions take the dim ink. */
+.landing[data-theme="dark"] .gyw { background: var(--gym-raised); border-color: var(--border-strong); }
+.landing[data-theme="dark"] .gyw :is(.gyInnerCard, .gyWell, .gychip, .gyrep) { background: var(--neutral-300); }
+.landing[data-theme="dark"] .gyCaption { color: var(--gym-ink-dim); }
+
+.gyCaption { color: var(--gym-ink-faint); }
+
+.gyWell {
+  background: var(--gym-sunken);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-lg);
+}
+
+.gychip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 52px; height: 44px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gym-line-strong);
+  background: var(--gym-raised);
+  font-family: var(--font-mono); font-size: 14.5px; color: var(--gym-ink);
+  transition: background 150ms var(--ease-standard), color 150ms var(--ease-standard);
+}
+
+.gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
+.gyck { margin-left: auto; color: var(--set-done); }

@@ -160,3 +160,21 @@ test('while auth is unanswered the toggle is already there and first; only the s
   assert.deepEqual(hidden.props.style, { display: 'contents', visibility: 'hidden' }, 'the buttons keep their box invisibly');
   assert.equal(elementsOf(hidden).some((each) => each.type?.name === 'AppearanceToggle'), false, 'the toggle is not in the hidden part');
 });
+
+// ---- the cross-nav on the brand root ----
+// The product links point at a product's landing everywhere but on the brand root, where `anchored`
+// turns them into anchors to that product's section on the same page. Pricing is unchanged.
+test('anchored turns the product links into same-page anchors and leaves Pricing alone', async (t) => {
+  browser({ ground: '#F7F7F5' });
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
+  const context = { ...DOOR, status: 'ghost', user: null, signOut() {} };
+  const hrefsOf = (anchored) => {
+    const page = renderHook(t, () => LandingPage({ brand: null, product: null, anchored, children: null }), { context });
+    const nav = renderNamed(t, page.tree, 'LandingNav', context);
+    const primary = elementsOf(nav).find((each) => each.props['aria-label'] === 'Primary');
+    return elementsOf(primary).filter((each) => each.type === 'a').map((each) => each.props.href);
+  };
+  assert.deepEqual(hrefsOf(true), [...PRODUCTS.map((entry) => `#${entry.id}`), '/pricing.html']);
+  assert.deepEqual(hrefsOf(false), [...PRODUCTS.map((entry) => entry.landing.href), '/pricing.html']);
+});

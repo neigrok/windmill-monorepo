@@ -32,6 +32,8 @@ function watchHour(onChange) {
   };
 }
 function halo(base, pct) { return `color-mix(in srgb, ${base} ${pct}%, transparent)`; }
+// The crown at rest: what reduced motion shows instead of the loop, and what a still wears by choice.
+function crownAtRest(base) { return `0 0 0 4px ${halo(base, 28)}, 0 0 26px 5px ${halo(base, 28)}`; }
 const FORK_IC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="4.6" r="2.5"></circle><circle cx="5.4" cy="19.4" r="2.5"></circle><circle cx="18.6" cy="19.4" r="2.5"></circle><path d="M12 7.1v3.2M12 10.3c0 3-6.6 3.4-6.6 6.6M12 10.3c0 3 6.6 3.4 6.6 6.6"></path></svg>';
 
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h); return Math.abs(h); }
@@ -112,7 +114,7 @@ function buildWorld(stage, o) {
     nd.style.cssText = `left:${P[id][0]}px; top:${P[id][1]}px; width:${sz}px; height:${sz}px;` +
       `--g:${k.base}; --ring:${k.ring}; --fill:${k.base};`;
     if (n.crown && st === 'done' && !o.pre) {
-      if (PRM) nd.style.boxShadow = `0 0 0 4px ${halo(k.base, 28)}, 0 0 26px 5px ${halo(k.base, 28)}`;
+      if (PRM) nd.style.boxShadow = crownAtRest(k.base);
       else nd.classList.add('nd--crown');
     }
     if (n.halo && !o.pre) nd.style.boxShadow = `0 0 0 3px ${halo(k.base, 22)}, 0 0 14px 3px ${halo(k.base, 20)}`;
@@ -390,6 +392,49 @@ export function mountBeat(stage, kind) {
     stage.innerHTML = '';
     stage.removeAttribute('style');
   };
+}
+
+// ---------- ROOT LANDING STILLS — the sail tree standing still for the brand root ----------
+// A still is one world at its STAGED states, zoom-fitted to its frame the way a beat is, repainted
+// on the hour. Nothing loops here except the section crown, the page's one infinite animation.
+function mountStill(stage, o) {
+  stage.style.cssText += `position:relative; width:${o.w}px; height:${o.h}px;`;
+  const frame = stage.parentElement;
+  const fit = () => { stage.style.zoom = Math.min(1, frame.clientWidth / o.w); };
+  const ro = new ResizeObserver(fit); ro.observe(frame); fit();
+  const W = buildWorld(stage, Object.assign({ states: Object.assign({}, STAGED), labels: 'all' }, o));
+  const unwatchHour = watchHour(W.repaint);
+  return { W, teardown() { ro.disconnect(); unwatchHour(); stage.innerHTML = ''; stage.removeAttribute('style'); } };
+}
+
+// The hero glimpse: nine nodes cropped out of the sail tree, the crown a static halo. Weather windows
+// sits between Read the wind and Tides & currents in the full tree; the crop skips it and draws the
+// contracted edge dormant — unlit and at a dormant edge's own opacity, so it reads as one of them
+// rather than 12% brighter for having been drawn from a done node.
+const GLIMPSE_W = 560, GLIMPSE_H = 370;
+const GLIMPSE_IDS = ['r', 'a', 'b', 'c', 'e', 'a2', 'b2', 'b3', 'c2'];
+export function mountGlimpse(stage) {
+  const nodes = {};
+  GLIMPSE_IDS.forEach(id => { nodes[id] = Object.assign({}, ND[id], { crown: false }); });
+  const edges = ED.filter(([s0, s1]) => s0 in nodes && s1 in nodes).concat([['c', 'c2']]);
+  const still = mountStill(stage, { w: GLIMPSE_W, h: GLIMPSE_H, s: .72, ox: 13, oy: -142, nodes, edges });
+  still.W.nodes.r.style.boxShadow = crownAtRest(KIND_CSS[ND.r.k].base);
+  unlight(still.W.edges['c-c2']);
+  return still.teardown;
+}
+
+// The section tree: the whole sail world as the /roadmap hero draws it, root crown animated. The
+// crown is the page's one infinite animation and it stands ~1800px below the fold, so it is gated
+// on an audience the way the hero and the beats are — no loop runs for a visitor who never arrives.
+const SECTION_W = 600, SECTION_H = 480;
+export function mountSectionTree(stage) {
+  const still = mountStill(stage, { w: SECTION_W, h: SECTION_H, s: .66, ox: 30, oy: -90 });
+  if (PRM) return still.teardown;                 // the crown already rests: nothing to gate
+  const crown = still.W.nodes.r;
+  crown.classList.remove('nd--crown');
+  const io = new IntersectionObserver(en => crown.classList.toggle('nd--crown', en[0].isIntersecting), { threshold: .25 });
+  io.observe(stage);
+  return () => { io.disconnect(); still.teardown(); };
 }
 
 // ---------- QUEST THUMBS — static: root haloed, first ring lit, the rest dim ----------

@@ -1,0 +1,105 @@
+/* The brand root's two journal scenes (RootScenes.jsx), and nothing else: the root draws these six
+   cards and must not pay for the landing's moat, beat stages and week columns to do it. A page card
+   is the glimpse and the foot of the illustration; the search field and the echo pill stand above it.
+   Every colour is a token of the ground the root paints the band with — the lamp arrives as
+   --color-brand, so the pill stays a 12% wash of it and the dot and caret take it whole. */
+.jn-root-scene {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.jn-root-scene .composed { display: block; text-align: right; margin-top: 8px; }
+.jn-root-stage, .jn-root-search { width: 100%; text-align: left; }
+
+.jn-root-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px 20px;
+  text-align: left;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+.jn-root-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.jn-root-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-brand);
+}
+.jn-root-quiet {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.jn-root-rule {
+  height: 0;
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.jn-root-page {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+.jn-root-caret {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  margin-left: 3px;
+  vertical-align: -3px;
+  background: var(--color-brand);
+}
+
+.jn-root-search {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jn-root-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 14px;
+  font-size: 14.5px;
+  color: var(--text-primary);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+}
+.jn-root-glass { display: flex; flex: none; color: var(--text-tertiary); }
+.jn-root-query { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jn-root-key {
+  flex: none;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+}
+.jn-root-echo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--color-brand);
+  background: color-mix(in srgb, var(--color-brand) 12%, transparent);
+  border-radius: 999px;
+}
+.jn-root-echo-hit { color: var(--text-secondary); }

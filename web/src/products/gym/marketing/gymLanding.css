@@ -1,11 +1,9 @@
 @import '../gymTokens.css';
+@import './gymIslands.css';
 
-/* The islands wear .gym-skin, so the token block above is the product's own, never a copy. On a night
-   page they stand on the ground they wear, so each climbs to the raised step and takes the strong
-   edge, every cell inside it climbs one more, and the small captions take the dim ink. */
-.landing[data-theme="dark"] .gyw { background: var(--gym-raised); border-color: var(--border-strong); }
-.landing[data-theme="dark"] .gyw :is(.gyInnerCard, .gyWell, .gychip, .gyrep) { background: var(--neutral-300); }
-.landing[data-theme="dark"] .gyCaption { color: var(--gym-ink-dim); }
+/* What the landing adds to the island parts: the hero moat, the loop stages, the movement shelf and
+   the arrivals that play inside them. The brand root's scenes are gymRootScenes.css and are not
+   imported here — nothing on this page draws them. */
 
 .gyMoat {
   width: min(720px, 100%);
@@ -28,13 +26,6 @@
   text-align: left;
 }
 
-.gyCaption { color: var(--gym-ink-faint); }
-.gyWell {
-  background: var(--gym-sunken);
-  border: 1px solid var(--gym-line);
-  border-radius: var(--radius-lg);
-}
-
 .gyLabel {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -43,15 +34,6 @@
   color: var(--gym-ink-faint);
 }
 
-.gychip {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 52px; height: 44px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--gym-line-strong);
-  background: var(--gym-raised);
-  font-family: var(--font-mono); font-size: 14.5px; color: var(--gym-ink);
-  transition: background 150ms var(--ease-standard), color 150ms var(--ease-standard);
-}
 .gychip--sm { min-width: 48px; height: 40px; font-size: 13.5px; }
 .gyrep {
   display: inline-flex; align-items: center; justify-content: center;
@@ -67,8 +49,6 @@
   border-color: var(--color-brand) !important;
 }
 
-.gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
-.gyck { margin-left: auto; color: var(--set-done); }
 .gyInnerCard {
   background: var(--gym-surface);
   border: 1px solid var(--gym-line);

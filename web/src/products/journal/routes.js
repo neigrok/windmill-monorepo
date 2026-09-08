@@ -63,7 +63,30 @@ export const journalRoutes = {
     Component: JournalLanding,
     preload: importJournalLanding,
     tagline: 'Notice what happened',
-    summary: 'Free-form daily writing for people who want to understand themselves, not score themselves. One page a day, yesterday above it — and search that finds the feeling, not the word.',
+    root: {
+      platforms: 'Web · iOS',
+      // A card of prose, so its height steps with where the text wraps rather than scaling with the
+      // frame: it settles at these once the words stop rewrapping, and stands taller on a phone.
+      // Holding the settled height is strictly better than holding nothing at every width.
+      reserve: { band: '170px', section: '322px' },
+      band: {
+        title: 'One page a night, in your own words.',
+        sub: 'Yesterday sits one line above. Search finds the feeling, not just the word.',
+      },
+      section: {
+        title: 'A page a night, kept only for you.',
+        sub: 'Free-form writing on a quiet canvas. Yesterday sits one line above, and search finds the feeling, not just the word.',
+        trust: 'Your pages stay yours. No scores, no streaks.',
+        cta: { href: '#/journal', label: 'Write tonight' },
+        proof: [
+          { title: 'One page a night', copy: 'Open it, write, close it. Yesterday waits one line up.' },
+          { title: 'Search by meaning', copy: 'Ask for the mood and find the night you felt it.' },
+          { title: 'Only you', copy: 'Private by default. Nothing is graded or shared.' },
+        ],
+      },
+      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.JournalGlimpse }))),
+      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.JournalIllustration }))),
+    },
   },
   shell: {
     room: '/app/journal',

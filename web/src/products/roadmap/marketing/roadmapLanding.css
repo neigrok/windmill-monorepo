@@ -82,6 +82,18 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 .landing[data-theme="dark"] .toastp { background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-strong); }
 .toastp.tin { opacity: 1; }
 
+/* ---- the brand root's stills: the hero glimpse and the section tree ----
+   Each stage keeps its world's aspect (GLIMPSE_W×GLIMPSE_H, SECTION_W×SECTION_H in treeScenes), so the
+   idle-deferred mount fills a box the page already reserved; the world zooms to the stage's width. */
+.rootGlimpse, .rootTreeCard { margin: 0; width: 100%; box-sizing: border-box; }
+.rootGlimpse { max-width: 560px; }
+.rootGlimpseStage { aspect-ratio: 560 / 370; overflow: hidden; }
+.rootGlimpse .composed, .rootTreeCard .composed { display: block; text-align: right; margin-top: 8px; }
+.rootTreeCard { position: relative; max-width: 640px; padding: 16px; background: var(--surface-card);
+                border: 1px solid var(--border-subtle); border-radius: var(--radius-2xl); box-shadow: var(--shadow-sm); }
+.rootTreeStage { aspect-ratio: 600 / 480; overflow: hidden; }
+.plq--card { left: 16px; top: 16px; }
+
 /* ---- the loop's stage ---- */
 /* min-height reserves BEAT_H: the scene mounts off the critical path, so an unreserved stage shoves the page down. */
 .beatStage { background: var(--surface-canvas); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);

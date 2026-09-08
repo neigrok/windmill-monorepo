@@ -17,7 +17,8 @@ Products may use the shell's platform services (auth, billing, `apiBase`, the la
 mount into) but never the `/app` chrome, and never each other.
 `test/shell-boundaries.test.mjs` enforces that: it walks every import in `src/` and fails naming the
 offending file and line, then reads the registry to check every product declares the landing, the
-door copy and the hrefs the seam promises. Read it first on a boundary question.
+brand root's `landing.root` words and scenes, and the hrefs the seam promises. Read it first on a
+boundary question.
 
 ## Run it
 

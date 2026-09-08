@@ -229,17 +229,49 @@ roadmap landing paints the "Rust from zero" quest card's rule and its first prog
 still identify a kind, or the rule is absolute and that card needs a different hue. Gold is clean
 either way — on all four landings it appears only as flourish.
 
-**0i · the brand-root landing does not fill the nine roles** → a brief is owed.
-It fills roles 1, 2, 6, 7, 8 and 9. It has no role 3 (the loop), no role 4 (proof), no role 5
-(trust boundary, whose can't-line is mandatory), and no moat at all, which is role 2's heart. What
-it needs first is `marketing/briefs-landings/04-brand-landing.md`: what the brand root's moat is
-when the page belongs to no single product, and what proof and trust boundary mean at brand scope.
+**0i · the brand-root landing does not fill the nine roles** → a brief is still owed, for less.
+The 2026-09-08 rebuild (three product bands, a separator beat, one section per product) closed part
+of it: role 4 now has three proof cards per product, role 5 a trust line per section, and role 2 has
+scenes drawn from each product's real vocabulary — the roadmap's straight from the live renderer.
+Three gaps stand. Role 3 (the loop, 01/02/03) is absent. Role 5 is a single trust *line*, not the
+can + can't panel whose can't-line canon calls mandatory. Role 2's scenes are **stills**, and the
+moat rule says a moat is a live self-playing vignette, never a static illustration — so the root has
+three glimpses and no moat. `marketing/briefs-landings/04-brand-landing.md` is still owed and should
+rule on exactly that: whether a brand-scope moat is one of the three scenes brought to life, and
+what a can't-line says on a page that belongs to no single product.
 
 **0j · the brand root prints a price in structured data** → 00-README to rule.
 00-README honesty rule 2 says landings carry no price numbers, and no landing prints one in its
 body. The brand root's FAQ structured data (`web/index.html`, `shell/marketing/landingHeads.js`)
 answers "How much does Windmill cost?" with the real figure, and a search result renders it.
 00-README should say whether structured data counts as showing a price.
+
+**0k · the Figma superapp-landing boards draw the sail tree left to right; the product draws it
+radially** → the designer's to redraw, in `Windmill · Marketing`. On page
+`Superapp landing · 2026-09-08` both the hero glimpse and the roadmap section tree are drawn as a
+left-to-right ladder, root crowned at the far left and `First solo sail` at the far right. The
+shipped scene is radial: `treeScenes.js` fixes `Learn to sail` at the centre of the frame and
+branches out in every direction, which is what `/roadmap` renders today and what the built root
+landing renders, because it mounts the same code. The boards were traced from Landings board
+`13:109`, so that board is stale the same way. Nothing in code is wrong; the drawings are. Until
+they are redrawn, do not review the built page against those boards' tree.
+
+**0l · the family eyebrow and trust line sit under 4.5:1 by day** → a token owner's call, family-wide.
+Measured in Chrome on the built pages: `.eyebrow` / `.rootEyebrow` is `--color-brand` at 12.5px/800,
+which is **3.6:1** on roadmap's cream and 4.39:1 on journal's paper, and the trust line is
+`--text-tertiary` at 13.5px, **3.52:1** on roadmap by day and 4.12 / 4.17 on journal and gym by
+night. Small text owes 4.5:1. This is the shipped recipe on all four landings, not a new
+divergence — the root landing copies it deliberately rather than diverge on one page — so the fix
+is one ramp step in `tokens/`, applied everywhere at once, not a per-page override. The separator
+wordmark's 3.6:1 is fine: at 28px/700 it is large text, which owes 3:1.
+
+**0m · every landing shifts its whole page 8px when the bundle lands** → the shell's to fix, in
+`scripts/appBoot.js`. The no-JS body keeps the user agent's default `margin: 8px` until the app
+stylesheet arrives and zeroes it, so the entire document moves. Measured in Chrome as the single
+largest layout shift on the brand root — 0.012 of its 0.014 at 1440, and 0.046 of its 0.065 at 390 —
+and it reproduces on `/journal` and `/gym` (0.012 each), so it is family-wide and predates the root
+landing. The boot `<style>` already ships inline to stamp the ground before the bundle; a body
+margin reset belongs in the same block, where it costs nothing and lands before first paint.
 
 **0r · `journal/onboarding.md` §2 specifies a first-run placeholder nothing draws** → the owner's call.
 §2's copy table gives the placeholder as "How was today?" and §8 asks whether it is too leading.
@@ -879,7 +911,9 @@ the pitch above them went with S4's narrowing). A second half of the same gap: `
 `sundayLabel`, `sundayLine`, `mondayLabel`, `mondayLine` and `truths` (`domain/ConnectedLog.kt`) are
 live constants with no Android drawing, kept because `ConnectedLogTests` enforces that vocabulary
 across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
-deliberately state-blind and those constants are the gate's only reason to exist.
+deliberately state-blind and those constants are the gate's only reason to exist. **Ruled
+2026-09-08 by `gym/briefs/19-connected-log.md`**: Android reads its grants and draws the same two
+states as iOS and the web; owed to the build.
 
 **2s · what ends a withheld window early is one answer on all three surfaces** → built 2026-08-27,
 nothing owed. `13-gestures.md` rules it and every surface now spends it: leaving a SCREEN keeps the
@@ -2017,6 +2051,8 @@ a read-level tool, so a read grant hands an agent every weigh-in, which none of 
 a shared omission on all three surfaces rather than a divergence, and the more important half: a
 consent line that enumerates what a read reaches and leaves out a body measurement is the copy the
 mission line forbids. One word for the thing and the weigh-ins named, on all six lines at once.
+**Ruled 2026-09-08 by `gym/briefs/19-connected-log.md`**: the six lines become one read row —
+*sets, workouts, routines, records, notes, weigh-ins* — on every surface; owed to the build.
 
 **5m · the Android logger is the ruled shape and iOS's logger still draws the older one** → a build
 owed on iOS; the direction is Android → iOS, and the domain bytes do not move. Android's
@@ -2140,3 +2176,11 @@ twenty-rep set is drawn as a ±15 % point on one screen and not another. The rul
 working set of one to ten reps with the highest estimate, a set rated below RPE 7 left out, and a
 session's own e1RM the largest of its movements' estimates. Closes when `Review.h`, `Record.cpp`
 and `Statistics.cpp` read one projection and the three surfaces print one number for one session.
+
+**5w · the page every gym connect door lands on pitches roadmaps only** → a copy owner's call on the
+shell. `Connect a tool` on all three gym surfaces opens `#/connect` (`web/src/shell/connect/
+ConnectPage.jsx`), whose lede reads *Claude, Cursor, or Codex can plant and tend your roadmaps* and
+whose `CAPS` chips name five roadmap verbs and no gym one, while `web/public/connect.html` already
+carries the gym paragraph. A lifter sent there from gym reads that they came to the wrong page.
+Filed by `gym/briefs/19-connected-log.md`, which made that page the only long form the gym screen
+points at.

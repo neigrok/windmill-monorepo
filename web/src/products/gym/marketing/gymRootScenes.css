@@ -1,0 +1,99 @@
+@import '../gymTokens.css';
+@import './gymIslands.css';
+
+/* The brand root's two gym scenes (RootScenes.jsx), and nothing else: the root draws these six cards
+   and must not pay for the landing's hero moat, loop stages and movement shelf to do it. Still markup
+   on the gym ground the root paints its band with. Every card is fluid — width 100%, no fixed measure
+   — so the 350px column of a phone holds it whole.
+
+   Each scene is a figure: one hidden stage, and the honesty caption outside it, which is the one
+   thing a screen reader is told about a session nobody lifted. */
+.gyRoot-scene {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.gyRoot-scene .composed { display: block; text-align: right; margin-top: 8px; }
+
+.gyRoot {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--gym-surface);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-2xl);
+  padding: clamp(18px, 3vw, 24px);
+  text-align: left;
+  color: var(--gym-ink);
+  font-family: var(--font-body);
+}
+.gyRoot-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gyRoot-lift { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--gym-ink); }
+.gyRoot-set { font-family: var(--font-mono); font-size: 12px; color: var(--gym-ink-dim); }
+.gyRoot-readout {
+  font-family: var(--font-mono); font-weight: 500;
+  font-size: clamp(40px, 5vw, 48px); line-height: .95;
+  color: var(--weight-ink);
+}
+.gyRoot-readout .gyCaption { font-size: 15px; margin-left: 6px; }
+.gyRoot-last { font-family: var(--font-mono); font-size: 12px; color: var(--gym-ink-faint); }
+.gyRoot-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.gyRoot-chips .gychip { min-width: 0; flex: 1 1 52px; }
+.gyRoot-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 44px; padding: 0 22px; box-sizing: border-box;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-body); font-weight: 700; font-size: 14.5px;
+  background: var(--color-brand); color: var(--gym-on-accent);
+}
+
+/* The glimpse: numbers left, the stepper and the log right; a phone folds the stepper away and puts
+   Log set beside the last-time line, the way the board draws it. */
+.gyRoot-glimpse-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end; column-gap: 20px; row-gap: 14px; margin-top: 16px;
+}
+.gyRoot-glimpse-body .gyRoot-chips { justify-content: flex-end; flex-wrap: nowrap; }
+.gyRoot-glimpse-body .gychip { flex: 0 0 auto; min-width: 52px; }
+.gyRoot-glimpse-body .gyRoot-button { justify-self: end; }
+.gyRoot-glimpse-body .gyRoot-last { align-self: center; }
+@media (max-width: 743px) {
+  .gyRoot-glimpse-body { grid-template-columns: minmax(0, 1fr) auto; }
+  .gyRoot-glimpse-body .gyRoot-chips { display: none; }
+  .gyRoot-glimpse-body .gyRoot-readout { grid-column: 1 / -1; }
+}
+
+/* The illustration: the phone-shaped logger beside the proposal it stands next to. */
+.gyRoot-pair {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .8fr);
+  align-items: center; gap: 20px;
+  width: 100%; min-width: 0;
+}
+.gyRoot-phone { display: flex; flex-direction: column; gap: 12px; border-radius: 28px; }
+.gyRoot-notch { display: block; width: 72px; height: 14px; margin: -4px auto 2px; border-radius: 999px; background: var(--gym-sunken); }
+.gyRoot-phone .gyRoot-chips .gychip { flex-basis: 0; }
+.gyRoot-phone .gyRoot-button { width: 100%; }
+.gyRoot-phone .gyWell { padding: 0 12px; }
+.gyRoot-phone .gyset { padding: 7px 0; }
+.gyRoot-phone .gyset .gyRoot-setn { color: var(--gym-ink-faint); }
+.gyRoot-by { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--gym-ink-faint); }
+.gyRoot-by i { width: 7px; height: 7px; border-radius: 999px; background: var(--color-brand); }
+.gyRoot-proposal .gyRoot-lift { display: block; font-size: 15px; margin-top: 8px; }
+.gyRoot-diff { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-family: var(--font-mono); font-size: 12.5px; color: var(--gym-ink-dim); }
+.gyRoot-diff-add { color: var(--color-brand); }
+.gyRoot-why { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--gym-ink-dim); }
+
+/* The two acts of a proposal are not a pair of equals, and the scene may not invent one: Apply is the
+   band across the card and turning it down is a plain text row beneath, which is the weighting the
+   shipped review draws (Proposals.jsx, .gym-proposal-band). */
+.gyRoot-acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 14px; }
+.gyRoot-acts .gyRoot-button { height: 36px; padding: 0 16px; font-size: 13.5px; }
+.gyRoot-turn-down {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 32px;
+  font-family: var(--font-body); font-weight: 700; font-size: 13px;
+  color: var(--gym-ink-dim);
+}
+@media (max-width: 743px) {
+  .gyRoot-pair { grid-template-columns: minmax(0, 1fr); }
+}

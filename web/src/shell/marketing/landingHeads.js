@@ -2,34 +2,42 @@
 // Keep everything this file reaches pure data: no top-level .jsx import and no browser global, or
 // plain Node can no longer resolve the landings. The '/' row is the shell web/index.html holds;
 // edit them together.
+//
+// The front door's two facts live here too, and BrandLanding reads them from here rather than
+// saying them again: the sentence the page and the shell both carry as their <h1>, and the one
+// place "Start free" opens. One label pointing two ways is what saying them twice buys.
 
 import { PRODUCTS } from '../products.js';
 import { SITE_ORIGIN, SITE_SCHEMA } from './siteIdentity.js';
 
 export { SITE_ORIGIN, SITE_SCHEMA };
 
-const start = PRODUCTS.find((product) => product.shell.status === 'open');
+// The root draws a band and a section for the open products alone, so the shell says exactly those.
+const open = PRODUCTS.filter((product) => product.shell.status === 'open');
+
+export const BRAND_PROMISE = 'Three tools. One account.';
+export const START_FREE = open.length > 0
+  ? { href: open[0].landing.root.section.cta.href, label: 'Start free' }
+  : null;
 
 const BRAND_ROOT = {
   path: '/',
   title: 'Windmill — Roadmap, Journal & Gym for self-growth',
   description: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
-  ogTitle: 'Windmill — Grow, gently.',
+  ogTitle: `Windmill — ${BRAND_PROMISE}`,
   ogDescription: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
-  twitterTitle: 'Windmill — Grow, gently.',
+  twitterTitle: `Windmill — ${BRAND_PROMISE}`,
   twitterDescription: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
   imageAlt: 'A hand-drawn RPG skill tree on a cream background with terracotta, gold, and sky nodes, the Windmill wordmark, and the tagline “Any goal, as a skill tree.”',
   fallback: {
     accent: '#BC6C42',
-    badge: 'Now in public beta',
-    h1: 'Grow, gently.',
-    sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, and a log for how you’re training. One account. One subscription.',
-    actions: start ? [{ href: start.landing.href, label: `Start with ${start.label}` }] : [],
+    badge: 'Roadmap · Journal · Gym',
+    h1: BRAND_PROMISE,
+    sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
+    actions: START_FREE ? [START_FREE] : [],
     trust: 'Free to use by hand, all of it. The paid layer is the AI doing the work for you — and it is not on sale yet.',
-    notes: [
-      'Three tools, one account.',
-      'Whichever tool you open, it’s the same account — and the roadmap doesn’t need one to begin.',
-    ],
+    // The hero bands' promises, read off the bands the page really draws.
+    notes: open.map((product) => product.landing.root.band.title),
   },
   schema: [
     {

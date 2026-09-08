@@ -57,7 +57,31 @@ export const gymRoutes = {
     Component: GymLanding,
     preload: importGymLanding,
     tagline: 'Keep a training log',
-    summary: 'A quiet record of how you’re moving — sets, sessions, the long line of showing up. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
+    // The words and the two still scenes the brand root composes gym's band and section from.
+    root: {
+      platforms: 'Web · iOS · Android',
+      // Cards of prose, so the height steps with where the text wraps rather than scaling with the
+      // frame: these are where it settles once the logger and the proposal sit side by side, and
+      // the pair stands taller stacked. Holding the settled height beats holding nothing.
+      reserve: { band: '220px', section: '412px' },
+      band: {
+        title: 'Log the set. The rest is remembered.',
+        sub: 'Two taps between sets, and the next session opens with last time’s numbers.',
+      },
+      section: {
+        title: 'It remembers what you lifted.',
+        sub: 'A training log for barbell programs. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
+        trust: 'Free to use by hand. Your log stays on your Windmill account.',
+        cta: { href: home(), label: 'Open the log' },
+        proof: [
+          { title: 'Two taps a set', copy: 'Load and reps are prefilled from last time. Tap to log, tap to rest.' },
+          { title: 'It remembers', copy: 'Every session opens with your last loads for that movement.' },
+          { title: 'Your AI tools, your log', copy: 'Connect Claude, Cursor or any MCP client to read and write your log.' },
+        ],
+      },
+      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.GymGlimpse }))),
+      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.GymIllustration }))),
+    },
   },
   shell: {
     room: '/app/gym',
