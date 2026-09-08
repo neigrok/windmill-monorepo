@@ -21,6 +21,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +72,46 @@ object WindmillColor {
     val textTertiary = neutral500
     val borderSubtle = neutral200
     val borderDefault = neutral300
+}
+
+// The semantic slots the shell's own chrome (the account sheet, the door, the capsule) is painted
+// in. Product-neutral: a room that wraps itself in its own scheme provides its own palette through
+// `LocalWindmillPalette`, and the same door then takes the room's colours. `noticeWash`/`noticeInk`
+// are the refusal line's ground and ink.
+@Immutable
+class WindmillPalette(
+    val canvas: Color,
+    val surface: Color,
+    val ink: Color,
+    val inkDim: Color,
+    val inkFaint: Color,
+    val line: Color,
+    val lineStrong: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val noticeWash: Color,
+    val noticeInk: Color,
+)
+
+val LocalWindmillPalette = staticCompositionLocalOf { brandPalette(dark = true) }
+
+// The brand's own skin: gold on warm brown. `surface` is the canvas because the shell's sheet
+// stands on the canvas shade, not the card one.
+fun brandPalette(dark: Boolean): WindmillPalette {
+    fun WindmillShade.pick() = if (dark) this.dark else this.light
+    return WindmillPalette(
+        canvas = WindmillColor.surfaceCanvas.pick(),
+        surface = WindmillColor.surfaceCanvas.pick(),
+        ink = WindmillColor.textPrimary.pick(),
+        inkDim = WindmillColor.textSecondary.pick(),
+        inkFaint = WindmillColor.textTertiary.pick(),
+        line = WindmillColor.borderSubtle.pick(),
+        lineStrong = WindmillColor.borderDefault.pick(),
+        accent = WindmillColor.gold400,
+        onAccent = WindmillColor.onAccent,
+        noticeWash = WindmillColor.gold400.copy(alpha = 0.14f),
+        noticeInk = WindmillColor.neutral700.pick(),
+    )
 }
 
 object WindmillFont {
@@ -121,6 +164,11 @@ object WindmillMotion {
 
 enum class ActionWeight { Primary, Quiet }
 
+// The colour a capsule is filled with, declared on its node so a test can read what a room painted
+// it in without rendering pixels. A Quiet capsule is unfilled.
+val CapsuleFill = SemanticsPropertyKey<Color>("CapsuleFill")
+var SemanticsPropertyReceiver.capsuleFill by CapsuleFill
+
 @Composable
 fun ActionCapsule(
     label: String,
@@ -130,6 +178,11 @@ fun ActionCapsule(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(WindmillRadius.full)
+    val palette = LocalWindmillPalette.current
+    val fill = when (weight) {
+        ActionWeight.Primary -> palette.accent
+        ActionWeight.Quiet -> Color.Transparent
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -138,10 +191,11 @@ fun ActionCapsule(
             .clip(shape)
             .then(
                 when (weight) {
-                    ActionWeight.Primary -> Modifier.background(WindmillColor.gold400)
-                    ActionWeight.Quiet -> Modifier.border(1.dp, WindmillColor.borderDefault.color, shape)
+                    ActionWeight.Primary -> Modifier.background(fill)
+                    ActionWeight.Quiet -> Modifier.border(1.dp, palette.lineStrong, shape)
                 }
             )
+            .semantics { capsuleFill = fill }
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(vertical = WindmillSpace.x3),
         contentAlignment = Alignment.Center,
@@ -150,8 +204,8 @@ fun ActionCapsule(
             label,
             style = WindmillFont.body(16, FontWeight.SemiBold),
             color = when (weight) {
-                ActionWeight.Primary -> WindmillColor.onAccent
-                ActionWeight.Quiet -> WindmillColor.textPrimary.color
+                ActionWeight.Primary -> palette.onAccent
+                ActionWeight.Quiet -> palette.ink
             },
         )
     }

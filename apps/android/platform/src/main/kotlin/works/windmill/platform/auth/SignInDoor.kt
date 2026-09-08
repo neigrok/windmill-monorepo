@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -32,7 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.platform.design.ActionCapsule
 import works.windmill.platform.design.ActionWeight
-import works.windmill.platform.design.WindmillColor
+import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -49,6 +48,7 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
     var canResend by remember { mutableStateOf(false) }
     var refusal by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val palette = LocalWindmillPalette.current
 
     fun requestLink() {
         scope.launch {
@@ -80,12 +80,12 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
     ) {
         val address = sentTo
         if (address == null) {
-            Text("Sign in", style = WindmillFont.display(22), color = WindmillColor.textPrimary.color)
+            Text("Sign in", style = WindmillFont.display(22), color = palette.ink)
 
             Text(
                 "New here? Same door — your account is created the first time.",
                 style = WindmillFont.body(15),
-                color = WindmillColor.textSecondary.color,
+                color = palette.inkDim,
             )
 
             DoorField("you@example.com", email, keyboardType = KeyboardType.Email) { email = it }
@@ -101,18 +101,18 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
             Text(
                 "No password. What you make on this device is claimed by your account when you sign in.",
                 style = WindmillFont.body(13),
-                color = WindmillColor.textTertiary.color,
+                color = palette.inkFaint,
             )
         } else {
-            Text("Check your email", style = WindmillFont.display(22), color = WindmillColor.textPrimary.color)
+            Text("Check your email", style = WindmillFont.display(22), color = palette.ink)
 
             Text(
                 "We sent a code to $address. It works once and lasts 15 minutes.",
                 style = WindmillFont.body(15),
-                color = WindmillColor.textSecondary.color,
+                color = palette.inkDim,
             )
 
-            HorizontalDivider(color = WindmillColor.borderSubtle.color)
+            HorizontalDivider(color = palette.line)
 
             // Exactly six digits tells a code apart from a link or token.
             DoorField("6-digit code", typed, keyboardType = KeyboardType.Number) { typed = it }
@@ -144,7 +144,7 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
                 Text(
                     "Use a different email",
                     style = WindmillFont.body(14),
-                    color = WindmillColor.textSecondary.color,
+                    color = palette.inkDim,
                     modifier = Modifier.clickable {
                         sentTo = null
                         refusal = null
@@ -155,7 +155,7 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
                     Text(
                         "Resend",
                         style = WindmillFont.body(14),
-                        color = WindmillColor.textSecondary.color,
+                        color = palette.inkDim,
                         modifier = Modifier.clickable { requestLink() },
                     )
                 }
@@ -166,19 +166,20 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
 
 @Composable
 private fun RefusalLine(line: String) {
+    val palette = LocalWindmillPalette.current
     Text(
         line,
         style = WindmillFont.body(14),
-        color = WindmillColor.neutral700.color,
+        color = palette.noticeInk,
         modifier = Modifier
             .fillMaxWidth()
-            .background(WindmillColor.gold400.copy(alpha = 0.14f), RoundedCornerShape(WindmillRadius.sm))
+            .background(palette.noticeWash, RoundedCornerShape(WindmillRadius.sm))
             .padding(WindmillSpace.x3),
     )
 }
 
-// Material's own field, dressed by whichever theme is hosting the door: the shell's sheet paints it
-// in the brand's ink, and a room that wraps itself in its own scheme gets that one instead.
+// Material's own field, dressed by whichever theme is hosting the door: under the brand's scheme it
+// takes the brand's ink, under a room's Skin it takes the room's.
 @Composable
 private fun DoorField(
     placeholder: String,

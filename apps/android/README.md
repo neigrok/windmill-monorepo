@@ -11,7 +11,9 @@ keypad and the offline set queue (`backend/products/gym/ARCHITECTURE.md` §11).
 settings.gradle.kts   includes :app :platform :gym
 platform/             the product-neutral seam: WindmillApi (the Bearer transport) · AuthStore +
                       the emailed-code door (magic-link paste as fallback) · SessionStore · Tokens ·
-                      the ProductModule / Account seam · SignInDoor · YouSheet
+                      the ProductModule / Account seam · SignInDoor · YouSheet — the door and
+                      the sheet paint in `LocalWindmillPalette`, which a room's `Skin` provides,
+                      so the shell's sheet wears whichever room is hosting it
 gym/                  the room — domain/ (pure) · store/ (SetQueue, the offline-first flush queue) ·
                       net/ · ui/
 app/                  the composition root — the only module that knows which rooms exist.

@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import works.windmill.platform.design.WindmillColor
 
 class GymMaterialTests {
     private val scheme = gymColorScheme
@@ -58,6 +59,45 @@ class GymMaterialTests {
         val strangers = everySlot.filterNot { (_, colour) -> colour in ours }.map { it.first }
         assertEquals("every slot a Material control reads is a colour this room already draws",
                      emptyList<String>(), strangers)
+    }
+
+    @Test
+    fun everyPaletteSlotIsAColourTheRoomDrawsAndNoneIsGold() {
+        val palette = gymPalette
+        val everySlot = listOf(
+            "canvas" to palette.canvas, "surface" to palette.surface,
+            "ink" to palette.ink, "inkDim" to palette.inkDim, "inkFaint" to palette.inkFaint,
+            "line" to palette.line, "lineStrong" to palette.lineStrong,
+            "accent" to palette.accent, "onAccent" to palette.onAccent,
+            "noticeWash" to palette.noticeWash, "noticeInk" to palette.noticeInk,
+        )
+        // The shell's sheet and door are painted in these slots over the room, and gold there would
+        // read as a personal record.
+        val wearingGold = everySlot.filter { (_, colour) ->
+            colour == GymSkin.prInk || colour == GymSkin.prSoft
+        }.map { it.first }
+        assertEquals(emptyList<String>(), wearingGold)
+
+        val brand = WindmillColor.run {
+            listOf(neutral0, neutral25, neutral50, neutral100, neutral200, neutral300, neutral400,
+                   neutral500, neutral600, neutral700, neutral800, neutral900)
+        }.flatMap { listOf(it.dark, it.light) }.toSet() +
+            setOf(WindmillColor.gold400, WindmillColor.olive400, WindmillColor.olive500)
+        val brandsOwn = everySlot.filter { (_, colour) -> colour in brand }.map { it.first }
+        assertEquals("no slot of the room's palette is the brand's warm brown or gold",
+                     emptyList<String>(), brandsOwn)
+
+        val ours = setOf(
+            GymSkin.canvas, GymSkin.surface, GymSkin.raised, GymSkin.line, GymSkin.lineStrong,
+            GymSkin.accent, GymSkin.onAccent, GymSkin.accentSoft, GymSkin.ink, GymSkin.inkDim,
+            GymSkin.inkFaint,
+        )
+        val strangers = everySlot.filterNot { (_, colour) -> colour in ours }.map { it.first }
+        assertEquals("every slot the shell's chrome reads is a colour this room already draws",
+                     emptyList<String>(), strangers)
+        assertEquals(GymSkin.accent, palette.accent)
+        assertEquals(GymSkin.surface, palette.surface)
+        assertEquals(GymSkin.accentSoft, palette.noticeWash)
     }
 
     @Test

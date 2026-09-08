@@ -5,11 +5,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
+// The brand's Material scheme and its palette together: the shell's chrome reads the palette, a
+// Material control reads the scheme, and a room wrapping itself in its own Skin replaces both.
 @Composable
 fun WindmillMaterial(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = windmillColorScheme(LocalWindmillDark.current), content = content)
+    val dark = LocalWindmillDark.current
+    CompositionLocalProvider(LocalWindmillPalette provides brandPalette(dark)) {
+        MaterialTheme(colorScheme = windmillColorScheme(dark), content = content)
+    }
 }
 
 fun windmillColorScheme(dark: Boolean): ColorScheme {

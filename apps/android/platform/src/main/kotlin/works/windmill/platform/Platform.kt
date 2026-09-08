@@ -11,6 +11,11 @@ interface ProductModule {
     val id: String
     val label: String
 
+    // The room's Material theme plus its `LocalWindmillPalette`, so the shell can draw its own
+    // sheet in the room's colours over the room.
+    @Composable
+    fun Skin(content: @Composable () -> Unit)
+
     @Composable
     fun Room(account: Account)
 }

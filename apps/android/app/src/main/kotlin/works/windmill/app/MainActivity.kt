@@ -20,7 +20,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import works.windmill.gym.GymModule
-import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
@@ -67,13 +66,16 @@ private fun Root(auth: AuthStore) {
     val account = Account(auth.api, standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true)
 
-    // WindmillMaterial must wrap everything Material draws. The gym room takes its OWN Material
-    // theme inside it: the brand's primary is gold, and gold in that room means a personal record.
-    // The shell's own sheet stays on the brand's.
+    // WindmillMaterial wraps everything Material draws; the room's Skin wraps the room AND the
+    // shell's sheet, so the sheet borrows the hosting room's colours — in gym the brand's gold
+    // would read as a personal record. When roadmap and journal mount, each brings its own Skin
+    // and the same door takes it.
     CompositionLocalProvider(LocalShellActions provides shell) {
         WindmillMaterial {
-            GymMaterial { gym.Room(account) }
-            if (youUp) YouSheet(auth, onDismiss = { youUp = false })
+            gym.Skin {
+                gym.Room(account)
+                if (youUp) YouSheet(auth, onDismiss = { youUp = false })
+            }
         }
     }
 }

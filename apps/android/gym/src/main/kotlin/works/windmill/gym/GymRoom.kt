@@ -89,6 +89,7 @@ import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
+import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.GymSkin
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
@@ -117,6 +118,11 @@ import works.windmill.platform.design.WindmillSpace
 class GymModule : ProductModule {
     override val id = "gym"
     override val label = "Gym"
+
+    @Composable
+    override fun Skin(content: @Composable () -> Unit) {
+        GymMaterial(content)
+    }
 
     @Composable
     override fun Room(account: Account) {

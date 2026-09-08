@@ -5,23 +5,46 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
+import works.windmill.platform.design.WindmillPalette
 
-// The room's own Material theme. Every Material control inside gym reads THIS scheme, never the
-// brand's: WindmillMaterial paints gold on warm brown, and gold in this room means a personal record
-// (`GymSkin.prInk`), so a Material control taking the brand's primary would say `record` on a
-// Switch. Gold is therefore absent from the scheme and stays painted by hand where a PR is.
+// The room's own Material theme and its palette — the gym module's `Skin`. Every Material control
+// inside gym reads THIS scheme, never the brand's, and the shell's chrome drawn under it (the
+// account sheet, the door) reads `gymPalette`: WindmillMaterial paints gold on warm brown, and gold
+// in this room means a personal record (`GymSkin.prInk`), so a control taking the brand's primary
+// would say `record` on a Switch. Gold is therefore absent from both and stays painted by hand
+// where a PR is.
 //
 // Dynamic colour is a refusal rather than an omission: colour here is a legend — verdigris says the agent
 // proposed it, olive says logged, brick says this destroys something — and a wallpaper cannot
 // recolour a legend.
 @Composable
 fun GymMaterial(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = gymColorScheme, typography = gymTypography, content = content)
+    CompositionLocalProvider(LocalWindmillPalette provides gymPalette) {
+        MaterialTheme(colorScheme = gymColorScheme, typography = gymTypography, content = content)
+    }
 }
+
+// The shell's slots in the room's colours. The refusal line's wash is the verdigris wash, its ink
+// the room's ink.
+val gymPalette: WindmillPalette = WindmillPalette(
+    canvas = GymSkin.canvas,
+    surface = GymSkin.surface,
+    ink = GymSkin.ink,
+    inkDim = GymSkin.inkDim,
+    inkFaint = GymSkin.inkFaint,
+    line = GymSkin.line,
+    lineStrong = GymSkin.lineStrong,
+    accent = GymSkin.accent,
+    onAccent = GymSkin.onAccent,
+    noticeWash = GymSkin.accentSoft,
+    noticeInk = GymSkin.ink,
+)
 
 // One skin, and it is dark: Daylight is a design task of its own and this scheme does not pretend to
 // have it. `secondaryContainer` is the rail's selected seat; `inverseSurface` is the snackbar's

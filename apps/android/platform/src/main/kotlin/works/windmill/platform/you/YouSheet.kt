@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -16,7 +17,7 @@ import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.ActionCapsule
 import works.windmill.platform.design.ActionWeight
-import works.windmill.platform.design.WindmillColor
+import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
@@ -24,9 +25,11 @@ import works.windmill.platform.design.WindmillSpace
 @Composable
 fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val palette = LocalWindmillPalette.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = WindmillColor.surfaceCanvas.color,
+        containerColor = palette.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = palette.inkFaint) },
     ) {
         when (val status = auth.status) {
             is AuthStatus.SignedIn -> Column(
@@ -39,12 +42,12 @@ fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
                     Text(
                         status.user.name.ifEmpty { "Windmill" },
                         style = WindmillFont.display(19),
-                        color = WindmillColor.textPrimary.color,
+                        color = palette.ink,
                     )
                     Text(
                         "${status.user.email} · one account, all three apps",
                         style = WindmillFont.body(13),
-                        color = WindmillColor.textTertiary.color,
+                        color = palette.inkFaint,
                     )
                 }
                 ActionCapsule("Sign out", ActionWeight.Quiet) {

@@ -52,6 +52,45 @@ class WindmillMaterialTests {
     }
 
     @Test
+    fun theBrandPaletteIsFamilyColoursInBothSkins() {
+        val family = WindmillColor.run {
+            listOf(
+                neutral0, neutral25, neutral50, neutral100, neutral200, neutral300,
+                neutral400, neutral500, neutral600, neutral700, neutral800, neutral900,
+            )
+        }
+        val ours = family.map { it.dark }.toSet() +
+            family.map { it.light }.toSet() +
+            setOf(WindmillColor.gold400, WindmillColor.onAccent,
+                  WindmillColor.gold400.copy(alpha = 0.14f))
+
+        for ((skin, dark) in listOf("dark" to true, "light" to false)) {
+            val palette = brandPalette(dark)
+            val slots = mapOf(
+                "canvas" to palette.canvas, "surface" to palette.surface,
+                "ink" to palette.ink, "inkDim" to palette.inkDim, "inkFaint" to palette.inkFaint,
+                "line" to palette.line, "lineStrong" to palette.lineStrong,
+                "accent" to palette.accent, "onAccent" to palette.onAccent,
+                "noticeWash" to palette.noticeWash, "noticeInk" to palette.noticeInk,
+            )
+            for ((slot, colour) in slots) {
+                assertTrue("$skin palette's $slot is not a Windmill colour: $colour", colour in ours)
+            }
+            // The door under only WindmillMaterial looks as it always has: gold capsule, canvas
+            // sheet, the family's three inks.
+            assertEquals(WindmillColor.gold400, palette.accent)
+            assertEquals(WindmillColor.onAccent, palette.onAccent)
+            val shade = { s: WindmillShade -> if (dark) s.dark else s.light }
+            assertEquals(shade(WindmillColor.surfaceCanvas), palette.surface)
+            assertEquals(shade(WindmillColor.textPrimary), palette.ink)
+            assertEquals(shade(WindmillColor.textSecondary), palette.inkDim)
+            assertEquals(shade(WindmillColor.textTertiary), palette.inkFaint)
+            assertEquals(shade(WindmillColor.borderSubtle), palette.line)
+            assertEquals(shade(WindmillColor.borderDefault), palette.lineStrong)
+        }
+    }
+
+    @Test
     fun theInkOnTheAccentIsFixedInBothSkins() {
         assertEquals(WindmillColor.gold400, dark.primary)
         assertEquals(WindmillColor.gold400, light.primary)
