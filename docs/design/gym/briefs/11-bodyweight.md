@@ -35,14 +35,14 @@ today's number is one back-gesture from the chip.
 The chart screen does carry the repair path, because that is a different verb and it belongs where
 the mistake is visible.
 
-## The chart is a new primitive
+## The chart is the room's one primitive
 
-Neither shape gym already owns will do, and this is worth saying plainly because reaching for the
-existing one would have been the obvious move.
-
-Gym's chart is **bars, and they normalise to the series maximum** — which is right for an estimated
-one-rep max climbing from 60 to 120, and useless for a bodyweight sitting between 82.0 and 84.5, where
-every bar renders as a near-identical full-height block.
+Gym once drew two chart shapes. The e1RM chart on the Record screen was **bars from zero,
+normalised to the series maximum** — and that shape could not show what progress looks like: an
+estimate climbing from 100 to 106 kg over twelve weeks is a row of equal blocks, which is why two
+of the three Record screens quietly moved their baseline (`consistency.md` `5u`). **Bars are
+retired.** The primitive ruled here — a dot per measurement on a truncated, labelled axis — serves
+both series, bodyweight and e1RM; `18-progress.md` carries the e1RM half and its own gap threshold.
 
 A **line** is banned, and for a reason that applies here more strongly than where it was written: *a
 line between discrete sessions implies days that never happened.* A weigh-in series is more gapped

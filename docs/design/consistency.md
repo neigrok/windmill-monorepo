@@ -2109,3 +2109,24 @@ disabled while Sets is empty. Until the owner rules, `15-the-routine.md`'s two s
 `TargetEntry.clearOthersFirst` / `nameSetsFirst` on all three surfaces stand as canon and code; the
 moment the ruling lands, `15-the-routine.md`'s *The illegal shape has two ways in* paragraph and
 its two rows in the strings table come out in the same change.
+
+**5u · the Record screen's e1RM bars stand on three baselines on three surfaces** → resolved by
+replacement; the fix flows to `gym/briefs/18-progress.md`. The web draws bars from zero normalised
+to the window's maximum (`record.js:66-85`), Android from zero normalised to the *lifetime* standing
+best (`Record.kt`, `chart`), and iOS floats the baseline a third of the window's span below its
+lowest session and adds a third ink for passed records (`Record.swift`, `bars`). Nobody ledgered
+it, and two of the three moved because a from-zero bar cannot show a climb from 100 to 106 kg —
+the shape progress actually has. `18-progress.md` retires bars from the room: the Record chart and
+the log's movement cards draw the dot primitive `11-bodyweight.md` owns, on a truncated axis, with
+a twenty-one-day gap rule. Until that lands the three screens stay as they are; the entry closes
+when all three draw dots and `11-bodyweight.md`'s rewritten paragraph is true of the code.
+
+**5v · one session has three e1RMs** → fix flows to the backend under the rule
+`18-progress.md` names *the session estimate*. The log row's `topE1rm` is `topE1rmOf` over every
+working set of the session (`ARCHITECTURE.md:597`, `:755`); the record page's `e1rmSeries` is Epley
+over the heaviest working set of the movement; the statistics engine's `points` are Epley over the
+heaviest set with the most reps (`:828-830`, `Statistics.h`). None caps the rep count, so a
+twenty-rep set is drawn as a ±15 % point on one screen and not another. The rule: Epley over the
+working set of one to ten reps with the highest estimate, a set rated below RPE 7 left out, and a
+session's own e1RM the largest of its movements' estimates. Closes when `Review.h`, `Record.cpp`
+and `Statistics.cpp` read one projection and the three surfaces print one number for one session.

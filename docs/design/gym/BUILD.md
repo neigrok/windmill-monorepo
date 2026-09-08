@@ -651,12 +651,13 @@ whole-document last-write-wins replace with no PATCH (`routes.cpp:213-229`,
 (`Preferences.swift:3`, `SettingsScreen.swift:4`, `settings/preferences.js:1`). Two screens open at
 once silently discards one.
 
-**The existing bar chart, reused for bodyweight.** `11-bodyweight.md` calls it a new primitive
-explicitly, and it is built as one (`design-system/charts/DotChart.jsx`, `BodyweightScreen.swift`,
+**Bars, for either series.** `11-bodyweight.md` rules one chart primitive for the room and it is
+built for bodyweight (`design-system/charts/DotChart.jsx`, `BodyweightScreen.swift`,
 `BodyweightScreen.kt`): dots on the series' own range, a segment only across a gap of seven days or
-fewer. Gym's e1RM chart is bars — normalised to the series maximum on the web (`record.js:66-80`),
-floated from a baseline on iOS (`Record.swift:286`) — and a bar implies a session on a day. Also
-banned on the bodyweight chart: a goal line, a projection, BMI, a trend, a scrub.
+fewer. The Record screen's e1RM bars — normalised to the series maximum on the web
+(`record.js:66-85`), to the lifetime best on Android, floated from a baseline on iOS — are retired
+by `18-progress.md` and ledgered as `5u`; the e1RM series takes the same dots with a twenty-one-day
+gap. Also banned on either chart: a goal line, a projection, BMI, a trend, a scrub.
 
 **The ± plate ladder on a bodyweight field.** `11-bodyweight.md`: a plain decimal field, explicitly
 not the ladder. The ladder carries plate physics and signed loads into a value that has neither.
