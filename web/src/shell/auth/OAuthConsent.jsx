@@ -126,9 +126,8 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
   return (
     <Card>
       <div style={mark}>Windmill</div>
-      <h1 style={title}>
-        <b>{client.client_name}</b> wants access to your Windmill account
-      </h1>
+      <h1 style={title}>Connect {client.client_name}</h1>
+      <p style={{ ...cant, marginTop: 8 }}>Review the access this tool is requesting.</p>
 
       <div style={acct}>
         <Avatar name={name} size={20} />
@@ -136,33 +135,33 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
         <button type="button" onClick={onNotYou} style={notYou}>Not you?</button>
       </div>
 
-      {reach === 'everything' ? (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ ...grow, ...growGone }}>
-            <span className="wm-oc-nd wm-oc-gone" />
+      <div style={permissions}>
+        {reach === 'everything' ? (
+          <p style={permissionLine}>
+            <span className="wm-oc-dot wm-oc-dot--delete" aria-hidden="true" />
             Everything in your account — every product, including deleting
-          </div>
-        </div>
-      ) : reach === 'nothing' ? (
-        <div style={{ marginTop: 6 }}>
-          <div style={grow}>
-            <span className="wm-oc-nd wm-oc-dim" />
+          </p>
+        ) : reach === 'nothing' ? (
+          <p style={permissionLine}>
+            <span className="wm-oc-dot" aria-hidden="true" />
             Nothing — this request names no part of your account
-          </div>
-        </div>
-      ) : (
-        groups.map((group) => (
-          <div key={group.product} style={{ marginTop: 8 }}>
-            <div style={groupHead}>Your {group.label}</div>
-            {group.lines.map((line) => (
-              <div key={line.level} style={line.level === 'delete' ? { ...grow, ...growGone } : grow}>
-                <span className={`wm-oc-nd wm-oc-${line.glyph}`} />
-                {line.label}
-              </div>
-            ))}
-          </div>
-        ))
-      )}
+          </p>
+        ) : (
+          groups.map((group) => (
+            <section key={group.product} aria-label={`Your ${group.label}`}>
+              <h2 style={groupHead}>Your {group.label}</h2>
+              <ul style={permissionList}>
+                {group.lines.map((line) => (
+                  <li key={line.level} style={permissionLine}>
+                    <span className={`wm-oc-dot${line.level === 'delete' ? ' wm-oc-dot--delete' : ''}`} aria-hidden="true" />
+                    {line.label}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </div>
 
       <p style={cant}>
         {canDelete
@@ -185,7 +184,7 @@ function ApprovedBloom({ clientName }) {
     <Card>
       <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 4px' }}>
         <span className="wm-oc-check wm-oc-wake">
-          <Icon name="check" size={20} color="#fff" strokeWidth={3} />
+          <Icon name="check" size={20} color="var(--color-success)" strokeWidth={2} />
         </span>
       </div>
       <h1 style={{ ...title, textAlign: 'center' }}>Connected</h1>
@@ -207,10 +206,10 @@ function GateCard({ onSignIn }) {
   return (
     <Card>
       <div style={mark}>Windmill</div>
-      <h1 style={title}>Sign in to connect your tool</h1>
-      <p style={{ ...cant, marginTop: 6 }}>Connecting a tool starts with signing in — the same magic link as always. Your tool waits right where it is.</p>
+      <h1 style={title}>Connect your tool</h1>
+      <p style={{ ...cant, marginTop: 6 }}>Sign in to review the access your tool is requesting.</p>
       <div style={btnRow}>
-        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onSignIn} style={{ flex: 1 }}>Email me a link</button>
+        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onSignIn} style={{ flex: 1 }}>Sign in</button>
       </div>
     </Card>
   );
@@ -244,9 +243,10 @@ function FailureCard({ kind, onRetry }) {
   const f = FAILURES[kind] ?? FAILURES.malformed;
   return (
     <Card>
+      <div style={mark}>Windmill</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {f.brick && <Icon name="wifi" size={18} color="var(--color-danger)" />}
-        <h1 style={{ ...title, color: f.brick ? 'var(--color-danger)' : 'var(--text-primary)' }}>{f.title}</h1>
+        {f.brick && <Icon name="wifi" size={18} color="var(--text-secondary)" />}
+        <h1 style={title}>{f.title}</h1>
       </div>
       <p style={{ ...cant, marginTop: 8 }}>{f.body}</p>
       <div style={btnRow}>
@@ -259,51 +259,29 @@ function FailureCard({ kind, onRetry }) {
 
 function Loader() {
   return (
-    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--text-xl)', color: 'var(--text-tertiary)', letterSpacing: 'var(--tracking-wide)' }}>
-      Windmill
-    </div>
+    <Card>
+      <div style={mark}>Windmill</div>
+      <p role="status" style={cant}>Preparing your connection…</p>
+    </Card>
   );
 }
 
 function Shell({ children }) {
   return (
-    <div style={shell}>
-      <style>{GLYPH_CSS}</style>
+    <main className="wm-oc-shell">
+      <style>{CONSENT_CSS}</style>
       {children}
-    </div>
+    </main>
   );
 }
 
 function Card({ children }) {
-  return <div style={card}>{children}</div>;
+  return <div className="wm-oc-card">{children}</div>;
 }
 
-const shell = {
-  position: 'fixed',
-  inset: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 'var(--space-4)',
-  background: 'var(--surface-canvas)',
-  fontFamily: 'var(--font-body)',
-  color: 'var(--text-primary)',
-};
+const mark = { fontFamily: 'var(--font-display)', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' };
 
-const card = {
-  width: 340,
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  background: 'var(--surface-card)',
-  border: '1px solid var(--border-subtle)',
-  borderRadius: 'var(--radius-xl)',
-  boxShadow: 'var(--shadow-lg)',
-  padding: '20px 20px 16px',
-};
-
-const mark = { fontFamily: 'var(--font-display)', fontSize: 'var(--text-xs)', fontWeight: 800, color: 'var(--text-tertiary)' };
-
-const title = { fontFamily: 'var(--font-display)', fontSize: '17px', fontWeight: 700, lineHeight: 1.3, margin: '8px 0 2px' };
+const title = { fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 500, lineHeight: 1.35, letterSpacing: '-0.02em', margin: '16px 0 0', overflowWrap: 'anywhere' };
 
 const acct = {
   display: 'flex',
@@ -311,76 +289,67 @@ const acct = {
   gap: 8,
   fontSize: 'var(--text-xs)',
   color: 'var(--text-secondary)',
-  margin: '10px 0 4px',
+  margin: '16px 0 0',
 };
 
 const notYou = {
   marginLeft: 'auto',
   flexShrink: 0,
   border: 'none',
+  borderRadius: 'var(--radius-sm)',
   background: 'none',
-  padding: 0,
+  minHeight: 44,
+  padding: '0 4px',
   cursor: 'pointer',
   fontFamily: 'inherit',
-  fontSize: '11px',
-  fontWeight: 700,
+  fontSize: 'var(--text-xs)',
+  fontWeight: 500,
   color: 'var(--text-link)',
 };
 
-const groupHead = {
-  fontSize: '10px',
-  fontWeight: 800,
-  letterSpacing: 'var(--tracking-wide)',
-  textTransform: 'uppercase',
-  color: 'var(--text-tertiary)',
-  margin: '0 2px 2px',
-};
+const permissions = { display: 'grid', gap: 20, margin: '24px 0' };
 
-const grow = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  padding: '8px 10px',
-  borderRadius: 'var(--radius-sm)',
-  background: 'var(--surface-canvas)',
-  fontSize: 'var(--text-sm)',
-  fontWeight: 700,
-  marginTop: 5,
-};
+const groupHead = { fontSize: 'var(--text-sm)', fontWeight: 600, lineHeight: 1.5, color: 'var(--text-primary)', margin: '0 0 8px' };
 
-const growGone = { color: 'var(--color-danger)' };
+const permissionList = { listStyle: 'none', display: 'grid', gap: 8, padding: 0, margin: 0 };
 
-const cant = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-tertiary)', margin: '10px 2px 0' };
+const permissionLine = { display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 'var(--text-sm)', lineHeight: 1.5, fontWeight: 400, color: 'var(--text-secondary)', margin: 0, overflowWrap: 'anywhere' };
 
-const btnRow = { display: 'flex', gap: 8, marginTop: 14 };
+const cant = { fontSize: '13px', lineHeight: 1.65, color: 'var(--text-secondary)', margin: '20px 0 0' };
 
-const foot = { fontSize: '10px', color: 'var(--text-tertiary)', lineHeight: 1.5, textAlign: 'center', marginTop: 10 };
+const btnRow = { display: 'flex', gap: 12, marginTop: 24 };
 
-// `gone` is the delete level.
-const GLYPH_CSS = `
-  .wm-oc-nd { width:14px; height:14px; border-radius:50%; box-sizing:border-box; flex:none; }
-  .wm-oc-dim  { border:2px solid rgba(95,132,148,.32); background:rgba(95,132,148,.22); }
-  .wm-oc-bud  { border:2px dashed #BC6C42; background:rgba(188,108,66,.16); }
-  .wm-oc-gone { border:2.5px solid #9E3B32; background:transparent; }
-  .wm-oc-done { border:2.5px solid #6F3B67; background:#8D4F83;
-                box-shadow:0 0 0 3px rgba(141,79,131,.4), 0 0 16px rgba(141,79,131,.4); }
-  .wm-oc-check { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px;
-                 border-radius:50%; background:#7D8C43; border:2.5px solid #616E33;
-                 box-shadow:0 0 0 4px rgba(125,140,67,.28), 0 0 26px 6px rgba(125,140,67,.28); }
-  /* Worn unconditionally: the reduced-motion redefinition below takes the scale and leaves the
-     arrival, so no caller has to know about the preference. */
+const foot = { fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.6, textAlign: 'center', margin: '16px 0 0', overflowWrap: 'anywhere' };
+
+const CONSENT_CSS = `
+  .wm-oc-shell { position:fixed; inset:0; display:flex; overflow-y:auto; box-sizing:border-box;
+    padding:32px 16px; background:var(--surface-canvas); font-family:var(--font-body); color:var(--text-primary); }
+  .wm-oc-card { width:440px; max-width:100%; flex:none; box-sizing:border-box; margin:auto;
+    padding:32px; background:var(--surface-card); border:1px solid var(--border-subtle);
+    border-radius:24px; box-shadow:var(--shadow-sm); }
+  .wm-oc-dot { width:8px; height:8px; box-sizing:border-box; flex:none; border-radius:50%;
+    background:var(--text-tertiary); }
+  .wm-oc-dot--delete { border:1px solid var(--text-secondary); background:transparent; }
+  .wm-oc-check { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px;
+    border-radius:50%; background:var(--color-success-bg); }
   .wm-oc-wake { animation:wm-oc-wake 480ms var(--ease-soft) 1; }
   @keyframes wm-oc-wake { 0% { transform:scale(.82); opacity:0; } 55% { transform:scale(1.04); opacity:1; } 100% { transform:scale(1); } }
-  @media (prefers-reduced-motion: reduce) {
-    @keyframes wm-oc-wake { 0% { opacity:0; } 55%, 100% { opacity:1; } }
-  }
   .wm-oc-btn { flex:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
-               font-family:var(--font-body); font-size:var(--text-sm); font-weight:700; padding:10px 16px;
-               border-radius:var(--radius-md); border:1.5px solid var(--border-default);
-               background:var(--surface-card); color:var(--text-primary);
-               transition:background var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
+    min-height:44px; box-sizing:border-box; font-family:var(--font-body); font-size:var(--text-sm); font-weight:500;
+    padding:12px 16px; border-radius:var(--radius-full); border:1px solid var(--border-subtle);
+    background:transparent; color:var(--text-primary);
+    transition:background var(--duration-fast) var(--ease-standard); }
   .wm-oc-btn:hover { background:var(--surface-hover); }
-  .wm-oc-btn:active { transform:scale(.97); }
-  .wm-oc-btn--allow { border-color:transparent; background:var(--color-brand); color:var(--text-on-accent); box-shadow:var(--shadow-sm); }
+  .wm-oc-btn--allow { border-color:transparent; background:var(--color-brand); color:var(--text-on-accent); }
   .wm-oc-btn--allow:hover { background:var(--color-brand-hover); }
+  .wm-oc-btn--allow:active { background:var(--color-brand-active); }
+  .wm-oc-shell :is(button,a):focus-visible { outline:2px solid var(--color-brand); outline-offset:4px; }
+  @media (max-width:480px) {
+    .wm-oc-shell { padding:16px; }
+    .wm-oc-card { padding:24px; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    .wm-oc-btn { transition:none; }
+    @keyframes wm-oc-wake { 0% { opacity:0; } 100% { opacity:1; } }
+  }
 `;

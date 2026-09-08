@@ -82,13 +82,14 @@ The settings above describe connecting Windmill’s hosted MCP server to ChatGPT
 
 OAuth 2.1 + PKCE, the MCP-standard flow.
 
-- **The screen:** wordmark · "{Tool} wants access to your Windmill account" · account row
+- **The screen:** wordmark · "Connect {Tool}" · "Review the access this tool is requesting." · account row
   with "Not you?" · **the capability lines the client actually asked for** · the can't line
   · Cancel / **Allow** · a foot line naming the redirect host.
 - **Scopes are `<product>:<level>`**, space-delimited, levels `read` · `write` · `delete`
   (`shell/auth/scopes.js`, mirroring `backend/platform/domain/ToolScope.h`). The card
   renders the request grouped by product — "Your roadmaps", "Your training log" — one line
-  per level, delete styled as the destructive one. It never renders a fixed list.
+  per level in an unboxed list. Deletion is named explicitly with a neutral outlined glyph;
+  its permanent effect is stated beneath the groups. It never renders a fixed list.
 - **Three reaches, not two.** An empty scope is the account-wide grant and is named as such
   ("Everything in your account — every product, including deleting"). A scope the
   server cannot read confers nothing and says so ("Nothing — this request names no part of
@@ -99,6 +100,12 @@ OAuth 2.1 + PKCE, the MCP-standard flow.
   anything you didn't grant above."; without, "It can only do what's listed above. It can't
   see your chats, and nothing else in your account is reachable."
 - **No red.** Authorization is not a danger moment.
+- **Rhythm:** a 440px card with 32px desktop padding and 24px phone padding, soft family
+  surfaces, a 24px display heading, and sentence-case product headings. Permission copy
+  uses regular weight; supporting copy remains readable at 13px. Cancel and Allow have
+  44px targets, rounded corners, and visible keyboard focus. Short viewports scroll.
+- **Signed out:** "Connect your tool" · "Sign in to review the access your tool is
+  requesting." · "Sign in", opening the shared sign-in door before the grant.
 - **Allow blooms once:** an olive check wakes (no confetti), "Connected · Returning to
   {tool}…", then the browser follows the redirect. Cancel gets the quiet twin: "No changes
   made."
@@ -174,7 +181,7 @@ capability chips.
 | Copy button | "Copy URL" / "Copy" → "Copying…" → "Copied" (1.4s) |
 | ChatGPT heading | "ChatGPT · OpenAI" |
 | ChatGPT approval step | "Choose OAuth, then approve access to Windmill when prompted." |
-| Grant title | "{Tool} wants access to your Windmill account" |
+| Grant title | "Connect {Tool}" |
 | Grant actions | "Allow" / "Cancel" · post: "Connected · Returning to {tool}…" / "No changes made" |
 | Disconnect confirm | "{Tool} will lose access now." → "Disconnect" |
 | First-build toast | "Claude planted {tree} · {n} steps" |
