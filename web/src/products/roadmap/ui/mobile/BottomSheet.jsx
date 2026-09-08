@@ -113,6 +113,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
 
   return (
     <div
+      data-roadmap-chrome
       style={{
         position: 'fixed',
         left: 0,

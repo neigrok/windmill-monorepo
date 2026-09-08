@@ -1,15 +1,15 @@
-// Pooled DOM overlays above the GPU canvas, placed on the nodes nearest the viewport centre and LOD-gated by zoom. Subclasses override the element, visibility band and render.
+// Fixed DOM pools above the GPU canvas; captions reserve readable screen-space rectangles.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
 import { DEFAULT_NODE_COLOR, nodeTier, NODE_SIZE } from '../theme.js';
+import { LABEL_FONT_SIZE } from '../model/geometry.js';
+import { LABEL_POOL_SIZE, wrapCaption, placeCaptions, captionCandidates } from './captionLayout.js';
 
-const POOL_SIZE = 64;
-const LABEL_ZOOM_THRESHOLD = 0.5;
+const POOL_SIZE = LABEL_POOL_SIZE;
 export const ICON_DOM_START = 2.0;
 export const ICON_DOM_FULL = 3.0;
 const ICON_NODE_FRACTION = 0.44; // glyph share of node diameter; matches the atlas inset
-const LABEL_FONT_FRACTION = 0.23; // caption height as a share of node diameter
 
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -68,13 +68,8 @@ class NodeOverlay {
     this.container.style.opacity = strength;
 
     const view = camera.getViewport();
-    const centerX = (view.minX + view.maxX) / 2;
-    const centerY = (view.minY + view.maxY) / 2;
-    const nearest = this.spatialGrid
-      .within(view.minX, view.minY, view.maxX, view.maxY)
-      .map((id) => { const n = this.nodesById.get(id); return { id, d: (n.x - centerX) ** 2 + (n.y - centerY) ** 2 }; })
-      .sort((a, b) => a.d - b.d)
-      .slice(0, POOL_SIZE);
+    const visible = this.spatialGrid.within(view.minX, view.minY, view.maxX, view.maxY).map((id) => this.nodesById.get(id));
+    const nearest = captionCandidates(visible, camera).slice(0, POOL_SIZE);
 
     this.pool.forEach((element, i) => {
       const picked = nearest[i];
@@ -96,27 +91,113 @@ class NodeOverlay {
 export class LabelOverlay extends NodeOverlay {
   constructor(canvas) {
     super(canvas, 'st-labels');
+    this.metrics = new Map();
+    this.captionCache = new Map();
+    this.neighborsById = new Map();
+    this.selectedId = null;
+    this.hoveredId = null;
+    this.onFontsReady = () => {
+      if (!this.container.isConnected) return;
+      this.captionCache.clear();
+      this.measureCaptions();
+    };
+    document.fonts?.addEventListener('loadingdone', this.onFontsReady);
   }
 
   createElement() {
     const span = document.createElement('span');
     span.className = 'st-label';
-    span.style.cssText = 'position:absolute;left:0;top:0;white-space:nowrap;display:none;will-change:transform;';
+    span.style.cssText = 'position:absolute;left:0;top:0;display:none;will-change:transform;';
     return span;
   }
 
-  visibility(zoom) {
-    return zoom >= LABEL_ZOOM_THRESHOLD ? 1 : 0;
+  setModel(renderModel, spatialGrid) {
+    super.setModel(renderModel, spatialGrid);
+    this.neighborsById = new Map(renderModel.nodes.map((node) => [node.id, new Set()]));
+    for (const edge of renderModel.edges) {
+      this.neighborsById.get(edge.from)?.add(edge.to);
+      this.neighborsById.get(edge.to)?.add(edge.from);
+    }
+    this.measureCaptions();
   }
 
-  place(element, sx, sy, zoom) {
-    const offsetY = NODE_SIZE * 0.62 * zoom;
-    element.style.fontSize = `${NODE_SIZE * LABEL_FONT_FRACTION * zoom}px`;
-    element.style.transform = `translate(${sx}px, ${sy + offsetY}px) translate(-50%, 0)`;
+  measureCaptions() {
+    const font = getComputedStyle(this.pool[0]).fontFamily;
+    const context = document.createElement('canvas').getContext('2d');
+    context.font = `700 ${LABEL_FONT_SIZE}px ${font}`;
+    const next = new Map();
+    for (const node of this.nodesById.values()) {
+      const key = `${context.font}|${node.label}`;
+      let metric = this.captionCache.get(key);
+      if (!metric) {
+        metric = wrapCaption(node.label, (text) => context.measureText(text).width);
+        this.captionCache.set(key, metric);
+      }
+      next.set(node.id, metric);
+    }
+    this.metrics = next;
+    if (this.captionCache.size > this.nodesById.size * 2 + 100) this.captionCache.clear();
+    this.assignedId.fill(null);
+    if (this.camera) this.update(this.camera, this.obstacles);
   }
 
-  render(element, node) {
-    element.textContent = node.label;
+  setStates(states) {
+    for (const [id, state] of states) {
+      const node = this.nodesById.get(id);
+      if (node) node.state = state;
+    }
+  }
+
+  setContext(selectedId, hoveredId = this.hoveredId) {
+    this.selectedId = selectedId;
+    this.hoveredId = hoveredId;
+  }
+
+  update(camera, obstacles = []) {
+    this.camera = camera;
+    this.obstacles = obstacles;
+    if (!this.spatialGrid) return;
+    const view = camera.getViewport();
+    const pad = NODE_SIZE * 2;
+    const nodes = this.spatialGrid.within(view.minX - pad, view.minY - pad, view.maxX + pad, view.maxY + pad)
+      .map((id) => this.nodesById.get(id));
+    const placements = placeCaptions(nodes, camera, this.metrics, {
+      selectedId: this.selectedId,
+      hoveredId: this.hoveredId,
+      neighbors: this.neighborsById.get(this.selectedId) ?? new Set(),
+      retained: new Set(this.assignedId.filter(Boolean)),
+      obstacles,
+    });
+    const byId = new Map(placements.map((placement) => [placement.id, placement]));
+    const assigned = new Set();
+    this.assignedId.forEach((id, i) => {
+      if (byId.has(id)) assigned.add(id);
+      else { this.assignedId[i] = null; this.pool[i].style.display = 'none'; }
+    });
+    let slot = 0;
+    for (const placement of placements) {
+      if (assigned.has(placement.id)) continue;
+      while (this.assignedId[slot] != null) slot += 1;
+      this.assignedId[slot] = placement.id;
+      const element = this.pool[slot];
+      const metric = this.metrics.get(placement.id);
+      element.textContent = metric.text;
+      element.dataset.nodeId = placement.id;
+      element.style.width = `${metric.width + 8}px`;
+    }
+    this.assignedId.forEach((id, i) => {
+      const placement = byId.get(id);
+      if (!placement) return;
+      const element = this.pool[i];
+      element.style.display = 'block';
+      element.classList.toggle('st-label--selected', id === this.selectedId);
+      element.style.transform = `translate(${placement.left}px, ${placement.top}px)`;
+    });
+  }
+
+  dispose() {
+    document.fonts?.removeEventListener('loadingdone', this.onFontsReady);
+    super.dispose();
   }
 }
 

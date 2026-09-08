@@ -1,6 +1,6 @@
 # Angular reorder
 
-Drag a node tangentially around the radial ring to reslot it among its siblings under
+Drag a node tangentially around its current radius to reslot it among its siblings under
 the same parent. Companion to `tree-layout-contract.md` (determinism).
 
 ## Rules
@@ -9,7 +9,7 @@ the same parent. Companion to `tree-layout-contract.md` (determinism).
    overloaded onto this drag.
 2. **A single node — its subtree rides along.** Moving a branch is reordering that
    branch's root node; no separate mode.
-3. **Roots too.** The root ring is the depth-0 sibling ring; the canvas center is its
+3. **Roots too.** Roots form a sibling group; the canvas center is its
    virtual parent.
 4. **A node drag is reorder.** No new chrome. Radius is owned by the layout; the
    tangential component picks the slot.
@@ -45,7 +45,7 @@ the same parent. Companion to `tree-layout-contract.md` (determinism).
 
 ## Touch
 
-The gesture degrades intact — drag a node around its ring — under three conditions from
+The gesture degrades intact — drag a node around its current radius — under three conditions from
 `mobile.md`: the node must own a real hit disc (§9), so reorder is unavailable below that
 clamp, where a tap zooms in first; the drag is direct manipulation and so exempt from the
 motion ceilings; the commit drops the standard 4s undo snackbar in the undo lane (§8).

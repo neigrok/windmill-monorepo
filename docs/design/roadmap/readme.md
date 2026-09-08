@@ -14,6 +14,7 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 
 - `guidelines/` — the feature canon (decoder below).
 - `briefs.md` — the open asks to the designers.
+- `readability-research.md` — the implemented readability contract and reproducible large-graph validation.
 
 ## Spec codes — decoder
 
@@ -47,14 +48,16 @@ DAG editing.
 
 ## Tree layout & metaphor
 
-The canvas lays out radially from a centered root: each node sits on the ring for its trunk
-depth, at the center of an angular wedge, wedges split among children by subtree leaf count.
+The canvas lays out radially from a centered root, or a synthetic center for multiple roots.
+Subtree leaf counts divide angular wedges. Each node advances locally until its body and caption
+footprint clear occupied space; siblings keep angular order without sharing one depth radius.
 A live gallery SVG portrait must use the tree's own canvas positions. Social link previews can
 be stored or generic and are not guaranteed to match the live page (`guidelines/og-tree-cards.md`).
 
 Connectors are stroked bezier curves, even-width with a gentle stable bend; a branch that starts
 in a **done** node lights up in that node's colour (no glow), otherwise it stays a thin muted
-line. Nodes are flat, uniform circular discs, base size 56.
+line. Circular node bodies use nominal size 56, with a larger root. Focus gives ordinary bodies a
+52px working diameter; captions remain 14px and reveal more names as screen space becomes available.
 
 **Colour and state are decoupled.** A node's colour comes from its `kind` — one of six palette
 hues (terracotta, olive, gold, brick, sky, plum) — and progress is carried by treatment across

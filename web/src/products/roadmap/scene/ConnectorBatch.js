@@ -118,13 +118,16 @@ void main() {
   color = mix(color, vec3(1.0), core * 0.3); // hottest white at the very front
   float alpha = mix(0.6, 0.95, lit);
   alpha = max(alpha, head * 0.9);
-  float deemph = vKind < 0.5 ? 1.0 : (vKind < 1.5 ? 0.7 : 0.4); // non-trunk edges recede
+  float incident = max(0.0, -vDim);
+  float unrelated = max(0.0, vDim);
+  float deemph = mix(vKind < 0.5 ? 0.7 : (vKind < 1.5 ? 0.35 : 0.18), 1.0, incident);
   color = mix(color, dim, (1.0 - deemph) * 0.6);
   alpha *= deemph;
   color = mix(color, uColorHot, vHover); // hover deepens the line to the hot hue
   alpha = mix(alpha, 0.95, vHover);
-  color = mix(color, dim, vDim * 0.5); // spotlight: branches off the focused node recede
-  alpha *= 1.0 - vDim * 0.72;
+  color = mix(color, dim, unrelated * 0.5);
+  alpha *= 1.0 - unrelated * 0.78;
+  alpha = max(alpha, incident * 0.95);
   // both endpoints selected: brighten toward bark-cream so the set reads as one shape
   color = mix(color, uBarkCream, vInSet * 0.6);
   alpha = max(alpha, vInSet * 0.92);
@@ -451,7 +454,7 @@ export class ConnectorBatch {
       const lit = new Set(this.edgesByNode.get(nodeId) ?? []);
       for (let e = 0; e < this.edges.length; e++) {
         const start = this.edges[e].vertexStart;
-        this.dim.fill(lit.has(e) ? 0 : 1, start, start + VERTS_PER_EDGE);
+        this.dim.fill(lit.has(e) ? -1 : 1, start, start + VERTS_PER_EDGE);
       }
     }
     this.spotlit = nodeId;

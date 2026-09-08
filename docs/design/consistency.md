@@ -547,14 +547,13 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
-§5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
-threshold. `RadialLayoutEngine.js` is the only engine in `web/src/products/roadmap/layout/`, it uses
-no fixed ring gap (`RING = NODE_SIZE * 2.8`, each ring pushed out until its tightest pair clears
-`MIN_ARC = NODE_SIZE * 1.7`), and no dagre appears anywhere in `web/src`. The contract's own Known
-gaps section records the mismatch without resolving it. Either the contract becomes radial-only and
-§5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
-a rendering rule.
+**1d · roadmap compact placement and readable captions** → code and written contract agree;
+Figma canvas boards need reconciliation. `RadialLayoutEngine` reserves body/caption footprints at a
+fixed reference zoom, preserves sibling angles, and advances colliding nodes locally. `geometry.js`,
+`captionLayout.js`, and the camera share 52px working bodies and 14px/20px captions. Focus and All
+steps are available on owner and shared canvas chrome. The drawing task is to show a dense overview,
+a readable selected branch, and phone camera controls using the existing kind palette; see
+`roadmap/readability-research.md` for measured fixtures and limits.
 
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body

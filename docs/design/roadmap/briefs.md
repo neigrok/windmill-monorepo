@@ -1,6 +1,6 @@
 # Roadmap — open design asks
 
-Three asks. Numbers are stable identifiers; `guidelines/mobile.md` cites them.
+Four asks. Numbers are stable identifiers; `guidelines/mobile.md` cites them.
 
 ## 21 · The fruit tiers in daylight
 
@@ -38,3 +38,15 @@ ordinary note on the node.
 
 **Deliver:** the flag as it reads on the canvas fruit and in the list row, plus the two response
 chips a finding invites (**Keep as is** / **Re-pace**).
+
+## 27 · Readable large roadmaps
+
+The web canvas uses compact radial placement, 52px ordinary bodies in Focus, and fixed 14px/20px
+captions. The Figma canvas boards need to show that contract at the densities covered by
+`readability-research.md`.
+
+**Deliver:** a dense overview, a selected branch with prerequisite/dependent emphasis, and phone
+Focus / All steps controls. Use the existing kind palette and authored long names; show caption
+priority and truncation, full names in the detail panel, and clearance around the legend, minimap,
+editing affordances, and phone controls. Include the real roadmap and a 5,000-node overview in
+both themes; make no claim that every title is simultaneously visible.

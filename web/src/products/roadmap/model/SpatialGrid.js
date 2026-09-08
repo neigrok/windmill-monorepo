@@ -29,29 +29,21 @@ export class SpatialGrid {
     const bucket = this.cells.get(oldKey);
     const at = bucket.indexOf(id);
     if (at >= 0) bucket.splice(at, 1);
+    if (bucket.length === 0) this.cells.delete(oldKey);
     if (!this.cells.has(newKey)) this.cells.set(newKey, []);
     this.cells.get(newKey).push(id);
     this.cellByNode.set(id, newKey);
   }
 
   nearest(x, y, maxRadius) {
-    const originX = Math.floor(x / this.cellSize);
-    const originY = Math.floor(y / this.cellSize);
     let bestId = null;
     let bestDistSq = maxRadius * maxRadius;
-
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        const ids = this.cells.get(this.cellKey(originX + dx, originY + dy));
-        if (!ids) continue;
-        for (const id of ids) {
-          const node = this.nodesById.get(id);
-          const distSq = (node.x - x) ** 2 + (node.y - y) ** 2;
-          if (distSq > bestDistSq) continue;
-          bestDistSq = distSq;
-          bestId = id;
-        }
-      }
+    for (const id of this.within(x - maxRadius, y - maxRadius, x + maxRadius, y + maxRadius)) {
+      const node = this.nodesById.get(id);
+      const distSq = (node.x - x) ** 2 + (node.y - y) ** 2;
+      if (distSq > bestDistSq) continue;
+      bestDistSq = distSq;
+      bestId = id;
     }
 
     return bestId;
@@ -63,6 +55,16 @@ export class SpatialGrid {
     const cellXMax = Math.floor(maxX / this.cellSize);
     const cellYMin = Math.floor(minY / this.cellSize);
     const cellYMax = Math.floor(maxY / this.cellSize);
+
+    // Overview queries can span millions of empty cells on a deep or wide tree.
+    const cellCount = (cellXMax - cellXMin + 1) * (cellYMax - cellYMin + 1);
+    if (cellCount > this.nodesById.size) {
+      for (const node of this.nodesById.values()) {
+        if (node.x < minX || node.x > maxX || node.y < minY || node.y > maxY) continue;
+        ids.push(node.id);
+      }
+      return ids;
+    }
 
     for (let cellX = cellXMin; cellX <= cellXMax; cellX++) {
       for (let cellY = cellYMin; cellY <= cellYMax; cellY++) {

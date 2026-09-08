@@ -30,7 +30,7 @@ scene.setModel(model);                                // GPU build + fit
 ```
 
 Repository loads → domain computes → scene renders. **Layout is synchronous** — no worker, no
-promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order signature
+promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order/color/creation-stamp signature
 changes and serves a cached copy otherwise. No business logic lives in the scene.
 
 After the first paint this is not the update path. A `SyncSession` owns the tree's CRDT lattice; a
@@ -103,8 +103,9 @@ A third, structural axis is `nodeForm(label, parentCount, childCount)` — `link
 unnamed) · `unlinked` (a stray with no branches left) — revealed as a dashed ring. Also `CONNECTOR`,
 `BACKGROUND`, `BARK` / `BARK_CREAM` (neutral tool + grouped selection) and `NODE_SIZE`.
 
-Positions are in **world units** where a node is `NODE_SIZE` (56) across. Everything in `model/` is
-pure JS — no WebGL, no React.
+Positions are in **world units**. `NODE_SIZE` is 56; the GPU body occupies 0.84 of that diameter.
+`model/geometry.js` shares the 52px working body target, reference zoom, and 14px caption geometry
+between layout and scene. Everything in `model/` is pure JS — no WebGL, no React.
 
 ## `model/`  (pure JS)
 
@@ -134,19 +135,20 @@ pure JS — no WebGL, no React.
   `DEFAULT_KINDS` are re-exported from `packages/api-contract/genesis.js`, re-asserted by
   `vite.config.js` on every build.
 - `NodeWorkspace.js` — a step's sub-tasks, note and links.
-- `SpatialGrid.js` — a uniform bucket grid over placed nodes. `nearest(x, y, maxRadius)` scans the
-  3×3 neighborhood (keep `cellSize ≥ pickRadius`); `within(...)` selects the viewport's nodes for LOD
-  labels; `move(id, x, y)` re-buckets after a live drag.
+- `SpatialGrid.js` — a uniform bucket grid over placed nodes. `nearest(x, y, maxRadius)` queries the
+  complete radius; `within(...)` scans nodes when a rectangle spans more cells than there are nodes,
+  keeping large overviews independent of empty world area. `move` re-buckets and removes empty cells.
 - `milestones.js` — `detectMilestones`: a whole branch turning to light, or the crown; never a single
   step. Pure; the offer conduct (owner-only, once-ever) lives at the call site.
 - `progress.js` — advancing progress and choosing which milestone to announce, as pure functions.
 
 ## `layout/`
 
-`RadialLayoutEngine.js` — the one engine. Each node sits on the ring for its trunk depth, centred in
-an angular wedge split among trunk children by subtree leaf count; a ring is pushed outward until its
-closest pair of neighbours has room. **Synchronous** and deterministic (siblings sort by their
-fractional-index key), so a load and a live emission project identical pixels.
+`RadialLayoutEngine.js` — the one engine. A breadth-first traversal divides angular wedges by subtree
+leaf count with a 15% equal-share component. Each node advances along its own ray until its body and
+two-line caption footprint clear occupied space. Children remain farther out than their trunk parent;
+nodes at the same depth can have different radii. Footprints use a fixed working zoom, so pan and
+pinch never relayout the graph. Sibling order and creation stamps make placement deterministic.
 
 ## `scene/`  (raw WebGL2)
 
@@ -166,16 +168,15 @@ fractional-index key), so a load and a live emission project identical pixels.
   just that node's incident edges.
 - `IconAtlas.js` — rasterizes lucide glyphs (through the app's `Icon` registry) into an alpha-mask
   canvas atlas (192px cells) for the far/mid LOD, re-uploading once async glyph decode completes.
-- `NodeOverlay.js` — DOM above the canvas. The abstract `NodeOverlay` owns one placement skeleton: a
-  **fixed pool of ~64** absolutely-positioned elements on the nodes nearest the viewport centre,
-  LOD-gated by zoom, moved by CSS `transform` so a frame costs no layout. `LabelOverlay` (captions)
-  and `IconOverlay` (live `<Icon>` SVG cross-fading in as the baked atlas fades out) override only
-  element / visibility band / draw.
+- `NodeOverlay.js` — fixed DOM pools above the canvas. Captions stay at 14px/20px in screen space,
+  measured and wrapped on model/font changes, then assigned stable slots from a pool of 96.
+  `captionLayout.js` ranks a bounded set of candidates and places non-overlapping rectangles within
+  the unobscured viewport. Selected and hovered steps have priority; overview names may cover tiny
+  context dots. Working-view captions avoid visible bodies. Icons retain their zoom cross-fade.
 - `AffordanceLayer.js` — the edit chrome: a plus chip + ports fading onto the **selected** node
   (hover shows no structure). The plus sits on the outward rim, ports at the widest gaps;
   repositioned per frame. A grace window keeps it reachable just after a deselect. The plus fires
   `onCreate`; each port starts a `ConnectGesture`.
-- `HoverLabel.js` — the hover name tip, inline-styled, so it owns no CSS.
 - `EdgeChrome.js` — the selected-edge chrome: a clicked branch turns bark and grows two endpoint
   handles plus a midpoint × (delete). Selection-gated, not hover.
 - `ConnectGesture.js` — dragging a dependency from a port or an edge handle: a dashed SVG ghost
@@ -210,16 +211,16 @@ fractional-index key), so a load and a live emission project identical pixels.
     plainly idle viewer gets one capped breath outward once the settle has landed.
 
   Public API (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyModel`,
-  `applyStates`, `moveNode`, `fitToView`, `focusNode`, `frameNodes`, `panTo`, `zoomBy`,
+  `applyStates`, `moveNode`, `fitToView`, `showAllSteps`, `focusSteps`, `focusNode`, `frameNodes`, `panTo`, `zoomBy`,
   `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`, `resize`,
   `start`, `stop`, `dispose`; selection (`select` / `selectEdge` — node and edge selection are
   mutually exclusive — `setSelection`, `setSelectedSet`, `toggleSelect`, `hover`, `pick`, `pickEdge`,
   `projectEdge`); previews (`previewKind` / `restoreKind`, `previewDeleteCost` / `clearDeleteCost`,
   `setFaded`, `highlightKind`, `spotlightNode`, `pulseNode`).
 
-Perf rules: constant draw calls regardless of node count; no per-node JS in the
-animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation; instanced
-attribute updates flag their buffer rather than reallocating.
+Perf rules: constant draw calls regardless of node count; cached layout and caption measurement;
+viewport-dependent caption work only when the camera, model or selection changes. Candidate ranking
+is bounded, but overview queries can scan all nodes. Instanced attribute updates flag their buffer.
 
 ## `sync/`  (the lattice is truth)
 

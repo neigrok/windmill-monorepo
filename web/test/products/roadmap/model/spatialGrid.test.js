@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SpatialGrid } from '../../../../src/products/roadmap/model/SpatialGrid.js';
 
-const node = (id, x, y) => ({ id, x, y });
+function node(id, x, y) { return { id, x, y }; }
 
 test('every node is bucketed by its floored cell, on both sides of the origin', () => {
   // cellSize 100: cell 0 is [0,100), cell -1 is [-100,0) — the origin is a cell boundary.
@@ -43,12 +43,11 @@ test('nearest is null when nothing is inside maxRadius, and null on an empty gri
   assert.equal(new SpatialGrid([], 100).nearest(0, 0, 1000), null);
 });
 
-test('nearest never looks past the 3x3 cells around the query, so cellSize must be >= maxRadius', () => {
-  const tooFineGrid = new SpatialGrid([node('a', 35, 0)], 10);
-  assert.equal(tooFineGrid.nearest(0, 0, 100), null);
-  assert.equal(tooFineGrid.nearest(0, 0, 35), null);
-  assert.equal(new SpatialGrid([node('a', 15, 0)], 10).nearest(0, 0, 100), 'a');
-  assert.equal(new SpatialGrid([node('a', 35, 0)], 100).nearest(0, 0, 100), 'a');
+test('nearest searches the full world radius when overview zoom spans many cells', () => {
+  const grid = new SpatialGrid([node('outside', 101, 0), node('inside', 35, 0)], 10);
+  assert.equal(grid.nearest(0, 0, 100), 'inside');
+  assert.equal(grid.nearest(0, 0, 35), 'inside');
+  assert.equal(grid.nearest(0, 0, 34), null);
 });
 
 test('nearest resolves a tie in favour of the last candidate it scans', () => {
@@ -121,4 +120,12 @@ test('move on an id the grid never held changes nothing', () => {
   assert.deepEqual([...grid.cellByNode], [['a', '0,0']]);
   assert.deepEqual(grid.within(-1000, -1000, 1000, 1000), ['a']);
   assert.equal(grid.nearest(600, 600, 50), null);
+});
+
+test('an overview of a 5000-node chain scans occupied nodes instead of empty world cells', () => {
+  const nodes = Array.from({ length: 5000 }, (_, index) => node(`n${index}`, index * 1000, 0));
+  const grid = new SpatialGrid(nodes, 100);
+  assert.deepEqual(grid.within(-1e9, -1e9, 1e9, 1e9), nodes.map(node => node.id));
+  assert.equal(grid.nearest(4e8, 4e8, 1e9), 'n4999');
+  assert.deepEqual(grid.within(1e8, 1e8, 1e9, 1e9), []);
 });

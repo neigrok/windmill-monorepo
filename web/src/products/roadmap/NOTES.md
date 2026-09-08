@@ -17,11 +17,13 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 - Glyph colour math is duplicated: the GLSL branch in `NodeBatch` and `glyphCssColor()` in
   `NodeOverlay.js`. Keep them in step or the baked and live glyphs disagree at the LOD seam.
 - `OUTER_R` / `QUAD_PADDING` must stay wide enough to contain the glow halo or it clips at the quad edge.
-- `SpatialGrid.nearest` scans the 3×3 cell block, so keep `cellSize ≥ pickRadius` (`NODE_SIZE*2` vs
-  `NODE_SIZE*0.65`).
-- The overlay pool is assigned by distance-rank recomputed each frame (`within` + sort → slice 64),
-  shared by labels and icons. A node crossing a rank boundary makes two pooled elements swap nodes
-  mid-pan.
+- `SpatialGrid.nearest` uses the complete query radius. Large viewport queries fall back to scanning
+  nodes, so empty world area cannot dominate overview cost.
+- Caption slots remain assigned to node IDs while visible. Font metrics are cached until text or
+  fonts change; candidate selection and collision placement rerun on camera/model/selection changes.
+- Overview captions can cover tiny context dots. Working-view collision checks reserve visible
+  bodies, edit affordances, canvas chrome, and other captions. The desktop detail panel shows full
+  names; the phone owner sheet truncates its title and needs the rename control for long names.
 - The canvas clears opaque to the cream background, so the CSS radial-gradient behind it is hidden.
 - Reduced motion rides one `uMotion` uniform: the pulse freezes and growth snaps.
 
@@ -56,11 +58,24 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
   `setSelectedSet(selectedIds)`, because a mixed selection has one node with `selectedId === null`.
 - Every delete path clears its own selection set.
 
+## Large-graph validation
+
+- `web/scripts/benchmark-roadmap.mjs` exercises 300, 500, 1,000 and 5,000 nodes across four shapes.
+  `docs/design/roadmap/readability-research.md` records the local browser and layout measurements.
+- Compact footprint placement costs more CPU than a ring-radius pass. Keep layout cached by all
+  of its inputs; do not run it during pan or zoom. A worker boundary is a follow-up if measured
+  structural-edit latency becomes a problem on slower devices.
+- A 5,000-step chain still occupies a long strip even with compact spacing. Its overview requires
+  a very small camera scale; readable labels are a focus-view concern rather than a reason to
+  render every caption simultaneously.
+- Persisted camera coordinates carry a layout version; selection can survive a geometry change
+  even when the old coordinates cannot.
+
 ## Open
 
-- Re-validate 5k-node perf (draw-call count is inherently 2; measure FPS).
-- Overlay slot assignment could be stable per nodeId (reslot only on enter/leave), removing the
-  per-frame sort and any residual shimmer, and letting labels and icons share one query.
+- Wrap the phone owner sheet's title so inspecting a long name does not require its rename control.
+- Profile structural edits and caption placement on low-end phones using the same fixtures before
+  changing the bounded pools or moving layout off the main thread.
 - A remote structural delete of a selected node or edge prunes the scene's copy but not the React
   set, so the multi-select bar can over-count until the next selection change.
 - Undo/redo does not reconcile the append-only activity log: a create-then-undo leaves a row whose
