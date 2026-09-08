@@ -128,6 +128,49 @@ Its tiles, PR ladder and recent-sets list stay. A dot there is an image named by
 (*e1RM 132.5 · 5 Sep · 120 × 5*), not a button: a set is repaired in its session, and the chart
 offers no second door to it.
 
+## The chart is touched, and where
+
+A chart that only shows is half a chart: the lifter puts a finger on a dot and reads the session
+it came from. Two gestures, and a rule about where they live.
+
+> **The interactive chart is the Record screen's. The card on the log's strip is a static preview
+> and a door.** The strip already scrolls sideways inside a list that scrolls up; a third pan axis
+> inside a card would fight both, and a scrub that starts on the wrong pixel would scroll the strip
+> instead. The card is also in the top band, where `thumb-reach.md` allows a destination and no
+> control. One tap on the card lands on the full chart with the same window, under the thumb.
+
+**Scrub.** A finger down on the chart selects the nearest dot by x and holds it while the finger
+moves; the readout says the estimate, the day and the set — `102.5 kg est · 3 Sep · 95 × 5` — and
+follows the finger. It **never covers the dot it names**: it sits above the dot, and beside it —
+on the side with more room — when the dot is in the top quarter of the plot. The selected dot grows
+by one ring and every other dot keeps its ink. Lifting the finger keeps the readout for
+**`SCRUB_HOLD_MS` = 1500** and then clears it; the constant lives in `progress.js`,
+`Progress.scrubHold` in `Progress.swift`, `Progress.scrubHoldMs` in `Progress.kt`, and in no
+sentence. Each change of selected dot fires the platform's light tick — `.selection` feedback on
+iOS, `HapticFeedbackType.SegmentFrequentTick` on Android — and never the impact the record row
+uses. The readout is one line in the fact style, the same bytes in both skins and at every text
+size; at the largest size it wraps to two lines above the plot rather than shrinking.
+
+**Pan.** The plot gives every session at least **`POINT_PITCH_PT` = 24** points of width. When the
+window's sessions need more than the card's plot — about thirteen sessions at the phone rule —
+the chart is wider than the card and pans sideways with momentum, opening at its **right edge, the
+most recent session**, and stopping at both ends. The axis labels stay pinned; the window line
+stays what it was — *last 12 weeks · 31 sessions* — because the window did not change, only the
+part of it in view. A pan and a scrub are told apart by the platform's own recogniser: a touch that
+moves before it holds pans, a touch that holds scrubs.
+
+**Zoom is out.** The window control is the zoom.
+
+**Web.** Hover is the scrub, drag is the pan, `←` `→` step dots when the plot is focused, and the
+readout is the accessible name of the focused dot. No wheel zoom.
+
+**Nothing on the readout is red, green, arrowed or a percentage.** It names one session.
+
+**Accessibility, both phones.** Each dot is a focusable element whose label is its readout, in date
+order; the plot is a group named by the window line and carries two custom actions, *earlier
+session* and *later session*, so a reader steps without a gesture. The readout's text is also
+announced on each change while scrubbing.
+
 ## Three surfaces
 
 **iOS.** The strip is a horizontal `ScrollView` inside the log's head section, `.scrollTargetBehavior(.viewAligned)`,
@@ -179,6 +222,8 @@ Every board in this brief is drawn in both skins and at three text sizes.
 | Assisted card | `most reps 14 · bodyweight · 3 Sep` · `heaviest added +10 · 28 Aug` · `heaviest assisted −20 · 28 Aug` |
 | Chart head (Record) | `E1RM PER SESSION` |
 | Strip, spoken | `Progress by movement` |
+| Scrub readout | `102.5 kg est · 3 Sep · 95 × 5` · `102.5 kg est · today · 95 × 5` |
+| Reader actions on the plot | `earlier session` · `later session` |
 
 The estimate prints through `Readout.estimate` on every surface, so `e1RM 132.5` is the same bytes
 the log row already draws.
