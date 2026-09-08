@@ -47,9 +47,7 @@ fun rememberGymHaptics(): GymHaptics {
     return remember(haptic) { GymHaptics(haptic) }
 }
 
-// The set confirmation, which is the one act in this room with a preference of its own. The rest
-// chime is an effect that sleeps until the instant it is due: no AlarmManager, no notification, no
-// wake lock.
+// The set confirmation, which is the one act in this room with a preference of its own.
 class GymConfirm(
     private val context: Context,
     private val haptics: GymHaptics,
@@ -58,10 +56,6 @@ class GymConfirm(
     fun setLogged() {
         if (preferences.confirmHaptic) haptics.saved()
         if (preferences.confirmSound) GymSound.setLogged(context)
-    }
-
-    fun restLanded() {
-        if (preferences.restSound) GymSound.restLanded(context)
     }
 }
 

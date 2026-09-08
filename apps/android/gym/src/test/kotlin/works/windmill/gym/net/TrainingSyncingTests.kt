@@ -529,9 +529,8 @@ internal class FakeTraining : TrainingSyncing {
         settingsWritten.add(document)
         reachable()
         refusePreferences?.let { throw it }
-        val stored = document.normalized()
-        settings = stored
-        return stored
+        settings = document
+        return document
     }
 
     override suspend fun ask(question: AskQuestion): AskAnswer {

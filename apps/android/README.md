@@ -2,7 +2,7 @@
 
 One Kotlin/Compose superapp for the whole brand — the native mirror of `apps/ios` and `web/`.
 One room is built: **gym**, the room that owns the open session — workout mode, the ladder, the
-keypad, the rest clock and the offline set queue (`backend/products/gym/ARCHITECTURE.md` §11).
+keypad and the offline set queue (`backend/products/gym/ARCHITECTURE.md` §11).
 `roadmap` and `journal` mount the same way when they arrive. There is no subscription surface here.
 
 ## Layout
@@ -69,9 +69,11 @@ no splash, no question about goals, and nothing that counts how many times an of
 The one account verb reachable mid-first-session is *Build my routine*, drawn only while there is no
 account — the step after one is the MCP grant, and that door is the web's.
 
-Gym's settings — units, the rest dial and how a logged set confirms itself
+Gym's settings — units and how a logged set confirms itself
 (`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of the
-Routines home rather than from You: `ProductModule` exposes a room and nothing else on this surface.
+Routines home rather than from You: `ProductModule` exposes a room and the room's `Skin` — its
+Material theme plus its palette, which the shell wraps around its own account sheet so the sheet
+wears the room's colours — and nothing else on this surface.
 
 **The room opens and works signed out**: sessions, routines, movements, weigh-ins and gym's own
 settings live on the device in `LocalLog` + `SetQueue` + `LocalBodyweight` + `LocalPreferences`. The six barbell movements —

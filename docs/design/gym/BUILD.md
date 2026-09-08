@@ -307,7 +307,7 @@ P10, P11. Answered: D1, D2, D3. Open: P9 alone, which needs a developer to pick 
 
 **Wave 1 · The defect sweep — done.** The prompt's retired-settings clause, the dismissal copy on all
 three surfaces, the two latent Daylight tokens and the three black shadows on web, the tap floor on
-Android, the rest clock's mid-rest flip on both phones, the iOS wake lock, and the discard
+Android, the iOS wake lock, and the discard
 confirmation on all three surfaces.
 
 **Wave 2 · Notes — done.** Backend resource, `list_notes` and its phrase on every surface, the
@@ -1451,14 +1451,9 @@ it closed.
   **Android:** the second Units caption is cut and the lb clause is gated on `units == Pounds` the
   way iOS's is, reading `Bodyweight.kilogramsOnly` instead of restating it as a literal (N2 then
   shortened the constant to *This phone still draws kg.* and cut it from the bodyweight screen, so
-  the settings row is its only draw site). The two Rest captions collapse to one, and it is the **override** that is kept: a
-  routine's own rest beating the dial is real — `Rest.target` is
-  `planEntry?.restSeconds ?: preferences.restSeconds`, so an entry that carries one wins even when
-  the dial is OFF, which is what the caption's *off included* names, and `RestTests` pins both
-  branches — the number rides the wire on the entry, and this is the only place on that phone the
-  fact is said. Being the sole carrier is what earns it a pin of its own:
-  `SettingsConnectPitchTests` now asserts the sentence is on the screen, so a later salvage cannot
-  cut it with the suite green. The 24-word Set-confirmation caption becomes one line for the
+  the settings row is its only draw site). The Rest captions are gone with the phones' rest timer:
+  neither phone draws one, and the override — a routine entry's own `restSeconds` beating the dial
+  — is the web timer's fact alone (`3g`). The 24-word Set-confirmation caption becomes one line for the
   system dependency, which N2 shortened again and moved onto the row it qualifies — the Haptic
   toggle's supporting text, *Silenced if Android’s touch feedback is off.*
   **Two true facts Android now states nowhere** rode out with those cuts — the wake lock and the
@@ -1572,16 +1567,12 @@ and six amendments after review; everything below is read at the symbol.
   (`:38-41`). Settings is named by its bar, `Settings` (`SettingsScreen.kt:69`), and its head line is
   gone. Sheet titles keep `WindmillFont.display`: it is sp-scaled (`Tokens.kt:78`), so the amendment
   that would have moved them to `titleLarge` did not apply.
-- **The rest target says where it came from, once, on the timer, on all three** (`3g`, closed). The
-  unit is `target m:ss` plus the bytes ` · from the routine` when the entry's own `restSeconds` is
-  in force: `Rest.Target(seconds, fromRoutine)` and `Rest.fromRoutine` on Android (`RestTimer.kt:11-17`,
-  `:35-37`); `Rest.targetLine` and `Rest.fromTheRoutine` on iOS (`RestTimer.swift:11-18`), whose rest
-  row gains the target line under the reading it used to draw alone (`LoggerScreen.swift:140`);
-  `restInForce` and `FROM_THE_ROUTINE` on the web (`log.js:461-468`), drawn on the mirror's meta as
-  *target 2:00 · from the routine* (`Mirror.jsx:66`) where it read *rest 2:00*. Because the timer
-  carries the fact, Android's Rest caption sentence about the override is gone
-  (`SettingsScreen.kt:115-117` says why) and iOS's source comment on the settings rest row went with
-  the `Form`; no settings copy on any surface mentions the override.
+- **The rest target says where it came from, once, on the timer** (`3g`, closed). The rest timer
+  is the web's alone — the phones draw no rest row, dial or chime and pass `restSeconds` and
+  `restSound` through the settings document untouched. The unit is `target m:ss` plus the bytes
+  ` · from the routine` when the entry's own `restSeconds` is in force: `restInForce` and
+  `FROM_THE_ROUTINE` (`log.js:461-468`), drawn on the mirror's meta as *target 2:00 · from the
+  routine* (`Mirror.jsx:66`). No settings copy on any surface mentions the override.
 - **The web got its discard door** (`3c`, closed). `SessionDetail` draws `Discard session` for a
   finished session (`Log.jsx:348-350`, under `isFinished(session)`) through the same withheld window
   every other web delete takes, with the same landing and the same undo as the routine delete; the
@@ -1607,8 +1598,8 @@ and six amendments after review; everything below is read at the symbol.
   last row is never under the band), matching iOS's `safeAreaInset`.
 - **Fixed-list choices on Android are Material's segmented row.** `GymSegmented`
   (`ui/GymScreen.kt:134-138`, over `SingleChoiceSegmentedButtonRow`) draws the bodyweight chart's
-  window (`BodyweightScreen.kt:397-398`), Settings' Units and Rest rows (`SettingsScreen.kt:104`,
-  `:126`) and the fix sheet's kinds (`FixSheet.kt:181`); strings unchanged, radio semantics the
+  window (`BodyweightScreen.kt:397-398`), Settings' Units row (`SettingsScreen.kt:104`) and the fix
+  sheet's kinds (`FixSheet.kt:181`); strings unchanged, radio semantics the
   platform's.
 - **Dead strings died.** Android's `ConnectedLog.head`, `sundayLabel`, `sundayLine`, `mondayLabel`,
   `mondayLine` and `truths` — declared and drawn nowhere since `df03334` — are deleted with their two

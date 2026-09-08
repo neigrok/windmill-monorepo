@@ -128,7 +128,7 @@ class LoggerScreenTests {
     private fun pills() = compose.onAllNodes(hasContentDescription("Set 1, ", substring = true))
 
     // The dots and the `+` are pinned above the hairline, outside the scroller: a landed set's
-    // clocks and strip push the head up, never the walk off the screen — and the rack under the
+    // strip pushes the head up, never the walk off the screen — and the rack under the
     // hairline does not move by a pixel.
     private fun theWalkStaysOnScreenWhenASetLands() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -143,7 +143,6 @@ class LoggerScreenTests {
         compose.onNodeWithText("Log set").performClick()
         compose.waitForIdle()
 
-        compose.onNode(hasContentDescription("resting  ·  ", substring = true)).assertIsDisplayed()
         pills().assertCountEquals(1)
         walk().assertIsDisplayed()
         assertEquals("the walk did not move", add, addMovement().assertIsDisplayed().getBoundsInRoot())
@@ -349,17 +348,14 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    // The words the old row drew are still said by the one merged node, byte for byte, with the
-    // clock after them.
+    // No rest clock stands between a landed set and its pill.
     @Test
-    fun theClocksRowSaysTheOldBytes() {
+    fun aLandedSetDrawsNoRestClock() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, logged = true)
 
-        val clocks = compose.onNode(hasContentDescription("resting  ·  ", substring = true))
-        clocks.assertIsDisplayed()
-        clocks.assertHasClickAction()
-        compose.onAllNodes(hasText("resting")).assertCountEquals(0)
+        compose.onNode(hasContentDescription("resting", substring = true)).assertDoesNotExist()
+        compose.onNode(hasContentDescription("clear the rest", substring = true)).assertDoesNotExist()
         scope.cancel()
     }
 

@@ -81,11 +81,6 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-            RestRow(
-                preferences = preferences,
-                onPick = { write(preferences.copy(restSeconds = it)) },
-                onToggleSound = { write(preferences.copy(restSound = !preferences.restSound)) },
-            )
             ConfirmRow(
                 preferences = preferences,
                 onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
@@ -111,26 +106,6 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
         )
         // Drawn only under the answer it is about: on kg it would be a sentence about nothing.
         if (units == Units.Pounds) Caption(Bodyweight.kilogramsOnly)
-    }
-}
-
-// Off is not a missing value: the clock still counts the gap between two sets, upward, and silently.
-// Nothing here says a routine's own rest beats this dial: the timer says so, on the reading it
-// governs, and a fact is drawn once.
-@Composable
-private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggleSound: () -> Unit) {
-    SettingCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Rest timer", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            Text(restLabel(preferences.restSeconds), style = GymType.numeral(13), color = GymSkin.inkDim)
-        }
-        GymSegmented(
-            options = GymPreferences.restChoices.map { it to restLabel(it) },
-            picked = preferences.restSeconds,
-            onPick = onPick,
-        )
-        ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
     }
 }
 
@@ -428,9 +403,4 @@ private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit, support
             ),
         )
     }
-}
-
-private fun restLabel(seconds: Int?): String {
-    if (seconds == null) return "off"
-    return Readout.clock(seconds * 1000L)
 }

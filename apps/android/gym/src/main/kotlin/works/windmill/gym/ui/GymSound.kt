@@ -18,11 +18,6 @@ object GymSound {
         play(context, hz = 760.0, seconds = 0.07)
     }
 
-    fun restLanded(context: Context) {
-        play(context, hz = 680.0, seconds = 0.13)
-        handler.postDelayed({ play(context, hz = 1020.0, seconds = 0.2) }, 150)
-    }
-
     private const val sampleRate = 44_100
     private val handler = Handler(Looper.getMainLooper())
 

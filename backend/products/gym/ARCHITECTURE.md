@@ -13,7 +13,7 @@ log, last-time prefill, the finish review, a movement's record, the statistics e
 exports, the workout share), the notes a lifter writes for Coach, eighteen MCP tools behind the
 platform grant gate, and the proposal ledger.
 
-Device-side and never here: the weight ladder, the rest timer, workout mode, and the prefill
+Device-side and never here: the weight ladder, workout mode, and the prefill
 arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
 
 - **It reads, it proposes, it never writes to the program.** Every mutation an agent can make
@@ -1133,7 +1133,7 @@ API and the MCP tools write through the same services.
 | | Phone | Web |
 |---|---|---|
 | owns | the **open** session | everything retrospective and prospective |
-| | workout mode, keypad, ladder, sticky carry-forward, rest timer, wake lock, the flush queue | the log, progression, the routines editor, export, MCP connect, settings, backfill |
+| | workout mode, keypad, ladder, sticky carry-forward, wake lock, the flush queue | the log, progression, the routines editor, export, MCP connect, settings, backfill |
 | writes | `gym_sessions` · `gym_sets` | `gym_routines` · `gym_routine_entries`, and past sessions only |
 
 ### 11.2 The mirror
@@ -1403,7 +1403,7 @@ promises no read of "the gym's settings" — no such tool exists.
   entitlement needs a paid Apple team. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite:
   Sign in with Apple without `user_identities` forks accounts on the first lifter who taps *Hide My
   Email*.
-- Set-kinds UI and the rest timer are unbuilt clients over columns the backend already writes.
+- Set-kinds UI is an unbuilt client over columns the backend already writes.
 - Merging a typo'd custom movement onto a catalog id is an UPDATE of `gym_sets.exercise_id`, unbuilt.
 - Raising the read receipt's floor needs a session id carried through `MovementTop` and the store's
   projection.

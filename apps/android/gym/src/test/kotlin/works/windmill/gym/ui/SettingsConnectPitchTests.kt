@@ -134,17 +134,14 @@ class SettingsConnectPitchTests {
         scope.cancel()
     }
 
-    // The rest override is said on the timer, where it is in force, and a fact is drawn once: the
-    // Rest card here says nothing about a routine's own rest beating this dial.
+    // The rest dial is the web's: nothing on this phone draws it.
     @Test
-    fun testTheRestCardSaysNothingAboutTheOverride() {
+    fun testThereIsNoRestCard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         settings(scope)
 
-        compose.onNodeWithText("Rest timer").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("wins over this dial", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("from the routine", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("its own rest", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Rest timer").assertDoesNotExist()
+        compose.onNodeWithText("Sound when it ends").assertDoesNotExist()
         scope.cancel()
     }
 

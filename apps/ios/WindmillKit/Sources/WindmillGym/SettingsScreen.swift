@@ -17,7 +17,6 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             units
-            restTimer
             confirmation
             doors
         }
@@ -54,28 +53,6 @@ struct SettingsScreen: View {
     private var unitsCaption: String {
         guard store.preferences.units == .lb else { return "" }
         return Settings.stillKg
-    }
-
-    private var restTimer: some View {
-        Section {
-            Picker("Rest timer", selection: Binding(get: { store.preferences.restSeconds },
-                                                    set: { write(store.preferences.resting($0)) })) {
-                ForEach(Rest.choices, id: \.self) { seconds in
-                    Text(Self.spell(seconds)).tag(seconds)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.large)
-            switching("Sound when it ends", isOn: store.preferences.restSound) {
-                write(store.preferences.with(restSound: $0))
-            }
-        } header: {
-            Text("Rest timer")
-        } footer: {
-            Text("A rest that ends while the phone is locked ends quietly.")
-        }
-        .listRowBackground(skin.surface)
     }
 
     private var confirmation: some View {
@@ -145,12 +122,6 @@ struct SettingsScreen: View {
             .foregroundStyle(skin.inkDim)
             .tint(skin.accent)
             .frame(minHeight: GymTap.minimum)
-    }
-
-    // nil spells `off`: there is no zero here and no `false`.
-    static func spell(_ seconds: Int?) -> String {
-        guard let seconds else { return "off" }
-        return Readout.clock(Int64(seconds) * 1000)
     }
 
     private func page(_ path: String) -> URL {

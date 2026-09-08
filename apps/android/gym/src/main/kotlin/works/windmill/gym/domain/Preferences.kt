@@ -10,7 +10,9 @@ import kotlinx.serialization.encoding.Encoder
 // Kilograms are the only thing stored: `units` is a display transform at the edge and reaches no write.
 // A PUT replaces the whole document and an omitted field takes its default, and kotlinx omits a value
 // equal to its declared default — so the defaults below must match the server's.
-// Rest off is `restSeconds == null` — there is no 0 and no `false`.
+// `restSeconds` and `restSound` are the web's rest dial: this phone draws neither and never clamps
+// them, only carries them through the whole-document write as read (a `restSound` of true is omitted
+// on the wire, which is the server's default for it).
 
 @Serializable(with = UnitsSerializer::class)
 enum class Units(val wire: String) {
@@ -35,17 +37,4 @@ data class GymPreferences(
     val restSound: Boolean = true,
     val confirmHaptic: Boolean = true,
     val confirmSound: Boolean = false,
-) {
-    fun normalized(): GymPreferences = copy(
-        restSeconds = restSeconds?.coerceIn(minRestSeconds, maxRestSeconds),
-    )
-
-    companion object {
-        // The server's own band.
-        const val minRestSeconds = 15
-        const val maxRestSeconds = 900
-
-        // The dial's four positions; null is off and is the default.
-        val restChoices: List<Int?> = listOf(null, 90, 120, 180)
-    }
-}
+)

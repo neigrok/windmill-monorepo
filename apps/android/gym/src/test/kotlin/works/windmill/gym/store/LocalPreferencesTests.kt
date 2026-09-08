@@ -109,9 +109,9 @@ class LocalPreferencesTests {
     }
 
     @Test
-    fun testWhatIsKeptIsWhatTheLogStoredRatherThanWhatWentOut() {
+    fun testTheWebsRestDialIsHeldExactlyAsItArrived() {
         val held = LocalPreferences(file())
-        held.save(GymPreferences(restSeconds = 4_000))
-        assertEquals(GymPreferences.maxRestSeconds, held.document.restSeconds)
+        held.save(GymPreferences(restSeconds = 4_000, restSound = false))
+        assertEquals(GymPreferences(restSeconds = 4_000, restSound = false), held.document)
     }
 }

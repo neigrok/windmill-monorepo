@@ -1070,20 +1070,16 @@ holding a refusal and a promise in two different places cannot claim a fixed hei
 order is now one order everywhere and `09-coach.md` states it: Apply · the gate's refusal · the
 atomic promise · turn down.
 
-**3g · the routine's own rest outranks the dial, and one surface says so** → **built 2026-09-02**,
-nothing owed. The fact moved to the timer, once, on all three, and off every settings screen. The
-unit is `target m:ss` plus the bytes ` · from the routine` when the entry's own `restSeconds` is in
-force and nothing when the dial is: `Rest.Target(seconds, fromRoutine)` and `Rest.fromRoutine` on
-Android (`RestTimer.kt:11-17`, drawn as *resting · target 2:00 · from the routine* at `:35-37`);
-`Rest.targetLine` and `Rest.fromTheRoutine` on iOS (`RestTimer.swift:11-18`, drawn under the rest
-reading by `LoggerScreen.swift:140`, where the row used to draw elapsed alone); `restInForce` and
-`FROM_THE_ROUTINE` on the web (`log.js:461-468`), drawn on the mirror's meta as *target 2:00 · from
-the routine* (`Mirror.jsx:66`), which read *rest 2:00* before. The override is still real on every
-timer (`RestTimer.kt:16`, `RestTimer.swift:8`) and no settings copy states it any more: Android's
-Rest caption sentence is gone and its `RestRow` comment says why (`SettingsScreen.kt:115-117`), and
-iOS's source comment on the settings rest row went with the `Form`. `LoggerRestTargetTests.kt`,
-`RestTimerTests` on both phones and `mirror.test.js` pin the bytes. One residue is ledger `5h`: which
-entry's rest is in force when a plan names a movement twice.
+**3g · the routine's own rest outranks the dial, and one surface says so** → **built**, nothing
+owed. The rest timer is the web's alone: neither phone draws a rest row, a rest dial or a rest
+chime, and both carry the settings document's `restSeconds` and `restSound` through untouched, so a
+tap on a phone never resets a rest set on the web. The fact lives on the web's timer, once, and on
+no settings screen: the unit is `target m:ss` plus the bytes ` · from the routine` when the entry's
+own `restSeconds` is in force and nothing when the dial is — `restInForce` and `FROM_THE_ROUTINE`
+(`log.js:461-468`), drawn on the mirror's meta as *target 2:00 · from the routine* (`Mirror.jsx:66`),
+pinned by `mirror.test.js`. `restSeconds` still rides the wire on every routine entry and plan
+entry, and a coach proposal that moves a rest is drawn as a `rest` move on every surface's review
+sheet, so the phones show a rest they do not time.
 
 **3h · iOS's routine home card draws the routine screen behind it** → closed 2026-08-31. The card is
 the routine's name, `untested`, one meta line — `{n} movements · trained {ago}`, iOS's
@@ -1634,9 +1630,8 @@ numeral rule reaches the pre-mint offer or stops at the consent screens.
 **4s · two true facts about Android's room are now said nowhere on it** → a copy owner's call, opened
 by the settings-caption salvage that cut them. (1) **Windmill holds the screen awake for an open
 session** — `GymRoom.kt` adds `FLAG_KEEP_SCREEN_ON` while one is running and clears it on the way out
-— and the rest chime is scheduled inside the app, so closing the app takes it. iOS says its half of
-that fact (*A rest that ends while the phone is locked ends quietly.*, `SettingsScreen.swift:76`);
-Android now says none of it. (2) **The dials are kept with the account and
+— and no phone says so: iOS holds the same lock (`GymRoom.swift:788`, `isIdleTimerDisabled`) and
+its settings screen carries no line about it either. (2) **The dials are kept with the account and
 follow a sign-in.** All five dials are one `GymPreferences` document written by one
 `store.savePreferences` (`Preferences.kt:32-37`), and the room already says the opposite state out
 loud when the write is refused — *that setting stayed on this device*. The only sentence that said
@@ -1973,31 +1968,13 @@ fix is a `scroll-margin-top` on `.journal-day` while a trail is up, which offset
 walk wraps its chips.
 
 **5h · a plan that names one movement twice picks its rest on the phones and drops it on the web**
-→ a ruling owed, not a defect either surface chose. The rest target in force is read off the frozen
-plan entry for the movement, and the three surfaces find that entry three ways. Android takes the
-first (`Training.kt:93`, `entries.firstOrNull { it.exerciseId == exerciseId }`) and iOS the same
-(`Training.swift:94`, `entries.first { $0.exerciseId == exerciseId }`), so a plan holding Back Squat
-at 3:00 and Back Squat again at 1:30 runs both blocks at 3:00 and says *from the routine* on both.
-The web's `planReadingOf` (`log.js:476-490`) answers `ambiguous` with a null entry for the same
-plan, so `restInForce` (`:461-466`) falls to the dial and says nothing about the routine — the same
-call the web already makes for the set's plan comparison, where a `PlanEntry` carries no id and
-nothing can tell which entry a set was performed against. Neither answer is wrong on its own: the
-phones prefer a target to none, the web prefers no claim to a guess. A lifter running one such plan
-on a phone and reading it on the web sees two targets, and that is the divergence. The ruling
-decides whether the first entry is the honest reading or the dial is, and the other two surfaces
-follow.
+→ closed 2026-09-08, nothing owed: no phone reads a rest target any more, so the web's
+`planReadingOf` (`log.js:476-490`), which answers `ambiguous` with a null entry for such a plan and
+lets `restInForce` (`:461-466`) fall to the dial, is the only reading there is.
 
-**5i · Android's Rest group draws no caption while iOS's footer states the app-awake fact** → a
-copy owner's call, and a narrow one. iOS's Rest section footer reads *A rest that ends while the
-phone is locked ends quietly.* (`SettingsScreen.swift:76`). Android's
-`RestRow` carries the segmented dial and the sound toggle and no caption at all
-(`SettingsScreen.kt:119-133`): its override sentence left with `3g`, and the app-awake fact is not
-Android's to state — the room holds a wake lock while a session runs, so a rest that ends under a
-locked phone sounds there (ledger `4s` records that lock as one of the two true facts Android says
-nowhere). What is asymmetric is the group, not the sentence: one phone's Rest dial has a caption and
-the other's has none, and `../guidelines/text-budget.md` sets a budget per group without saying a
-group must spend it. The call is whether Android's Rest group owes a line — the wake lock would be
-the honest one, and closing `4s` would close this.
+**5i · Android's Rest group draws no caption while iOS's footer states the app-awake fact** →
+closed 2026-09-08, nothing owed: neither phone draws a Rest group. iOS's settings form is Units,
+Set confirmation and the doors (`SettingsScreen.swift`), with one captioned group, the lb line.
 
 **5j · the assembly sheet draws no Close on Android while iOS's `JumpSheet` keeps a toolbar Close**
 → recorded as legal, nothing owed. Both are the platform's own dismissal per `gym/briefs/12-native-idiom.md`:
@@ -2091,3 +2068,12 @@ config-time gate makes every dressed page link it and open `.navr` with the rese
 seat's pop-up on a landing draws no Appearance row; `/app` keeps the seat's Light · Dark · System
 bar. Spec in `guidelines/superapp-shell.md` §6 (*The marketing-page toggle*); the landing
 skeleton's nav row in `marketing/briefs-landings/00-README.md` names it.
+
+**5r · four gym briefs still put a rest timer on the phones** → fix flows to the brief owner. The
+rest timer is the web's alone: the phones draw no rest row, dial or chime and pass `restSeconds` and
+`restSound` through the settings document untouched (`3g`). `gym/briefs/14-live-activity.md` (*And
+the room's rest row changes to match*, "built on all three surfaces") and
+`gym/briefs/16-the-workout.md` (*The rest reading counts up*, "built on all three surfaces") still
+describe a counting rest row on every surface, and `10-notes.md:124` places Notes "between the units
+toggle and the rest timer" on a settings screen that has no rest timer, and
+`12-native-idiom.md:241` keeps a tabular numeral role "so a running rest clock" does not jitter.

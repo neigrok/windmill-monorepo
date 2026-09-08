@@ -277,7 +277,7 @@ class LargestTypeTests {
     private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
 
     // At fontScale 1.0 on the 411 × 731 phone the reading region has 196 dp between the bar and the
-    // dots once the numeral owns a 72 dp box: the head, the set line, the clocks, the strip and the
+    // dots once the numeral owns a 72 dp box: the head, the set line, the strip and the
     // pinned dots are all drawn, and the strip is fully INSIDE the scroller rather than clipped by it
     // — while Log set stands exactly where it stood before the set landed.
     @Test
@@ -294,7 +294,6 @@ class LargestTypeTests {
 
         compose.onNodeWithText("Bench Press").assertIsDisplayed()
         compose.onNodeWithText("Set 2").assertIsDisplayed()
-        compose.onNode(hasContentDescription("resting", substring = true)).assertIsDisplayed()
         compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
         val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
         val region = scroller()

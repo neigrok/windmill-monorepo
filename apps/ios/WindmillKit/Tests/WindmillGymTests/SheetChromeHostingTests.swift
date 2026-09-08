@@ -152,27 +152,23 @@ final class SheetChromeHostingTests: XCTestCase {
     }
 
     // The settings screen is the platform's form: its sections are a collection view's, and the
-    // three fixed-list dials are the platform's segmented control and switch.
+    // fixed-list dials are the platform's segmented control and switch.
     func testSettingsIsAFormWithThePlatformsControlsInside() async throws {
         let store = makeStore()
         let window = await host(SettingsScreen(store: store, web: URL(string: "https://windmill.works")!,
                                                connected: .none, onConnectedLog: {}, onNotes: {}, say: { _ in }))
         XCTAssertFalse(views(UICollectionView.self, in: window).isEmpty, "a Form lays out as a collection view")
-        XCTAssertEqual(views(UISegmentedControl.self, in: window).map(\.numberOfSegments).sorted(),
-                       [Units.allCases.count, Rest.choices.count].sorted())
-        XCTAssertEqual(views(UISwitch.self, in: window).count, 3, "rest sound, haptic, sound")
+        XCTAssertEqual(views(UISegmentedControl.self, in: window).map(\.numberOfSegments),
+                       [Units.allCases.count])
+        XCTAssertEqual(views(UISwitch.self, in: window).count, 2, "haptic, sound")
 
-        // At most one caption per group, each its section's footer: the unit limitation (lb only)
-        // and the locked-phone fact. Set confirmation has nothing to add, and the Notes door's own
-        // line says what Coach reads.
+        // At most one caption per group, each its section's footer: the unit limitation (lb only).
+        // Set confirmation has nothing to add, and the Notes door's own line says what Coach reads.
         let settings = try String(contentsOf: URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/WindmillGym/SettingsScreen.swift"), encoding: .utf8)
-        XCTAssertEqual(settings.components(separatedBy: "} footer: {").count - 1, 2, "two captioned groups")
-        for footer in ["Text(unitsCaption)",
-                       "Text(\"A rest that ends while the phone is locked ends quietly.\")"] {
-            XCTAssertEqual(settings.components(separatedBy: footer).count - 1, 1, footer)
-        }
+        XCTAssertEqual(settings.components(separatedBy: "} footer: {").count - 1, 1, "one captioned group")
+        XCTAssertEqual(settings.components(separatedBy: "Text(unitsCaption)").count - 1, 1)
         XCTAssertFalse(settings.contains("Display only"), "a display unit that rewrote data would be the surprise")
         XCTAssertEqual(Settings.stillKg, "This phone still draws kg.")
         XCTAssertFalse(settings.contains("how the room behaves at the rack"), "the bar's title is the screen's")

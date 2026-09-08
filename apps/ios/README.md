@@ -62,8 +62,8 @@ always, and exactly one thing that moves on its own — today's ember.
 
 **Roadmap** is mounted and renders one line about where it works today plus a door to it.
 
-**Gym** owns the open session — workout mode, the ladder, the keypad, the rest clock and the
-offline queue (`backend/products/gym/ARCHITECTURE.md` §11). The web mirrors and backfills.
+**Gym** owns the open session — workout mode, the ladder, the keypad and the offline queue
+(`backend/products/gym/ARCHITECTURE.md` §11). The web mirrors and backfills.
 The catalog ships in the app (`DeviceCatalog.seeded`, the same 64 rows as `backend/db/schema.sql`)
 because signed out there is no catalog read to make.
 
@@ -248,9 +248,9 @@ be tested without the file on the domain and a signed build.
   Gym's "Build my routine" opens You — one tap longer than the design.
 - **Choosing `lb` changes nothing this app draws.** The setting is account-level and gym stores
   kilograms either way, but the ladder and keypad here are kilogram instruments. The row says so.
-- **The rest timer has no alarm the phone is asleep for.** The clock is computed from the set's own
-  instant so it is right whenever it is looked at; the chime is scheduled in-process, iOS suspends a
-  backgrounded app, and a late chime is dropped. This product sends no notifications.
+- **No rest timer.** The web keeps its rest timer and dial; this app draws none and carries the
+  settings document's `restSeconds` and `restSound` through untouched. This product sends no
+  notifications.
 - **Gym's CSV export and the connected-log grant open the web** — a file this app has nowhere to
   put, and an entitlements read this client does not have.
 - **No app icon or launch asset.**

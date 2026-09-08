@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -116,7 +115,6 @@ import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LoggerWalk
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Deletion
@@ -127,13 +125,13 @@ import works.windmill.platform.design.WindmillMotion
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// The live training screen. Two regions: the READING region (name, set line, history, clocks, the
+// The live training screen. Two regions: the READING region (name, set line, history, the
 // logged strip, the walk's dots) is the one elastic part and scrolls only when the largest text
 // leaves it no room; the RACK (Weight, the ladder, Reps, Log set) is pinned to the bottom and never
 // moves, because it is what a hand with a bar in it presses forty times.
 //
 // Every weight and rep tap goes through `Ladder`, and every weight is kilograms in and out. The
-// domain's bytes — `set 2 of 4`, `movement 1 of 3`, `resting · target 1:30 · from the routine` —
+// domain's bytes — `set 2 of 4`, `movement 1 of 3` —
 // are capitalised or spoken at the draw site and never rewritten.
 
 private sealed class LoggerSheet {
@@ -165,7 +163,6 @@ fun LoggerScreen(
     var reps by remember { mutableIntStateOf(store.prefill.reps) }
     // The one piece of dial state that is saved: the weight and reps are re-seeded from the prefill.
     var kind by rememberSaveable { mutableStateOf(SetKind.Working) }
-    var restStartedAtMs by remember { mutableStateOf<Long?>(null) }
     var sheet by remember { mutableStateOf<LoggerSheet?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
     var pendingDeviation by remember { mutableStateOf<DeviationOffer?>(null) }
@@ -221,7 +218,6 @@ fun LoggerScreen(
         if (sheet != null) return@LaunchedEffect
         goingTo?.let { movement ->
             goingTo = null
-            restStartedAtMs = null
             scope.launch { store.choose(movement) }
         }
         val offer = pendingDeviation ?: return@LaunchedEffect
@@ -240,22 +236,10 @@ fun LoggerScreen(
     }
 
     LaunchedEffect(Unit) {
-        restStartedAtMs = store.todaySets.lastOrNull()?.completedAtMs
         while (true) {
             nowMs = System.currentTimeMillis()
             delay(1_000)
         }
-    }
-
-    // Scheduled against the instant the set landed, and it is the app's own sleep, not an alarm.
-    val restTarget = Rest.target(store.planEntry, preferences)
-    LaunchedEffect(restStartedAtMs, restTarget, preferences.restSound) {
-        val started = restStartedAtMs ?: return@LaunchedEffect
-        val target = restTarget?.seconds ?: return@LaunchedEffect
-        val waited = (System.currentTimeMillis() - started) / 1000
-        if (waited >= target) return@LaunchedEffect
-        delay((target - waited) * 1000)
-        confirm.restLanded()
     }
 
     val title = store.session?.plan?.routine ?: Readout.noRoutine
@@ -316,11 +300,10 @@ fun LoggerScreen(
             history, routine = store.session?.plan?.routine,
             readFailed = store.lastTimeFailed, now = nowMs,
         )
-        val rest = restStartedAtMs?.let { Rest.Line(restTarget, it, nowMs) }
 
         // The reading region: centred while it is short, scrolling only once the largest text
         // leaves it no room. The walk's dots and the `+` sit UNDER the scroller, pinned above the
-        // hairline: a landed set's clocks and strip may push the head up, never the walk off. The
+        // hairline: a landed set's strip may push the head up, never the walk off. The
         // whole region is one box so the transient can stand on its floor, over it and never over
         // the rack; the rack below grows no inset for it, so nothing there moves.
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -332,8 +315,8 @@ fun LoggerScreen(
                         .fillMaxWidth()
                         .heightIn(min = viewport)
                         .verticalScroll(reading),
-                    // 8 dp between rows: on a 411 × 731 phone the head, the set line, the clocks and
-                    // the strip have 196 dp between the bar and the dots, and the spec's gaps cost 24
+                    // 8 dp between rows: on a 411 × 731 phone the head, the set line and the strip
+                    // have 196 dp between the bar and the dots, and the spec's gaps cost 24
                     // of it that the strip does not have.
                     verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterVertically),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -375,28 +358,6 @@ fun LoggerScreen(
                             },
                         ) }
                     }
-                    if (rest != null) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                        ) {
-                            Clocks(
-                                rest = rest,
-                                targetSeconds = restTarget?.seconds,
-                                onClear = { restStartedAtMs = null },
-                            )
-                            if (restTarget?.fromRoutine == true) {
-                                // The merged clocks node already says ` · from the routine`; this is the
-                                // drawn half of the same fact, once.
-                                Text(
-                                    "from the routine",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = GymSkin.inkFaint,
-                                    modifier = Modifier.clearAndSetSemantics {},
-                                )
-                            }
-                        }
-                    }
                     StrandedBand(store.strandedCount, store.strandedBy)
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
                     if (rows.isNotEmpty()) {
@@ -432,7 +393,6 @@ fun LoggerScreen(
             onLog = {
                 val logging = kind
                 confirm.setLogged()
-                restStartedAtMs = System.currentTimeMillis()
                 // Disarmed on the tap and never on the reply: a warmup is a single set, not a mode.
                 kind = SetKind.Working
                 scope.launch { store.logSet(weightKg, reps, logging) }
@@ -739,51 +699,6 @@ private fun ChipRow(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 32.dp, content = content)
 }
 
-// The clock counts UP — time since the last set — and keeps the ring against the target. The row is
-// ONE node and it SAYS what the old label drew: `resting · target 1:30 · from the routine  ·  0:03`.
-@Composable
-private fun Clocks(rest: Rest.Line, targetSeconds: Int?, onClear: () -> Unit) {
-    val sweep by animateFloatAsState(
-        rest.fraction ?: 0f,
-        tween(WindmillMotion.fastMs, easing = WindmillMotion.easeSoft),
-        label = "rest",
-    )
-    Row(
-        Modifier
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .clickable(role = Role.Button, onClickLabel = "clear the rest", onClick = onClear)
-            .semantics(mergeDescendants = true) { contentDescription = "${rest.label}  ·  ${rest.time}" }
-            .padding(horizontal = WindmillSpace.x2),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x6),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(timerGlyph, contentDescription = null, tint = GymSkin.inkFaint, modifier = Modifier.size(18.dp))
-            Text(rest.time, style = MaterialTheme.typography.titleLarge,
-                 color = if (rest.overrun) GymSkin.accent else GymSkin.inkDim)
-        }
-        if (rest.fraction != null && targetSeconds != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    progress = { sweep },
-                    modifier = Modifier.size(22.dp),
-                    color = GymSkin.accent,
-                    strokeWidth = 3.dp,
-                    trackColor = GymSkin.line,
-                )
-                if (rest.overrun) {
-                    Icon(Icons.Filled.Check, contentDescription = null, tint = GymSkin.accent,
-                         modifier = Modifier.size(18.dp))
-                } else {
-                    Text(Readout.clock(targetSeconds * 1000L), style = MaterialTheme.typography.bodyMedium,
-                         color = GymSkin.inkFaint)
-                }
-            }
-        }
-    }
-}
-
 // The one caption that survives: a disclosure at the moment of consequence — your data is not on
 // the server — and it exists only while something is wrong.
 @Composable
@@ -801,8 +716,8 @@ private fun StrandedBand(count: Int, by: Blocker?) {
     }
 }
 
-// One fixed 32dp of pills that scrolls sideways, next to the clock you look at right after the set
-// landed. A pill is the drawn, named door to the fix (Law 1); a pill without the cloud is synced,
+// One fixed 32dp of pills that scrolls sideways, the thing you look at right after the set landed.
+// A pill is the drawn, named door to the fix (Law 1); a pill without the cloud is synced,
 // and the cloud says the exception — an absence needs no glyph.
 @Composable
 private fun LoggedStrip(rows: List<LiveLines.Row>, state: LazyListState, onFix: (String) -> Unit) {
@@ -1074,13 +989,6 @@ private fun glyph(name: String, path: String): ImageVector =
         .build()
 
 private val removeGlyph = glyph("Filled.Remove", "M19 13H5v-2h14v2z")
-
-private val timerGlyph = glyph(
-    "Outlined.Timer",
-    "M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 " +
-        "14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13" +
-        "-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z",
-)
 
 private val historyGlyph = glyph(
     "Outlined.History",

@@ -1,11 +1,12 @@
 import Foundation
 
 // PUT /v1/gym/preferences replaces the whole document and an omitted field takes its default, so every write sends every field.
+// `restSeconds` and `restSound` are the web's rest dial: this phone draws no rest timer, so it carries
+// both through untouched — read as written, sent back as read, never clamped and never set here.
 public struct GymPreferences: Equatable, Codable, Sendable {
     public let units: Units
-    // nil is off.
     public let restSeconds: Int?
-    public let restSound: Bool
+    public let restSound: Bool?
     public let confirmHaptic: Bool
     public let confirmSound: Bool
 
@@ -13,11 +14,11 @@ public struct GymPreferences: Equatable, Codable, Sendable {
 
     public init(units: Units = .kg,
                 restSeconds: Int? = nil,
-                restSound: Bool = true,
+                restSound: Bool? = nil,
                 confirmHaptic: Bool = true,
                 confirmSound: Bool = false) {
         self.units = units
-        self.restSeconds = restSeconds.map { min(max($0, 15), 900) }
+        self.restSeconds = restSeconds
         self.restSound = restSound
         self.confirmHaptic = confirmHaptic
         self.confirmSound = confirmSound
@@ -32,25 +33,20 @@ public struct GymPreferences: Equatable, Codable, Sendable {
         let fallback = GymPreferences.defaults
         self.init(units: (try? fields.decode(Units.self, forKey: .units)) ?? fallback.units,
                   restSeconds: try? fields.decode(Int.self, forKey: .restSeconds),
-                  restSound: (try? fields.decode(Bool.self, forKey: .restSound)) ?? fallback.restSound,
+                  restSound: try? fields.decode(Bool.self, forKey: .restSound),
                   confirmHaptic: (try? fields.decode(Bool.self, forKey: .confirmHaptic))
                       ?? fallback.confirmHaptic,
                   confirmSound: (try? fields.decode(Bool.self, forKey: .confirmSound))
                       ?? fallback.confirmSound)
     }
 
-    public func with(units: Units? = nil, restSound: Bool? = nil, confirmHaptic: Bool? = nil,
+    public func with(units: Units? = nil, confirmHaptic: Bool? = nil,
                      confirmSound: Bool? = nil) -> GymPreferences {
         GymPreferences(units: units ?? self.units,
                        restSeconds: restSeconds,
-                       restSound: restSound ?? self.restSound,
+                       restSound: restSound,
                        confirmHaptic: confirmHaptic ?? self.confirmHaptic,
                        confirmSound: confirmSound ?? self.confirmSound)
-    }
-
-    public func resting(_ seconds: Int?) -> GymPreferences {
-        GymPreferences(units: units, restSeconds: seconds, restSound: restSound,
-                       confirmHaptic: confirmHaptic, confirmSound: confirmSound)
     }
 }
 

@@ -34,18 +34,18 @@ class LocalPreferences(private val file: File) {
     }
 
     fun save(document: GymPreferences) {
-        hold(held.copy(document = document.normalized(), owed = true))
+        hold(held.copy(document = document, owed = true))
     }
 
     // Keep the stored document, never the one that went out.
     fun landed(stored: GymPreferences) {
-        hold(held.copy(document = stored.normalized(), owed = false))
+        hold(held.copy(document = stored, owed = false))
     }
 
     // A read back may not overwrite something this device still owes.
     fun readBack(stored: GymPreferences) {
         if (held.owed) return
-        hold(held.copy(document = stored.normalized(), owed = false))
+        hold(held.copy(document = stored, owed = false))
     }
 
     // Clears `owed` so the claim is not jammed behind an answer that cannot change.

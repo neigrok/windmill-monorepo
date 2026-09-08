@@ -1215,7 +1215,7 @@ class TrainingStore(
         return made
     }
 
-    // Held on the device FIRST, so the rest clock obeys it on the next frame whether or not the log
+    // Held on the device FIRST, so the screen obeys it on the next frame whether or not the log
     // is reachable. A whole-document PUT whose reply is the STORED document rather than the send.
     suspend fun savePreferences(document: GymPreferences): WriteFailure? {
         localPreferences.save(document)

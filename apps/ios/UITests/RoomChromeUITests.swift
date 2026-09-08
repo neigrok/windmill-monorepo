@@ -121,7 +121,7 @@ final class RoomChromeUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Units"].exists,
                       "the kg | lb control is drawn with no name over it")
-        XCTAssertTrue(app.staticTexts["Rest timer"].exists, "Rest timer lost its head too")
+        XCTAssertFalse(app.staticTexts["Rest timer"].exists, "this phone draws no rest timer")
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",
                                                             "Display only")).firstMatch.exists,
                        "the units control still explains that a display unit rewrites nothing")

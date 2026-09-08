@@ -19,11 +19,14 @@ class PreferencesTests {
     }
 
     @Test
-    fun testRestOffIsAnAbsentKeyInBothDirections() {
+    fun testTheWebsRestDialPassesThroughUntouched() {
         assertEquals("{}", encoded(GymPreferences(restSeconds = null)))
         assertEquals("""{"restSeconds":120}""", encoded(GymPreferences(restSeconds = 120)))
         assertNull(decoded("""{"restSound":true}""").restSeconds)
         assertEquals(180, decoded("""{"restSeconds":180}""").restSeconds)
+        assertEquals(4_000, decoded("""{"restSeconds":4000}""").restSeconds)
+        assertEquals("""{"restSeconds":5,"restSound":false}""",
+                     encoded(GymPreferences(restSeconds = 5, restSound = false)))
     }
 
     @Test
@@ -31,16 +34,6 @@ class PreferencesTests {
         assertEquals("""{"units":"lb"}""", encoded(GymPreferences(units = Units.Pounds)))
         assertEquals(Units.Pounds, decoded("""{"units":"lb"}""").units)
         assertEquals(Units.Kilograms, decoded("""{"units":"stone"}""").units)
-    }
-
-    @Test
-    fun testTheRestBandIsClampedAndOffSurvives() {
-        assertEquals(GymPreferences.maxRestSeconds,
-                     GymPreferences(restSeconds = 4_000).normalized().restSeconds)
-        assertEquals(GymPreferences.minRestSeconds,
-                     GymPreferences(restSeconds = 5).normalized().restSeconds)
-        assertNull("off survives normalizing — it is not a value to clamp",
-                   GymPreferences(restSeconds = null).normalized().restSeconds)
     }
 
     @Test

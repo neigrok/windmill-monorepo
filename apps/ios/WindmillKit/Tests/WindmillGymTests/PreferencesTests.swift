@@ -6,19 +6,16 @@ final class PreferencesTests: XCTestCase {
         let defaults = GymPreferences.defaults
         XCTAssertEqual(defaults.units, .kg)
         XCTAssertNil(defaults.restSeconds)
-        XCTAssertTrue(defaults.restSound)
+        XCTAssertNil(defaults.restSound)
         XCTAssertTrue(defaults.confirmHaptic)
         XCTAssertFalse(defaults.confirmSound)
     }
 
-    func testAnOffTimerIsOmittedFromTheDocument() throws {
+    func testARestFieldThisPhoneNeverSetIsOmittedFromTheDocument() throws {
         let written = try String(decoding: JSONEncoder().encode(GymPreferences.defaults), as: UTF8.self)
         XCTAssertFalse(written.contains("restSeconds"))
+        XCTAssertFalse(written.contains("restSound"))
         XCTAssertTrue(written.contains("\"units\":\"kg\""))
-
-        let dialled = try String(decoding: JSONEncoder().encode(GymPreferences.defaults.resting(90)),
-                                 as: UTF8.self)
-        XCTAssertTrue(dialled.contains("\"restSeconds\":90"))
     }
 
     func testEquipmentIsGoneFromTheDocumentInBothDirections() throws {
@@ -39,33 +36,42 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(read, held)
     }
 
+    // The web's rest dial lives in this document; the phone carries it through as written, whatever
+    // the web wrote, so a settings tap here never resets a rest set there.
+    func testTheWebsRestDialPassesThrough() throws {
+        let fromTheWeb = Data(#"{"units":"kg","restSeconds":5,"restSound":false,"confirmHaptic":true,"confirmSound":false}"#.utf8)
+        let read = try JSONDecoder().decode(GymPreferences.self, from: fromTheWeb)
+        XCTAssertEqual(read.restSeconds, 5)
+        XCTAssertEqual(read.restSound, false)
+
+        let tapped = read.with(units: .lb, confirmSound: true)
+        let sent = try String(decoding: JSONEncoder().encode(tapped), as: UTF8.self)
+        XCTAssertTrue(sent.contains("\"restSeconds\":5"))
+        XCTAssertTrue(sent.contains("\"restSound\":false"))
+        XCTAssertEqual(GymPreferences(restSeconds: 4000).restSeconds, 4000, "no band is applied here")
+    }
+
     func testAThinOrUnknownDocumentReadsAsTheDefaults() throws {
         let thin = Data(#"{"restSound":false}"#.utf8)
         let read = try JSONDecoder().decode(GymPreferences.self, from: thin)
-        XCTAssertEqual(read, GymPreferences.defaults.with(restSound: false))
+        XCTAssertEqual(read, GymPreferences(restSound: false))
 
         let strange = Data(#"{"units":"stone","restSound":"loudly"}"#.utf8)
         XCTAssertEqual(try JSONDecoder().decode(GymPreferences.self, from: strange),
                        GymPreferences.defaults)
     }
 
-    func testTheRestTargetIsBoundedToTheBandTheWireWillTake() {
-        XCTAssertEqual(GymPreferences(restSeconds: 5).restSeconds, 15)
-        XCTAssertEqual(GymPreferences(restSeconds: 4000).restSeconds, 900)
-        XCTAssertEqual(GymPreferences(restSeconds: 120).restSeconds, 120)
-    }
-
     func testOneRowChangesAndTheRestOfTheDocumentDoesNotMove() {
-        let held = GymPreferences.defaults.resting(120).with(confirmSound: true)
-        let quiet = held.with(restSound: false)
+        let held = GymPreferences(restSeconds: 120, restSound: false).with(confirmSound: true)
+        let quiet = held.with(confirmHaptic: false)
         XCTAssertEqual(quiet.restSeconds, 120)
+        XCTAssertEqual(quiet.restSound, false)
         XCTAssertTrue(quiet.confirmSound)
-        XCTAssertFalse(quiet.restSound)
-        XCTAssertNil(held.resting(nil).restSeconds)
+        XCTAssertFalse(quiet.confirmHaptic)
     }
 
     func testUnitsReachNoNumber() {
-        let inPounds = GymPreferences.defaults.resting(90).with(units: .lb)
+        let inPounds = GymPreferences(restSeconds: 90).with(units: .lb)
         XCTAssertEqual(inPounds.restSeconds, 90)
         XCTAssertEqual(Readout.weight(102.5), "102.5")
     }

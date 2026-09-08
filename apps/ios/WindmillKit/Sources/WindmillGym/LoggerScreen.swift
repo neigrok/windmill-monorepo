@@ -17,7 +17,6 @@ struct LoggerScreen: View {
     @State private var weightKg = Prefill.emptyBarKg
     @State private var reps = Prefill.emptyBarReps
     @State private var kind: SetKind = .working
-    @State private var restStartedAtMs: Int64?
     @State private var sheet: Sheet?
     @State private var goingTo: String?
     @State private var pendingDeviation: Deviation?
@@ -54,7 +53,6 @@ struct LoggerScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             header
-            if let clock = restClock { restRow(clock) }
             if let line = LiveLines.onThisDeviceLine(store.strandedCount, stall: store.strandedBy) {
                 unsynced(line)
             }
@@ -89,22 +87,6 @@ struct LoggerScreen: View {
         .task {
             weightKg = store.prefill.weightKg
             reps = store.prefill.reps
-            // The rest is computed from the last set's own instant, so nothing about it is persisted.
-            restStartedAtMs = store.todaySets.last?.completedAtMs
-        }
-        // Keyed on the whole clock, so a target changed mid-rest replaces this task instead of leaving a sleep to land.
-        .task(id: restClock) {
-            guard let clock = restClock else { return }
-            let started = clock.startedAtMs
-            let target = clock.targetSeconds
-            let waited = (Int64(Date().timeIntervalSince1970 * 1000) - started) / 1000
-            guard waited < Int64(target) else { return }
-            try? await Task.sleep(for: .seconds(Int64(target) - waited))
-            guard !Task.isCancelled else { return }
-            // iOS suspends the app, so the sleep above lands whenever it is next awake; a late chime confirms nothing.
-            let elapsed = (Int64(Date().timeIntervalSince1970 * 1000) - started) / 1000
-            guard elapsed <= Int64(target) + Rest.lateChimeSeconds else { return }
-            GymConfirm.restLanded(under: store.preferences)
         }
         .sheet(item: $sheet, onDismiss: settleTheMove) { sheet in
             content(of: sheet)
@@ -128,42 +110,6 @@ struct LoggerScreen: View {
                     .font(GymType.numeral(14))
                     .foregroundStyle(skin.inkDim)
             }
-        }
-    }
-
-    private func restRow(_ clock: Rest.Clock) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { beat in
-            let now = stamp(beat.date)
-            let filled = Rest.filled(targetSeconds: clock.targetSeconds,
-                                     startedAtMs: clock.startedAtMs, now: now)
-            let reading = Rest.reading(startedAtMs: clock.startedAtMs, now: now)
-            let target = Rest.targetLine(planEntry: store.planEntry, preferences: store.preferences)
-            Button { restStartedAtMs = nil } label: {
-                VStack(alignment: .trailing, spacing: WindmillSpace.x1) {
-                    HStack(spacing: WindmillSpace.x3) {
-                        Capsule().fill(skin.line)
-                            .frame(height: 2)
-                            .overlay(alignment: .leading) {
-                                GeometryReader { rule in
-                                    Capsule().fill(skin.accent).frame(width: rule.size.width * filled)
-                                }
-                            }
-                        Text(reading)
-                            .font(GymType.numeral(13))
-                            .foregroundStyle(skin.inkDim)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 22)
-                    if let target {
-                        Text(target)
-                            .font(GymType.numeral(12))
-                            .foregroundStyle(skin.inkFaint)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Resting")
-            .accessibilityValue([reading, target].compactMap { $0 }.joined(separator: " · "))
-            .accessibilityHint("Clears the rest timer")
         }
     }
 
@@ -441,21 +387,11 @@ struct LoggerScreen: View {
                 .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // nil until a set lands and a target is set: the timer times the gap between two sets.
-    private var restClock: Rest.Clock? {
-        guard let started = restStartedAtMs,
-              let target = Rest.target(planEntry: store.planEntry, preferences: store.preferences)
-        else { return nil }
-        return Rest.Clock(startedAtMs: started, targetSeconds: target)
-    }
-
     private var logButton: some View {
         Button {
-            let landed = Int64(Date().timeIntervalSince1970 * 1000)
             let filedAs = kind
             // One haptic for one act: the set confirmation, and nothing else fires here.
             GymConfirm.setLogged(under: store.preferences)
-            restStartedAtMs = landed
             kind = .working
             Task {
                 await store.logSet(weightKg: weightKg, reps: reps, kind: filedAs)
@@ -576,7 +512,6 @@ struct LoggerScreen: View {
     private func settleTheMove() {
         if let movement = goingTo {
             goingTo = nil
-            restStartedAtMs = nil
             Task { await store.choose(movement) }
         }
         guard let deviation = pendingDeviation else { return }

@@ -1024,18 +1024,18 @@ final class TrainingStoreTests: XCTestCase {
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.preferences, .defaults)
 
-        await anonymous.save(GymPreferences.defaults.resting(120).with(restSound: false))
+        await anonymous.save(GymPreferences(restSeconds: 120, restSound: false))
 
         let relaunched = makeStore(sync: nil)
         await relaunched.connect(to: account(signedIn: false))
-        XCTAssertFalse(relaunched.preferences.restSound)
+        XCTAssertEqual(relaunched.preferences.restSound, false)
         XCTAssertEqual(relaunched.preferences.restSeconds, 120)
     }
 
     func testSigningInClaimsTheDevicesSettingsOverTheAccountsOwn() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        await anonymous.save(GymPreferences.defaults.with(units: .lb).resting(180))
+        await anonymous.save(GymPreferences(units: .lb, restSeconds: 180))
 
         let server = FakeTraining()
         server.settings = GymPreferences.defaults.with(confirmSound: true)
@@ -1057,7 +1057,7 @@ final class TrainingStoreTests: XCTestCase {
 
     func testTheAccountsSettingsAreReadAndKeptOnTheDevice() async {
         let server = FakeTraining()
-        server.settings = GymPreferences.defaults.resting(90).with(units: .lb)
+        server.settings = GymPreferences(units: .lb, restSeconds: 90)
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
@@ -1073,7 +1073,7 @@ final class TrainingStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
 
         server.online = false
-        let why = await store.save(GymPreferences.defaults.resting(120))
+        let why = await store.save(GymPreferences(restSeconds: 120))
 
         XCTAssertEqual(why, .noAnswer)
         XCTAssertEqual(why?.line("that setting is on this device, not on the log"),
@@ -1095,9 +1095,9 @@ final class TrainingStoreTests: XCTestCase {
 
         server.onSavePreferences = { [weak store] in
             server.onSavePreferences = {}
-            await store?.save(GymPreferences.defaults.resting(180))
+            await store?.save(GymPreferences(restSeconds: 180))
         }
-        await store.save(GymPreferences.defaults.resting(90))
+        await store.save(GymPreferences(restSeconds: 90))
 
         XCTAssertEqual(server.settingsWrites.count, 2, "the second tap is sent, and only once")
         XCTAssertEqual(server.settings?.restSeconds, 180,
@@ -1112,7 +1112,7 @@ final class TrainingStoreTests: XCTestCase {
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
-        _ = await store.save(GymPreferences.defaults.resting(120))
+        _ = await store.save(GymPreferences(restSeconds: 120))
         XCTAssertEqual(store.preferences.restSeconds, 120)
         XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
 
@@ -1123,7 +1123,7 @@ final class TrainingStoreTests: XCTestCase {
 
     func testOneLiftersSettingsAreNeitherDrawnNorSentInAnothersRoom() async {
         let hers = FakeTraining()
-        hers.settings = GymPreferences.defaults.resting(180).with(units: .lb)
+        hers.settings = GymPreferences(units: .lb, restSeconds: 180)
         let herRoom = makeStore(sync: hers)
         await herRoom.connect(to: account(signedIn: true))
         XCTAssertEqual(herRoom.preferences.restSeconds, 180, "her own document, on her own seat")
@@ -1155,7 +1155,7 @@ final class TrainingStoreTests: XCTestCase {
     func testTheLaunchBeforeTheSeatIsNamedKeepsTheLiftersOwnSettings() async {
         let hers = makeStore(sync: nil)
         await hers.connect(to: account(signedIn: true))
-        await hers.save(GymPreferences.defaults.resting(180).with(units: .lb))
+        await hers.save(GymPreferences(units: .lb, restSeconds: 180))
 
         let launching = makeStore(sync: nil)
         await launching.connect(to: account(signedIn: false))
@@ -1164,14 +1164,14 @@ final class TrainingStoreTests: XCTestCase {
                        "and the launch did not drop it from disk on its way past")
 
         await launching.connect(to: account(signedIn: true))
-        XCTAssertEqual(launching.preferences, GymPreferences.defaults.resting(180).with(units: .lb),
+        XCTAssertEqual(launching.preferences, GymPreferences(units: .lb, restSeconds: 180),
                        "the seat the document was written for gets it back")
     }
 
     func testTheAnonymousDocumentCrossesIntoTheAccountAndNotBackOut() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        await anonymous.save(GymPreferences.defaults.resting(120).with(units: .lb))
+        await anonymous.save(GymPreferences(units: .lb, restSeconds: 120))
 
         let server = FakeTraining()
         let store = makeStore(sync: server)
@@ -1187,13 +1187,13 @@ final class TrainingStoreTests: XCTestCase {
     func testATapDuringTheClaimIsSentByTheClaimItself() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        await anonymous.save(GymPreferences.defaults.resting(120))
+        await anonymous.save(GymPreferences(restSeconds: 120))
 
         let server = FakeTraining()
         let store = makeStore(sync: server)
         server.onSavePreferences = { [weak store] in
             server.onSavePreferences = {}
-            await store?.save(GymPreferences.defaults.resting(180))
+            await store?.save(GymPreferences(restSeconds: 180))
         }
         await store.connect(to: account(signedIn: true))
 
@@ -1210,7 +1210,7 @@ final class TrainingStoreTests: XCTestCase {
         await anonymous.choose("bench-press")
         await anonymous.logSet(weightKg: 80, reps: 5)
         guard case .closed = await anonymous.finish() else { return XCTFail("no close") }
-        await anonymous.save(GymPreferences.defaults.resting(120))
+        await anonymous.save(GymPreferences(restSeconds: 120))
 
         let server = FakeTraining()
         server.refusePreferences = refusal(503, message: "no such route")

@@ -30,12 +30,6 @@ enum GymConfirm {
         landed.notificationOccurred(.success)
     }
 
-    static func restLanded(under preferences: GymPreferences) {
-        guard preferences.restSound else { return }
-        play(hz: 680, seconds: 0.13)
-        play(hz: 1020, seconds: 0.2, after: 0.15)
-    }
-
     private static let tap = UIImpactFeedbackGenerator(style: .medium)
     private static let stroke = UIImpactFeedbackGenerator(style: .light)
     private static let landed = UINotificationFeedbackGenerator()
