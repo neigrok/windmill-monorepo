@@ -259,8 +259,8 @@ the Boards page, section "The Coach wave · web".
 **0v · the gym app boards disagree with the built routine-first IA** → one redraw pass.
 Each line below was ruled for the build and is owed a redraw:
 
-- Screens 5 and 30 draw two routine details; built as one — 30's content (History, Duplicate)
-  under 5's chrome (header Edit), with the locked verb **Start workout**.
+- Screens 5 and 30 draw two routine details; built as one — 30's History under 5's chrome (header
+  Edit), with the locked verb **Start workout**, and no Duplicate anywhere (`5t`).
 - Screens 28 and 6 draw the editor with both a header Save and a footer "Save routine"; the editor
   has Save in the header only, and rename lives in the inline name.
 - The user-created movement marker is "yours" (screen 7), not "· mine" (screen 30).
@@ -1098,14 +1098,9 @@ launch that has not resolved one yet leaves it standing (`AccountCopy.open(under
 proposals (`kRoutineHistoryProposals`, `backend/products/gym/ports/ProgramRepository.h:48`). The one
 thing the cut left open was a phone split — `3r`, closed since.
 
-**3i · Duplicate copies the saved routine on two surfaces and the unsaved draft on the third** → a
-deliberate divergence, recorded so the next wave does not read it as drift. Duplicate's one home is
-the routine **row's** overflow, the menu that also carries Delete (`Routines.jsx:107-113`,
-`RoutinesScreen.kt:340-353`). iOS's routine row draws no overflow — `.swipeActions` and the rotor
-are the whole of it — and its editor head keeps a Duplicate that passes the **draft**
-(`RoutineBuilderScreens.swift:162-171`), so it copies what is on screen including unsaved edits.
-That is a different act from copying the row, not a second home for the same one, and it is why
-`13-gestures.md`'s per-row test names only two surfaces.
+**3i · Duplicate copies the saved routine on two surfaces and the unsaved draft on the third** →
+closed 2026-09-08 by the owner's ruling that there is no Duplicate: the act is off every surface
+(`5t`), so there is no divergence left to record.
 
 **3j · a proposal card names its routine twice, and sometimes says the same sentence twice** → a
 copy owner's call, before anything else is drawn on that card. The eyebrow is `Proposal · <routine
@@ -1527,8 +1522,7 @@ TWICE: one list is what the ACCOUNT holds — the read less the rows the store h
 for — and the other is what the withheld window leaves. The stance reads the first; the rows read
 the second. **Web.** `Routines.jsx`: `program` beside `routines`, with the empty stance AND its
 `Build a routine` primary reading `program` — so no act is offered over a program that still holds a
-routine — and the position a duplicate is filed at reading it too, which is the write and not a
-stance. `Log.jsx`'s `LogList`: `sessions` beside `shown`, the stance and `LogFoot`'s `oldest`
+routine. `Log.jsx`'s `LogList`: `sessions` beside `shown`, the stance and `LogFoot`'s `oldest`
 reading `sessions` — *first session · …* names the day training started, which is the account's —
 while `loadedLine` and the weeks read `shown`. `Log.jsx`'s `SessionDetail`: `logged` beside `sets`,
 the stance and `closedOnItsOwn` reading `logged`, `sessionDetailMeta` deliberately reading `sets`.
@@ -1546,7 +1540,7 @@ and `allThreads` beside `recent`, `routines` and `threads`. `LogScreen`'s two si
 `logHolds = store.allSessions.any { !it.session.isOpen }`, and its foot's *first session · …* names
 the oldest session the ACCOUNT holds rather than the oldest week the window leaves drawn, because
 that line is a claim about the day training started; `RoutinesScreen`'s stance, its primary and the
-position a new or duplicated routine is written at read `allRoutines`; `ThreadsScreen`'s stance
+position a new routine is written at read `allRoutines`; `ThreadsScreen`'s stance
 reads `allThreads`, and its screen-local `var threads by remember` is gone, because a screen holding
 its own snapshot of a list is the same defect in different clothes — the rows it draws are the
 store's, drawn only when this entry's read landed, since a read that FAILED is not a shorter list
@@ -2078,11 +2072,40 @@ describe a counting rest row on every surface, and `10-notes.md:124` places Note
 toggle and the rest timer" on a settings screen that has no rest timer, and
 `12-native-idiom.md:241` keeps a tabular numeral role "so a running rest clock" does not jitter.
 
-**5s · the routine row is 62 pt on iOS and 64 dp on Android, and the Notes editor's field and Save are
+**5s · the routine row is 62 pt on iOS and 63 dp on Android, and the Notes editor's field and Save are
 56 / 52 on both** → deliberate divergence, nothing owed. The routines-list row is a header button at
 the room's 46 floor (`GymTap.minimum`) inside 8 / 8 vertical padding on iOS (`RoutinesScreen.swift`,
-`row`), so it measures 62 pt and carries no `minHeight` of its own; on Android the same row holds an
-M3 `IconButton` at its 48 dp box inside the same 8 / 8 (`RoutinesScreen.kt`), so it measures 64 dp.
-Recorded as a deliberate pair, beside the bar heights, the rail-versus-tab-bar, the M3 drag-handle
-chrome and Android's rack labels, so a later sweep does not read the two points as drift to reconcile. The Notes editor's title field stands at `GymTap.secondary`
-(56) and its Save at `GymTap.row` (52) on both phones (`NotesScreen.swift`, `NotesScreen.kt`).
+`row`), so it measures 62 pt and carries no `minHeight` of its own; on Android the same row draws no
+control at its trailing edge, so its height is its two text lines' inside the same 8 / 8 over a
+`heightIn(min = GymTap.row)` floor of 52 (`RoutinesScreen.kt`), and it measures 63 dp — pinned in
+`RoutinesScreenTests.testTheRowStandsOnTheRoomsRowFloor`. Recorded as a deliberate pair, beside the
+bar heights, the rail-versus-tab-bar, the M3 drag-handle chrome and Android's rack labels, so a later
+sweep does not read the two points as drift to reconcile. The Notes editor's title field stands at
+`GymTap.secondary` (56) and its Save at `GymTap.row` (52) on both phones (`NotesScreen.swift`,
+`NotesScreen.kt`).
+
+**5t · two gym briefs still draw a Duplicate for a routine** → fix flows to the brief owner. The
+owner ruled Duplicate out of the product on every surface (2026-09-08): the web's routine row
+overflow carries Delete alone (`Routines.jsx`), and on the phones the routine's removal is the
+trailing swipe made fully active — iOS's `.swipeActions` at `allowsFullSwipe: true`
+(`RoutinesScreen.swift`), Android's `SwipeToDismissBox` with the same Delete declared as a custom
+accessibility action named with the routine (`RoutinesScreen.kt`), because the overflow that was
+Law 1's real button is gone. No editor head draws an overflow, `RoutineDraft` has no duplicating
+constructor on either phone, and `duplicateRoutine` is gone from the web. `gym/briefs/15-the-routine.md`
+still puts an overflow beside Save on iOS holding Duplicate (*The editor after the cuts*, first and
+ninth bullets), and `gym/briefs/13-gestures.md` still gives Duplicate a home in the routine row's
+overflow — under Law 1 (*the routine row is in that position on the web and on Android — one
+overflow holding Duplicate and Delete*), under *The routine row* (*Duplicate stays in the overflow,
+not the swipe*, and the iOS editor-head copy of the draft), and in *Still unbuilt* (a long press
+offering *Start · Duplicate · Delete*). Law 1's routine-row case on Android now reads the other way:
+the swipe is the only drawn door, so the custom action is declared by hand, as the set row's is.
+
+**5t · `17-set-targets.md` proposes striking two of `15-the-routine.md`'s pinned sentences** → a
+ruling owed by the owner, nothing built. The set-targets brief makes a line's target a scheme of
+up to twenty sets and retires the two illegal-shape refusals — *Clear reps and weight first — an
+open line names neither.* and *Name the sets first — an open line names neither.* — because under
+it clearing Sets hides the ladder rather than destroying it and the other two head fields are
+disabled while Sets is empty. Until the owner rules, `15-the-routine.md`'s two sentences and
+`TargetEntry.clearOthersFirst` / `nameSetsFirst` on all three surfaces stand as canon and code; the
+moment the ruling lands, `15-the-routine.md`'s *The illegal shape has two ways in* paragraph and
+its two rows in the strings table come out in the same change.

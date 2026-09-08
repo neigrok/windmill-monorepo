@@ -11,7 +11,6 @@ import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
   cappedName, isNameOverCap, NAME_MAX, nameChars, nameCountLabel, showsNameCount,
 } from '../../../src/products/gym/log.js';
-import { duplicateRoutine } from '../../../src/products/gym/routines.js';
 import {
   isTitleOverCap, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../src/products/gym/notes/notes.js';
@@ -53,13 +52,6 @@ test('the sixty-first code point is the only one refused, and the cut never halv
   assert.equal(cappedName(emoji), '😀'.repeat(NAME_MAX));
   assert.equal(bytesOf(cappedName(emoji)), 240, 'the heaviest sixty characters there are');
   assert.equal(/\p{Surrogate}/u.test(cappedName(emoji)), false, 'no half of a character survives the cut');
-});
-
-test('a duplicate’s name is cut in code points too, so no copy carries half a character', () => {
-  const copy = duplicateRoutine({ id: 'rt_1', name: '😀'.repeat(60), position: 0, entries: [] }, { id: 'rt_2', position: 1 });
-  assert.equal(copy.name, `${'😀'.repeat(55)} copy`);
-  assert.equal(nameChars(copy.name), NAME_MAX);
-  assert.equal(/\p{Surrogate}/u.test(copy.name), false);
 });
 
 test('one thing on screen can be five characters, and the cap counts all five', () => {

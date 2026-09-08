@@ -15,9 +15,8 @@ struct RoutineEditorScreen: View {
     let onSave: (RoutineDraft) -> Void
     // The way out that is not Save. It asks first whenever the draft has moved off what was loaded.
     let onCancel: () -> Void
-    // Hands back the day as edited, not as last saved. Deleting is not here: the editor sits three
-    // screens deep, and the routine row's own trailing swipe is where Delete lives (`13-gestures.md`).
-    let onDuplicate: ((RoutineDraft) -> Void)?
+    // Deleting is not here: the editor sits three screens deep, and the routine row's own trailing
+    // swipe is where Delete lives (`13-gestures.md`).
     let onCreateMovement: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
 
     @Environment(\.gymSkin) private var skin
@@ -55,7 +54,6 @@ struct RoutineEditorScreen: View {
          untested: Bool, saving: Bool, failure: String?,
          onSave: @escaping (RoutineDraft) -> Void,
          onCancel: @escaping () -> Void,
-         onDuplicate: ((RoutineDraft) -> Void)? = nil,
          onCreateMovement: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>) {
         self.catalog = catalog
         self.sessions = sessions
@@ -65,7 +63,6 @@ struct RoutineEditorScreen: View {
         self.failure = failure
         self.onSave = onSave
         self.onCancel = onCancel
-        self.onDuplicate = onDuplicate
         self.onCreateMovement = onCreateMovement
         self.opening = draft
         _draft = State(initialValue: draft)
@@ -146,19 +143,6 @@ struct RoutineEditorScreen: View {
                     abandoning = true
                 }
                 .disabled(saving)
-            }
-            // A routine that does not exist yet has nothing to duplicate.
-            if editing, let onDuplicate {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                            Button { onDuplicate(draft) } label: {
-                            Label("Duplicate", systemImage: "doc.on.doc")
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
-                    }
-                    .disabled(saving)
-                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(saving ? "Saving…" : "Save") { onSave(draft) }

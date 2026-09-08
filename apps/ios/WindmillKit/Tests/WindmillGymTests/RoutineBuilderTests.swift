@@ -80,7 +80,7 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(draft.entries[0].restSeconds, 180)
     }
 
-    func testEditKeepsTheIdAndPositionAndDuplicateTakesFreshOnes() {
+    func testEditKeepsTheIdAndPosition() {
         let routine = Routine(id: "rt_1", name: "Heavy Thursday", position: 2,
                               entries: [RoutineEntry(position: 1, exerciseId: "deadlift",
                                                      targetSets: 3, targetReps: 5,
@@ -91,13 +91,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(edit.name, "Heavy Thursday")
         XCTAssertEqual(edit.entries.map(\.exerciseId), ["deadlift"])
         XCTAssertEqual(edit.entries.map(\.targetSets), [3])
-
-        let copy = RoutineDraft(duplicating: edit, position: 5)
-        XCTAssertNotEqual(copy.id, "rt_1")
-        XCTAssertEqual(copy.position, 5)
-        XCTAssertEqual(copy.name, "Heavy Thursday",
-                       "seeded from the day on screen — a starting point to type over in the inline field")
-        XCTAssertEqual(copy.entries.map(\.targetWeightKg), [140])
     }
 
     // The counter's silence below the last fifth is `RoutineEditorCopyTests`; this is what it counts

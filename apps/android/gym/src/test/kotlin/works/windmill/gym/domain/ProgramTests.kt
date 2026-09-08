@@ -202,7 +202,7 @@ class ProgramTests {
     }
 
     @Test
-    fun testEditCarriesTheDocumentAndDuplicateCarriesEverythingButTheName() {
+    fun testEditCarriesTheDocument() {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", position = 2,
             lastTrainedAtMs = 5_000,
             entries = listOf(
@@ -216,13 +216,6 @@ class ProgramTests {
         assertEquals(2, edit.position)
         assertEquals(routine.entries, edit.entries)
         assertTrue("a day that has run does not say it has never been logged", edit.trained)
-
-        val copy = edit.duplicated(position = 7)
-        assertNull("a copy is a routine that does not exist yet", copy.id)
-        assertEquals("", copy.name)
-        assertEquals(7, copy.position)
-        assertEquals(routine.entries, copy.entries)
-        assertFalse("and a copy has never been trained", copy.trained)
     }
 
     @Test

@@ -6,8 +6,7 @@
 
 import { round } from './logger/ladder.js';
 import {
-  cappedName, groupByExercise, isUntested, NAME_MAX, proposalHref, shortDayLabel, weekdayName,
-  workingSetsOf,
+  groupByExercise, isUntested, proposalHref, shortDayLabel, weekdayName, workingSetsOf,
 } from './log.js';
 import { conversationOf, historyLabel, isPending, sourceLabel } from './proposals.js';
 
@@ -85,19 +84,6 @@ export function routineFromSession({ id, name, position = 0, sets }) {
       targetWeightKg: done.reduce((top, set) => Math.max(top, set.weightKg), done[0].weightKg),
     })),
   };
-}
-
-// A copy is a new id over the same entries, never trained, so `lastTrainedAt` is not carried across.
-// The name fits the server's ceiling by construction, the original giving way before the suffix does.
-// `position` is the caller's to state: a copy that took the original's would land on top of it.
-const COPY_SUFFIX = ' copy';
-
-export function duplicateRoutine(routine, {
-  id,
-  name = `${cappedName(routine.name, NAME_MAX - COPY_SUFFIX.length)}${COPY_SUFFIX}`,
-  position,
-}) {
-  return { ...routineWrite(routine), id, name: cappedName(name), position };
 }
 
 // Every change lands in this copy and nothing reaches the store until Save. The draft is a whole

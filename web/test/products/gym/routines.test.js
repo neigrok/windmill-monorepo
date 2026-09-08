@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  blankRoutine, builtLabel, CLEAR_REPS_AND_WEIGHT, draftFrom, duplicateRoutine,
+  blankRoutine, builtLabel, CLEAR_REPS_AND_WEIGHT, draftFrom,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, historyRows,
   isOpenEntry, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER, NAME_SETS_FIRST, ONE_DECIMAL,
   OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, refusalOf, reorderEntries, REPS_BAND,
@@ -116,41 +116,6 @@ test('routineWrite — an absent target is omitted, never sent as null and never
     entries: [{ position: 1, exerciseId: 'chin-up', targetSets: 3, targetReps: null, targetWeightKg: null, restSeconds: null }],
   });
   assert.deepEqual(Object.keys(write.entries[0]), ['exerciseId', 'targetSets']);
-});
-
-test('duplicateRoutine — a new id over the same entries, and a copy has never been trained', () => {
-  const stored = {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    lastTrainedAt: 1_754_300_000_000,
-    entries: [{ position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
-  };
-  assert.deepEqual(duplicateRoutine(stored, { id: 'rt_push_b', position: 3 }), {
-    id: 'rt_push_b',
-    name: 'Push A copy',
-    position: 3,
-    entries: [{ exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
-  });
-  assert.deepEqual(duplicateRoutine(stored, { id: 'rt_push_b', name: 'Push B', position: 4 }), {
-    id: 'rt_push_b',
-    name: 'Push B',
-    position: 4,
-    entries: [{ exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
-  });
-  // The position is the caller's to state. A copy that fell back on the original's would land on top
-  // of it, so there is no fallback to fall back on.
-  assert.equal(duplicateRoutine(stored, { id: 'rt_push_b' }).position, undefined);
-});
-
-test('duplicateRoutine — the default name fits the store, and the suffix is what survives', () => {
-  const long = 'P'.repeat(NAME_MAX);
-  const copy = duplicateRoutine({ id: 'rt_1', name: long, position: 0, entries: [] }, { id: 'rt_2', position: 1 });
-  assert.equal(copy.name, `${'P'.repeat(NAME_MAX - 5)} copy`);
-  assert.equal(copy.name.length, NAME_MAX);
-
-  const typed = duplicateRoutine({ id: 'rt_1', name: 'Push A', position: 0, entries: [] }, { id: 'rt_2', name: 'Q'.repeat(NAME_MAX + 20), position: 1 });
-  assert.equal(typed.name.length, NAME_MAX);
 });
 
 test('reorderEntries — the order moves and the numbering is rewritten from it', () => {

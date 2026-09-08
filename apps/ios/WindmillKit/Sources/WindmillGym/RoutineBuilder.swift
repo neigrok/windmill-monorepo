@@ -52,11 +52,6 @@ public struct RoutineDraft: Equatable {
                   entries: RoutineWrite(routine).entries, position: routine.position)
     }
 
-    // The day as it stands on screen, unsaved edits included, under a new id.
-    public init(duplicating draft: RoutineDraft, position: Int) {
-        self.init(name: draft.name, entries: draft.entries, position: position)
-    }
-
     public var entries: [RoutineWrite.Entry] { lines.map(\.entry) }
 
     // What a name is, said once for the whole room: the editor's Save, the editor's refusal and the

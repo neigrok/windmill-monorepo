@@ -230,12 +230,6 @@ data class RoutineDraft(
 
     fun entry(exerciseId: String): RoutineEntry? = entries.firstOrNull { it.exerciseId == exerciseId }
 
-    fun duplicated(position: Int): RoutineDraft = RoutineDraft(
-        position = position,
-        entries = entries.sortedBy { it.position }
-            .mapIndexed { index, entry -> entry.copy(position = index + 1) },
-    )
-
     // One-based; a movement no longer in the day answers null.
     fun placeOf(exerciseId: String): Int? =
         entries.indexOfFirst { it.exerciseId == exerciseId }.takeIf { it >= 0 }?.plus(1)

@@ -78,7 +78,7 @@ class RowSwipeAccessibilityTests {
             .toList()
 
     @Test
-    fun theRoutineRowSwipesToDeleteAndItsOverflowIsTheAlternativeSoNoActionIsDeclaredTwice() {
+    fun theRoutineRowSwipesToDeleteAndDeclaresThatActionByHandNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = store(scope, FakeTraining())
         runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
@@ -94,8 +94,8 @@ class RowSwipeAccessibilityTests {
         compose.onNodeWithText("Push Day").performTouchInput { swipeRight() }
         compose.runOnIdle { assertEquals("nothing on the leading edge", emptyList<String>(), deleted) }
 
-        assertEquals("the overflow already carries it, so the row declares nothing twice",
-            emptyList<String>(), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
+        assertEquals("the row draws no control for Delete, so the swipe's one act is declared by hand",
+            listOf("Delete Push Day"), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
 
         compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
         compose.runOnIdle {

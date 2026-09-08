@@ -300,7 +300,7 @@ final class RoutineScreensHostingTests: XCTestCase {
                             catalog: [Exercise(id: "movement-1", name: "Back Squat")],
                             sessions: [], editing: false, untested: false, saving: false,
                             failure: failure,
-                            onSave: { _ in }, onCancel: {}, onDuplicate: nil,
+                            onSave: { _ in }, onCancel: {},
                             onCreateMovement: { _, _ in .failure(.noAnswer) })
     }
 

@@ -216,10 +216,10 @@ test('a routine delete is in the row overflow, is not on the wire until the wind
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  assert.deepEqual(menuOf(home.screen()).props.items.map((item) => item.label), ['Duplicate', 'Delete']);
+  assert.deepEqual(menuOf(home.screen()).props.items.map((item) => item.label), ['Delete']);
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   assert.deepEqual(wire, ['GET /routines'], 'nothing is on the wire while the window runs');
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home');
   // Deleting a routine cascades its proposals, so the transient says WHICH routine it was.
@@ -242,7 +242,7 @@ test('a routine delete taken back is never sent, and the row is back on the home
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   home.log().transient.action.run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
@@ -266,7 +266,7 @@ test('the home’s empty stance and its Build a routine read the store: a held d
   assert.deepEqual(quiet(), []);
   assert.deepEqual(build(), []);
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home, which is all the window decides');
   assert.deepEqual(quiet(), [], 'the account still holds a routine, so nothing on this home says it holds none');
   assert.deepEqual(build(), [], 'least of all an act offered over a program that has one');
@@ -281,67 +281,6 @@ test('the home’s empty stance and its Build a routine read the store: a held d
   assert.equal(build().length, 1, 'the store answered, and only now is the offer honest');
 });
 
-// The other thing this home reads a list for, and it is a WRITE: a copy is filed past the end of the
-// program. Nothing re-reads the home behind a settled delete, so the raw read is one long for the
-// life of the room and every copy after it would be filed one place high.
-test('a routine copy is filed past the end of the account’s program, and a settled delete moves that end', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  browserWith();
-  const wire = [];
-  const filed = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/routines' && method === 'GET') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          routines: [
-            { id: 'rt_push', name: 'Push A', position: 0, revision: 1, entries: [] },
-            { id: 'rt_pull', name: 'Pull A', position: 1, revision: 1, entries: [] },
-          ],
-        }),
-      };
-    }
-    if (path === '/routines' && method === 'POST') {
-      filed.push(JSON.parse(options.body));
-      return { ok: true, status: 200, json: async () => JSON.parse(options.body) };
-    }
-    if (path === '/routines/rt_push' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
-  const overflow = () => elementsOf(home.screen())
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'Menu');
-
-  overflow()[1].props.items[0].run();
-  await settle();
-  assert.equal(filed.length, 1);
-  assert.equal(filed[0].position, 2, 'two routines in the program, so the copy is filed third');
-
-  // The first routine deleted, held: the account still holds two, so the end of the program has not
-  // moved and neither has the place the next copy is filed at.
-  overflow()[0].props.items[1].run();
-  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Pull A'], 'the row is off the home');
-  overflow()[0].props.items[0].run();
-  await settle();
-  assert.equal(filed.length, 2);
-  assert.equal(filed[1].position, 2, 'a window decides which rows are drawn, and never where a write is filed');
-
-  t.mock.timers.tick(UNDO_MS);
-  await settle();
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /routines/rt_push']);
-  // The read this home holds is never taken again — the delete's own send does not re-read it — so
-  // the copy lands in the right place only because the settled delete leaves the READ as well.
-  overflow()[0].props.items[0].run();
-  await settle();
-  assert.equal(filed.length, 3);
-  assert.equal(filed[2].position, 1, 'the store answered, and the program is one routine long');
-});
-
 test('leaving the room abandons a held routine delete: the row is back, and nothing ever went', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
@@ -349,7 +288,7 @@ test('leaving the room abandons a held routine delete: the row is back, and noth
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
   // Out of the gym and into another product, four seconds in. Committing the delete here would put
@@ -375,7 +314,7 @@ test('a hidden tab abandons a held routine delete: the row is back, and nothing 
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
   // Another tab, four seconds in. A hidden tab is a room that has left the foreground — the exact
@@ -466,7 +405,7 @@ test('a delete settles into a screen that never armed it, and the row does not c
   const wire = routinesOnTheWire();
   const home = await homeAgainAndAgain(t);
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   home.redraw();
   assert.deepEqual(namesOn(home), [], 'off the home for the length of the window');
 
@@ -497,7 +436,7 @@ test('a refusal reaches the room even though the screen that armed it is gone, a
   const wire = routinesOnTheWire({ deleteStatus: 500 });
   const home = await homeAgainAndAgain(t);
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   t.mock.timers.tick(4000);
   await home.remount();
   assert.deepEqual(namesOn(home), []);
@@ -521,7 +460,7 @@ test('a routine delete the store refuses says the routine is still in the progra
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
 
-  menuOf(home.screen()).props.items[1].run();
+  menuOf(home.screen()).props.items[0].run();
   t.mock.timers.tick(UNDO_MS);
   await settle();
 

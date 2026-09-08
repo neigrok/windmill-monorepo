@@ -382,12 +382,6 @@ public struct GymRoom: View {
                                     failure: routineFailure,
                                     onSave: { written in Task { await save(written) } },
                                     onCancel: back,
-                                    // A copy is a new routine under a fresh id; `.id(draft.id)` is what gives it the screen.
-                                    onDuplicate: { copied in
-                                        replaceTop(with: .building(
-                                            RoutineDraft(duplicating: copied,
-                                                         position: store.allRoutines.count)))
-                                    },
                                     onCreateMovement: { name, equipment in
                                         await store.create(name, loadedAs: equipment)
                                     })

@@ -15,26 +15,19 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('the routine row’s overflow is Duplicate and Delete, and it is the only home either has', () => {
+test('the routine row’s overflow is Delete alone, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
-  // The survivor: a re-entrancy guard, and a position past the end of the ACCOUNT's program rather
-  // than the original's own or the raw read's, which a settled delete leaves one high for ever.
-  assert.equal(source.includes("duplicateRoutine(routine, { id: mintId('rt_'), position: program.length })"), true);
-  assert.equal(source.includes('if (copying) return;'), true);
-  assert.equal(source.includes("duplicateRoutine(view.data,"), false);
-  assert.equal(source.includes("duplicateRoutine(draft,"), false);
-  assert.equal(source.includes("items={[\n                  { label: 'Duplicate', run: () => duplicate(routine) },\n                  { label: 'Delete', run: () => remove(routine) },\n                ]}"), true);
-  // The editor's head keeps no menu of its own. Its Duplicate copied the SAVED routine, took the
-  // draft's unsaved edits with it, collided on the original's position and had no re-entrancy guard;
-  // the row's — with `copying` and a position past the end of the list — is the one that survives.
+  assert.equal(source.includes("items={[{ label: 'Delete', run: () => remove(routine) }]}"), true);
+  assert.equal(/duplicat/i.test(source), false, 'the room has no duplicate act');
+  assert.equal(/duplicat/i.test(spoken(read('routines.js'))), false);
+  // The editor's head keeps no menu of its own: the row's is the one menu in the room.
   assert.equal((source.match(/<Menu/g) ?? []).length, 1, 'one menu, on the row');
   assert.equal(source.includes("import { Button, Icon, Input, Menu, Tag } from '../../design-system/index.js';"), true, 'the menu is the design system’s');
   assert.equal(fs.existsSync(path.join(GYM, 'Overflow.jsx')), false, 'the gym-local twin is gone');
   assert.equal(/gym-overflow/.test(read('gym.css')), false);
   assert.equal(read('gym.css').includes('.gym-routine .wm-menu-open {'), true, 'the row alone shapes its opener');
   assert.equal(source.includes('More for this routine'), false);
-  assert.equal(source.includes('const copy = async ()'), false);
-  assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false, 'the two drawn buttons are gone');
+  assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
   // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
   // the only thing that ever sends it.

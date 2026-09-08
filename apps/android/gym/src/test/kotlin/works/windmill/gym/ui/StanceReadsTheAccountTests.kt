@@ -327,38 +327,6 @@ class StanceReadsTheAccountTests {
         scope.cancel()
     }
 
-    // A duplicate is FILED, and a position minted off the drawn list collides with the routine the
-    // window is holding. The write reads the program, like the stance above it.
-    @Test
-    fun aDuplicateIsFiledAfterEveryRoutineTheProgramHolds() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope, FakeTraining())
-        runBlocking {
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
-            store.saveRoutine(RoutineDraft(name = "Pull Day", position = 1).adding("barbell-row"))
-        }
-        val drafts = mutableListOf<RoutineDraft>()
-        compose.setContent {
-            RoutinesScreen(
-                store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
-                onJustStart = {}, onBuild = { drafts += it }, onOpenRoutine = {},
-                onDeleteRoutine = {}, onReview = {}, onOpenSettings = {}, onSignIn = {},
-            )
-        }
-        val pull = store.allRoutines.single { it.name == "Pull Day" }
-
-        compose.runOnIdle { store.withhold(Deletion.Routine(pull.id, "Pull Day")) }
-        compose.onNodeWithContentDescription("More for Push Day").performClick()
-        compose.onNodeWithText("Duplicate").performClick()
-
-        compose.runOnIdle {
-            assertEquals("the program still holds two, so the copy is filed third",
-                listOf(2), drafts.map { it.position })
-            assertEquals(listOf("Push Day"), store.routines.map { it.name })
-        }
-        scope.cancel()
-    }
-
     // `Your first session` is a stance about the ACCOUNT written into the finish receipt, and the
     // receipt is raised the instant a workout closes — with any window still open. A session deleted
     // a moment ago is still the account's, so the workout just finished is not the first.

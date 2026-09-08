@@ -14,7 +14,7 @@ import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, builtLabel, draftFrom, duplicateRoutine, entryDroppedLine,
+  blankRoutine, builtLabel, draftFrom, entryDroppedLine,
   entryPlaceLabel, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
   NAME_IT_TO_SAVE_IT, OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite,
   saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt,
@@ -27,7 +27,6 @@ import { useGymRead } from './useGymRead.js';
 // and whatever it settles or learns lands in this list's own read.
 export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const view = useGymRead(() => gymApi.routines(), []);
-  const [copying, setCopying] = useState(false);
 
   // The read, answered TWICE: `program` is what the ACCOUNT holds — the read less the routines the
   // store has answered a delete for — and `routines` is what the withheld window leaves to draw. The
@@ -40,21 +39,6 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const hidden = log.hidden('routine');
   const program = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
   const routines = program.filter((routine) => !hidden.has(routine.id));
-
-  // The copy is filed past the end of the ACCOUNT's program, never the original's own place and
-  // never the raw read's length: nothing re-reads this list behind a settled delete, so the raw read
-  // would file every copy one place high for the life of the room. The phones file it the same way.
-  const duplicate = async (routine) => {
-    if (copying) return;
-    setCopying(true);
-    try {
-      await gymApi.createRoutine(duplicateRoutine(routine, { id: mintId('rt_'), position: program.length }));
-      view.retry();
-    } catch (error) {
-      log.say(`That copy wasn’t made — ${failureReason(error)}.`);
-    }
-    setCopying(false);
-  };
 
   // Withheld like every other delete in this room: nothing is on the wire for the length of the
   // window, and the transient the room draws is the only way back.
@@ -119,10 +103,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
               </a>
               <Menu
                 label={`More for ${routine.name}`}
-                items={[
-                  { label: 'Duplicate', run: () => duplicate(routine) },
-                  { label: 'Delete', run: () => remove(routine) },
-                ]}
+                items={[{ label: 'Delete', run: () => remove(routine) }]}
               />
             </li>
           ))}

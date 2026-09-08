@@ -2,7 +2,9 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
@@ -12,6 +14,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -144,40 +148,44 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // The overflow carries BOTH now, and that is what satisfies Law 1 for this row's swipe for free:
-    // Delete is a real button a screen reader can reach, so the swipe declares no custom action of
-    // its own. Duplicate stays here rather than on a second swipe action, which would hide the row's
-    // own name behind the lane while a lifter decided.
+    // Law 1: the row draws no control for Delete — the swipe is its whole door — so the row declares
+    // the same Delete as a custom action a screen reader reaches, named with the routine.
     @Test
-    fun testTheRowsOverflowOffersDuplicateAndTheDeleteItsSwipeAlsoMakes() {
+    fun testTheRowDeclaresItsDeleteAsACustomActionNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
         val drafts = mutableListOf<RoutineDraft>()
         val store = home(scope, doors, drafts)
         val routineId = store.routines.single().id
 
-        compose.onNodeWithContentDescription("More for Push Day").performClick()
-        compose.onNodeWithText("Duplicate").assertIsDisplayed()
-        // Two nodes say it and that is the point: the swipe's lane behind the row and the overflow
-        // item spend ONE word for one act, so Law 1's per-row test is satisfied by the same Delete.
-        compose.onAllNodesWithText("Delete").assertCountEquals(2)
-        compose.onAllNodesWithText("Delete").filterToOne(hasClickAction()).assertIsDisplayed()
-        compose.onNodeWithText("Duplicate").performClick()
+        compose.onNodeWithContentDescription("More for Push Day").assertDoesNotExist()
+        compose.onNodeWithText("Duplicate").assertDoesNotExist()
+        // One node says it: the swipe's lane behind the row. The row's own Delete is the custom
+        // action, not a drawn button.
+        compose.onAllNodesWithText("Delete").assertCountEquals(1)
 
-        compose.runOnIdle {
-            assertEquals(1, drafts.size)
-            assertEquals("a copy is not the routine, so it carries no id", null, drafts.single().id)
-            assertEquals("and the lifter names it themselves", "", drafts.single().name)
-            assertEquals(listOf("bench-press"), drafts.single().entries.map { it.exerciseId })
-            assertEquals("nothing else fired", emptyList<String>(), doors)
-        }
+        val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
+        val actions = row.config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Delete Push Day"), actions.map { it.label })
 
-        compose.onNodeWithContentDescription("More for Push Day").performClick()
-        compose.onAllNodesWithText("Delete").filterToOne(hasClickAction()).performClick()
+        compose.runOnIdle { actions.single().action() }
         compose.runOnIdle {
             assertEquals("the same act the swipe makes, and the room withholds it",
                 listOf("delete:$routineId"), doors)
+            assertEquals("nothing else fired", emptyList<RoutineDraft>(), drafts)
         }
+        scope.cancel()
+    }
+
+    // With no control at its trailing edge the row's height is its text's, over the room's row floor
+    // (`GymTap.row`). The number is what ledger 5s records beside iOS's 62 pt.
+    @Test
+    fun testTheRowStandsOnTheRoomsRowFloor() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        home(scope, mutableListOf(), mutableListOf())
+
+        val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
+        assertEquals(63.dp, bounds.height)
         scope.cancel()
     }
 

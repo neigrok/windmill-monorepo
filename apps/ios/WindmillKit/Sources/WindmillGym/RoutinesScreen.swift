@@ -42,11 +42,11 @@ struct RoutinesScreen: View {
                 Section {
                     ForEach(store.routines) { routine in
                         row(routine)
-                            // One action, trailing, no full swipe: two revealed actions hide the
-                            // routine's own name while the lifter decides which one they are
-                            // deciding about. Duplicate is not the second: on this phone it copies
-                            // the DRAFT from the editor's own head, a different act from the row's.
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            // The row's one act, and the swipe is its whole door: a full swipe
+                            // deletes outright, and what it deletes is withheld for the room's undo
+                            // window before anything reaches the wire (`onDelete`). One action,
+                            // because a second would hide the routine's own name behind the lane.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     GymConfirm.revealed()
                                     onDelete(routine)

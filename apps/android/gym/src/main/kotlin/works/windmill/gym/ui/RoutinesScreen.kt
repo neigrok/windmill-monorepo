@@ -21,9 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,7 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -151,9 +151,6 @@ fun RoutinesScreen(
                             standingProposalId = standing?.id,
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
-                            onDuplicate = {
-                                onBuild(RoutineDraft.of(routine).duplicated(position = store.allRoutines.size))
-                            },
                             onDelete = { onDeleteRoutine(routine.id) },
                             onReview = onReview,
                         )
@@ -247,12 +244,12 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
     }
 }
 
-// Trailing swipe, one action, and it is Delete — Duplicate stays in the overflow, because two
-// trailing actions hide the row's own name behind them and a lifter cannot see WHICH routine they
-// are deciding about while they decide.
+// Trailing swipe, one action, and it is Delete: the row's only act besides opening it, and the swipe
+// is its whole door. A stroke carried across settles it, and the room withholds what it deletes.
 //
-// LAW 1 is satisfied here for free and by the overflow, not by the swipe: the same Delete is a real
-// button a screen reader can reach, so no custom action is declared twice on this row.
+// LAW 1: the row draws no control for Delete, so the swipe would be the only way to it — the row
+// declares the same Delete as a custom accessibility action, named with the routine, which is where
+// a screen reader reaches it.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeableRoutineRow(
@@ -260,7 +257,6 @@ private fun SwipeableRoutineRow(
     standingProposalId: String?,
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
-    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
@@ -276,7 +272,7 @@ private fun SwipeableRoutineRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = { RowDeleteGround() },
     ) {
-        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDuplicate, onDelete, onReview)
+        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onReview)
     }
 }
 
@@ -289,16 +285,16 @@ private fun RoutineRow(
     standingProposalId: String?,
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
-    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val waiting = routine.pendingProposal
-    var menuUp by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            // The row's own floor: with no control at its trailing edge, its height is its text's.
+            .heightIn(min = GymTap.row)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(
                 1.dp,
@@ -308,7 +304,10 @@ private fun RoutineRow(
             .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") {
                 onOpenRoutine(routine.id)
             }
-            .padding(start = WindmillSpace.x4, top = WindmillSpace.x2, bottom = WindmillSpace.x2),
+            .semantics {
+                customActions = listOf(CustomAccessibilityAction("Delete ${routine.name}") { onDelete(); true })
+            }
+            .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x2),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Row(
@@ -327,35 +326,6 @@ private fun RoutineRow(
                 waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
             }
             Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
-        }
-        Box {
-            IconButton(onClick = { menuUp = true }) {
-                Icon(
-                    Icons.Filled.MoreVert,
-                    contentDescription = "More for ${routine.name}",
-                    tint = GymSkin.inkFaint,
-                )
-            }
-            DropdownMenu(
-                expanded = menuUp,
-                onDismissRequest = { menuUp = false },
-                containerColor = GymSkin.raised,
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Duplicate", color = GymSkin.ink) },
-                    onClick = {
-                        menuUp = false
-                        onDuplicate()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = GymSkin.alarmInk) },
-                    onClick = {
-                        menuUp = false
-                        onDelete()
-                    },
-                )
-            }
         }
     }
 }

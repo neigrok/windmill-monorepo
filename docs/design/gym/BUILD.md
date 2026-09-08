@@ -793,8 +793,8 @@ before showing the snackbar and so changed the key its own effect was running un
 cleared after (`GymRoom.kt`'s `deleteRefused` effect); the class is that a keyed effect clears the
 state its key reads only after the work is done, and the tell is silence rather than a crash.
 
-**Opened by the simplification programme (§8):** `3i` iOS's editor Duplicate copying the draft, a
-deliberate divergence rather than drift · `3j` a proposal card naming its routine twice · `3l` a
+**Opened by the simplification programme (§8):** `3i`, since closed by the removal of Duplicate from
+every surface · `3j` a proposal card naming its routine twice · `3l` a
 removal counted where the intent is not asked, on iOS's two proposal cards and on every surface's
 conversation rows, whose wire carries no intent for any client to read · `3s` three writers
 sharing one bottom band on iOS under a rule that names two · `3u` the web's routines-home card saying
@@ -886,8 +886,8 @@ and at `UICTContentSizeCategoryAccessibilityXXXL`, and the tab bar's rendered co
 the running build for `1v`. On **web**, `npm test` and `npm run build` green, and the whole room
 driven at 390 px in headless Chrome with zero console errors — the routines home, the editor and its
 two Save refusals, the target sheet's six refusals one at a time, the refused clear retyped, the
-picker from the editor and from backfill, the log, a movement record, the notes room, and Duplicate
-end to end. On **Android**, the unit and Robolectric suites (the UI classes now drawing on a
+picker from the editor and from backfill, the log, a movement record and the notes room. On
+**Android**, the unit and Robolectric suites (the UI classes now drawing on a
 412 × 915 dp frame) and `:app:assembleDebug` green, plus emulator screenshots at the default font
 scale and at `font_scale 2.0`, a `uiautomator dump` reading the semantics of a converted row, and
 the assembly sheet's swipe performed on the device.
@@ -1097,10 +1097,11 @@ which is why its block sits here and why six of the entries below closed in it.
   after, and a short name not clipped. **The sheet head is the exception and it is deliberate**: it
   wraps to two lines on both phones, because that is the screen the routine is decided on and
   clipping its name hides the subject of the decision.
-- **Duplicate has one home, the routine row's overflow** (**R5**) — the menu that also carries
-  Delete, and whose `duplicate` guards re-entrancy with `copying` and places the copy at the end of
-  the list. The web editor head draws no overflow at all. iOS's editor head keeps one, and what it
-  copies is the unsaved draft: a different act, recorded as a deliberate divergence (ledger `3i`).
+- **There is no Duplicate** (**R5**, overruled by the owner). The routine row's overflow on the web
+  carries Delete alone; on the phones the routine's removal is the trailing swipe, fully active —
+  a full swipe deletes on iOS (`allowsFullSwipe: true`) and a stroke carried across settles on
+  Android — withheld by the room's undo window, and Android's row declares the same Delete as a
+  custom accessibility action named with the routine. No editor head draws an overflow.
 - **The routine editor's rows stopped being a door out of an unsaved draft.** Name, `yours` tag and
   numbers are one row-body button opening the target sheet, and the record door is re-homed: a
   **Movements** anchor beside `New` on the routines home (`Routines.jsx:67`), the only drawn way to
@@ -1497,8 +1498,7 @@ or found by the sweep it was asked to run.
   from `conversations` on the 200 and the 404 alike (`threads()` is `readThreads()` now, because it
   writes what it read); iOS needs none for sets, whose hold is on disk.
 - **The claims a window was deciding that are not stances at all**, all found by the sweep. A
-  WRITE: the position a new or duplicated routine is filed at, minted off the drawn list on all
-  three surfaces — a collision, not only words. A VERDICT, three times: `TrainingStore.apply`'s 404
+  WRITE: the position a new routine is filed at, minted off the drawn list on all three surfaces — a collision, not only words. A VERDICT, three times: `TrainingStore.apply`'s 404
   branch on a remove-proposal answered `.removed`, *the routine and its ledger are gone*, over a
   routine an Undo still reached; Android's `ReviewSheet` called a proposal superseded off the drawn
   routines; and `Backfill.jsx` refused a span as *already in the log* over a session the
