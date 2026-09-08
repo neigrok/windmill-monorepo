@@ -52,8 +52,7 @@ private:
   std::string instructions_;
 };
 
-// `build` is the deployed commit (empty on a laptop), riding in `serverInfo.version` as semver
-// build metadata and named in the instructions.
+// `build` is the deployed commit, carried in `serverInfo.version` as semver build metadata.
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build = "");
 
 }

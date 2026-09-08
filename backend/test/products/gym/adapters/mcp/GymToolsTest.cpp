@@ -406,8 +406,6 @@ TEST(gym_the_retired_routine_tools_name_what_replaced_them) {
                                             ToolCaller{uid(), ToolScope::everything()});
   CHECK(saved.isError);
   CHECK_EQ(message(saved), "save_routine: " + retired[0].sentence);
-  CHECK(gymInstructions().find("save_routine") != std::string::npos);
-  CHECK(gymInstructions().find("propose_routine_change") != std::string::npos);
 }
 
 // No agent may edit or delete a logged set at any level: the rule is about the verb, not the grant.
@@ -1386,15 +1384,6 @@ TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
   // The level was granted; the tool is gone.
   CHECK(message(refused).find("granted") == std::string::npos);
   CHECK_EQ(h.tools.retirement("get_preferences")->replacement, std::string(""));
-}
-
-// The same sentence reaches a client at connect, pinned here beside retiredTools()'s copy.
-TEST(gym_connect_paragraph_carries_the_retirement) {
-  const std::string paragraph = gymInstructions();
-
-  CHECK(paragraph.find("`get_preferences` does not exist and nothing replaced it") !=
-        std::string::npos);
-  CHECK(paragraph.find("keeps no plate inventory") != std::string::npos);
 }
 
 // The rest dial is inherited at the rack and this server fills in nothing, with the lifter's dial armed.

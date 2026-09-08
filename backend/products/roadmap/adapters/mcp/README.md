@@ -109,8 +109,8 @@ and `set_progress` use.
 ## Resources
 
 `resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — edge direction,
-handles, graph validation, canonical tool names, batch workflows, read projections, and caps. A test checks every
-claim it makes against the shipped catalog.
+progress, diagnostics, omitted fields and the graph/progress import boundary. Tool schemas carry
+arguments and limits; initialize instructions give concise shared and product guidance.
 
 ## Transports
 
@@ -246,9 +246,8 @@ product can declare a tool without its annotations:
 - `annotations.openWorldHint` — false everywhere: nothing here reaches beyond the caller's account.
 - `_meta.product`, `_meta.access` — the grant the composite checks the call against.
 
-The server never gates a call on human approval. A "No approval received" answer is the client's
-own permission prompt, and the read-only hint is what lets a client stop raising it on reads; the
-handshake `instructions` say so.
+Client approval prompts are separate from server permissions. Gym instructions preserve the user's
+Apply action for routine proposals; annotations describe each tool's effects.
 
 ## `status`, `seedStatus`, `state`, `summary`
 

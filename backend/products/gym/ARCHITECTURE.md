@@ -1045,7 +1045,7 @@ diff and write nothing. **The receipt is never shaped like a write** — it carr
 `state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent cannot tell its human the
 program changed. **Retired names answer with their replacements** (`GymTools::retiredTools()`,
 consulted only after a name misses the live catalog, by `CompositeToolHost` over MCP and `AskTools`
-in-process); `gymInstructions()` carries the same retirement in the connect handshake.
+in-process).
 
 - **No apply tool at any grant level.** Apply is not a capability, it is a human act: `gym:delete`
   proposes destructive changes and does not imply the right to make one. The two routes that settle a

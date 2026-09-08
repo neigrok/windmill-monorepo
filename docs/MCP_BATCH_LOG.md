@@ -18,6 +18,8 @@ The seven new tools have output schemas and matching structured/compatibility re
 reads bound the complete result to 262144 bytes and report missing ids explicitly. Initialize
 instructions teach balanced roadmap authoring and friendly, context-aware gym coaching; factual
 logging remains separate from training decisions and routine changes retain the user's Apply flow.
+Live initialization guidance measures 203 words / 1351 characters; the optional roadmap quickstart
+measures 279 words / 2196 characters.
 
 ## Verification
 
@@ -26,14 +28,14 @@ omission preservation, duplicate ids, dry runs, sequence conflicts, unchanged re
 ordered selected reads, response bounds, progress rollback, strict workout replay, correction and
 deletion preservation, normalized numeric identity, and concurrent single/batch writes.
 
-Local PostgreSQL/MCP checks cover all seven new tools, canonical/legacy routing, initialization
-instructions with preserved natural prose, invalid-final rollback, concurrent exact retries,
+Local PostgreSQL/MCP checks cover all seven new tools, canonical/legacy routing, live initialization,
+resource and catalog responses, invalid-final rollback, concurrent exact retries,
 independent historical import while a live workout remains open, owner isolation and oversized
 result refusal. Roadmap browser checks observe the live WebSocket sequence update and changed DOM
 labels. Gym browser checks show the recorded workout and preserved human correction. Both pages
 have no runtime exceptions.
 
-Verified backend suites: domain **947/947**, MCP **262/262**, adapters **948/948**, with PostgreSQL
+Verified backend suites: domain **947/947**, MCP **261/261**, adapters **948/948**, with PostgreSQL
 integration enabled. All three completed with zero stopped cases, zero skips and zero failed
 assertions, including cross-session durable-id reservation and half-cent numeric replay. The
 branch is integrated with main at `66fa0543`. These checks verify application behavior; no
@@ -42,6 +44,8 @@ model-task benchmark or token saving has been measured.
 ## Structure and simplification
 
 - Product-local declarations stay authoritative; the composite owns public naming and routing.
+- Initialize guidance stays concise: shared context and permissions, then product-specific judgment.
+  The roadmap quickstart explains subtle app semantics; schemas carry argument details and limits.
 - Pure roadmap planners share the existing command/room pipeline rather than a second mutation path.
 - `ProgressRepository` owns the bulk commit, so callers cannot accidentally loop independent commits.
 - Gym's pure `SetBatch` centralizes admission; one repository transaction pipeline serves logging and

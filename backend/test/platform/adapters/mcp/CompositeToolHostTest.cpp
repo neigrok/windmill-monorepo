@@ -346,25 +346,21 @@ TEST(windmill_server_info_names_the_connected_products_and_carries_their_paragra
 
   const ServerInfo info = windmillServerInfo(surface);
   CHECK_EQ(info.name, std::string("windmill"));
-  CHECK(info.instructions.find("This connection reaches: roadmap, gym.") != std::string::npos);
-  CHECK(info.instructions.find("a tool you cannot see is a level that was not granted") !=
-        std::string::npos);
+  CHECK(info.instructions.find("Connected: roadmap, gym.") != std::string::npos);
+  CHECK(info.instructions.find("tools/list reflects this connection's grants.") != std::string::npos);
   CHECK(info.instructions.find("Roadmaps are skill trees.") != std::string::npos);
   CHECK(info.instructions.find("A gym log.") != std::string::npos);
   CHECK_EQ(info.version, std::string("0.1.0"));
   CHECK(info.instructions.find("build") == std::string::npos);
 }
 
-// The handshake dates the catalog — the deployed sha as semver build metadata plus one sentence saying what a stale list means.
+// The deployed sha identifies the catalog in semver build metadata.
 TEST(windmill_server_info_dates_the_catalog_with_the_deployed_build) {
   FakeProduct r = roadmap();
   CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
 
   const ServerInfo info = windmillServerInfo(surface, "e86762e0d1c2b3a4f5");
   CHECK_EQ(info.version, std::string("0.1.0+e86762e"));
-  CHECK(info.instructions.find("This server is build e86762e;") != std::string::npos);
-  CHECK(info.instructions.find("reconnect rather than concluding the server is old") !=
-        std::string::npos);
 }
 
 namespace {

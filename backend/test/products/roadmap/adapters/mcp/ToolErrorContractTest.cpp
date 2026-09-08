@@ -830,21 +830,18 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));
 
   const std::string& text = catalog[0].text;
-  CHECK(text.find("`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked.") !=
+  CHECK(text.find("`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked: prerequisite first.") !=
         std::string::npos);
   CHECK(text.find("prerequisite first") != std::string::npos);
-  CHECK(text.find(kNodeHandle.published) != std::string::npos);
-  CHECK(text.find(std::to_string(kMaxNodeDescriptionLength) + " characters") != std::string::npos);
-  CHECK(text.find("max " + std::to_string(kMaxLimit)) != std::string::npos);
 
   const Json::Value tools = h.tools.listTools(h.actor);
-  for (const char* named : {"list_trees", "get_tree", "find_nodes", "get_progress", "get_diagnostics",
-                            "create_node", "connect", "import_subgraph", "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
+  for (const char* named : {"get_tree", "find_nodes", "get_diagnostics", "connect", "import_subgraph",
+                            "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
     CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
   }
 
-  for (const char* claim : {"introducedDiagnostics", "seedStatus", "id, label and description",
+  for (const char* claim : {"introducedDiagnostics", "seedStatus", "progressApplied",
                             "find_nodes {state: \"available\"}"})
     CHECK(text.find(claim) != std::string::npos);
 

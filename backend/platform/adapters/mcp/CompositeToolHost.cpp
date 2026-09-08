@@ -164,25 +164,12 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
   }
 
   std::string instructions =
-      "Use the user's stated goals, preferences, constraints and earlier answers. Read relevant app "
-      "state before recommending or making changes. Ask only for missing information that materially "
-      "affects the result; do not ask people to repeat known context or invent their answers. Keep "
-      "explanations clear, concise, friendly and grounded in what the app records.\n\n"
-      "Windmill is one account behind several self-growth products. This connection reaches: " +
-      (connected.empty() ? std::string("nothing — no product is wired into this server") : connected) +
-      ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "
-      "surface this connection may use — a tool you cannot see is a level that was not granted, not a "
-      "tool that is missing; ask your human to reconnect and approve it. Windmill never gates a call "
-      "on human approval: a call this server accepts runs the moment it arrives, and an answer that "
-      "reads \"No approval received\" or \"awaiting approval\" is your own client's permission prompt, "
-      "not this server. Every read is declared readOnlyHint, so a client can stop prompting on reads; "
-      "every tool that deletes or edits in bulk is declared destructiveHint, and a tool that only "
-      "proposes a removal for your human to apply is not.";
+      "Windmill is one account for self-growth products. Connected: " +
+      (connected.empty() ? std::string("none") : connected) +
+      ". Use the user's goals and known context; read relevant app state and ask only for missing "
+      "information that materially affects the result. Keep explanations concise and friendly. "
+      "tools/list reflects this connection's grants.";
   const std::string stamp = build.substr(0, 7);
-  if (!stamp.empty())
-    instructions += " This server is build " + stamp +
-                    "; a tools/list your session cached before that build may name tools it no "
-                    "longer declares — reconnect rather than concluding the server is old.";
   if (!tools.instructions().empty()) instructions += "\n\n" + tools.instructions();
 
   return {"windmill", stamp.empty() ? "0.1.0" : "0.1.0+" + stamp, std::move(instructions)};
