@@ -8,7 +8,7 @@ still owed. It is not a complete list — verify anything else against the code.
 
 - **Settings sections.** `roadmap/guidelines/auth.md` §5 draws four sections — Profile, Connected
   tools, Sessions & devices, Your data. `SettingsPage.jsx` also renders Appearance, API keys and
-  Feedback, plus roadmap's Reminder and Tending sections. Canon owes those a layout.
+  Feedback, plus roadmap's Reminder and AI assistance sections. Canon owes those a layout.
 
 ## Decisions owed
 

@@ -22,40 +22,42 @@ For these examples, one credit equals 0.5% of the base allowance: 200 credits at
 
 The service must aggregate exact debits before rounding display values. Keep fractional precision for small charges and disclose rounding in activity details. Avoid rounding every small call up to a whole credit. A production denomination and plan amounts remain a product decision.
 
-## Two independent clocks
+## Active requests only
 
-AI credits are restored as counted activity becomes older than 30 days. Subscription renewal is separate. Roadmap tendings have their own existing calendar-month quota and UTC reset. The summary therefore separates these meters; neither a payment date nor a tending reset date is the credit restoration date.
+Only AI work explicitly requested by the user debits customer credits: roadmap AI requests, gym Coach and journal voice. The specimen's journal activity is voice only. Automatic echoes are included, show complete passages for everyone, cannot be disabled, and never debit the customer allowance. Internal provider cost accounting may still record passive processing without exposing it as a customer charge.
 
-A user may have tending runs remaining when the shared AI allowance is exhausted. The pause state must name the actual limiting allowance. A preflight balance does not guarantee a fixed number of future actions.
+There is one shared credit allowance across products. No separate roadmap run-count meter or calendar-month AI quota belongs in this proposal. Credits return as counted activity becomes older than 30 days; subscription payment dates are separate. A preflight balance never guarantees a fixed number of future actions.
 
 ## Supported state and proposed controls
 
-The factual audit is [AI usage review](../AI_USAGE_REVIEW.md). The current customer API exposes tending receipts and reset information, but does not expose the aggregate credit balance, product breakdown, fractional credit receipts or automatic-echo control drawn here. Anonymous roadmap compose work must not appear as an account debit.
+The factual audit is [AI usage review](../AI_USAGE_REVIEW.md). The customer credit balance, product breakdown and fractional receipts require the proposed account usage contract. Anonymous roadmap compose work must not appear as an account debit.
 
-Paid checkout is closed. The prelaunch view therefore shows no checkout, renewal promise or self-service cancellation. It displays example tending data and an explicit unavailable credit-reporting state, never a zero balance. This is a new design proposal, not a screenshot of the existing app. Existing pricing canon currently hides the Plan section while checkout is closed; adopting this account status surface requires reconciling that rule.
+Paid checkout is closed. The prelaunch view therefore shows no checkout, renewal promise or self-service cancellation. It shows an explicit unavailable credit-reporting state, never a zero balance. This is a new design proposal, not a screenshot of the existing app.
 
 Future subscription management requires a customer billing contract: access source, real renewal date, amount and currency, scheduled action kind, hosted billing destination and cancellation. The drawn $12/month and 1 Oct payment are labeled example data. Owner-granted One access needs its own non-renewing access state; subscription status alone must never decide entitlement. Current cancellation remains email support under the pricing canon.
 
-The Automatic echoes switch is a proposed consent and spend control. Turning it off must stop future automatic work without deleting existing echoes. It must not imply journal uses a separate allowance: journal processing contributes to the shared ledger. Foreground Coach, voice and tending remain available subject to their own gates. No top-ups, overages or upgrade pressure are introduced.
+No top-ups, overages or upgrade pressure are introduced. The account page contains no passive-feature switch. [Roadmap AI redesign](roadmap/ai-assistance-redesign.md) specifies the active request, preview and apply flow.
 
 ## Interaction and accessibility
 
-Overview navigation opens details and plan management; Back/Done returns to the originating screen in the Figma prototype. Billing details, cancellation and the automatic-echo switch are drawn controls with behavior specified here; they are not executable billing or server integrations.
+Overview navigation opens details and plan management; Back/Done returns to the originating screen in the Figma prototype. Billing details and cancellation are drawn controls with behavior specified here; they are not executable billing or server integrations.
 
 Cancellation must open a neutral confirmation naming the verified end date, retaining stored work, and offering equally legible Keep plan and Cancel plan controls. Show the scheduled result only after server confirmation. Failed requests keep the current state with a retry affordance. A generic scheduled change must never be relabeled as cancellation.
 
 For fetch failures, show Usage unavailable and Retry. Loading must not flash Free, zero credits or an empty history. Paid access, owner grants, scheduled changes and credit state load independently.
 
-Use the shared button hover and 0.97 press treatment; transition state colors in 150–280ms. Credit bars change only after confirmed data, with a short ease-out update; reduced motion uses the final value directly. A toggle commits optimistically only if rollback and inline error feedback exist. No ambient meter pulse or animated countdown.
+Use the shared button hover and 0.97 press treatment; transition state colors in 150–280ms. Credit bars change only after confirmed data, with a short ease-out update; reduced motion uses the final value directly. No ambient meter pulse or animated countdown.
 
 Mobile web remains one column; detail and management are separate destinations. Cancellation and confirmation actions belong in a pinned bottom action area above the safe inset. Screen readers announce a single remaining-credit value and the window, not every bar segment. Buttons need at least 44px hit areas, keyboard focus and stable back navigation. No custom native iOS or Android components are claimed by these mobile-web drawings.
 
 ## Structure and verification
 
-The page reuses the existing semantic theme, spacing and radius variables, Baloo 2 / Nunito / JetBrains Mono styles, and Button and Switch instances. Account / Usage row is one local component with editable Title, Detail and Value properties. Desktop groups allowance controls and activity in two columns; mobile uses the same hierarchy in one column.
+The page reuses the existing semantic theme, spacing and radius variables, Baloo 2 / Nunito / JetBrains Mono styles, and Button instances. Account / Usage row is one local component with editable Title, Detail and Value properties. Desktop groups allowance and activity in two columns; mobile uses the same hierarchy in one column.
 
-The design simplification pass consolidates repeated feature rows, removes inherited switch placeholder copy, separates credit and tending clocks, and keeps raw token details out of the UI. New controls remain on the isolated proposal page; the published foundations and existing shell drawings are unchanged.
+The design simplification pass consolidates repeated feature rows, removes passive-feature controls and separate request-count meters, and keeps raw token details out of the UI. New controls remain on the isolated proposal page; the published foundations are unchanged.
 
 Implementation follow-up: account usage contract, metering correctness and subscription management must land before the future example can become a live account page. The dogfood task is account-usage-contract, connected to subscription-allowance-design.
 
-All five Figma frames were rendered and visually inspected after the simplification pass. A read-back checked 90 visible text nodes: all use Baloo 2, Nunito or JetBrains Mono; no raw-token wording, inherited switch placeholder or Continue placeholder remains. Six usage-row instances share one local component. Prototype navigation was assigned through the file API; browser interaction and backend behavior were not tested because this phase produces designs only.
+Verification is performed on the revised frames after the active-request policy update.
+
+The four changed account views were rendered and visually inspected after revision; the management sheet remains as verified in the preceding pass. The account proposal page has no obsolete request-unit wording or automatic-echo controls. The activity fixture still reconciles to 128 used and 272 remaining, with Journal representing voice only. The simplification removes an entire settings control and separate quota card rather than compensating with explanatory warnings.

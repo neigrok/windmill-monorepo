@@ -15,7 +15,7 @@ public:
 
   void record(const AiSpend& spend) noexcept override;
   long long spentSinceNanos(const UserId& user, const std::string& product,
-                            long long sinceMs) override;
+                            long long sinceMs, const AiOperationFilter& filter = {}) override;
   UsageSummary summary(long long fromMs, long long toMs) override;
   std::vector<UserSpend> topSpenders(long long fromMs, long long toMs, int limit) override;
 

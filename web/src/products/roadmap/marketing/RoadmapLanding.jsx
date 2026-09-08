@@ -192,7 +192,7 @@ function AiTools() {
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">Build with your AI tools</div>
       <h2 className="sectionTitle">Your agent tends the tree with you</h2>
-      <p className="sectionSub">Claude, Cursor, or Codex can plant and tend your roadmaps. Pick your tool, paste one snippet — your browser handles the rest.</p>
+      <p className="sectionSub">Claude, Cursor, or Codex can create and update your roadmaps. Pick your tool, paste one snippet — your browser handles the rest.</p>
       <div className="aiPanel">
         <div className="aiCol">
           <div className="aiLabel">Works with</div>
@@ -223,7 +223,7 @@ function AiTools() {
 function Story() {
   const items = [
     { icon: 'git-fork', title: 'Share a tree', copy: 'Every tree is a page. Send the link — anyone can fork a copy and grow their own.' },
-    { icon: 'monitor-smartphone', title: 'Everywhere you are', copy: 'Sign in once and your trees follow — check a step off on your phone, tend the branches at your desk.' },
+    { icon: 'monitor-smartphone', title: 'Everywhere you are', copy: 'Sign in once and your trees follow — check a step off on your phone, edit the branches at your desk.' },
   ];
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>

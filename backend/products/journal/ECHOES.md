@@ -138,14 +138,10 @@ The drain deals round-robin across accounts, not in queue order: one drain threa
 `Entitlements::sweepAllowanceFor` is the per-user AI spend ceiling, asked once per user on both
 paths. Over budget is **skipped**, not failed: stamps never advance and the page stays owed.
 
-**It is not an echo budget, it is a JOURNAL budget.** `kSweepMonthlyAiNanos` is $2.00 per account
-per rolling 30 days and `sweepAllowanceFor` sums `spentSinceNanos(user, "journal", …)`, which is
-every `product = 'journal'` row in the ledger — and `OpenAiTranscriber` tags voice transcription
-`journal` too. So a writer who dictates their pages spends the echoes' allowance on transcription
-and stops receiving echoes sooner, silently, since over budget is skipped and nothing is shown about
-it. It is denominated in DOLLARS where `perPageDaily` (4) and `perUserDaily` (40) count calls, so
-which of the three binds first cannot be read off the source at all — it turns on the per-call cost,
-and that is a question for `ai_usage` which has not been asked.
+`kSweepMonthlyAiNanos` is an internal $2.00 ceiling per account per rolling 30 days. It includes
+only passive `echo.segment` and `echo.curate` operations for Journal. Voice transcription consumes
+the account's active AI allowance and does not reduce the Echoes ceiling. Echoes remain recorded in
+the operational spend ledger but never reduce the customer's active AI allowance.
 
 No pending state is served — no progress route, no spinner. The client re-reads on its own.
 
@@ -493,24 +489,14 @@ path still owes.
 The answer also states whether the page is **due** at all, the embedding version and how many corpus
 passages are stored under it, the segmenter's passages, and what the page carries today.
 
-## Entitlement
+## Access and allowance
 
-Echo marks are locked, not hidden. A non-subscriber sees the mark, the count, the real opening words
-of the passage (`kFreeWords` = 8), the withheld word count, and every match's date and distance.
+Echoes are automatic for every signed-in writer. The read serves full passages, occurrence hints,
+and useful marks without a subscription check. The response retains `entitled: true` and
+`withheldWords: 0` for existing clients.
 
-**The sweep is entitlement-blind and the gate lives in the read layer**: `EchoApi::listEchoes` asks
-`Entitlements::hasWindmillOne` once and the serialiser serves either full text or a prefix plus
-`withheldWords`.
-
-What the lock may never become:
-
-- no blurred or scrambled text standing in for words that exist;
-- no fake preview — every character shown is a character the reader wrote;
-- no manufactured count of what they are missing, and no count of anything they cannot check;
-- no urgency, no expiry, no social-proof nudges.
-
-Deriving for every user rather than only subscribers multiplies embed and curate spend by the
-free-to-paid ratio; `sweepAllowanceFor` is the brake.
+Passive derivation never consumes the customer's active AI allowance. The operational ledger retains
+all vendor spend, and `sweepAllowanceFor` caps passive work separately.
 
 ## The surface
 

@@ -195,8 +195,7 @@ that app → the first real thing → the house, once.
   holding nothing are absent rather than shown as zero.
 - **Journal's one teaching card** appears after the first page is saved and retires when answered.
 
-**Tending is the one account verb** (30/month free signed in, 300 on Windmill One); there is no
-anonymous tending. Everything done by hand works signed out. Roadmap's "Plant it" and Gym's "Build
+Active AI requests require an account. Roadmap AI assistance is being redesigned; its allowance is not announced yet. Automatic Journal echoes are free and outside the active AI allowance. Everything done by hand works signed out. Roadmap's "Plant it" and Gym's "Build
 my routine" open the door at that tap and resume after
 (`docs/design/roadmap/guidelines/auth.md` §2).
 

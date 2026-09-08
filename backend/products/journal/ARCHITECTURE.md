@@ -141,8 +141,9 @@ const bool subscribed = entitlements.hasWindmillOne(caller, email);
 ```
 
 `Entitlements` (`platform/application/Entitlements.h`) wraps the Paddle mirror and the
-`grantsAccess` rule. Journal's two subscriber surfaces are **echoes** (asked in the read) and
-**voice** (asked before any audio is touched). Everything else asks nothing of billing.
+`grantsAccess` rule. **Voice** asks for a subscription before any audio is touched and consumes
+the active AI allowance. **Echoes** are automatic for every signed-in writer, serve full passages,
+and consume only an internal passive-work budget.
 
 ## HTTP surface
 

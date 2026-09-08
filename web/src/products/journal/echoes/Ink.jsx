@@ -1,8 +1,8 @@
 // Ink — what an opened echo is made of, wherever it opens: a mono date in the margin, the older words in
-// lamp ink. A cut passage is counted out loud, never blurred. The reader's answer lives on the server.
+// lamp ink. The reader's answer lives on the server.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { distanceStamp, proseDayMonth, stampCompact, stampStacked } from './echoDates.js';
+import { distanceStamp, stampCompact, stampStacked } from './echoDates.js';
 
 // One older passage. `dim` is worn by the date and the words, never by the row, so the answer below reads
 // the same on the ninth passage as on the first. `data-je-match` stays on the row: the footer counts it.
@@ -20,9 +20,6 @@ export function InkRow({ match, triggerDay, onOpen, onUseful, onNotUseful, dim =
         <button type="button" className="je-ink-open" style={faded} onClick={onOpen}>
           <span className="je-ink-passage">{match.text}</span>
           <Provenance match={match} />
-          {match.withheldWords > 0 && (
-            <span className="je-ink-withheld">{match.withheldWords} MORE WORDS</span>
-          )}
         </button>
         {onUseful && <Verdict match={match} onUseful={onUseful} onNotUseful={onNotUseful} />}
       </span>
@@ -76,15 +73,6 @@ export function InkDates({ matches, onOpen, size = 'page' }) {
         ))}
       </span>
     </div>
-  );
-}
-
-// Stated on every surface that cuts: the older page is one scroll away.
-export function FreePath({ match }) {
-  return (
-    <p className="je-free-path">
-      The {proseDayMonth(match.day)} page is yours already — scroll up to it any time, free.
-    </p>
   );
 }
 

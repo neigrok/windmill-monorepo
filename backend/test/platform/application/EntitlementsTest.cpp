@@ -89,33 +89,37 @@ TEST(the_sweep_bucket_is_its_own_and_a_maxed_one_leaves_the_account_free_to_ask)
   Entitlements entitlements{subs, usage};
 
   usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
-  usage.spentByProduct[""] = kSweepMonthlyAiNanos;
+  usage.spentByProduct[""] = 0;
 
-  const AiAllowance sweep = entitlements.sweepAllowanceFor(UserId{"u"});
+  const AiAllowance sweep = entitlements.sweepAllowanceFor(UserId{"u"}, "journal");
   CHECK_EQ(sweep.limitNanos, kSweepMonthlyAiNanos);
   CHECK_EQ(sweep.spentNanos, kSweepMonthlyAiNanos);
   CHECK_EQ(sweep.allows(), false);
 
   const AiAllowance account = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
   CHECK_EQ(account.limitNanos, kFreeMonthlyAiNanos);
-  CHECK_EQ(account.spentNanos, kSweepMonthlyAiNanos);
+  CHECK_EQ(account.spentNanos, 0);
   CHECK_EQ(account.allows(), true);
 }
 
-TEST(both_ceilings_are_measured_over_the_trailing_thirty_days) {
+TEST(both_ceilings_select_separate_operations_over_the_trailing_thirty_days) {
   FakeSubscriptionRepository subs;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage};
+  Entitlements entitlements{subs, usage, "", {"passive.segment", "passive.curate"}};
 
   const long long before = nowMs();
   entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
-  entitlements.sweepAllowanceFor(UserId{"u"});
+  entitlements.sweepAllowanceFor(UserId{"u"}, "journal");
   const long long after = nowMs();
 
   CHECK_EQ(usage.asked.size(), std::size_t{2});
   CHECK_EQ(usage.asked[0].user.str(), std::string{"u"});
   CHECK_EQ(usage.asked[0].product, std::string{""});
   CHECK_EQ(usage.asked[1].product, std::string{"journal"});
+  CHECK(usage.asked[0].filter.match == AiOperationMatch::Exclude);
+  CHECK(usage.asked[1].filter.match == AiOperationMatch::Include);
+  CHECK(usage.asked[0].filter.operations == std::vector<std::string>({"passive.segment", "passive.curate"}));
+  CHECK(usage.asked[1].filter.operations == usage.asked[0].filter.operations);
   for (const FakeAiUsageRepository::Query& query : usage.asked) {
     CHECK_EQ(query.sinceMs >= before - kAiWindowMs, true);
     CHECK_EQ(query.sinceMs <= after - kAiWindowMs, true);

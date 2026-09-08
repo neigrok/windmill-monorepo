@@ -18,7 +18,7 @@
 // and nothing the journal receives may take it.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { FreePath, InkDates, InkRow } from './Ink.jsx';
+import { InkDates, InkRow } from './Ink.jsx';
 import { stampWeekday } from './echoDates.js';
 import { KINDLE_MS } from './arrival.js';
 
@@ -83,10 +83,9 @@ export function aimMark({ rule, stub = null, rootTop = 0, stampRect, frame, trai
   return y;
 }
 
-export function EchoMargin({ echoes, page, sheeted = false }) {
+export function EchoMargin({ echoes, page }) {
   const { canvas, verify } = echoes;
-  const nearest = page ? page.matches[0] : null;
-  const read = page ? (page.entitled ? page.matches.slice(0, MARGIN_INK) : [nearest]) : [];
+  const read = page ? page.matches.slice(0, MARGIN_INK) : [];
   const dated = page ? page.matches.slice(read.length) : [];
   const lit = echoes.lit && echoes.lit.kindledAt ? echoes.lit : null;
   const settling = Boolean(echoes.settling);
@@ -96,10 +95,7 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
   // the panel is DESCRIBING and not off the tab that asked for it: the tab is a control and the tie is
   // an indicator, and keeping them apart is what leaves the tab free to move without touching this.
   const held = Boolean(page) && echoes.heldDay === page.day;
-  // The two conditions on the rule that are not measurements: a page to name, and no One sheet over
-  // the panel. The sheet dims the panel to 0.26 and the rule HIDES rather than dimming with it —
-  // there is no honest weight for a mark that aims at a canvas nobody is reading.
-  const drawn = Boolean(page) && !sheeted;
+  const drawn = Boolean(page);
 
   // The entrance a body has already played, LATCHED. The key below is what replays an entrance, so it
   // may only ever move forward: read straight off `lit`, it would fall back to the follow key the
@@ -281,15 +277,13 @@ export function EchoMargin({ echoes, page, sheeted = false }) {
                 triggerDay={page.day}
                 size="desk"
                 dim={index === 0 ? 1 : 0.78}
-                onOpen={() => (page.entitled ? echoes.walkTo(page.day, match) : echoes.openSheet(page.day))}
+                onOpen={() => echoes.walkTo(page.day, match)}
                 onUseful={() => echoes.markUseful(page.day, match.day)}
                 onNotUseful={() => echoes.retireMatch(page.day, match.day)}
               />
             ))}
             {page && <InkDates matches={dated} size="desk" onOpen={(match) => echoes.walkTo(page.day, match)} />}
-            {page && (page.entitled
-              ? <p className="je-margin-foot">This panel follows the scroll.</p>
-              : <FreePath match={nearest} />)}
+            {page && <p className="je-margin-foot">This panel follows the scroll.</p>}
           </div>
         </div>
       </aside>

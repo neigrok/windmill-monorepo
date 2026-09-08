@@ -63,9 +63,9 @@ The six marked **↓** have a section of their own below.
 | `quests/` | The nine authored starter quests (`roster/`) and the shelf + thumbnails that plant them. |
 | `browse/` | The in-product public wall `#/browse`. |
 | `demo/` | The playable demo (`#/demo`): staged tree constants and the once-ever coach chip. |
-| `tending/` | The Tend bar, its client, and the pure receipt/meter copy behind settings' ledger. |
+| `tending/` | The AI assistance bar, its client, and the pure receipt/meter copy behind settings' ledger. |
 | `reminders/` | The weekly-nudge preference client (its settings section lives in `settings/`). |
-| `settings/` | Plan, reminders, tending and your-data sections, plus the export archive builder. |
+| `settings/` | Plan, reminders, AI assistance and your-data sections, plus the export archive builder. |
 | `marketing/` | The `/roadmap` landing, its crawlable `<head>`, its stylesheet, the self-playing tree scenes. |
 
 Two rules `persistence/` enforces: every device-tree row carries the ACCOUNT it belongs to
@@ -296,7 +296,7 @@ Wires:
   The scene is held in state so overlay children can subscribe once it exists.
 - Overlay UI, built from `src/design-system`:
   - `ui/ControlBar.jsx` — the wordmark linking home, the tree identity plaque (`TreeSwitcher` docks
-    into `titleSlot`, else a static title), and on the right the Tend chip (owner of an armed tree
+    into `titleSlot`, else a static title), and on the right the Ask AI chip (owner of an armed tree
     only), the Activity / "Next · N" chip with its unseen badge, Share, Reset edits, the shortcuts
     button and the zoom-out / zoom-in / fit group. Key hints come from `shortcuts/shortcutMap.js`,
     never a duplicated literal.

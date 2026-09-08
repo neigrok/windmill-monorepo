@@ -472,6 +472,7 @@ struct FakeAiUsageRepository : AiUsageRepository {
     UserId user;
     std::string product;
     long long sinceMs = 0;
+    AiOperationFilter filter;
   };
 
   std::map<std::string, long long> spentByProduct;
@@ -486,8 +487,8 @@ struct FakeAiUsageRepository : AiUsageRepository {
   void record(const AiSpend& spend) noexcept override { recorded.push_back(spend); }
 
   long long spentSinceNanos(const UserId& user, const std::string& product,
-                            long long sinceMs) override {
-    asked.push_back(Query{user, product, sinceMs});
+                            long long sinceMs, const AiOperationFilter& filter = {}) override {
+    asked.push_back(Query{user, product, sinceMs, filter});
     auto it = spentByProduct.find(product);
     return it == spentByProduct.end() ? 0 : it->second;
   }

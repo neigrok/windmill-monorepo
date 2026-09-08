@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,51 +17,10 @@ namespace wm {
 namespace {
 constexpr std::uint64_t kDayMs = 24ULL * 60 * 60 * 1000;
 
-// How much of a passage an unentitled reader is shown; the withheld count travels with it.
-constexpr std::size_t kFreeWords = 8;
-
 drogon::HttpResponsePtr noContent() {
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   return response;
-}
-
-std::vector<std::string> wordsOf(const std::string& text) {
-  std::istringstream stream(text);
-  std::vector<std::string> words;
-  for (std::string word; stream >> word;) words.push_back(word);
-  return words;
-}
-
-// An entitled reader gets the passage; everyone else gets its opening words and the number withheld.
-void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
-  Json::Value match(Json::objectValue);
-  match["day"] = echo.matchDay.iso();
-  match["isSelf"] = echo.matchIsSelf;
-  match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
-  // Served rather than left to the device, so a mark made on a laptop is not asked for again.
-  match["useful"] = echo.markedUseful;
-
-  if (entitled) {
-    match["text"] = echo.matchText;
-    match["withheldWords"] = 0;
-    // Which occurrence of that text the passage is, 0 for the first. Absent when the body moved
-    // under the passage, and absent for the cut below, where the text served is a prefix.
-    if (echo.matchOccurrenceHint >= 0) match["occurrenceHint"] = echo.matchOccurrenceHint;
-    into.append(match);
-    return;
-  }
-
-  const std::vector<std::string> words = wordsOf(echo.matchText);
-  const std::size_t shown = words.size() < kFreeWords ? words.size() : kFreeWords;
-  std::string prefix;
-  for (std::size_t i = 0; i < shown; ++i) {
-    if (i > 0) prefix += ' ';
-    prefix += words[i];
-  }
-  match["text"] = prefix;
-  match["withheldWords"] = static_cast<int>(words.size() - shown);
-  into.append(match);
 }
 
 Json::Value toJson(const EchoSweepReport& report) {
@@ -283,8 +241,6 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
 
-  const bool entitled = entitlements_->hasWindmillOne(caller->id, caller->email.value);
-
   // Which pages the reader has already answered "not now" on, so the next device does not ask again.
   std::set<std::string> offersRetired;
   for (const LocalDate& day : echoes_->retiredOffers(caller->id, *first, *last))
@@ -305,11 +261,19 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
       openDay = echo.triggerDay.iso();
       page = Json::Value(Json::objectValue);
       page["day"] = openDay;
-      page["entitled"] = entitled;
+      page["entitled"] = true;
       page["offerRetired"] = offersRetired.count(openDay) > 0;
       matches = Json::Value(Json::arrayValue);
     }
-    appendMatch(matches, echo, entitled);
+    Json::Value match(Json::objectValue);
+    match["day"] = echo.matchDay.iso();
+    match["isSelf"] = echo.matchIsSelf;
+    match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
+    match["useful"] = echo.markedUseful;
+    match["text"] = echo.matchText;
+    match["withheldWords"] = 0;
+    if (echo.matchOccurrenceHint >= 0) match["occurrenceHint"] = echo.matchOccurrenceHint;
+    matches.append(match);
   }
   if (!openDay.empty()) {
     page["matches"] = matches;

@@ -117,12 +117,10 @@ function seenFirstEcho() {
 export function useEchoes({
   today = localDay(), account = null, onFly = () => {}, covered = false,
 } = {}) {
-  const [pages, setPages] = useState(new Map());       // trigger day -> { day, entitled, matches, verified }
+  const [pages, setPages] = useState(new Map());       // trigger day -> { day, matches, verified }
   const [floored, setFloored] = useState(false);       // fewer than ~20 pages: the canvas stays quiet
   const [firstEver, setFirstEver] = useState(false);
-  const [retiredOffers, setRetiredOffers] = useState(new Set());
   const [openDay, setOpenDay] = useState(null);        // the one page whose ink is open
-  const [sheetDay, setSheetDay] = useState(null);
   const [hops, setHops] = useState([]);                // the walk, tonight first
   const [followedDay, setFollowedDay] = useState(null); // which page the scroll puts the margin beside
   const [settledDay, setSettledDay] = useState(null);  // and which of those the panel has committed to
@@ -230,7 +228,6 @@ export function useEchoes({
         reads.current += 1;
         setPages((current) => new Map(found.map((page) => [page.day, {
           day: page.day,
-          entitled: page.entitled !== false,
           matches: page.matches,
           // A page already verified against a body that has not moved stays verified, so a re-read
           // never flickers a standing quote back into an unchecked one.
@@ -249,7 +246,6 @@ export function useEchoes({
     setFloored(false);
     setFirstEver(false);
     setOpenDay(null);
-    setSheetDay(null);
     setHops([]);
     setFollowedDay(null);
     setSettledDay(null);
@@ -345,9 +341,7 @@ export function useEchoes({
     };
   }, [load, check]);
 
-  // The canvas is under something whenever the caller's overlays are up OR the One sheet is, which
-  // is this hook's own answer — so the caller is never asked to tell us a fact we already hold.
-  const under = covered || sheetDay !== null;
+  const under = covered;
   isCovered.current = under;
 
   // A page a LATER read added or changed is re-located AT ONCE rather than on the next beat: the
@@ -489,17 +483,6 @@ export function useEchoes({
   // the ink open in the page column, which exists only below the margin's width.
   const holdPanel = useCallback((day) => setHeldDay(day), []);
   const followScroll = useCallback(() => setHeldDay(null), []);
-  const openSheet = useCallback((day) => setSheetDay(day), []);
-  const closeSheet = useCallback(() => setSheetDay(null), []);
-
-  // "Not now" — held locally first, posted after, never posted twice.
-  const retireOffer = useCallback((day) => {
-    setSheetDay((current) => (current === day ? null : current));
-    if (retiredOffers.has(day)) return;
-    setRetiredOffers((current) => new Set(current).add(day));
-    journalApi.dismissEchoOffer(day).catch(() => { /* answered here regardless */ });
-  }, [retiredOffers]);
-
   // "Not useful" on a page: one request for the whole set, never one per match — per-match calls can
   // each fail on their own and leave a page half faded on the next read.
   const retireEcho = useCallback((day) => {
@@ -711,10 +694,6 @@ export function useEchoes({
     openDay,
     openInk,
     closeInk,
-    sheetDay,
-    openSheet,
-    closeSheet,
-    retireOffer,
     retireEcho,
     retireMatch,
     markUseful,

@@ -241,7 +241,8 @@ int main() {
   // list of addresses that hold Windmill One; unset means nobody is an owner.
   const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
   auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
-                                                     ownerEmailsEnv ? ownerEmailsEnv : "");
+                                                     ownerEmailsEnv ? ownerEmailsEnv : "",
+                                                     std::vector<std::string>{"echo.segment", "echo.curate"});
 
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).

@@ -62,7 +62,6 @@
   --je-hairline: rgba(255, 255, 255, 0.07);
   --je-trail-fill: rgba(255, 255, 255, 0.06);
   --je-grabber: rgba(255, 255, 255, 0.18);
-  --je-sheet-lift: 0 -18px 50px rgba(0, 0, 0, 0.45);
 }
 
 /* Day. The sheet comes from the room palette through data-brand; the candle, ink, mood scale and echo
@@ -149,7 +148,6 @@
   --je-hairline: rgba(42, 33, 24, 0.1);
   --je-trail-fill: rgba(42, 33, 24, 0.05);
   --je-grabber: rgba(42, 33, 24, 0.18);
-  --je-sheet-lift: 0 -18px 50px rgba(74, 58, 36, 0.2);
 }
 
 .journal-root {
@@ -1412,12 +1410,6 @@ a.journal-link:focus-visible {
   font: 400 15.5px/28px var(--font-body), sans-serif;
   color: var(--lamp-200);
 }
-.je-ink-withheld {
-  margin-top: 10px;
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.1em;
-  color: var(--lamp-500);
-}
 .je-ink-note {
   margin-top: 6px;
   font: 400 11px/1.4 var(--font-body), sans-serif;
@@ -1452,13 +1444,6 @@ a.journal-link:focus-visible {
 }
 .je-verdict-held { color: var(--lamp-400); font-weight: 700; }
 
-.je-free-path {
-  margin: 24px 0 0;
-  padding-top: 15px;
-  border-top: 1px solid var(--je-hairline);
-  font: 400 12.5px/20px var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
 
 .je-ink-foot {
   position: fixed;
@@ -1611,11 +1596,9 @@ a.journal-link:focus-visible {
 .je-ink-desk { gap: 12px; }
 .je-ink-desk .je-ink-margin { width: 44px; padding-top: 4px; }
 .je-ink-desk .je-ink-passage { font-size: 14.5px; line-height: 26px; }
-.je-ink-desk .je-ink-withheld { margin-top: 9px; font-size: 9.5px; }
 .je-ink-desk .je-ink-run { font-size: 9.5px; line-height: 19px; letter-spacing: 0.06em; }
 .je-ink-desk .je-verdict { gap: 16px; margin-top: 6px; }
 .je-ink-desk .je-verdict-mark { padding: 4px 0; font-size: 11.5px; }
-.je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
 @keyframes journal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* Everything the panel says about ONE page, on one clock. The swap lives here and not on the body
@@ -1832,107 +1815,6 @@ a.journal-link:focus-visible {
   color: var(--text-secondary);
   font: 700 12.5px/1 var(--font-body), sans-serif;
   cursor: pointer;
-}
-
-/* The One sheet — the surface that asks for money. */
-.journal-root.is-sheeted .journal-scroll,
-.journal-root.is-sheeted .je-margin { opacity: 0.26; }
-
-.je-sheet-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 62;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.je-sheet {
-  width: min(520px, 100%);
-  box-sizing: border-box;
-  max-height: 92vh;
-  overflow-y: auto;
-  padding: 12px 22px 34px;
-  border-top: 1px solid var(--border-subtle);
-  border-radius: 26px 26px 0 0;
-  background: var(--surface-card);
-  box-shadow: var(--je-sheet-lift);
-  animation: journal-fade-in-up 200ms var(--ease-soft);
-}
-.je-sheet-grabber {
-  display: block;
-  width: 38px;
-  height: 4px;
-  margin: 0 auto;
-  border-radius: 999px;
-  background: var(--je-grabber);
-}
-.je-sheet-title {
-  margin: 16px 0 0;
-  font: 800 22px/1.25 var(--font-display), sans-serif;
-  color: var(--text-primary);
-}
-.je-ink-sheet { margin-top: 13px; }
-.je-ink-sheet .je-ink-margin { padding-top: 3px; }
-.je-ink-sheet .je-ink-passage { font-size: 14.5px; line-height: 26px; }
-.je-ink-sheet .je-ink-withheld { margin-top: 7px; font-size: 9.5px; }
-.je-offer-line {
-  margin: 14px 0 0;
-  font: 400 13px/21px var(--font-body), sans-serif;
-  color: var(--text-secondary);
-}
-.je-plan { display: flex; align-items: baseline; gap: 9px; margin-top: 18px; }
-.je-plan-name {
-  font: 800 19px/1.2 var(--font-display), sans-serif;
-  color: var(--text-primary);
-}
-.je-plan-price {
-  font: 700 13px/1 var(--font-mono), ui-monospace, monospace;
-  color: var(--accent-terracotta-400);
-}
-.je-bullets { display: flex; flex-direction: column; gap: 9px; margin: 12px 0 0; padding: 0; list-style: none; }
-.je-bullets li {
-  position: relative;
-  padding-left: 14px;
-  font: 400 13.5px/21px var(--font-body), sans-serif;
-  color: var(--text-secondary);
-}
-.je-bullets li::before {
-  content: '·';
-  position: absolute;
-  left: 2px;
-  color: var(--lamp-400);
-}
-.je-sheet-buttons { display: flex; flex-direction: column; gap: 11px; margin-top: 18px; }
-.je-sheet-buy {
-  height: 50px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent-terracotta-400);
-  color: #1B1408;
-  font: 800 15px/1 var(--font-body), sans-serif;
-  cursor: pointer;
-}
-.je-sheet-not-now {
-  height: 44px;
-  border: 0;
-  background: none;
-  color: var(--text-tertiary);
-  font: 700 13.5px/1 var(--font-body), sans-serif;
-  cursor: pointer;
-}
-.je-sheet-note {
-  margin: 8px 0 0;
-  font: 400 12px/1.4 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-fine {
-  margin: 8px 0 0;
-  font: 400 11.5px/19px var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .je-sheet { animation: none; }
 }
 
 /* ── Nudges ─────────────────────────────────────────────────────────────── */

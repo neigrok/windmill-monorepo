@@ -21,8 +21,9 @@ long long windowFloorMs() {
 }
 
 Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage,
-                           std::string owners)
-    : subscriptions_(subscriptions), usage_(usage), owners_(std::move(owners)) {}
+                           std::string owners, std::vector<std::string> passiveOperations)
+    : subscriptions_(subscriptions), usage_(usage),
+      passiveOperations_(std::move(passiveOperations)), owners_(std::move(owners)) {}
 
 // No mirrored subscription is no access.
 bool Entitlements::isOwner(const std::string& email) const {
@@ -62,13 +63,13 @@ AiAllowance Entitlements::aiAllowanceFor(const UserId& user, const std::string& 
   const long long limit =
       hasWindmillOne(user, email) ? kProMonthlyAiNanos : kFreeMonthlyAiNanos;
   // An empty product is every product.
-  return AiAllowance{limit, usage_.spentSinceNanos(user, "", windowFloorMs())};
+  return AiAllowance{limit, usage_.spentSinceNanos(
+      user, "", windowFloorMs(), {AiOperationMatch::Exclude, passiveOperations_})};
 }
 
-// Keyed by PRODUCT, the grain the ledger records, so this bucket holds everything that product
-// spent for the account.
-AiAllowance Entitlements::sweepAllowanceFor(const UserId& user) const {
-  return AiAllowance{kSweepMonthlyAiNanos, usage_.spentSinceNanos(user, "journal", windowFloorMs())};
+AiAllowance Entitlements::sweepAllowanceFor(const UserId& user, const std::string& product) const {
+  return AiAllowance{kSweepMonthlyAiNanos, usage_.spentSinceNanos(
+      user, product, windowFloorMs(), {AiOperationMatch::Include, passiveOperations_})};
 }
 
 }

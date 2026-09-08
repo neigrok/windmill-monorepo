@@ -55,10 +55,17 @@ struct UsageSummary {
   std::vector<std::string> unpricedModels;
 };
 
+enum class AiOperationMatch { Include, Exclude };
+
+struct AiOperationFilter {
+  AiOperationMatch match = AiOperationMatch::Exclude;
+  std::vector<std::string> operations;
+};
+
 // Windows arrive as epoch-ms; an empty `product` means every product.
 struct AiUsageRepository : UsageSink {
   virtual long long spentSinceNanos(const UserId& user, const std::string& product,
-                                    long long sinceMs) = 0;
+                                    long long sinceMs, const AiOperationFilter& filter = {}) = 0;
   virtual UsageSummary summary(long long fromMs, long long toMs) = 0;
   virtual std::vector<UserSpend> topSpenders(long long fromMs, long long toMs, int limit) = 0;
 };

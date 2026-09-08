@@ -17,12 +17,16 @@ Paddle price id configured. Where the predicate is read:
 | surface | what the plan changes |
 |---|---|
 | journal Talk (`VoiceApi.cpp`) | hard refusal |
-| journal echoes (`EchoApi.cpp`) | passage truncated to eight words, never refused |
-| roadmap tending (`TendingService.cpp`) | monthly run allowance; the feature is off unless `TENDING_ENABLED` is set |
-| gym Coach (`AskService.cpp`) | nothing — the only read is `aiAllowanceFor`, the monthly AI spend ceiling |
+| journal Echoes | included passive assistance; never debits user AI credits |
+| roadmap AI assistance (`TendingService.cpp`) | active requests; redesigned credit presentation replaces request-count plan copy |
+| gym Coach (`AskService.cpp`) | shared active AI allowance; no separate gym plan |
 
-Products do not define their own paid axis; they contribute surfaces to the one Windmill One
-funnel. No bet's success is defined by revenue this cycle.
+Only actively requested AI work spends user credits. Passive Echoes is platform-covered and
+has no allowance-saving disable control. Credit quantities and commercial conversion remain
+unapproved. The source implementation and remaining contract gaps are recorded in
+`docs/AI_USAGE_REVIEW.md`; this table states the product policy.
+
+Products do not define their own paid axis. No bet's success is defined by revenue this cycle.
 
 ---
 

@@ -40,5 +40,5 @@ client constraints. Splitting them by trigger would fracture what makes them con
   `../brand-identity-brief.html`.
 - **Anything whose subject is the tree** — `../roadmap/`. A landing may embed a demo tree, but
   the tree's own canon (layout contract, node states, share cards) lives there.
-- **Tending mechanics** — `../roadmap/guidelines/tending.md`. `pricing.md` prices tending; it
+- **AI assistance mechanics** — `../roadmap/guidelines/ai-assistance.md`. `pricing.md` prices AI assistance; it
   does not specify it.

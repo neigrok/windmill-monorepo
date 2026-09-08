@@ -200,7 +200,7 @@ page above. No second editor — the desktop grammar degrades to the finger.
   Activity sheet as "Undo this" rows (`mobile.md` §8).
 - **Check-off is one tap** — in the list the fruit is the control (swipe-right accelerates); on the
   canvas the peek's state chip is the toggle (`mobile.md` §6).
-- **Rename, the paste well and the Tend bar** obey `mobile.md` §7's keyboard contract.
+- **Rename, the paste well and the AI input** obey `mobile.md` §7's keyboard contract.
 - **Tablet (744–1023):** the sheet stands up into the right-side panel (§9); aim + bulk bar dock to
   that column. ≥1024 hands back to desktop editing.
 - **Reduced motion:** sheet fades in place, aim uses static rings, travel → 280ms fade.

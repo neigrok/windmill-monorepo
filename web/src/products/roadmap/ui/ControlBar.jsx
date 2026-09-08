@@ -19,7 +19,7 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
           <Tooltip label="Tell your tree what to change · ⌘K" side="bottom">
             <button type="button" className="st-tend-chip" onClick={onTend}>
               <Icon name="sparkles" size={14} />
-              <span>Tend</span>
+              <span>Ask AI</span>
             </button>
           </Tooltip>
         )}

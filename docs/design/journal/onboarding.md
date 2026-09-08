@@ -44,7 +44,7 @@ it for good. Nothing counts declines.
 | **The week** | first Sunday with 3+ pages behind it |
 | **Search** | never announced — it lives in the chrome from day one and explains itself when used |
 
-**Never during the first run:** echoes / One (needs a corpus), sign-in (the shell's, from You
+**Never during the first run:** Echoes (needs a corpus), sign-in (the shell's, from You
 only), the notification permission (asked *after* "yes", never before), and anything about the
 other two rooms (the shell's house sheet owns that).
 
@@ -86,10 +86,10 @@ feature does not rely on a settings page to be honest.
 Neither is onboarding; both are what onboarding is *for*.
 
 - **Search is free, semantic and on-device** (`journal.md` §5).
-- **Echoes sit behind Windmill One** (`journal.md` §6). Today's page, answered with your own
+- **Echoes are included and use no AI credits** (`journal.md` §6). Today's page, answered with your own
   older line and a visible count — no interpretation, no advice. Beside the page, never above
   the cursor, always carrying "Not useful".
-- **First-run rule:** neither the offer nor an echo may appear during onboarding.
+- **First-run rule:** an echo does not appear during onboarding.
 
 ## 8. Open
 

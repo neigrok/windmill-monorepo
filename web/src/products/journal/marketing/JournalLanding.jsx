@@ -304,14 +304,14 @@ function OnlyYou() {
 function Echoes() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
-      <div className="eyebrow">The paid layer</div>
+      <div className="eyebrow">Automatic and free</div>
       <h2 className="sectionTitle">Echoes</h2>
       <div style={{ maxWidth: 620 }}>
         <p style={{ fontSize: 17, lineHeight: 1.6, color: 'var(--text-secondary)', margin: 0, textWrap: 'pretty' }}>
           When tonight rhymes with something you wrote months ago, Journal says it back — the older line itself, its date, and how far back it was: “07 JAN 2026 · seven months ago”. It never interprets. It just remembers with you.
         </p>
         <p style={{ fontSize: 15.5, lineHeight: 1.6, color: 'var(--text-secondary)', margin: '14px 0 0', textWrap: 'pretty' }}>
-          The mark on the page is the same for everyone, and so is the reading that found it — every echo is computed across everything you have ever written, subscribed or not. What One buys is the passage whole: without it the nearest one stops after eight words and the rest are counted out loud, and that older page is still yours to scroll to, free. Talk comes with One too. One is not on sale yet, so there is nothing to buy here today. If One lapses, nothing you wrote is touched — every page and every date stays, and the passages go back to their opening words, as they were before it.
+          Echoes are automatic and free. Every passage is available in full, with or without Windmill One, and echoes never use your AI allowance. Talk is separate: you start a recording when you want a transcript, and it requires One. One is not on sale yet.
         </p>
       </div>
     </section>

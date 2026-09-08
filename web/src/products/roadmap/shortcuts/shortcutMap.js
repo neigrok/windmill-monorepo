@@ -30,7 +30,7 @@ export const SHORTCUT_GROUPS = [
       { label: 'Rename step', chords: [[key('⏎')]] },
       { label: 'Delete step', chords: [[key('⌫')]] },
       { label: 'Paste a plan (append)', chords: [[key('⌘'), key('V')]] },
-      { label: 'Tend the tree', chords: [[key('⌘'), key('K')], [key('/')]] },
+      { label: 'Ask AI', chords: [[key('⌘'), key('K')], [key('/')]] },
     ],
   },
   {

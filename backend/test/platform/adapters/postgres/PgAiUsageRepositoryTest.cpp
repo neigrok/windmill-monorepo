@@ -264,3 +264,37 @@ TEST(pg_ai_usage_the_ranked_table_names_people_and_never_the_anonymous_canvas) {
   REQUIRE_EQ(top.size(), 1u);
   CHECK_EQ(top[0].user, UserId{kMine});
 }
+
+TEST(pg_ai_usage_passive_operations_are_separate_from_active_allowance_and_retained_in_reporting) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAiUsageRepository repo{pgTestPool()};
+  const AiOperationFilter passive{AiOperationMatch::Include, {"echo.segment", "echo.curate"}};
+  const AiOperationFilter active{AiOperationMatch::Exclude, passive.operations};
+
+  for (const auto& [product, operation] : std::vector<std::pair<std::string, std::string>>{
+           {"pgtest-roadmap", "compose"}, {"pgtest-roadmap", "tend"},
+           {"pgtest-gym", "ask"}, {"pgtest-journal", "transcribe"},
+           {"pgtest-journal", "echo.segment"}, {"pgtest-journal", "echo.curate"},
+           {"pgtest-gym", "future-active-operation"}}) {
+    AiSpend row = spend(product, "claude-sonnet-5", kMine, TokenUse{1000, 0, 0, 0});
+    row.operation = operation;
+    repo.record(row);
+    stampLatest(kDayOneMs);
+  }
+
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs, active), 15'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, active), 3'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, passive), 6'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-gym", kFromMs, passive), 0);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kOther}, "", kFromMs, passive), 0);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kToMs, active), 0);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs, {AiOperationMatch::Include, {}}), 0);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000);
+  CHECK_EQ(repo.summary(kFromMs, kToMs).costNanos, 21'000'000);
+  CHECK_EQ(repo.summary(kFromMs, kToMs).calls, 7);
+  const auto spenders = repo.topSpenders(kFromMs, kToMs, 10);
+  REQUIRE_EQ(spenders.size(), 1u);
+  CHECK_EQ(spenders[0].costNanos, 21'000'000);
+  CHECK_EQ(spenders[0].calls, 7);
+}

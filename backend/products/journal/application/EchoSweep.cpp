@@ -98,7 +98,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
   ++report.usersScanned;
 
-  if (!entitlements_.sweepAllowanceFor(user).allows()) {
+  if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
     ++report.usersOverAiBudget;
     return report;
   }
@@ -129,7 +129,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
 
     // The background bucket, asked once per user. Dry means skipped, not failed: no stamp advances
     // and every page is still owed next pass.
-    if (!entitlements_.sweepAllowanceFor(user).allows()) {
+    if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
       ++report.usersOverAiBudget;
       continue;
     }

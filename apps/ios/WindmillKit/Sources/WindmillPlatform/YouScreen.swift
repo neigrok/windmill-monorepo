@@ -38,7 +38,7 @@ struct YouScreen: View {
                         }
                     }
                 } footer: {
-                    Text("Windmill is free. One buys the AI — tending in Roadmap, Talk and echoes in Journal. Coach in Gym answers ten questions a day without it; a plan only raises the AI ceiling behind it. It is not on sale yet.")
+                    Text("Windmill is free. Automatic Journal echoes are free in full and never use your AI allowance. One is planned for active AI use, such as Talk and Coach. It is not on sale yet.")
                 }
 
                 if auth.status.user == nil, !held.isEmpty {
@@ -143,18 +143,17 @@ struct ProScreen: View {
                             .foregroundStyle(WindmillColor.textTertiary)
                     }
 
-                    Text("Windmill is free — every app, every device, hand editing forever. One buys the AI: tending in Roadmap, Talk and echoes in Journal. Coach in Gym answers ten questions a day without it; a plan only raises the AI ceiling behind it. It is not on sale yet.")
+                    Text("Windmill is free. Automatic Journal echoes are free in full and never use your AI allowance. One is planned for active AI use, such as Talk and Coach. It is not on sale yet.")
                         .font(WindmillFont.body(15))
                         .lineSpacing(4)
                         .foregroundStyle(WindmillColor.textSecondary)
 
                     VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                        included("300 tendings a month", "In Roadmap, where tending lives")
-                        included("Every run is a visible receipt", nil)
+                        included("Active AI use", "Allowance amounts are not announced yet")
                     }
                     .padding(.vertical, WindmillSpace.x1)
 
-                    Text("Free keeps 30 tendings a month in Roadmap — a real allowance, not a teaser. Tending is not switched on yet.")
+                    Text("Roadmap AI assistance is being redesigned. Automatic echoes remain free.")
                         .font(WindmillFont.body(13))
                         .foregroundStyle(WindmillColor.textTertiary)
 

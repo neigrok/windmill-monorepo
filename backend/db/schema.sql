@@ -675,9 +675,8 @@ create table if not exists journal_nudge_day (
 create index if not exists journal_nudge_day_decided on journal_nudge_day (decided_at);
 
 -- ── Journal echoes ───────────────────────────────────────────────────────────────────────────
--- An older passage of the writer's own set beside one written tonight. Written by the nightly sweep
--- and only for Windmill One subscribers, so everyone else's tables stay empty. Everything is
--- passage-level.
+-- An older passage of the writer's own set beside one written tonight. Derived automatically for
+-- every writer and served in full without a subscription. Everything is passage-level.
 
 -- Guarded on a column the current shape lacks: an unguarded drop would delete real echoes on every
 -- deploy.

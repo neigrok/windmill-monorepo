@@ -32,12 +32,11 @@ plain verbs (plan something big · write tonight · log a workout), plus a skip.
 
 - **Everything done by hand works**: all three apps, unlimited editing, every read, and every
   device feature that doesn't require an identity. Nothing is disabled, dimmed, or
-  countdown-limited. The one exception is tending — a server-side agent loop metered per
-  account, so it needs an account (`superapp-shell.md` §9a).
+  countdown-limited. Account-metered AI assistance is requested separately and needs an account (`superapp-shell.md` §9a).
 - **Local is the truth** until a claim happens; the shell states this **once**, in You: *"your
   trees, entries and sets live on this device."*
 - **The You screen is the only unprompted mention of signing in.** Account verbs the user
-  initiates (share a tree, use a second device, tend, restore a purchase) open the same door
+  initiates (share a tree, use a second device, ask AI, restore a purchase) open the same door
   and **resume the action afterwards**.
 - **Never**: on launch · on a timer · after N edits · on exit intent · as a banner · as "save
   your work". **Nothing counts declines** — no cooldowns, no escalation, no third-ask copy.
@@ -87,7 +86,8 @@ Gym starts with a routine, not a movement: the logger's advantage is prefill —
 target reps, last time's weight — and none of it exists until a routine does.
 
 **Routines are agent-writable and MCP-writable.** "4 days, upper/lower, no deadlifts, 45
-minutes" is a tending — same agent, same allowance, same visible receipt as planting a tree.
+minutes" is an active AI request in the proposed onboarding flow. Account-metered requests
+use shared AI credits; request counts do not define the unit.
 Because a routine is a plain artifact, the same call belongs on the hosted MCP server
 (`roadmap/guidelines/mcp-connect.md`), so a coach's plan, a Claude conversation or a script can
 write a routine that appears on this screen. Two requirements follow: a routine written by an

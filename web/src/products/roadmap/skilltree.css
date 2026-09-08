@@ -518,13 +518,13 @@
 /* Phone: transient toasts move to the top, below the chrome's plaque row, and fade in place. The selection bar stays at the bottom. */
 @media (max-width: 743px) {
   .st-toast {
-    top: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 88px);
+    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
     bottom: auto;
     max-width: calc(100vw - 24px);
     animation: wm-fade-in var(--duration-base) var(--ease-soft);
   }
   .st-ticker {
-    top: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 88px);
+    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
     bottom: auto;
     flex-direction: column;
   }
@@ -1417,7 +1417,7 @@
   border-color: var(--accent-terracotta-400);
 }
 
-/* Tending's front door (desktop). Only rendered for an owner of an armed tree. */
+/* AI assistance’s front door (desktop). Only rendered for an owner of an armed tree. */
 .st-tend-chip {
   display: inline-flex;
   align-items: center;
@@ -1994,7 +1994,7 @@
   }
 }
 
-/* ---- Tend bar: the working-state breathing dot; reduced motion holds it as a steady dot. ---- */
+/* ---- AI assistance bar: the working-state breathing dot; reduced motion holds it as a steady dot. ---- */
 @keyframes wmTendBreathe {
   0%, 100% { transform: scale(0.82); box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.45); }
   50%      { transform: scale(1);    box-shadow: 0 0 0 5px rgba(201, 154, 46, 0); }

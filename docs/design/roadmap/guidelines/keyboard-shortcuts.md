@@ -46,7 +46,7 @@ gesture; the map is `products/roadmap/shortcuts/shortcutMap.js`.
 | Edit | Rename step | `⏎` |
 | Edit | Delete step | `⌫` |
 | Edit | Paste a plan (append) | `⌘ V` |
-| Edit | Tend the tree | `⌘ K` · `/` |
+| Edit | Ask AI about the tree | `⌘ K` · `/` |
 | History | Undo | `⌘ Z` |
 | History | Redo | `⇧ ⌘ Z` |
 | View | Keyboard shortcuts | `?` |

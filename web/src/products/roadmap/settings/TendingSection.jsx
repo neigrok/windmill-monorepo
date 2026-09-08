@@ -25,10 +25,10 @@ export function TendingSection() {
   const pct = meterPct(used, limit);
 
   return (
-    <Section title="Tending">
+    <Section title="AI assistance">
       <div style={{ padding: '2px 0 4px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-          <span style={styles.primaryText}>{remaining} of {limit} left this month</span>
+          <span style={styles.primaryText}>{remaining} of {limit} AI requests left this month</span>
           {plan === 'pro' && <span style={styles.tag}>PRO</span>}
         </div>
         <div style={bar}><span style={{ ...barFill, width: `${pct}%` }} /></div>
@@ -50,7 +50,7 @@ export function TendingSection() {
           ))}
         </div>
       ) : (
-        <p style={{ ...styles.calmLine, marginTop: 10 }}>No tendings yet this month.</p>
+        <p style={{ ...styles.calmLine, marginTop: 10 }}>No AI requests yet this month.</p>
       )}
     </Section>
   );

@@ -15,7 +15,6 @@ import { EchoMargin } from './echoes/EchoMargin.jsx';
 import { EchoLive } from './echoes/PageEchoes.jsx';
 import { InkFooter } from './echoes/Ink.jsx';
 import { EchoTrail, BackToTonight } from './echoes/EchoTrail.jsx';
-import { OneSheet } from './echoes/OneSheet.jsx';
 import { useEchoes } from './echoes/useEchoes.js';
 import { useToday } from './usePages.js';
 import { useNudge } from './useNudge.js';
@@ -38,7 +37,7 @@ export function JournalApp({ hash }) {
   // echoes reading yesterday.
   const today = useToday();
   // An arrival that lands while the canvas is under something is HELD rather than spent: it kindles
-  // on the first frame the canvas is back. The One sheet is the hook's own answer, so it is not here.
+  // on the first frame the canvas is back.
   const covered = searchOpen || zoomOpen || nudgeOpen;
   const echoes = useEchoes({
     today, account, covered, onFly: (target) => setFlyTo({ ...target, at: Date.now() }),
@@ -52,7 +51,6 @@ export function JournalApp({ hash }) {
   // answers the same for every render and every remount, and a hop away from it deep-links as usual.
   const focusDate = openPosition(hash, documentEntry());
   const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
-  const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
   // Which page the panel is DESCRIBING is the hook's answer, not this frame's: the panel, its stamp,
   // its rule and the day row that lights on the canvas all read this one day, so no two of them can
   // ever name a different one. The edge tabs read `marginDay` instead — they are controls answering a
@@ -73,7 +71,7 @@ export function JournalApp({ hash }) {
 
   return (
     <div
-      className={'journal-root' + (echoes.marginOpen ? ' has-margin' : '') + (sheetPage ? ' is-sheeted' : '')}
+      className={'journal-root' + (echoes.marginOpen ? ' has-margin' : '')}
       ref={lendDoorSkin}
       data-theme={theme}
       data-brand="journal"
@@ -84,7 +82,7 @@ export function JournalApp({ hash }) {
         echoes={echoes}
         holdWriter={holdWriter}
       />
-      {echoes.marginOpen && <EchoMargin echoes={echoes} page={shownPage} sheeted={Boolean(sheetPage)} />}
+      {echoes.marginOpen && <EchoMargin echoes={echoes} page={shownPage} />}
       {!echoes.marginOpen && openPage && <InkFooter echoes={echoes} page={openPage} />}
       <EchoLive arrival={echoes.announce} />
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
@@ -132,14 +130,6 @@ export function JournalApp({ hash }) {
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
         account={account}
       />
-      {sheetPage && (
-        <OneSheet
-          page={sheetPage}
-          onClose={echoes.closeSheet}
-          onNotNow={() => echoes.retireOffer(sheetPage.day)}
-          onNeedSignIn={openSignInDoor}
-        />
-      )}
       {nudgeOpen && <NudgePanel nudge={nudge} onClose={() => setNudgeOpen(false)} />}
       {zoomOpen && (
         <ZoomView

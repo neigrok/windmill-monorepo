@@ -53,8 +53,8 @@ function echoesWith(over = {}) {
   };
 }
 
-const draw = (echoes, page, sheeted = false) =>
-  renderToStaticMarkup(React.createElement(EchoMargin, { echoes, page, sheeted }));
+const draw = (echoes, page) =>
+  renderToStaticMarkup(React.createElement(EchoMargin, { echoes, page }));
 
 // ─── the aiming rule: where it points, and the four ways it may not be drawn ──────────────────────
 //
@@ -209,25 +209,6 @@ test('with no page under the waterline there is no rule, no stub and no stamp �
   // OVERRULED 2026-09-02: the rest line stays. The drawn tie is built around it, never instead of it.
   assert.match(html, /class="je-margin-rest">No echo on this page\./);
   assert.match(html, /class="je-margin-body is-resting"/);
-});
-
-test('under the One sheet the rule HIDES rather than dimming with the panel — the stamp carries the tie alone', () => {
-  const sheeted = draw(echoesWith(), PAGE, true);
-  assert.ok(!sheeted.includes('je-tie'), 'the rule dimmed to 0.26 with the panel instead of going');
-  assert.ok(!sheeted.includes('je-margin-stub'), 'the stub outlived the rule it is the near end of');
-  // and the naming half is untouched: the panel still says which page it is describing
-  assert.match(sheeted, new RegExp(`class="je-margin-stamp"[^>]*>${stampWeekday(PAGE.day)}<`));
-
-  const open = draw(echoesWith(), PAGE, false);
-  assert.match(open, /class="je-tie"/);
-  assert.match(open, /class="je-margin-stub"/);
-});
-
-test('the sheet is ONE fact, decided where the class is set, so the panel and the rule cannot disagree', () => {
-  const APP = readFileSync(new URL('../../../../src/products/journal/JournalApp.jsx', import.meta.url), 'utf8');
-  assert.match(APP, /\(sheetPage \? ' is-sheeted' : ''\)/);
-  assert.match(APP, /sheeted=\{Boolean\(sheetPage\)\}/);
-  assert.match(CSS, /\.journal-root\.is-sheeted \.journal-scroll,\n\.journal-root\.is-sheeted \.je-margin \{ opacity: 0\.26; \}/);
 });
 
 // ─── one day, named in three places ───────────────────────────────────────────────────────────────

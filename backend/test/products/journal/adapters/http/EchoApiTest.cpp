@@ -234,20 +234,20 @@ TEST(echoes_are_grouped_by_the_page_that_carries_them) {
   CHECK_EQ(body["pages"][0]["matches"][0]["day"].asString(), std::string("2024-01-01"));
 }
 
-TEST(an_unentitled_reader_is_told_what_exists_and_shown_only_its_opening_words) {
+TEST(a_free_reader_receives_the_whole_echo_without_spending_active_allowance) {
   Harness h;
   const UserId user = h.signIn("s-live");
   plantEcho(h, user);
 
   const Json::Value page = listOf(h, "s-live")["pages"][0];
 
-  CHECK(!page["entitled"].asBool());
+  CHECK(page["entitled"].asBool());
   REQUIRE_EQ(page["matches"].size(), 1u);
   CHECK_EQ(page["matches"][0]["text"].asString(),
-           std::string("i want to learn c++ properly one of"));
-  CHECK_EQ(page["matches"][0]["withheldWords"].asInt(), 2);
-  // No hint on a prefix: the number counts occurrences of the WHOLE passage.
-  CHECK(!page["matches"][0].isMember("occurrenceHint"));
+           kJanuary);
+  CHECK_EQ(page["matches"][0]["withheldWords"].asInt(), 0);
+  CHECK_EQ(page["matches"][0]["occurrenceHint"].asInt(), 0);
+  CHECK(h.usage.asked.empty());
 }
 
 TEST(a_subscriber_is_handed_the_whole_passage) {
@@ -437,7 +437,7 @@ TEST(declining_the_offer_retires_the_asking_and_not_one_echo) {
   const Json::Value body = listOf(h, "s-live");
   CHECK(offerRetiredOn(body, "2026-05-01"));
   CHECK_EQ(matchesOn(body, "2026-05-01"), 3u);
-  CHECK(!body["pages"][0]["entitled"].asBool());
+  CHECK(body["pages"][0]["entitled"].asBool());
 }
 
 TEST(the_read_carries_the_offer_state_back_so_no_device_has_to_remember_it) {
@@ -536,7 +536,7 @@ TEST(the_read_carries_the_useful_answer_back_and_says_false_for_every_match_that
   CHECK(!matchOn(body, "2026-05-01", "2024-03-01")["useful"].asBool());
 }
 
-TEST(the_useful_answer_is_carried_back_across_the_honest_cut_too) {
+TEST(a_free_reader_receives_the_useful_answer_and_full_match) {
   Harness h;
   const UserId user = h.signIn("s-live");
   plantPanel(h, user, "2026-05-01", "2024", 100);
@@ -544,7 +544,8 @@ TEST(the_useful_answer_is_carried_back_across_the_honest_cut_too) {
 
   const Json::Value match = matchOn(listOf(h, "s-live"), "2026-05-01", "2024-02-01");
   CHECK(match["useful"].asBool());
-  CHECK(match["withheldWords"].asInt() > 0);
+  CHECK_EQ(match["withheldWords"].asInt(), 0);
+  CHECK_EQ(match["text"].asString(), panelMatch("2024", 2));
 }
 
 TEST(marking_a_match_useful_twice_says_the_same_thing_the_first_time_did) {

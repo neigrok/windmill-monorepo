@@ -317,7 +317,7 @@ test('the brand FAQ prices Gym by its true rule: the log, the connected log and 
   const root = LANDING_HEADS.find((head) => head.path === '/');
   const faq = root.schema.find((entry) => entry['@type'] === 'FAQPage');
   const cost = faq.mainEntity.find((question) => question.name === 'How much does Windmill cost?').acceptedAnswer.text;
-  assert.match(cost, /the log, the connected log and Coach — ten questions a day — cost nothing/);
+  assert.match(cost, /the log and the connected log are free, and Coach includes a free allowance/);
   assert.match(cost, /a plan only raises the AI ceiling behind Coach/);
   assert.doesNotMatch(cost, /Ask chat|Gym is outside/);
   assert.equal(SHELL.includes(cost), true, 'web/index.html carries the same answer');

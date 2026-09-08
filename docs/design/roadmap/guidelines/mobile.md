@@ -10,7 +10,7 @@ Ordered by how often the job happens on a phone.
 |---|---|---|---|
 | **P0** | **Explore** — what's next, why is this locked, where am I, find *that* step | the list | zero taps (it's the landing view) |
 | **P1** | **Check off** | the list row | one tap |
-| **P2** | **Capture intent** — "add a testing branch under backend" | the Tend bar | one sentence |
+| **P2** | **Capture intent** — "add a testing branch under backend" | the AI input | one sentence |
 | **P3** | **Structural edit** — add · connect · recolor · delete | row card, below content | available, never featured |
 | **P4** | **Arrange** — angular reorder | canvas, desktop only | not on the phone |
 
@@ -116,7 +116,7 @@ the user*, and movement needs rules.
 ```
 STICKY HEAD  ≤64px  tree name ▾ · readout · search icon — thin, because it never scrolls away
 SCROLL BODY         the kind lens, then the outline; the only scroller on the page
-ACTION LANE  bottom ≥300px  view pill (left) · Fork or Tend bar (centre) · Share (right) · undo above them
+ACTION LANE  bottom ≥300px  view pill (left) · Fork or AI input (centre) · Share (right) · undo above them
 ```
 - **The top of a scrolling list is unreachable by definition** — nothing lives there except
   identity and one search affordance. Every verb is in the action lane.
@@ -140,7 +140,7 @@ ACTION LANE  bottom ≥300px  view pill (left) · Fork or Tend bar (centre) · S
   the canvas (`../briefs.md` #21).
 
 ## 7. The keyboard contract
-Applies to every text surface: row rename/describe, the paste well, the Tend bar, the search
+Applies to every text surface: row rename/describe, the paste well, the AI input, the search
 field (§4).
 
 - **The list pads itself by the keyboard's height and pins the active row just above it** —
@@ -153,7 +153,7 @@ field (§4).
   own Search key: it dismisses the keyboard and **keeps the query**. Closing the field is a
   different act and belongs to the ✕.
 - **Never two text inputs on one phone screen.** Typing in the header is a lookup (read); the
-  Tend bar is intent (write); they must not be up at once. Whether they should instead be one
+  AI input is intent (write); they must not be up at once. Whether they should instead be one
   input is open (`../briefs.md` #23).
 - **No text field under 16px**, or iOS zooms the whole page on focus. This is a constraint on
   the type ramp, not on the field.
@@ -167,7 +167,7 @@ field (§4).
   session holds it. On a phone Activity shares the return-visit sheet with **Next up**
   (segmented *Next · Activity*).
 - Destructive edits state their cost before the tap. Agent edits are ordinary edits: one
-  sentence, one history step, one undo (`tending.md` §4).
+  request with the real undo behavior supported by history (`ai-assistance.md` §4).
 - **Never:** a confirm dialog for an undoable act · a toast that blocks the canvas · an undo
   that expires mid-gesture.
 
@@ -186,7 +186,7 @@ gaps must exceed the overhang, not merely look airy.
 
 ## 10. Share surfaces
 - **Share is a verb, so it lives in the action lane** — a ≥44px button in the lane's **right**
-  slot, the owner's twin of the visitor's Fork pill. Centre stays Fork / the Tend bar; the
+  slot, the owner's twin of the visitor's Fork pill. Centre stays Fork / the AI input; the
   sticky head stays identity-only. It opens the publish-and-link sheet (`sharing.md`).
 - **Fork is a persistent button below 1024** — there is no hover to reveal it.
 - **Publish and copy link** requires the gallery disclosure and server confirmation before a public

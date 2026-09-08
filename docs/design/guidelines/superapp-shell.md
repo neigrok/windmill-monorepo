@@ -130,8 +130,9 @@ No call site branches on the skin: the role tokens are aliases onto an *adaptive
 exactly as `tokens/colors.css` re-authors the ramp under `[data-theme="dark"]` and lets every
 role follow. `surfaceCanvas` IS `neutral50` in both skins.
 
-**Windmill One** — the superapp's only paywall, and it sells **tending**, never a re-sold
-default (`pricing.md`). Free is a real allowance, not a teaser. One plan across all three apps.
+**Windmill One** is one shared plan for actively requested AI assistance. Credits do not pay
+for passive Echoes or ordinary product use. Purchasing is closed and allowance quantities
+remain a proposal; see `../marketing/guidelines/pricing.md`.
 
 Both are **always clay**, whatever room you came from, and both are one tap away: the avatar on
 the hub, or the You seat at the end of any app's bar.
@@ -171,11 +172,11 @@ into that app → the first real thing → the house, once.**
   from a second device, and it resumes whatever you were doing. Never unprompted.
 - **The one honest line** — "your stuff lives on this device" — is stated once, in You.
 
-### 9a. Tending is the one account verb
+### 9a. Active AI requests and accounts
 
-**Tending requires an account.** Free is 30 a month for a signed-in account; Windmill One
-raises it to 300. There is no anonymous tending — a tending is a server-side agent loop that
-bills real tokens, the allowance is metered per account, and a device id is not an identity.
+**Account-metered AI assistance requires an account.** The door opens when the person asks
+for that work and resumes the request afterwards. Public text import is currently anonymous;
+it cannot debit an account until attribution is defined. Passive Echoes uses no AI credits.
 
 - Everything a person does **by hand** works signed out, forever — writing, planting steps,
   logging sets, editing, and every read. Journal's first run spends nothing.
@@ -200,6 +201,6 @@ APP OWNS    its bar, tabs, gestures below the capsule · its skin incl. dark def
             its own settings · the one line it lends the hub · its skin reported outward once
 JOURNEY     one question once · first run IS the real surface · first real thing · house once
             launch reopens the LAST ROOM · claim is adoption, never unprompted
-TENDING     needs an account · 30/mo free signed in · 300 on Windmill One · never anonymous
+AI REQUESTS account-metered active work needs an account · passive Echoes uses no credits
             it is an account verb: the door opens when asked for, and resumes after
 ```

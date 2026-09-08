@@ -38,7 +38,7 @@ async function pollToRest(runId, aliveRef) {
     if (isTerminal(run)) return run;
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-  // A run that hasn't settled reads as a miss rather than a stuck "Tending…" toast.
+  // A run that hasn't settled reads as a miss rather than a stuck "Updating roadmap…" toast.
   if (!aliveRef.current) return null;
   const last = await fetchRun(runId);
   return isTerminal(last) ? last : null;

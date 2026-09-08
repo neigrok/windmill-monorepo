@@ -72,25 +72,22 @@ the canvas to that spot with its neighbours intact**. It never opens a detail vi
 dims the rest of the canvas to 0.22 and leaves the trace lit. They are never stored as user
 input; there is no tagging UI.
 
-## 6. Echoes — behind Windmill One
+## 6. Echoes — included passive assistance
 
-An **echo** is Journal noticing that today repeats something you wrote months ago, and saying
-so with the older line. It is marked `ONE` wherever it appears. Talk is gated the same way;
-both read `Entitlements::hasWindmillOne` server-side.
+An **echo** is Journal noticing that today repeats something you wrote months ago and showing
+that connection through the older line. Echoes is included, without a subscription lock or
+paid excerpt. Its automatic processing never spends the user's AI credits. There is no
+allowance-saving switch to disable it.
 
-- **Without One, echo marks are locked, not absent.** The lock is the *honest cut*: the mark,
-  the count, the **real opening words** of the nearest passage, the withheld word count, and
-  every match's date and distance. The One offer card carries the ask, one per page,
-  dismissible with "Not now", which retires it for that page.
-- **What the lock may never become.** No blurred or scrambled text standing in for words that
-  exist, no fake preview, no count of what you're missing, no urgency, no expiry. Every
-  character the cut shows is a character the reader wrote.
-- If One lapses, existing echoes stay visible; new ones stop being computed. Nothing written
-  is ever withdrawn.
-- **The margin is a place, not a pop-up.** On desktop it is always there once the account has any echo at all, and when no page under the reading waterline has one it rests — the hairline and one true line, *No echo on this page.* It never fills with substitute content, never shows a spinner, and swapping from one page's ink to the next is a fade with a settle delay, so scrolling fast crosses pages without a strobe.
-- Echoes are computed on write, not nightly. The nightly pass is the repair job
-  (re-derivation after an edit, inbound edges, retries). The journal never speaks first — the
-  trigger is always a page you wrote.
+- Reading existing Echoes is free of AI credit use. Writing an entry can trigger background
+  processing without becoming a chargeable active AI request.
+- Service-level processing safeguards are separate from the user's allowance. Do not show
+  those limits as a depleted customer balance or ask for payment to restore processing.
+- **The margin is a place, not a pop-up.** On desktop it is always there once the account has
+  any echo. With no echo on the current page, it rests with the hairline and “No echo on this
+  page.” It never fills with substitute content or a spinner.
+- Echoes are derived on write; repair processing handles edits and retries. A subscription
+  ending does not withdraw the person's existing writing or lock the Echoes it connects.
 
 ## 7. Nudges
 

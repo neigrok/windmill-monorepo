@@ -63,17 +63,25 @@ void PgAiUsageRepository::record(const AiSpend& spend) noexcept {
 }
 
 long long PgAiUsageRepository::spentSinceNanos(const UserId& user, const std::string& product,
-                                               long long sinceMs) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  // An empty product means every product — one query rather than two.
-  const pqxx::result rows = txn.exec_params(
-      // cost_floor_nanos, not cost_nanos: summing the nullable column lets an unpriced model spend
-      // against no ceiling at all.
+                                               long long sinceMs, const AiOperationFilter& filter) {
+  if (filter.operations.empty() && filter.match == AiOperationMatch::Include) return 0;
+  std::string query =
       "SELECT coalesce(sum(cost_floor_nanos), 0) FROM ai_usage "
       "WHERE user_id = $1::uuid AND ts >= to_timestamp($2::bigint / 1000.0) "
-      "AND ($3 = '' OR product = $3)",
-      user.str(), sinceMs, product);
+      "AND ($3 = '' OR product = $3)";
+  pqxx::params params{user.str(), sinceMs, product};
+  if (!filter.operations.empty()) {
+    query += filter.match == AiOperationMatch::Include ? " AND operation IN (" : " AND operation NOT IN (";
+    for (std::size_t i = 0; i < filter.operations.size(); ++i) {
+      if (i != 0) query += ", ";
+      query += "$" + std::to_string(i + 4);
+      params.append(filter.operations[i]);
+    }
+    query += ")";
+  }
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec(query, params);
   if (rows.empty()) return 0;
   return rows[0][0].as<long long>();
 }

@@ -1,8 +1,8 @@
 // Everything an echo draws inside a page: the tab on the edge, the ink it opens, the once-ever card.
-// The tab is the same with or without One; what differs is one tap in.
+// Every reader can open every passage in full.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { FreePath, InkDates, InkRow } from './Ink.jsx';
+import { InkRow } from './Ink.jsx';
 import { KINDLE_MS, resumedOnMount } from './arrival.js';
 
 // Nothing is dimmed past legibility, so the ladder stops at half.
@@ -205,9 +205,8 @@ export function EchoLive({ arrival }) {
   return <p className="je-live" aria-live="polite">{said}</p>;
 }
 
-// With One, every passage found, oldest at the bottom; without One, the nearest cut, then the dates.
+// Every passage found, oldest at the bottom.
 function PageInk({ echoes, page }) {
-  const [nearest, ...rest] = page.matches;
   const ref = useRef(null);
   const scroller = echoes.canvas?.scroller ?? null;
 
@@ -219,35 +218,19 @@ function PageInk({ echoes, page }) {
     if (rise > 0 && rise < frame.height) scroller.scrollTop += rise;
   }, [scroller, page.day]);
 
-  if (page.entitled) {
-    return (
-      <div className="je-ink" ref={ref}>
-        {page.matches.map((match, index) => (
-          <InkRow
-            key={match.day}
-            match={match}
-            triggerDay={page.day}
-            dim={LADDER[Math.min(index, LADDER.length - 1)]}
-            onOpen={() => echoes.walkTo(page.day, match)}
-            onUseful={() => echoes.markUseful(page.day, match.day)}
-            onNotUseful={() => echoes.retireMatch(page.day, match.day)}
-          />
-        ))}
-      </div>
-    );
-  }
-  // The cut passage can be answered too.
   return (
     <div className="je-ink" ref={ref}>
-      <InkRow
-        match={nearest}
-        triggerDay={page.day}
-        onOpen={() => echoes.openSheet(page.day)}
-        onUseful={() => echoes.markUseful(page.day, nearest.day)}
-        onNotUseful={() => echoes.retireMatch(page.day, nearest.day)}
-      />
-      <InkDates matches={rest} onOpen={(match) => echoes.walkTo(page.day, match)} />
-      <FreePath match={nearest} />
+      {page.matches.map((match, index) => (
+        <InkRow
+          key={match.day}
+          match={match}
+          triggerDay={page.day}
+          dim={LADDER[Math.min(index, LADDER.length - 1)]}
+          onOpen={() => echoes.walkTo(page.day, match)}
+          onUseful={() => echoes.markUseful(page.day, match.day)}
+          onNotUseful={() => echoes.retireMatch(page.day, match.day)}
+        />
+      ))}
     </div>
   );
 }

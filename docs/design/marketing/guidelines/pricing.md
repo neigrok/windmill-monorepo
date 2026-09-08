@@ -1,118 +1,78 @@
-# Windmill Pricing — pay for the AI's work, not for the product
+# Windmill pricing — active AI assistance
 
-The canonical spec for the paid layer.
+The commercial design contract covers one shared account and one Windmill One plan across
+roadmap, journal and gym. The products remain useful without paid AI assistance.
 
-> **Principle: sell the new power, never re-sell a default.** The product is free forever.
-> What costs money is the AI doing the work: **tending** in the roadmap, **Talk** and **full
-> echoes** in the journal. Gym sells nothing. **Windmill One is one flat plan — $12/month for
-> 300 tendings a month.** One plan, one price, no tiers.
+## What spends the allowance
 
-**Nothing is on sale.** `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns a
-hardcoded `false`, and `BillingApi::startCheckout` 503s with no Paddle price id configured, so
-no surface offers a checkout and none can complete. Windmill One is held only by an account the
-owner list names; the gated features stay shut for everyone else, and the pricing page says so
-on its own plan card.
+**Only AI work the user actively asks for spends their AI credits.** Roadmap assistance,
+Coach questions and Talk transcription are active requests. Ordinary writing, editing, reading,
+search and workout logging do not spend credits.
 
-Shippable pages: `web/public/pricing.html` + `web/public/refunds.html`, dressed in the visitor's
-Appearance choice like every static page (the nav's Light · Dark toggle,
-`../../guidelines/superapp-shell.md` §6) and legible in both. The
-in-app meter and the out-of-allowance pause are specified in
-`../../roadmap/guidelines/tending.md` §6 and the settings usage row. Settings carries **no
-Plan section** while nothing can be bought — naming a tier nobody can buy is an advertisement,
-not a setting.
+**Automatic Echoes are included.** Creating and reading passive connections between journal
+entries does not spend the user's AI allowance. Echoes has no allowance-saving disable control,
+paid preview, or subscription lock. Operational limits on background processing belong to the
+service and must not be presented as a user credit balance.
 
----
+Public text-to-tree import is currently recorded without an account. Its account attribution
+must be designed before it can debit a signed-in user's credits; do not promise that it already
+does. The implementation inventory is [AI usage review](../../../AI_USAGE_REVIEW.md).
 
-## 1. What's free
+## The unit: AI credits
 
-Everything except the AI doing the work: unlimited trees and steps, **unlimited hand
-editing**, **private by default**, share and fork, all nine quests, export, every device, the
-MCP server and an API key. The whole journal canvas and its on-device search. The whole gym —
-its log, its connected log over MCP, and Coach. Plus **30 tendings every month, free**.
+Show **AI credits**, not raw tokens or provider costs. One credit represents a fixed amount of
+cost-weighted active AI work, with the same value on every plan. Larger allowances contain more
+credits; they never change a credit's value. Work can use fractions of a credit. A credit does
+not mean one message, one request, one word, or one minute.
 
-There is **no usage meter on the product itself**.
+The design proposal uses 200 base credits and 400 One credits only as sample data. Neither those
+quantities nor a commercial conversion rate is approved. Do not publish them as plan benefits.
+Do not define a credit as a percentage of whichever plan the viewer holds.
 
-**Tending needs an account, and it is the only thing that does.** The allowance is metered
-per account; there is **no anonymous tending**. Everything else works signed out, forever.
-Tending is an *account verb* in `auth.md`'s sense — the door opens at the moment it is asked
-for and resumes after — never a wall, and never a reason to ask for an account on launch.
+The implemented account guardrail uses a trailing 30-day window. A credits design matching that
+window explains that capacity returns as older active usage leaves it. There is no single
+monthly reset date. Subscription billing dates are separate. The legacy roadmap request counter
+is an implementation constraint under redesign, not a product plan or a credit conversion.
 
-## 2. What's metered: tendings
+## Availability and management
 
-- **A tending = one instruction to the AI** — "plant a 10k plan", "add a testing branch", "is
-  this realistic?". One sentence, one tending, **one receipt** in the ledger. It maps exactly
-  to `tending.md`'s "one sentence = one history step".
-- **Hand editing is unlimited and never counted.**
-- **Every tending is a visible receipt.** The meter is transparent, not a mystery counter.
-- An allowance, never literal "unlimited" — every tending bills tokens per run.
+**Nothing is on sale.** `paidPlansOpen()` is false; the checkout endpoint also refuses when
+Paddle is not configured. No current screen offers checkout, token packs, top-ups or a plan
+purchase. The settings entry is **AI usage** while purchasing is closed; **Plan & usage** is the
+proposed paid-management destination.
 
-## 3. The plan
+Effective access and billing status are separate: an owner grant can provide One without a
+Paddle subscription. Failed reads are unavailable data, never Free or zero use. Subscription
+renewal amounts, payment details, invoices and self-service cancellation require their own
+backend contracts before controls can ship. The documented support route for cancellation is
+email to `hello@windmill.works`.
 
-**Windmill One — $12/month — 300 tendings a month** (about ten a day), plus Talk and full
-echoes in the journal. USD, before tax. One plan; no tier ladder, no add-on packs, no per-run
-pricing to forecast.
+No price, credit quantity or renewal date in a design fixture is a live offer. Final commercial
+terms require an explicit product decision. If sales open, show the price and tax basis, seller
+of record, cancellation path and applicable refund terms where payment is requested.
 
-**Free stays at 30 tendings/month**; Windmill One raises it to 300. Both reset monthly. Talk
-and echoes ride this same subscription — never a new tier.
+## The page
 
-## 4. The honesty beats
+Lead with the user's allowance and the work it covers. Keep one shared meter and a compact
+activity list of active requests, grouped into the user-facing products. Explain passive Echoes
+with a quiet **Included · No credits used** line, outside the charged activity breakdown.
 
-1. **One price, one plan.** "That's the whole plan."
-2. **Nothing is deleted if you stop.** Drop to Free and your trees are untouched; hand editing
-   is always free. Running out pauses the robot, never the product — the `tending.md` §6.4
-   refusal face.
-3. **You can't overspend it.** When the month's tendings are gone, tending pauses until the
-   month turns — no overage, no per-run bill.
+A receipt shows the request, its outcome and its credit use. A request refused before it starts
+uses no credits; a failed request may have performed model work, so do not promise every failure
+is free. Missing usage is a calm unavailable state with Retry. Never substitute a zero meter.
 
-**Colour rule:** terracotta = the buy verb + tending surface; brand-soft = the Windmill One
-card; **gold** = "running low" nudge only; **brick = never** (reserved for deletion, X6).
-Register: never scare, never gate (`../../roadmap/guidelines/honesty.md`).
+When allowance is exhausted, pause active AI requests without withdrawing existing work or
+manual editing. Use a factual message and the known restoration information; never invent a
+countdown or push an unavailable upgrade. A fixed balance cannot promise an exact number of
+future requests because their work varies.
 
-## 5. Non-negotiables
+Desktop keeps allowance and activity in one readable column with secondary account details.
+Phone stacks them, uses list receipts, and keeps controls above the safe area. Example data is
+explicitly marked. Terracotta belongs to action; gold is a quiet low-allowance cue; brick stays
+reserved for deletion. No urgency, tier ladder, or manufactured savings.
 
-- The **30-day money-back guarantee** on the subscription, visible where money is asked.
-- **Refunds / Terms / Privacy** reachable from navigation, in the shared footer across the
-  marketing family + landing nav.
-- Prices **USD before tax**; **Paddle is seller of record**; the receipt says Paddle.
-- Cancellation is by email to `hello@windmill.works`; self-serve cancellation from Settings is
-  not built, and the page says so rather than implying a button that doesn't exist.
+## Related design contracts
 
-## 6. The page — free-first, meter-forward
-
-`windmill.works/pricing`, built from the terms/privacy static shell, in both appearances:
-
-1. **Hero — "Windmill is free."** The header never leads with payment. The sub carries the
-   whole truth — all three rooms free, the AI's work is the one paid thing, 30 tendings a
-   month on the house, one flat plan past that. The price figure first appears at the
-   meter/plan sections, never in the hero.
-2. **Everything you do by hand is free** — a generous grid closing on "30 tendings a month,
-   free."
-3. **One meter: tendings** — what a tending is, with a live meter + receipts.
-4. **One upgrade** — Windmill One as a single brand-soft card: $12/month, 300 tendings, Talk
-   and full echoes, the beats (nothing deleted · can't overspend), the guarantee, the "not
-   open yet" state, and an aside "That's the whole plan." Never a tier table.
-5. **The fine print, said plainly** — Paddle, cost, when you run out, changing your mind
-   (links Refunds).
-
-The meter specimen must read as an **example**, not the viewer's own account (an "example" tag
-+ an aside line), since the page is seen logged-out.
-
-Never: a two-column Free-vs-One feature table, restated free features padding the plan card,
-"upgrade to unlock", any surprise-overage language, any red, any countdown.
-
-## 7. Ownership map
-
-| Concern | Owner |
-|---|---|
-| Register (never scare/sell/gate) | X4 · `../../roadmap/guidelines/honesty.md` |
-| Brick reserved for deletion | `../../roadmap/guidelines/auth.md` (X6) |
-| The tending meter, receipts, out-of-allowance pause (in-app) | `../../roadmap/guidelines/tending.md` §3–§6 |
-| The echo lock and its honest cut | `../../journal/journal.md` §6 |
-| What's sold, the identity, the page | **this doc** |
-
-## Phone
-
-One column, plan card first, ledger second, FAQ last. The **receipt ledger stays the hero** —
-it is what teaches "a tending" — but scrolls as a list, not a table. The meter specimen keeps
-its "for example" tag. Checkout hand-off obeys X8 §7's keyboard contract; the CTA lives in the
-action lane and never sticks to the bottom edge over the home bar.
+- [Plan and usage proposal](../../subscription-usage-proposal.md): boards, credit fixtures and API gaps.
+- [Roadmap AI assistance](../../roadmap/guidelines/ai-assistance.md): request, result and failure principles.
+- [Journal](../../journal/journal.md): included passive Echoes.

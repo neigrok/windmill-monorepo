@@ -40,7 +40,7 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
       <div style={shell}>
         <span style={mark}><Icon name="sparkles" size={17} /></span>
         {working ? (
-          <div style={thinking}><span style={dot} />Tending your tree…</div>
+          <div style={thinking}><span style={dot} />Updating roadmap…</div>
         ) : (
           <input
             ref={inputRef}
@@ -53,7 +53,7 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
             style={field}
           />
         )}
-        <button type="submit" aria-label="Tend" disabled={working || !value.trim()} style={{ ...send, opacity: !working && value.trim() ? 1 : 0.35 }}>
+        <button type="submit" aria-label="Ask AI" disabled={working || !value.trim()} style={{ ...send, opacity: !working && value.trim() ? 1 : 0.35 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 19V5M5 12l7-7 7 7" />
           </svg>

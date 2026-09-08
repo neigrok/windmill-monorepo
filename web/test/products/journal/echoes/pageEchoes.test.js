@@ -219,7 +219,7 @@ test('the margin’s width is asked in the hook and nowhere else — the stylesh
 
 test('the frame wears that one answer: the class, the panel and the page footer all read it', () => {
   assert.match(APP, /echoes\.marginOpen \? ' has-margin' : ''/);
-  assert.match(APP, /\{echoes\.marginOpen && <EchoMargin echoes=\{echoes\} page=\{shownPage\} sheeted=\{Boolean\(sheetPage\)\} \/>\}/);
+  assert.match(APP, /\{echoes\.marginOpen && <EchoMargin echoes=\{echoes\} page=\{shownPage\} \/>\}/);
   assert.match(APP, /\{!echoes\.marginOpen && openPage && <InkFooter/);
   // The panel draws the page the SWAP is showing, never this frame's pick: one source of truth for
   // the panel, its stamp, its rule and the day row that lights on the canvas.
@@ -433,4 +433,23 @@ test('the count cross-fade re-arms on a second change, so no digit ever flips at
 
   t.mock.timers.tick(700);
   assert.deepEqual(face(), { cls: 'je-tab-count', digit: 4 }, 'and only then is the fade over');
+});
+
+test('a free account can read every echo and open its source without an upgrade', () => {
+  const page = {
+    day: '2026-08-11',
+    entitled: false,
+    matches: [
+      { day: '2026-05-02', text: 'Every word of this older passage is available.', withheldWords: 0 },
+      { day: '2026-01-19', text: 'The second passage is available too.', withheldWords: 0 },
+    ],
+  };
+  const html = markup(echoesWith({ pageOf: () => page, openDay: page.day }));
+  const passages = [...html.matchAll(/class="je-ink-passage">([^<]*)<\/span>/g)].map((match) => match[1]);
+  assert.deepEqual(passages, [
+    'Every word of this older passage is available.',
+    'The second passage is available too.',
+  ]);
+  assert.doesNotMatch(html, /Windmill One|MORE WORDS|je-free-path|je-sheet/);
+  assert.doesNotMatch(APP, /OneSheet|sheetPage/);
 });

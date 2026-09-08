@@ -32,7 +32,7 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 | gallery | the public wall + the in-product browse shelf | `guidelines/gallery.md` |
 | X2 · share | explicit publication and public link | `guidelines/sharing.md` |
 | X2 · preview | stored/fallback link previews and live gallery portraits | `guidelines/og-tree-cards.md` |
-| tending | the in-tree agent | `guidelines/tending.md` |
+| AI assistance | the roadmap AI interaction | `guidelines/ai-assistance.md` |
 | — | the tree canvas geometry contract | `guidelines/tree-layout-contract.md` |
 | — | the activity feed | `guidelines/event-log.md` |
 | — | the Next up panel | `guidelines/whats-next.md` |
