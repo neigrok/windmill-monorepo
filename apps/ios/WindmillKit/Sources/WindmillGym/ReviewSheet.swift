@@ -51,7 +51,7 @@ struct ReviewSheet: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+                    VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                         if let proposal {
                             head(proposal)
                             if !proposal.head.summary.isEmpty { wrote(proposal) }
@@ -70,9 +70,9 @@ struct ReviewSheet: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .padding(.horizontal, WindmillSpace.x5)
-                    .padding(.top, WindmillSpace.x4)
-                    .padding(.bottom, WindmillSpace.x4)
+                    .padding(.horizontal, GymLayout.gutter)
+                    .padding(.top, GymLayout.contentTop)
+                    .padding(.bottom, GymLayout.scrollTailBand)
                     // The end is the diff's, never the loading line's: the marker exists only once a proposal is
                     // drawn, so a diff landing after the first layout cannot inherit a gate the placeholder opened.
                     // It is read twice — where it sits in the viewport, and where it sits in the document, which a
@@ -122,7 +122,7 @@ struct ReviewSheet: View {
     // The model's prose in a quoted block under its kicker, apart from the counted rows. The kicker is an
     // attribution, not an eyebrow: drawn as written, never uppercased.
     private func wrote(_ proposal: Proposal) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+        VStack(alignment: .leading, spacing: GymLayout.pair) {
             Text(proposal.head.kicker)
                 .font(GymType.numeral(11.5, .bold))
                 .foregroundStyle(skin.inkFaint)
@@ -139,7 +139,7 @@ struct ReviewSheet: View {
     }
 
     private func rows(_ proposal: Proposal) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+        VStack(alignment: .leading, spacing: GymLayout.cardGap) {
             ForEach(proposal.blocks) { block in
                 switch block {
                 case .row(_, .renamed(let before, let after)):
@@ -309,7 +309,7 @@ struct ReviewSheet: View {
             }
             .disabled(deciding)
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .padding(.top, WindmillSpace.x2)
         .padding(.bottom, WindmillSpace.x3)
         .background(skin.surface)
@@ -414,7 +414,7 @@ struct ProposalCard: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             HStack(spacing: WindmillSpace.x2) {
                 Circle()
                     .fill(skin.accent)
@@ -450,7 +450,7 @@ struct ProposalCard: View {
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.accent))
             }
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accentSoft))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.accent, lineWidth: 1))

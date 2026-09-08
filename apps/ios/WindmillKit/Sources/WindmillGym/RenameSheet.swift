@@ -50,7 +50,7 @@ struct RenameSheet: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             field
 
             if !proof.isEmpty { proven }
@@ -62,7 +62,7 @@ struct RenameSheet: View {
                     .lineSpacing(3)
             }
         }
-        .padding(WindmillSpace.x5)
+        .padding(GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(skin.surface)
         .task { typing = true }
@@ -97,7 +97,7 @@ struct RenameSheet: View {
     }
 
     private var proven: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             HStack(spacing: WindmillSpace.x2) {
                 Text("✓")
                     .font(WindmillFont.body(14))
@@ -120,7 +120,7 @@ struct RenameSheet: View {
             }
             .font(GymType.numeral(12.5))
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.canvas))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)

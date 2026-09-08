@@ -120,7 +120,7 @@ struct ThreadsScreen: View {
                     .foregroundStyle(skin.inkFaint)
             }
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.cardInset)
         .padding(.vertical, WindmillSpace.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
@@ -153,7 +153,7 @@ struct ThreadsScreen: View {
     }
 
     private func silence(_ line: String) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(line)
                 .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)
@@ -176,7 +176,7 @@ struct ThreadsScreen: View {
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .padding(.bottom, WindmillSpace.x2)
     }
 
@@ -213,7 +213,7 @@ struct ThreadScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                 if let thread {
                     head(thread)
                     turns(thread)
@@ -235,9 +235,9 @@ struct ThreadScreen: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x4)
-            .padding(.bottom, WindmillSpace.x8)
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.top, GymLayout.contentTop)
+            .padding(.bottom, GymLayout.scrollTail)
         }
         .task { await read() }
         .onChange(of: receipts) { _, _ in Task { await read() } }
@@ -260,7 +260,7 @@ struct ThreadScreen: View {
     }
 
     private func turns(_ thread: AskThread) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             ForEach(Array((thread.turns ?? []).filter(\.isDrawn).enumerated()), id: \.offset) { _, turn in
                 if turn.from == .lifter {
                     HStack {
@@ -299,7 +299,7 @@ struct ThreadScreen: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(skin.inkFaint)
             }
-            .padding(.horizontal, WindmillSpace.x3)
+            .padding(.horizontal, GymLayout.rowInset)
             .frame(minHeight: GymTap.minimum)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
@@ -312,13 +312,13 @@ struct ThreadScreen: View {
         Text(line)
             .font(GymType.numeral(12.5, .bold))
             .foregroundStyle(skin.inkDim)
-            .padding(.horizontal, WindmillSpace.x3)
+            .padding(.horizontal, GymLayout.rowInset)
             .frame(minHeight: WindmillSpace.x8)
             .background(Capsule().fill(skin.raised))
     }
 
     private func silence(_ line: String) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(line)
                 .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)
@@ -353,7 +353,7 @@ private struct ThreadRow: ViewModifier {
         content
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x5,
-                                      bottom: 4, trailing: WindmillSpace.x5))
+            .listRowInsets(EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
+                                      bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter))
     }
 }

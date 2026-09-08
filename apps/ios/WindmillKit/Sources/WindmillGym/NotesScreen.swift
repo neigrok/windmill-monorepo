@@ -31,11 +31,12 @@ struct NotesScreen: View {
                 list(standing: Self.standing(notes, outside: withheld))
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                    VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                         if let failure { silence(failure) } else { reading }
                     }
-                    .padding(.horizontal, WindmillSpace.x5)
-                    .padding(.vertical, WindmillSpace.x4)
+                    .padding(.horizontal, GymLayout.gutter)
+                    .padding(.top, GymLayout.contentTop)
+                    .padding(.bottom, GymLayout.scrollTail)
                 }
             }
         }
@@ -52,7 +53,7 @@ struct NotesScreen: View {
     }
 
     private var head: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+        VStack(alignment: .leading, spacing: GymLayout.pair) {
             Text(Notes.honesty)
                 .font(WindmillFont.body(15, .semibold))
                 .foregroundStyle(skin.ink)
@@ -63,8 +64,8 @@ struct NotesScreen: View {
                 .foregroundStyle(skin.inkFaint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.top, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.gutter)
+        .padding(.top, GymLayout.contentTop)
         .padding(.bottom, WindmillSpace.x3)
         .overlay(alignment: .bottom) { Rectangle().fill(skin.line).frame(height: 1) }
     }
@@ -121,11 +122,12 @@ struct NotesScreen: View {
     }
 
     private var rowInsets: EdgeInsets {
-        EdgeInsets(top: 4, leading: WindmillSpace.x5, bottom: 4, trailing: WindmillSpace.x5)
+        EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
+                  bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter)
     }
 
     private func row(_ stored: Note) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+        VStack(alignment: .leading, spacing: GymLayout.pair) {
             Text(stored.title)
                 .font(WindmillFont.body(15, .bold))
                 .foregroundStyle(skin.ink)
@@ -137,7 +139,7 @@ struct NotesScreen: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.cardInset)
         .padding(.vertical, WindmillSpace.x2)
         .frame(maxWidth: .infinity, minHeight: GymTap.row, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
@@ -149,7 +151,7 @@ struct NotesScreen: View {
         Text(title)
             .font(WindmillFont.body(15))
             .foregroundStyle(skin.inkFaint)
-            .padding(.horizontal, WindmillSpace.x4)
+            .padding(.horizontal, GymLayout.cardInset)
             .padding(.vertical, WindmillSpace.x2)
             .frame(maxWidth: .infinity, minHeight: GymTap.row, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
@@ -162,7 +164,7 @@ struct NotesScreen: View {
     // cap line has to stand while it is true.
     @ViewBuilder
     private func foot(stored count: Int) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             if Notes.canAdd(count) {
                 Button { editing = NoteDraft() } label: {
                     Text(Notes.add)
@@ -201,7 +203,7 @@ struct NotesScreen: View {
     }
 
     private func silence(_ line: String) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(line)
                 .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)
@@ -303,7 +305,7 @@ struct NoteEditor: View {
         VStack(spacing: 0) {
             editorHead
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                     titleField
                     if let counter = Notes.counter(characters: Notes.titleCharacters(draft.title)) {
                         Text(counter)
@@ -326,8 +328,9 @@ struct NoteEditor: View {
                     }
                     if draft.stored { deleteRow }
                 }
-                .padding(.horizontal, WindmillSpace.x5)
-                .padding(.vertical, WindmillSpace.x4)
+                .padding(.horizontal, GymLayout.gutter)
+                .padding(.top, GymLayout.contentTop)
+                .padding(.bottom, GymLayout.scrollTail)
             }
         }
         .task { focused = draft.title.isEmpty ? .title : .body }
@@ -346,14 +349,14 @@ struct NoteEditor: View {
                     .font(WindmillFont.body(15, .bold))
                     .foregroundStyle(skin.onAccent)
                     .padding(.horizontal, WindmillSpace.x4)
-                    .frame(minHeight: GymTap.minimum)
+                    .frame(minHeight: GymTap.row)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.accent))
             }
             // Never disabled for bounds: an over-limit tap is refused in place, in the server's sentence.
             .disabled(working)
         }
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.top, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.gutter)
+        .padding(.top, GymLayout.contentTop)
         .padding(.bottom, WindmillSpace.x2)
     }
 
@@ -364,8 +367,8 @@ struct NoteEditor: View {
             .focused($focused, equals: .title)
             .submitLabel(.next)
             .onSubmit { focused = .body }
-            .padding(.horizontal, WindmillSpace.x3)
-            .frame(minHeight: GymTap.row)
+            .padding(.horizontal, GymLayout.rowInset)
+            .frame(minHeight: GymTap.secondary)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                 .strokeBorder(Notes.titleCharacters(draft.title) > Notes.maxTitleCharacters ? skin.alarmInk : skin.lineStrong,
@@ -396,7 +399,7 @@ struct NoteEditor: View {
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
         }
         .disabled(working)
-        .padding(.top, WindmillSpace.x4)
+        .padding(.top, GymLayout.sectionGap)
     }
 
     // Refused in place with the server's sentence, whether it was this screen or the server that refused.
@@ -429,9 +432,9 @@ struct NotesSignedOutStance: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             Text(Notes.needsSignIn)
-                .padding(.top, WindmillSpace.x4)
+                .padding(.top, GymLayout.contentTop)
                 .font(WindmillFont.body(15))
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
@@ -440,13 +443,13 @@ struct NotesSignedOutStance: View {
                 Text(Notes.signIn)
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.row)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

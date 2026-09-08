@@ -25,7 +25,7 @@ public enum WithheldWords {
     // What deleting a conversation does NOT take with it, said at the moment of the act rather than
     // three screens deep inside the conversation, where the block that used to say it lived. Six
     // words, byte-identical on all three surfaces — which is why it may not be shortened again on this
-    // one alone, and why this phone draws it over two lines under 402 points (`WithheldTransient`).
+    // one alone, and why this phone draws it over two lines under 410 points (`WithheldTransient`).
     public static let threadDetail = "your routine keeps what you applied"
     public static let session = "Session deleted."
     public static let note = "Note deleted."
@@ -283,9 +283,9 @@ struct WithheldTransient: View {
                             .foregroundStyle(skin.ink)
                             .lineLimit(1)
                         // Two lines, not one. `your routine keeps what you applied` draws 249 points
-                        // and the slot beside the Undo button holds one line only from 402 points up,
+                        // and the slot beside the Undo button holds one line only from 410 points up,
                         // so on a 390-point phone one line is a sentence cut off mid-word. It runs on
-                        // instead: the transient is three lines under 402 and two above, which overruns
+                        // instead: the transient is three lines under 410 and two above, which overruns
                         // `text-budget.md`'s two on the phones the room actually ships to — the detail
                         // is one string in three files and cannot be shortened on this one alone.
                         // Measured by hosting, in `WithheldTransientTests`.

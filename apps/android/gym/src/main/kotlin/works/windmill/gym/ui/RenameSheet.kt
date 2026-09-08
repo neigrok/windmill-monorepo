@@ -67,7 +67,7 @@ fun RenameSheet(
             .background(GymSkin.surface)
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text(title, style = WindmillFont.display(22), color = GymSkin.ink)
@@ -130,7 +130,7 @@ private fun ProofBlock(proof: List<Record.Proof>) {
             .fillMaxWidth()
             .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

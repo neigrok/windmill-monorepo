@@ -22,7 +22,7 @@ struct RoutineScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                 if let routine {
                     head(routine)
                     rows(routine)
@@ -37,9 +37,9 @@ struct RoutineScreen: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x4)
-            .padding(.bottom, WindmillSpace.x4)
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.top, GymLayout.contentTop)
+            .padding(.bottom, GymLayout.scrollTailBand)
         }
         .safeAreaInset(edge: .bottom) { reachBand }
         .task { await read() }
@@ -76,7 +76,7 @@ struct RoutineScreen: View {
 
     // Keyed on position, never on the movement: a routine may name one twice, and duplicate `ForEach` ids are undefined.
     private func rows(_ routine: Routine) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+        VStack(alignment: .leading, spacing: GymLayout.cardGap) {
             ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
                 HStack(spacing: WindmillSpace.x3) {
                     MovementDoor(exerciseId: entry.exerciseId, name: name(of: entry.exerciseId),
@@ -88,7 +88,7 @@ struct RoutineScreen: View {
                         .font(GymType.numeral(13))
                         .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
                 }
-                .padding(.horizontal, WindmillSpace.x3)
+                .padding(.horizontal, GymLayout.rowInset)
                 .frame(minHeight: GymTap.minimum)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
@@ -150,7 +150,7 @@ struct RoutineScreen: View {
                 .foregroundStyle(skin.accent)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x3)
+        .padding(.horizontal, GymLayout.rowInset)
         .frame(minHeight: GymTap.minimum)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -169,7 +169,7 @@ struct RoutineScreen: View {
             }
         }
         .frame(minHeight: GymTap.minimum)
-        .padding(.horizontal, WindmillSpace.x3)
+        .padding(.horizontal, GymLayout.rowInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
@@ -189,7 +189,7 @@ struct RoutineScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
-            .padding(.horizontal, WindmillSpace.x5)
+            .padding(.horizontal, GymLayout.gutter)
             .padding(.bottom, WindmillSpace.x2)
         }
     }
@@ -197,7 +197,7 @@ struct RoutineScreen: View {
     // The whole-screen failure says so and draws the way back to asking again: `.task` fires once per
     // appearance, so signal returning is not a redraw.
     private func silence(_ line: String) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(line)
                 .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)

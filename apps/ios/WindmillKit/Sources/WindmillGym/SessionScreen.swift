@@ -280,7 +280,7 @@ struct SessionScreen: View {
 
     private func row(_ set: Performed.Row, of movement: String) -> some View {
         Button { open(set, of: movement) } label: {
-            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            VStack(alignment: .leading, spacing: GymLayout.pair) {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(set.number)
                         .font(GymType.numeral(12))
@@ -413,7 +413,7 @@ struct PlainRow: ViewModifier {
         content
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x5,
-                                      bottom: 4, trailing: WindmillSpace.x5))
+            .listRowInsets(EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
+                                      bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter))
     }
 }

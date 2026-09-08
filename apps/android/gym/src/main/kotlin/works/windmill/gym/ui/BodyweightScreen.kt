@@ -180,7 +180,7 @@ fun WeighInSheet(
             .background(GymSkin.surface)
             .imePadding()
             .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
         Text(Bodyweight.sheetTitle(fixedDate), style = WindmillFont.display(22), color = GymSkin.ink)

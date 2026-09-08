@@ -205,7 +205,7 @@ private fun Tiles(tiles: List<Finish.Tile>) {
         modifier = Modifier
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         tiles.forEach { tile ->
             Column(
@@ -232,7 +232,7 @@ private fun RecordLine(sentence: String) {
             .fillMaxWidth()
             .background(GymSkin.prSoft, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text("Personal record", style = GymType.numeral(11), color = GymSkin.prInk)
         Text(
@@ -302,7 +302,7 @@ fun FinishScreen(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
     ) {
         // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.
@@ -367,7 +367,7 @@ private fun KeepAsRoutine(
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text("Keep this as a routine", style = WindmillFont.display(18), color = GymSkin.ink)
 

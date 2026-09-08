@@ -34,7 +34,7 @@ fun DeviationSheet(
             .fillMaxWidth()
             .background(GymSkin.surface)
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text("Heavier than the plan", style = WindmillFont.display(22), color = GymSkin.ink)

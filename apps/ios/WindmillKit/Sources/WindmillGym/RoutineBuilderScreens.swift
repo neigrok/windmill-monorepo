@@ -334,7 +334,7 @@ private struct TargetSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+                VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                     Text(place)
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
@@ -363,7 +363,7 @@ private struct TargetSheet: View {
 
                     commit
                 }
-                .padding(WindmillSpace.x5)
+                .padding(GymLayout.gutter)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(skin.surface)
@@ -412,7 +412,7 @@ private struct TargetSheet: View {
                     .foregroundStyle(refusal == nil ? skin.weightInk : skin.alarmInk)
                     .keyboardType(.decimalPad)
                     .focused($typing, equals: focus)
-                    .padding(.leading, WindmillSpace.x3)
+                    .padding(.leading, GymLayout.rowInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(caption)
                     .onChange(of: text.wrappedValue) { was, typed in

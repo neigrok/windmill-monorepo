@@ -216,7 +216,7 @@ private fun MarkTile(tile: Record.Tile, modifier: Modifier) {
         modifier = modifier
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text(
             tile.label.uppercase(),
@@ -240,7 +240,7 @@ private fun ChartCard(chart: Record.Chart) {
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(

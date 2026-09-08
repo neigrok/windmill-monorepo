@@ -348,7 +348,7 @@ private fun CreateMovementSheet(
             .background(GymSkin.surface)
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
@@ -439,7 +439,7 @@ private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .dashedEdge(GymSkin.accent, WindmillRadius.lg)
             .clickable(role = Role.Button, onClick = onBuildRoutine)
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text(
             "Have a written program? An agent can build it — sign in first.",
@@ -464,7 +464,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
             .background(GymSkin.surface)
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
             .clickable(role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
-            .padding(horizontal = WindmillSpace.x3),
+            .padding(horizontal = GymLayout.rowInset),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {

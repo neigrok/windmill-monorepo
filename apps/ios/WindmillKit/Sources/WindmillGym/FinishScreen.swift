@@ -188,7 +188,7 @@ struct ReviewReadout: View {
     private func tiles(_ stats: Review.Stats) -> some View {
         HStack(alignment: .top, spacing: WindmillSpace.x3) {
             ForEach(Finish.tiles(stats)) { tile in
-                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+                VStack(alignment: .leading, spacing: GymLayout.pair) {
                     Text(tile.value)
                         .font(GymType.numeral(26, .semibold))
                         .foregroundStyle(skin.ink)
@@ -201,7 +201,7 @@ struct ReviewReadout: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
     }
 
@@ -215,7 +215,7 @@ struct ReviewReadout: View {
                 .foregroundStyle(skin.ink)
                 .lineSpacing(4)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.prInk.opacity(0.12)))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
@@ -223,7 +223,7 @@ struct ReviewReadout: View {
     }
 
     private func against(_ comparison: Finish.Comparison) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(comparison.title)
                 .font(GymType.numeral(11))
                 .foregroundStyle(skin.inkFaint)
@@ -288,7 +288,7 @@ struct FinishScreen: View {
                 VStack(alignment: .leading, spacing: WindmillSpace.x5) {
                     // The title stays in the content and never becomes the bar's: it is the largest
                     // thing on the screen, and `Ended early.` is the whole salience of a slight session.
-                    VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+                    VStack(alignment: .leading, spacing: GymLayout.pair) {
                         Text(head.title)
                             .font(WindmillFont.display(30))
                             .foregroundStyle(skin.ink)
@@ -322,9 +322,9 @@ struct FinishScreen: View {
                     }
 
                 }
-                .padding(.horizontal, WindmillSpace.x5)
-                .padding(.top, WindmillSpace.x4)
-                .padding(.bottom, WindmillSpace.x8)
+                .padding(.horizontal, GymLayout.gutter)
+                .padding(.top, GymLayout.contentTop)
+                .padding(.bottom, GymLayout.scrollTail)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -358,7 +358,7 @@ struct FinishScreen: View {
     }
 
     private var keepAsRoutine: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text("Keep this as a routine")
                 .font(GymType.numeral(10.5, .bold))
                 .textCase(.uppercase)
@@ -387,7 +387,7 @@ struct FinishScreen: View {
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
             }
-            .padding(.horizontal, WindmillSpace.x3)
+            .padding(.horizontal, GymLayout.rowInset)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                 .strokeBorder(skin.lineStrong, lineWidth: 1))
@@ -425,7 +425,7 @@ struct FinishScreen: View {
             refusal(Finish.keepRefusal(name: routineName, failure: failure),
                     ink: unnamed ? skin.inkFaint : skin.alarmInk)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(skin.accent, lineWidth: 1))

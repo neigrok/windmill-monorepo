@@ -363,7 +363,7 @@ private fun SettingCard(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         content()
     }

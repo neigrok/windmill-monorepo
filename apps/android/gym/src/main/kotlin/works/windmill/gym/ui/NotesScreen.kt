@@ -263,7 +263,7 @@ private fun NoteList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
         contentPadding = PaddingValues(bottom = GymLayout.scrollTail),
     ) {
         itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->

@@ -24,7 +24,7 @@ struct BodyweightScreen: View {
         let standing = Bodyweight.chart(store.allWeighIns, window: window, today: today)
         let chart = Bodyweight.chart(store.bodyweight, window: window, today: today)
         return ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                 head(today: today)
                 windows
                 if let empty = Bodyweight.emptyWindow(standing) {
@@ -36,9 +36,9 @@ struct BodyweightScreen: View {
                     card(chart)
                 }
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x4)
-            .padding(.bottom, WindmillSpace.x8)
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.top, GymLayout.contentTop)
+            .padding(.bottom, GymLayout.scrollTail)
         }
         .sheet(item: $repairing) { held in
             WeighInSheet(existing: held, fixedDate: held.dateLocal,
@@ -82,7 +82,7 @@ struct BodyweightScreen: View {
     }
 
     private func card(_ chart: Bodyweight.Chart) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             HStack(alignment: .firstTextBaseline) {
                 Text("KG PER WEIGH-IN")
                     .font(GymType.numeral(10.5))
@@ -96,7 +96,7 @@ struct BodyweightScreen: View {
             dots(chart)
                 .frame(height: 220)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
@@ -230,7 +230,7 @@ struct WeighInSheet: View {
         let day = fixedDate ?? Bodyweight.dateLocal(date)
         let dateRefusal = Bodyweight.dateRefusal(day, today: Bodyweight.dateLocal(Date()))
         return ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                 head
                 field(reading)
                 dateRow
@@ -243,7 +243,7 @@ struct WeighInSheet: View {
                 save(reading, on: day, refused: dateRefusal != nil)
                 if let onDelete { deleteRow(onDelete) }
             }
-            .padding(WindmillSpace.x5)
+            .padding(GymLayout.gutter)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(skin.surface)

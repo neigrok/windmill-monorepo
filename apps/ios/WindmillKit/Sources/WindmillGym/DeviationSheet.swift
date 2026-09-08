@@ -47,7 +47,7 @@ struct DeviationSheet: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             Text("Heavier than the plan")
                 .font(WindmillFont.display(22))
                 .foregroundStyle(skin.ink)
@@ -72,7 +72,7 @@ struct DeviationSheet: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.row)
             }
         }
-        .padding(WindmillSpace.x5)
+        .padding(GymLayout.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(skin.surface)
     }

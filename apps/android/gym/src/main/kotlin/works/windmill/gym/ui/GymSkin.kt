@@ -104,7 +104,7 @@ object GymGlyph {
 object GymTap {
     val minimum = 46.dp
     val primary = 64.dp
-    val row = 52.dp        // list rows, ladder pills, secondary buttons
+    val row = 52.dp        // list rows, ladder pills
     val secondary = 56.dp  // dashed add slots, Apply, Sign in, text fields
 }
 
@@ -120,6 +120,7 @@ object GymLayout {
     val pair = WindmillSpace.x1            // title ↔ caption inside one row
     val scrollTail = WindmillSpace.x8      // bottom of a scroll body with nothing pinned under it
     val scrollTailBand = WindmillSpace.x4  // bottom of a scroll body with a band pinned under it
+    val sheetBottom = WindmillSpace.x6     // bottom of every sheet, under its last control
     val contentTop = WindmillSpace.x2      // first content under the top bar
 }
 

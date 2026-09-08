@@ -51,7 +51,7 @@ struct LoggerScreen: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             header
             if let line = LiveLines.onThisDeviceLine(store.strandedCount, stall: store.strandedBy) {
                 unsynced(line)
@@ -67,7 +67,7 @@ struct LoggerScreen: View {
                 todayColumn
                 value
                 Spacer(minLength: 0)
-                VStack(spacing: WindmillSpace.x3) {
+                VStack(spacing: GymLayout.blockGap) {
                     kindPill
                     ladder
                     repsRow
@@ -75,7 +75,7 @@ struct LoggerScreen: View {
                 }
             }
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .padding(.top, WindmillSpace.x2)
         .padding(.bottom, WindmillSpace.x3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -255,7 +255,7 @@ struct LoggerScreen: View {
                 .font(GymType.numeral(13))
                 .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.setDone)
         }
-        .padding(.horizontal, WindmillSpace.x3)
+        .padding(.horizontal, GymLayout.rowInset)
         .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
@@ -572,7 +572,7 @@ struct RefusalRows: View {
     var body: some View {
         ForEach(refusals) { refused in
             HStack(alignment: .top, spacing: WindmillSpace.x3) {
-                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+                VStack(alignment: .leading, spacing: GymLayout.pair) {
                     Text(Self.headline(of: refused, in: catalog))
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.alarmInk)

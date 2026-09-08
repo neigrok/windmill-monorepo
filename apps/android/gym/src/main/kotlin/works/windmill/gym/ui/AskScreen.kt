@@ -223,7 +223,7 @@ private fun Head(onNotes: (() -> Unit)?) {
                     .background(GymSkin.surface)
                     .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
                     .clickable(role = Role.Button, onClick = open)
-                    .padding(horizontal = WindmillSpace.x3),
+                    .padding(horizontal = GymLayout.rowInset),
             ) {
                 Text(Ask.notesDoor, style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.ink)
                 Spacer(Modifier.weight(1f))
@@ -317,7 +317,7 @@ private fun ConnectDoor(origin: String) {
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text(
             Ask.freeDoor,
@@ -482,7 +482,7 @@ private fun Minted(
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
@@ -574,7 +574,7 @@ private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
                     .clip(RoundedCornerShape(WindmillRadius.full))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.full))
                     .clickable(enabled = !asking, role = Role.Button) { onAsk(opener) }
-                    .padding(horizontal = WindmillSpace.x3),
+                    .padding(horizontal = GymLayout.rowInset),
             ) {
                 Text(opener, style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.inkDim)
             }

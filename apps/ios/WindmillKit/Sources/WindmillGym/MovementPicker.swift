@@ -191,7 +191,7 @@ struct MovementList: View {
 
     private func row(_ movement: PickerOptions.Row) -> some View {
         Button { onPick(movement.id) } label: {
-            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            VStack(alignment: .leading, spacing: GymLayout.pair) {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x2) {
                     Text(movement.name)
                         .font(WindmillFont.body(17))
@@ -390,8 +390,8 @@ struct OpeningPicker: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
+            VStack(alignment: .leading, spacing: GymLayout.pair) {
                 Text("What are you starting with?")
                     .font(WindmillFont.display(26))
                     .foregroundStyle(skin.ink)
@@ -432,7 +432,7 @@ struct OpeningPicker: View {
                         .font(WindmillFont.body(14, .bold))
                         .foregroundStyle(skin.accent)
                 }
-                .padding(WindmillSpace.x4)
+                .padding(GymLayout.cardInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)

@@ -2077,3 +2077,12 @@ the room's rest row changes to match*, "built on all three surfaces") and
 describe a counting rest row on every surface, and `10-notes.md:124` places Notes "between the units
 toggle and the rest timer" on a settings screen that has no rest timer, and
 `12-native-idiom.md:241` keeps a tabular numeral role "so a running rest clock" does not jitter.
+
+**5s · the routine row is 62 pt on iOS and 64 dp on Android, and the Notes editor's field and Save are
+56 / 52 on both** → deliberate divergence, nothing owed. The routines-list row is a header button at
+the room's 46 floor (`GymTap.minimum`) inside 8 / 8 vertical padding on iOS (`RoutinesScreen.swift`,
+`row`), so it measures 62 pt and carries no `minHeight` of its own; on Android the same row holds an
+M3 `IconButton` at its 48 dp box inside the same 8 / 8 (`RoutinesScreen.kt`), so it measures 64 dp.
+Recorded as a deliberate pair, beside the bar heights, the rail-versus-tab-bar, the M3 drag-handle
+chrome and Android's rack labels, so a later sweep does not read the two points as drift to reconcile. The Notes editor's title field stands at `GymTap.secondary`
+(56) and its Save at `GymTap.row` (52) on both phones (`NotesScreen.swift`, `NotesScreen.kt`).

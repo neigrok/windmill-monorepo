@@ -158,7 +158,7 @@ fun KeypadSheet(
             .fillMaxWidth()
             .background(GymSkin.surface)
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text(
@@ -188,7 +188,7 @@ fun KeypadSheet(
             KeypadEntry.keys.chunked(3).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                    horizontalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
                 ) {
                     row.forEach { key ->
                         Box(

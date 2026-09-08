@@ -371,7 +371,7 @@ struct ConnectScreen: View {
                 Text(isSignedIn ? ConnectedLog.action : ConnectedLog.accountFirst)
                     .font(WindmillFont.body(17, .bold))
                     .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary - 6)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
             .padding(.top, WindmillSpace.x2)

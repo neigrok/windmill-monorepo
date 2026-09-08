@@ -66,7 +66,7 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
     ) {
         Column(
             Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(GymSkin.canvas),
-            verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
+            verticalArrangement = Arrangement.spacedBy(GymLayout.pair, Alignment.CenterVertically),
         ) {
             Text(headline, style = MaterialTheme.typography.bodySmall, color = GymSkin.alarmInk)
             Text(reason, style = MaterialTheme.typography.bodySmall, color = GymSkin.inkDim)

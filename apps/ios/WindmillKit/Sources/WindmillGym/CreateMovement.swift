@@ -31,7 +31,7 @@ struct CreateMovementSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             HStack {
                 Button("Cancel", action: onCancel)
                     .font(WindmillFont.body(14, .bold))
@@ -60,7 +60,7 @@ struct CreateMovementSheet: View {
             Spacer(minLength: 0)
             create
         }
-        .padding(WindmillSpace.x5)
+        .padding(GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(skin.canvas)
         .task { typing = true }
@@ -106,8 +106,8 @@ struct CreateMovementSheet: View {
                 .font(GymType.numeral(10.5))
                 .tracking(0.7)
                 .foregroundStyle(skin.inkFaint)
-            LazyVGrid(columns: Array(repeating: GridItem(spacing: WindmillSpace.x2), count: 2),
-                      spacing: WindmillSpace.x2) {
+            LazyVGrid(columns: Array(repeating: GridItem(spacing: GymLayout.cardGap), count: 2),
+                      spacing: GymLayout.cardGap) {
                 ForEach(Equipment.offered, id: \.0) { value, label in
                     let picked = equipment == value
                     Button { equipment = value } label: {

@@ -126,14 +126,14 @@ struct LogScreen: View {
             Section { head(weeks.count) }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x5,
-                                          bottom: WindmillSpace.x2, trailing: WindmillSpace.x5))
+                .listRowInsets(EdgeInsets(top: 0, leading: GymLayout.gutter,
+                                          bottom: WindmillSpace.x2, trailing: GymLayout.gutter))
             if store.allSessions.isEmpty, store.logFoot == .bottom {
                 Section { nothingYet }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x5,
-                                              bottom: 0, trailing: WindmillSpace.x5))
+                    .listRowInsets(EdgeInsets(top: 0, leading: GymLayout.gutter,
+                                              bottom: 0, trailing: GymLayout.gutter))
             } else {
                 ForEach(weeks) { week in
                     Section {
@@ -163,14 +163,14 @@ struct LogScreen: View {
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: WindmillSpace.x1, leading: WindmillSpace.x5,
-                                              bottom: WindmillSpace.x1, trailing: WindmillSpace.x5))
+                    .listRowInsets(EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
+                                              bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter))
                 }
                 Section { foot }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: WindmillSpace.x3, leading: WindmillSpace.x5,
-                                              bottom: WindmillSpace.x4, trailing: WindmillSpace.x5))
+                    .listRowInsets(EdgeInsets(top: WindmillSpace.x3, leading: GymLayout.gutter,
+                                              bottom: GymLayout.scrollTailBand, trailing: GymLayout.gutter))
             }
         }
         .listStyle(.plain)
@@ -232,7 +232,7 @@ struct LogScreen: View {
                     .background(Capsule().fill(skin.accent))
             }
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .padding(.vertical, WindmillSpace.x2)
     }
 
@@ -284,7 +284,7 @@ struct LogScreen: View {
                     .foregroundStyle(skin.inkDim)
             }
         }
-        .padding(.top, WindmillSpace.x4)
+        .padding(.top, GymLayout.sectionGap)
         .padding(.bottom, WindmillSpace.x2)
     }
 
@@ -319,7 +319,7 @@ struct LogScreen: View {
                     if let e1rm = row.e1rm { fact(e1rm) }
                 }
             }
-            .padding(.horizontal, WindmillSpace.x4)
+            .padding(.horizontal, GymLayout.cardInset)
             .padding(.vertical, WindmillSpace.x3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))

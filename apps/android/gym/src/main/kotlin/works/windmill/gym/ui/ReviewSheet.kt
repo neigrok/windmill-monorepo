@@ -296,7 +296,7 @@ private fun Body(
                 .fillMaxWidth()
                 .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
                 .border(1.dp, GymSkin.alarmInk, RoundedCornerShape(WindmillRadius.md))
-                .padding(WindmillSpace.x4),
+                .padding(GymLayout.cardInset),
         ) {
             Text(
                 "− ${proposal.routineName}",
@@ -333,7 +333,7 @@ private fun Body(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
-                .padding(WindmillSpace.x4),
+                .padding(GymLayout.cardInset),
         )
     }
 }
@@ -461,7 +461,7 @@ private fun ChangeCard(edge: Color, content: @Composable () -> Unit) {
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
             .border(1.dp, edge, RoundedCornerShape(WindmillRadius.md))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         content()
     }
@@ -572,7 +572,7 @@ fun ProposalCard(
             .fillMaxWidth()
             .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))

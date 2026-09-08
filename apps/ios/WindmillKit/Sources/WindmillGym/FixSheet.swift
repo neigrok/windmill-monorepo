@@ -103,7 +103,7 @@ struct FixSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                     head
                     weight
                     ladder
@@ -114,7 +114,7 @@ struct FixSheet: View {
                     save
                     deleteRow
                 }
-                .padding(WindmillSpace.x5)
+                .padding(GymLayout.gutter)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .safeAreaPadding(.bottom, keyboardInset)
@@ -274,7 +274,7 @@ struct FixSheet: View {
                 .foregroundStyle(skin.ink)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
-                .padding(WindmillSpace.x3)
+                .padding(GymLayout.rowInset)
                 .frame(minHeight: GymTap.minimum, alignment: .topLeading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)

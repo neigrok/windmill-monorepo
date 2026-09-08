@@ -190,7 +190,7 @@ fun RoutineBuilder(
                         .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
                         .padding(horizontal = GymLayout.gutter)
-                        .padding(bottom = WindmillSpace.x6),
+                        .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },
                 )
             }
@@ -495,7 +495,7 @@ private fun TargetSheet(
             .background(GymSkin.surface)
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = WindmillSpace.x6),
+            .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {

@@ -100,7 +100,7 @@ fun ThreadsScreen(
                     top = GymLayout.contentTop,
                     bottom = GymLayout.scrollTailBand,
                 ),
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
             ) {
                 // The count captions the rows below it, so it is drawn where there are rows. Between
                 // the two stances — rows held by a window over an account that still has them — the
@@ -359,7 +359,7 @@ private fun Minted(
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))

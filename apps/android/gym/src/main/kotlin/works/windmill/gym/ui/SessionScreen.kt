@@ -224,7 +224,7 @@ fun SessionScreen(
                 top = GymLayout.contentTop,
                 bottom = GymLayout.scrollTail,
             ),
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+            verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
         ) {
             item("head") { SessionHead(standing) }
             val held = movements
@@ -382,7 +382,7 @@ private fun MovementCard(
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -454,7 +454,7 @@ private fun DeleteGround() {
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
             .background(GymSkin.alarmInk.copy(alpha = 0.18f))
-            .padding(horizontal = WindmillSpace.x3),
+            .padding(horizontal = GymLayout.rowInset),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {

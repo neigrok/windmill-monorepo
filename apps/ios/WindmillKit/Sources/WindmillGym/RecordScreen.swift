@@ -15,7 +15,7 @@ struct RecordScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                 if let page {
                     head(page)
                     if page.neverLogged {
@@ -44,9 +44,9 @@ struct RecordScreen: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x4)
-            .padding(.bottom, WindmillSpace.x8)
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.top, GymLayout.contentTop)
+            .padding(.bottom, GymLayout.scrollTail)
         }
         // Shaped once, outside the body; a second visit asks again.
         .task { await read() }
@@ -77,14 +77,14 @@ struct RecordScreen: View {
     }
 
     private func tiles(_ page: Record.Page) -> some View {
-        HStack(spacing: WindmillSpace.x2) {
+        HStack(spacing: GymLayout.cardGap) {
             if let best = page.best { tile(best, ink: skin.prInk) }
             if let heaviest = page.heaviest { tile(heaviest, ink: skin.ink) }
         }
     }
 
     private func tile(_ tile: Record.Tile, ink: Color) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+        VStack(alignment: .leading, spacing: GymLayout.pair) {
             Text(tile.caption.uppercased())
                 .font(GymType.numeral(10.5))
                 .tracking(0.7)
@@ -96,14 +96,14 @@ struct RecordScreen: View {
                 .font(GymType.numeral(11.5))
                 .foregroundStyle(skin.inkFaint)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
     }
 
     private func chart(_ chart: Record.Chart) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             HStack(alignment: .firstTextBaseline) {
                 Text("E1RM PER SESSION")
                     .font(GymType.numeral(10.5))
@@ -133,7 +133,7 @@ struct RecordScreen: View {
             .font(GymType.numeral(10.5))
             .foregroundStyle(skin.inkFaint)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
@@ -148,7 +148,7 @@ struct RecordScreen: View {
     }
 
     private func records(_ rows: [Record.Row]) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+        VStack(alignment: .leading, spacing: GymLayout.cardGap) {
             caption("Personal records")
             ForEach(rows) { row in
                 let leading = row.id == 0
@@ -166,7 +166,7 @@ struct RecordScreen: View {
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
                 }
-                .padding(.horizontal, WindmillSpace.x4)
+                .padding(.horizontal, GymLayout.cardInset)
                 .padding(.vertical, WindmillSpace.x2)
                 .frame(maxWidth: .infinity, minHeight: WindmillSpace.x10, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
@@ -211,7 +211,7 @@ struct RecordScreen: View {
                 .foregroundStyle(skin.inkFaint)
                 .lineSpacing(3)
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
     }
@@ -241,7 +241,7 @@ struct RecordScreen: View {
     }
 
     private func silence(_ line: String, retry: Bool) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(line)
                 .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)

@@ -165,7 +165,7 @@ struct KeypadSheet: View {
     // commit is the reach band under them (`12-native-idiom.md` §"Back, and the thumb": a committing
     // action stays where the thumb is; only the bar's Cancel is the platform's).
     private func content(_ reading: KeypadEntry.Reading) -> some View {
-        VStack(spacing: WindmillSpace.x4) {
+        VStack(spacing: GymLayout.sectionGap) {
             HStack(alignment: .center, spacing: WindmillSpace.x3) {
                 Text(pad.echo)
                     .font(WindmillFont.display(56, .heavy).monospacedDigit())
@@ -188,8 +188,8 @@ struct KeypadSheet: View {
                 .foregroundStyle(reading.isValid ? skin.inkFaint : skin.alarmInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            LazyVGrid(columns: Array(repeating: GridItem(spacing: WindmillSpace.x2), count: 3),
-                      spacing: WindmillSpace.x2) {
+            LazyVGrid(columns: Array(repeating: GridItem(spacing: GymLayout.cardGap), count: 3),
+                      spacing: GymLayout.cardGap) {
                 ForEach(KeypadEntry.keys, id: \.self) { key in
                     Button { pad = pad.pressing(key, in: mode) } label: {
                         Text(key)
@@ -212,7 +212,7 @@ struct KeypadSheet: View {
             }
             .disabled(!reading.isValid)
         }
-        .padding(WindmillSpace.x5)
+        .padding(GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(skin.surface)
     }

@@ -31,17 +31,18 @@ struct AskScreen: View {
             head
             NotesDoorRow(action: doors.openNotes)
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+                VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
                     if conversation.exchanges.isEmpty { opening }
                     ForEach(conversation.exchanges) { exchange in
-                        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                             asked(exchange.question)
                             outcome(of: exchange)
                         }
                     }
                 }
-                .padding(.horizontal, WindmillSpace.x5)
-                .padding(.vertical, WindmillSpace.x4)
+                .padding(.horizontal, GymLayout.gutter)
+                .padding(.top, GymLayout.contentTop)
+                .padding(.bottom, GymLayout.scrollTailBand)
             }
             .defaultScrollAnchor(.bottom)
             composer
@@ -67,8 +68,8 @@ struct AskScreen: View {
                     .frame(minHeight: GymTap.minimum)
             }
         }
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.top, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.gutter)
+        .padding(.top, GymLayout.contentTop)
         .padding(.bottom, WindmillSpace.x3)
         .overlay(alignment: .bottom) {
             Rectangle().fill(skin.line).frame(height: 1)
@@ -76,7 +77,7 @@ struct AskScreen: View {
     }
 
     private var opening: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             Text(Ask.scope)
                 .font(WindmillFont.body(15))
                 .foregroundStyle(skin.inkDim)
@@ -88,7 +89,7 @@ struct AskScreen: View {
 
     // The one path that is not rationed: the empty room offers it, and the cap-reached moment offers it again.
     private var connectDoor: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(Ask.freeDoor)
                 .font(GymType.numeral(12.5))
                 .foregroundStyle(skin.inkFaint)
@@ -103,7 +104,7 @@ struct AskScreen: View {
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
@@ -118,7 +119,7 @@ struct AskScreen: View {
                 .foregroundStyle(skin.ink)
                 .lineSpacing(4)
                 .multilineTextAlignment(.leading)
-                .padding(.horizontal, WindmillSpace.x3)
+                .padding(.horizontal, GymLayout.rowInset)
                 .padding(.vertical, WindmillSpace.x3)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accentSoft))
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
@@ -148,7 +149,7 @@ struct AskScreen: View {
     private func answered(_ answer: AskAnswer, of exchange: AskExchange) -> some View {
         let lines = Ask.stepLines(answer.steps)
         let open = opened.contains(exchange.id)
-        return VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        return VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(answer.answer)
                 .font(WindmillFont.body(14.5))
                 .foregroundStyle(skin.ink)
@@ -199,7 +200,7 @@ struct AskScreen: View {
     @ViewBuilder
     private func proposal(_ id: String) -> some View {
         let found = minted[id]
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             HStack(spacing: WindmillSpace.x2) {
                 Circle()
                     .fill(skin.accent)
@@ -245,7 +246,7 @@ struct AskScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(WindmillSpace.x4)
+        .padding(GymLayout.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.accent, lineWidth: 1))
@@ -256,14 +257,14 @@ struct AskScreen: View {
         Text(line)
             .font(GymType.numeral(12.5, .bold))
             .foregroundStyle(skin.inkDim)
-            .padding(.horizontal, WindmillSpace.x3)
+            .padding(.horizontal, GymLayout.rowInset)
             .frame(minHeight: WindmillSpace.x8)
             .background(Capsule().fill(skin.raised))
             .accessibilityLabel(line)
     }
 
     private func refused(_ why: AskRefusal, of exchange: AskExchange) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Text(why.line)
                 .font(WindmillFont.body(14))
                 .foregroundStyle(skin.inkDim)
@@ -298,7 +299,7 @@ struct AskScreen: View {
     @ViewBuilder
     private var capReachedState: some View {
         if let why = conversation.cappedRefusal {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                 Text(why.line)
                     .font(WindmillFont.body(15))
                     .foregroundStyle(skin.inkDim)
@@ -343,7 +344,7 @@ struct AskScreen: View {
             }
             if conversation.capReached { capReachedState } else { input }
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .padding(.top, WindmillSpace.x3)
     }
 
@@ -406,7 +407,7 @@ struct AskSignedOutStance: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             AskStanceHead()
             Text(Ask.scope)
                 .font(WindmillFont.body(15))
@@ -422,13 +423,13 @@ struct AskSignedOutStance: View {
                 Text(Ask.signIn)
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.row)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -440,7 +441,7 @@ struct AskAbsentStance: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             AskStanceHead()
             Text(Ask.absentLine)
                 .font(WindmillFont.body(15))
@@ -450,7 +451,7 @@ struct AskAbsentStance: View {
             NotesDoorRow(action: onNotes)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.horizontal, GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -472,7 +473,7 @@ struct NotesDoorRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(skin.inkFaint)
             }
-            .padding(.horizontal, WindmillSpace.x5)
+            .padding(.horizontal, GymLayout.gutter)
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -489,6 +490,6 @@ private struct AskStanceHead: View {
             .font(GymType.numeral(11))
             .foregroundStyle(skin.inkFaint)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, WindmillSpace.x4)
+            .padding(.top, GymLayout.contentTop)
     }
 }

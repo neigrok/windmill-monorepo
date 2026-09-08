@@ -445,7 +445,7 @@ fun LoggerScreen(
                         .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
                         .padding(horizontal = GymLayout.gutter)
-                        .padding(bottom = WindmillSpace.x6),
+                        .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },
                 )
                 is LoggerSheet.Deviation -> DeviationSheet(
@@ -755,7 +755,7 @@ private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modif
             .border(1.dp, GymSkin.line, shape)
             .clickable(role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) }
             .semantics(mergeDescendants = true) { contentDescription = said }
-            .padding(horizontal = WindmillSpace.x3),
+            .padding(horizontal = GymLayout.rowInset),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {

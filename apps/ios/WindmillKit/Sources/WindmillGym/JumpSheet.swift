@@ -27,7 +27,7 @@ struct JumpSheet: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
             List {
                 ForEach(rows) { row in
                     Button { onJump(row.id) } label: { movement(row) }
@@ -74,7 +74,7 @@ struct JumpSheet: View {
                 }
             }
         }
-        .padding(WindmillSpace.x5)
+        .padding(GymLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(skin.canvas)
     }

@@ -299,7 +299,6 @@ private fun RoutineRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.row)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(
                 1.dp,
@@ -381,7 +380,7 @@ private fun ClaimCard(onSignIn: () -> Unit) {
             .fillMaxWidth()
             .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClickLabel = "sign in", onClick = onSignIn)
-            .padding(WindmillSpace.x4),
+            .padding(GymLayout.cardInset),
     ) {
         Text(
             "Your log is saved on this device.",

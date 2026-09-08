@@ -24,8 +24,8 @@ struct RoutinesScreen: View {
 
     // Every section carries it, empty state included: the room's margin is one number, and a section
     // that leaves it out draws its content 3pt off the cards above it.
-    private let rowInsets = EdgeInsets(top: 4, leading: WindmillSpace.x5,
-                                       bottom: 4, trailing: WindmillSpace.x5)
+    private let rowInsets = EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
+                                       bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter)
 
     // What the ACCOUNT holds decides the state — the empty stance and the two acts it offers, the
     // reach band; the window decides which rows are drawn, and the count captioning them is one of
@@ -89,7 +89,7 @@ struct RoutinesScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
-            .padding(.horizontal, WindmillSpace.x5)
+            .padding(.horizontal, GymLayout.gutter)
             .padding(.bottom, WindmillSpace.x2)
         }
     }
@@ -108,7 +108,7 @@ struct RoutinesScreen: View {
     }
 
     private var empty: some View {
-        VStack(spacing: WindmillSpace.x4) {
+        VStack(spacing: GymLayout.sectionGap) {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(skin.inkFaint)
@@ -158,7 +158,7 @@ struct RoutinesScreen: View {
     // The whole card is the sign-in door, so the sentence is not the only affordance.
     private var claimOffer: some View {
         Button(action: onSignIn) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            VStack(alignment: .leading, spacing: GymLayout.pair) {
                 Text("Your log is saved on this device.")
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
@@ -168,7 +168,7 @@ struct RoutinesScreen: View {
                     .lineSpacing(3)
                     .multilineTextAlignment(.leading)
             }
-            .padding(WindmillSpace.x4)
+            .padding(GymLayout.cardInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
         }
@@ -207,7 +207,7 @@ struct RoutinesScreen: View {
     // settled history are read on the routine's own screen, which is the only screen that draws them.
     private func row(_ routine: Routine) -> some View {
         let pending = store.pending(of: routine.id)
-        return VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        return VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Button { onOpen(routine.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(routine.name)
@@ -236,9 +236,9 @@ struct RoutinesScreen: View {
             // one holding more keeps this row, which is where the count is said.
             if let newest = store.waitingOnTheRow(of: routine.id) { waiting(newest, of: pending.count) }
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, GymLayout.cardInset)
         .padding(.vertical, WindmillSpace.x2)
-        .frame(maxWidth: .infinity, minHeight: GymTap.row, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(pending.isEmpty ? skin.line : skin.accent, lineWidth: 1))
