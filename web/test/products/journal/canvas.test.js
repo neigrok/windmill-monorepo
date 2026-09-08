@@ -79,3 +79,36 @@ test('nothing but the canvas holds the canvas position: scroll anchoring is off 
   assert.match(scroll, /overflow-anchor: none;/);
   assert.equal(CSS.split('overflow-anchor').length - 1, 1);
 });
+
+test('measuring a tall composer keeps the viewport until its content really shrinks', () => {
+  const source = readFileSync(new URL('../../../src/products/journal/Canvas.jsx', import.meta.url), 'utf8');
+  const callback = source.slice(source.indexOf('const sizeToContent ='), source.indexOf('useLayoutEffect(sizeToContent'));
+  const measure = new Function('textareaRef', 'widthRef', `${callback}; sizeToContent();`);
+
+  for (const [contentHeight, expectedScrollTop] of [[1500, 1050], [1528, 1050], [1300, 900], [28, 0]]) {
+    let scrollTop = 1050;
+    const composer = { style: { minHeight: '' } };
+    const field = {
+      parentElement: composer,
+      style: { height: '1500px' },
+      clientWidth: 640,
+      get offsetHeight() { return this.style.height === 'auto' ? 28 : parseFloat(this.style.height); },
+      get scrollHeight() {
+        const height = Math.max(this.offsetHeight, parseFloat(composer.style.minHeight) || 0);
+        scrollTop = Math.min(scrollTop, Math.max(0, height + 200 - 600));
+        return contentHeight;
+      },
+    };
+    const widthRef = { current: 0 };
+
+    measure({ current: field }, widthRef);
+    void field.scrollHeight;
+
+    assert.deepEqual({ scrollTop, height: field.style.height, minHeight: composer.style.minHeight, width: widthRef.current }, {
+      scrollTop: expectedScrollTop,
+      height: `${contentHeight}px`,
+      minHeight: '',
+      width: 640,
+    });
+  }
+});

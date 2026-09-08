@@ -104,8 +104,12 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const sizeToContent = () => {
     const ta = textareaRef.current;
     if (!ta) return;
+    const composer = ta.parentElement;
+    // Keep the scroll extent intact while the field collapses for measurement.
+    composer.style.minHeight = `${ta.offsetHeight}px`;
     ta.style.height = 'auto';
     ta.style.height = `${ta.scrollHeight}px`;
+    composer.style.minHeight = '';
     widthRef.current = ta.clientWidth;
   };
   useLayoutEffect(sizeToContent, [body]);
