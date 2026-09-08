@@ -219,9 +219,10 @@ fun SessionScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = WindmillSpace.x5,
-                end = WindmillSpace.x5,
-                bottom = WindmillSpace.x8,
+                start = GymLayout.gutter,
+                end = GymLayout.gutter,
+                top = GymLayout.contentTop,
+                bottom = GymLayout.scrollTail,
             ),
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         ) {
@@ -268,7 +269,7 @@ fun SessionScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = WindmillSpace.x2)
-                        .heightIn(min = GymTap.minimum + 6.dp)
+                        .heightIn(min = GymTap.row)
                         .clickable(role = Role.Button, onClick = onDiscard),
                 ) {
                     Text(
@@ -461,6 +462,9 @@ private fun DeleteGround() {
     }
 }
 
+// The set's kind glyph; the note under a set starts past it and one gap.
+private val setGlyph = 15.dp
+
 @Composable
 private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val pressing = remember { MutableInteractionSource() }
@@ -489,12 +493,12 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
                 Icons.Filled.Check,
                 contentDescription = null,
                 tint = GymSkin.setDone,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(setGlyph),
             )
         } else {
             // No core icon says `warmup`; the dot does, and the kind is said in the tree.
             Box(
-                Modifier.size(15.dp).semantics { contentDescription = set.kind.wire },
+                Modifier.size(setGlyph).semantics { contentDescription = set.kind.wire },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.size(5.dp).clip(CircleShape).background(GymSkin.warmupInk))
@@ -530,7 +534,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
               style = GymType.numeral(11),
               color = GymSkin.inkDim,
               maxLines = 2,
-              modifier = Modifier.padding(start = 23.dp, bottom = WindmillSpace.x1),
+              modifier = Modifier.padding(start = setGlyph + WindmillSpace.x2, bottom = WindmillSpace.x1),
           )
       }
     }

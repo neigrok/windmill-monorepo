@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
@@ -70,7 +69,7 @@ internal fun RowDeleteGround() {
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum + 12.dp)
+            .heightIn(min = GymTap.row)
             .background(GymSkin.alarmInk.copy(alpha = 0.18f), RoundedCornerShape(WindmillRadius.lg))
             .padding(horizontal = WindmillSpace.x4),
         horizontalArrangement = Arrangement.End,

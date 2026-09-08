@@ -211,7 +211,7 @@ private fun Head(proposal: Proposal?, nowMs: Long) {
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = WindmillSpace.x2),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Text(
                 proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
                 style = WindmillFont.display(19),
@@ -251,7 +251,7 @@ private fun StateChip(state: ProposalState) {
                 if (state == ProposalState.Pending) GymSkin.accentSoft else GymSkin.raised,
                 RoundedCornerShape(WindmillRadius.full),
             )
-            .padding(horizontal = 9.dp, vertical = 4.dp),
+            .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
     )
 }
 
@@ -274,7 +274,7 @@ private fun Body(
         ) {
             Text(proposal.kicker, style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
             Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-                Box(Modifier.width(2.dp).heightIn(min = 20.dp).background(GymSkin.accent))
+                Box(Modifier.width(2.dp).heightIn(min = WindmillSpace.x5).background(GymSkin.accent))
                 Text(
                     proposal.summary,
                     style = WindmillFont.body(15).copy(lineHeight = 23.sp),
@@ -355,7 +355,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .heightIn(min = GymTap.minimum)
                 .semantics { stateDescription = if (open) "expanded" else "collapsed" }
                 .clickable(role = Role.Button) { open = !open }
-                .padding(horizontal = WindmillSpace.x2),
+                .padding(horizontal = GymLayout.rowInset),
         ) {
             Text(row.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
             Icon(
@@ -369,7 +369,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
             row.kept.forEach { change ->
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x2),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.rowInset),
                 ) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
@@ -512,7 +512,7 @@ private fun Foot(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.primary - 8.dp)
+                .heightIn(min = GymTap.secondary)
                 .alpha(if (ready) 1f else 0.4f)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
@@ -567,7 +567,7 @@ fun ProposalCard(
     onReview: () -> Unit,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalArrangement = Arrangement.spacedBy(GymLayout.blockGap),
         modifier = Modifier
             .fillMaxWidth()
             .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.lg))

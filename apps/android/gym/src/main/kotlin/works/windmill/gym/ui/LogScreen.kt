@@ -171,9 +171,10 @@ fun LogScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(
-                    start = WindmillSpace.x5,
-                    end = WindmillSpace.x5,
-                    bottom = WindmillSpace.x4,
+                    start = GymLayout.gutter,
+                    end = GymLayout.gutter,
+                    top = GymLayout.contentTop,
+                    bottom = GymLayout.scrollTailBand,
                 ),
             ) {
                 item("head") {

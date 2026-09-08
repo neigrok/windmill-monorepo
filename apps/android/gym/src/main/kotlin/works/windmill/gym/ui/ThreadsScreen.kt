@@ -95,9 +95,10 @@ fun ThreadsScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(
-                    start = WindmillSpace.x4,
-                    end = WindmillSpace.x4,
-                    bottom = WindmillSpace.x4,
+                    start = GymLayout.gutter,
+                    end = GymLayout.gutter,
+                    top = GymLayout.contentTop,
+                    bottom = GymLayout.scrollTailBand,
                 ),
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
             ) {
@@ -153,8 +154,8 @@ fun ThreadsScreen(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = WindmillSpace.x4)
-                    .padding(bottom = WindmillSpace.x4)
+                    .padding(horizontal = GymLayout.gutter)
+                    .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
                     .heightIn(min = GymTap.primary)
                     .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClick = onAskNew),
@@ -239,7 +240,7 @@ private fun OutcomeChip(label: String, applied: Boolean) {
         modifier = Modifier
             .clip(RoundedCornerShape(WindmillRadius.full))
             .background(if (applied) GymSkin.accentSoft else GymSkin.raised)
-            .padding(horizontal = WindmillSpace.x2, vertical = 3.dp),
+            .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
     ) {
         Text(
             label.uppercase(),
@@ -294,8 +295,8 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = WindmillSpace.x4)
-                .padding(bottom = WindmillSpace.x8),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
         ) {
             if (held == null) return@Column
             held.outcome.detail?.let {
@@ -336,7 +337,7 @@ private fun Turn(turn: AskTurn) {
                 .weight(0.8f, fill = false)
                 .background(GymSkin.accentSoft, bubble)
                 .border(1.dp, GymSkin.accent, bubble)
-                .padding(horizontal = WindmillSpace.x3 + 2.dp, vertical = WindmillSpace.x3),
+                .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
         )
     }
 }
@@ -353,7 +354,7 @@ private fun Minted(
 ) {
     val routineName = proposal.routine.ifBlank { read?.routineName ?: "this routine" }
     Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalArrangement = Arrangement.spacedBy(GymLayout.blockGap),
         modifier = Modifier
             .fillMaxWidth()
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))

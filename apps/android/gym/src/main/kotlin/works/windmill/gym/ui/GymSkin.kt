@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import works.windmill.platform.design.WindmillSpace
 
 // The room palette, mirrored BY HAND from apps/ios GymSkin.swift and the web tokens. There is ONE
 // skin and it is dark.
@@ -103,6 +104,23 @@ object GymGlyph {
 object GymTap {
     val minimum = 46.dp
     val primary = 64.dp
+    val row = 52.dp        // list rows, ladder pills, secondary buttons
+    val secondary = 56.dp  // dashed add slots, Apply, Sign in, text fields
+}
+
+// The room's layout scale: every edge, gap and inset is one of these, so a screen reads like its
+// siblings.
+object GymLayout {
+    val gutter = WindmillSpace.x5          // every screen's horizontal edge, every sheet's
+    val cardInset = WindmillSpace.x4       // inner padding of a content card
+    val rowInset = WindmillSpace.x3        // horizontal inner padding of a single-line row
+    val cardGap = WindmillSpace.x2         // between sibling cards / rows in a list
+    val blockGap = WindmillSpace.x3        // between blocks inside one card
+    val sectionGap = WindmillSpace.x4      // between sections of a scroll body
+    val pair = WindmillSpace.x1            // title ↔ caption inside one row
+    val scrollTail = WindmillSpace.x8      // bottom of a scroll body with nothing pinned under it
+    val scrollTailBand = WindmillSpace.x4  // bottom of a scroll body with a band pinned under it
+    val contentTop = WindmillSpace.x2      // first content under the top bar
 }
 
 // Compose has no dashed border modifier, so it is drawn rather than declared.

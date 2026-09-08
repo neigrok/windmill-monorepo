@@ -136,8 +136,8 @@ fun AskScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(scroll)
-                .padding(horizontal = WindmillSpace.x4)
-                .padding(top = WindmillSpace.x4, bottom = WindmillSpace.x2),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x2),
         ) {
             if (thread.isEmpty()) Opening(origin)
             thread.forEachIndexed { index, exchange ->
@@ -183,7 +183,7 @@ fun AskScreen(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = WindmillSpace.x4)
+                .padding(horizontal = GymLayout.gutter)
                 .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
         ) {
             if (cap == null && thread.isEmpty()) Openers(asking, onAsk)
@@ -210,14 +210,14 @@ private fun Head(onNotes: (() -> Unit)?) {
             Ask.subtitle,
             style = GymType.numeral(12),
             color = GymSkin.inkFaint,
-            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+            modifier = Modifier.padding(horizontal = GymLayout.gutter),
         )
         onNotes?.let { open ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = WindmillSpace.x4)
+                    .padding(horizontal = GymLayout.gutter)
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(GymSkin.surface)
@@ -243,7 +243,7 @@ fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
         Head(onNotes = null)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+            modifier = Modifier.padding(horizontal = GymLayout.gutter),
         ) {
             Text(
                 Ask.whatItIs,
@@ -259,7 +259,7 @@ fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = GymTap.primary - 8.dp)
+                    .heightIn(min = GymTap.secondary)
                     .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClick = onSignIn),
             ) {
@@ -283,7 +283,7 @@ fun AskAbsentStance(seat: String) {
                 Ask.notHere,
                 style = WindmillFont.body(15).copy(lineHeight = 23.sp),
                 color = GymSkin.inkDim,
-                modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+                modifier = Modifier.padding(horizontal = GymLayout.gutter),
             )
         }
     }
@@ -380,7 +380,7 @@ private fun Question(question: String) {
                 .weight(0.8f, fill = false)
                 .background(GymSkin.accentSoft, bubble)
                 .border(1.dp, GymSkin.accent, bubble)
-                .padding(horizontal = WindmillSpace.x3 + 2.dp, vertical = WindmillSpace.x3),
+                .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
         )
     }
 }
@@ -453,7 +453,7 @@ private fun Receipt(answer: AskAnswer) {
         }
         if (open) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
@@ -600,13 +600,13 @@ private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
             placeholder = { Text(Ask.placeholder, style = WindmillFont.body(16)) },
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = gymFieldColours(),
-            modifier = Modifier.weight(1f).heightIn(min = 54.dp),
+            modifier = Modifier.weight(1f).heightIn(min = GymTap.secondary),
         )
         val ready = Ask.sendable(typed) && !asking
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(54.dp)
+                .size(GymTap.secondary)
                 .background(
                     if (ready) GymSkin.accent else GymSkin.raised,
                     RoundedCornerShape(WindmillRadius.lg),

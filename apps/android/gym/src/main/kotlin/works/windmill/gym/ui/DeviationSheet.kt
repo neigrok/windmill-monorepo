@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.DeviationOffer
 import works.windmill.platform.design.WindmillFont
@@ -34,7 +33,8 @@ fun DeviationSheet(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text("Heavier than the plan", style = WindmillFont.display(22), color = GymSkin.ink)
@@ -61,7 +61,7 @@ fun DeviationSheet(
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
+                .heightIn(min = GymTap.row)
                 .clickable(role = Role.Button, onClick = onToday),
             contentAlignment = Alignment.Center,
         ) {

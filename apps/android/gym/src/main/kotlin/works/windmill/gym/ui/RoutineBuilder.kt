@@ -189,7 +189,8 @@ fun RoutineBuilder(
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
-                        .padding(WindmillSpace.x5),
+                        .padding(horizontal = GymLayout.gutter)
+                        .padding(bottom = WindmillSpace.x6),
                     onClose = { close() },
                 )
             }
@@ -285,8 +286,8 @@ private fun BuildStep(
             .fillMaxSize()
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x8),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
       ) {
         // The name is the editor's first field and it opens with the keyboard up: there is no
         // screen in front of this one asking for a string this screen already has a field for.
@@ -348,7 +349,7 @@ private fun BuildStep(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum + 6.dp)
+                    .heightIn(min = GymTap.row)
                     .graphicsLayer {
                         translationX = swipe
                         alpha = 1f - (abs(swipe) / (dropAt * 2f)).coerceAtMost(0.6f)
@@ -437,7 +438,7 @@ private fun BuildStep(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = GymTap.primary - 8.dp)
+                    .heightIn(min = GymTap.secondary)
                     .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
                     .clickable(role = Role.Button, onClick = onAdd),
             ) {
@@ -493,7 +494,8 @@ private fun TargetSheet(
             .fillMaxWidth()
             .background(GymSkin.surface)
             .imePadding()
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {

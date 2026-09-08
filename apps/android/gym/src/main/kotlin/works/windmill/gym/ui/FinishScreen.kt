@@ -301,8 +301,8 @@ fun FinishScreen(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
     ) {
         // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.

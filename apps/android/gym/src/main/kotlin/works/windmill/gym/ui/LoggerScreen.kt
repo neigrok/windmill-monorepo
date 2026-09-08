@@ -256,11 +256,11 @@ fun LoggerScreen(
             }
         },
     ) {
-      Column(Modifier.fillMaxSize().padding(horizontal = WindmillSpace.x4)) {
+      Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
         val movement = store.exerciseId
         if (movement == null) {
             Column(
-                Modifier.fillMaxWidth().padding(top = WindmillSpace.x3),
+                Modifier.fillMaxWidth().padding(top = GymLayout.contentTop),
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             ) {
                 StrandedBand(store.strandedCount, store.strandedBy)
@@ -444,7 +444,8 @@ fun LoggerScreen(
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
-                        .padding(WindmillSpace.x5),
+                        .padding(horizontal = GymLayout.gutter)
+                        .padding(bottom = WindmillSpace.x6),
                     onClose = { close() },
                 )
                 is LoggerSheet.Deviation -> DeviationSheet(
@@ -754,8 +755,8 @@ private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modif
             .border(1.dp, GymSkin.line, shape)
             .clickable(role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) }
             .semantics(mergeDescendants = true) { contentDescription = said }
-            .padding(horizontal = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = WindmillSpace.x3),
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(row.index, style = MaterialTheme.typography.labelMedium,
@@ -870,7 +871,7 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
             Box(
                 Modifier
                     .weight(1f)
-                    .height(52.dp)
+                    .height(GymTap.row)
                     .pressed(interaction)
                     .clip(shape)
                     .background(GymSkin.raised)

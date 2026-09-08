@@ -104,8 +104,8 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = WindmillSpace.x4)
-                .padding(bottom = WindmillSpace.x8),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
         ) {
             val read = record
             val silent = failure
@@ -200,7 +200,7 @@ private fun Body(page: Record.Page) {
                         day.day,
                         style = GymType.numeral(13),
                         color = GymSkin.inkFaint,
-                        modifier = Modifier.width(62.dp),
+                        modifier = Modifier.width(WindmillSpace.x16),
                     )
                     Text(day.sets, style = GymType.numeral(13), color = GymSkin.ink)
                 }
@@ -322,7 +322,7 @@ private fun RecordRow(best: Record.Best) {
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum - 6.dp)
+            .heightIn(min = WindmillSpace.x10)
             .background(
                 if (best.standing) GymSkin.prSoft else GymSkin.surface,
                 RoundedCornerShape(WindmillRadius.md),

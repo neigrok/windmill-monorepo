@@ -100,11 +100,12 @@ fun RoutinesScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(
-                    start = WindmillSpace.x5,
-                    end = WindmillSpace.x5,
-                    bottom = WindmillSpace.x6,
+                    start = GymLayout.gutter,
+                    end = GymLayout.gutter,
+                    top = GymLayout.contentTop,
+                    bottom = GymLayout.scrollTailBand,
                 ),
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+                verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
             ) {
                 if (routines.isNotEmpty()) {
                     item("count") {
@@ -233,7 +234,7 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.primary - 10.dp)
+                .heightIn(min = GymTap.secondary)
                 .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
                 .clickable(role = Role.Button, onClick = onJustStart),
         ) {
@@ -298,7 +299,7 @@ private fun RoutineRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum + 12.dp)
+            .heightIn(min = GymTap.row)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(
                 1.dp,
@@ -310,7 +311,7 @@ private fun RoutineRow(
             }
             .padding(start = WindmillSpace.x4, top = WindmillSpace.x2, bottom = WindmillSpace.x2),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -366,7 +367,7 @@ private fun UntestedChip() {
     Box(
         Modifier
             .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.full))
-            .padding(horizontal = WindmillSpace.x2, vertical = 2.dp),
+            .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
     ) {
         Text("untested", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
     }
@@ -513,8 +514,8 @@ fun RoutineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = WindmillSpace.x5)
-                .padding(bottom = WindmillSpace.x8),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTailBand),
         ) {
             if (routine == null) {
                 Text(

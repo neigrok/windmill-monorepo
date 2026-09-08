@@ -223,7 +223,7 @@ fun WeighInSheet(
                         Modifier
                     },
                 )
-                .padding(horizontal = WindmillSpace.x1),
+                .padding(horizontal = WindmillSpace.x4),
         ) {
             Text("Date", style = WindmillFont.body(14), color = GymSkin.inkDim)
             Spacer(Modifier.weight(1f))
@@ -255,7 +255,7 @@ fun WeighInSheet(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum + 6.dp)
+                    .heightIn(min = GymTap.row)
                     .clickable(enabled = !saving, role = Role.Button, onClick = it),
             ) {
                 Text(Bodyweight.deleteRow, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
@@ -302,9 +302,9 @@ fun BodyweightScreen(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x8),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
+        verticalArrangement = Arrangement.spacedBy(GymLayout.sectionGap),
       ) {
         // The STORE decides whether there is anything to draw; the window decides only which dots
         // are. Deleting your only weigh-in leaves nine seconds of Undo, and this screen may not

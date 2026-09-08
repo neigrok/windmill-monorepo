@@ -76,9 +76,9 @@ fun SettingsScreen(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = WindmillSpace.x4)
-                .padding(bottom = WindmillSpace.x8),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
+            verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
         ) {
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
             ConfirmRow(
@@ -136,7 +136,7 @@ private fun NotesRow(onNotes: () -> Unit) {
                 .heightIn(min = GymTap.minimum)
                 .clickable(role = Role.Button, onClick = onNotes),
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
                 Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
                 Caption(Notes.sub)
             }
@@ -183,7 +183,7 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
+                .heightIn(min = GymTap.row)
                 .clip(RoundedCornerShape(WindmillRadius.md))
                 .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
                 .clickable(role = Role.Button) {
@@ -251,13 +251,13 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
             color = GymSkin.ink)
         Caption("Logged before any sign-in. Nothing joins an account until you say it is yours.")
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Text(heldLine(held, live), style = GymType.numeral(13), color = GymSkin.inkDim)
             held.days.take(4).forEach {
                 Text(Readout.date(it), style = GymType.numeral(12), color = GymSkin.inkFaint)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Box(
                 Modifier
                     .weight(1f)
@@ -322,7 +322,6 @@ private fun ClosingNote(origin: String) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = WindmillSpace.x2)
             .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
             .padding(WindmillSpace.x3),
     ) {
@@ -385,7 +384,7 @@ private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit, support
             .heightIn(min = GymTap.minimum)
             .toggleable(value = on, role = Role.Switch, onValueChange = { onToggle() }),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Text(label, style = WindmillFont.body(14), color = GymSkin.inkDim)
             supporting?.let { Caption(it) }
         }

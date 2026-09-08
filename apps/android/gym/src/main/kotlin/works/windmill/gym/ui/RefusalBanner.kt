@@ -21,7 +21,6 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.RefusedClaim
@@ -66,8 +65,8 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
         },
     ) {
         Column(
-            Modifier.fillMaxWidth().background(GymSkin.canvas),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(GymSkin.canvas),
+            verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
         ) {
             Text(headline, style = MaterialTheme.typography.bodySmall, color = GymSkin.alarmInk)
             Text(reason, style = MaterialTheme.typography.bodySmall, color = GymSkin.inkDim)

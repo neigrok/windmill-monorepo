@@ -116,11 +116,11 @@ fun NotesScreen(
     GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
       Column(Modifier.fillMaxSize()) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = WindmillSpace.x4)
-                .padding(bottom = WindmillSpace.x4),
+                .padding(horizontal = GymLayout.gutter)
+                .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x4),
         ) {
             Text(Notes.honesty, style = WindmillFont.display(22), color = GymSkin.ink)
             Text(Notes.sub, style = GymType.numeral(12), color = GymSkin.inkFaint)
@@ -134,7 +134,7 @@ fun NotesScreen(
                 it,
                 style = GymType.numeral(12).copy(lineHeight = 18.sp),
                 color = GymSkin.inkDim,
-                modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+                modifier = Modifier.padding(horizontal = GymLayout.gutter),
             )
         }
         if (!read) return@Column
@@ -144,7 +144,7 @@ fun NotesScreen(
         if (store.noteCount == 0) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
             ) {
                 Notes.placeholders.forEach { title ->
                     PlaceholderRow(title) { onEdit(null, title) }
@@ -176,7 +176,7 @@ fun NotesScreen(
 private fun SignedOut(onSignIn: () -> Unit) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
     ) {
         Text(
             Notes.signedOut,
@@ -187,7 +187,7 @@ private fun SignedOut(onSignIn: () -> Unit) {
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.primary - 8.dp)
+                .heightIn(min = GymTap.secondary)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
                 .clickable(role = Role.Button, onClick = onSignIn),
         ) {
@@ -204,7 +204,7 @@ private fun PlaceholderRow(title: String, onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum + 6.dp)
+            .heightIn(min = GymTap.row)
             .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg)
             .clip(RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClickLabel = "write this note", onClick = onOpen)
@@ -231,7 +231,7 @@ private fun AddRow(count: Int, onAdd: () -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.primary - 8.dp)
+            .heightIn(min = GymTap.secondary)
             .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
             .clickable(role = Role.Button, onClick = onAdd),
         contentAlignment = Alignment.Center,
@@ -262,9 +262,9 @@ private fun NoteList(
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        contentPadding = PaddingValues(bottom = WindmillSpace.x6),
+        contentPadding = PaddingValues(bottom = GymLayout.scrollTail),
     ) {
         itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
             val held = dragging == note.id
@@ -285,6 +285,7 @@ private fun NoteList(
                     .fillMaxWidth()
                     .zIndex(if (held) 1f else 0f)
                     .graphicsLayer { translationY = if (held) dragOffset else 0f }
+                    .heightIn(min = GymTap.row)
                     .clip(RoundedCornerShape(WindmillRadius.lg))
                     .background(GymSkin.surface)
                     .border(1.dp, if (held) GymSkin.accent else GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
@@ -341,7 +342,7 @@ private fun NoteList(
                     },
                 )
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(
@@ -407,12 +408,12 @@ fun NoteEditorScreen(
             .fillMaxSize()
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = WindmillSpace.x8),
+            .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
       ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
         ) {
             Field(
                 value = title,
@@ -467,7 +468,7 @@ fun NoteEditorScreen(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = GymTap.minimum + 6.dp)
+                        .heightIn(min = GymTap.row)
                         .clickable(enabled = !saving, role = Role.Button) {
                             // Nothing is sent: the window holds it and the editor leaves at once, so
                             // the Undo is on the room's transient rather than behind this screen.
@@ -491,7 +492,7 @@ private fun Field(
     style: androidx.compose.ui.text.TextStyle,
     singleLine: Boolean,
     enabled: Boolean,
-    minHeight: androidx.compose.ui.unit.Dp = 54.dp,
+    minHeight: androidx.compose.ui.unit.Dp = GymTap.secondary,
 ) {
     OutlinedTextField(
         value = value,

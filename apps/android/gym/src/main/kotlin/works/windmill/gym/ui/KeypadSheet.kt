@@ -157,7 +157,8 @@ fun KeypadSheet(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text(
@@ -182,32 +183,35 @@ fun KeypadSheet(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        KeypadEntry.keys.chunked(3).forEach { row ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            ) {
-                row.forEach { key ->
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = 58.dp)
-                            .clip(RoundedCornerShape(WindmillRadius.md))
-                            .background(GymSkin.raised)
-                            .clickable(role = Role.Button) { pad = pad.pressing(key, mode) }
-                            // A digit is its own name; a glyph is not, so a glyph key says what it is.
-                            .then(
-                                KeypadEntry.spoken(key)?.let { name ->
-                                    Modifier.semantics(mergeDescendants = true) { contentDescription = name }
-                                } ?: Modifier
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            key,
-                            style = WindmillFont.display(24, FontWeight.SemiBold).copy(fontFeatureSettings = "tnum"),
-                            color = if (KeypadEntry.isLive(key, mode)) GymSkin.ink else GymSkin.inkFaint,
-                        )
+        // A keypad is a grid: the keys sit as far apart downwards as they do sideways.
+        Column(verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap)) {
+            KeypadEntry.keys.chunked(3).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                ) {
+                    row.forEach { key ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .heightIn(min = GymTap.secondary)
+                                .clip(RoundedCornerShape(WindmillRadius.md))
+                                .background(GymSkin.raised)
+                                .clickable(role = Role.Button) { pad = pad.pressing(key, mode) }
+                                // A digit is its own name; a glyph is not, so a glyph key says what it is.
+                                .then(
+                                    KeypadEntry.spoken(key)?.let { name ->
+                                        Modifier.semantics(mergeDescendants = true) { contentDescription = name }
+                                    } ?: Modifier
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                key,
+                                style = WindmillFont.display(24, FontWeight.SemiBold).copy(fontFeatureSettings = "tnum"),
+                                color = if (KeypadEntry.isLive(key, mode)) GymSkin.ink else GymSkin.inkFaint,
+                            )
+                        }
                     }
                 }
             }
@@ -248,7 +252,7 @@ fun KeypadSheet(
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = GymTap.minimum + 6.dp)
+                    .heightIn(min = GymTap.row)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(if (reading.isValid) GymSkin.accent else GymSkin.raised)
                     .clickable(role = Role.Button) { reading.value?.let(onCommit) },

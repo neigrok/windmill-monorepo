@@ -66,7 +66,8 @@ fun RenameSheet(
             .fillMaxWidth()
             .background(GymSkin.surface)
             .imePadding()
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text(title, style = WindmillFont.display(22), color = GymSkin.ink)
@@ -118,6 +119,9 @@ fun RenameSheet(
     }
 }
 
+// The proof's label column; the same width as iOS, so the two phones' receipts line up.
+private val proofLabel = 80.dp
+
 @Composable
 private fun ProofBlock(proof: List<Record.Proof>) {
     Column(
@@ -150,7 +154,7 @@ private fun ProofBlock(proof: List<Record.Proof>) {
                     row.label,
                     style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
                     color = GymSkin.inkFaint,
-                    modifier = Modifier.width(72.dp),
+                    modifier = Modifier.width(proofLabel),
                 )
                 Text(row.value, style = GymType.numeral(12), color = GymSkin.inkDim)
                 Spacer(Modifier.weight(1f))

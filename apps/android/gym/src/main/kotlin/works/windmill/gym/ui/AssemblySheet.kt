@@ -76,7 +76,8 @@ fun AssemblySheet(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,7 +236,7 @@ fun AssemblySheet(
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.primary - 8.dp)
+                .heightIn(min = GymTap.secondary)
                 .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
                 .clickable(role = Role.Button, onClick = onAdd),
             contentAlignment = Alignment.Center,

@@ -228,7 +228,7 @@ class NotesScreenTests {
 
     // Where a title starts when a drag handle sits before it: the screen's edge, the rail, the gap.
     private val pastTheRail: Float
-        get() = with(compose.density) { (WindmillSpace.x4 + 32.dp + WindmillSpace.x2).toPx() }
+        get() = with(compose.density) { (WindmillSpace.x5 + 32.dp + WindmillSpace.x2).toPx() }
 
     // The unmerged tree: the merged node for a title is the whole clickable row.
     private fun titleX(title: String): Float =

@@ -225,7 +225,7 @@ fun MovementPicker(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = WindmillFont.display(if (firstSession) 26 else 20), color = GymSkin.ink)
                 Spacer(Modifier.weight(1f))
@@ -288,7 +288,7 @@ fun MovementPicker(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = GymTap.minimum + 6.dp)
+                        .heightIn(min = GymTap.row)
                         .clip(RoundedCornerShape(WindmillRadius.md))
                         .background(GymSkin.accent)
                         .clickable(role = Role.Button) {
@@ -347,7 +347,8 @@ private fun CreateMovementSheet(
             .fillMaxWidth()
             .background(GymSkin.surface)
             .imePadding()
-            .padding(WindmillSpace.x5),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
@@ -434,7 +435,7 @@ private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = WindmillSpace.x3)
+            .padding(top = WindmillSpace.x2)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .dashedEdge(GymSkin.accent, WindmillRadius.lg)
             .clickable(role = Role.Button, onClick = onBuildRoutine)
@@ -458,7 +459,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum + 6.dp)
+            .heightIn(min = GymTap.row)
             .clip(RoundedCornerShape(WindmillRadius.md))
             .background(GymSkin.surface)
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
@@ -467,7 +468,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Row(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),

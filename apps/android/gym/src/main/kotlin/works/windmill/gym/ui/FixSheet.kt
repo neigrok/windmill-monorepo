@@ -96,8 +96,8 @@ fun FixSheet(
             .background(GymSkin.surface)
             .verticalScroll(rememberScrollState())
             .imePadding()
-            .padding(horizontal = WindmillSpace.x4)
-            .padding(top = WindmillSpace.x5, bottom = WindmillSpace.x6),
+            .padding(horizontal = GymLayout.gutter)
+            .padding(bottom = WindmillSpace.x6),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
@@ -109,7 +109,7 @@ fun FixSheet(
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -131,12 +131,12 @@ fun FixSheet(
                  modifier = Modifier.alignByBaseline())
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Ladder.labels(weightKg).forEachIndexed { index, label ->
                 Box(
                     Modifier
                         .weight(1f)
-                        .heightIn(min = GymTap.minimum + 6.dp)
+                        .heightIn(min = GymTap.row)
                         .clip(RoundedCornerShape(WindmillRadius.md))
                         .background(GymSkin.raised)
                         .border(1.dp, if (index == 0 || index == 3) GymSkin.line else GymSkin.lineStrong,
@@ -261,7 +261,7 @@ private fun RpeBand(picked: Double?, onPick: (Double?) -> Unit) {
         Text(SetEffort.rpeLabel, style = WindmillFont.body(14), color = GymSkin.inkDim)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         ) {
             // The way back is the one seat holding a word rather than a numeral, so it takes the
             // body face; every other seat is tabular, as every numeral in this room is.
