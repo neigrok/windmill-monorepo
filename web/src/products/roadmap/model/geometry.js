@@ -8,3 +8,5 @@ export const LABEL_LINE_HEIGHT = 20;
 export const LABEL_MAX_WIDTH = 168;
 export const LABEL_GAP = 8;
 export const LABEL_CLEARANCE = 16;
+export const RADIAL_ROW_SPREAD = 56 / WORKING_ZOOM;
+export const RADIAL_ROW_GAP = 224 / WORKING_ZOOM;

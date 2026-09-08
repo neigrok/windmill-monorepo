@@ -1,5 +1,6 @@
-// Same-parent reorder follows authored order across concentric rows; angles within one row follow that order.
+// Same-parent reorder follows authored order across ordered radial rows; angles within one row follow that order.
 import { keyBetween } from '../../sync/fractionalIndex.js';
+import { RADIAL_ROW_SPREAD, RADIAL_ROW_GAP } from '../../model/geometry.js';
 
 const TAU = Math.PI * 2;
 const norm = (a) => ((a % TAU) + TAU) % TAU;
@@ -22,8 +23,10 @@ export function reorderSlot(siblings, dropPoint) {
     const sibling = siblings[index];
     const radius = Math.hypot(sibling.x, sibling.y);
     const last = rows[rows.length - 1];
-    if (last && Math.abs(last.radius - radius) < 0.001) last.nodes.push(sibling);
-    else rows.push({ radius, start: index, nodes: [sibling] });
+    if (last && Math.abs(last.radius - radius) < (RADIAL_ROW_SPREAD + RADIAL_ROW_GAP) / 2) {
+      last.radius = (last.radius * last.nodes.length + radius) / (last.nodes.length + 1);
+      last.nodes.push(sibling);
+    } else rows.push({ radius, start: index, nodes: [sibling] });
   }
   const dropRadius = Math.hypot(dropPoint.x, dropPoint.y);
   const row = rows.reduce((nearest, candidate) => Math.abs(candidate.radius - dropRadius) < Math.abs(nearest.radius - dropRadius) ? candidate : nearest);
@@ -33,7 +36,10 @@ export function reorderSlot(siblings, dropPoint) {
   const lastGap = angles.length > 1 ? Math.min(0.3, norm(angles.at(-1) - angles.at(-2)) / 2) : 0.3;
   const angle = slot === 0 ? angles[0] - firstGap : slot === angles.length ? angles.at(-1) + lastGap
     : angles[slot - 1] + norm(angles[slot] - angles[slot - 1]) / 2;
-  return { index: row.start + slot, radius: row.radius, angle, x: row.radius * Math.cos(angle), y: row.radius * Math.sin(angle) };
+  const left = row.nodes[Math.max(0, slot - 1)];
+  const right = row.nodes[Math.min(slot, row.nodes.length - 1)];
+  const radius = (Math.hypot(left.x, left.y) + Math.hypot(right.x, right.y)) / 2;
+  return { index: row.start + slot, radius, angle, x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
 }
 
 export function reorderPlan(siblings, dropPoint) {

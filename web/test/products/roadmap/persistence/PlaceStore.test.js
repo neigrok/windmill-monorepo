@@ -7,13 +7,19 @@ test('old-layout places keep the roadmap and selection but discard obsolete coor
   assert.deepEqual(store.load(), { treeId: 'tree', selectedId: 'step', camera: null, at: 100 });
 });
 
-test('a structured-layout camera round-trips with its selected step', () => {
+test('structured-row cameras are discarded when organic placement changes the coordinates', () => {
+  const place = { treeId: 'tree', selectedId: 'step', camera: { x: 1200, y: 1800, zoom: 1.1 }, cameraLayout: 'structured-radial-v2', at: 100 };
+  const store = new PlaceStore({ getItem: () => JSON.stringify(place) });
+  assert.deepEqual(store.load(), { ...place, camera: null });
+});
+
+test('an organic-layout camera round-trips with its selected step', () => {
   const items = new Map();
   const store = new PlaceStore({ getItem: (key) => items.get(key), setItem: (key, value) => items.set(key, value), removeItem: (key) => items.delete(key) });
   const place = { treeId: 'tree', selectedId: 'step', camera: { x: 130, y: -230, zoom: 1.1 } };
   store.save(place);
   const saved = store.load();
-  assert.deepEqual(saved, { ...place, cameraLayout: 'structured-radial-v2', at: saved.at });
+  assert.deepEqual(saved, { ...place, cameraLayout: 'organic-radial-v3', at: saved.at });
   assert.ok(Number.isFinite(saved.at));
   store.forget('other');
   assert.deepEqual(store.load(), saved);

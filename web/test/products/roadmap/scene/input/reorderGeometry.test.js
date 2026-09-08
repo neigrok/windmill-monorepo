@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { circularInsertionIndex, reorderSlot, reorderPlan } from '../../../../../src/products/roadmap/scene/input/reorderGeometry.js';
 import { nKeysBetween } from '../../../../../src/products/roadmap/sync/fractionalIndex.js';
+import { RadialLayoutEngine } from '../../../../../src/products/roadmap/layout/RadialLayoutEngine.js';
+import { SkillTree } from '../../../../../src/products/roadmap/model/SkillTree.js';
+import { WORKING_ZOOM } from '../../../../../src/products/roadmap/model/geometry.js';
 
 
 test('circularInsertionIndex: empty and single', () => {
@@ -145,5 +148,38 @@ test('row boundary slots map to adjacent authored keys, with markers near that r
     assert.ok(keys[1] < plan.key && plan.key < keys[2]);
     assert.ok(Math.abs(plan.radius - radius) < 0.001);
     assert.ok(Math.abs(plan.angle - angle) < 0.001);
+  }
+});
+
+test('organic sibling contours retain their complete row order and interpolate the slot marker', () => {
+  const keys = nKeysBetween(null, null, 150);
+  const tree = new SkillTree({ id: 'organic', title: 'Organic reorder', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'major', label: 'Major', prerequisites: ['root'] },
+    { id: 'other', label: 'Other', prerequisites: ['root'] },
+    ...keys.map((order, index) => ({ id: `child-${index}`, label: 'A two-line child caption', order, prerequisites: ['major'] })),
+  ] });
+  const positions = new RadialLayoutEngine().layout(tree);
+  const siblings = tree.trunk.trunkChildrenOf('major').map(id => ({ ...tree.nodesById.get(id), ...positions.get(id) }));
+  const rows = [];
+  for (let index = 0; index < siblings.length; index++) {
+    const sibling = siblings[index];
+    const radius = Math.hypot(sibling.x, sibling.y);
+    const row = rows.at(-1);
+    if (row && Math.abs(radius - row.radius) * WORKING_ZOOM < 140) row.nodes.push(sibling);
+    else rows.push({ start: index, radius, nodes: [sibling] });
+  }
+  assert.ok(rows.length > 5);
+  for (const row of rows.filter(candidate => candidate.nodes.length > 1)) {
+    const [left, right] = row.nodes;
+    const radius = (Math.hypot(left.x, left.y) + Math.hypot(right.x, right.y)) / 2;
+    const angle = (Math.atan2(left.y, left.x) + Math.atan2(right.y, right.x)) / 2;
+    const point = { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
+    const plan = reorderPlan(siblings, point);
+    assert.equal(plan.index, row.start + 1);
+    assert.ok(left.order < plan.key && plan.key < right.order);
+    assert.ok(Math.abs(plan.radius - radius) < 1e-6);
+    assert.ok(Math.hypot(plan.x - point.x, plan.y - point.y) < 1e-6);
+    assert.ok(Math.abs(Math.hypot(left.x, left.y) - Math.hypot(right.x, right.y)) > 1e-6);
   }
 });

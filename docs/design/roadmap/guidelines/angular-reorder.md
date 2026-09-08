@@ -1,7 +1,7 @@
 # Angular reorder
 
 Drag a node to another slot among siblings under the same trunk parent. Siblings can occupy several
-concentric rows inside their major sector. Companion to `tree-layout-contract.md` (determinism).
+rows with bounded radial variation inside their major sector. Companion to `tree-layout-contract.md` (determinism).
 
 ## Rules
 
@@ -16,8 +16,10 @@ concentric rows inside their major sector. Companion to `tree-layout-contract.md
 
 - **Lift:** movement past 4px changes a press into reorder. The held node receives the marquee
   preview treatment and a dashed insertion ring appears.
-- **Row:** the pointer's distance from the canvas origin chooses the nearest sibling row. The
-  held node follows the pointer angle at that row's radius, so a drag can cross wrapped rows.
+- **Row:** siblings belong to one row while their radii stay within a 140px threshold at working
+  zoom. This threshold lies between the maximum 56px spread inside one row and the minimum
+  224px gap to another. Pointer radius chooses the nearest row by its mean radius; the held node
+  follows the pointer angle at the radius interpolated from the gap's neighboring nodes.
 - **Slot:** angle chooses a gap within that row. The ring marks the gap on the chosen row;
   its local insertion index maps back to the full authored sibling sequence. Row boundary slots
   use the adjacent keys from that full sequence, including a neighbor on the next or previous row.
@@ -26,7 +28,9 @@ concentric rows inside their major sector. Companion to `tree-layout-contract.md
 - **Commit:** release writes one fractional key. The layout recomputes row capacity and placement;
   displaced nodes settle over 520ms with up to 120ms stagger. The preview marks the chosen order
   gap, not a promise that all final coordinates will remain at their preview positions.
-- **Cancel:** pointer cancellation restores the held node's original coordinates without a write.
+- **Gesture takeover:** explicit tool cancellation, such as a pinch taking over, restores the
+  held node's original coordinates without a write. DOM `pointercancel` currently routes through
+  release and can commit the order; that input-path gap is recorded in `web/src/products/roadmap/NOTES.md`.
 - **Reduced motion:** the preview still tracks the pointer, but committed layout positions apply
   immediately without the settle animation.
 
@@ -47,5 +51,5 @@ concentric rows inside their major sector. Companion to `tree-layout-contract.md
 Canvas reorder is desktop-only. Phone and tablet canvases use the navigation tool; owner editing
 lives in their sheets and list surfaces (`mobile.md`).
 
-Figma reorder drawings and DOM tree presentations still need reconciliation with wrapped rows and
+Figma reorder drawings and DOM tree presentations still need reconciliation with gently varied rows and
 the current preview. `../../consistency.md` tracks that visual work.

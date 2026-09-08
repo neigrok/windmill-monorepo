@@ -546,9 +546,11 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · roadmap structured rows and readable captions** → Figma canvas boards and standalone DOM
-specimens need reconciliation. Production uses equal major-branch sectors, wrapped generation
-rows, 240px radial pitch, 320px generation gaps, and 128px clear branch gutters at reference zoom.
+**1d · roadmap ordered rows and readable captions** → Figma canvas boards and standalone DOM
+specimens need reconciliation. Production uses equal major-branch sectors and wrapped generation
+rows with modest deterministic variation: unequal arc intervals, at most 56px radial spread per row,
+224–360px adjacent-row gaps, 264–408px generation gaps, and 128px reserved branch gutters at working
+zoom. The full authored DAG and the real snapshot's nine-root imbalance remain unchanged.
 The canvas has flat status faces, quiet parent links, contextual dependencies, attached 14px/20px
 captions, and counted overview groups. Focus and All steps appear on owner and shared chrome.
 The drawing task includes unselected and selected working views, overview, and phone controls;

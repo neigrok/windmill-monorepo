@@ -49,9 +49,10 @@ DAG editing.
 ## Tree layout & metaphor
 
 The canvas lays out radially from a centered root, or a synthetic center for multiple roots.
-Major branches occupy separate equal sectors. Each logical generation fills concentric rows,
-with consistent node pitch, radial gaps, and clear gutters between branches. Sibling order stays
-explicit when a generation wraps. A live gallery SVG portrait uses the tree's own positions;
+Major branches occupy separate equal sectors. Each logical generation fills ordered radial rows,
+with modest seeded variation in angular gaps and node radii. Reserved footprints, bounded row
+bands and clear branch gutters preserve sibling order when a generation wraps. The variation
+is stable across reloads and does not animate with the camera. A live gallery SVG portrait uses the tree's own positions;
 social link previews may use stored or generic assets (`guidelines/og-tree-cards.md`).
 
 Resting connectors show a quiet primary parent forest. Hover or selection emphasizes dependencies

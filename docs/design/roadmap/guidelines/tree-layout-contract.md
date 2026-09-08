@@ -7,7 +7,7 @@ resting state treatments are tracked in `docs/design/consistency.md`. Palette va
 `web/src/styles/tokens/` through `theme.js`.
 
 > **Metaphor:** circular steps grow outward in ordered generation bands. Major branches have
-> separate sectors; wide generations wrap into concentric rows. Colour comes from `kind`, while
+> separate sectors; wide generations wrap into rows with modest, stable irregularity. Colour comes from `kind`, while
 > rings and fill intensity carry progress. Connections reveal dependency structure on inspection.
 
 > **Motion:** finite ceremonies follow `../../guidelines/motion-language.md`. Production nodes
@@ -119,11 +119,15 @@ previews use stored assets or a generic fallback and need not match the live pag
    the roots are the major branches. Colour changes inside a subtree do not create new sectors.
 2. Major branches receive equal angular sectors. Each sector is laid out independently.
 3. Breadth-first traversal forms logical generation bands. A parent's children remain contiguous
-   in the authored full sibling sequence. Wide bands wrap into concentric rows.
-4. At reference working zoom, same-row centers are at least 208px apart, radial rows are 240px
-   apart, and the next generation starts 320px beyond the preceding generation's outermost row.
-5. Reserved body/caption footprints stay at least 128px apart across neighboring sector borders.
-   The full two-line footprint determines conservative arc capacity. There is no per-node packing.
+   in the authored full sibling sequence. Wide bands wrap into rows with bounded radial variation.
+4. At reference working zoom, same-row centers remain at least 208px apart. Angular slack above
+   the conservative footprint minimum is distributed unequally using stable ID-derived weights.
+5. A coherent radial wave contributes up to ±20px and each node adds up to ±8px. A row therefore
+   spans at most 56px radially. Actual node-radius gaps between adjacent rows stay within
+   224–360px; the last and first rows of neighboring generations stay 264–408px apart.
+6. Reserved body/caption footprints stay at least 128px apart across neighboring sector borders.
+   Capacity and angular margins use the row's innermost possible radius, so variation cannot
+   consume the reserved clearance. No frame-time noise or free-gap packing is involved.
 
 The engine is synchronous and cached. Cache inputs include node IDs, prerequisites, sibling order,
 raw color, and creation stamps. Zoom never changes world placement. Layout and scene share the
@@ -133,8 +137,11 @@ geometry constants in `model/geometry.js`.
 NODE_SIZE          = 56
 WORKING_BODY       = 52   // CSS px
 WORKING_ZOOM       = 52 / (56 × 0.84)
-ROW_PITCH          = 240 / WORKING_ZOOM
-GENERATION_GAP     = 320 / WORKING_ZOOM
+RADIAL_ROW_SPREAD  = 56 / WORKING_ZOOM
+RADIAL_ROW_GAP     = 224 / WORKING_ZOOM
+ROW_CENTER_STEP    = (280…304) / WORKING_ZOOM
+GENERATION_STEP    = (320…352) / WORKING_ZOOM
+ROW_GROUP_LIMIT    = 140 / WORKING_ZOOM
 NODE_PITCH         = 208 / WORKING_ZOOM
 SECTOR_GUTTER      = 128 / WORKING_ZOOM
 LABEL_SIZE         = 14   // CSS px, independent of camera zoom
@@ -146,12 +153,15 @@ LABEL_CLEARANCE    = 16
 
 ## 6. Determinism / seeding
 
-Per-element variation comes from a string hash:
-```js
-function hashStr(str){let h=0;for(let i=0;i<str.length;i++)h=str.charCodeAt(i)+((h<<5)-h);return Math.abs(h);}
-```
-- **Node:** seed from the node `id`. Drives fruit rotation.
-- **Branch:** seed from `` `${parentId}-${childId}` `` → drives bend sign and amount.
+Layout variation is seeded from stable IDs plus a named channel, using integer string hashing.
+The major-branch ID chooses a coherent bend phase; row, parent and node IDs control interval
+weights, row spacing and bounded radial offsets. Authored order remains monotone within each row.
+Identical input produces identical positions regardless of input array order, reload, pan or zoom.
+There is no call to random state and no frame-dependent displacement.
+
+Connector curvature uses a separate stable hash of the ordered parent/child ID pair. Node state,
+52px working bodies, 14px captions and finite motion retain their existing treatment. Equal major
+sectors remain equal; the real snapshot's nine-root imbalance is not changed by seeded placement.
 
 ## 7. Motion — summary only
 
@@ -191,9 +201,11 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
 - Below a 20px ordinary body, overview group boxes show major-branch names and exact subtree
   counts at occupied-sector centroids. These are noninteractive summaries; they do not label
   individual dots. Collisions can omit groups. Zoom or Focus enters the working view.
-- Sibling reorder chooses the nearest radial row, then an angular insertion slot mapped back to
-  the full sibling sequence. The ghost follows the target row; undo restores the authored order.
-- Stored cameras carry a layout version. A mismatched camera preserves the selected step for
+- Sibling reorder groups rows using a 140px reference-zoom threshold between the maximum
+  within-row spread and minimum inter-row gap. It chooses the nearest row, maps an angular slot
+  to the full sibling sequence, and interpolates the neighboring radii for the preview. Undo
+  restores authored order.
+- Stored cameras carry `organic-radial-v3`. A mismatched camera preserves the selected step for
   refocus, or opens the overview when no surviving selection exists.
 
 ## 9. Performance
@@ -207,7 +219,7 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
 
 ## Drawing reconciliation
 
-Figma canvas boards and standalone DOM specimens need the structured rows, branch gutters, quiet
+Figma canvas boards and standalone DOM specimens need the gently varied ordered rows, branch gutters, quiet
 resting state, named overview groups, and Focus/All steps chrome. The available-state material
 difference is tracked separately in `docs/design/consistency.md`.
 

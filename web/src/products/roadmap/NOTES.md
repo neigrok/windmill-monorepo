@@ -69,21 +69,32 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 
 - `web/scripts/benchmark-roadmap.mjs` exercises 300, 500, 1,000 and 5,000 nodes across four shapes.
   `docs/design/roadmap/readability-research.md` records the local browser and layout measurements.
-- Layout fills ordered concentric rows inside major sectors, keeping logical depths in separate
-  bands. Cache it by every structural input; pan and zoom must not relayout nodes. A worker boundary
-  is a follow-up only if measured structural-edit latency warrants it on slower devices.
+- Layout fills ordered rows inside major sectors, keeping logical depths in separate bands.
+  Stable ID/channel hashes vary angular slack and bounded node radii; cache every structural input.
+  Pan, zoom and redraw must not change positions. A worker boundary is a follow-up only if measured
+  structural-edit latency warrants it on slower devices.
+- Keep the radial bounds and reorder tolerance together in `model/geometry.js`: at working zoom,
+  within-row spread is at most 56px, the nearest-row gap is at least 224px, and grouping uses their
+  midpoint, 140px. Changing only the layout or only the gesture makes rows ambiguous.
+- Calculate angular capacity at the innermost permitted radius and retain the full caption
+  footprint before distributing seeded slack. These bounds keep modest irregularity from becoming
+  overlap. Keep variation in the existing layout pipeline; separate random-layout modes or frame
+  timers would add state without improving the contract.
 - A 5,000-step chain still occupies a long strip. Its overview requires a very small camera scale;
   group summaries and a shallow backbone describe that scale, while Focus makes steps readable.
 - Reorder cannot treat all siblings as one angular sweep once a depth wraps into multiple rows.
-  Pointer radius chooses a row; its insertion slot maps back to the full authored sibling array.
+  Pointer radius chooses a row; its insertion slot maps back to the full authored sibling array,
+  and the preview interpolates neighboring radii instead of snapping to a perfect circle.
   Fixture order values must be valid fractional keys, not padded numeric strings.
 - Default Focus preserves selection and saved working views, then chooses a root with a readable
   neighborhood or a meaningful major-branch anchor. Choosing the nearest arbitrary leaf loses context.
-- Persisted cameras carry `structured-radial-v2`; selection survives rejection of older coordinates.
+- Persisted cameras carry `organic-radial-v3`; selection survives rejection of older coordinates.
 
 ## Open
 
-- Reconcile the DOM tree components and Figma canvas drawings with structured rows, flat resting
+- DOM `pointercancel` uses the release handler and can commit a reorder. Explicit tool cancellation
+  on gesture takeover restores the original position; the DOM cancellation path needs the same rule.
+- Reconcile the DOM tree components and Figma canvas drawings with gently varied ordered rows, flat resting
   nodes, sparse overview links and counted group boxes; `docs/design/consistency.md` tracks this gap.
 
 - Wrap the phone owner sheet's title so inspecting a long name does not require its rename control.

@@ -37,6 +37,7 @@ function assertReadableLayout(tree, positions) {
   const footprints = [];
   const majorById = new Map();
   const bandsByMajor = new Map();
+  const rowById = new Map();
   const centerId = tree.trunk.centerId();
   for (const id of tree.topoOrder()) {
     const parentId = tree.trunk.primaryParentOf(id);
@@ -48,22 +49,36 @@ function assertReadableLayout(tree, positions) {
     const depth = tree.trunk.trunkDepthOf(id);
     const point = positions.get(id);
     const radius = Math.hypot(point.x, point.y);
-    if (!bands.has(depth)) bands.set(depth, new Set());
-    bands.get(depth).add(Math.round(radius * 1e6) / 1e6);
+    if (!bands.has(depth)) bands.set(depth, []);
+    bands.get(depth).push({ id, radius });
   }
   for (const bands of bandsByMajor.values()) {
     let previousOuterRadius = null;
-    for (const [, rows] of [...bands.entries()].sort((a, b) => a[0] - b[0])) {
-      const radii = [...rows].sort((a, b) => a - b);
-      if (previousOuterRadius !== null && (radii[0] - previousOuterRadius) * WORKING_ZOOM < 320 - 1e-5) {
-        violations.push('Logical generations interleave or lose their visible gap');
+    for (const [, points] of [...bands.entries()].sort((a, b) => a[0] - b[0])) {
+      const rows = [];
+      for (const point of points.sort((a, b) => a.radius - b.radius)) {
+        const row = rows.at(-1);
+        if (row && (point.radius - row[0].radius) * WORKING_ZOOM < 140) row.push(point);
+        else rows.push([point]);
       }
-      for (let index = 1; index < radii.length; index++) {
-        if (Math.abs((radii[index] - radii[index - 1]) * WORKING_ZOOM - 240) > 1e-5) violations.push('Rows lose their regular radial pitch');
+      const innerRadius = rows[0][0].radius;
+      if (previousOuterRadius !== null) {
+        const gap = (innerRadius - previousOuterRadius) * WORKING_ZOOM;
+        if (gap < 264 - 1e-5 || gap > 408 + 1e-5) violations.push('Logical generations lose their bounded radial gap');
       }
-      previousOuterRadius = radii.at(-1);
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        for (const point of row) rowById.set(point.id, row);
+        if ((row.at(-1).radius - row[0].radius) * WORKING_ZOOM > 56 + 1e-5) violations.push('A row exceeds its bounded radius variation');
+        if (index > 0) {
+          const gap = (row[0].radius - rows[index - 1].at(-1).radius) * WORKING_ZOOM;
+          if (gap < 224 - 1e-5 || gap > 360 + 1e-5) violations.push('Adjacent rows lose their bounded radial gap');
+        }
+      }
+      previousOuterRadius = rows.at(-1).at(-1).radius;
     }
   }
+
   for (const node of tree.nodes) {
     const { x, y } = positions.get(node.id);
     if (!Number.isFinite(x) || !Number.isFinite(y)) violations.push(`${node.id} is not finite`);
@@ -92,7 +107,7 @@ function assertReadableLayout(tree, positions) {
       const right = footprints[next];
       const distance = Math.hypot(left.x - right.x, left.y - right.y) * WORKING_ZOOM;
       if (distance < 184 - 1e-6) violations.push(`${left.id} is too close to ${right.id}`);
-      if (left.major === right.major && left.depth === right.depth && Math.abs(left.radius - right.radius) < 1e-6 && distance < 208 - 1e-6) {
+      if (left.major === right.major && left.depth === right.depth && rowById.get(left.id) === rowById.get(right.id) && distance < 208 - 1e-6) {
         violations.push(`${left.id} loses the same-row pitch beside ${right.id}`);
       }
       if (left.maxX > right.minX + 1e-7 && left.maxY > right.minY + 1e-7 && right.maxY > left.minY + 1e-7) {
@@ -131,7 +146,32 @@ test('input order and repeated layout calls do not change a node position', () =
   assert.deepEqual(engine.layout(tree), positions);
 });
 
-test('crowded siblings fill regular rows without inflating an unrelated branch', () => {
+test('populated rows have visible radial contours and unequal angular intervals', () => {
+  const tree = new SkillTree(largeRoadmap(5000, 'broad'));
+  const positions = new RadialLayoutEngine().layout(tree);
+  const majorId = tree.trunk.trunkChildrenOf(tree.trunk.centerId())[0];
+  const children = tree.trunk.trunkChildrenOf(majorId);
+  const rows = [];
+  for (const id of children) {
+    const point = positions.get(id);
+    const radius = Math.hypot(point.x, point.y);
+    const row = rows.at(-1);
+    if (row && Math.abs(radius - row[0].radius) * WORKING_ZOOM < 140) row.push({ radius, angle: Math.atan2(point.y, point.x) });
+    else rows.push([{ radius, angle: Math.atan2(point.y, point.x) }]);
+  }
+  const populatedRows = rows.filter(row => row.length >= 5);
+  assert.ok(populatedRows.length >= 3);
+  const intervalRanges = [];
+  for (const row of populatedRows) {
+    const radii = row.map(point => point.radius * WORKING_ZOOM);
+    const intervals = row.slice(1).map((point, index) => (point.angle - row[index].angle) * Math.min(point.radius, row[index].radius) * WORKING_ZOOM);
+    assert.ok(Math.max(...radii) - Math.min(...radii) >= 20);
+    intervalRanges.push(Math.max(...intervals) - Math.min(...intervals));
+  }
+  assert.ok(intervalRanges.filter(range => range >= 10).length >= populatedRows.length * 0.8);
+});
+
+test('crowded siblings fill irregular rows without inflating an unrelated branch', () => {
   const nodes = [
     { id: 'root', label: 'root', prerequisites: [] },
     { id: 'wide', label: 'wide', prerequisites: ['root'] },
@@ -168,18 +208,19 @@ test('radial sibling order follows authored order across major sectors', () => {
   assert.deepEqual(actual, children);
 });
 
-test('every sibling in a broad single-root tree keeps one radius and its own sector gutter', () => {
+test('broad single-root trees vary their anchor radii while retaining every sector gutter', () => {
   const tree = fixture(5000, 'wide');
   const positions = new RadialLayoutEngine().layout(tree);
   const radii = tree.nodes.slice(1).map(node => {
     const point = positions.get(node.id);
     return Math.round(Math.hypot(point.x, point.y));
   });
-  assert.equal(new Set(radii).size, 1);
+  assert.ok(new Set(radii).size > 30);
+  assert.ok(Math.max(...radii) - Math.min(...radii) <= 56 / WORKING_ZOOM + 1);
   assertReadableLayout(tree, positions);
 });
 
-test('long chains retain a constant generation gap after the first branch anchor', () => {
+test('long chains bend gently and retain bounded generation distances', () => {
   const tree = fixture(5000, 'deep');
   const positions = new RadialLayoutEngine().layout(tree);
   const gaps = tree.nodes.slice(1).map(node => {
@@ -187,8 +228,11 @@ test('long chains retain a constant generation gap after the first branch anchor
     const parent = positions.get(node.prerequisites[0]);
     return Math.round(Math.hypot(point.x - parent.x, point.y - parent.y) * WORKING_ZOOM);
   });
-  assert.equal(gaps[0], 240);
-  assert.deepEqual(new Set(gaps.slice(1)), new Set([320]));
+  assert.ok(gaps[0] >= 212 && gaps[0] <= 268);
+  assert.ok(Math.min(...gaps.slice(1)) >= 264);
+  assert.ok(Math.max(...gaps.slice(1)) <= 415);
+  assert.ok(new Set(gaps.slice(1)).size > 40);
+  assert.ok(new Set([...positions.values()].map(point => Math.round(point.y))).size > 40);
 });
 
 test('deep alternating branches retain finite structured rows', () => {
@@ -227,7 +271,7 @@ test('wrapped rows preserve authored sibling groups in their complete band seque
   const actual = [...expected].sort((left, right) => {
     const a = positions.get(left), b = positions.get(right);
     const row = Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y);
-    if (Math.abs(row) > 1e-6) return row;
+    if (Math.abs(row) * WORKING_ZOOM > 140) return row;
     return (Math.atan2(a.y, a.x) + Math.PI * 2) % (Math.PI * 2)
       - (Math.atan2(b.y, b.x) + Math.PI * 2) % (Math.PI * 2);
   });

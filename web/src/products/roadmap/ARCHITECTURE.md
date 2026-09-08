@@ -147,11 +147,13 @@ between layout and scene. Everything in `model/` is pure JS — no WebGL, no Rea
 
 `RadialLayoutEngine.js` — the one engine. Forest roots each own an equal angular sector; with a
 single root, its trunk children own the sectors and the root sits at the center. Within each sector,
-breadth-first authored order fills concentric rows of one logical depth before advancing to the next
-depth. At the working zoom, rows are 240px apart, same-row centers have at least 208px spacing, and
-sector footprints reserve a 128px gutter. The next logical depth starts 320px beyond the preceding
-depth's outer row. Body and two-line caption footprints constrain row capacity. Pan and pinch never
-relayout the graph; sibling order and creation stamps make placement deterministic.
+breadth-first authored order fills rows of one logical depth before advancing to the next depth.
+Stable ID/channel hashes give the rows unequal angular intervals and a coherent ±20px radial wave
+plus individual ±8px offsets at working zoom. Each row spans at most 56px radially; actual gaps
+between adjacent rows remain 224–360px and gaps between generations 264–408px. Same-row centers
+stay at least 208px apart, with a 128px reserved footprint gutter between sectors. Body and two-line
+caption footprints constrain capacity at the row's innermost radius. Variation changes neither the
+full DAG nor equal sector allocation. It uses no runtime randomness; pan and pinch never relayout.
 
 ## `scene/`  (raw WebGL2)
 
@@ -205,8 +207,9 @@ relayout the graph; sibling order and creation stamps make placement determinist
   bookkeeping, drives two-finger pinch, and forwards down/drag/move/up/leave to the active `Tool`.
   `tools.js` holds the `Tool` contract, `NavigateTool` (drag-pan + inertia, click-select, throttled
   hover — the viewer behaviour and the editing default) and `ReadOnlyTool` (1:1 pan, tap-select, no
-  fling). `reorderGeometry.js` picks the nearest sibling row by pointer radius, chooses the angular
-  gap within that row, and maps it back to the full authored sibling sequence for a fractional key.
+  fling). `reorderGeometry.js` groups varied sibling radii with a 140px reference-zoom threshold,
+  picks the nearest row by pointer radius, and maps its angular gap to the full authored sequence
+  for a fractional key. The preview interpolates the neighboring radii.
 - `SkillTreeScene.js` — the orchestrator: the GL context, the `Camera2D`, both batches, the
   `IconAtlas`, every overlay, the `CeremonyDirector`, the `InputController`. Its **rAF loop** advances
   `uTime` and the camera, steps any settle glide, considers the pending auto-frame, repositions every
