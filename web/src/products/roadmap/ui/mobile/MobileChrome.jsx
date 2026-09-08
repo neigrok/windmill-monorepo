@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 
-const SAFE_TOP = 'max(env(safe-area-inset-top, 0px), 44px)';
+const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 const TABLET_PANEL_WIDTH = 320;
 

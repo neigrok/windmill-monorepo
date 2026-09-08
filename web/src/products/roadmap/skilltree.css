@@ -518,13 +518,13 @@
 /* Phone: transient toasts move to the top, below the chrome's plaque row, and fade in place. The selection bar stays at the bottom. */
 @media (max-width: 743px) {
   .st-toast {
-    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
+    top: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 88px);
     bottom: auto;
     max-width: calc(100vw - 24px);
     animation: wm-fade-in var(--duration-base) var(--ease-soft);
   }
   .st-ticker {
-    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
+    top: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 88px);
     bottom: auto;
     flex-direction: column;
   }

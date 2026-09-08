@@ -1662,7 +1662,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {stranded && !demo && (
-        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
+        <div style={{ position: 'absolute', top: 'calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
           <StatusChip>{stranded}</StatusChip>
         </div>
       )}
@@ -1899,7 +1899,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {demotion && !demotion.cardOpen && (
-        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
+        <div style={{ position: 'absolute', top: 'calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
           <StatusChip>
             {demotion.edits > 0
               ? `Read-only · ${demotion.edits} change${demotion.edits === 1 ? '' : 's'} kept here`

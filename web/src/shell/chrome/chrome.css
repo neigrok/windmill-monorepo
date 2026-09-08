@@ -4,7 +4,9 @@
   font-family: var(--font-body);
   background: var(--surface-canvas);
   color: var(--text-primary);
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   transition: background var(--duration-base) var(--ease-standard);
@@ -15,11 +17,11 @@
 .wm-head {
   flex: none;
   position: relative;
-  height: 52px;
+  height: calc(52px + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
+  padding: env(safe-area-inset-top, 0px) 16px 0;
 }
 
 .wm-head-mark {
@@ -91,6 +93,8 @@ a.wm-switch-btn:hover {
 /* ---- The room ---- */
 
 .wm-room {
+  /* The head has already consumed the viewport's top safe area. */
+  --content-safe-area-top: 0px;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -99,6 +103,7 @@ a.wm-switch-btn:hover {
   flex-direction: column;
   /* Containment makes this the containing block for position:fixed product roots. */
   contain: layout paint;
+  overflow: auto;
 }
 
 .wm-room > * {
@@ -196,7 +201,7 @@ a.wm-switch-btn:hover {
 
 @media (max-width: 480px) {
   .wm-head {
-    padding: 0 12px;
+    padding-inline: 12px;
   }
 
   .wm-head-mark {
