@@ -1,14 +1,14 @@
 # Motion language — the beats (X1)
 
-Canon for every animated moment in Windmill. Ceremonies compose these five beats and never
-invent new motion. Tokens: `tokens/motion.css`.
+The shared vocabulary for animated moments in Windmill. The production roadmap timings below
+follow `CeremonyDirector.js`, `NodeBatch.js`, `ConnectorBatch.js`, and `Camera2D.js`. DOM motion
+tokens live in `web/src/styles/tokens/motion.css`; their specimen timings are identified separately.
 
-The tree breathes, it doesn't flash. Motion celebrates growth only — downward state changes
-are silent.
+Motion celebrates growth. Downward state changes are silent. The production WebGL roadmap
+uses static resting status rings; only feedback and finite ceremonies animate its nodes.
 
-Tier names here are the component vocabulary (`SkillNode`): **locked · available · active
-(the ember) · complete**. The renderer's enum names the same four tiers
-`unavailable / available / inprogress / activated` (`web/src/products/roadmap/theme.js`).
+Tier names here are **locked · available · active (the ember) · complete**. The renderer maps
+them to indices 0–3 through `nodeTier` in `web/src/products/roadmap/theme.js`.
 
 ---
 
@@ -16,12 +16,14 @@ Tier names here are the component vocabulary (`SkillNode`): **locked · availabl
 
 | Class | What | Rule |
 |---|---|---|
-| **Feedback** | hover scale 1.06 (280ms `--ease-soft`), press 0.97, selection-chrome fades (150ms), tooltip | Runs immediately, always. Never queued, never blocked by a ceremony. |
+| **Feedback** | hover scale 1.06 over 280ms, press 0.97 over 120ms, selection-chrome fades (150ms) | Runs immediately. Never queued or blocked by a ceremony. Shader scale feedback uses a cubic smoothstep. |
 | **Ceremony** | the five beats below, composed | Schedulable, one at a time, yields to interaction (§4). |
 
 ## 1. The sentence
 
-Every ceremony is a subset of one sentence, in this order, never reordered:
+The five beats describe a growth event. A completed source blooms before its outgoing travel;
+each reached child blooms at handoff. Camera motion can precede the event, with pulse and toast
+following the structural beats:
 
 ```
 camera ease  →  travel  →  bloom  →  pulse  →  toast
@@ -32,40 +34,41 @@ camera ease  →  travel  →  bloom  →  pulse  →  toast
 
 ### bloom — a node ignites (tier rises)
 
-Two intensities, by the tier the node *lands on*:
+Production WebGL starts fill, scale, and event halo from the same ignition stamp:
 
-- **wake** (`locked → available`): **ignite** — fill/ring cross-fade dim→lit, 280ms
-  `--ease-standard` — plus scale 1→**1.02**→1 over 480ms `--ease-soft`. No halo (available
-  nodes have none at rest).
-- **full bloom** (`→ complete`): ignite as above; **blossom** starts **+80ms**: halo swells
-  from 0 to overshoot (radius ×1.25, α .40) at 55%, settles to rest (×1.0, α .28) over 480ms
-  `--ease-soft`; scale 1→**1.045**→1 on the same curve. Total footprint **560ms**.
-- One bloom per node per ceremony; a re-trigger mid-flight coalesces, never restarts.
-- **Downward changes** (`complete → available`, un-done, delete): plain 280ms dim on
-  `--ease-standard`. No blossom, no beat, no toast (except delete-undo).
-- **Entrances reuse the wake shape**: an element arriving on the canvas fades in and
-  scale-settles to its *resting* tier treatment.
-- DOM approximation: `wm-bloom` (560ms `--ease-soft`), in `tokens/motion.css`.
+- **Fill/ring:** dim-to-lit interpolation lasts 280ms by default and uses cubic smoothstep.
+  Available, active, and complete share the lit fill; their status rings distinguish them.
+- **Scale:** a sine-shaped rise and return lasts **620ms**. Peaks are **1.05** for an available
+  wake, **1.02** for active, and **1.10** for complete.
+- **Halo:** every stamped ignition can produce a finite 620ms halo, including an available wake.
+  Its strength follows `0.45 × sin(πt)` and returns to zero. It has no delayed start or resting
+  halo. The strength is a shader multiplier, not a final screen alpha.
+- The director coalesces queued ceremonies. Directly stamping an ignition replaces that node's
+  existing stamp.
+- Ordinary downward state application does not schedule a growth ceremony.
+- **DOM specimen:** `wm-bloom` uses a 560ms animation, peaks at scale 1.045, and settles to its
+  static box shadow. That token does not define the GPU bloom duration or scale.
 
-### travel — light runs along a trunk edge
+### travel — light follows a dependency
 
-- A bright head (2× edge width) with a ~24px fading tail runs parent→child along the bezier;
-  the edge **wakes behind the head** (dormant→lit stroke).
-- **Solo**: speed **540 world-px/s**, duration clamped **[180, 420]ms**, position on
-  `--ease-standard`. **In cascades**: duration locks to the cadence (320ms) so arrivals land
-  on the beat.
-- **Handoff**: the target's ignite starts at **85%** of the arc — arrival *is* ignition.
-- **Departures**: solo travels leave when the source's ignite completes (+280ms). In cascades
-  they overlap it (**+40ms**, travel locked to 280ms) so rings land on the 320ms grid.
-- **≤3 heads per source.** 4+ children: skip the heads — edges fade lit together (280ms) and
-  the children share one bloom beat.
+- A scheduled edge is temporarily visible with the 2px context stroke. Its finite head uses a
+  10-world-unit core and approximately 24-world-unit trailing wake along the bezier; progress is
+  linear in time through the curve parameter.
+- Duration uses **400 world units/s**, clamped to **280–620ms**, unless the caller supplies a
+  duration. Completion does not permanently brighten the resting edge. After travel, ordinary
+  visibility and context determine whether the edge remains visible.
+- Completion travels depart at **+280ms**; successive replay waves add **320ms** each. A reached
+  child's ignition starts at **85%** of travel duration plus seeded jitter of up to ±60ms.
+- Arrival travels start with their logical generation's scheduled beat and retain their own
+  length-derived duration. There is no per-source head-count cap in the production renderer.
 
 ### camera ease — settle to a target
 
 - Pan + zoom on **one** curve, `--ease-soft`. Duration: **480ms** (≤ half a viewport),
   **600ms** default, **720ms** cap — never longer, never chained. A new target retargets the
   live tween (no restart jerk).
-- Moves only if the target sits outside the central **80% safe frame**.
+- Automatic context glides can skip a target inside the **80% safe frame** when zoom need not
+  change. Explicit Focus can force recentering.
 - Dependent beats start at **90%** settle.
 - Any user input (drag / wheel / pinch / key-nav) cancels it instantly.
 
@@ -77,77 +80,78 @@ Two intensities, by the tier the node *lands on*:
   ceremony — it summarizes ("Step unlocked: Add plants · 2 more steps opened").
 - One at a time; a newer toast **replaces** (150ms cross-fade), never stacks.
 
-### crown / pulse — the breath
+### status / pulse
 
-- **Crown** (root only): emphasized halo (radius ×1.35 + thin satellite ring at r+8px) that
-  **breathes**: α .22↔.34, radius ±2px, period **2400ms** `--ease-glow`, infinite. The only
-  infinite halo loop on the canvas. Other complete nodes wear a **static** halo (α .28).
-- **Ember** (active tier): the in-progress breath — same 2400ms clock and phase, amplitude
-  peaking *below* a resting halo, no ring offset. DOM: `wm-ember`. A wide field of embers
-  freezes at mid-breath past a small concurrent cap; frozen face = `--glow-ember`.
-- **Pulse** (finite attention beat): the same waveform at double-time — **1200ms/cycle × 2
-  cycles, decaying** (peaks α .42/+3px, then .34/+1.5px), then rest. Marks the newly-available
-  frontier after a ceremony. DOM: `wm-pulse-echo` (2400ms, once).
-- **Shared phase**: all oscillating halos lock to one global clock.
+- **Production WebGL status:** roots retain a quiet structural ring, active nodes a dashed ring,
+  and complete nodes a static outer ring. None has a resting halo or infinite node animation.
+- **Production pulse:** a finite cosine waveform runs **1400ms per cycle × 2**, for **2800ms**
+  total. Its envelope decreases between the two cycles, then the halo disappears. Pulse begins
+  after the director's final structural settle and does not wait for toast dismissal.
+- **DOM specimens:** `wm-pulse-node` and `wm-ember` retain 2400ms periodic box-shadow treatments.
+  `wm-pulse-echo` is a separate finite 2400ms token, and `wm-bloom` returns to a static shadow.
+  These appearances require reconciliation with the production roadmap's resting rings.
+- **Clock:** finite GPU effects read the shared scene clock and their own event start stamps.
 
 ## 3. Cascade & stagger rules
 
-- Cascade unit = **depth ring**. Ring N+1 ignites **one beat (320ms, `--duration-beat`) after
-  ring N**; travels span the gap so arrival = ignition.
-- Within a ring, per-node **seeded jitter ±60ms** (deterministic, from the node seed); the
-  ring still lands on the beat.
-- **Budget**: structural beats (camera, travel, bloom, toast-enter) fit in **≤2400ms**
-  first-ignite→last-settle. Too deep? Compress cadence to a floor of **160ms**; still over →
-  remaining outer rings join the final beat.
-- Pulse afterglow and toast hold are **exempt** from the budget.
+- The arrival plan groups nodes by logical depth, independent of wrapped visual rows. Beats start
+  **320ms** apart with per-node seeded jitter of up to **±60ms**.
+- For a deep arrival, cadence compresses to a **160ms** floor; later generations share the final
+  beat. The **2400ms** budget limits scheduled generation starts, not the final bloom or toast.
+  The last 620ms bloom and 120ms toast gap can extend beyond that budget.
+- Arrivals above **400 nodes** use the director's immediate state path rather than staggered
+  generation timers. Under normal motion, shader stamps can still produce finite node feedback;
+  reduced motion suppresses that scale and halo.
+- Completion replay uses its own 320ms wave offsets. Pulse afterglow and toast hold are separate
+  from structural scheduling.
 
 ## 4. The calm ceiling
 
 - **One ceremony at a time.** Later events queue and **coalesce** into one combined ceremony
   (one toast that sums them).
-- **≤24 nodes tweening concurrently.** A wider ring drops the blossom overshoot and
-  plain-cross-fades instead.
-- **Exactly 1 infinite halo loop** in the scene: the crown. The ember's low-amplitude breath
-  (capped, shared clock) is the only other periodic motion; everything else is finite.
-- **Motion yields to interaction**: pointer-down / wheel / pinch / key-nav fast-forwards every
-  running ceremony beat to its end state via a **150ms** fade. Toasts survive. Feedback motion
-  never waits.
+- Production does not enforce a separate 24-node tween cap. Large arrivals use the immediate
+  path described above; shader event effects remain finite.
+- **No infinite node loops in the production roadmap.** Standalone DOM crown and ember specimens
+  retain their own periodic treatments; their visual reconciliation is tracked in the consistency ledger.
+- **Motion yields to interaction:** pointer-down / wheel / pinch cancels remaining director
+  timers and applies endpoint states with **150ms** fill/travel durations. With normal motion,
+  stamped node scale and halo still follow the shader's 620ms window. Toasts survive.
 - **While editing** (drag in progress, panel typing): ceremonies don't start — changes apply
   silently, coalesce, and celebrate once after **400ms idle**.
 
 ## 5. Reduced motion (`uMotion = 0`)
 
-Colour/opacity cross-fades ≤280ms **stay**; anything spatial (scale, translate, zoom, travel)
-**snaps or skips**; loops **freeze at mid-amplitude**. The renderer freezes all periodic
-waveforms via the `uMotion` uniform; the JS timeline collapses to endpoint keyframes with
-150ms alpha ramps.
+Production node fill transitions use **150ms**; scale, halo, and pulse are suppressed through
+`uMotion`. The director applies all endpoint states together and skips spatial travel heads.
+Camera movement snaps. Static status and selection treatments remain visible.
 
 | Beat | Fallback |
 |---|---|
-| bloom (both) | 150ms colour/opacity cross-fade to end state; halo appears at rest values; no scale |
-| travel | **skip**; edge cross-fades lit (150ms) in sync with the target's fade |
-| camera ease | snap + 150ms fade-through; zero spatial interpolation |
+| bloom | 150ms dim-to-lit transition; no event halo or scale |
+| travel | no moving head; the context stroke can remain visible for its 150ms event interval |
+| camera ease | snap; zero spatial interpolation |
 | toast | opacity fades only, no rise |
-| crown | frozen at mid-amplitude (α .28 — exactly a standard halo) |
-| ember | frozen at mid-breath (static face: `--glow-ember`) |
+| crown | production structural ring stays static |
+| ember | production dashed ring stays static; DOM `wm-ember` uses its static shadow |
 | pulse ×2 | **skip** entirely |
-| cascade | one simultaneous 280ms cross-fade, no stagger |
-| feedback: hover/press scale | skip scale; keep ring/colour change + tooltip |
+| cascade | simultaneous endpoint state application with 150ms node fill fades, no stagger |
+| feedback: hover/press scale | skip scale; keep ring/colour feedback and caption emphasis |
 | feedback: chrome fades (150ms opacity) | keep |
 
-## 6. Constants — copy into the renderer
+## 6. Production roadmap constants
 
 ```
-IGNITE         280ms  ease-standard
-BLOSSOM        480ms  ease-soft, starts +80ms      // full-bloom footprint 560ms
-WAKE_SCALE     1.02      FULL_SCALE 1.045          // halo overshoot ×1.25 @ α .40
-TRAVEL_V       540 wpx/s  clamp [180, 420]ms       // cascade: depart +40ms, dur 280ms
+IGNITE         280ms  cubic smoothstep; reduced motion 150ms
+BLOOM_WINDOW   620ms  from ignition stamp; sine-shaped scale and halo
+SCALE_PEAK     available 1.05 · active 1.02 · complete 1.10
+TRAVEL_V       400 world units/s  clamp [280, 620]ms; depart +280ms
 HANDOFF        0.85
 CADENCE        320ms/ring  floor 160ms  jitter ±60ms seeded
 CAMERA         600ms ease-soft (480 short · 720 cap)  DEPEND_AT 0.90  SAFE_FRAME 80%
 TOAST          in 280 · hold 4000 (6000 w/ action) · out 280 · replace 150
-PULSE          1200ms ×2, decaying (α .42 → .34)   CROWN 2400ms  α .22↔.34  r ±2px
-CEREMONY_MAX   2400ms     TWEEN_MAX 24     LOOP_MAX 1 (the crown)
+PULSE          1400ms ×2, decaying; total 2800ms
+ARRIVAL_START_BUDGET 2400ms    ARRIVAL_STAGGER_LIMIT 400 nodes
+LOOP_MAX       0 (production node status)
 YIELD          150ms      IDLE_COALESCE 400ms
 ```
 
@@ -158,11 +162,11 @@ Easings (`tokens/motion.css`): `--ease-soft cubic-bezier(0.16,1,0.3,1)` ·
 
 | Ceremony | Sentence used |
 |---|---|
-| **#3 paste arrival** | camera fit → root wakes + crown ignites → rings enter on the cadence (wake per ring, dormant edges fade in with their ring) → toast ("Roadmap planted · N steps") |
+| **#3 paste arrival** | camera fit → generation wakes and finite travels, or immediate state application above 400 nodes → toast ("Roadmap planted · N steps") |
 | **#4 first unlock** | camera (only if off-frame) → complete full-bloom → travels → children wake → pulse ×2 on frontier → toast |
 | **#9 unlock ceremony** | the full sentence; may add flourish only within the ceilings above |
 | **milestone share offer** | ceremony #9 verbatim; the finished limb (a root-child's whole subtree) shares one pulse ×2, and any Share action opens the public-link dialog (`roadmap/guidelines/sharing.md`); no image or video is exported |
-| **welcome-back recap** | on reopen with unseen completions (≥12h): camera fit → the unseen completions re-bloom in real order on the cadence, travels waking edges → frontier pulse ×2 → the Next panel enters (no toast) |
+| **welcome-back recap** | on reopen with unseen completions (≥12h): camera fit → completions re-bloom with finite replay travels → frontier pulse ×2 → the Next panel enters (no toast) |
 
 Owning specs refine content (copy, targets), never the physics: durations, easings, ceilings
 and reduced-motion mappings come from here.

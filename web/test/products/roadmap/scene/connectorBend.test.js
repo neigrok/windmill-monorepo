@@ -48,9 +48,11 @@ test('two edges of the same length still bow differently', () => {
   assert.ok(Math.abs(a - b) > 0.01, 'edges should not all bow alike');
 });
 
+import { sceneHierarchy } from '../../../../src/products/roadmap/scene/sceneHierarchy.js';
+import { edgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';
 import { ConnectorBatch } from '../../../../src/products/roadmap/scene/ConnectorBatch.js';
 
-test('selection emphasizes all incident dependencies including cross edges and restores the whole DAG', () => {
+test('selection emphasizes incident dependencies while retaining the complete DAG in the model', () => {
   const uploads = [];
   const vertices = 30;
   const batch = {
@@ -65,6 +67,8 @@ test('selection emphasizes all incident dependencies including cross edges and r
     dimBuffer: 'dim',
     uploadDynamic: (buffer, data) => uploads.push({ buffer, values: Array.from(data) }),
   };
+  for (const edge of batch.edges) edge.key = edgeKey(edge.from, edge.to);
+  batch.hierarchy = sceneHierarchy([], batch.edges);
   ConnectorBatch.prototype.setSpotlight.call(batch, 'step');
   assert.deepEqual(uploads, [{ buffer: 'dim', values: [...Array(vertices * 2).fill(-1), ...Array(vertices).fill(1)] }]);
   ConnectorBatch.prototype.setSpotlight.call(batch, null);

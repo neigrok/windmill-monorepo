@@ -46,8 +46,29 @@ for (const fixture of fixtures) {
     const grid = new Map();
     let bodyOverlaps = 0;
     const bodyDiameter = NODE_SIZE * 0.84;
+    const roots = tree.roots();
+    const majorRoots = roots.length === 1 ? tree.trunk.trunkChildrenOf(roots[0].id) : roots.map(node => node.id);
+    const sectorForNode = new Map();
+    for (const sectorId of majorRoots) {
+      const descendants = [sectorId];
+      for (let index = 0; index < descendants.length; index++) {
+        const id = descendants[index];
+        sectorForNode.set(id, sectorId);
+        descendants.push(...tree.trunk.trunkChildrenOf(id));
+      }
+    }
+    const bandsByDepth = new Map();
     for (const node of tree.nodes) {
       const point = { ...positions.get(node.id), radius: bodyDiameter * (node.prerequisites.length === 0 ? 1.55 : 1) / 2 };
+      const depth = tree.trunk.trunkDepthOf(node.id);
+      const radius = Math.hypot(point.x, point.y);
+      const sectorId = sectorForNode.get(node.id) ?? node.id;
+      const bandKey = `${sectorId}:${depth}`;
+      if (!bandsByDepth.has(bandKey)) bandsByDepth.set(bandKey, { sectorId, depth, nodes: 0, innerRadius: Infinity, outerRadius: 0 });
+      const band = bandsByDepth.get(bandKey);
+      band.nodes++;
+      band.innerRadius = Math.min(band.innerRadius, radius);
+      band.outerRadius = Math.max(band.outerRadius, radius);
       const cellX = Math.floor(point.x / (NODE_SIZE * 2));
       const cellY = Math.floor(point.y / (NODE_SIZE * 2));
       for (let x = cellX - 1; x <= cellX + 1; x++) {
@@ -61,6 +82,9 @@ for (const fixture of fixtures) {
       if (!grid.has(key)) grid.set(key, []);
       grid.get(key).push(point);
     }
+    const depthBands = [...bandsByDepth.values()].sort((a, b) => a.sectorId.localeCompare(b.sectorId) || a.depth - b.depth);
+    const depthGaps = depthBands.slice(1).flatMap((band, index) => band.sectorId === depthBands[index].sectorId
+      ? [band.innerRadius - depthBands[index].outerRadius] : []);
     results.push({
       id: fixture.id, nodes: tree.nodes.length, edges: tree.edges.length, roots: tree.roots().length,
       maxTrunkDepth: Math.max(...tree.nodes.map(node => tree.trunk.trunkDepthOf(node.id))),
@@ -69,6 +93,8 @@ for (const fixture of fixtures) {
       medianEdge: edgeLengths[Math.floor(edgeLengths.length / 2)] ?? 0,
       p95Edge: edgeLengths[Math.floor(edgeLengths.length * 0.95)] ?? 0,
       maxEdge: edgeLengths.at(-1) ?? 0,
+      minSectorDepthBandGap: depthGaps.length ? Math.min(...depthGaps) : null,
+      depthBands,
     });
   } catch (error) {
     results.push({ id: fixture.id, nodes: fixture.nodes.length, error: error.message });

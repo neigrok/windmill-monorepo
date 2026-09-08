@@ -41,11 +41,13 @@ chips a finding invites (**Keep as is** / **Re-pace**).
 
 ## 27 · Readable large roadmaps
 
-The web canvas uses compact radial placement, 52px ordinary bodies in Focus, and fixed 14px/20px
-captions. The Figma canvas boards need to show that contract at the densities covered by
+The web canvas uses ordered radial rows within separated major-branch sectors, 52px ordinary
+bodies in Focus, and attached 14px/20px captions. Rows use 240px radial pitch, generation bands
+have a 320px gap, and neighboring branch footprints keep a 128px gutter at working zoom. The Figma canvas boards need to show that contract at the densities covered by
 `readability-research.md`.
 
-**Deliver:** a dense overview, a selected branch with prerequisite/dependent emphasis, and phone
+**Deliver:** a named and counted branch overview, an unselected working view with quiet local
+parent links, a selected branch with prerequisite/dependent emphasis, and phone
 Focus / All steps controls. Use the existing kind palette and authored long names; show caption
 priority and truncation, full names in the detail panel, and clearance around the legend, minimap,
 editing affordances, and phone controls. Include the real roadmap and a 5,000-node overview in

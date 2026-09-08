@@ -2,17 +2,16 @@
 
 The rules for rendering the roadmap skill-tree canvas on the GPU. Production is a hand-rolled WebGL2
 renderer (`web/src/products/roadmap/scene/`); the React `SkillNode` / `SkillConnector` components are
-the DOM reference. This doc translates their look into resolution-independent rules and concrete
-values to hard-code, since a GPU canvas has no CSS custom properties. Everything here mirrors
-`web/src/styles/tokens/` — if a token changes, update this doc.
+standalone DOM specimens. This contract describes the production canvas; differences in their
+resting state treatments are tracked in `docs/design/consistency.md`. Palette values bridge
+`web/src/styles/tokens/` through `theme.js`.
 
-> **Metaphor:** the tree grows radially from a single root at the center of the canvas. Children fan
-> out in all directions from their parent. Steps are circular nodes; dependencies are gently-curved
-> branches. A node's colour comes from its `kind`; its tier is treatment only — dim → ringed → ember
-> → glowing. The tier never re-hues a node.
+> **Metaphor:** circular steps grow outward in ordered generation bands. Major branches have
+> separate sectors; wide generations wrap into concentric rows. Colour comes from `kind`, while
+> rings and fill intensity carry progress. Connections reveal dependency structure on inspection.
 
-> **Motion:** §7 is a summary. `motion-language.md` is canon for every animated moment and supersedes
-> this doc wherever they disagree.
+> **Motion:** finite ceremonies follow `../../guidelines/motion-language.md`. Production nodes
+> have no continuous resting halo; §7 records the canvas treatment.
 
 ---
 
@@ -22,8 +21,8 @@ values to hard-code, since a GPU canvas has no CSS custom properties. Everything
   `(0, 0)`; pan/zoom is a camera transform on the stage, never baked into node coords.
 - One container per node (disc + label) at the node's world coordinate. One batched layer for all
   branches, beneath the node layer.
-- Draw order, back to front: `branchesLayer` → `glowLayer` → `nodeLayer` → `labelLayer`. Glows keep
-  their own layer so they never occlude a node.
+- Batched connectors draw below instanced node bodies and finite event effects. DOM captions
+  and interaction chrome sit above the canvas.
 
 ## 2. Node geometry (base size = 56)
 
@@ -40,7 +39,7 @@ default. All values scale linearly with `size`; "u" = size/56.
 | Hit area | nearest node within `0.65 × size`; read-only views also apply a 22px screen-space radius floor |
 
 **Fill is flat.** A single flat, saturated kind colour — no gradient, no gloss highlight. The tier
-treatment (§3) supplies depth through fill weight, ring and glow, never a light-spot gradient.
+treatment (§3) uses fill intensity and static rings; event halos are finite.
 
 ### 2.1 Working size
 
@@ -64,16 +63,14 @@ state.
 | `sky` | `#C4D5DC` | `#5F8494` | `rgba(95,132,148,·)` |
 | `plum` | `#D3ABC9` | `#8D4F83` | `rgba(141,79,131,·)` |
 
-Treatment (values mirror `SkillNode.jsx`):
-- **locked** — recessed kind tint: fill = base mixed `22%` into the card surface, `1.5px` ring = base
-  mixed `52%` with the default border, no glow, full opacity. The tint carries the dim read; no
-  opacity wash, which pushes locked toward the white available node.
-- **available** — white node (`--surface-card`), solid `2px` kind ring, no glow at rest.
-- **active** — the ember: fill = base mixed `34%` into the card surface, `2px` kind ring, low
-  breathing kind glow (`wm-ember` waveform — amplitude peaks below a complete node's resting halo),
-  no halo ring.
-- **complete** — flat base fill, `2px` base ring, halo glow (`0 0 0 4px glow, 0 0 30px glow`),
-  on-accent ink icon. Only complete nodes wear a halo.
+Production treatment (`NodeBatch.js`):
+- **locked** — a dim kind fill and ring against the canvas.
+- **available** — flat base fill and kind ring.
+- **active** — flat base fill with a static dashed status ring.
+- **complete** — flat base fill with a static outer status ring.
+
+Roots keep their larger body and one quiet structural ring. Hover and selection add immediate
+feedback. Ordinary resting nodes have no center bloom or continuous glow.
 
 By night every kind takes its own four-value set, tuned for the `#0B0B0C` canvas — a brighter base,
 a lighter ring, a recessed soft, and a glow hue that ships at two alphas: `--kind-*-glow` in
@@ -92,24 +89,21 @@ a night kind fill is `#0B0B0C`.
 Night scene literals: canvas `#0B0B0C`, glow `#141416`, connector `#2E2E32` inactive / `#7E7C77`
 active, bark `#6E5D49`, bark-cream `#D9C7A6`.
 
-### 3.1 Glow (halo)
+### 3.1 Event halos
 
-A blurred circle sprite behind the fruit in `glowLayer`, tinted with the node's kind glow colour —
-the full halo only for `complete` nodes; `active` nodes get the ember's low-amplitude glow with no
-ring offset. Resting halo: radius ≈ `size * 0.9`, alpha ~0.28. Prefer a pre-blurred sprite over a
-live blur filter.
+Bloom and arrival pulses produce a finite halo, gated by reduced motion. They settle back to the
+static status face. Selection has its own ring; grouped selection retains its bark treatment.
 
 ## 4. Branches (connectors)
 
-- A branch is a quadratic bezier from parent center to child center with a single control point
-  offset perpendicular to the straight line.
-- Bend magnitude: `0.18 * distance(parent, child)`, sign and exact fraction from the branch seed (§6)
-  so it's stable across frames but varied between branches. Control point = midpoint +
-  perpendicularUnit × bend.
-- Stroke: round cap, width `3` when active (grown), else `2`.
-- A branch is **active the moment its `from` node is `complete`** — an ember never lights its outward
-  branches. Active branches take the source node's kind colour as a solid `3px` stroke with no glow;
-  dormant branches are a thin `2px` muted line (`--connector-inactive`) at ~0.7 opacity.
+- Connectors are stable, gently bent bezier ribbons. Stroke width is measured in screen pixels.
+- At working zoom, resting links show the primary parent forest at 1.25px and 26% opacity.
+  Both endpoints must be near the viewport. Unrelated resting links fall to 12% during inspection.
+- Hover or selection reveals incident dependencies and the ancestor path at 2px and 86% opacity.
+  Secondary DAG links remain in the model and appear in that context, explicit edge selection,
+  editing feedback, or a finite travel ceremony. Completion alone does not brighten resting links.
+- Below a 20px projected ordinary body, the overview shows a shallow backbone capped at 64 links.
+  Deep cross-canvas ribbons are hidden. Rendering and picking share the same visibility predicate.
 
 ## 5. Layout
 
@@ -119,17 +113,17 @@ render the tree's own canvas positions** — mode follows the tree, never the su
 previews use stored assets or a generic fallback and need not match the live page
 (`og-tree-cards.md`); sharing performs no image capture or upload.
 
-### 5.1 Compact radial placement
+### 5.1 Structured radial placement
 
-1. A single root sits at the origin. Multiple roots divide the full circle around a synthetic center.
-2. Parents divide their angular wedge among trunk children: 85% by subtree leaf count, 15% equally.
-3. A breadth-first traversal seats parents before descendants. Each node keeps the center angle of
-   its wedge and starts at least 170 screen pixels, converted through the reference working zoom,
-   farther from the origin than its trunk parent.
-4. A spatial grid reserves each node's body, full caption width, two lines, and clearance. Only a
-   colliding node moves farther along its ray. Depth does not imply a shared radius.
-5. All DAG edges remain in the model. Selection emphasizes immediate prerequisites and dependents,
-   including secondary connections, while unrelated connections become quiet.
+1. A single root sits at the origin. Its trunk children are the major branches. In a forest,
+   the roots are the major branches. Colour changes inside a subtree do not create new sectors.
+2. Major branches receive equal angular sectors. Each sector is laid out independently.
+3. Breadth-first traversal forms logical generation bands. A parent's children remain contiguous
+   in the authored full sibling sequence. Wide bands wrap into concentric rows.
+4. At reference working zoom, same-row centers are at least 208px apart, radial rows are 240px
+   apart, and the next generation starts 320px beyond the preceding generation's outermost row.
+5. Reserved body/caption footprints stay at least 128px apart across neighboring sector borders.
+   The full two-line footprint determines conservative arc capacity. There is no per-node packing.
 
 The engine is synchronous and cached. Cache inputs include node IDs, prerequisites, sibling order,
 raw color, and creation stamps. Zoom never changes world placement. Layout and scene share the
@@ -139,7 +133,10 @@ geometry constants in `model/geometry.js`.
 NODE_SIZE          = 56
 WORKING_BODY       = 52   // CSS px
 WORKING_ZOOM       = 52 / (56 × 0.84)
-MIN_RADIAL_STEP    = 170 / WORKING_ZOOM
+ROW_PITCH          = 240 / WORKING_ZOOM
+GENERATION_GAP     = 320 / WORKING_ZOOM
+NODE_PITCH         = 208 / WORKING_ZOOM
+SECTOR_GUTTER      = 128 / WORKING_ZOOM
 LABEL_SIZE         = 14   // CSS px, independent of camera zoom
 LABEL_LINE_HEIGHT  = 20
 LABEL_MAX_WIDTH    = 168
@@ -163,15 +160,15 @@ renderer must know:
 
 | Moment | Spec |
 |---|---|
-| **Crown** (root only) | the only infinite loop on the canvas: halo breathes at 2400ms `--ease-glow` (α .22↔.34, radius ±2px). Other complete nodes wear a static halo (α .28). |
-| **Ember** (active) | `wm-ember` waveform, same 2400ms clock and phase, amplitude below a resting halo, no ring offset. |
-| **Hover** (interactive nodes) | scale 1.06 over 280ms `--ease-soft`; locked nodes ignore hover. Feedback-class: never queued. |
+| **Root / completed status** | static structural and status rings; no continuous resting halo. |
+| **Active status** | static dashed ring. |
+| **Hover** (inspectable nodes) | scale 1.06 over 280ms cubic smoothstep, including locked nodes. Feedback-class: never queued. |
 | **Press** | scale ~0.97, soft release, no bounce. |
-| **Unlock** | the travel beat: a bright head runs parent→child, the edge wakes behind it, the child ignites at 85% of the arc. |
-| **Tier rise** | bloom (wake 1.02 / full 1.045 + halo overshoot ×1.25); downward changes are a plain 280ms dim — silent. |
-| Reduced motion | motion doc §5: spatial motion snaps/skips, ≤280ms cross-fades stay, loops freeze at mid-amplitude (`uMotion = 0`). |
+| **Unlock** | finite dependency travel temporarily reveals a 2px context stroke; child ignition starts at 85% of travel duration plus seeded jitter. Resting edges do not stay bright because of completion. |
+| **Tier rise** | a 620ms sine-shaped scale/halo window starts at ignition; scale peaks at 1.05 available, 1.02 active, or 1.10 complete. Event halo returns to zero; ordinary downward state application schedules no growth ceremony. |
+| Reduced motion | node fill fades over 150ms; event scale, halo, pulse and moving travel heads are suppressed. Camera movement snaps and status rings remain static. |
 
-All oscillating halos share one global clock (§9) — the tree breathes as one organism.
+Finite animation stamps share the scene clock. Resting node status does not animate.
 
 Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-bezier(0.45,0,0.15,1)`,
 `--ease-standard = cubic-bezier(0.4,0,0.2,1)`. Durations: fast 150 / base 280 / slow 480 / glow 2400
@@ -184,32 +181,37 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
 - **All steps:** fit the complete node bounds inside the visible canvas, excluding chrome and the
   detail panel. Preserve the last working view when leaving it.
 - **Focus:** reveal the selected step at a readable scale, restore the saved working view, or focus
-  the nearest step when there is no selection or saved view. Ordinary bodies reach at least 52px.
+  a meaningful root with nearby children, or a stable major-branch anchor with a useful local
+  neighborhood. A newly focused step reaches at least 52px; restoring a saved view retains its zoom.
 - **Select:** open the step's detail panel. Locked steps remain inspectable so prerequisites can be
   understood. Desktop detail shows the full title; the phone owner sheet's single-line title needs
   the rename control for long names, pending a wrapping-header follow-up.
-- Captions stay horizontal at 14px/20px. Priority and collision checks decide which names fit.
-  Overview captions may cover context dots smaller than 8px; working captions avoid visible node
-  bodies and other captions. Hover and selection receive priority within the safe viewport.
+- Working captions stay horizontal at 14px/20px, 8px below their own bodies. Hover and selection
+  receive priority. Obstructed captions are omitted, never floated away from the node.
+- Below a 20px ordinary body, overview group boxes show major-branch names and exact subtree
+  counts at occupied-sector centroids. These are noninteractive summaries; they do not label
+  individual dots. Collisions can omit groups. Zoom or Focus enters the working view.
+- Sibling reorder chooses the nearest radial row, then an angular insertion slot mapped back to
+  the full sibling sequence. The ghost follows the target row; undo restores the authored order.
 - Stored cameras carry a layout version. A mismatched camera preserves the selected step for
   refocus, or opens the overview when no surviving selection exists.
 
 ## 9. Performance
 
-- Pre-bake glow as textures rather than a per-frame blur once node counts pass ~50.
+- Node fills, rings, and finite halos are procedural in the instanced shader.
 - Batch all branches into one draw. Rebuild connector geometry on graph changes; the frame loop
   draws cached geometry and animates through uniforms.
-- Drive pulses from a single shared clock feeding all halos the same phase (optionally offset by node
-  seed); never run N independent tweens.
+- Drive finite pulses from the shared scene clock; never run N independent resting tweens.
 - Cull caption candidates to the visible viewport and bound the candidate pool. Cache text
   measurement between model/font changes. Large spatial queries scan occupied data, not empty area.
 
 ## Drawing reconciliation
 
-The Figma canvas boards need the compact placement, readable captions, and Focus/All steps chrome.
-The available-state material disagreement is tracked separately in `docs/design/consistency.md`.
+Figma canvas boards and standalone DOM specimens need the structured rows, branch gutters, quiet
+resting state, named overview groups, and Focus/All steps chrome. The available-state material
+difference is tracked separately in `docs/design/consistency.md`.
 
 ---
 
-**Reference implementation:** `web/src/products/roadmap/ui/tree/SkillNode.jsx` and
-`SkillConnector.jsx` for the DOM look; `web/src/products/roadmap/layout/` for placement.
+**Production implementation:** `web/src/products/roadmap/scene/` for rendering and interaction;
+`web/src/products/roadmap/layout/` for placement.

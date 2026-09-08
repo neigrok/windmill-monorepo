@@ -3,7 +3,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
 import { DEFAULT_NODE_COLOR, nodeTier, NODE_SIZE } from '../theme.js';
-import { LABEL_FONT_SIZE } from '../model/geometry.js';
+import { sceneHierarchy, OVERVIEW_BODY_DIAMETER } from './sceneHierarchy.js';
+import { LABEL_FONT_SIZE, LABEL_LINE_HEIGHT, NODE_BODY_DIAMETER } from '../model/geometry.js';
 import { LABEL_POOL_SIZE, wrapCaption, placeCaptions, captionCandidates } from './captionLayout.js';
 
 const POOL_SIZE = LABEL_POOL_SIZE;
@@ -113,6 +114,7 @@ export class LabelOverlay extends NodeOverlay {
 
   setModel(renderModel, spatialGrid) {
     super.setModel(renderModel, spatialGrid);
+    this.hierarchy = sceneHierarchy(renderModel.nodes, renderModel.edges);
     this.neighborsById = new Map(renderModel.nodes.map((node) => [node.id, new Set()]));
     for (const edge of renderModel.edges) {
       this.neighborsById.get(edge.from)?.add(edge.to);
@@ -134,6 +136,11 @@ export class LabelOverlay extends NodeOverlay {
         this.captionCache.set(key, metric);
       }
       next.set(node.id, metric);
+    }
+    for (const summary of this.hierarchy?.summaries ?? []) {
+      const metric = wrapCaption(summary.label, (text) => context.measureText(text).width);
+      const count = `${summary.count.toLocaleString()} ${summary.count === 1 ? 'step' : 'steps'}`;
+      next.set(summary.id, { text: `${metric.text}\n${count}`, width: Math.max(metric.width, context.measureText(count).width) + 6, height: metric.height + LABEL_LINE_HEIGHT });
     }
     this.metrics = next;
     if (this.captionCache.size > this.nodesById.size * 2 + 100) this.captionCache.clear();
@@ -161,10 +168,15 @@ export class LabelOverlay extends NodeOverlay {
     const pad = NODE_SIZE * 2;
     const nodes = this.spatialGrid.within(view.minX - pad, view.minY - pad, view.maxX + pad, view.maxY + pad)
       .map((id) => this.nodesById.get(id));
+    const overview = NODE_BODY_DIAMETER * camera.zoom < OVERVIEW_BODY_DIAMETER;
+    const summaries = overview ? this.hierarchy.summaries : [];
+    const bySummaryId = new Map(summaries.map((summary) => [summary.id, summary]));
+    nodes.push(...summaries);
     const placements = placeCaptions(nodes, camera, this.metrics, {
       selectedId: this.selectedId,
       hoveredId: this.hoveredId,
-      neighbors: this.neighborsById.get(this.selectedId) ?? new Set(),
+      neighbors: this.neighborsById.get(this.selectedId ?? this.hoveredId) ?? new Set(),
+      anchors: overview ? new Set(bySummaryId.keys()) : this.hierarchy.anchors,
       retained: new Set(this.assignedId.filter(Boolean)),
       obstacles,
     });
@@ -182,7 +194,15 @@ export class LabelOverlay extends NodeOverlay {
       const element = this.pool[slot];
       const metric = this.metrics.get(placement.id);
       element.textContent = metric.text;
-      element.dataset.nodeId = placement.id;
+      const summary = bySummaryId.get(placement.id);
+      if (summary) {
+        delete element.dataset.nodeId;
+        element.dataset.branchId = summary.sourceId;
+        element.style.setProperty('--summary-color', `var(--kind-${summary.color ?? DEFAULT_NODE_COLOR})`);
+      } else {
+        delete element.dataset.branchId;
+        element.dataset.nodeId = placement.id;
+      }
       element.style.width = `${metric.width + 8}px`;
     }
     this.assignedId.forEach((id, i) => {
@@ -191,6 +211,8 @@ export class LabelOverlay extends NodeOverlay {
       const element = this.pool[i];
       element.style.display = 'block';
       element.classList.toggle('st-label--selected', id === this.selectedId);
+      element.classList.toggle('st-label--anchor', placement.anchor && !bySummaryId.has(id));
+      element.classList.toggle('st-label--summary', bySummaryId.has(id));
       element.style.transform = `translate(${placement.left}px, ${placement.top}px)`;
     });
   }

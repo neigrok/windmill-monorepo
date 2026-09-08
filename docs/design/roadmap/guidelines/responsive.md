@@ -88,8 +88,17 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
 - **Select makes room:** the node eases into the band above the sheet (phone) or beside the panel
   (tablet); it moves only if outside the safe frame.
 - **Safe frame** is 80% of the *visible* canvas — viewport minus sheet/panel.
-- **Labels declutter:** priority and collision placement keep a readable subset of names at every
-  scale. Overview labels can mask tiny context dots; working labels avoid visible node bodies.
+- **Focus** restores the selected step or saved working camera. Without either, it chooses a root
+  with a readable immediate neighborhood or a meaningful major-branch anchor.
+- **Working labels** stay 14px/20px, 8px below their own node. They avoid bodies, edit controls,
+  chrome and one another; an obstructed label is omitted rather than moved to unrelated canvas.
+- **Overview** below a 20px projected ordinary body shows grouped major-branch names and exact
+  subtree counts at sector centroids, with a shallow structural backbone capped at 64 links. These
+  group boxes describe branches, not the physical location of their root nodes. Selected/hovered
+  individual captions remain attached to their own nodes.
+- **Connections** use quiet 1.25px screen strokes. Working views show resting parent links only
+  when both endpoints are near the viewport; node context reveals incident dependencies and the
+  ancestor path at 2px. Rendering and edge picking share the visibility rule.
 - **Chrome yields:** plaque, wordmark and CTA sit at 35% opacity while the finger is down; restore
   ~200ms after release.
 
@@ -109,7 +118,7 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
 - **One door:** signed out, email → magic link, and the fork waits server-side behind the link.
   Signed in, instant.
 - **What copies:** structure, names, kinds, descriptions. **What resets:** progress. Your root wakes
-  as the first available step; the crown waits to be earned.
+  as the first available step and retains its static structural ring.
 - **Lineage is quiet and permanent:** "forked from Maren K." on your plaque and your gallery card.
 - **Ceremony:** arrival cascade on your copy + toast "Forked — 17 steps planted."
 - **The glyph:** the CTA wears the upright fork (one trunk splitting in two).
@@ -150,9 +159,9 @@ Same page, one change: the sheet stands up.
 | camera ease (make-room, recenter, double-tap) | snap + 150ms fade-through |
 | sheet / panel / door | opacity only, no rise |
 | travel · pulse | skipped |
-| crown | frozen at mid-amplitude (α .28 — a standard halo) |
+| crown | static structural ring; no resting halo in either motion mode |
 | drag · pinch | exempt — finger-driven motion isn't animation |
-| renderer | `uMotion = 0` freezes every periodic waveform; DOM chrome collapses to 150ms alpha ramps |
+| renderer | `uMotion = 0` suppresses pulse/scale/event halos; tier colour changes fade over 150ms |
 
 ## 11. Constants — copy into the build
 
@@ -163,7 +172,8 @@ CTA       50px pill · bottom-center 18px above home bar (tablet: bottom-left 20
 CAMERA    Focus / All steps · targets ≥44px · vertical beneath the phone wordmark
 SHEET     peek 216 · expand ≤62% viewport · rise 280ms ease-soft
 PANEL     320w · top 104 · right 16 · ≤70% tall · r20   (744–1023)
-ZOOM      0.00001×–2.5× pinch · double-tap 1↔1.6 @480ms · priority captions at 14px
+ZOOM      0.00001×–2.5× pinch · double-tap 1↔1.6 @480ms
+LABELS    14px/20px attached captions · major-branch summaries below 20px projected bodies
 YIELD     chrome to 35% while panning · restore +200ms · all chrome fades 150ms
 FLOORS    read-only pick diameter ≥44px · chrome ≥44px · captions 14px/20px
 GALLERY   1-col <744 · 2-up ≥744 (cards ≥320px) · chips: Popular · New · Finished
@@ -188,7 +198,7 @@ page above. No second editor — the desktop grammar degrades to the finger.
 - **The sheet is the workbench.** Tap a step → the sheet grows a verb rail (Mark done · Add step ·
   Connect), a rename-in-place title, a recolor swatch row, and an isolated Delete that states its
   cost.
-- **Add** = a rail button plants a bud one ring out, auto-selected, keyboard up.
+- **Add** = a rail button creates a bud in the next logical depth band, auto-selected, keyboard up.
 - **Connect** = tap-then-tap aim mode: eligible steps pulse, cycles fade, tap the target; a direction
   toggle (`unlocks →` / `← needs`). No 8px port drag. Aim keeps pan + pinch and offers "Fit eligible"
   (`mobile.md` §3).
@@ -204,3 +214,10 @@ page above. No second editor — the desktop grammar degrades to the finger.
 - **Tablet (744–1023):** the sheet stands up into the right-side panel (§9); aim + bulk bar dock to
   that column. ≥1024 hands back to desktop editing.
 - **Reduced motion:** sheet fades in place, aim uses static rings, travel → 280ms fade.
+
+## Canvas drawing reconciliation
+
+The current canvas uses structured concentric rows, flat resting node fills, attached captions and
+counted overview groups. The DOM tree components and Figma drawings still require visual
+reconciliation; see `../../consistency.md`. Agreement with these canvas rules has not been verified
+for those separate surfaces.

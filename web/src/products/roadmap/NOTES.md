@@ -6,9 +6,8 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 ## Rendering and overlays
 
 - Verify actual pixels on screen, not proxy signals (draw-call counts, picking logic, "it compiles").
-- Verify animated surfaces by evaluating in-page (`Runtime.evaluate` / `javascript_tool`), never by
-  screenshot: the extension's screenshot and `read_page` wait for an idle page, which never comes
-  under the perpetual rAF loop.
+- Inspect settled screenshots and live interactions together. Capture the active canvas without
+  waiting for network/page idle; the renderer runs a perpetual rAF loop.
 - Never route a per-frame value and a React-state value through one throttled callback.
 - Overlay chrome is positioned from the render loop with the live camera, never a cached one: a
   cached camera is unset until the first overlay pass, so on a still camera chips stack at (0,0).
@@ -16,16 +15,24 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
   reposition animates instead of snapping and the element never sits where a pointerdown lands.
 - Glyph colour math is duplicated: the GLSL branch in `NodeBatch` and `glyphCssColor()` in
   `NodeOverlay.js`. Keep them in step or the baked and live glyphs disagree at the LOD seam.
-- `OUTER_R` / `QUAD_PADDING` must stay wide enough to contain the glow halo or it clips at the quad edge.
+- `OUTER_R` / `QUAD_PADDING` must contain state rings and finite event halos, or they clip at the quad edge.
 - `SpatialGrid.nearest` uses the complete query radius. Large viewport queries fall back to scanning
   nodes, so empty world area cannot dominate overview cost.
-- Caption slots remain assigned to node IDs while visible. Font metrics are cached until text or
-  fonts change; candidate selection and collision placement rerun on camera/model/selection changes.
-- Overview captions can cover tiny context dots. Working-view collision checks reserve visible
-  bodies, edit affordances, canvas chrome, and other captions. The desktop detail panel shows full
-  names; the phone owner sheet truncates its title and needs the rename control for long names.
-- The canvas clears opaque to the cream background, so the CSS radial-gradient behind it is hidden.
-- Reduced motion rides one `uMotion` uniform: the pulse freezes and growth snaps.
+- Caption slots remain assigned to node or branch-summary IDs while visible. Font metrics are
+  cached until text or fonts change; placement reruns on camera/model/selection changes.
+- Working captions remain 14px/20px and 8px below their node body. Collision checks reserve bodies,
+  edit affordances, chrome and other captions; an obstructed caption is omitted, never detached.
+  The desktop detail panel shows full names; the phone owner sheet truncates its title and needs
+  the rename control for long names.
+- Below 20px projected ordinary bodies, group boxes summarize named major branches at their
+  centroids with exact subtree counts. They are not relocated labels for their branch-root nodes.
+  The shallow overview backbone is capped at 64 links; deep primary ribbons stay hidden.
+- Rendering and edge picking must share `ConnectorBatch.visibilityFor`. At working scales, resting
+  parent edges require both endpoints near the viewport. Context and finite travel can reveal extra
+  edges; completion alone cannot. Picking follows the tessellated curve, including after a drag.
+- The canvas clears opaque to its current theme background, hiding the CSS radial-gradient behind it.
+- Resting nodes use flat fills and static state rings. Reduced motion suppresses event halos,
+  pulse and scale effects; tier colour transitions still use the reduced-motion fade.
 
 ## Ceremony and timing
 
@@ -62,16 +69,22 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 
 - `web/scripts/benchmark-roadmap.mjs` exercises 300, 500, 1,000 and 5,000 nodes across four shapes.
   `docs/design/roadmap/readability-research.md` records the local browser and layout measurements.
-- Compact footprint placement costs more CPU than a ring-radius pass. Keep layout cached by all
-  of its inputs; do not run it during pan or zoom. A worker boundary is a follow-up if measured
-  structural-edit latency becomes a problem on slower devices.
-- A 5,000-step chain still occupies a long strip even with compact spacing. Its overview requires
-  a very small camera scale; readable labels are a focus-view concern rather than a reason to
-  render every caption simultaneously.
-- Persisted camera coordinates carry a layout version; selection can survive a geometry change
-  even when the old coordinates cannot.
+- Layout fills ordered concentric rows inside major sectors, keeping logical depths in separate
+  bands. Cache it by every structural input; pan and zoom must not relayout nodes. A worker boundary
+  is a follow-up only if measured structural-edit latency warrants it on slower devices.
+- A 5,000-step chain still occupies a long strip. Its overview requires a very small camera scale;
+  group summaries and a shallow backbone describe that scale, while Focus makes steps readable.
+- Reorder cannot treat all siblings as one angular sweep once a depth wraps into multiple rows.
+  Pointer radius chooses a row; its insertion slot maps back to the full authored sibling array.
+  Fixture order values must be valid fractional keys, not padded numeric strings.
+- Default Focus preserves selection and saved working views, then chooses a root with a readable
+  neighborhood or a meaningful major-branch anchor. Choosing the nearest arbitrary leaf loses context.
+- Persisted cameras carry `structured-radial-v2`; selection survives rejection of older coordinates.
 
 ## Open
+
+- Reconcile the DOM tree components and Figma canvas drawings with structured rows, flat resting
+  nodes, sparse overview links and counted group boxes; `docs/design/consistency.md` tracks this gap.
 
 - Wrap the phone owner sheet's title so inspecting a long name does not require its rename control.
 - Profile structural edits and caption placement on low-end phones using the same fixtures before

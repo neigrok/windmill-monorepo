@@ -2,11 +2,10 @@
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLOR_NAMES, isDone, NODE_SIZE } from '../theme.js';
 import { edgeKey } from './edgeKey.js';
+import { sceneHierarchy, spotlightEdges, edgeVisibility } from './sceneHierarchy.js';
 
 const SEGMENTS = 14;
-const WIDTH = 4;
-const KIND_HALF_WIDTH = { trunk: 2.6, 'in-branch': 1.6, 'cross-branch': 1.3 };
-const KIND_CODE = { trunk: 0, 'in-branch': 1, 'cross-branch': 2 };
+const HALF_WIDTH = 1;
 const BEND_FACTOR = 0.18;
 const GROW_DURATION = 0.5;
 const SOLO_SPEED = 400; // world-px/s
@@ -27,13 +26,14 @@ layout(location=2) in float aActive;
 layout(location=3) in float aGrowStart;
 layout(location=4) in float aColor;
 layout(location=5) in float aHover;
-layout(location=6) in float aKind;
 layout(location=7) in float aDim;
 layout(location=8) in float aDuration;
 layout(location=9) in float aLength;
 layout(location=10) in float aHead;
 layout(location=11) in float aSelected;
-layout(location=12) in float aInSet; // 1 when BOTH endpoints are in the node multi-selection
+layout(location=12) in float aInSet;
+layout(location=13) in vec2 aCenter;
+layout(location=14) in float aVisibility;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -42,27 +42,29 @@ out float vAlongT;
 out float vGrowStart;
 out float vColor;
 out float vHover;
-out float vKind;
 out float vDim;
 out float vDuration;
 out float vLength;
 out float vHead;
 out float vSelected;
 out float vInSet;
+out float vVisibility;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
   vGrowStart = aGrowStart;
   vColor = aColor;
   vHover = aHover;
-  vKind = aKind;
   vDim = aDim;
   vDuration = aDuration;
   vLength = aLength;
   vHead = aHead;
   vSelected = aSelected;
   vInSet = aInSet;
-  vec2 screen = (aPos - uCamera) * uZoom;
+  vVisibility = aVisibility;
+  float emphasis = max(max(aSelected, aHover), max(aInSet, step(1.5, aVisibility)));
+  float halfWidth = mix(0.625, 1.0, emphasis);
+  vec2 screen = (aCenter - uCamera) * uZoom + (aPos - aCenter) * halfWidth;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
 }`;
@@ -74,13 +76,13 @@ in float vAlongT;
 in float vGrowStart;
 in float vColor;
 in float vHover;
-in float vKind;
 in float vDim;
 in float vDuration;
 in float vLength;
 in float vHead;
 in float vSelected;
 in float vInSet;
+in float vVisibility;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
@@ -90,51 +92,31 @@ uniform vec3 uBarkCream;
 uniform vec3 uEdgeColor[${NC}];
 out vec4 fragColor;
 void main() {
+  if (vVisibility < 0.5) discard;
   vec3 hue = uEdgeColor[int(vColor + 0.5)];
   vec3 dim = mix(uColorInactive, hue, 0.6); // dormant branch: a muted tint of its kind
 
-  float lit;
   float head = 0.0; // comet contribution (front core + trailing wake)
-  float core = 0.0; // the bright front band alone
-  if (uMotion < 0.5) {
-    // reduced motion: the whole edge cross-fades dim->lit over 150ms — no sweep, no comet
-    lit = vActive * clamp((uTime - vGrowStart) / 0.15, 0.0, 1.0);
-  } else {
+  if (uMotion > 0.5) {
     // travel beat: a parent->child reveal front trailed by a comet head + fading tail
     float dur = vDuration > 0.0 ? vDuration : uGrowDuration; // per-edge, length-derived
     float progress = clamp((uTime - vGrowStart) / dur, 0.0, 1.0);
-    lit = vActive * (1.0 - smoothstep(progress - 0.08, progress, vAlongT)); // wakes behind the front
     float tailFrac = 24.0 / max(vLength, 1.0); // 24 world-px wake, in vAlongT units
     float coreFrac = 10.0 / max(vLength, 1.0); // tight bright band on the front
     float dist = vAlongT - progress; // <0 behind the front, where the wake trails
     float onEdge = vActive * vHead * (1.0 - smoothstep(0.9, 1.0, progress)); // comet vanishes as the front lands
-    core = (1.0 - smoothstep(0.0, coreFrac, abs(dist))) * onEdge;
+    float core = (1.0 - smoothstep(0.0, coreFrac, abs(dist))) * onEdge;
     float tail = (dist <= 0.0 ? exp(dist / tailFrac) : 0.0) * onEdge; // exp fade over ~24px
     head = max(core, tail);
   }
 
-  vec3 color = mix(dim, hue, lit) + hue * lit * 0.16; // +0.16 static glow on the woken body
-  color += hue * head * 0.6; // comet: additive kind-hue highlight, ~2x brighter at the front
-  color = mix(color, vec3(1.0), core * 0.3); // hottest white at the very front
-  float alpha = mix(0.6, 0.95, lit);
-  alpha = max(alpha, head * 0.9);
-  float incident = max(0.0, -vDim);
-  float unrelated = max(0.0, vDim);
-  float deemph = mix(vKind < 0.5 ? 0.7 : (vKind < 1.5 ? 0.35 : 0.18), 1.0, incident);
-  color = mix(color, dim, (1.0 - deemph) * 0.6);
-  alpha *= deemph;
-  color = mix(color, uColorHot, vHover); // hover deepens the line to the hot hue
-  alpha = mix(alpha, 0.95, vHover);
-  color = mix(color, dim, unrelated * 0.5);
-  alpha *= 1.0 - unrelated * 0.78;
-  alpha = max(alpha, incident * 0.95);
-  // both endpoints selected: brighten toward bark-cream so the set reads as one shape
-  color = mix(color, uBarkCream, vInSet * 0.6);
-  alpha = max(alpha, vInSet * 0.92);
-  // selected: last say, so a selected edge is never dimmed
-  color = mix(color, vec3(1.0), vSelected * 0.20);
-  color += hue * vSelected * 0.28;
-  alpha = max(alpha, vSelected * 0.9);
+  float emphasis = max(max(vSelected, vHover), max(vInSet, step(1.5, vVisibility)));
+  vec3 color = mix(dim, hue, emphasis);
+  float alpha = mix(vDim > 0.5 ? 0.12 : 0.26, 0.86, emphasis);
+  color = mix(color, uColorHot, vHover * 0.4);
+  color = mix(color, uBarkCream, vInSet * 0.5);
+  color += hue * head * 0.25;
+  alpha = max(alpha, head * 0.85);
   fragColor = vec4(color, alpha);
 }`;
 
@@ -243,13 +225,14 @@ export class ConnectorBatch {
     this.growBuffer = this.attrib(3, 1, gl.DYNAMIC_DRAW);
     this.colorBuffer = this.attrib(4, 1, gl.STATIC_DRAW);
     this.hoverBuffer = this.attrib(5, 1, gl.DYNAMIC_DRAW);
-    this.kindBuffer = this.attrib(6, 1);
     this.dimBuffer = this.attrib(7, 1, gl.DYNAMIC_DRAW);
     this.durationBuffer = this.attrib(8, 1, gl.DYNAMIC_DRAW);
     this.lengthBuffer = this.attrib(9, 1, gl.DYNAMIC_DRAW);
     this.headBuffer = this.attrib(10, 1, gl.DYNAMIC_DRAW);
     this.selectedBuffer = this.attrib(11, 1, gl.DYNAMIC_DRAW);
     this.inSetBuffer = this.attrib(12, 1, gl.DYNAMIC_DRAW);
+    this.centerBuffer = this.attrib(13, 2, gl.STATIC_DRAW);
+    this.visibilityBuffer = this.attrib(14, 1, gl.DYNAMIC_DRAW);
     this.spotlit = null;
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
@@ -271,9 +254,18 @@ export class ConnectorBatch {
     const vertexTotal = edgeCount * VERTS_PER_EDGE;
 
     this.positions = new Float32Array(vertexTotal * 2);
+    this.centers = new Float32Array(vertexTotal * 2);
+    this.visibility = new Float32Array(vertexTotal);
+    this.hierarchy = sceneHierarchy(renderModel.nodes, renderModel.edges);
+    this.spotlightKeys = new Set();
+    this.selectedKeys = new Set();
+    this.selectedNodeIds = new Set();
+    this.projectedEdgeKey = null;
+    this.visibilityDirty = true;
+    this.visibilityView = null;
+    this.travelUntil = 0;
     const along = new Float32Array(vertexTotal);
     const colors = new Float32Array(vertexTotal);
-    const kinds = new Float32Array(vertexTotal);
     this.active = new Float32Array(vertexTotal);
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
     this.hover = new Float32Array(vertexTotal);
@@ -297,19 +289,18 @@ export class ConnectorBatch {
       const vertexStart = e * VERTS_PER_EDGE;
       const active = isDone(from.state) ? 1 : 0;
       const colorIdx = colorIndex(from.color);
-      const halfWidth = KIND_HALF_WIDTH[edge.kind] ?? KIND_HALF_WIDTH.trunk;
-      const code = KIND_CODE[edge.kind] ?? 0;
+      const halfWidth = HALF_WIDTH;
 
       const sway = bendOf(edge.from, edge.to);
       const length = writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth, sway);
       const duration = travelDuration(length);
+      this.writeCenters(vertexStart);
       for (let i = 0; i <= SEGMENTS; i++) {
         const v = vertexStart + i * 2;
         const local = i / SEGMENTS;
         along[v] = local; along[v + 1] = local;
         this.active[v] = active; this.active[v + 1] = active;
         colors[v] = colorIdx; colors[v + 1] = colorIdx;
-        kinds[v] = code; kinds[v + 1] = code;
         this.duration[v] = duration; this.duration[v + 1] = duration;
         this.length[v] = length; this.length[v + 1] = length;
       }
@@ -324,15 +315,16 @@ export class ConnectorBatch {
         this.edgesByNode.get(nid).push(e);
       }
       this.edgeIndex.set(`${edge.from}→${edge.to}`, e);
-      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth, length, duration, sway };
+      return { modelEdge: edge, overview: this.hierarchy.backboneKeys.has(edgeKey(edge.from, edge.to)), from: edge.from, to: edge.to, kind: edge.kind, key: edgeKey(edge.from, edge.to), active, vertexStart, halfWidth, length, duration, sway };
     });
 
     this.indexCount = indices.length;
     gl.bindVertexArray(this.vao);
     this.uploadStatic(this.posBuffer, this.positions);
+    this.uploadStatic(this.centerBuffer, this.centers);
+    this.uploadDynamic(this.visibilityBuffer, this.visibility);
     this.uploadStatic(this.alongBuffer, along);
     this.uploadStatic(this.colorBuffer, colors);
-    this.uploadStatic(this.kindBuffer, kinds);
     this.uploadDynamic(this.activeBuffer, this.active);
     this.uploadDynamic(this.growBuffer, this.grow);
     this.uploadDynamic(this.hoverBuffer, this.hover);
@@ -347,12 +339,24 @@ export class ConnectorBatch {
     gl.bindVertexArray(null);
   }
 
+  writeCenters(start) {
+    for (let v = start; v < start + VERTS_PER_EDGE; v += 2) {
+      const x = (this.positions[v * 2] + this.positions[(v + 1) * 2]) / 2;
+      const y = (this.positions[v * 2 + 1] + this.positions[(v + 1) * 2 + 1]) / 2;
+      this.centers[v * 2] = x;
+      this.centers[(v + 1) * 2] = x;
+      this.centers[v * 2 + 1] = y;
+      this.centers[(v + 1) * 2 + 1] = y;
+    }
+  }
+
   // Re-tessellate only the edges touching a moved node and re-upload their vertex ranges in place.
   moveNode(id, x, y) {
     const pos = this.nodePos.get(id);
     if (!pos) return;
     pos.x = x;
     pos.y = y;
+    this.visibilityDirty = true;
     const indices = this.edgesByNode.get(id);
     if (!indices || indices.length === 0) return;
     const gl = this.gl;
@@ -361,6 +365,9 @@ export class ConnectorBatch {
       const from = this.nodePos.get(edge.from);
       const to = this.nodePos.get(edge.to);
       const length = writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth, edge.sway);
+      this.writeCenters(edge.vertexStart);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.centerBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, edge.vertexStart * 2 * 4, this.centers, edge.vertexStart * 2, VERTS_PER_EDGE * 2);
       edge.length = length;
       edge.duration = travelDuration(length);
       const start = edge.vertexStart;
@@ -408,6 +415,10 @@ export class ConnectorBatch {
     const duration = opts.durationMs != null ? opts.durationMs / 1000 : travelDuration(edge.length);
     edge.active = 1;
     edge.duration = duration;
+    edge.travelStart = atSeconds;
+    edge.travelEnd = atSeconds + duration;
+    this.travelUntil = Math.max(this.travelUntil, edge.travelEnd);
+    this.visibilityDirty = true;
     const start = edge.vertexStart;
     for (let v = start; v < start + VERTS_PER_EDGE; v++) {
       this.active[v] = 1;
@@ -444,26 +455,70 @@ export class ConnectorBatch {
     this.hoveredEdge = next;
   }
 
-  // Every edge not incident to nodeId recedes.
   setSpotlight(nodeId) {
-    if (!this.dim) return;
-    if (nodeId === this.spotlit) return;
-    if (nodeId == null) {
-      this.dim.fill(0);
-    } else {
-      const lit = new Set(this.edgesByNode.get(nodeId) ?? []);
-      for (let e = 0; e < this.edges.length; e++) {
-        const start = this.edges[e].vertexStart;
-        this.dim.fill(lit.has(e) ? -1 : 1, start, start + VERTS_PER_EDGE);
+    if (!this.dim || nodeId === this.spotlit) return;
+    this.spotlit = nodeId;
+    this.spotlightKeys = spotlightEdges(nodeId, this.hierarchy, this.edgesByNode, this.edges);
+    for (const edge of this.edges) {
+      const value = nodeId == null ? 0 : this.spotlightKeys.has(edge.key) ? -1 : 1;
+      this.dim.fill(value, edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
+    }
+    this.uploadDynamic(this.dimBuffer, this.dim);
+    this.visibilityDirty = true;
+  }
+
+  setProjectedEdge(edge) {
+    this.projectedEdgeKey = edge ? edgeKey(edge.from, edge.to) : null;
+    this.visibilityDirty = true;
+  }
+
+  visibilityFor(edge, camera, timeSeconds = 0, viewport = camera.getViewport()) {
+    const key = edge.key ?? edgeKey(edge.from, edge.to);
+    const emphasized = this.spotlightKeys.has(key) || this.selectedKeys.has(key) || key === this.projectedEdgeKey
+      || (this.selectedNodeIds.has(edge.from) && this.selectedNodeIds.has(edge.to))
+      || (timeSeconds >= edge.travelStart && timeSeconds <= edge.travelEnd);
+    return edgeVisibility(edge, this.nodePos.get(edge.from), this.nodePos.get(edge.to), viewport, camera.zoom, emphasized);
+  }
+
+  pickEdge(sx, sy, camera, timeSeconds, screenRadius) {
+    const world = camera.screenToWorld(sx, sy);
+    const viewport = camera.getViewport();
+    let nearest = null;
+    let distance = screenRadius / camera.zoom;
+    for (const edge of this.edges) {
+      if (!this.visibilityFor(edge, camera, timeSeconds, viewport)) continue;
+      for (let vertex = edge.vertexStart; vertex < edge.vertexStart + VERTS_PER_EDGE - 2; vertex += 2) {
+        const ax = this.centers[vertex * 2];
+        const ay = this.centers[vertex * 2 + 1];
+        const dx = this.centers[(vertex + 2) * 2] - ax;
+        const dy = this.centers[(vertex + 2) * 2 + 1] - ay;
+        const t = Math.max(0, Math.min(1, ((world.x - ax) * dx + (world.y - ay) * dy) / (dx * dx + dy * dy || 1)));
+        const next = Math.hypot(world.x - ax - t * dx, world.y - ay - t * dy);
+        if (next >= distance) continue;
+        distance = next;
+        nearest = edge.modelEdge;
       }
     }
-    this.spotlit = nodeId;
-    this.uploadDynamic(this.dimBuffer, this.dim);
+    return nearest;
+  }
+
+  updateVisibility(camera, timeSeconds) {
+    const view = `${camera.x}|${camera.y}|${camera.zoom}|${camera.viewportWidth}|${camera.viewportHeight}`;
+    if (!this.visibilityDirty && this.visibilityView === view && timeSeconds > this.travelUntil) return;
+    const viewport = camera.getViewport();
+    for (const edge of this.edges) {
+      this.visibility.fill(this.visibilityFor(edge, camera, timeSeconds, viewport), edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
+    }
+    this.uploadDynamic(this.visibilityBuffer, this.visibility);
+    this.visibilityView = view;
+    this.visibilityDirty = timeSeconds <= this.travelUntil;
   }
 
   // Every edge whose key is in the set reads aSelected=1.
   setSelectedEdges(keySet) {
     if (!this.selected) return;
+    this.selectedKeys = new Set(keySet);
+    this.visibilityDirty = true;
     for (const edge of this.edges) {
       const on = keySet.has(edgeKey(edge.from, edge.to)) ? 1 : 0;
       this.selected.fill(on, edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
@@ -474,6 +529,8 @@ export class ConnectorBatch {
   // Every edge with BOTH endpoints in the node selection reads aInSet=1.
   setInSetEdges(nodeIdSet) {
     if (!this.inSet) return;
+    this.selectedNodeIds = new Set(nodeIdSet);
+    this.visibilityDirty = true;
     for (const edge of this.edges) {
       const on = nodeIdSet.has(edge.from) && nodeIdSet.has(edge.to) ? 1 : 0;
       this.inSet.fill(on, edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
@@ -484,6 +541,7 @@ export class ConnectorBatch {
   draw(camera, timeSeconds, motion) {
     const gl = this.gl;
     if (this.indexCount === 0) return;
+    this.updateVisibility(camera, timeSeconds);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.u.uResolution, camera.viewportWidth, camera.viewportHeight);
@@ -512,6 +570,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.selectedBuffer, this.inSetBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.selectedBuffer, this.inSetBuffer, this.centerBuffer, this.visibilityBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }

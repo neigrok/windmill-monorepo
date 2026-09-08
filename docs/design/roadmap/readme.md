@@ -49,21 +49,18 @@ DAG editing.
 ## Tree layout & metaphor
 
 The canvas lays out radially from a centered root, or a synthetic center for multiple roots.
-Subtree leaf counts divide angular wedges. Each node advances locally until its body and caption
-footprint clear occupied space; siblings keep angular order without sharing one depth radius.
-A live gallery SVG portrait must use the tree's own canvas positions. Social link previews can
-be stored or generic and are not guaranteed to match the live page (`guidelines/og-tree-cards.md`).
+Major branches occupy separate equal sectors. Each logical generation fills concentric rows,
+with consistent node pitch, radial gaps, and clear gutters between branches. Sibling order stays
+explicit when a generation wraps. A live gallery SVG portrait uses the tree's own positions;
+social link previews may use stored or generic assets (`guidelines/og-tree-cards.md`).
 
-Connectors are stroked bezier curves, even-width with a gentle stable bend; a branch that starts
-in a **done** node lights up in that node's colour (no glow), otherwise it stays a thin muted
-line. Circular node bodies use nominal size 56, with a larger root. Focus gives ordinary bodies a
-52px working diameter; captions remain 14px and reveal more names as screen space becomes available.
+Resting connectors show a quiet primary parent forest. Hover or selection emphasizes dependencies
+and ancestor paths. Overview shows a sparse backbone and named branch summaries with subtree counts.
+Focus gives ordinary bodies a 52px working diameter; attached captions stay 14px/20px.
 
-**Colour and state are decoupled.** A node's colour comes from its `kind` — one of six palette
-hues (terracotta, olive, gold, brick, sky, plum) — and progress is carried by treatment across
-four tiers: **locked** dimmed, **available**, **ember** (in-progress, low breathing glow, no
-halo), **complete** (bright, glowing halo — breathing on the crowned root, static elsewhere).
-The tier never re-hues a node.
+**Colour and state are decoupled.** Kind selects one of six palette hues. Locked nodes are dim;
+available nodes use a flat kind face, active nodes add a dashed ring, and completed nodes add a
+static outer ring. Growth ceremonies retain finite halos; ordinary resting nodes do not glow.
 
 The production renderer is a hand-rolled WebGL2 canvas (`web/src/products/roadmap/scene/`);
 `guidelines/tree-layout-contract.md` defines the visual contract it must match, and

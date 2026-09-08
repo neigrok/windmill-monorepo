@@ -71,15 +71,13 @@ test('small pans keep caption assignments and line heights stable across zoom', 
   assert.ok(overview.every((rect) => rect.bottom - rect.top === 20));
 });
 
-test('a selected caption at the canvas edge finds a safe seat beyond its immediate body', () => {
+test('a selected caption at the canvas edge never detaches into unrelated canvas', () => {
   const camera = new Camera2D();
   camera.resize(800, 600);
   const nodes = [{ id: 'selected', x: -395, y: -295, state: 'active' }];
   const metrics = new Map([['selected', { text: 'Selected step', width: 140, height: 40 }]]);
   const placements = placeCaptions(nodes, camera, metrics, { selectedId: 'selected' });
-  assert.equal(placements.length, 1);
-  assert.equal(placements[0].id, 'selected');
-  assert.ok(placements[0].left >= 8 && placements[0].top >= 8);
+  assert.deepEqual(placements, []);
 });
 
 test('5000 tiny overview dots leave room for readable branch names', () => {
@@ -91,7 +89,7 @@ test('5000 tiny overview dots leave room for readable branch names', () => {
   const placements = placeCaptions(nodes, camera, metrics);
   assert.ok(placements.length >= 8 && placements.length <= LABEL_POOL_SIZE);
   assert.ok(nodes.find((node) => node.id === placements[0].id).emphasis > 0);
-  assert.ok(placements.every((rect) => rect.bottom - rect.top === 20));
+  assert.ok(placements.every((rect) => Math.abs(rect.bottom - rect.top - 20) < 0.000001));
 });
 
 test('nodes hidden behind a panel cannot starve a visible caption out of the candidate pool', () => {
@@ -104,15 +102,13 @@ test('nodes hidden behind a panel cannot starve a visible caption out of the can
   assert.deepEqual(placeCaptions(nodes, camera, metrics).map(({ id }) => id), ['visible']);
 });
 
-test('captions reserve room for the selected node’s editing controls', () => {
+test('an editing control hides an obstructed caption instead of displacing it', () => {
   const camera = new Camera2D();
   camera.resize(800, 600);
   const nodes = [{ id: 'step', x: 0, y: 0 }];
   const metrics = new Map([['step', { text: 'Selected step', width: 140, height: 40 }]]);
   const obstacle = { left: 388, right: 412, top: 330, bottom: 354 };
-  const [rect] = placeCaptions(nodes, camera, metrics, { selectedId: 'step', obstacles: [obstacle] });
-  assert.equal(rect.id, 'step');
-  assert.ok(rect.right <= obstacle.left || rect.left >= obstacle.right || rect.bottom <= obstacle.top || rect.top >= obstacle.bottom);
+  assert.deepEqual(placeCaptions(nodes, camera, metrics, { selectedId: 'step', obstacles: [obstacle] }), []);
 });
 
 test('expanded legend and minimap keep captions clear without starving unobscured steps', () => {
@@ -125,7 +121,7 @@ test('expanded legend and minimap keep captions clear without starving unobscure
   nodes.push({ id: 'selected', x: -490, y: 260, state: 'active' });
   const metrics = new Map(nodes.map((node) => [node.id, { text: node.id, width: 160, height: 40 }]));
   const placements = placeCaptions(nodes, camera, metrics, { selectedId: 'selected', obstacles: [legend, minimap] });
-  assert.deepEqual(placements.map(({ id }) => id), ['selected', 'visible']);
+  assert.deepEqual(placements.map(({ id }) => id), ['visible']);
   for (const rect of placements) {
     for (const obstacle of [legend, minimap]) {
       assert.ok(rect.right <= obstacle.left || rect.left >= obstacle.right || rect.bottom <= obstacle.top || rect.top >= obstacle.bottom);
@@ -133,7 +129,7 @@ test('expanded legend and minimap keep captions clear without starving unobscure
   }
 });
 
-test('a lifted phone action lane moves the selected caption into the unobscured canvas', () => {
+test('a lifted phone action lane hides the covered caption until its attached seat is free', () => {
   const camera = new Camera2D();
   camera.resize(390, 774);
   const nodes = [{ id: 'selected', x: 0, y: 0, state: 'active' }];
@@ -141,9 +137,32 @@ test('a lifted phone action lane moves the selected caption into the unobscured 
   const resting = { left: 0, right: 390, top: 688, bottom: 732 };
   const lifted = { ...resting, top: 420, bottom: 464 };
   const [before] = placeCaptions(nodes, camera, metrics, { selectedId: 'selected', obstacles: [resting] });
-  const [after] = placeCaptions(nodes, camera, metrics, { selectedId: 'selected', obstacles: [lifted] });
+  const after = placeCaptions(nodes, camera, metrics, { selectedId: 'selected', obstacles: [lifted] });
   assert.equal(before.id, 'selected');
-  assert.equal(after.id, 'selected');
+  assert.deepEqual(after, []);
   assert.ok(before.top >= lifted.top && before.bottom <= lifted.bottom);
-  assert.ok(after.bottom <= lifted.top || after.top >= lifted.bottom);
+
+});
+
+
+test('overview names only structural anchors, never an arbitrary active leaf', () => {
+  const camera = new Camera2D();
+  camera.resize(1440, 900);
+  camera.zoom = 0.1;
+  const nodes = [
+    { id: 'root', x: 0, y: 0 },
+    { id: 'branch', x: 2000, y: 0 },
+    { id: 'active-leaf', x: -2000, y: 0, state: 'active' },
+  ];
+  const metrics = new Map(nodes.map((node) => [node.id, { text: node.id, width: 130, height: 20 }]));
+  const anchors = new Set(['root', 'branch']);
+  const captions = placeCaptions(nodes, camera, metrics, { anchors });
+  assert.deepEqual(captions.map(({ id }) => id), ['root', 'branch']);
+  for (const caption of captions) {
+    const node = nodes.find(({ id }) => id === caption.id);
+    const point = camera.worldToScreen(node.x, node.y);
+    assert.equal((caption.left + caption.right) / 2, point.x);
+    assert.equal(caption.top, point.y + NODE_BODY_DIAMETER * camera.zoom / 2 + 8);
+    assert.equal(caption.anchor, true);
+  }
 });

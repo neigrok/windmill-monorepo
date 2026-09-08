@@ -1,3 +1,5 @@
+import { nKeysBetween } from '../../../../src/products/roadmap/sync/fractionalIndex.js';
+
 export function largeRoadmap(count, shape = 'mixed') {
   if (!Number.isInteger(count) || count < 2) throw new Error('A roadmap fixture needs at least two nodes');
   if (!['mixed', 'broad', 'deep', 'multiroot'].includes(shape)) throw new Error(`Unknown roadmap shape: ${shape}`);
@@ -6,6 +8,7 @@ export function largeRoadmap(count, shape = 'mixed') {
   const subjects = ['Foundations', 'Practice', 'Feedback', 'Experiments', 'Reflection', 'Next steps'];
   const roots = shape === 'multiroot' ? Math.min(8, count) : 1;
   const nodes = [];
+  const orders = nKeysBetween(null, null, count);
 
   for (let index = 0; index < count; index++) {
     const id = `probe-${shape}-${String(index).padStart(5, '0')}`;
@@ -34,7 +37,7 @@ export function largeRoadmap(count, shape = 'mixed') {
     nodes.push({
       id, label, prerequisites, color, icon: index % 5 === 0 ? 'book-open' : 'circle',
       description: `A reproducible ${shape} roadmap step for testing layout, long labels, and prerequisite navigation.`,
-      order: String(index).padStart(5, '0'),
+      order: orders[index],
       status: index < count * 0.6 ? 'complete' : index < count * 0.66 ? 'active' : 'none',
     });
   }

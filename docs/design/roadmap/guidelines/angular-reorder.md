@@ -1,51 +1,51 @@
 # Angular reorder
 
-Drag a node tangentially around its current radius to reslot it among its siblings under
-the same parent. Companion to `tree-layout-contract.md` (determinism).
+Drag a node to another slot among siblings under the same trunk parent. Siblings can occupy several
+concentric rows inside their major sector. Companion to `tree-layout-contract.md` (determinism).
 
 ## Rules
 
-1. **Arrange is order only.** Reparenting is a separate reconnect gesture, never
-   overloaded onto this drag.
-2. **A single node — its subtree rides along.** Moving a branch is reordering that
-   branch's root node; no separate mode.
-3. **Roots too.** Roots form a sibling group; the canvas center is its
-   virtual parent.
-4. **A node drag is reorder.** No new chrome. Radius is owned by the layout; the
-   tangential component picks the slot.
+1. **Arrange changes order.** Reparenting is a separate reconnect gesture.
+2. **One node register moves a branch.** Descendants take their new layout positions after the
+   order change; the drag preview moves only the held node and its incident edges.
+3. **Roots form a sibling group.** Their virtual parent is the canvas center.
+4. **The layout owns positions.** Radius chooses an existing sibling row during the gesture;
+   angle chooses a gap in that row. The committed value is an order key, never a free position.
 
 ## The interaction
 
-- **Lift** — past the 4px threshold (the same threshold that splits click-to-select from
-  drag) the node lifts, scale 1.08 + shadow. A dashed slot marks where it sat.
-- **Arc** — angle follows the cursor, radius is pinned; pull in/out and it snaps back.
-  The subtree ghosts along.
-- **Slot** — crossing a sibling boundary opens an insertion slot at that gap: the
-  position the node will take, not where the cursor is. Always legal: same parent, so no
-  cycle is possible.
-- **Relayout** — on release the node lands in the slot; siblings ease to their recomputed
-  even angles over 480ms `--ease-soft`. One history step, silent + ⌘Z, no toast.
-- **Boundary** — the drag stays inside the parent's sibling arc; crossing into another
-  parent's sector does nothing.
-- **Reduced motion** — no lift-scale, no eased relayout: the node snaps to its slot,
-  siblings jump with a 150ms fade-through. The slot preview still shows.
+- **Lift:** movement past 4px changes a press into reorder. The held node receives the marquee
+  preview treatment and a dashed insertion ring appears.
+- **Row:** the pointer's distance from the canvas origin chooses the nearest sibling row. The
+  held node follows the pointer angle at that row's radius, so a drag can cross wrapped rows.
+- **Slot:** angle chooses a gap within that row. The ring marks the gap on the chosen row;
+  its local insertion index maps back to the full authored sibling sequence. Row boundary slots
+  use the adjacent keys from that full sequence, including a neighbor on the next or previous row.
+- **Scope:** only the original same-parent sibling set participates. Crossing another sector
+  cannot reparent the node.
+- **Commit:** release writes one fractional key. The layout recomputes row capacity and placement;
+  displaced nodes settle over 520ms with up to 120ms stagger. The preview marks the chosen order
+  gap, not a promise that all final coordinates will remain at their preview positions.
+- **Cancel:** pointer cancellation restores the held node's original coordinates without a write.
+- **Reduced motion:** the preview still tracks the pointer, but committed layout positions apply
+  immediately without the settle animation.
 
 ## The order register
 
-- Each node carries an `order`: a fractional index (sortable string) scoped to its
-  parent. Siblings render sorted by `order`; angular spacing is derived from the sort,
-  not stored.
-- A reorder writes one new index between the two neighbours at the drop slot — never a
-  renumber.
-- Last-writer-wins per node; identical results tie-break by actor id.
-- Roots use the same field against the virtual center parent. Absent `order` falls back
-  to creation time.
-- Reorder changes the register, never a free position: identical register ⇒ identical
-  layout on every device.
+- Each node carries a sortable fractional `order` string scoped to its parent. Authored sibling
+  order determines row membership and angular spacing.
+- A reorder writes one key between the drop slot's neighbors, without renumbering siblings.
+  Equal-key runs are stepped over; an empty order is an open bound. Non-empty values must be
+  valid fractional keys, including in test fixtures.
+- The CRDT stores the register with last-writer-wins semantics. Missing order uses the tree's
+  deterministic creation/id fallback.
+- Roots use the same field against the virtual center parent.
+- The existing gesture history owns undo/redo; a reorder changes no prerequisite edges.
 
-## Touch
+## Touch and drawings
 
-The gesture degrades intact — drag a node around its current radius — under three conditions from
-`mobile.md`: the node must own a real hit disc (§9), so reorder is unavailable below that
-clamp, where a tap zooms in first; the drag is direct manipulation and so exempt from the
-motion ceilings; the commit drops the standard 4s undo snackbar in the undo lane (§8).
+Canvas reorder is desktop-only. Phone and tablet canvases use the navigation tool; owner editing
+lives in their sheets and list surfaces (`mobile.md`).
+
+Figma reorder drawings and DOM tree presentations still need reconciliation with wrapped rows and
+the current preview. `../../consistency.md` tracks that visual work.

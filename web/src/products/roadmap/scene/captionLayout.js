@@ -1,4 +1,5 @@
 import { LABEL_MAX_WIDTH, LABEL_LINE_HEIGHT, LABEL_GAP, NODE_BODY_DIAMETER } from '../model/geometry.js';
+import { OVERVIEW_BODY_DIAMETER } from './sceneHierarchy.js';
 
 export const LABEL_POOL_SIZE = 96;
 const CANDIDATE_LIMIT = LABEL_POOL_SIZE * 3;
@@ -28,12 +29,14 @@ function compare(a, b) {
   return a.priority - b.priority || a.retained - b.retained || a.distance - b.distance || a.id.localeCompare(b.id);
 }
 
-export function captionCandidates(nodes, camera, { selectedId = null, hoveredId = null, neighbors = new Set(), retained = new Set() } = {}) {
+export function captionCandidates(nodes, camera, { selectedId = null, hoveredId = null, neighbors = new Set(), retained = new Set(), anchors = null } = {}) {
   const heap = [];
   for (const node of nodes) {
-    const branch = node.emphasis > 0 || node.branch === node.id;
+    const branch = anchors ? anchors.has(node.id) : node.emphasis > 0 || node.branch === node.id;
+    const overview = NODE_BODY_DIAMETER * camera.zoom < OVERVIEW_BODY_DIAMETER;
+    if (overview && !branch && node.id !== selectedId && node.id !== hoveredId) continue;
     const priority = node.id === selectedId ? 0 : node.id === hoveredId ? 1 : neighbors.has(node.id) ? 2
-      : camera.zoom < 0.3 && branch ? 3 : node.state === 'active' || node.state === 'available' ? (camera.zoom < 0.3 ? 4 : 3) : branch ? 4 : 5;
+      : overview && branch ? 3 : node.state === 'active' || node.state === 'available' ? 3 : branch ? 4 : 5;
     const candidate = { id: node.id, node, priority, retained: retained.has(node.id) ? 0 : 1, distance: (node.x - camera.x) ** 2 + (node.y - camera.y) ** 2 };
     if (heap.length < CANDIDATE_LIMIT) {
       heap.push(candidate);
@@ -84,6 +87,7 @@ export function placeCaptions(nodes, camera, metrics, context = {}) {
     && rect.top < other.bottom + COLLISION_GAP && rect.bottom > other.top - COLLISION_GAP));
   for (const obstacle of context.obstacles ?? []) insert(obstacle);
   for (const node of nodes) {
+    if (node.summary) continue;
     const point = camera.worldToScreen(node.x, node.y);
     const radius = NODE_BODY_DIAMETER * (1 + (node.emphasis ?? 0) * 0.55 + (node.id === context.selectedId ? 0.14 : 0)) * camera.zoom / 2;
     if (radius < 4 && node.id !== context.selectedId && node.id !== context.hoveredId) continue;
@@ -105,39 +109,12 @@ export function placeCaptions(nodes, camera, metrics, context = {}) {
     const radius = NODE_BODY_DIAMETER * (1 + (candidate.node.emphasis ?? 0) * 0.55 + (candidate.id === context.selectedId ? 0.14 : 0)) * camera.zoom / 2;
     const width = metric.width + 8;
     const height = metric.height;
-    const gap = radius + LABEL_GAP;
-    const positions = [
-      [point.x - width / 2, point.y + gap],
-      [point.x - width / 2, point.y - gap - height],
-      [point.x + gap, point.y - height / 2],
-      [point.x - gap - width, point.y - height / 2],
-    ];
-    if (candidate.priority <= 1) {
-      for (let offset = 24; offset <= 240; offset += 24) {
-        positions.push([point.x - width / 2 + offset, point.y + gap], [point.x - width / 2 - offset, point.y + gap]);
-        positions.push([point.x - width / 2, point.y + gap + offset], [point.x - width / 2, point.y - gap - height - offset]);
-      }
-    }
-    let rectangle = null;
-    for (const [left, top] of positions) {
-      const rect = { left, top, right: left + width, bottom: top + height };
-      if (rect.left < viewport.left || rect.right > viewport.right || rect.top < viewport.top || rect.bottom > viewport.bottom || collides(rect)) continue;
-      rectangle = rect;
-      break;
-    }
-    if (!rectangle && candidate.priority === 0) {
-      for (let top = viewport.top; top + height <= viewport.bottom && !rectangle; top += LABEL_LINE_HEIGHT) {
-        for (let left = viewport.left; left + width <= viewport.right; left += 24) {
-          const rect = { left, top, right: left + width, bottom: top + height };
-          if (collides(rect)) continue;
-          rectangle = rect;
-          break;
-        }
-      }
-    }
-    if (!rectangle) continue;
+    const gap = candidate.node.summary ? LABEL_GAP : radius + LABEL_GAP;
+    const top = point.y + gap;
+    const rectangle = { left: point.x - width / 2, top, right: point.x + width / 2, bottom: top + height };
+    if (rectangle.left < viewport.left || rectangle.right > viewport.right || rectangle.top < viewport.top || rectangle.bottom > viewport.bottom || collides(rectangle)) continue;
     insert(rectangle);
-    placements.push({ id: candidate.id, ...rectangle });
+    placements.push({ id: candidate.id, anchor: NODE_BODY_DIAMETER * camera.zoom < OVERVIEW_BODY_DIAMETER, ...rectangle });
   }
   return placements;
 }

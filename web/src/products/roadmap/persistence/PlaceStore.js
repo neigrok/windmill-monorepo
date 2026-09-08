@@ -1,7 +1,7 @@
 // The last place the editor stood — tree, camera, selection. Storage errors are never fatal.
 
 const KEY = 'windmill:last-place';
-const CAMERA_LAYOUT = 'compact-radial-v1';
+const CAMERA_LAYOUT = 'structured-radial-v2';
 
 export class PlaceStore {
   constructor(storage = window.localStorage) {
