@@ -1,7 +1,7 @@
 # Roadmap — architecture (web)
 
 One product package: `web/src/products/roadmap/`. It renders a Windmill roadmap (a **DAG** — a step
-can have several prerequisites) as a painterly RPG skill tree on a **hand-rolled WebGL2 renderer**
+can have several prerequisites) as a structured RPG skill tree on a **hand-rolled WebGL2 renderer**
 (no three.js). Target: **60fps at 5,000+ nodes, 2 GPU draw calls** — one instanced node draw plus one
 connector draw, labels and near-LOD icons as a pooled DOM overlay — with pan/zoom, hover,
 direct-manipulation editing, live sync across one account's own devices, and a presence cursor layer.
@@ -30,7 +30,7 @@ scene.setModel(model);                                // GPU build + fit
 ```
 
 Repository loads → domain computes → scene renders. **Layout is synchronous** — no worker, no
-promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order signature
+promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order/color/creation-stamp signature
 changes and serves a cached copy otherwise. No business logic lives in the scene.
 
 After the first paint this is not the update path. A `SyncSession` owns the tree's CRDT lattice; a
@@ -51,7 +51,7 @@ The six marked **↓** have a section of their own below.
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
 | `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (workspaces, legend, last place, return/milestone baselines, view prefs). |
 | `ui/` | Desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, Next-up ranking, honesty chrome. |
-| `ui/tree/` | The step's components — kind legend, checklist, workspace body — the two hooks over their pure models (`useLegend` · `useWorkspace`), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the DOM reference implementation of the tree metaphor. |
+| `ui/tree/` | The step's components — kind legend, checklist, workspace body — the two hooks over their pure models (`useLegend` · `useWorkspace`), plus `SkillNode`/`SkillConnector`/`ProgressBar`, DOM presentations of the tree metaphor; their visual reconciliation with the canvas is outstanding. |
 | `ui/mobile/` | Phone/tablet surfaces: bottom sheets, editor sheet, aim + bulk bars, action lane, read-only chrome, fork door. |
 | `list/` | The phone's second view of the same model: the tree as an outline, with its own pure outline/editing/explore rules. |
 | `activity/` | The activity log domain, the presentation grammar every feed surface speaks, and `useActivity`. |
@@ -94,17 +94,19 @@ is two orthogonal dimensions:
 - **kind** — `NODE_COLORS` / `NODE_COLOR_NAMES`: terracotta · olive · gold · brick · sky · plum, each
   `base` (accent-500), `ring` (accent-600), `soft` (accent-200), `glow`. The shader and the swatch
   rows size themselves off the name list.
-- **tier** — `nodeTier(state)`, four rising indices: locked (low-opacity wash, no glow), available
-  (saturated fill + ring, glow on hover), ember (`active` — a soft glow breathing at half the crown),
-  complete (outer ring + breathing halo). Indices rise with progress, so a state diff reads growth as
-  a rise in tier. `isDone(state)` (complete only) drives edge growth.
+- **tier** — `nodeTier(state)`, four rising indices: locked (muted flat fill), available
+  (full fill and rim), ember (`active` — a dashed outer ring), complete (a solid outer ring).
+  Resting nodes have no continuous halo; hover changes the rim tint and scale, selection adds a
+  strong ring, and event halos are finite. `isDone(state)` drives ceremony travel without making
+  completed edges permanently brighter.
 
 A third, structural axis is `nodeForm(label, parentCount, childCount)` — `linked` · `bud` (born,
 unnamed) · `unlinked` (a stray with no branches left) — revealed as a dashed ring. Also `CONNECTOR`,
 `BACKGROUND`, `BARK` / `BARK_CREAM` (neutral tool + grouped selection) and `NODE_SIZE`.
 
-Positions are in **world units** where a node is `NODE_SIZE` (56) across. Everything in `model/` is
-pure JS — no WebGL, no React.
+Positions are in **world units**. `NODE_SIZE` is 56; the GPU body occupies 0.84 of that diameter.
+`model/geometry.js` shares the 52px working body target, reference zoom, and 14px caption geometry
+between layout and scene. Everything in `model/` is pure JS — no WebGL, no React.
 
 ## `model/`  (pure JS)
 
@@ -134,19 +136,24 @@ pure JS — no WebGL, no React.
   `DEFAULT_KINDS` are re-exported from `packages/api-contract/genesis.js`, re-asserted by
   `vite.config.js` on every build.
 - `NodeWorkspace.js` — a step's sub-tasks, note and links.
-- `SpatialGrid.js` — a uniform bucket grid over placed nodes. `nearest(x, y, maxRadius)` scans the
-  3×3 neighborhood (keep `cellSize ≥ pickRadius`); `within(...)` selects the viewport's nodes for LOD
-  labels; `move(id, x, y)` re-buckets after a live drag.
+- `SpatialGrid.js` — a uniform bucket grid over placed nodes. `nearest(x, y, maxRadius)` queries the
+  complete radius; `within(...)` scans nodes when a rectangle spans more cells than there are nodes,
+  keeping large overviews independent of empty world area. `move` re-buckets and removes empty cells.
 - `milestones.js` — `detectMilestones`: a whole branch turning to light, or the crown; never a single
   step. Pure; the offer conduct (owner-only, once-ever) lives at the call site.
 - `progress.js` — advancing progress and choosing which milestone to announce, as pure functions.
 
 ## `layout/`
 
-`RadialLayoutEngine.js` — the one engine. Each node sits on the ring for its trunk depth, centred in
-an angular wedge split among trunk children by subtree leaf count; a ring is pushed outward until its
-closest pair of neighbours has room. **Synchronous** and deterministic (siblings sort by their
-fractional-index key), so a load and a live emission project identical pixels.
+`RadialLayoutEngine.js` — the one engine. Forest roots each own an equal angular sector; with a
+single root, its trunk children own the sectors and the root sits at the center. Within each sector,
+breadth-first authored order fills rows of one logical depth before advancing to the next depth.
+Stable ID/channel hashes give the rows unequal angular intervals and a coherent ±20px radial wave
+plus individual ±8px offsets at working zoom. Each row spans at most 56px radially; actual gaps
+between adjacent rows remain 224–360px and gaps between generations 264–408px. Same-row centers
+stay at least 208px apart, with a 128px reserved footprint gutter between sectors. Body and two-line
+caption footprints constrain capacity at the row's innermost radius. Variation changes neither the
+full DAG nor equal sector allocation. It uses no runtime randomness; pan and pinch never relayout.
 
 ## `scene/`  (raw WebGL2)
 
@@ -157,25 +164,35 @@ fractional-index key), so a load and a live emission project identical pixels.
   `update(dt)`.
 - `NodeBatch.js` — **one instanced draw** for every node: a base quad drawn N times with per-instance
   attributes (offset, colour, tier, form, glow seed, selection, icon cell, plus the ceremony and
-  feedback animation stamps). The body is procedural (disc + gradient + ring); the glow pulses from
-  `uTime`; the icon atlas is tinted per tier and fades out across the band where the DOM icons take
-  over. `moveInstance(id, x, y)` is a ranged `bufferSubData` write — the live-drag path.
-- `ConnectorBatch.js` — **one draw** for all edges, bézier ribbons in one buffer. A branch inherits
-  its source: once that node is complete it lights in the source's kind hue with a GPU colour/growth
-  sweep driven by `uTime`. `setStates` rewrites only the grow attributes; `moveNode` re-tessellates
-  just that node's incident edges.
+  feedback animation stamps). The body is a flat procedural disc with state and selection rings;
+  `uTime` drives finite ceremony effects and pointer feedback. The icon atlas is tinted per tier and
+  fades out across the band where DOM icons take over. `moveInstance(id, x, y)` is a ranged
+  `bufferSubData` write — the live-drag path.
+- `ConnectorBatch.js` — **one draw** for all edges, bézier ribbons in one buffer. Centerlines and
+  normals produce 1.25px resting strokes at any camera scale, tinted by category at 26% opacity.
+  Context paths use 2px strokes at 86%; unrelated resting edges recede to 12%. `visibilityFor` is
+  shared by the GPU visibility update and picking, which measures the actual tessellated centerline.
+  `moveNode` re-tessellates only incident edges; `travel` temporarily reveals a ceremony edge.
+- `sceneHierarchy.js` — pure presentation rules derived from trunk edges: major-branch summaries,
+  ancestor/incident context, meaningful default Focus, and edge visibility. Below a 20px projected
+  ordinary body, the resting overview shows at most 64 shallow links to non-leaf branches. At working
+  scales, resting trunk edges require both endpoints within the viewport plus a body-width margin.
+  Other DAG links appear for node hover/selection, explicit edge selection, a selected pair, or a
+  finite ceremony. Hidden edges cannot be picked; the full DAG remains in the render model.
 - `IconAtlas.js` — rasterizes lucide glyphs (through the app's `Icon` registry) into an alpha-mask
   canvas atlas (192px cells) for the far/mid LOD, re-uploading once async glyph decode completes.
-- `NodeOverlay.js` — DOM above the canvas. The abstract `NodeOverlay` owns one placement skeleton: a
-  **fixed pool of ~64** absolutely-positioned elements on the nodes nearest the viewport centre,
-  LOD-gated by zoom, moved by CSS `transform` so a frame costs no layout. `LabelOverlay` (captions)
-  and `IconOverlay` (live `<Icon>` SVG cross-fading in as the baked atlas fades out) override only
-  element / visibility band / draw.
+- `NodeOverlay.js` — fixed DOM pools above the canvas. Captions stay at 14px/20px in screen space,
+  measured and wrapped on model/font changes, then assigned stable slots from a pool of 96.
+  `captionLayout.js` ranks a bounded set of candidates and places non-overlapping rectangles within
+  the unobscured viewport. Working captions stay 8px below their own body, with selected and hovered
+  steps first; an obstructed caption is omitted instead of moved elsewhere. Below a 20px projected
+  body, separate group boxes show authored major-branch names and exact trunk-subtree counts at
+  sector centroids. They carry `data-branch-id`, distinct from node captions' `data-node-id`; only
+  selected/hovered individual steps retain captions at that scale. Icons retain their zoom cross-fade.
 - `AffordanceLayer.js` — the edit chrome: a plus chip + ports fading onto the **selected** node
-  (hover shows no structure). The plus sits on the outward rim, ports at the widest gaps;
+  (hover shows no edit controls). The plus sits on the outward rim, ports at the widest gaps;
   repositioned per frame. A grace window keeps it reachable just after a deselect. The plus fires
   `onCreate`; each port starts a `ConnectGesture`.
-- `HoverLabel.js` — the hover name tip, inline-styled, so it owns no CSS.
 - `EdgeChrome.js` — the selected-edge chrome: a clicked branch turns bark and grows two endpoint
   handles plus a midpoint × (delete). Selection-gated, not hover.
 - `ConnectGesture.js` — dragging a dependency from a port or an edge handle: a dashed SVG ghost
@@ -190,7 +207,9 @@ fractional-index key), so a load and a live emission project identical pixels.
   bookkeeping, drives two-finger pinch, and forwards down/drag/move/up/leave to the active `Tool`.
   `tools.js` holds the `Tool` contract, `NavigateTool` (drag-pan + inertia, click-select, throttled
   hover — the viewer behaviour and the editing default) and `ReadOnlyTool` (1:1 pan, tap-select, no
-  fling). `reorderGeometry.js` is the angular-reorder math, pure.
+  fling). `reorderGeometry.js` groups varied sibling radii with a 140px reference-zoom threshold,
+  picks the nearest row by pointer radius, and maps its angular gap to the full authored sequence
+  for a fractional key. The preview interpolates the neighboring radii.
 - `SkillTreeScene.js` — the orchestrator: the GL context, the `Camera2D`, both batches, the
   `IconAtlas`, every overlay, the `CeremonyDirector`, the `InputController`. Its **rAF loop** advances
   `uTime` and the camera, steps any settle glide, considers the pending auto-frame, repositions every
@@ -210,16 +229,19 @@ fractional-index key), so a load and a live emission project identical pixels.
     plainly idle viewer gets one capped breath outward once the settle has landed.
 
   Public API (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyModel`,
-  `applyStates`, `moveNode`, `fitToView`, `focusNode`, `frameNodes`, `panTo`, `zoomBy`,
+  `applyStates`, `moveNode`, `fitToView`, `showAllSteps`, `focusSteps`, `focusNode`, `frameNodes`, `panTo`, `zoomBy`,
   `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`, `resize`,
   `start`, `stop`, `dispose`; selection (`select` / `selectEdge` — node and edge selection are
   mutually exclusive — `setSelection`, `setSelectedSet`, `toggleSelect`, `hover`, `pick`, `pickEdge`,
   `projectEdge`); previews (`previewKind` / `restoreKind`, `previewDeleteCost` / `clearDeleteCost`,
   `setFaded`, `highlightKind`, `spotlightNode`, `pulseNode`).
 
-Perf rules: constant draw calls regardless of node count; no per-node JS in the
-animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation; instanced
-attribute updates flag their buffer rather than reallocating.
+Perf rules: constant draw calls regardless of node count; cached layout and caption measurement;
+viewport-dependent caption work only when the camera, model or selection changes. Candidate ranking
+is bounded, but overview queries can scan all nodes. Connector visibility is cached while the
+camera/context is unchanged and no edge travel is pending. Instanced attribute updates flag their
+buffer. The DOM tree components and Figma canvas drawings still need visual reconciliation with
+these renderer rules; see `docs/design/consistency.md`.
 
 ## `sync/`  (the lattice is truth)
 

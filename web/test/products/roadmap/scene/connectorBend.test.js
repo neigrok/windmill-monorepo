@@ -47,3 +47,31 @@ test('two edges of the same length still bow differently', () => {
   const b = bowRatio(0, 0, 400, 0, bendOf('root', 'two'));
   assert.ok(Math.abs(a - b) > 0.01, 'edges should not all bow alike');
 });
+
+import { sceneHierarchy } from '../../../../src/products/roadmap/scene/sceneHierarchy.js';
+import { edgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';
+import { ConnectorBatch } from '../../../../src/products/roadmap/scene/ConnectorBatch.js';
+
+test('selection emphasizes incident dependencies while retaining the complete DAG in the model', () => {
+  const uploads = [];
+  const vertices = 30;
+  const batch = {
+    dim: new Float32Array(vertices * 3),
+    spotlit: null,
+    edges: [
+      { from: 'parent', to: 'step', kind: 'trunk', vertexStart: 0 },
+      { from: 'step', to: 'dependent', kind: 'cross-branch', vertexStart: vertices },
+      { from: 'other', to: 'branch', kind: 'trunk', vertexStart: vertices * 2 },
+    ],
+    edgesByNode: new Map([['step', [0, 1]]]),
+    dimBuffer: 'dim',
+    uploadDynamic: (buffer, data) => uploads.push({ buffer, values: Array.from(data) }),
+  };
+  for (const edge of batch.edges) edge.key = edgeKey(edge.from, edge.to);
+  batch.hierarchy = sceneHierarchy([], batch.edges);
+  ConnectorBatch.prototype.setSpotlight.call(batch, 'step');
+  assert.deepEqual(uploads, [{ buffer: 'dim', values: [...Array(vertices * 2).fill(-1), ...Array(vertices).fill(1)] }]);
+  ConnectorBatch.prototype.setSpotlight.call(batch, null);
+  assert.deepEqual(uploads[1], { buffer: 'dim', values: Array(vertices * 3).fill(0) });
+  assert.equal(batch.edges.length, 3);
+});

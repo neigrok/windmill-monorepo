@@ -1,98 +1,100 @@
-// Radial tidy tree over the trunk arborescence: each node sits on the ring for its trunk depth, at the centre of an angular wedge; wedges split among trunk children proportional to subtree leaf counts.
 import { LayoutEngine } from '../model/ports.js';
 import { cmpOrder } from '../model/TrunkTree.js';
-import { NODE_SIZE } from '../theme.js';
+import {
+  NODE_BODY_DIAMETER, WORKING_ZOOM, LABEL_MAX_WIDTH,
+  LABEL_LINE_HEIGHT, LABEL_GAP, LABEL_CLEARANCE,
+  RADIAL_ROW_SPREAD, RADIAL_ROW_GAP,
+} from '../model/geometry.js';
 
-const RING = NODE_SIZE * 2.8; // the least the first ring clears the center
-const MIN_ARC = NODE_SIZE * 1.7; // center to center
 const FULL_CIRCLE = 2 * Math.PI;
+const ROW_PITCH = RADIAL_ROW_GAP + RADIAL_ROW_SPREAD;
+const GENERATION_PITCH = 320 / WORKING_ZOOM;
+const NODE_PITCH = 208 / WORKING_ZOOM;
+const SECTOR_GUTTER = 128 / WORKING_ZOOM;
+const FOOTPRINT_WIDTH = (LABEL_MAX_WIDTH + LABEL_CLEARANCE) / WORKING_ZOOM;
+const FOOTPRINT_HEIGHT = NODE_BODY_DIAMETER + (LABEL_GAP + 2 * LABEL_LINE_HEIGHT + LABEL_CLEARANCE) / WORKING_ZOOM;
+const ROW_NODE_DISTANCE = Math.max(NODE_PITCH, Math.hypot(FOOTPRINT_WIDTH, FOOTPRINT_HEIGHT));
 
-// How much of a child's slice comes from an equal share rather than from its leaf count.
-const EVENNESS = 0.15;
-
-// Fraction each ring past the first widens its clearance by, per depth.
-const RING_GROWTH = 0.05;
+function variation(id, channel) {
+  let hash = 2166136261;
+  for (const character of `${id}:${channel}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+  hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+  return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
+}
 
 export class RadialLayoutEngine extends LayoutEngine {
   layout(tree) {
     const trunk = tree.trunk;
-    // a synthetic center (multi-root) pushes the real roots out to the first ring
-    const depthOffset = trunk.centerId() !== null ? 0 : 1;
-    const wedges = [];
-
-    const claim = (id, angleStart, angleEnd) => {
-      wedges.push({
-        id,
-        depth: trunk.trunkDepthOf(id) + depthOffset,
-        angle: (angleStart + angleEnd) / 2,
-      });
-
-      const children = trunk.trunkChildrenOf(id);
-      if (children.length === 0) return;
-
-      const totalLeaves = children.reduce((sum, childId) => sum + trunk.leafCountOf(childId), 0);
-      let cursor = angleStart;
-      for (const childId of children) {
-        const span = (angleEnd - angleStart) * shareOf(trunk.leafCountOf(childId), totalLeaves, children.length);
-        claim(childId, cursor, cursor + span);
-        cursor += span;
-      }
-    };
-
-    const centerId = trunk.centerId();
-    if (centerId !== null) {
-      claim(centerId, 0, FULL_CIRCLE);
-    } else {
-      const roots = [...tree.roots()].sort(cmpOrder);
-      const totalLeaves = roots.reduce((sum, root) => sum + trunk.leafCountOf(root.id), 0);
-      let cursor = 0;
-      for (const root of roots) {
-        const span = FULL_CIRCLE * shareOf(trunk.leafCountOf(root.id), totalLeaves, roots.length);
-        claim(root.id, cursor, cursor + span);
-        cursor += span;
-      }
-    }
-
-    const radii = ringRadii(wedges);
+    const roots = [...tree.roots()].sort(cmpOrder).map(node => node.id);
     const positions = new Map();
-    for (const { id, depth, angle } of wedges) {
-      const radius = radii[depth];
-      positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+    if (roots.length === 0) return positions;
+
+    const centerId = roots.length === 1 ? roots[0] : null;
+    if (centerId !== null) positions.set(centerId, { x: 0, y: 0 });
+    const majorRoots = centerId === null ? roots : trunk.trunkChildrenOf(centerId);
+    const sectorWidth = FULL_CIRCLE / majorRoots.length;
+    const singleSector = majorRoots.length === 1;
+
+    for (let sector = 0; sector < majorRoots.length; sector++) {
+      const majorId = majorRoots[sector];
+      const phase = variation(majorId, 'bend') * FULL_CIRCLE;
+      let band = [majorId];
+      let radius = 240 / WORKING_ZOOM;
+      let row = 0;
+
+      while (band.length > 0) {
+        const node = tree.nodesById.get(band[0]);
+        const bodyRadius = NODE_BODY_DIAMETER * (node.prerequisites.length === 0 ? 1.55 : 1) / 2;
+        const footprintBottom = bodyRadius + (LABEL_GAP + 2 * LABEL_LINE_HEIGHT + LABEL_CLEARANCE / 2) / WORKING_ZOOM;
+        const boundaryDistance = Math.hypot(FOOTPRINT_WIDTH / 2, footprintBottom) + SECTOR_GUTTER / 2;
+        if (!singleSector) radius = Math.max(radius, boundaryDistance / Math.sin(sectorWidth / 2) + RADIAL_ROW_SPREAD / 2);
+        const nextBand = [];
+
+        for (let offset = 0; offset < band.length;) {
+          const innerRadius = radius - RADIAL_ROW_SPREAD / 2;
+          const minimumAngle = 2 * Math.asin(ROW_NODE_DISTANCE / (2 * innerRadius));
+          const margin = singleSector ? 0 : Math.asin(boundaryDistance / innerRadius);
+          const usableAngle = sectorWidth - 2 * margin;
+          const capacity = singleSector
+            ? Math.max(1, Math.floor(FULL_CIRCLE / (minimumAngle * 1.12)))
+            : Math.max(1, 1 + Math.floor(usableAngle / (minimumAngle * 1.12)));
+          const count = Math.min(capacity, band.length - offset);
+          const rowId = band[offset];
+          const rowPhase = phase + row * 0.55;
+          const bend = Math.sin(rowPhase);
+          let angle = sector * sectorWidth + sectorWidth / 2 + bend * Math.min(usableAngle * 0.15, 80 / (WORKING_ZOOM * radius));
+          let angleSurplus = 0;
+          const weights = [];
+          if (count > 1) {
+            const gapCount = singleSector ? count : count - 1;
+            const minimumSpan = gapCount * minimumAngle;
+            const span = singleSector ? FULL_CIRCLE
+              : minimumSpan + (usableAngle - minimumSpan) * (0.55 + 0.3 * variation(rowId, 'span'));
+            angleSurplus = span - minimumSpan;
+            angle = sector * sectorWidth + (singleSector ? minimumAngle / 2 + bend * minimumAngle * 0.2
+              : margin + (usableAngle - span) * (0.5 + 0.35 * bend));
+            for (let index = 0; index < gapCount; index++) weights.push(0.35 + 1.3 * variation(band[offset + index], 'gap'));
+          }
+          const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+
+          for (let index = 0; index < count; index++) {
+            const id = band[offset + index];
+            const parentId = trunk.primaryParentOf(id) ?? id;
+            const wave = Math.sin(rowPhase + index * 1.25 + variation(parentId, 'branch') * 0.6);
+            const nodeRadius = radius + (20 * wave + 16 * (variation(id, 'radius') - 0.5)) / WORKING_ZOOM;
+            positions.set(id, { x: nodeRadius * Math.cos(angle), y: nodeRadius * Math.sin(angle) });
+            nextBand.push(...trunk.trunkChildrenOf(id));
+            if (index < count - 1) angle += minimumAngle + angleSurplus * weights[index] / weightTotal;
+          }
+          offset += count;
+          row++;
+          if (offset < band.length) radius += ROW_PITCH + 24 * variation(rowId, 'row') / WORKING_ZOOM;
+        }
+        band = nextBand;
+        radius += GENERATION_PITCH + 32 * variation(band[0] ?? majorId, 'generation') / WORKING_ZOOM;
+      }
     }
     return positions;
   }
-}
-
-// Shares sum to one, so the wedge is always fully spent.
-function shareOf(leaves, totalLeaves, siblings) {
-  return (1 - EVENNESS) * (leaves / totalLeaves) + EVENNESS * (1 / siblings);
-}
-
-// Radii inside out: a ring clears the one within it by RING, and is pushed further when neighbours an angle g apart need MIN_ARC of arc between them.
-function ringRadii(wedges) {
-  const anglesByDepth = new Map();
-  let deepest = 0;
-  for (const { depth, angle } of wedges) {
-    deepest = Math.max(deepest, depth);
-    if (!anglesByDepth.has(depth)) anglesByDepth.set(depth, []);
-    anglesByDepth.get(depth).push(angle);
-  }
-
-  const radii = [0];
-  for (let depth = 1; depth <= deepest; depth++) {
-    const gap = tightestGap(anglesByDepth.get(depth) ?? []);
-    const needed = gap > 0 ? MIN_ARC / gap : 0;
-    const clearance = RING * (1 + RING_GROWTH * (depth - 1));
-    radii.push(Math.max(radii[depth - 1] + clearance, needed));
-  }
-  return radii;
-}
-
-// Smallest angle between neighbours around the ring, wrap included; 0 when no radius can part them.
-function tightestGap(angles) {
-  if (angles.length < 2) return 0;
-  const sorted = [...angles].sort((a, b) => a - b);
-  let tightest = FULL_CIRCLE - (sorted[sorted.length - 1] - sorted[0]);
-  for (let i = 1; i < sorted.length; i++) tightest = Math.min(tightest, sorted[i] - sorted[i - 1]);
-  return tightest;
 }

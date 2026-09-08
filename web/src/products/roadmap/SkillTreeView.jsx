@@ -346,7 +346,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const layoutPositions = useCallback((nextTree) => {
     const signature = nextTree.allNodes
-      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
+      .map((node) => JSON.stringify([node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? null, node.createdAt ?? null]))
       .sort()
       .join('|');
     if (layoutCacheRef.current.signature !== signature) {
@@ -986,7 +986,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
       pushArcs();
       setBounds(scene.getBounds());
-      if (restoredSelection) setSelectedId(restoredSelection);
+      if (restoredSelection) {
+        setSelectedId(restoredSelection);
+        if (!savedCamera) scene.focusNode(restoredSelection);
+      }
       if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
       if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
@@ -1457,7 +1460,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   function handleFitToView() {
     const scene = sceneRef.current;
     if (!scene) return;
-    scene.fitToView();
+    scene.showAllSteps();
     setBounds(scene.getBounds());
   }
 
@@ -1526,6 +1529,47 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
+  useEffect(() => {
+    const root = rootRef.current;
+    const selector = '.st-mobile-chrome > *, .st-topbar > *, .st-legend-dock, .st-minimap, .st-action-lane, .st-detail-panel--open, .st-root > [role="group"], .st-selection-bar, .st-toast, .st-ticker, [data-roadmap-chrome]';
+    let chrome = [];
+    const updateFrame = () => {
+      const right = breakpoint === 'desktop' && dockOpen ? 408 : breakpoint === 'tablet' && dockOpen ? 352 : 24;
+      const canvas = canvasRef.current.getBoundingClientRect();
+      const obstacles = [];
+      for (const element of chrome) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        obstacles.push({ left: rect.left - canvas.left, top: rect.top - canvas.top, right: rect.right - canvas.left, bottom: rect.bottom - canvas.top });
+      }
+      sceneRef.current?.setViewportInsets({ left: 24, top: breakpoint === 'desktop' ? (readOnly ? 164 : 88) : 140, right, bottom: phone && selectedId ? 300 : 32 }, obstacles);
+    };
+    const observer = new ResizeObserver(updateFrame);
+    const refreshChrome = () => {
+      mutations.disconnect();
+      mutations.observe(root, { childList: true });
+      const mobileChrome = root.querySelector('.st-mobile-chrome');
+      if (mobileChrome) mutations.observe(mobileChrome, { childList: true });
+      chrome = [...root.querySelectorAll(selector)];
+      observer.disconnect();
+      observer.observe(root);
+      for (const element of chrome) {
+        observer.observe(element);
+        mutations.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
+      }
+      updateFrame();
+    };
+    const mutations = new MutationObserver(refreshChrome);
+    refreshChrome();
+    root.addEventListener('transitionend', updateFrame, true);
+    root.addEventListener('animationend', updateFrame, true);
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      root.removeEventListener('transitionend', updateFrame, true);
+      root.removeEventListener('animationend', updateFrame, true);
+    };
+  }, [scene, breakpoint, dockOpen, phone, selectedId, readOnly, view, inUse, legendForceOpen, laneLift, listReady, mobileSurface]);
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
@@ -1601,8 +1645,10 @@ export function SkillTreeView({ treeId, demo = false }) {
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
           onSignInToKeep={status === 'ghost' && treeMine && !demo ? openSignInDoor : undefined}
           onRecenter={handleRecenter}
+          onFocus={() => sceneRef.current?.focusSteps()}
           showRecenter={recenterAvailable}
           tablet={breakpoint === 'tablet'}
+          desktop={breakpoint === 'desktop'}
           panelOpen={!!selectedNode}
         />
       ) : (
@@ -1622,6 +1668,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onFitToView={handleFitToView}
+          onFocus={() => sceneRef.current?.focusSteps()}
           canReset={hasLocalEdits}
           onResetEdits={handleResetEdits}
           onShare={() => setShareOpen(true)}
@@ -1662,13 +1709,13 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {stranded && !demo && (
-        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
+        <div data-roadmap-chrome style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
           <StatusChip>{stranded}</StatusChip>
         </div>
       )}
 
       {!readOnly && status !== 'signed-in' && treeMine && !demo && (
-        <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div data-roadmap-chrome style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
       )}
@@ -1899,7 +1946,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {demotion && !demotion.cardOpen && (
-        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
+        <div data-roadmap-chrome style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
           <StatusChip>
             {demotion.edits > 0
               ? `Read-only · ${demotion.edits} change${demotion.edits === 1 ? '' : 's'} kept here`

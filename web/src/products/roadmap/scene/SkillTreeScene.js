@@ -1,6 +1,7 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
 import { NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
+import { WORKING_ZOOM } from '../model/geometry.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
 import { NodeBatch } from './NodeBatch.js';
@@ -9,12 +10,12 @@ import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
 import { ArrivalChevron } from './ArrivalChevron.js';
-import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
 import { ReorderSlot } from './ReorderSlot.js';
-import { circularInsertionIndex, reorderPlan } from './input/reorderGeometry.js';
+import { reorderSlot, reorderPlan } from './input/reorderGeometry.js';
 import { edgeKey } from './edgeKey.js';
+import { defaultFocusId } from './sceneHierarchy.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
@@ -28,8 +29,7 @@ const EDGE_PICK_RADIUS = 12; // screen px
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
 const ICON_ZOOM_FULL = 1.1;
-// Caps the fit zoom so a near-empty tree cannot balloon: the emphasised root reads at ~46px.
-const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
+const FIT_MAX_ZOOM = WORKING_ZOOM;
 const SETTLE_MS = 520;
 const SETTLE_MIN_DELTA = 2; // world units
 const SETTLE_STAGGER_MS = 120;
@@ -65,12 +65,11 @@ export class SkillTreeScene {
     this.connectorBatch = new ConnectorBatch(gl, this.theme);
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas, this.theme);
-    this.hoverLabel = new HoverLabel(canvas, this.theme);
     this.affordanceLayer = null;
     this.edgeChrome = null;
     this.marqueeOverlay = null;
     this.reorderSlot = null;
-    this.reorder = null; // { id, radius, siblings, homeX, homeY }
+    this.reorder = null; // { id, siblings, homeX, homeY }
     if (!this.readOnly) {
       this.marqueeOverlay = new MarqueeOverlay(canvas);
       this.reorderSlot = new ReorderSlot(canvas);
@@ -95,7 +94,8 @@ export class SkillTreeScene {
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
-    this.applyMotion = () => { this.motion = this.motionQuery.matches ? 0 : 1; };
+    this.camera.motion = !!this.motion;
+    this.applyMotion = () => { this.motion = this.motionQuery.matches ? 0 : 1; this.camera.motion = !!this.motion; };
     this.motionQuery.addEventListener('change', this.applyMotion);
 
     this.renderModel = null;
@@ -106,10 +106,14 @@ export class SkillTreeScene {
     this.selectedId = null; // size<=1 projection of selectedIds
     this.selectedIds = new Set();
     this.hoveredId = null;
+    this.activitySpotlightId = null;
     this.selectedEdge = null;
     this.selectedEdges = new Set(); // edge keys
     this.hoveredEdge = null;
     this.lastArcs = new Map();
+    this.workingViewpoint = null;
+    this.inOverview = false;
+    this.chromeObstacles = [];
 
     this.viewportListeners = new Set();
     this.panning = false;
@@ -206,8 +210,13 @@ export class SkillTreeScene {
     this.installModel(renderModel);
     this.selectedId = null;
     this.hoveredId = null;
+    this.activitySpotlightId = null;
     this.selectedEdge = null;
     this.selectedEdges = new Set();
+    this.selectedIds = new Set();
+    this.workingViewpoint = null;
+    this.inOverview = true;
+    this.labelOverlay.setContext(null, null);
     this.fitToView();
     // Pre-dim before the first paint: a return-recap darkens only the steps it replays, any other first paint the whole tree.
     if (this.returnRecap) {
@@ -245,8 +254,10 @@ export class SkillTreeScene {
       else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
     } else this.nodeBatch.setSelectedSet(this.selectedIds);
     this.affordanceLayer?.setSelected(this.selectedId);
-    this.hoverLabel.setHovered(this.hoveredId);
+    this.labelOverlay.setContext(this.selectedId, this.hoveredId);
+    this.connectorBatch.setSpotlight(this.activitySpotlightId ?? this.selectedId ?? this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.connectorBatch.setProjectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
     const arrivals = renderModel.nodes.filter((node) => !previous.has(node.id));
     this.beginSettle(previous, arrivals);
@@ -383,7 +394,6 @@ export class SkillTreeScene {
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
-    this.hoverLabel.setModel(renderModel);
     this.affordanceLayer?.setModel(renderModel);
     this.edgeChrome?.setModel(renderModel);
     if (this.readOnly) this.camera.setPanBounds(renderModel.bounds);
@@ -392,6 +402,8 @@ export class SkillTreeScene {
   // The first push paints the resting look silently; later pushes diff against it.
   applyStates(statesMap) {
     this.iconOverlay.setStates(statesMap);
+    this.labelOverlay.setStates(statesMap);
+    this.overlaysDirty = true;
 
     // A stopped scene must never arm the director: the settle poll would spin on a frozen clock and burst stale beats on resume.
     if (!this.running) {
@@ -605,20 +617,48 @@ export class SkillTreeScene {
     this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight, 0.9, FIT_MAX_ZOOM);
   }
 
+  showAllSteps() {
+    if (this.camera.zoom >= WORKING_ZOOM * 0.8) this.workingViewpoint = this.getViewpoint();
+    this.inOverview = true;
+    this.fitToView();
+  }
+
+  focusSteps() {
+    const selected = this.nodesById.get(this.selectedId);
+    if (selected) { this.revealNode(selected.id); return; }
+    if (this.inOverview && this.workingViewpoint) {
+      this.restoreViewpoint(this.workingViewpoint);
+      this.inOverview = false;
+      return;
+    }
+    const id = defaultFocusId(this.nodesById, this.connectorBatch.hierarchy, this.camera);
+    if (id) this.revealNode(id);
+  }
+
+  setViewportInsets(insets, obstacles = []) {
+    this.chromeObstacles = obstacles;
+    this.overlaysDirty = true;
+    if (Object.entries(insets).every(([key, value]) => this.camera.insets[key] === value)) return;
+    this.camera.setInsets(insets);
+    const node = this.nodesById.get(this.selectedId);
+    if (node && Math.max(this.camera.zoom, this.camera.glide?.toZoom ?? 0) >= WORKING_ZOOM * 0.8) this.camera.focus(node.x, node.y, true);
+  }
+
   getViewpoint() { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom }; }
-  restoreViewpoint({ x, y, zoom }) { this.camera.restore(x, y, zoom); }
+  restoreViewpoint({ x, y, zoom }) { this.camera.restore(x, y, zoom); this.inOverview = zoom < WORKING_ZOOM * 0.8; }
 
   focusNode(id) {
     const node = this.nodesById.get(id);
     if (!node) return;
-    this.selectedId = id;
     this.selectedIds = new Set([id]);
+    this.setSelection(id);
     this.nodeBatch.setSelected(id);
     this.camera.focus(node.x, node.y);
+    this.inOverview = false;
   }
 
   panTo(x, y) { this.camera.panTo(x, y); }
-  zoomBy(factor) { this.camera.zoomBy(factor); }
+  zoomBy(factor) { this.camera.zoomBy(factor); if (this.camera.zoom >= WORKING_ZOOM * 0.8) this.inOverview = false; }
 
   frameNodes(ids) {
     const points = [];
@@ -649,6 +689,7 @@ export class SkillTreeScene {
 
   // Light one node + its branches and dim the rest; null restores the resting look.
   spotlightNode(id) {
+    this.activitySpotlightId = id;
     if (id == null) {
       this.nodeBatch.clearFaded();
       this.connectorBatch.setSpotlight(null);
@@ -677,7 +718,11 @@ export class SkillTreeScene {
 
   revealNode(id) {
     const node = this.nodesById.get(id);
-    if (node) this.camera.glideTo(node.x, node.y);
+    if (!node) return;
+    this.labelOverlay.setContext(id);
+    this.overlaysDirty = true;
+    this.inOverview = false;
+    this.camera.focus(node.x, node.y, true);
   }
 
   // Fires now with the current viewport and again on every frame the camera moves; returns an unsubscribe.
@@ -738,7 +783,6 @@ export class SkillTreeScene {
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
-    this.hoverLabel.dispose();
     this.arrivalChevron.dispose();
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
@@ -756,7 +800,6 @@ export class SkillTreeScene {
     this.nodeBatch.setTheme(theme);
     this.connectorBatch.setTheme(theme);
     this.iconOverlay.setTheme(theme);
-    this.hoverLabel.setTheme(theme);
     this.arrivalChevron.setTheme(theme);
   }
 
@@ -773,11 +816,10 @@ export class SkillTreeScene {
 
     const moved = this.camera.update(dt);
     if (moved || this.overlaysDirty) {
-      this.labelOverlay.update(this.camera);
-      this.iconOverlay.update(this.camera);
-      this.hoverLabel.update(this.camera);
-      this.arrivalChevron.update(this.camera);
       this.affordanceLayer?.update(this.camera);
+      this.labelOverlay.update(this.camera, [...this.chromeObstacles, ...(this.affordanceLayer?.obstacles ?? [])]);
+      this.iconOverlay.update(this.camera);
+      this.arrivalChevron.update(this.camera);
       this.edgeChrome?.update(this.camera);
       this.overlaysDirty = false;
     }
@@ -879,7 +921,7 @@ export class SkillTreeScene {
       .filter(Boolean);
     if (siblings.length === 0) { this.reorder = null; return; }
     this.finishSettle(); // land any in-flight glide first
-    this.reorder = { id, radius: Math.hypot(node.x, node.y), siblings, homeX: node.x, homeY: node.y };
+    this.reorder = { id, siblings, homeX: node.x, homeY: node.y };
     this.nodeBatch.setMarqueePreview(new Set([id]));
     this.reorderSlot?.show();
     this.updateReorder(sx, sy);
@@ -887,13 +929,13 @@ export class SkillTreeScene {
 
   updateReorder(sx, sy) {
     if (!this.reorder) return;
-    const { id, radius, siblings } = this.reorder;
+    const { id, siblings } = this.reorder;
     const world = this.camera.screenToWorld(sx, sy);
     const angle = Math.atan2(world.y, world.x);
-    this.moveNode(id, radius * Math.cos(angle), radius * Math.sin(angle)); // arc: radius pinned
-    const index = circularInsertionIndex(siblings.map((s) => Math.atan2(s.y, s.x)), angle);
-    const slot = this.slotAngle(siblings, index);
-    const screen = this.camera.worldToScreen(radius * Math.cos(slot), radius * Math.sin(slot));
+    const slot = reorderSlot(siblings, world);
+    if (!slot) return;
+    this.moveNode(id, slot.radius * Math.cos(angle), slot.radius * Math.sin(angle));
+    const screen = this.camera.worldToScreen(slot.x, slot.y);
     this.reorderSlot?.moveTo(screen.x, screen.y, 1.3 * NODE_SIZE * this.camera.zoom);
   }
 
@@ -918,19 +960,6 @@ export class SkillTreeScene {
     this.reorder = null;
   }
 
-  // The angle of the insertion slot at `index`: the midpoint of the gap the node drops into, the ends borrowing half the wrap gap.
-  slotAngle(siblings, index) {
-    const TAU = Math.PI * 2;
-    const norm = (a) => ((a % TAU) + TAU) % TAU;
-    const m = siblings.length;
-    const ang = siblings.map((s) => Math.atan2(s.y, s.x));
-    if (m === 1) return index === 0 ? ang[0] - 0.3 : ang[0] + 0.3;
-    const wrap = norm(ang[0] - ang[m - 1]);
-    if (index === 0) return norm(ang[0] - wrap / 2);
-    if (index === m) return norm(ang[m - 1] + wrap / 2);
-    return norm(ang[index - 1] + norm(ang[index] - ang[index - 1]) / 2);
-  }
-
   setSelection(id) {
     if (id === this.selectedId) return;
     this.selectedId = id;
@@ -943,6 +972,7 @@ export class SkillTreeScene {
     if (edge && this.selectedIds.size > 0) this.select(null);
     this.selectedEdge = edge ?? null;
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.connectorBatch.setProjectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
   }
 
@@ -950,14 +980,16 @@ export class SkillTreeScene {
   projectEdge(edge) {
     this.selectedEdge = edge ?? null;
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.connectorBatch.setProjectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
   }
 
   hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
-    this.hoverLabel.setHovered(id);
+    this.labelOverlay.setContext(this.selectedId, id);
     this.nodeBatch.setHover(id, this.elapsedSeconds);
+    this.connectorBatch.setSpotlight(this.activitySpotlightId ?? this.selectedId ?? id);
     this.overlaysDirty = true;
     if (this.options.onNodeHover) this.options.onNodeHover(id);
   }
@@ -979,6 +1011,9 @@ export class SkillTreeScene {
   }
 
   refreshHighlight() {
+    this.labelOverlay.setContext(this.selectedId, this.hoveredId);
+    this.connectorBatch.setSpotlight(this.activitySpotlightId ?? this.selectedId ?? this.hoveredId);
+    this.overlaysDirty = true;
     if (this.readOnly) {
       if (this.selectedIds.size > 0) this.nodeBatch.setSelectedSet(this.selectedIds);
       else this.nodeBatch.setSelected(this.selectedId);
@@ -999,18 +1034,7 @@ export class SkillTreeScene {
   // Nearest branch to the cursor within EDGE_PICK_RADIUS, or null; only meaningful off-node.
   pickEdge(sx, sy) {
     if (!this.renderModel) return null;
-    const world = this.camera.screenToWorld(sx, sy);
-    const maxDist = EDGE_PICK_RADIUS / this.camera.zoom;
-    let best = null;
-    let bestDist = maxDist;
-    for (const edge of this.renderModel.edges) {
-      const from = this.nodesById.get(edge.from);
-      const to = this.nodesById.get(edge.to);
-      if (!from || !to) continue; // an edge can briefly outrun its endpoints mid-rebuild
-      const d = distanceToSegment(world.x, world.y, from.x, from.y, to.x, to.y);
-      if (d < bestDist) { bestDist = d; best = edge; }
-    }
-    return best;
+    return this.connectorBatch.pickEdge(sx, sy, this.camera, this.elapsedSeconds, EDGE_PICK_RADIUS);
   }
 }
 
@@ -1028,12 +1052,4 @@ function centroid(points) {
   let y = 0;
   for (const point of points) { x += point.x; y += point.y; }
   return { x: x / points.length, y: y / points.length };
-}
-
-function distanceToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy || 1;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }

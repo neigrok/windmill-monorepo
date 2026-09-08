@@ -167,6 +167,20 @@
     transition: none;
   }
 }
+.st-view-action {
+  padding: 8px 10px;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-primary);
+  font: 700 13px var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-mobile-chrome .st-view-action { min-height: 44px; }
+.st-view-action:hover { background: var(--surface-hover); }
+.st-view-action:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .st-zoom-group {
   display: flex;
   align-items: center;
@@ -368,16 +382,54 @@
   background: var(--color-danger-bg);
 }
 
-/* ---- Node labels: pooled DOM over the GPU canvas, LOD-gated ---- */
+/* ---- Node labels: readable screen-space captions ---- */
 .st-labels {
   z-index: 10;
 }
 .st-label {
-  /* font-size is set per-frame in LabelOverlay.place() — it scales with zoom */
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  white-space: pre-line;
+  background: var(--surface-canvas);
   font-family: var(--font-body);
   font-weight: 700;
   color: var(--text-primary);
   text-shadow: 0 1px 2px var(--surface-canvas), 0 0 5px var(--surface-canvas), 0 0 5px var(--surface-canvas);
+}
+
+.st-label--anchor::before {
+  content: '';
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: -8px;
+  height: 6px;
+  width: 1px;
+  background: var(--text-secondary);
+}
+
+.st-label--summary {
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 4px;
+  border-radius: 2px;
+  outline: 1px solid var(--border-default);
+}
+.st-label--summary::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: 2px;
+  background: var(--summary-color);
+}
+
+.st-label--selected {
+  outline: 1px solid var(--border-default);
 }
 
 /* ---- Node icons: live SVG glyphs that replace the baked atlas when zoomed in ---- */

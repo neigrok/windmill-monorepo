@@ -23,7 +23,7 @@ stored or generic (`og-tree-cards.md`).
 |---|---|
 | **390–743** | Phone. StepPanel docks to the bottom edge as a sheet; Fork pill bottom-center; Share in the action lane's right slot for owners (`mobile.md` §10); plaque top-left; wordmark top-right; gallery one column. |
 | **744–1023** | Tablet. Selection detail is a 320px floating panel, right side; Fork pill bottom-left; fork door becomes a centered Dialog; gallery two-up. |
-| **≥1024** | Desktop read-only. The app canvas + docked StepPanel with editing chrome absent; ControlBar keeps zoom + fit only; Fork sits where Share sits for owners. |
+| **≥1024** | Desktop read-only. The app canvas + docked StepPanel with editing chrome absent; camera controls offer Focus and All steps; Fork sits where Share sits for owners. |
 
 Breakpoints are width-driven; orientation never changes rules. Below 390 the plaque caps at 60vw;
 nothing else changes.
@@ -36,13 +36,13 @@ nothing else changes.
 | **Plaque** | Card, radius 16, ≤236px, top-left under the status bar: kind dot + title (display 17) · mono readout + 96px gradient bar · author 11. A label, not a menu — nothing tappable. |
 | **Wordmark chip** | 30px pill, top-right, "Windmill" display-bold 13, always terracotta. The only brand exit. |
 | **Fork CTA** | 50px terracotta pill, bottom-center, 18px above the home bar. Press 0.97. Hidden while a sheet or door is up (150ms fade + 10px sink). |
-| **Recenter chip** | 36px pill, bottom-right. Exists only after the tree's bounds leave the 80% safe frame for 400ms (150ms fade in). The only programmatic zoom-out. |
+| **Camera controls** | Focus and All steps, with targets at least 44px high. Phone controls sit beneath the wordmark beside the plaque and remain reachable without a precise pinch. |
 
 Soft scrims (canvas color → transparent, 64px top / 108px bottom) keep status bar and CTA legible
-over panned fruit. **z-order:** canvas < scrims < rule < plaque/wordmark < CTA/recenter < sheet <
+over panned fruit. **z-order:** canvas < scrims < rule < plaque/wordmark < CTA/camera controls < sheet <
 door < status bar.
 
-At rest chrome covers ≈13% of the screen and ≈0% mid-pan. No toolbars, no tab bar, no hamburger.
+Camera controls leave the center of the canvas available for direct manipulation.
 
 ## 3. The sheet — StepPanel re-docked
 
@@ -68,17 +68,16 @@ Per-node detail keeps exactly one home, docked to the bottom edge instead of the
 
 - **One finger pans** — 1:1, direct, soft-clamped 80px past the tree's bounds. No rubber-band bounce;
   the world just gets heavier.
-- **Pinch zooms** 0.5×–2.5×, anchored between the fingers.
+- **Pinch zooms** 0.00001×–2.5×, anchored between the fingers; All steps fits large and deep graphs.
 - **Double-tap steps** 1×↔1.6× at the tap point (camera ease, 480ms).
 - **Tap node** = select · **tap canvas** = deselect · chrome never pans the canvas.
 - **Long-press: nothing** on a stranger's tree — reserved, and the OS callout is suppressed
   (`-webkit-touch-callout:none`). On your own tree it enters multi-select (§13). Full gesture
   registry: `mobile.md` §3.
 - **Hover doesn't exist** here: tap is select and the sheet is the tooltip grown up.
-- **Floors:** node hit disc ≥44px regardless of visual size (visual 20–34px); all chrome ≥44px; node
-  labels ≥11px. The disc is capped at half the nearest-neighbour distance so targets never overlap;
-  where that cap falls under 44px a tap **zooms** instead of selecting, and the escape hatch is the
-  list, where precision is a property of rows (`mobile.md` §9).
+- **Picking:** read-only views choose the nearest node within a radius of at least 22 screen pixels.
+  Focus provides a 52px ordinary body; chrome targets are at least 44px and captions stay 14px/20px.
+  The list provides a precise row target when a dense overview is difficult to select.
 
 Direct manipulation (drag, pinch) is exempt from the motion ceilings — the finger is the easing.
 
@@ -89,7 +88,17 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
 - **Select makes room:** the node eases into the band above the sheet (phone) or beside the panel
   (tablet); it moves only if outside the safe frame.
 - **Safe frame** is 80% of the *visible* canvas — viewport minus sheet/panel.
-- **Labels declutter:** node names hide below 0.8× zoom (150ms fade).
+- **Focus** restores the selected step or saved working camera. Without either, it chooses a root
+  with a readable immediate neighborhood or a meaningful major-branch anchor.
+- **Working labels** stay 14px/20px, 8px below their own node. They avoid bodies, edit controls,
+  chrome and one another; an obstructed label is omitted rather than moved to unrelated canvas.
+- **Overview** below a 20px projected ordinary body shows grouped major-branch names and exact
+  subtree counts at sector centroids, with a shallow structural backbone capped at 64 links. These
+  group boxes describe branches, not the physical location of their root nodes. Selected/hovered
+  individual captions remain attached to their own nodes.
+- **Connections** use quiet 1.25px screen strokes. Working views show resting parent links only
+  when both endpoints are near the viewport; node context reveals incident dependencies and the
+  ancestor path at 2px. Rendering and edge picking share the visibility rule.
 - **Chrome yields:** plaque, wordmark and CTA sit at 35% opacity while the finger is down; restore
   ~200ms after release.
 
@@ -109,7 +118,7 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
 - **One door:** signed out, email → magic link, and the fork waits server-side behind the link.
   Signed in, instant.
 - **What copies:** structure, names, kinds, descriptions. **What resets:** progress. Your root wakes
-  as the first available step; the crown waits to be earned.
+  as the first available step and retains its static structural ring.
 - **Lineage is quiet and permanent:** "forked from Maren K." on your plaque and your gallery card.
 - **Ceremony:** arrival cascade on your copy + toast "Forked — 17 steps planted."
 - **The glyph:** the CTA wears the upright fork (one trunk splitting in two).
@@ -150,9 +159,9 @@ Same page, one change: the sheet stands up.
 | camera ease (make-room, recenter, double-tap) | snap + 150ms fade-through |
 | sheet / panel / door | opacity only, no rise |
 | travel · pulse | skipped |
-| crown | frozen at mid-amplitude (α .28 — a standard halo) |
+| crown | static structural ring; no resting halo in either motion mode |
 | drag · pinch | exempt — finger-driven motion isn't animation |
-| renderer | `uMotion = 0` freezes every periodic waveform; DOM chrome collapses to 150ms alpha ramps |
+| renderer | `uMotion = 0` suppresses pulse/scale/event halos; tier colour changes fade over 150ms |
 
 ## 11. Constants — copy into the build
 
@@ -160,12 +169,13 @@ Same page, one change: the sheet stands up.
 RULE      4px top, dominant kind
 PLAQUE    r16 · ≤236px (≤60vw below 390) · title 17 · readout mono 12 + 96px bar
 CTA       50px pill · bottom-center 18px above home bar (tablet: bottom-left 20/26)
-RECENTER  36px pill · gated: bounds outside 80% safe frame ≥400ms
+CAMERA    Focus / All steps · targets ≥44px · vertical beneath the phone wordmark
 SHEET     peek 216 · expand ≤62% viewport · rise 280ms ease-soft
 PANEL     320w · top 104 · right 16 · ≤70% tall · r20   (744–1023)
-ZOOM      0.5×–2.5× pinch · double-tap 1↔1.6 @480ms · labels hide <0.8×
+ZOOM      0.00001×–2.5× pinch · double-tap 1↔1.6 @480ms
+LABELS    14px/20px attached captions · major-branch summaries below 20px projected bodies
 YIELD     chrome to 35% while panning · restore +200ms · all chrome fades 150ms
-FLOORS    hit ≥44px · chrome ≥44px · labels ≥11px
+FLOORS    read-only pick diameter ≥44px · chrome ≥44px · captions 14px/20px
 GALLERY   1-col <744 · 2-up ≥744 (cards ≥320px) · chips: Popular · New · Finished
 ```
 
@@ -188,7 +198,7 @@ page above. No second editor — the desktop grammar degrades to the finger.
 - **The sheet is the workbench.** Tap a step → the sheet grows a verb rail (Mark done · Add step ·
   Connect), a rename-in-place title, a recolor swatch row, and an isolated Delete that states its
   cost.
-- **Add** = a rail button plants a bud one ring out, auto-selected, keyboard up.
+- **Add** = a rail button creates a bud in the next logical depth band, auto-selected, keyboard up.
 - **Connect** = tap-then-tap aim mode: eligible steps pulse, cycles fade, tap the target; a direction
   toggle (`unlocks →` / `← needs`). No 8px port drag. Aim keeps pan + pinch and offers "Fit eligible"
   (`mobile.md` §3).
@@ -204,3 +214,10 @@ page above. No second editor — the desktop grammar degrades to the finger.
 - **Tablet (744–1023):** the sheet stands up into the right-side panel (§9); aim + bulk bar dock to
   that column. ≥1024 hands back to desktop editing.
 - **Reduced motion:** sheet fades in place, aim uses static rings, travel → 280ms fade.
+
+## Canvas drawing reconciliation
+
+The current canvas uses structured concentric rows, flat resting node fills, attached captions and
+counted overview groups. The DOM tree components and Figma drawings still require visual
+reconciliation; see `../../consistency.md`. Agreement with these canvas rules has not been verified
+for those separate surfaces.

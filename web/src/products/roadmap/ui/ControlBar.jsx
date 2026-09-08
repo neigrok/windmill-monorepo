@@ -2,7 +2,7 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, onFocus, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   const activityHint = keyHint('Activity feed');
   const shortcutsHint = keyHint('Keyboard shortcuts');
   return (
@@ -55,9 +55,8 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
           <Tooltip label="Zoom in" side="bottom">
             <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
           </Tooltip>
-          <Tooltip label="Fit to view" side="bottom">
-            <IconButton icon={<Icon name="maximize" />} label="Fit to view" size="sm" onClick={onFitToView} />
-          </Tooltip>
+          {onFocus && <button type="button" className="st-view-action" onClick={onFocus} title="Read steps at a comfortable size">Focus</button>}
+          <button type="button" className="st-view-action" onClick={onFitToView} title="Show the whole roadmap">All steps</button>
         </div>
       </div>
     </div>

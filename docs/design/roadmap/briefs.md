@@ -1,6 +1,6 @@
 # Roadmap — open design asks
 
-Three asks. Numbers are stable identifiers; `guidelines/mobile.md` cites them.
+Four asks. Numbers are stable identifiers; `guidelines/mobile.md` cites them.
 
 ## 21 · The fruit tiers in daylight
 
@@ -37,3 +37,22 @@ brief owns whether those findings become flags and how the user applies a correc
 
 **Deliver:** the flag as it reads on the canvas fruit and in the list row, plus the two response
 chips a finding invites (**Keep as is** / **Re-pace**).
+
+## 27 · Readable large roadmaps
+
+The web canvas uses ordered radial rows with modest seeded variation inside equal major-branch
+sectors, 52px ordinary bodies in Focus, and attached 14px/20px captions. Unequal angular intervals
+and gently varied radii soften the rows; within-row radial spread stays at most 56px. Adjacent-row
+radial gaps stay within 224–360px and generation gaps within 264–408px, while reserved branch
+footprints keep a 128px gutter at working zoom. The variation is deterministic, not animation.
+The Figma canvas boards need to show that contract at the densities covered by
+`readability-research.md`.
+
+**Deliver:** a named and counted branch overview, an unselected working view with quiet local
+parent links, a selected branch with prerequisite/dependent emphasis, and phone
+Focus / All steps controls. Use the existing kind palette and authored long names; show caption
+priority and truncation, full names in the detail panel, and clearance around the legend, minimap,
+editing affordances, and phone controls. Include the real roadmap and a 5,000-node overview in
+both themes; make no claim that every title is simultaneously visible. Keep the real snapshot's
+nine roots and unequal subtree sizes visible in the evaluation: varied spacing does not change
+that authored structure or redistribute the equal sectors.

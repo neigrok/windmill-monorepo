@@ -1,5 +1,6 @@
-// Pure math for the angular-reorder gesture: the cursor’s angle-from-origin picks the gap a dragged node lands in. `angles` MUST be the siblings in sort order.
+// Same-parent reorder follows authored order across ordered radial rows; angles within one row follow that order.
 import { keyBetween } from '../../sync/fractionalIndex.js';
+import { RADIAL_ROW_SPREAD, RADIAL_ROW_GAP } from '../../model/geometry.js';
 
 const TAU = Math.PI * 2;
 const norm = (a) => ((a % TAU) + TAU) % TAU;
@@ -15,19 +16,41 @@ export function circularInsertionIndex(angles, dropAngle) {
   return index;
 }
 
-// siblings: same-parent siblings EXCLUDING the dragged node, in sort order, each with its world position and order key. An equal-key run is stepped over (keyBetween throws on a == b), and '' — an unordered node — is an open bound, not a key.
-export function reorderPlan(siblings, dropPoint) {
+export function reorderSlot(siblings, dropPoint) {
   if (siblings.length === 0) return null;
-  const angles = siblings.map((s) => Math.atan2(s.y, s.x));
-  const index = circularInsertionIndex(angles, Math.atan2(dropPoint.y, dropPoint.x));
+  const rows = [];
+  for (let index = 0; index < siblings.length; index += 1) {
+    const sibling = siblings[index];
+    const radius = Math.hypot(sibling.x, sibling.y);
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(last.radius - radius) < (RADIAL_ROW_SPREAD + RADIAL_ROW_GAP) / 2) {
+      last.radius = (last.radius * last.nodes.length + radius) / (last.nodes.length + 1);
+      last.nodes.push(sibling);
+    } else rows.push({ radius, start: index, nodes: [sibling] });
+  }
+  const dropRadius = Math.hypot(dropPoint.x, dropPoint.y);
+  const row = rows.reduce((nearest, candidate) => Math.abs(candidate.radius - dropRadius) < Math.abs(nearest.radius - dropRadius) ? candidate : nearest);
+  const angles = row.nodes.map((node) => Math.atan2(node.y, node.x));
+  const slot = circularInsertionIndex(angles, Math.atan2(dropPoint.y, dropPoint.x));
+  const firstGap = angles.length > 1 ? Math.min(0.3, norm(angles[1] - angles[0]) / 2) : 0.3;
+  const lastGap = angles.length > 1 ? Math.min(0.3, norm(angles.at(-1) - angles.at(-2)) / 2) : 0.3;
+  const angle = slot === 0 ? angles[0] - firstGap : slot === angles.length ? angles.at(-1) + lastGap
+    : angles[slot - 1] + norm(angles[slot] - angles[slot - 1]) / 2;
+  const left = row.nodes[Math.max(0, slot - 1)];
+  const right = row.nodes[Math.min(slot, row.nodes.length - 1)];
+  const radius = (Math.hypot(left.x, left.y) + Math.hypot(right.x, right.y)) / 2;
+  return { index: row.start + slot, radius, angle, x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
+}
 
-  let left = index > 0 ? siblings[index - 1].order : null;
-  let right = index < siblings.length ? siblings[index].order : null;
+export function reorderPlan(siblings, dropPoint) {
+  const slot = reorderSlot(siblings, dropPoint);
+  if (!slot) return null;
+  let left = slot.index > 0 ? siblings[slot.index - 1].order : null;
+  let right = slot.index < siblings.length ? siblings[slot.index].order : null;
   if (left && left === right) {
-    let after = index;
+    let after = slot.index;
     while (after < siblings.length && siblings[after].order === left) after++;
     right = after < siblings.length ? siblings[after].order : null;
   }
-  const bound = (order) => (order ? order : null);
-  return { index, key: keyBetween(bound(left), bound(right)) };
+  return { ...slot, key: keyBetween(left || null, right || null) };
 }

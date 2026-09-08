@@ -97,11 +97,10 @@ scene the night set through `sceneTheme(isDark)`; the night kind bases (`#D98B5F
 `#B06FA6` plum) are the same values `colors.css`'s dark `--kind-*` declare, so the GL scene and the
 CSS-var consumers paint one palette per skin.
 
-**F15 · two documents say a complete node breathes; the shader says it does not** → delete both claims.
-`theme.js:14` and `web/src/products/roadmap/ARCHITECTURE.md` describe complete as wearing "a breathing
-halo". `scene/NodeBatch.js:224` reads `HALO_STEADY; // no oscillation`. Only the crowned root
-breathes. The DOM specimen does animate `wm-pulse-node` when `pulse` is passed; that is opt-in and
-is not the scene.
+**F15 · roadmap resting motion** → production uses static status rings and no infinite node
+halos. `NodeBatch.js` gates bloom and arrival halos on finite event stamps. The layout/render
+contract and motion language describe that production treatment. Standalone DOM crown and ember
+specimens retain their own appearance; reconciliation is tracked under 1d and 1e.
 
 **F16 · `TreeSwitcher.jsx` invents a third kind palette** → built 2026-09-06, nothing owed. It reads
 `--kind-<name>` for all six kinds, the tokens `colors.css` already flips per skin.
@@ -547,22 +546,21 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
-§5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
-threshold. `RadialLayoutEngine.js` is the only engine in `web/src/products/roadmap/layout/`, it uses
-no fixed ring gap (`RING = NODE_SIZE * 2.8`, each ring pushed out until its tightest pair clears
-`MIN_ARC = NODE_SIZE * 1.7`), and no dagre appears anywhere in `web/src`. The contract's own Known
-gaps section records the mismatch without resolving it. Either the contract becomes radial-only and
-§5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
-a rendering rule.
+**1d · roadmap ordered rows and readable captions** → Figma canvas boards and standalone DOM
+specimens need reconciliation. Production uses equal major-branch sectors and wrapped generation
+rows with modest deterministic variation: unequal arc intervals, at most 56px radial spread per row,
+224–360px adjacent-row gaps, 264–408px generation gaps, and 128px reserved branch gutters at working
+zoom. The full authored DAG and the real snapshot's nine-root imbalance remain unchanged.
+The canvas has flat status faces, quiet parent links, contextual dependencies, attached 14px/20px
+captions, and counted overview groups. Focus and All steps appear on owner and shared chrome.
+The drawing task includes unselected and selected working views, overview, and phone controls;
+see `roadmap/readability-research.md` for measured fixtures and limits.
 
-**1e · the GL renderer has no available face** → an owner call.
-`tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
-(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
-`float toLit = tier == 0 ? 0.0 : 1.0`, so tiers 1–3 all paint the full base fill and ring colour:
-on the GL canvas — which is production — an available node is saturated and differs from complete
-only by the halo. Either the shader gains an available face, or the contract and the DOM reference
-take the renderer's.
+**1e · the DOM available face differs from the production canvas** → an owner call.
+`SkillNode.jsx` gives available a card-colored body with a solid kind ring. Production
+`NodeBatch.js` paints tiers 1–3 with the base fill; active adds a dashed ring and complete adds a
+static outer ring. The production contract records that behavior. The standalone DOM specimens
+still use different available and resting halo treatments and need a deliberate reconciliation.
 
 **1f · the gallery grid goes three-up in code and two-up in canon** → fix one toward the other.
 `responsive.md` §8, its constants block (`GALLERY`) and the breakpoint table all say one column
@@ -570,11 +568,9 @@ below 744 and two-up at ≥744, full stop. `browse/BrowsePage.jsx:199-200` adds 
 ≥1180. Both keep cards past 320px, so either value is defensible; all three places in the guideline
 move together with whichever wins.
 
-**1g · angular reorder is desktop-only in one guideline and touch-capable in another** → one wins.
-`mobile.md` §1 rates it P4, "canvas, desktop only", "not on the phone". `angular-reorder.md`'s Touch
-section specifies the gesture degrading intact — drag a node around its ring, unavailable below the
-hit-disc clamp, exempt from the motion ceilings, standard 4s undo. Either the phone gets the
-gesture and `mobile.md` §1 restates P4, or the Touch section goes.
+**1g · angular reorder scope** → code and guidelines agree. Canvas reorder is desktop-only;
+phone and tablet canvases use the navigation tool, with editing in their list and sheet surfaces.
+`angular-reorder.md` documents the wrapped-row desktop gesture and its fractional-order semantics.
 
 **1h · `front-door.md` §2 names a route that does not exist** → fix toward the code, or build it.
 §2 gives My trees as `windmill.works/trees` = the app on your newest tree with the TreeSwitcher
@@ -1854,10 +1850,10 @@ flicker. Left to the clamp, its 1200ms rise collapses into an instant luminance 
 abrupt onset: the reader who asked for *less* motion is handed the one transient the whole design
 exists to carry none of. `journal.css` therefore restates each of the arrival's durations with
 `!important` inside its own reduced-motion block. Two things are owed by the owners of the two files.
-`motion-language.md` §5 preserves *"colour/opacity cross-fades ≤280ms"*, and every fallback it lists
-is a 150ms ramp; the arrival deliberately keeps its full 1200ms under the preference, on the ground
-that a slower luminance ramp is gentler than a faster one, not harsher — §5 does not license that in
-its letter, and either it grows the case or the arrival is out of canon. And the same argument
+`motion-language.md` §5 describes the production roadmap's 150ms reduced-motion fallback; it does
+not settle the separate journal luminance guidance. The journal arrival deliberately keeps its
+full 1200ms under the preference because a slower luminance ramp is gentler than an abrupt step.
+That case still needs explicit brand guidance. And the same argument
 `scales.md:241-252` won for `animation-duration` — *"a site-wide clamp must permit finite durations
 rather than nuking them"* — applies unchanged to `transition-duration`, which is the half that was
 left behind; while it stands, every luminance-only transition in the brand needs the same

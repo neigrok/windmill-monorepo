@@ -39,6 +39,7 @@ export class AffordanceLayer {
     this.neighbors = new Map();
     this.target = null;
     this.hideTimer = null;
+    this.obstacles = [];
   }
 
   setModel(renderModel) {
@@ -81,10 +82,11 @@ export class AffordanceLayer {
 
   update(camera) {
     const node = this.target ? this.nodesById.get(this.target) : null;
+    this.obstacles = [];
     if (!node) return;
     const sx = (node.x - camera.x) * camera.zoom + camera.viewportWidth / 2;
     const sy = (node.y - camera.y) * camera.zoom + camera.viewportHeight / 2;
-    const rim = NODE_RADIUS * camera.zoom;
+    const rim = NODE_RADIUS * (1 + (node.emphasis ?? 0) * 0.55 + 0.14) * camera.zoom;
 
     const dirTo = (id) => { const o = this.nodesById.get(id); return Math.atan2(o.y - node.y, o.x - node.x); };
     const parentAngles = this.parents.get(node.id).map(dirTo);
@@ -120,6 +122,8 @@ export class AffordanceLayer {
     const x = sx + Math.cos(angle) * distance;
     const y = sy + Math.sin(angle) * distance;
     element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    const radius = element === this.plus ? 12 : 5;
+    this.obstacles.push({ left: x - radius, top: y - radius, right: x + radius, bottom: y + radius });
   }
 
   dispose() {

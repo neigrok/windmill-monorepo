@@ -131,13 +131,6 @@ const float EDGE = 0.84;
 const float OUTER_R = 1.16;      // outer-ring radius (activated), in centered space
 const float OUTER_W = 0.07;
 const float BLOSSOM = 0.62;      // halo-overshoot window (s)
-const float HALO_STEADY = 0.6;   // static activated halo ~= a .28 (the old mid-breath)
-const float HALO_OVERSHOOT = 1.2; // blossom halo peak (boosted for legibility)
-const float CROWN_PERIOD = 2.4;  // crown breath period (s) -- the only infinite loop
-const float CROWN_LO = 0.471;    // crown halo trough ~= a .22
-const float CROWN_HI = 0.729;    // crown halo crest ~= a .34
-const float EMBER_MID = 0.471;   // ember resting glow ~= a .22 (crown trough), below complete's a .28
-const float EMBER_AMP = 0.5;     // ember breathes at half the crown's amplitude (spec: glow 1/2 crown)
 const float PULSE_DUR = 2.8;     // arrival-pulse window (s)
 const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly slower
 const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
@@ -199,40 +192,18 @@ void main() {
   body = mix(body, glyphColor, iconMask * uIconOpacity);
   // the loud body lift is single-select only; a grouped member wears the bark ring below instead
   float singleSel = vSelected * (1.0 - uGrouped);
-  body *= (1.0 + singleSel * 0.20);
+  body = mix(body, ringColor, singleSel * 0.12);
   // hover brightness: kept even under reduced motion
   float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
-  body *= (1.0 + 0.12 * hoverE);
+  body = mix(body, ringColor, 0.12 * hoverE);
 
-  // ---- glow: the root crown breathes; complete wears a STATIC halo; ember a soft breath ----
-  float crownWave = uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * (TAU / CROWN_PERIOD)) : 0.5;
+  // Only arrivals and completed actions produce a finite halo.
   float haloRadiusMul = 1.0;
   float strength = 0.0;
-  if (tier == 3) {
-    strength = HALO_STEADY; // no oscillation -- a still a .28 halo
-    // blossom overshoot: lift->overshoot->steady from wherever the glow already sat, +80ms after ignite
-    if (vBloom.w > 0.5 && vBloom.x > -900.0 && uMotion > 0.5) {
-      float fromGlow = int(vBloom.y + 0.5) == 2 ? EMBER_MID : 0.0;
-      float bt = (uTime - vBloom.x - 0.08) / BLOSSOM;
-      if (bt < 0.0) strength = fromGlow;
-      else if (bt < 1.0) {
-        float up = smoothstep(0.0, 0.55, bt);   // rise to overshoot at 55%
-        float down = smoothstep(0.55, 1.0, bt); // settle overshoot->steady
-        strength = mix(fromGlow, HALO_OVERSHOOT, up) - (HALO_OVERSHOOT - HALO_STEADY) * down;
-        haloRadiusMul = 1.0 + 0.45 * (up - down); // radius swell at the peak (boosted)
-      }
-    }
-  } else if (tier == 2) {
-    // ember: no static halo or outer ring, just a glow breathing at half the crown's amplitude
-    strength = EMBER_MID + (crownWave - 0.5) * (CROWN_HI - CROWN_LO) * EMBER_AMP;
-    // kindle glow-in: the glow rises from 0 over the bloom window
-    if (vBloom.x > -900.0 && uMotion > 0.5) {
-      float gt = clamp((uTime - vBloom.x) / max(vBloom.z, 0.001), 0.0, 1.0);
-      strength *= smoothstep(0.0, 1.0, gt);
-    }
+  if (vBloom.x > -900.0 && uMotion > 0.5) {
+    float bt = (uTime - vBloom.x) / BLOSSOM;
+    if (bt >= 0.0 && bt < 1.0) strength = sin(bt * 3.14159265) * 0.45;
   }
-  if (vEmphasis > 0.5) strength = mix(CROWN_LO, CROWN_HI, crownWave); // crown halo a .22<->.34
-  if (tier >= 1) strength = max(strength, singleSel); // the loud kind-hue glow is single-select only
   // arrival pulse: a finite double-bump on any tier when an event lands, gated by motion
   float pt = uTime - vPulseStart;
   if (vPulseStart > -900.0 && pt >= 0.0 && pt < PULSE_DUR) {
@@ -240,13 +211,16 @@ void main() {
     float bump = 0.5 - 0.5 * cos(pt * (TAU / PULSE_CYCLE)); // two crests over 2400ms
     strength = max(strength, bump * amp * uMotion);
   }
-  float glowFalloff = smoothstep(1.6 * haloRadiusMul, 0.1, dist);
+  float glowFalloff = smoothstep(1.6 * haloRadiusMul, EDGE, dist) * smoothstep(EDGE - 0.02, EDGE + 0.03, dist);
   float glowAmt = glow.a * strength * glowFalloff * 1.7;
   if (vFaded > 0.5) glowAmt = 0.0; // a faded ghost carries no halo
 
   // ---- outer ring (activated only) ----
   float outerBand = 1.0 - smoothstep(0.0, OUTER_W, abs(dist - OUTER_R));
-  float outerA = (tier == 3 ? 1.0 : 0.0) * outerBand * 0.6;
+  float outerA = (tier == 3 ? 1.0 : 0.0) * outerBand * 0.5;
+  float activeBand = 1.0 - smoothstep(0.0, 0.045, abs(dist - 1.04));
+  float activeDash = step(fract(atan(centered.y, centered.x) / TAU * 10.0), 0.65);
+  outerA = max(outerA, activeBand * activeDash * (tier == 2 ? 0.72 : 0.0));
 
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
@@ -256,24 +230,18 @@ void main() {
   // a marquee-preview node (pre-commit) takes a lighter ring than a committed member
   float grouped = vSelected * uGrouped;
   float barkRing = 1.0 - smoothstep(0.04, 0.09, abs(dist - 0.98)); // a thin band hugging the body rim
-  float ringA = max(barkRing * 0.85 * grouped, barkRing * 0.42 * vPreview * (1.0 - grouped));
+  float ringA = max(barkRing * max(0.85 * grouped, singleSel), barkRing * 0.42 * vPreview * (1.0 - grouped));
   color = color * (1.0 - ringA) + uBark * ringA;
   alpha = max(alpha, ringA);
   float barkHalo = max(smoothstep(1.5, 0.9, dist) - smoothstep(0.9, 0.0, dist), 0.0) * 0.22 * grouped;
   color += uBark * barkHalo; // a soft outward bloom, additive, grouped members only
   alpha = max(alpha, barkHalo);
 
-  // ---- root crown: a bright ring plus a satellite ring, breathing in sync with the halo ----
-  float crownR = 1.32 + (crownWave - 0.5) * 0.06; // radius +/-2px equiv
-  float crownBand = 1.0 - smoothstep(0.0, 0.05, abs(dist - crownR));
-  float crownA = crownBand * vEmphasis * mix(0.78, 0.92, crownWave);
-  color = color * (1.0 - crownA) + mix(ring, vec3(1.0), 0.25) * crownA;
+  // Roots retain one quiet structural ring.
+  float crownBand = 1.0 - smoothstep(0.0, 0.045, abs(dist - 1.28));
+  float crownA = crownBand * vEmphasis * 0.65;
+  color = color * (1.0 - crownA) + ring * crownA;
   alpha = max(alpha, crownA);
-  float satR = 1.45 + (crownWave - 0.5) * 0.06; // ~8px beyond the crown, +/-2px
-  float satBand = 1.0 - smoothstep(0.0, 0.035, abs(dist - satR));
-  float satA = satBand * vEmphasis * mix(0.5, 0.85, crownWave);
-  color = color * (1.0 - satA) + mix(ring, vec3(1.0), 0.4) * satA;
-  alpha = max(alpha, satA);
 
   // ---- structural form: a dashed ring on buds (nascent) and unlinked strays ----
   int form = int(vForm + 0.5); // 0 linked, 1 bud, 2 unlinked
