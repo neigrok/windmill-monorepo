@@ -96,6 +96,9 @@ vocabulary, not the platform's). Top to bottom:
 3. **The window line**, the chart's own label: `last 12 weeks · 9 sessions`.
 4. **The latest estimate**, one fact row: `e1RM 132.5 · 3 days ago`.
 5. **The heaviest working load in the window**, one fact row: `heaviest 120 × 5 · 28 Aug`.
+6. **The best estimate in the window**, one fact row in the PR ink: `best e1RM 132.5 · 28 Aug`.
+   It is what the chart's gold point means, said in words — the point may not carry that meaning in
+   colour alone. A window whose best is its latest draws the row once, on the latest.
 
 The heaviest load is reachable on the card as **a fact row and not a toggle or a tap**: a toggle
 is a control the head would have to remember per card for a reading a lifter takes once, and the

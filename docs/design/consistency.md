@@ -556,6 +556,14 @@ gaps section records the mismatch without resolving it. Either the contract beco
 §5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
 a rendering rule.
 
+**Roadmap caption readability** → align renderer and working-camera behavior with a readable label contract.
+`roadmap/guidelines/tree-layout-contract.md` asks for upright, unscaled captions and nominal 14px
+type. `NodeOverlay.js` instead uses `56 × 0.23 × zoom` and displays captions from zoom 0.5,
+where they are 6.44px; its pool has no label collision handling. The current Fit cap permits at
+most 8.13px captions. `roadmap/readability-research.md` records the code and live-tree evidence,
+proposes readable labels, local branch compaction and focus, and identifies the overview label
+policy that still needs a design decision. These are research recommendations; the app is unchanged.
+
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
 (`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
@@ -2163,3 +2171,109 @@ whose `CAPS` chips name five roadmap verbs and no gym one, while `web/public/con
 carries the gym paragraph. A lifter sent there from gym reads that they came to the wrong page.
 Filed by `gym/briefs/19-connected-log.md`, which made that page the only long form the gym screen
 points at.
+
+
+## Gym web review · 8 September 2026
+
+Open review and design-owner handoff: `gym/web-ux-review.md`. The report separates browser evidence,
+source findings and proposals, and links five inspected Figma frames. No UI fixes are implied.
+
+- At 390 × 844, six target sets produce a dialog 867px high at y = −23, hiding its title and Close
+  behind the shell; Escape does not dismiss it. Use a bounded shared overlay with keyboard handling.
+- Movement records entered from a workout return to Routines. Preserve the originating route.
+- Figma contains incompatible navigation generations: the session frame `327:2120` has Today /
+  The log / Routines; the progress frame `460:98` has Routines / The log / Coach; record `463:129`
+  returns to Today. Design owners need an authoritative current/proposed/archive screen index.
+- Progress/chart and appearance work remain open under their existing ledger entries. The browser
+  record still draws bars, including a full-width gold rectangle for one point; the newer Figma
+  dot chart is a proposal, not evidence of implementation.
+
+The review also proposes consistent action placement, retained drafts, desktop numeric entry,
+clearer saved-workout review and quieter Coach/Notes chrome. These are design proposals for the
+existing web planning/review charter. Tracking node: `gym-web-ux-review-2026-09-08`.
+
+### Set kind · product direction
+
+The proposed gym web screens omit set Kind at the user's direction. Removing Kind from the app
+and reconciling set classification in the domain, metrics and cross-surface specifications remain
+implementation work; the Figma revision does not change those behaviors. Past-workout design
+refinement is tracked by `gym-past-workout-figma-refinement`.
+
+### Planned targets and actual sets
+
+Actual workout entry must preserve independent weight and reps for every set. Targets are a
+reference, not validation constraints: higher or lower values, extra or skipped sets, and added
+or substituted movements must remain representable. Aggregate Weight/Reps/Sets entry cannot be
+the only editing model. This is a design requirement; app and domain support require verification
+during implementation.
+
+### Inline and page-based editing
+
+The gym web proposal uses inline Coach proposals with direct Apply/Dismiss. Small edits expand
+inline and longer tasks use dedicated screens; routine target and conflict flows should not
+require modal dialogs. Existing implementation behavior is not changed by these design decisions.
+
+### Editable numeric values
+
+Dense workout and target tables use compact editable numbers, with subtle hover/focus feedback
+instead of repeated large input boxes. Short forms with only a few fields retain conventional
+inputs. Each table value remains independently editable. Keyboard entry, Tab navigation and focus visibility belong in the implementation
+contract; visual density must not make the values read-only.
+
+## Gym web form · 9 September 2026
+
+The form contract is `gym/web-form.md`; the drawn half is the component section
+`Components · Numeric row language` (`534:3341`) on the Gym file's `Web · Proposed UX` page.
+
+**F37 · the ordinal column's tokens outlive the column** → fix toward the Gym Figma file.
+`size/set-number-w` (18) and `size/set-mark-w` (12) in the `Gym · Metrics` collection sized the
+`#` column that `gym/web-form.md` replaces with the rail. Nothing references them now, and the
+rail's own 10px leading width has no token at all. Other surfaces read that collection, so the
+delete and the new token are one owner's change, not a board's.
+
+**F38 · web drops the target sheet's `Sets` field; the phones keep it** → a product owner's call
+across the three surfaces. `gym/briefs/17-set-targets.md` leaves it open whether `Sets` survives
+once `Add set` and the row delete exist, and keeps it because typing `5` is one gesture where
+tapping is four. `gym/web-form.md` closes that question for web only: the ladder is the count.
+So a lifter who plans on the phone and edits on the desk meets two different heads on the same
+sheet. Closing it means either ruling the field off all three surfaces or restoring it on web.
+
+**F39 · a narrow gym board's rows sit 4px left of the nav above them** → fix toward the shell.
+`Gym / Set row` Width=narrow is 358 (390 − 2×16) and every narrow board on the gym proposal page
+draws its content at a 16px margin, while `Web shell / Narrow` insets its own nav at 20. One of the
+two numbers is wrong for every product that mounts in that shell, so the shell owns the call.
+
+**F40 · the shared `Button` wears the global terracotta inside every product room** → fix toward the
+design system. `470:635` / `470:638` / `470:641` in the Gym file bind the remote global `brand/base`,
+so a library CTA renders terracotta on gym's verdigris ground. Three redraw waves each worked around
+it by binding `brand/base` + `gym/on-accent` per instance, which is the wrong layer. The button wants
+a room-scoped brand binding, the way `palettes.css` already re-points a room's hues on the web.
+
+**F41 · two boards preview a log the fixture does not hold** → built 2026-09-09, nothing owed.
+Both share previews now draw the eight distinct fixture rows summing to 30 sets and 10,560 kg, so
+`8 workouts · 30 sets · 234 reps` is true for what is drawn. All 21 indexes on the page were swept:
+zero duplicate rows.
+
+**F42 · the page keeps two todays** → built 2026-09-09, nothing owed. Today is 8 September 2026,
+pinned in `gym/log-exploration.md`: the record chart's axis runs 16 June to 8 September, twelve weeks
+to the day, and the latest workout is yesterday's. Twelve nodes moved off `9 Sep`, including two the
+literal sweep would have missed — a `30-day` expiry that had to become 8 Oct, and a `Trained 2 days
+ago` on a session another card called `yesterday`.
+
+**F43 · a pinned action floats over empty canvas on eight narrow boards** → built 2026-09-09, nothing
+owed. A geometric sweep (any child sitting 48px or more below the one above it) found seven boards
+beyond the one named, six of them invisible to a name search because their action is a bare `Button`.
+Seven were seated at the foot of their content; `470:21` and `524:3906` keep the band because their
+content provably overflows.
+
+**F44 · gym's own accent leaves the gym family in Daylight** → fix toward the Gym Figma file.
+`brand/base` in the local `Gym · Colour` collection aliases to verdigris in Instrument but to
+`VariableID:1:21` `#4c4374` in Daylight, so every gym CTA on a Daylight board renders indigo rather
+than a light-mode verdigris. This is F40's shape one layer deeper: not the shared `Button` leaking
+the global terracotta, but gym's own token aliasing out of its room in one mode. It belongs to the
+open gym light round.
+
+**F45 · `End of history` sits below the fold on every narrow index** → a design owner's call.
+All eight narrow index boards clip a 506px list into roughly 410, so the end marker is drawn and
+never reached. The boards agree with each other, so this is not drift; the question is whether a
+marker nobody can see is worth drawing.

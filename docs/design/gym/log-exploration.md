@@ -31,7 +31,22 @@ Evidence: `web/src/products/gym/gymApi.js`, `useTrainingLog.js`; `backend/produc
 
 ## Synthetic review data
 
-The coherent small fixture contains eight workouts across 2024–2026: 30 sets and 10,560 kg external volume. The selected 7 September Push A has nine sets, 66 reps and 2,160 kg. It is separate from the unsaved 8 September entry draft.
+Today is 8 September 2026 on every board. The record chart's axis runs 16 June to 8 September — twelve weeks to the day — and the latest workout is yesterday's.
+
+The coherent small fixture contains eight workouts across 2024–2026: 30 sets, 234 reps and 10,560 kg external volume. The selected 7 September Push A has nine sets, 66 reps and 2,160 kg. It is separate from the unsaved 8 September entry draft.
+
+| date | routine | sets | reps | kg |
+|---|---|---|---|---|
+| 7 Sep 2026 | Push A | 9 | 66 | 2,160 |
+| 24 Aug 2026 | Bench day | 3 | 24 | 1,380 |
+| 10 Aug 2026 | Bench day | 3 | 24 | 1,320 |
+| 6 Jul 2026 | Bench day | 3 | 24 | 1,260 |
+| 22 Jun 2026 | Bench day | 3 | 24 | 1,200 |
+| 3 Mar 2025 | Bench day | 3 | 24 | 1,140 |
+| 10 Jun 2024 | Bench day | 3 | 24 | 1,080 |
+| 8 Jan 2024 | Bench day | 3 | 24 | 1,020 |
+
+Push A is Bench Press `3 × 8 · 60`, Overhead Press `32.5 × 8 · 30 × 8 · 27.5 × 8` and Chin-up `3 × 6 · bodyweight` — one movement whose sets disagree, so the collapse rule of `web-form.md` has both cases to draw.
 
 A separate density fixture has one workout per day from 1 January 2024 through 8 September 2026: 982 workouts, 2,952 sets and 22,638 reps. This fixture tests the navigation and row density, not real account history. It must not be mixed with the eight-workout sharing sample.
 

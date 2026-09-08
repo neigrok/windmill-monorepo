@@ -37,8 +37,14 @@ A board is wrong if its content is shorter than two thirds of its frame. The ans
 column — it is the split. On desktop the routine editor is **movements left (read), the selected
 movement's ladder right (figures)**; there is no sheet. Narrow keeps the sheet.
 
-Vertical: 8px grid. Row heights 44 and 56 only. Section gap 32. Page top 96. The action band sits at
-the foot of the **content**, not the viewport, and never floats over empty canvas.
+Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The `Web shell` insets its own nav
+at 20, so a narrow board's rows sit 4px left of the nav above them; the shell owns that reconciliation
+and it is ledgered as F39.
+
+Vertical: 8px grid. Row heights 44 and 56 only. Section gap 32. A board with no chrome starts its
+content at 96; every board on the proposal page carries the `Web shell`, so content starts one section
+gap below it — 184 on desktop, 164 on narrow. The action band sits at the foot of the **content**, not
+the viewport, and never floats over empty canvas.
 
 ## The numeric row
 
@@ -72,7 +78,7 @@ difference *is* the content. This is the rule that empties the workout reader.
 | `Remove` as a word, nine times | one `×` at the row's trailing edge, faint until the row is hovered or focused |
 | `Edit` on a routine card | the card is the door; `⋯` on hover holds Duplicate and Delete |
 | `kg` on every row | once, in the column head |
-| `3 movements · 9 sets` **and** the movement names | the names, with the set count as a grouped rail |
+| `3 movements · 9 sets` **and** the movement names | the names, with the set count as a rail grouped per movement |
 | `Plan here. Train on your phone.` under every visit | the phone fact belongs where a lifter reaches for a Start that is not there, once |
 | a filter pill that reads its own name when set | a set filter reads its value — `2024`, `Bench Press` — and carries a clearing `×` |
 
