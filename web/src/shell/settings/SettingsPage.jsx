@@ -4,7 +4,7 @@ import React, { Suspense } from 'react';
 import { AccountChrome } from '../account/AccountChrome.jsx';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { useSignInDoor } from '../auth/SignInDoor.jsx';
-import { homeHash, PRODUCTS } from '../products.js';
+import { PRODUCTS } from '../products.js';
 import { Button } from '../../design-system';
 import { ProfileSection } from './ProfileSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
@@ -25,7 +25,7 @@ export function SettingsPage({ inShell = false }) {
 
   return (
     <>
-      <AccountChrome width={540} backHash={homeHash()} bare={inShell}>
+      <AccountChrome width={540} bare={inShell}>
         <h1 style={title}>Account settings</h1>
 
         {status === 'loading' ? null : signedIn ? (

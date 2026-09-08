@@ -6,6 +6,7 @@ import { verifyToken } from './auth/AuthClient.js';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
+import { navigate, rememberHashNavigation, replaceLocation } from './navigation.js';
 
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
@@ -41,7 +42,9 @@ function useHashRoute() {
   const [, setTick] = React.useState(0);
   const [hash, setHash] = React.useState(() => window.location.hash);
   React.useEffect(() => {
-    const onChange = () => {
+    rememberHashNavigation();
+    const onChange = (event) => {
+      if (event.type === 'hashchange') rememberHashNavigation(event);
       React.startTransition(() => { setHash(window.location.hash); setTick((n) => n + 1); });
     };
     window.addEventListener('hashchange', onChange);
@@ -72,7 +75,7 @@ function warmRoute(pathname, hash) {
   PRODUCTS.find((product) => room === product.shell.room || room.startsWith(`${product.shell.room}/`))?.preloadApp?.();
 }
 
-// A left-click on a same-origin route we answer becomes a pushState; hash-only changes fall through.
+// Same-origin links retain their predecessor for account-page return navigation.
 function useOwnNavigation() {
   React.useEffect(() => {
     const follow = (event) => {
@@ -82,11 +85,11 @@ function useOwnNavigation() {
       if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
-      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
       if (!ownRoute(url.pathname)) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search
+        && !['#/connect', '#/settings'].some((prefix) => url.hash.startsWith(prefix))) return;
       event.preventDefault();
-      window.history.pushState({}, '', url.href);
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      navigate(url.href);
     };
     const warm = (event) => {
       const anchor = event.target.closest?.('a[href]');
@@ -156,7 +159,7 @@ function AppRoutes() {
   // The door upgrades during this render; the effect only catches the URL bar up.
   const upgraded = legacyDoorTarget(window.location.pathname, route);
   React.useLayoutEffect(() => {
-    if (upgraded) window.history.replaceState({}, '', upgraded + window.location.search + window.location.hash);
+    if (upgraded) replaceLocation(upgraded + window.location.search + window.location.hash);
   }, [upgraded, route]);
   const pathname = upgraded ?? window.location.pathname;
 
@@ -226,7 +229,7 @@ function ResumeCheckout() {
     const url = new URL(window.location.href);
     if (!url.searchParams.has('_ptxn')) return;
     url.searchParams.delete('_ptxn');
-    window.history.replaceState({}, '', url.toString());
+    replaceLocation(url.toString());
     if (transactionId) openCheckout(transactionId);
   }, [account]);
   return null;

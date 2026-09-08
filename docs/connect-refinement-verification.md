@@ -13,9 +13,10 @@ workspace settings. The API key disclosure provides the fallback for clients wit
   320px in the dark theme.
 - All six client panels were exercised. Native arrow-key navigation selected Claude, signed-out
   Copy opened sign-in, and the API key disclosure opened and closed.
-- Four interaction regressions cover ChatGPT’s default selection and setup instructions, exact
+- Five interaction regressions cover ChatGPT’s default selection and setup instructions, exact
   clipboard content for every client, pending and successful copy states, clipboard rejection,
-  stale completion after a tool change, signed-out sign-in gating, and the API key fallback.
+  stale completion after a tool change, signed-out sign-in gating, the API key fallback, and Codex’s
+  explicit OAuth login instructions and official guide.
 
 ## Verification limits
 

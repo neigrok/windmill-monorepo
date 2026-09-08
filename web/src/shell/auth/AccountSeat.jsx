@@ -71,7 +71,12 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
     if (!open) return undefined;
     const dismiss = () => { setOpen(false); seatRef.current?.focus(); };
     const onDown = (e) => { if (!rootRef.current?.contains(e.target)) dismiss(); };
-    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss();
+    };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {

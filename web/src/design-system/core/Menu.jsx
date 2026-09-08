@@ -11,12 +11,17 @@ export function Menu({ label, items }) {
   useEffect(() => {
     if (!open) return undefined;
     const away = (event) => { if (!box.current?.contains(event.target)) setOpen(false); };
-    const key = (event) => { if (event.key === 'Escape') setOpen(false); };
+    const key = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    };
     window.addEventListener('pointerdown', away);
-    window.addEventListener('keydown', key);
+    document.addEventListener('keydown', key);
     return () => {
       window.removeEventListener('pointerdown', away);
-      window.removeEventListener('keydown', key);
+      document.removeEventListener('keydown', key);
     };
   }, [open]);
 

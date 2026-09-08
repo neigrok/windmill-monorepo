@@ -10,12 +10,7 @@ import { useAppearance } from '../useAppearance.js';
 import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
-
-function navigate(href, { replace = false } = {}) {
-  if (replace) window.history.replaceState({}, '', href);
-  else window.history.pushState({}, '', href);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
+import { navigate } from '../navigation.js';
 
 function RoomLink({ href, label, active }) {
   const onClick = (e) => {

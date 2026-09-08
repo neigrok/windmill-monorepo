@@ -24,6 +24,11 @@ things: which tool, what to paste, what happens next.
 - **Entry:** account business, never canvas chrome — one row in the account menu ("Connect
   your LLM tools"), plus settings and the marketing footer. The tree canvas never learns
   about MCP. Signed out, the same page shows with a sign-in gate on Copy.
+- **Return:** Connect and Settings share a quiet left-arrow "Back" control at the card’s top,
+  in both shell and standalone views, with a muted "Esc" hint. The control has a 44px target
+  and visible keyboard focus. Back and unhandled Escape return to the previous in-app
+  location; direct entry falls back to `/app`. Dialogs and popovers consume Escape
+  before page navigation, and Escape in an editable field does not leave the page.
 - **Anatomy, top to bottom:** title + one-sentence purpose · **tool picker** (ChatGPT ·
   Claude Desktop · Claude Code · Cursor · Codex · Any client) · selected tool settings ·
   **one theme-inverse snippet well** with one Copy · per-tool setup steps · API-key disclosure.
@@ -34,6 +39,13 @@ things: which tool, what to paste, what happens next.
 - **Per-tool snippets:** ChatGPT and Claude Desktop get the server URL and setup steps;
   Claude Code gets its one-liner; Cursor and Codex get their config file blocks; Any client
   gets `mcpServers` JSON. The hosted server URL never varies.
+- **Codex settings:** the well contains the `mcp_servers.windmill` TOML entry for
+  `~/.codex/config.toml`, shared by desktop, CLI and IDE. Setup explicitly asks the user to
+  run `codex mcp login windmill` or choose Authenticate in Codex’s MCP settings, then approve
+  access in the browser. Restart Codex to load the configuration; `/mcp` checks the server
+  connection in the CLI. The panel links the official
+  [Codex MCP guide](https://learn.chatgpt.com/docs/extend/mcp). Authentication is an explicit
+  step; the instructions do not promise an automatic first-call prompt.
 - **ChatGPT settings:** name `Windmill`, server URL `https://windmill.works/mcp`,
   authentication `OAuth`. The page guides the user to enable Developer mode under
   Settings → Security and login, create a plugin from the Plugins plus button, enter the

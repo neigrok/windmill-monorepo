@@ -3,42 +3,54 @@
 import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { Avatar } from '../../design-system';
+import { previousLocation, returnToPreviousLocation } from '../navigation.js';
 
-// `bare` is the /app-shell mode: the card minus the wordmark head, the back door and its Esc twin.
-export function AccountChrome({ width = 460, backHash = '#/app', bare = false, children }) {
+// The shell supplies identity chrome; both modes retain the same return action.
+export function AccountChrome({ width = 460, bare = false, children }) {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
-  // Bubble-phase, so an open Dialog's capture-phase Esc still wins.
   React.useEffect(() => {
-    if (bare) return undefined;
     const onKey = (event) => {
-      if (event.key !== 'Escape') return;
-      const el = document.activeElement;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      window.location.hash = backHash;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const element = document.activeElement;
+      if (element?.isContentEditable || element?.tagName === 'TEXTAREA' || element?.tagName === 'SELECT') return;
+      if (element?.tagName === 'INPUT' && !['radio', 'checkbox', 'button', 'submit', 'reset'].includes(element.type)) return;
+      event.preventDefault();
+      returnToPreviousLocation();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [backHash, bare]);
+  }, []);
 
-  if (bare) {
-    return <div style={{ ...card, width }}>{children}</div>;
-  }
-
-  return (
-    <div style={shell}>
-      <div style={{ ...card, width }}>
-        <div style={head}>
+  const content = (
+    <div style={{ ...card, width }}>
+      <style>{`
+        .wm-account-back { display:inline-flex; align-items:center; gap:8px; min-height:44px;
+          color:var(--text-link); font-size:var(--text-xs); font-weight:700; text-decoration:none; }
+        .wm-account-back:focus-visible { outline:2px solid var(--text-link); outline-offset:3px; border-radius:var(--radius-sm); }
+        .wm-account-escape { color:var(--text-tertiary); font-size:10px; font-weight:400; }
+        @media (pointer:coarse) { .wm-account-escape { display:none; } }
+      `}</style>
+      <div style={head}>
+        <a className="wm-account-back" href={previousLocation() ?? '/app'} title="Back (Esc)" onClick={(event) => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          returnToPreviousLocation();
+        }}>
+          <span aria-hidden="true">←</span> Back <span className="wm-account-escape" aria-hidden="true">Esc</span>
+        </a>
+        {!bare && <>
           <span style={mark}>Windmill</span>
-          <a href={backHash} style={backLink} title="Back to Windmill (Esc)">Back to Windmill</a>
           {signedIn && <Avatar name={name} size={22} />}
-        </div>
-        {children}
+        </>}
       </div>
+      {children}
     </div>
   );
+  if (bare) return content;
+  return <div style={shell}>{content}</div>;
 }
 
 export default AccountChrome;
@@ -54,5 +66,4 @@ const card = {
   padding: '18px 20px 18px',
 };
 const head = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 };
-const mark = { fontFamily: 'var(--font-display)', fontSize: '14px', fontWeight: 800, flex: 1 };
-const backLink = { fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-link)', textDecoration: 'none' };
+const mark = { fontFamily: 'var(--font-display)', fontSize: '14px', fontWeight: 800, marginLeft: 'auto' };

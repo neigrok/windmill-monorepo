@@ -89,13 +89,14 @@ test('signed in, the same radiogroup sits between the identity and the menu', as
 });
 
 test('Escape and a press outside both close the pop-up and hand focus back to the seat', async (t) => {
-  for (const [type, event] of [['keydown', { key: 'Escape' }], ['pointerdown', { target: {} }]]) {
+  for (const [type, event] of [['keydown', { key: 'Escape', preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } }], ['pointerdown', { target: {} }]]) {
     const dom = browser();
     const { view, seat } = await openSeat(t, { status: 'ghost', user: null, onSignIn() {}, onSettings() {} });
     assert.deepEqual(dom.listening(), ['keydown', 'pointerdown']);
     let focused = 0;
     seat().ref.current = { focus: () => { focused += 1; } };
     dom.fire(type, event);
+    if (type === 'keydown') { assert.equal(event.prevented, true); assert.equal(event.stopped, true); }
     assert.equal(seat().props['aria-expanded'], false, `${type} did not close the pop-up`);
     assert.equal(focused, 1, `${type} did not return focus to the seat`);
     assert.deepEqual(dom.listening(), [], 'the closed pop-up still listens to the document');

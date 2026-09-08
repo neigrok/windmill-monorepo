@@ -3,13 +3,13 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { AccountChrome } from '../account/AccountChrome.jsx';
 import { McpKeyPanel } from './McpKeyPanel.jsx';
-import { homeHash } from '../products.js';
 
 const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
 const CLIENTS = [
   {
-    id: 'chatgpt', name: 'ChatGPT', title: 'ChatGPT · OpenAI', label: 'Server URL', copy: MCP_URL,
+    id: 'chatgpt', name: 'ChatGPT', guide: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
+    guideLabel: 'OpenAI setup guide', note: 'Availability depends on your ChatGPT account and workspace settings.', title: 'ChatGPT · OpenAI', label: 'Server URL', copy: MCP_URL,
     steps: [
       'In ChatGPT, open Settings → Security and login and enable Developer mode.',
       'Open Plugins and use the plus button to create a connection. Enter the settings above and a description, such as “Use Windmill from ChatGPT”.',
@@ -33,7 +33,12 @@ const CLIENTS = [
   {
     id: 'codex', name: 'Codex', label: '~/.codex/config.toml',
     copy: `[mcp_servers.windmill]\nurl = "${MCP_URL}"`,
-    steps: ['Add this configuration to config.toml and restart Codex.', 'Approve access in the browser on the first call.'],
+    steps: [
+      'Add this configuration to ~/.codex/config.toml. Codex desktop, CLI, and IDE share these settings.',
+      'Run codex mcp login windmill, or choose Authenticate in Codex’s MCP settings. Approve access in your browser.',
+      'Restart Codex to load the configuration. In the CLI, use /mcp to check the server connection.',
+    ],
+    guide: 'https://learn.chatgpt.com/docs/extend/mcp', guideLabel: 'Codex MCP guide',
   },
   {
     id: 'any', name: 'Any client', label: 'mcpServers JSON', copy: JSON_TEXT,
@@ -76,7 +81,7 @@ export function ConnectPage({ inShell = false }) {
   };
 
   return (
-    <AccountChrome width={560} backHash={homeHash()} bare={inShell}>
+    <AccountChrome width={560} bare={inShell}>
       <style>{CSS}</style>
       <div className="wm-cn">
         <h1>Connect your LLM tools</h1>
@@ -116,12 +121,10 @@ export function ConnectPage({ inShell = false }) {
             {copyStatus === 'copied' ? 'Copied to clipboard.' : copyStatus === 'failed' ? 'Couldn’t copy. Select the text above and copy it manually.' : ''}
           </p>
           <ol className="wm-cn-steps">{client.steps.map((step) => <li key={step}>{step}</li>)}</ol>
-          {isChatGPT ? (
-            <p className="wm-cn-note">
-              Availability depends on your ChatGPT account and workspace settings.{' '}
-              <a href="https://developers.openai.com/plugins/deploy/connect-chatgpt" target="_blank" rel="noreferrer">OpenAI setup guide ↗</a>
-            </p>
-          ) : <p className="wm-cn-note">{client.note || 'OAuth opens your browser to approve access. No API key to paste.'}</p>}
+          <p className="wm-cn-note">
+            {client.note || 'OAuth opens your browser to approve access. No API key to paste.'}
+            {client.guide && <> <a href={client.guide} target="_blank" rel="noreferrer">{client.guideLabel} ↗</a></>}
+          </p>
         </section>
 
         <div className="wm-cn-advanced">

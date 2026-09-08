@@ -14,6 +14,8 @@ function listeningWindow() {
   const bound = new Map();
   window.addEventListener = (type, fn) => bound.set(type, [...(bound.get(type) ?? []), fn]);
   window.removeEventListener = (type, fn) => bound.set(type, (bound.get(type) ?? []).filter((each) => each !== fn));
+  document.addEventListener = window.addEventListener;
+  document.removeEventListener = window.removeEventListener;
   return {
     fire: (type, event) => (bound.get(type) ?? []).forEach((fn) => fn(event)),
     count: (type) => (bound.get(type) ?? []).length,
@@ -75,7 +77,11 @@ test('Escape and a pointer outside close it, and the listeners live only while i
   assert.equal(win.count('pointerdown'), 1);
   win.fire('keydown', { key: 'Enter' });
   assert.equal(isOpen(), true, 'only Escape closes');
-  win.fire('keydown', { key: 'Escape' });
+  const escape = { key: 'Escape', prevented: false, stopped: false,
+    preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+  win.fire('keydown', escape);
+  assert.equal(escape.prevented, true);
+  assert.equal(escape.stopped, true);
   assert.equal(isOpen(), false);
   assert.equal(win.count('keydown'), 0, 'unbound with the close');
   assert.equal(win.count('pointerdown'), 0);

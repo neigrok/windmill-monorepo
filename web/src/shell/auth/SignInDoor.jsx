@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { SignInDialog } from './SignInDialog.jsx';
 import { requestMagicLink } from './AuthClient.js';
 import { useAuth } from './AuthProvider.jsx';
+import { replaceLocation } from '../navigation.js';
 
 const SIGN_IN_PARAM = 'signin';
 
@@ -48,7 +49,7 @@ export function SignInDoorProvider({ children }) {
       const url = new URL(window.location.href);
       if (!url.searchParams.has(SIGN_IN_PARAM)) return;
       url.searchParams.delete(SIGN_IN_PARAM);
-      window.history.replaceState({}, '', url.toString());
+      replaceLocation(url.toString());
       setUrlAsked(true);
     };
     claim();

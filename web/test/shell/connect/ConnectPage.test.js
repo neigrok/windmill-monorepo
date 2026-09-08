@@ -104,3 +104,18 @@ test('API key fallback remains reachable with sign-in requirements and a named d
   assert.equal(panel.props.onRequireSignIn, open);
   assert.equal(elementsOf(body()).find((item) => item.type === 'a').props.href, '#/settings');
 });
+
+
+test('Codex setup includes explicit OAuth login and the official connection guide', async (t) => {
+  const { ConnectPage } = await loadScreen('shell/connect/ConnectPage.jsx');
+  const view = renderHook(t, () => ConnectPage({}), { context: { status: 'ghost', user: null, open() {} } });
+  elementsOf(view.tree).find((item) => item.type === 'input' && item.props.value === 'codex').props.onChange();
+  const elements = elementsOf(view.tree);
+  assert.deepEqual(elements.filter((item) => item.type === 'li').map(textOf), [
+    'Add this configuration to ~/.codex/config.toml. Codex desktop, CLI, and IDE share these settings.',
+    'Run codex mcp login windmill, or choose Authenticate in Codex’s MCP settings. Approve access in your browser.',
+    'Restart Codex to load the configuration. In the CLI, use /mcp to check the server connection.',
+  ]);
+  assert.equal(elements.find((item) => textOf(item) === 'Codex MCP guide ↗').props.href,
+    'https://learn.chatgpt.com/docs/extend/mcp');
+});
