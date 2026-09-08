@@ -15,6 +15,9 @@ public:
   Progress load(const TreeId& tree, const UserId& user) override;
   bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                  ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override;
+  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
+                                 const std::vector<ProgressUpdate>& updates,
+                                 std::uint64_t receivedAtMs) override;
   std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override;
 
 private:

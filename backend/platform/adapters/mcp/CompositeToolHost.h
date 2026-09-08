@@ -20,7 +20,8 @@ struct ToolModule {
 // Every connected product's tools behind the single seam McpServer binds, and the grant gate: a
 // name outside the caller's scope is refused here, naming the level that was not granted, and the
 // same scope filters the catalog through ToolHost::listTools.
-// A duplicate tool name across products is a construction failure. A key no schema declares is
+// Canonical names carry the product prefix; unambiguous local names remain compatibility aliases.
+// A duplicate canonical name is a construction failure. A key no schema declares is
 // refused before dispatch by `undeclaredArgument`, the one check every dispatching host runs.
 class CompositeToolHost : public ToolHost {
 public:
@@ -39,7 +40,10 @@ private:
   struct Registered {
     ToolDeclaration declaration;
     ToolHost* host;
+    std::string publicName;
   };
+
+  std::map<std::string, std::string> referencesFor(const ToolHost& host) const;
 
   std::vector<Registered> tools_;
   std::map<std::string, std::size_t> byName_;  // tool name -> index into tools_, built once at boot
@@ -48,8 +52,7 @@ private:
   std::string instructions_;
 };
 
-// `build` is the deployed commit (empty on a laptop), riding in `serverInfo.version` as semver
-// build metadata and named in the instructions.
+// `build` is the deployed commit, carried in `serverInfo.version` as semver build metadata.
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build = "");
 
 }

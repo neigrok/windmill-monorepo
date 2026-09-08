@@ -10,6 +10,7 @@
 #include "products/gym/ports/ProgramRepository.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
@@ -82,6 +83,11 @@ struct FakeGymStore {
 
     bool operator==(const KeptSet&) const = default;
   };
+
+  struct SetReceipt { UserId user; Set request; };
+  struct SessionReceipt { Session request; std::vector<Set> sets; bool imported = false; };
+  std::map<SetId, SetReceipt> setReceipts;
+  std::map<SessionId, SessionReceipt> sessionReceipts;
 
   std::vector<Exercise> seeds;
   std::vector<std::pair<std::string, Exercise>> customs;   // (owner, row)
@@ -229,6 +235,7 @@ public:
   }
 
   void insertSession(const Session& incoming) override {
+    if (db.sessionReceipts.count(incoming.id)) return;
     // routine_id is a real foreign key and is NOT owner-scoped: a broken pointer is a storage failure.
     bool plannedExists = !incoming.routine;
     for (const Routine& routine : db.routineRows)
@@ -239,6 +246,7 @@ public:
     for (const Session& session : db.sessions)
       if (session.user == incoming.user && !session.finishedAtMs) return; // one open per user
     db.sessions.push_back(incoming);
+    db.sessionReceipts.emplace(incoming.id, FakeGymStore::SessionReceipt{incoming, {}});
   }
 
   void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
@@ -263,6 +271,14 @@ public:
     for (const Session& session : db.sessions)
       if (session.id == incoming.session) ran = session;
     if (!ran) return {std::nullopt, SetInsertError::idTaken};
+    const auto receipt = db.setReceipts.find(incoming.id);
+    if (receipt != db.setReceipts.end()) {
+      if (receipt->second.user != ran->user) return {std::nullopt, SetInsertError::idTaken};
+      const auto current = setOf(ran->user, incoming.id);
+      if (!current) return {std::nullopt, SetInsertError::deleted};
+      if (current->session != incoming.session) return {std::nullopt, SetInsertError::idTaken};
+      return {*current, SetInsertError::none};
+    }
     // The revisions read under the same lock: a DELETED id is spent for good, asked before the closed refusal.
     for (const FakeGymStore::KeptSet& row : db.kept) {
       if (!row.deleted || !(row.set.id == incoming.id)) continue;
@@ -289,11 +305,100 @@ public:
     Set stored = incoming;
     stored.setNumber = number;
     db.sets.push_back(stored);
+    Set canonical = incoming;
+    canonical.setNumber = 0;
+    canonical.weightKg = std::round(canonical.weightKg * 100) / 100;
+    if (canonical.weightKg == 0) canonical.weightKg = 0;
+    if (canonical.rpe) canonical.rpe = std::round(*canonical.rpe * 10) / 10;
+    db.setReceipts.emplace(incoming.id, FakeGymStore::SetReceipt{ran->user, canonical});
     if (continuesStaleClose)
       for (Session& session : db.sessions)
         if (session.id == incoming.session)
           session.finishedAtMs = std::max(*session.finishedAtMs, incoming.completedAtMs);
     return {stored, SetInsertError::none};
+  }
+
+  BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) override {
+    return writeBatch(user, batch, std::nullopt);
+  }
+
+  BatchLogOutcome importSession(const Session& session, const SetBatch& batch) override {
+    return writeBatch(session.user, batch, session);
+  }
+
+  BatchLogOutcome writeBatch(const UserId& user, const SetBatch& batch, const std::optional<Session>& imported) {
+    const auto receipt = db.sessionReceipts.find(batch.sessionId);
+    if (imported && receipt != db.sessionReceipts.end()) {
+      const Session& original = receipt->second.request;
+      if (!receipt->second.imported || original.user != user || original.startedAtMs != imported->startedAtMs ||
+          original.finishedAtMs != imported->finishedAtMs || original.routine != imported->routine || receipt->second.sets != batch.sets)
+        return {std::nullopt, {}, BatchLogError::payloadConflict};
+      BatchLogOutcome outcome;
+      outcome.session = session(user, batch.sessionId);
+      outcome.sessionDeleted = !outcome.session;
+      outcome.replayed = true;
+      for (const Set& set : batch.sets) outcome.sets.push_back({set.id, setOf(user, set.id), true});
+      return outcome;
+    }
+    FakeGymStore next = db;
+    FakeLogRepository planned(next);
+    BatchLogOutcome outcome;
+    if (imported) {
+      for (const Session& old : next.sessions)
+        if (old.id == batch.sessionId) return {std::nullopt, {}, BatchLogError::idTaken};
+      if (imported->routine && !imported->plan) return {std::nullopt, {}, BatchLogError::unknownRoutine};
+      next.sessions.push_back(*imported);
+      next.sessionReceipts.emplace(batch.sessionId, FakeGymStore::SessionReceipt{*imported, batch.sets, true});
+      outcome.session = *imported;
+    } else {
+      outcome.session = planned.session(user, batch.sessionId);
+      if (!outcome.session) return {std::nullopt, {}, BatchLogError::notFound};
+    }
+    batch.checkInterval(*outcome.session, imported.has_value());
+    bool allReplayed = true;
+    for (std::size_t index = 0; index < batch.sets.size(); ++index) {
+      const Set& set = batch.sets[index];
+      const auto existing = next.setReceipts.find(set.id);
+      if (existing != next.setReceipts.end()) {
+        if (existing->second.user != user || existing->second.request != set)
+          return {std::nullopt, {}, BatchLogError::payloadConflict, index};
+        if (imported) return {std::nullopt, {}, BatchLogError::idTaken, index};
+        outcome.sets.push_back({set.id, planned.setOf(user, set.id), true});
+        continue;
+      }
+      allReplayed = false;
+      for (const auto& kept : next.kept)
+        if (kept.deleted && kept.set.id == set.id && next.ownsSession(user, kept.set.session))
+          return {std::nullopt, {}, BatchLogError::deleted, index};
+      for (const Set& old : next.sets)
+        if (old.id == set.id) return {std::nullopt, {}, BatchLogError::idTaken, index};
+      const bool late = !imported && outcome.session->finishedAtMs && lateSetLands(*outcome.session, set.completedAtMs);
+      if (!imported && outcome.session->finishedAtMs && !late) return {std::nullopt, {}, BatchLogError::finished, index};
+      if (!next.visibleTo(user, set.exercise)) return {std::nullopt, {}, BatchLogError::unknownExercise, index};
+      Set stored = set;
+      stored.setNumber = 1;
+      for (const Set& old : next.sets)
+        if (old.session == batch.sessionId && old.exercise == set.exercise)
+          stored.setNumber = std::max(stored.setNumber, old.setNumber + 1);
+      next.sets.push_back(stored);
+      next.setReceipts.emplace(set.id, FakeGymStore::SetReceipt{user, set});
+      outcome.sets.push_back({set.id, stored, false});
+      if (late) {
+        outcome.session->finishedAtMs = std::max(*outcome.session->finishedAtMs, set.completedAtMs);
+        for (Session& current : next.sessions)
+          if (current.id == batch.sessionId) current.finishedAtMs = outcome.session->finishedAtMs;
+      }
+    }
+    outcome.replayed = !imported && allReplayed;
+    db = std::move(next);
+    return outcome;
+  }
+
+  std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) override {
+    std::vector<SessionRows> rows;
+    for (const SessionId& id : ids)
+      if (const auto stored = session(user, id)) rows.push_back({*stored, setsOf(id)});
+    return rows;
   }
 
   // The correction, scoped (id, session, owner); what it replaces is kept BEFORE the row is rewritten.

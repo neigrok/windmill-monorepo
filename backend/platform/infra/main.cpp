@@ -175,7 +175,8 @@ int main() {
                 {"journal_page", "user_id"},          // journal
                 {"gym_sessions", "user_id"},          // gym
                 {"gym_sets", "user_id"},              // gym
-                {"gym_set_revisions", "user_id"},     // gym
+                {"gym_set_revisions", "user_id"},
+                {"gym_write_receipts", "user_id"},     // gym
                 {"gym_routines", "user_id"},          // gym
                 {"gym_proposals", "user_id"},         // gym
                 {"gym_proposal_changes", "user_id"},  // gym
@@ -882,6 +883,7 @@ int main() {
   app.setClientMaxBodySize(8 * 1024 * 1024);         // backstop cap; a full PUT document can be large
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
-  app.addListener("0.0.0.0", port).setThreadNum(ioThreads).run();
+  const char* listenHost = std::getenv("WINDMILL_HOST");
+  app.addListener(listenHost && *listenHost ? listenHost : "0.0.0.0", port).setThreadNum(ioThreads).run();
   return 0;
 }

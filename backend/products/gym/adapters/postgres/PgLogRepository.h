@@ -29,6 +29,9 @@ public:
   void insertSession(const Session& incoming) override;
   void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override;
   SetInsertOutcome insertSet(const Set& incoming) override;
+  BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) override;
+  BatchLogOutcome importSession(const Session& session, const SetBatch& batch) override;
+  std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) override;
   std::optional<Set> updateSet(const UserId& user, const Set& corrected) override;
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override;
   LogPage log(const UserId& user, const LogCursor& cursor) override;
@@ -47,6 +50,8 @@ public:
                                              std::uint64_t nowMs) override;
 
 private:
+  BatchLogOutcome writeBatch(const UserId& user, const SetBatch& batch, const std::optional<Session>& imported);
+
   std::shared_ptr<PgPool> pool_;
 };
 

@@ -680,8 +680,8 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   args["treeId"] = "t";
   const ToolResult result = tools.callTool("get_tree", args, ToolCaller{caller, ToolScope::everything()});
   CHECK(result.isError);
-  CHECK_EQ(message(result), std::string("get_tree: that call failed inside the server. Nothing was "
-                                        "changed; the detail is in the server log."));
+  CHECK_EQ(message(result), std::string("get_tree: that call failed inside the server. The outcome may be uncertain; "
+                                        "read the affected records before retrying. The detail is in the server log."));
   CHECK_EQ(message(result).find("hunter2"), std::string::npos);
   CHECK_EQ(message(result).find("db.internal"), std::string::npos);
 }
@@ -1882,6 +1882,12 @@ struct ThrowingProgressRepository : FakeProgressRepository {
     if (armed) throw std::runtime_error("connect host=db.internal user=windmill password=hunter2: FATAL");
     return FakeProgressRepository::setStatus(tree, user, node, status, outOfOrder, at, receivedAtMs);
   }
+  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
+                                 const std::vector<ProgressUpdate>& updates,
+                                 std::uint64_t receivedAtMs) override {
+    if (armed) throw std::runtime_error("progress transaction failed");
+    return FakeProgressRepository::setStatuses(tree, user, updates, receivedAtMs);
+  }
 };
 }
 
@@ -1913,6 +1919,8 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   CHECK_FALSE(result.isError);
   const Json::Value receipt = body(result);
   CHECK(receipt["imported"].asBool());
+  CHECK(receipt["graphApplied"].asBool());
+  CHECK_FALSE(receipt["progressApplied"].asBool());
   CHECK_EQ(receipt["tombstoned"]["nodes"].asUInt64(), 1u);
   CHECK_EQ(trees.savedNodeCounts.size(), saves + 1);
   CHECK_FALSE(registry.open(TreeId{"t"})->hasNode(NodeId{"n"}));
@@ -2765,4 +2773,95 @@ TEST(mcp_import_subgraph_refuses_more_description_text_than_one_call_may_carry) 
   ToolResult landed = h.call("import_subgraph", describedImport(393, std::string(16000, 'd')));  // 6288000 bytes
   CHECK_FALSE(landed.isError);
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 393u);
+}
+
+TEST(mcp_patch_nodes_is_one_edit_preserves_omissions_and_retries_as_noop) {
+  Harness h;
+  Json::Value a = node("a", "A");
+  a["icon"] = "star";
+  a["description"] = "Keep this";
+  h.call("create_node", a);
+  h.call("create_node", node("b", "B"));
+  Json::Value args = parse(R"({"updates":[{"nodeId":"a","label":"New A"},{"nodeId":"b","description":"New B","position":{"x":7,"y":8}}],"expectedSeq":2})");
+  const ToolResult result = h.call("patch_nodes", args);
+  CHECK_FALSE(result.isError);
+  CHECK_EQ(body(result), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":["a","b"],"unchangedNodeIds":[],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(result.structured, body(result));
+  REQUIRE_EQ(h.bus.subgraphBroadcasts.size(), 3u);
+  REQUIRE_EQ(h.ops.byTree["t"].size(), 3u);
+  CHECK(std::holds_alternative<Batch>(h.ops.byTree["t"].back().command));
+  Json::Value read = parse(R"({"nodeIds":["b","missing","a"],"fields":["id","label","icon","description","position"]})");
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"b","label":"B","icon":"","description":"New B","position":{"x":7.0,"y":8.0}},{"id":"a","label":"New A","icon":"star","description":"Keep this"}],"missingNodeIds":["missing"]})"));
+  const ToolResult conflict = h.call("patch_nodes", args);
+  CHECK(conflict.isError);
+  CHECK_EQ(message(conflict), std::string("patch_nodes: expectedSeq conflict: requested 2, current seq is 3. Nothing changed; read get_nodes or get_tree and retry with the current seq."));
+  args.removeMember("expectedSeq");
+  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 3u);
+  CHECK_EQ(h.ops.byTree["t"].size(), 3u);
+}
+
+TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  const Json::Value before = body(h.call("get_tree", kNoArgs));
+  for (const char* json : {
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"missing","label":"Bad"}]})",
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"a","label":"Duplicate"}]})",
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","position":{"x":1}}]})",
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","description":null}]})",
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b"}]})",
+      R"({"updates":[]})"}) {
+    CHECK(h.call("patch_nodes", parse(json)).isError);
+    CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
+  }
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
+           parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"]})"));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 2u);
+}
+
+TEST(mcp_change_edges_is_atomic_and_reports_cycles_and_noop_retries) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  h.call("connect", parse(R"({"from":"a","to":"b"})"));
+  const Json::Value args = parse(R"({"add":[{"from":"b","to":"a"}],"remove":[{"from":"missing","to":"a"}],"expectedSeq":3})");
+  CHECK_EQ(body(h.call("change_edges", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[{"from":"b","to":"a"}],"removedEdges":[],"unchangedEdges":1,"diagnosticsClean":false,"introducedDiagnostics":["cycle among \"a\", \"b\""]})"));
+  Json::Value retry = args;
+  retry.removeMember("expectedSeq");
+  CHECK_EQ(body(h.call("change_edges", retry)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],"removedEdges":[],"unchangedEdges":2,"diagnosticsClean":false,"introducedDiagnostics":[]})"));
+  const Json::Value before = body(h.call("get_tree", kNoArgs));
+  for (const char* json : {
+      R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"missing","to":"a"}]})",
+      R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"b"}]})",
+      R"({"add":[{"from":"a","to":"b"},{"from":"a","to":"b"}]})",
+      R"({"add":[],"remove":[]})"}) {
+    CHECK(h.call("change_edges", parse(json)).isError);
+    CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
+  }
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 4u);
+}
+
+TEST(mcp_get_nodes_is_bounded_and_private_and_uses_exact_ids) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", describedImport(20, std::string(16000, 'd'))).isError);
+  Json::Value args(Json::objectValue);
+  args["nodeIds"] = Json::Value(Json::arrayValue);
+  for (int i = 0; i < 20; ++i) args["nodeIds"].append("n" + std::to_string(i));
+  args["fields"] = list({"id", "description"});
+  CHECK_EQ(message(h.call("get_nodes", args)), std::string("get_nodes: response exceeds the 262144-byte limit; retry with fewer nodeIds or fewer fields (summary instead of description). No nodes were omitted silently."));
+  args["fields"] = list({"id"});
+  const ToolResult light = h.call("get_nodes", args);
+  CHECK_FALSE(light.isError);
+  CHECK_EQ(body(light)["nodes"].size(), 20u);
+  CHECK_EQ(light.structured, body(light));
+  args["nodeIds"].append("n0");
+  CHECK_EQ(message(h.call("get_nodes", args)), std::string("get_nodes: nodeIds repeats \"n0\""));
+  h.registry.open(TreeId{"t"})->setVisibility(Visibility::private_);
+  h.caller = uid("other");
+  CHECK_EQ(message(h.call("get_nodes", parse(R"({"nodeIds":["n0"]})"))), std::string("get_nodes: no such tree \"t\""));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"n0","label":"No"}]})"))), std::string("patch_nodes: no such tree \"t\""));
+  CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"n0","to":"n1"}]})"))), std::string("change_edges: no such tree \"t\""));
 }

@@ -25,10 +25,11 @@ ProgressOutcome ProgressService::setStatus(const std::vector<NodeId>& prerequisi
 std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, const UserId& user,
                                                           const std::vector<ProgressWrite>& writes,
                                                           std::uint64_t receivedAtMs) {
-  std::vector<bool> applied;
-  applied.reserve(writes.size());
+  std::vector<ProgressUpdate> updates;
+  updates.reserve(writes.size());
   for (const ProgressWrite& write : writes)
-    applied.push_back(repo_.setStatus(treeId, user, write.node, write.status, write.outOfOrder, write.at, receivedAtMs));
+    updates.push_back({write.node, write.status, write.outOfOrder, write.at});
+  const std::vector<bool> applied = repo_.setStatuses(treeId, user, updates, receivedAtMs);
 
   Progress final = repo_.load(treeId, user);  // one read; every advisory reads the same committed state
   std::vector<ProgressOutcome> outcomes;

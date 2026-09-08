@@ -865,3 +865,71 @@ TEST(a_node_edit_naming_no_present_node_is_refused_before_it_can_plant_a_phantom
            std::optional<std::string>("label would be 201 characters, 1 over the 200 cap"));
   CHECK_EQ(g.presentNodeCount(), 1u);
 }
+
+TEST(node_patch_plan_preserves_omitted_fields_and_retries_without_commands) {
+  LooseGraph graph = seeded();
+  Legend legend;
+  NodePatch first;
+  first.nodeId = nid("a");
+  first.label = "New A";
+  NodePatch second;
+  second.nodeId = nid("b");
+  second.description = "New description";
+  second.links = std::vector<Link>{{"Reference", "https://example.com"}};
+  const auto result = planNodePatches(graph, legend, {first, second});
+  REQUIRE(std::holds_alternative<NodePatchPlan>(result));
+  const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
+  CHECK_EQ(plan.changedNodeIds, (std::vector<NodeId>{nid("a"), nid("b")}));
+  merge(graph, legend, plan.batch, at(10));
+  CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("New A"));
+  CHECK_EQ(graph.nodeView(nid("a"))->icon, std::string("x"));
+  CHECK_EQ(graph.nodeView(nid("b"))->position, (std::optional<Vec2>{Vec2{3, 4}}));
+  CHECK_EQ(graph.nodeView(nid("b"))->prerequisites, (std::vector<NodeId>{nid("a")}));
+  const auto retry = planNodePatches(graph, legend, {first, second});
+  REQUIRE(std::holds_alternative<NodePatchPlan>(retry));
+  CHECK(std::get<NodePatchPlan>(retry).batch.commands.empty());
+  CHECK(std::get<NodePatchPlan>(retry).changedNodeIds.empty());
+}
+
+TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
+  const LooseGraph graph = seeded();
+  Legend legend;
+  NodePatch first;
+  first.nodeId = nid("a");
+  first.label = "New A";
+  NodePatch last;
+  last.nodeId = nid("b");
+  last.description = std::string(kMaxNodeDescriptionLength + 1, 'x');
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+  CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("A"));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, first})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {NodePatch{nid("a")}})));
+  last.description = std::string("bad\0text", 8);
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+  last.nodeId = nid("missing");
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+}
+
+TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
+  LooseGraph graph = seeded();
+  Legend legend;
+  for (std::size_t i = 1; i < kMaxEdges; ++i)
+    graph.addEdge(nid("a"), NodeId{"missing-" + std::to_string(i)}, at(2));
+  const EdgeChanges replace{{Edge{nid("b"), nid("a")}}, {Edge{nid("a"), nid("b")}}};
+  const auto result = planEdgeChanges(graph, replace);
+  REQUIRE(std::holds_alternative<EdgeChangePlan>(result));
+  CHECK_EQ(std::get<EdgeChangePlan>(result).batch.commands.size(), 2u);
+  CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, {}})));
+  EdgeChanges invalid = replace;
+  invalid.add.push_back(Edge{nid("a"), nid("absent")});
+  CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, invalid)));
+  CHECK(graph.edgePresent(nid("a"), nid("b")));
+  merge(graph, legend, std::get<EdgeChangePlan>(result).batch, at(10));
+  CHECK_FALSE(graph.edgePresent(nid("a"), nid("b")));
+  CHECK(graph.edgePresent(nid("b"), nid("a")));
+  const auto retry = planEdgeChanges(graph, replace);
+  REQUIRE(std::holds_alternative<EdgeChangePlan>(retry));
+  CHECK(std::get<EdgeChangePlan>(retry).batch.commands.empty());
+  CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, replace.add})));
+  CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, {replace.remove[0], replace.remove[0]}})));
+}

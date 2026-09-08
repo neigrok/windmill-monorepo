@@ -97,6 +97,40 @@ using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNod
 
 struct Batch { std::vector<Command> commands; };
 
+constexpr std::size_t kMaxPatchNodes = 200;
+constexpr std::size_t kMaxChangeEdges = 500;
+
+struct NodePatch {
+  NodeId nodeId;
+  std::optional<std::string> label;
+  std::optional<std::string> icon;
+  std::optional<std::string> description;
+  std::optional<NodeColor> color;
+  std::optional<Vec2> position;
+  std::optional<std::vector<Link>> links;
+};
+
+struct NodePatchPlan {
+  Batch batch;
+  std::vector<NodeId> changedNodeIds;
+};
+
+struct EdgeChanges {
+  std::vector<Edge> add;
+  std::vector<Edge> remove;
+};
+
+struct EdgeChangePlan {
+  Batch batch;
+  std::vector<Edge> added;
+  std::vector<Edge> removed;
+};
+
+std::variant<NodePatchPlan, std::string> planNodePatches(
+    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
+std::variant<EdgeChangePlan, std::string> planEdgeChanges(
+    const LooseGraph& graph, const EdgeChanges& changes);
+
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
 // Server-authoritative validation before a command is admitted to the log. A graph command is

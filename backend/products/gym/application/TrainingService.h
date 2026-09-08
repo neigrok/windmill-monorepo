@@ -98,6 +98,10 @@ public:
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
+  BatchLogOutcome appendSets(const UserId& user, const SessionId& session, const std::vector<SetWrite>& sets);
+  BatchLogOutcome importSession(const UserId& user, const SessionStart& start, std::uint64_t finishedAtMs,
+                                 const std::vector<SetWrite>& sets);
+  std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
 
   // Both name the SESSION as well as the set, so a set id resolving under this account but in

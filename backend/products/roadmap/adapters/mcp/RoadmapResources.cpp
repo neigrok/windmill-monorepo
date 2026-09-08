@@ -4,121 +4,59 @@ namespace wm {
 
 namespace {
 
-constexpr char kQuickstart[] = R"(# Windmill quickstart
+constexpr char kQuickstart[] = R"(# Windmill roadmap quickstart
 
-A Windmill roadmap is an RPG-style skill tree: nodes are skills or milestones, and an edge is a
-prerequisite. Six things agents get wrong; each is true of this server.
+Tool schemas describe arguments and limits. These are the app-specific semantics.
 
-## 1. Which way an edge points
+## Edges and diagnostics
 
-`connect(from, to)` means `from` must be complete before `to` is unlocked. The edge points from
-the requirement to the thing it unlocks — prerequisite first. `create_node`'s `prerequisites` is
-the same direction: every id in it unlocks the new node. Edge tools name their endpoints by role,
-not by handle: `from`/`to`, and `oldFrom`/`oldTo`/`newFrom`/`newTo` — two node handles in one
-call cannot share one name, and which is which is the whole meaning.
+`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked: prerequisite first.
+Cycles and detached nodes are accepted and reported by `roadmap_get_diagnostics`. In an edit receipt,
+`diagnosticsClean` describes the whole graph; `introducedDiagnostics` identifies problems added by
+that edit. Existing problems do not mean the edit caused them.
 
-## 2. Handles
+## Progress
 
-The law: **`id` is the id you PROPOSE for a new thing; `<thing>Id` is the handle to one that
-already exists.** Whichever you guess, both are read.
+Structure is shared; progress is private to the caller. `roadmap_set_progress` accepts completion
+with unmet prerequisites and returns `prerequisitesMet: false`. Use `outOfOrder: true` when intended.
 
-- `treeId` — the roadmap, on every tree-scoped tool. `list_trees` discovers it.
-- `nodeId` — a node that EXISTS, on every tool that edits or marks one. (The older `id` spelling
-  is still accepted everywhere `nodeId` is, and carries `deprecated` in the schema.)
-- `id` — the id PROPOSED for a new thing: `create_node`, `add_kind`, `import_subgraph`'s
-  `nodes[].id` and `kinds[].id`. Omit it on `create_node` and one is minted from the label.
-  `create_node` refuses `nodeId` and `add_kind` refuses `kindId`, rather than guess which you meant.
-- Legend kinds still publish `id` for the kind that exists — all six `*_kind` tools spell it alike
-  — but `kindId` is accepted there too.
+- `status` is your mark: `active`, `complete` or `none`.
+- `seedStatus` is the document's authored baseline, carried when copying a graph.
+- `state` is derived from prerequisites and your marks: `locked`, `available`, `active` or `complete`.
 
-## 3. Structure is never refused
+`roadmap_find_nodes {state: "available"}` finds the current frontier. Import personal marks through
+`progress[]`, separately from node `seedStatus`.
 
-A cycle, a detached node, an edge to an id that does not exist: all accepted, none rejected.
-`get_diagnostics` is where you find them. Every edit answers two things about them:
-`diagnosticsClean` is a property of the WHOLE tree — a `false` may be dirt that was already there
-— and `introducedDiagnostics` is what YOUR edit broke, the errors the tree holds now and did not
-hold a moment before, named endpoint by endpoint. An innocent edit on a dirty tree answers
-`{"diagnosticsClean": false, "introducedDiagnostics": []}`, so you never have to ask twice. Three
-things do refuse: the legend (hues are unique per kind, at most 6 kinds, and a kind nodes still
-wear cannot be removed — `import_subgraph` is held to the same rule), the per-tree capacity
-(10000 nodes, 20000 edges), and `delete_node` when an id names no present node — the whole call,
-every missing id named, nothing applied.
+## Reads and edits
 
-## 4. `set_progress` is advisory, `status` is yours, and `state` is derived for you
+Reads use lean projections: an omitted description is not an empty description. Request `fields`
+for needed detail or `summary` for a short preview. `roadmap_get_nodes` returns exact ids in requested
+order with explicit `missingNodeIds`; use `roadmap_get_tree` for broader context.
 
-Marking a node complete whose prerequisites are unmet still records the mark and answers
-`prerequisitesMet: false` — it never fails. When that inversion is meant, send `outOfOrder: true`
-with the completion: the word is kept on the mark and the receipt answers `acknowledged: true`
-beside it, so `prerequisitesMet: false` alone always means an inversion nobody acknowledged. What
-it does refuse is an id the tree does not hold, so no orphan rows are born. Progress is
-per-caller and private; structure is shared.
+`roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
+and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`
+requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
+support `expectedSeq` and `dryRun`.
 
-The same word means the same thing on every read: ask `get_tree` or `find_nodes` for the `status`
-field and each node answers YOUR mark — `active`, `complete` or `none`, always present, never
-omitted. The document's own authored baseline (what a reader sees before their own marks) is a
-different fact under a different name, `seedStatus`, and it is what `import_subgraph`'s
-`nodes[].seedStatus` carries. Copy a tree with `seedStatus`; carry your own marks in `progress[]`.
-
-The unlock cascade is a third fact, and the tree derives it so you never have to: ask for the
-`state` field and each node answers `locked`, `available`, `active` or `complete`, computed from
-its prerequisites and your marks — the same rule the app paints from. The read every client wants
-after it plants is the frontier, and it is one call: `find_nodes {state: "available"}` answers
-what you can work on right now. With no account behind the call the cascade runs over no marks:
-roots available, the rest locked.
-
-## 5. Ask for less
-
-`get_tree`, `find_nodes` and `get_progress` take `fields`; `get_tree` also takes `kindFields`.
-Ask for `["id","label"]` when you only need an index to pick edit targets — the default already
-omits `description`, `links`, `position`, `icon`, both status fields and `state`. To skim a
-tree's notes ask for `summary` — each description's opening 200 characters (Unicode code points),
-cut at a word and ellipsized when cut — and for `description` only when you need one node's whole
-text: on an annotated tree a page of full descriptions runs past most clients' result ceiling. Ask
-for `kind` to get the legend kind id a node's color refers to, joined for you. Both node reads
-page: `limit` (default 200, max 1000) and the `nextCursor` they hand back. To see every edge at
-once, `get_tree {includeEdges: true}` adds a top-level `edges` array of the whole tree's live
-edges beside the page — the same list on every page, so ask once.
-
-`find_nodes`' `query` is a case-insensitive substring over a node's **id, label and description**,
-answered best first: an exact id, then an id prefix, then a label hit, then an id substring, then
-a description-only hit. Pasting an id you already know finds that node, at the top.
-
-## 6. Author in bulk
-
-`import_subgraph` grafts a whole `{nodes[], kinds[]}` slice as ONE op, upserting by id; a carried
-`progress[]` is applied after it as ordinary overlay writes (and skipped entirely under `dryRun`,
-which previews the collisions and changes nothing). A re-sent node's fields are replaced, but its
-`prerequisites` are UNIONED with the edges it already has unless you pass
-`prerequisiteMode: "replace"` — a merge reports what it left standing in `keptEdges`. To delete in
-the same batch, list ids in `tombstone` — that needs the roadmap:delete grant, and your own marks
-on those nodes are cleared after the graft, as `prune` clears an orphan's. It does not touch the
-tree's title. Prefer it to N× `create_node` + `connect` + `delete_node`.
-
-## Limits worth knowing
-
-A node's `description` is capped at 16000 characters, its `label` at 200, its `icon` at 64, its
-`links` at 32 (url ≤ 2048). A kind's `label` is capped at 24 and its `description` at 80. Every cap
-counts Unicode code points — a CJK character or an emoji is one. `annotate_node`'s
-`appendDescription` adds to the end of a body instead of replacing it, and the cap is held against
-the body the node would then hold. A cap refusal names every field over its cap and by how much
-(`description would be 17181 characters, 1181 over the 16000 cap`), so one retry fits. Every
-failure names the tool, the argument, what you sent and what is legal — read it before retrying.
+`roadmap_import_subgraph` upserts a graph slice, replacing node fields. Prerequisites merge by default;
+`prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
+operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
+`progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress
+is incomplete. `dryRun` changes neither phase.
 )";
 
 }  // namespace
 
 std::string roadmapInstructions() {
-  return "Roadmaps are RPG-style skill trees: nodes are skills/milestones, and a prerequisite edge "
-         "points from a required node to the node it unlocks. Use get_tree and get_diagnostics to "
-         "inspect, the edit tools (create_node, connect, …) to author, and set_progress to mark a node "
-         "active or complete. Edits are never rejected — a cycle or a detached node is surfaced by "
-         "get_diagnostics, not refused.";
+  return "Roadmap is a graph of skills and milestones. Cover the relevant aspects of the user's goals "
+         "in a balanced way, with genuine prerequisites and no filler. Give each node a short title "
+         "and a concise, friendly description explaining its activity and purpose on its own. Check "
+         "the whole graph for gaps, duplicates, conflicts and unrealistic scope.";
 }
 
 std::vector<McpResource> roadmapResources() {
   return {{"windmill://quickstart", "quickstart", "Windmill quickstart",
-           "Edge direction, handle names, what is never refused, and the read projections — the "
-           "handful of things agents get backwards.",
+           "Roadmap edge direction, progress, diagnostics, projections and batch semantics.",
            "text/markdown", kQuickstart}};
 }
 

@@ -247,6 +247,22 @@ struct FakeProgressRepository : ProgressRepository {
     return true;
   }
 
+  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
+                                 const std::vector<ProgressUpdate>& updates,
+                                 std::uint64_t receivedAtMs) override {
+    auto next = byKey;
+    std::vector<bool> applied;
+    for (const ProgressUpdate& update : updates) {
+      const std::string nodeKey = key(tree, user, update.node);
+      const auto current = next.find(nodeKey);
+      const bool wins = current == next.end() || update.at > current->second.at;
+      applied.push_back(wins);
+      if (wins) next[nodeKey] = Entry{update.status, update.at, update.outOfOrder};
+    }
+    byKey = std::move(next);
+    return applied;
+  }
+
   std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {
     std::map<TreeId, ProgressDigest> overlays;
     for (const auto& [k, entry] : byKey) {

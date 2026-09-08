@@ -354,6 +354,85 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
   }, command);
 }
 
+std::variant<NodePatchPlan, std::string> planNodePatches(
+    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates) {
+  if (updates.empty() || updates.size() > kMaxPatchNodes)
+    return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
+
+  NodePatchPlan plan;
+  std::set<NodeId> seen;
+  for (const NodePatch& patch : updates) {
+    if (!seen.insert(patch.nodeId).second)
+      return "updates repeats nodeId " + quoted(patch.nodeId.str());
+    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links)
+      return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
+    for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
+      if (*value && (*value)->find('\0') != std::string::npos)
+        return "node " + quoted(patch.nodeId.str()) + ": " + field + " cannot contain a NUL character";
+    if (patch.links)
+      for (const Link& link : *patch.links)
+        if (link.label.find('\0') != std::string::npos || link.url.find('\0') != std::string::npos)
+          return "node " + quoted(patch.nodeId.str()) + ": links cannot contain a NUL character";
+    const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
+    if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
+
+    std::vector<std::pair<Command, bool>> candidates;
+    if (patch.label)
+      candidates.push_back({RenameNode{patch.nodeId, *patch.label}, node->label != *patch.label});
+    if (patch.color)
+      candidates.push_back({SetNodeColor{patch.nodeId, *patch.color}, node->color != *patch.color});
+    if (patch.position)
+      candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
+    if (patch.description || patch.icon || patch.links) {
+      const bool changed = (patch.description && node->description != *patch.description) ||
+                           (patch.icon && node->icon != *patch.icon) ||
+                           (patch.links && node->links != *patch.links);
+      candidates.push_back({AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon}, changed});
+    }
+
+    const std::size_t before = plan.batch.commands.size();
+    for (const auto& [command, changed] : candidates) {
+      if (std::optional<std::string> reason = validate(graph, legend, command)) return *reason;
+      if (changed) plan.batch.commands.push_back(command);
+    }
+    if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
+  }
+  return plan;
+}
+
+std::variant<EdgeChangePlan, std::string> planEdgeChanges(
+    const LooseGraph& graph, const EdgeChanges& changes) {
+  const std::size_t count = changes.add.size() + changes.remove.size();
+  if (count == 0 || count > kMaxChangeEdges)
+    return "add and remove must contain 1 to " + std::to_string(kMaxChangeEdges) + " edges in total";
+
+  EdgeChangePlan plan;
+  std::set<Edge> seen;
+  for (const Edge& edge : changes.remove) {
+    if (std::optional<std::string> reason = edgeEndpointBounds(edge)) return *reason;
+    if (!seen.insert(edge).second)
+      return "remove repeats edge " + quoted(edge.from.str()) + " -> " + quoted(edge.to.str());
+    if (!graph.edgePresent(edge.from, edge.to)) continue;
+    plan.removed.push_back(edge);
+    plan.batch.commands.push_back(RemoveEdge{edge.from, edge.to});
+  }
+  for (const Edge& edge : changes.add) {
+    if (std::optional<std::string> reason = edgeEndpointBounds(edge)) return *reason;
+    if (!seen.insert(edge).second)
+      return "add repeats edge or overlaps remove: " + quoted(edge.from.str()) + " -> " + quoted(edge.to.str());
+    for (const NodeId& endpoint : {edge.from, edge.to})
+      if (!graph.hasNode(endpoint)) return "no node in this tree is named " + quoted(endpoint.str());
+    if (graph.edgePresent(edge.from, edge.to)) continue;
+    plan.added.push_back(edge);
+    plan.batch.commands.push_back(AddEdge{edge.from, edge.to});
+  }
+
+  const std::size_t before = graph.presentEdgeCount();
+  const std::size_t after = before - plan.removed.size() + plan.added.size();
+  if (std::optional<Admission> refusal = growthWithin(0, 0, before, after)) return refusal->reason;
+  return plan;
+}
+
 std::optional<Admission> admitTitle(const std::string& title) {
   Overages over;
   over.note("the title", title, kMaxTitleChars);

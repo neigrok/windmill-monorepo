@@ -118,7 +118,7 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   std::vector<std::string> names;
   for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
   std::sort(names.begin(), names.end());
-  CHECK_EQ(names, (std::vector<std::string>{"get_session", "get_stats", "last_time",
+  CHECK_EQ(names, (std::vector<std::string>{"get_last_times", "get_session", "get_sessions", "get_stats", "last_time",
                                             "list_bodyweight", "list_exercises", "list_notes",
                                             "list_routines", "list_sessions",
                                             "propose_routine_change", "propose_routine_removal"}));

@@ -6,6 +6,12 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <pqxx/pqxx>
+#include <openssl/sha.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <numeric>
 
 #include <map>
 #include <optional>
@@ -70,6 +76,30 @@ PriorMark markFrom(const Row& row) {
   return PriorMark{ExerciseId{row["exercise_id"].template as<std::string>()},
                    row["weight_kg"].template as<double>(), row["reps"].template as<int>(),
                    instantFrom(row["at_ms"])};
+}
+
+std::string requestHash(const Json::Value& request) {
+  const std::string text = dump(request);
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> bytes{};
+  SHA256(reinterpret_cast<const unsigned char*>(text.data()), text.size(), bytes.data());
+  constexpr char hex[] = "0123456789abcdef";
+  std::string hash;
+  for (const unsigned char byte : bytes) {
+    hash += hex[byte >> 4];
+    hash += hex[byte & 15];
+  }
+  return hash;
+}
+
+std::string setRequestHash(const Set& set) {
+  Set canonical = set;
+  canonical.weightKg = std::round(canonical.weightKg * 100) / 100;
+  if (canonical.weightKg == 0) canonical.weightKg = 0;
+  if (canonical.rpe) canonical.rpe = std::round(*canonical.rpe * 10) / 10;
+  Json::Value request = toJson(canonical);
+  request.removeMember("setNumber");
+  request["sessionId"] = set.session.str();
+  return requestHash(request);
 }
 
 struct Tally {
@@ -160,12 +190,17 @@ void PgLogRepository::insertSession(const Session& incoming) {
 
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec(
+  Json::Value request = toJson(incoming);
+  request.removeMember("plan");
+  const pqxx::result reservation = txn.exec_params(
+      "INSERT INTO gym_write_receipts (kind,id,user_id,session_id,request_hash) VALUES ('session',$1,$2::uuid,$1,$3) "
+      "ON CONFLICT (kind,id) DO NOTHING", incoming.id.str(), incoming.user.str(), requestHash(request));
+  if (reservation.affected_rows() == 0) return;
+  const pqxx::result inserted = txn.exec(
       "INSERT INTO gym_sessions (id, user_id, routine_id, plan, started_at, finished_at) "
       "VALUES ($1, $2::uuid, $3, $4::jsonb, to_timestamp($5::bigint / 1000.0), "
-      "        to_timestamp($6::bigint / 1000.0)) "
-      "ON CONFLICT DO NOTHING",
-      params);
+      "        to_timestamp($6::bigint / 1000.0)) ON CONFLICT DO NOTHING RETURNING id", params);
+  if (inserted.empty()) return;
   txn.commit();
 }
 
@@ -194,24 +229,36 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
   // `user_id` the two refusals below turn on.
   std::optional<Set> stored;
   {
-    pqxx::params params;
-    params.append(incoming.id.str());
-    params.append(incoming.session.str());
-    params.append(incoming.exercise.str());
-    params.append(incoming.weightKg);
-    params.append(incoming.reps);
-    params.append(toString(incoming.kind));
-    if (incoming.rpe) params.append(*incoming.rpe);
-    else params.append();
-    params.append(incoming.note);
-    params.append(static_cast<long long>(incoming.completedAtMs));
-
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
     pqxx::result locked = txn.exec_params(
         "SELECT " + std::string(kSessionColumns) + " FROM gym_sessions WHERE id = $1 FOR UPDATE",
         incoming.session.str());
     if (locked.empty()) return {std::nullopt, SetInsertError::idTaken};
+    pqxx::params precision;
+    precision.append(incoming.weightKg);
+    if (incoming.rpe) precision.append(*incoming.rpe); else precision.append();
+    const pqxx::result normalized = txn.exec(
+        "SELECT $1::numeric(6,2)::float8 AS weight_kg, $2::numeric(3,1)::float8 AS rpe", precision);
+    Set canonical = incoming;
+    canonical.weightKg = normalized[0]["weight_kg"].as<double>();
+    if (!normalized[0]["rpe"].is_null()) canonical.rpe = normalized[0]["rpe"].as<double>();
+    const pqxx::result reservation = txn.exec_params(
+        "INSERT INTO gym_write_receipts (kind,id,user_id,session_id,request_hash) VALUES ('set',$1,$2::uuid,$3,$4) "
+        "ON CONFLICT (kind,id) DO NOTHING", incoming.id.str(), locked[0]["user_id"].as<std::string>(),
+        incoming.session.str(), setRequestHash(canonical));
+    if (reservation.affected_rows() == 0) {
+      const pqxx::result receipt = txn.exec_params(
+          "SELECT user_id::text FROM gym_write_receipts WHERE kind = 'set' AND id = $1", incoming.id.str());
+      if (receipt[0]["user_id"].as<std::string>() != locked[0]["user_id"].as<std::string>())
+        return {std::nullopt, SetInsertError::idTaken};
+      const pqxx::result current = txn.exec_params("SELECT " + std::string(kSetColumns) +
+          " FROM gym_sets WHERE id = $1 AND user_id = $2::uuid", incoming.id.str(), receipt[0]["user_id"].as<std::string>());
+      if (current.empty()) return {std::nullopt, SetInsertError::deleted};
+      const Set existing = setFrom(current[0]);
+      if (existing.session != incoming.session) return {std::nullopt, SetInsertError::idTaken};
+      return {existing, SetInsertError::none};
+    }
     // A set id is spent for good. Asked under the session's lock, so a delete of the same id is
     // either seen or waits behind this transaction; asked before `finished`, and scoped to the
     // session's owner, so a deleted id is refused whichever session replays it.
@@ -228,6 +275,16 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
     // The catalog's visibility predicate under the owner the locked row names.
     if (!namesVisibleMovement(txn, locked[0]["user_id"].as<std::string>(), incoming.exercise))
       return {std::nullopt, SetInsertError::unknownExercise};
+    pqxx::params params;
+    params.append(canonical.id.str());
+    params.append(canonical.session.str());
+    params.append(canonical.exercise.str());
+    params.append(canonical.weightKg);
+    params.append(canonical.reps);
+    params.append(toString(canonical.kind));
+    if (canonical.rpe) params.append(*canonical.rpe); else params.append();
+    params.append(canonical.note);
+    params.append(static_cast<long long>(canonical.completedAtMs));
     txn.exec(
         "INSERT INTO gym_sets "
         "(id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
@@ -243,7 +300,8 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
         "SELECT " + std::string(kSetColumns) + " FROM gym_sets WHERE id = $1 AND session_id = $2",
         incoming.id.str(), incoming.session.str());
     if (!rows.empty()) stored = setFrom(rows[0]);
-    if (stored && continuesStaleClose)
+    if (!stored) return {std::nullopt, SetInsertError::idTaken};
+    if (continuesStaleClose)
       txn.exec_params(
           "UPDATE gym_sessions SET finished_at = greatest(finished_at, to_timestamp($2::bigint / 1000.0)) "
           "WHERE id = $1",
@@ -252,6 +310,167 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
   }
   if (!stored) return {std::nullopt, SetInsertError::idTaken};
   return {stored, SetInsertError::none};
+}
+
+BatchLogOutcome PgLogRepository::appendSets(const UserId& user, const SetBatch& batch) {
+  return writeBatch(user, batch, std::nullopt);
+}
+
+BatchLogOutcome PgLogRepository::importSession(const Session& session, const SetBatch& batch) {
+  return writeBatch(session.user, batch, session);
+}
+
+BatchLogOutcome PgLogRepository::writeBatch(const UserId& user, const SetBatch& batch,
+                                            const std::optional<Session>& imported) {
+  std::vector<std::string> hashes;
+  for (const Set& set : batch.sets) hashes.push_back(setRequestHash(set));
+  std::string importHash;
+  if (imported) {
+    Json::Value request = toJson(*imported);
+    request.removeMember("plan");
+    request["sets"] = Json::Value(Json::arrayValue);
+    for (const std::string& hash : hashes) request["sets"].append(hash);
+    importHash = requestHash(request);
+  }
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  auto importReplay = [&]() -> std::optional<BatchLogOutcome> {
+    const pqxx::result receipts = txn.exec_params(
+        "SELECT user_id::text, request_hash FROM gym_write_receipts WHERE kind = 'session' AND id = $1",
+        batch.sessionId.str());
+    if (receipts.empty()) return std::nullopt;
+    if (receipts[0]["user_id"].as<std::string>() != user.str() || receipts[0]["request_hash"].as<std::string>() != importHash)
+      return BatchLogOutcome{std::nullopt, {}, BatchLogError::payloadConflict};
+    BatchLogOutcome outcome;
+    outcome.replayed = true;
+    const pqxx::result sessions = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+        " FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid FOR UPDATE", batch.sessionId.str(), user.str());
+    if (!sessions.empty()) outcome.session = sessionFrom(sessions[0]);
+    else outcome.sessionDeleted = true;
+    for (const Set& set : batch.sets) {
+      const pqxx::result rows = txn.exec_params("SELECT " + std::string(kSetColumns) +
+          " FROM gym_sets WHERE id = $1 AND session_id = $2 AND user_id = $3::uuid",
+          set.id.str(), batch.sessionId.str(), user.str());
+      outcome.sets.push_back({set.id, rows.empty() ? std::nullopt : std::optional<Set>{setFrom(rows[0])}, true});
+    }
+    return outcome;
+  };
+
+  BatchLogOutcome outcome;
+  if (imported) {
+    if (const auto replay = importReplay()) return *replay;
+    const pqxx::result reservation = txn.exec_params(
+        "INSERT INTO gym_write_receipts (kind,id,user_id,session_id,request_hash) VALUES ('session',$1,$2::uuid,$1,$3) "
+        "ON CONFLICT (kind,id) DO NOTHING", batch.sessionId.str(), user.str(), importHash);
+    if (reservation.affected_rows() == 0) {
+      if (const auto replay = importReplay()) return *replay;
+      return {std::nullopt, {}, BatchLogError::idTaken};
+    }
+    if (imported->routine && !imported->plan) return {std::nullopt, {}, BatchLogError::unknownRoutine};
+    pqxx::params params;
+    params.append(imported->id.str());
+    params.append(user.str());
+    if (imported->routine) params.append(imported->routine->str()); else params.append();
+    if (imported->plan) params.append(dump(toJson(*imported->plan))); else params.append();
+    params.append(static_cast<long long>(imported->startedAtMs));
+    params.append(static_cast<long long>(*imported->finishedAtMs));
+    const pqxx::result inserted = txn.exec(
+        "INSERT INTO gym_sessions (id,user_id,routine_id,plan,started_at,finished_at,closed_by) "
+        "VALUES ($1,$2::uuid,$3,$4::jsonb,to_timestamp($5::bigint/1000.0),to_timestamp($6::bigint/1000.0),'finish') "
+        "ON CONFLICT (id) DO NOTHING RETURNING " + std::string(kSessionColumns), params);
+    if (inserted.empty()) return {std::nullopt, {}, BatchLogError::idTaken};
+    outcome.session = sessionFrom(inserted[0]);
+  } else {
+    const pqxx::result locked = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+        " FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid FOR UPDATE", batch.sessionId.str(), user.str());
+    if (locked.empty()) return {std::nullopt, {}, BatchLogError::notFound};
+    outcome.session = sessionFrom(locked[0]);
+  }
+  batch.checkInterval(*outcome.session, imported.has_value());
+
+  std::vector<std::size_t> order(batch.sets.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return batch.sets[a].id < batch.sets[b].id; });
+  std::vector<bool> fresh(batch.sets.size(), false);
+  for (const std::size_t index : order) {
+    const Set& set = batch.sets[index];
+    const pqxx::result reserved = txn.exec_params(
+        "INSERT INTO gym_write_receipts (kind,id,user_id,session_id,request_hash) VALUES ('set',$1,$2::uuid,$3,$4) "
+        "ON CONFLICT (kind,id) DO NOTHING", set.id.str(), user.str(), batch.sessionId.str(), hashes[index]);
+    fresh[index] = reserved.affected_rows() == 1;
+    const pqxx::result receipt = txn.exec_params(
+        "SELECT user_id::text, request_hash FROM gym_write_receipts WHERE kind = 'set' AND id = $1", set.id.str());
+    if (receipt[0]["user_id"].as<std::string>() != user.str() || receipt[0]["request_hash"].as<std::string>() != hashes[index])
+      return {std::nullopt, {}, BatchLogError::payloadConflict, index};
+    if (imported && !fresh[index]) return {std::nullopt, {}, BatchLogError::idTaken, index};
+  }
+
+  bool allReplayed = true;
+  for (std::size_t index = 0; index < batch.sets.size(); ++index) {
+    const Set& set = batch.sets[index];
+    if (!fresh[index]) {
+      const pqxx::result current = txn.exec_params("SELECT " + std::string(kSetColumns) +
+          " FROM gym_sets WHERE id = $1 AND session_id = $2 AND user_id = $3::uuid",
+          set.id.str(), batch.sessionId.str(), user.str());
+      outcome.sets.push_back({set.id, current.empty() ? std::nullopt : std::optional<Set>{setFrom(current[0])}, true});
+      continue;
+    }
+    allReplayed = false;
+    const pqxx::result deleted = txn.exec_params(
+        "SELECT 1 FROM gym_set_revisions WHERE set_id = $1 AND user_id = $2::uuid AND deleted LIMIT 1", set.id.str(), user.str());
+    if (!deleted.empty()) return {std::nullopt, {}, BatchLogError::deleted, index};
+    const Session& session = *outcome.session;
+    const bool late = !imported && session.finishedAtMs && lateSetLands(session, set.completedAtMs);
+    if (!imported && session.finishedAtMs && !late) return {std::nullopt, {}, BatchLogError::finished, index};
+    if (!namesVisibleMovement(txn, user.str(), set.exercise)) return {std::nullopt, {}, BatchLogError::unknownExercise, index};
+    pqxx::params params;
+    params.append(set.id.str()); params.append(batch.sessionId.str()); params.append(user.str());
+    params.append(set.exercise.str()); params.append(set.weightKg); params.append(set.reps); params.append(toString(set.kind));
+    if (set.rpe) params.append(*set.rpe); else params.append();
+    params.append(set.note); params.append(static_cast<long long>(set.completedAtMs));
+    const pqxx::result stored = txn.exec(
+        "INSERT INTO gym_sets (id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,rpe,note,completed_at) "
+        "VALUES ($1,$2,$3::uuid,$4,coalesce((SELECT max(set_number)+1 FROM gym_sets WHERE session_id=$2 AND exercise_id=$4),1), "
+        "$5,$6,$7,$8,$9,to_timestamp($10::bigint/1000.0)) ON CONFLICT (id) DO NOTHING RETURNING " + std::string(kSetColumns), params);
+    if (stored.empty()) return {std::nullopt, {}, BatchLogError::idTaken, index};
+    outcome.sets.push_back({set.id, setFrom(stored[0]), false});
+    if (late) {
+      txn.exec_params("UPDATE gym_sessions SET finished_at=greatest(finished_at,to_timestamp($2::bigint/1000.0)) WHERE id=$1",
+                      batch.sessionId.str(), static_cast<long long>(set.completedAtMs));
+      outcome.session->finishedAtMs = std::max(*outcome.session->finishedAtMs, set.completedAtMs);
+    }
+  }
+  outcome.replayed = !imported && allReplayed;
+  txn.commit();
+  return outcome;
+}
+
+std::vector<SessionRows> PgLogRepository::sessions(const UserId& user, const std::vector<SessionId>& ids) {
+  Json::Value requested(Json::arrayValue);
+  for (const SessionId& id : ids) requested.append(id.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+      " FROM gym_sessions WHERE user_id=$1::uuid AND id IN (SELECT jsonb_array_elements_text($2::jsonb))", user.str(), dump(requested));
+  std::map<SessionId, SessionRows> byId;
+  for (const auto& row : rows) {
+    const Session session = sessionFrom(row);
+    byId.emplace(session.id, SessionRows{session, {}});
+  }
+  const pqxx::result sets = txn.exec_params("SELECT " + std::string(kSetColumns) +
+      " FROM gym_sets WHERE user_id=$1::uuid AND session_id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
+      "ORDER BY session_id, completed_at, set_number, id", user.str(), dump(requested));
+  for (const auto& row : sets) {
+    const Set set = setFrom(row);
+    const auto session = byId.find(set.session);
+    if (session != byId.end()) session->second.sets.push_back(set);
+  }
+  std::vector<SessionRows> result;
+  for (const SessionId& id : ids) {
+    const auto session = byId.find(id);
+    if (session != byId.end()) result.push_back(std::move(session->second));
+  }
+  return result;
 }
 
 // Lock the session row in its own statement first: one lock order for every write that changes what a

@@ -10,17 +10,17 @@ application/ · adapters/{json,csv,postgres,http,mcp,llm}` — and plugs in thro
 
 The backend owns the durable set write, exercise identity, the reads the device cannot fake (the
 log, last-time prefill, the finish review, a movement's record, the statistics engine, the CSV
-exports, the workout share), the notes a lifter writes for Coach, eighteen MCP tools behind the
+exports, the workout share), the notes a lifter writes for Coach, twenty-two MCP tools behind the
 platform grant gate, and the proposal ledger.
 
 Device-side and never here: the weight ladder, workout mode, and the prefill
 arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
 
-- **It reads, it proposes, it never writes to the program.** Every mutation an agent can make
-  declares `record` or `intent` (`domain/Proposal.h`). Recording something that already happened
-  executes immediately at every door — a set, a workout starting or ending, a movement, a new day of
-  the program. Changing something that will happen mints a proposal that does nothing until the
-  lifter taps Apply. Enforcement is the tool layer, the only place gym can tell an agent from a hand:
+- **Changes to an existing routine use proposals.** Every mutation an agent can make declares
+  `record` or `intent` (`domain/Proposal.h`). Supplied workout facts are recorded immediately. New
+  exercises and routines are also created immediately; a new routine is a training decision and
+  requires the user's relevant goals and constraints. Changing an existing routine mints a
+  proposal that does nothing until the lifter taps Apply. Enforcement is the tool layer, the only place gym can tell an agent from a hand:
   `ProgramService::replaceRoutine` is `PUT /v1/gym/routines/{id}` and is unreachable from `GymTools`,
   and there is no apply tool at any grant level.
 - **No visibility column.** Every owner route is `WHERE user_id = :caller`, and absent is
@@ -655,11 +655,12 @@ under it in a **different** session is `idTaken` → 409.
 - **Every remaining refusal is decided by the insert**, not a second time by the service: `FOR UPDATE`
   on the session row, then `max+1` in the next statement, `ON CONFLICT (id) DO NOTHING`, then a
   read-back scoped to **(id, session_id)**.
-- **A set id is spent once and for good.** `setOf` reads the rows that STAND, so a deleted set falls
-  through to the insert; the insert therefore asks `gym_set_revisions`, under the session's lock and
-  scoped to its owner, whether the id names a deleted set — **before** the `finished` refusal, and
-  under its own word (`deleted` → 409 `set-deleted`) rather than `idTaken`, because the repairs are
-  opposite: a re-mint is exactly how a deleted set would come back.
+- **Accepted creation ids remain spent.** `setOf` reads standing rows, so deleted sets reach the
+  insert. Under the session lock it reserves `gym_write_receipts` identity, checks owner-scoped
+  deleted state before the `finished` refusal, and also checks legacy `gym_set_revisions`.
+  An owner's deleted set answers `deleted` → 409 `set-deleted`; another owner's reserved id answers
+  generic `idTaken`. Receipts survive workout deletion and hold no original note text. Newly created
+  sessions use the same durable reservation discipline.
 - **Check visibility on the WRITE, not from the FK.** Every write naming an exercise id carries the
   catalog read's own predicate — `id = $1 AND (created_by IS NULL OR created_by = $2)` — inside the
   open transaction, resolved against the owner read off the locked session row (or off the routine,
@@ -693,7 +694,7 @@ truth in one round trip — and where there is no row it is entitled to, a refus
 ## 6. Ports
 
 Seven structs, each file carrying its own DTOs. `LogRepository`: `open` · `session` · `setOf` ·
-`lastActivity` · `insertSession` · `close` · `insertSet` · `updateSet` · `deleteSet` · `log` ·
+`lastActivity` · `insertSession` · `close` · `insertSet` · `appendSets` · `importSession` · `sessions` · `updateSet` · `deleteSet` · `log` ·
 `setsOf` · `lastTime` · `lastSets` · `historyFor` · `movementHistory` · `trainingLog` ·
 `exportedSets` · `deleteSession` · `insertShare` · `revokeShare` · `sharedSession`.
 `CatalogRepository`: `catalog` · `insertExercise` · `renameExercise`. `ProgramRepository`: `routines`
@@ -977,9 +978,8 @@ Absences that carry meaning:
 
 ### 8.3 The status ladder
 
-The status alone is not enough for a flush queue to act on: of the 409s, three mean *mint a new id and
-send it again*, one means *drop this set forever*, and the rest mean *a new id will not help*. So every
-refusal a client must branch on carries a machine word under `code`
+The status alone is not enough for a flush queue to act on. Every refusal a client must branch on
+carries a machine word under `code`
 (`platform/adapters/http/JsonReply.h`).
 
 | Status | `code` | When | What the client does |
@@ -989,7 +989,7 @@ refusal a client must branch on carries a machine word under `code`
 | 400 | — | unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant out of bounds, a bad cursor, a prefill read naming no movement, a close instant running backwards | terminal |
 | 400 | `unknown-exercise` | a set, routine entry or prefill read names a movement **this account's** catalog does not hold | terminal — resolve against `GET /v1/gym/exercises` first |
 | 400 | `clock-ahead` | a start that would CREATE a session more than five minutes past the log's now; replays and joins exempt | terminal — the fix is the clock |
-| 409 | `session-id-taken` | start with a session id spent by an account this caller cannot see | mint a NEW session id and start again |
+| 409 | `session-id-taken` | start with a reserved id whose workout cannot be returned, including a deleted workout | native queues currently mint a new session id; MCP asks for log reconciliation and preserves deletion |
 | 409 | `session-already-open` | start that said `joinOpenSession: false` while another session is open | wait for the open workout to end, then resend |
 | 409 | `routine-stale` | a PUT that NAMED the revision it read, over a day that moved since, whose bytes would move it | re-read the routine and save again |
 | 409 | `set-id-taken` | append a NEW set id already spent outside this session | mint a NEW set id, resend the set |
@@ -1021,9 +1021,9 @@ refusal a client must branch on carries a machine word under `code`
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares, `adapters/mcp/GymTools` dispatches. Eighteen tools; a tool a
-parameter on another tool could serve does not get a slot, because `tools/list` is the fixed cost of
-every connection. **The level is declared beside the description**, in the same `ToolDeclaration` the
+`adapters/mcp/GymToolCatalog` declares twenty-two tools; `adapters/mcp/GymTools` dispatches them.
+The table uses product-local names. External MCP publishes only `gym_<local>` names and accepts
+unambiguous raw compatibility aliases; in-process Coach uses the local catalog. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.
 
 | `gym:read` | `gym:write` | `gym:delete` |
@@ -1035,7 +1035,9 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
-| `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt; **the only bodyweight tool there will ever be** | | |
+| `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt | | |
+| `get_sessions` — 1–50 exact unique ids, requested order, explicit missing ids, optional review | `log_sets` — 1–200 ordered sets, one transaction | |
+| `get_last_times` — 1–50 exact unique exercise ids, explicit missing ids and no non-warmup history | `import_session` — one completed historical workout with 0–200 sets | |
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
 `create_routine` writes it; a day that already stands is `existing` and the two `propose_` tools mint a
@@ -1043,7 +1045,7 @@ diff and write nothing. **The receipt is never shaped like a write** — it carr
 `state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent cannot tell its human the
 program changed. **Retired names answer with their replacements** (`GymTools::retiredTools()`,
 consulted only after a name misses the live catalog, by `CompositeToolHost` over MCP and `AskTools`
-in-process); `gymInstructions()` carries the same retirement in the connect handshake.
+in-process).
 
 - **No apply tool at any grant level.** Apply is not a capability, it is a human act: `gym:delete`
   proposes destructive changes and does not imply the right to make one. The two routes that settle a
@@ -1069,9 +1071,11 @@ in-process); `gymInstructions()` carries the same retirement in the connect hand
 - **The refusals are the HTTP ones in words a model can act on**, each naming the tool that answers the
   question it should ask next. The domain's `InvalidTraining` sentence is forwarded **verbatim** here,
   where the browser edge flattens every one into `could not read that set`.
-- **Client-minted ids, said out loud in the description**, on all six write tools that take one, each
-  saying a replay answers with the stored row. **A replay is the same id carrying the SAME document**;
-  the two document-carrying tools refuse a spent id carrying a different one.
+- **Retry semantics are explicit per tool.** Batch logging matches immutable normalized set input;
+  import matches the original completed-session request, including ordered sets. A different payload
+  under an accepted id is a conflict. Exact retries return the current standing rows or explicit
+  deleted status, preserving user corrections and deletions. Single logging retains its existing
+  stored-row replay behavior and participates in the same durable id reservation.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
   `list_routines` and sending it back under a fresh id, so `position`, `lastTrainedAt`, `revision` and
   `pendingProposal` are declared on `create_routine` and ignored. `additionalProperties: false` is
@@ -1082,7 +1086,35 @@ in-process); `gymInstructions()` carries the same retirement in the connect hand
 
 The grant is the platform's: `CompositeToolHost` filters `tools/list` by scope, refuses an out-of-scope
 call naming the missing `gym:<level>`, refuses an argument no schema declares, and refuses a duplicate
-tool name **at boot**.
+canonical tool name or compatibility alias **at boot**.
+
+### Batch persistence and selected reads
+
+`TrainingService` constructs the pure `SetBatch`, which validates size, unique ids, supported decimal
+precision and time intervals. The repository receives the validated batch and owns one transaction;
+it never loops over separately committed single-set service calls. Historical imports insert a
+finished session directly and leave an open workout untouched. Set instants must lie within the
+imported session, and recorded facts cannot be in the future.
+
+`PgLogRepository::writeBatch` serves batch logging and imports. An owner-scoped session row lock
+serializes numbering and finish/correction operations. All single and batch creation paths reserve
+`gym_write_receipts` identities atomically; set reservations are acquired in sorted id order. The
+table stores SHA-256 request hashes and minimal ownership/identity metadata, never original note
+text. It survives session deletion and cascades with account deletion, preventing reuse of accepted ids
+through another creation path. Hashes use the numeric precision PostgreSQL stores. Validation
+or conflicts roll back every new row and receipt; late infrastructure failures are reported without
+claiming a confirmed rollback.
+
+`get_sessions` loads owner-scoped sessions and sets in two queries, restores requested order, and
+reports absent or inaccessible ids identically. `get_last_times` uses existing per-exercise history
+reads; `trained: false` means no completed non-warmup set history. Both retain read-receipt accounting
+and reject complete serialized results over 262144 bytes rather than silently omitting rows. New
+batch tool results include `outputSchema`, `structuredContent` and compatibility JSON text.
+
+Initialize instructions teach the product's use: consult known goals, constraints and history; ask
+only materially necessary gaps before training decisions; keep coaching friendly and systematic;
+check the consistency of the affected plan; leave existing-routine changes in the user's Apply
+flow. This intake guidance does not block recording supplied workout facts.
 
 ## 10. Composition
 
@@ -1160,8 +1192,8 @@ the band says the digits under a label it can stand behind — *last set 1:47 ag
    The **weak `ETag`** is over `(startedAt, finishedAt, a fold of the sets as the reply renders them)`.
    The fold must cover anything a poll could act on: a **correction** moves no count, no last instant
    and no `finished_at`, so a tag built from counts would answer 304 over a weight that had changed.
-   `startedAt` leads, so a session discarded and recreated under the same id cannot answer the dead
-   workout's tag with a 304. `If-None-Match` is read per RFC 9110 §13.1.2. The tag lives at the HTTP
+   `startedAt` leads and the stored session identity remains stable. A deleted session answers 404,
+   including when its previous tag is supplied. `If-None-Match` is read per RFC 9110 §13.1.2. The tag lives at the HTTP
    edge (`TrainingApi.cpp`); `TrainingService` stays wire-blind and the MCP tools never see it. The 401
    and the 404 never carry it. **No socket**: a set lands once every 60–120 seconds, and polling is
    correct as written where a socket only becomes correct after its reconnect-and-replay path does.

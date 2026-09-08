@@ -14,6 +14,9 @@ inline const std::vector<const char*> kEquipment = {"barbell", "dumbbell",   "ma
                                                     "cable",   "bodyweight", "kettlebell"};
 inline const std::vector<const char*> kSetKinds = {"warmup", "working", "drop", "failure"};
 
+constexpr std::size_t kMaxBatchReadIds = 50;
+constexpr std::size_t kBatchReadByteBudget = 256 * 1024;
+
 constexpr int kDefaultLogLimit = 20;
 constexpr int kMaxLogLimit = 200;
 

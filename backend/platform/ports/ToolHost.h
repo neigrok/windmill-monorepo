@@ -65,6 +65,7 @@ struct ToolDeclaration {
 
   // "Roadmap · Get tree": the product word first, so a client's search groups one product's tools.
   std::string title() const {
+    if (descriptor["title"].isString()) return descriptor["title"].asString();
     std::string word = product;
     if (!word.empty()) word[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(word[0])));
     std::string human = name();

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <map>
+#include <vector>
 
 namespace wm {
 
@@ -18,6 +19,13 @@ struct ProgressDigest {
 // log or the tree document. `none` is a stamped VALUE, not a row delete. `at` is the stamp the marking
 // replica minted and the only input to the merge; `receivedAtMs` is when this server took delivery,
 // on its own clock, passed in rather than taken as now() inside the statement.
+struct ProgressUpdate {
+  NodeId node;
+  ProgressStatus status;
+  bool outOfOrder;
+  Hlc at;
+};
+
 struct ProgressRepository {
   virtual ~ProgressRepository() = default;
   virtual Progress load(const TreeId& tree, const UserId& user) = 0;
@@ -25,6 +33,9 @@ struct ProgressRepository {
   // this one lost. Callers need it to avoid announcing a mark the overlay does not hold.
   virtual bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                          ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) = 0;
+  virtual std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
+                                         const std::vector<ProgressUpdate>& updates,
+                                         std::uint64_t receivedAtMs) = 0;
   // Every tree this user has touched, keyed by tree id — one read behind the registry list.
   virtual std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) = 0;
 };
