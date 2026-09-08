@@ -24,18 +24,41 @@ things: which tool, what to paste, what happens next.
 - **Entry:** account business, never canvas chrome — one row in the account menu ("Connect
   your LLM tools"), plus settings and the marketing footer. The tree canvas never learns
   about MCP. Signed out, the same page shows with a sign-in gate on Copy.
-- **Anatomy, top to bottom:** title + one-sentence promise · **tool tabs** (Claude Desktop ·
-  Claude Code · Cursor · Codex · Any client — tools, not transports; adding a tool later is
-  adding a tab) · **one dark snippet well** with one Copy, the only dark surface on the page
-  · per-tool follow-up steps · the waiting seat · capability chips.
-- **Per-tool snippets:** Claude Desktop gets the connector URL + settings steps; CLI tools
-  get their one-liner; Cursor/Codex get their config file block; "Any client" gets standard
-  `mcpServers` JSON. The URL inside never varies.
-- **Copy** flips to olive "Copied" for 1.4s (150ms fades).
-- **The promise line replaces the auth wall:** "first connect opens your browser to approve
-  — no keys to paste." The page never shows a token.
-- **Never:** a packet or card shelf, or a terminal-first page that makes Claude Desktop the
-  exception.
+- **Anatomy, top to bottom:** title + one-sentence purpose · **tool picker** (ChatGPT ·
+  Claude Desktop · Claude Code · Cursor · Codex · Any client) · selected tool settings ·
+  **one theme-inverse snippet well** with one Copy · per-tool setup steps · API-key disclosure.
+  ChatGPT is first and selected by default; its panel identifies OpenAI explicitly.
+- **Tool picker:** native radio controls in a labelled group. Each option has a 44px target,
+  visible keyboard focus, and an unmistakable selected state. The grid has three columns,
+  switching to two at viewport widths of 380px or less.
+- **Per-tool snippets:** ChatGPT and Claude Desktop get the server URL and setup steps;
+  Claude Code gets its one-liner; Cursor and Codex get their config file blocks; Any client
+  gets `mcpServers` JSON. The hosted server URL never varies.
+- **ChatGPT settings:** name `Windmill`, server URL `https://windmill.works/mcp`,
+  authentication `OAuth`. The page guides the user to enable Developer mode under
+  Settings → Security and login, create a plugin from the Plugins plus button, enter the
+  settings and approve Windmill access, then select it from the composer’s + → Developer mode.
+  Availability depends on the account and workspace; link the official setup instructions
+  beside that disclosure, without a plan checklist.
+- **Copy** changes its label to "Copied" for 1.4s only after the clipboard write resolves.
+  Failure offers manual copying and never claims success. Announce the result politely;
+  changing tools clears feedback and its timer.
+- **Approval:** each tool’s numbered setup steps include account approval. The default path
+  never shows a token or asks for an OpenAI API key. Public endpoint settings are distinct
+  from account credentials.
+- **Rhythm:** 13px body copy and 12px code in a workbench capped at 560px. The snippet well
+  follows the inverse neutral palette: dark in light mode and ivory in dark mode. Copy feedback
+  keeps the neutral treatment. Tool selection uses 150ms standard easing, removed under
+  reduced motion; copy feedback and the disclosure change immediately.
+- **Advanced:** an "API keys" disclosure follows the setup instructions. It retains the shared
+  key panel and exposes expanded state and its controlled region to assistive technology.
+
+### ChatGPT reference
+
+Setup terminology and OAuth support follow OpenAI’s
+[Developer mode guide](https://developers.openai.com/api/docs/guides/developer-mode) and
+[ChatGPT connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+The settings above describe connecting Windmill’s hosted MCP server to ChatGPT.
 
 ## 3. The grant — OAuth in the browser
 
@@ -75,8 +98,7 @@ OAuth is the front door; a handful of clients can't open it (an older or self-bu
 CI job, a home server). For those only, Windmill mints a personal key. Deliberately off the
 happy path.
 
-- **Placement — both, quietly.** A folded "Advanced — connect with an API key" row (tagged
-  `NO OAUTH`) at the bottom of `/connect`, and the API keys section in Settings. Both mount
+- **Placement — both, quietly.** A folded "API keys" row at the bottom of `/connect`, and the API keys section in Settings. Both mount
   the same mint-and-reveal panel (`shell/connect/McpKeyPanel.jsx`).
 - **Create — named, shown once.** Name the key for the tool or machine that will hold it
   ("CI · deploy bot", "home server"). On create it is revealed once in a single well with
@@ -88,22 +110,22 @@ happy path.
   the full secret never returns. Revoke asks once, acts on the spot, toasts quietly, and
   never touches content the key created. Multiple named keys per account.
 
-## 4. Capability chips
+## 4. Setup scope
 
-The connect page carries five compact chips, each wearing its node hue: plant roadmaps ·
-add & connect steps · color with your legend · mark progress · read your trees. Example
-prompts are real, copyable, and domestic (a move, pottery — never assuming a software team).
-Post-connect, three "first prompts" sit under the chips; they reference the user's actual
-tree names once any exist.
+The connect page contains client settings and setup instructions. Product capabilities and
+example prompts belong to product guidance; the setup page has no capability chips or first-prompt
+shelf. The account grant identifies the access requested by the client.
 
-## 5. Verify — one seat, three tenses
+## 5. Connection evidence
 
-Verification is passive: no test button, nothing to click.
+Connection verification must reflect observed server activity. Copying a setting only
+confirms clipboard success; it does not establish a connection. The setup page has no
+listening indicator or connected claim without that observation.
 
-- **Waiting** (after Copy): gold seat, breathing dot — "Listening for a hello from {tool}…"
-- **Verified** (first authenticated call): the same chip cross-fades to olive in place,
-  280ms — "{Tool} said hello — it can see {n} roadmaps."
-- **Settled** (return visits): the connections list + a dashed "+ Connect another tool" row.
+- **Waiting:** only when a real observation mechanism is active; no simulated progress.
+- **Verified:** only after an authenticated call from the named tool. Any displayed account
+  or roadmap count must come from that observation.
+- **Settled:** a connections list belongs to connection management, not an inferred setup state.
 - **The payoff is ceremony #3 on the canvas, verbatim:** camera fit → root wakes + crown →
   rings on the 320ms cadence → toast last ("Claude planted Learn pottery · 12 steps").
   Recoloring is feedback-class (silent 280ms recolor, no beat); marking done earns the same
@@ -130,26 +152,28 @@ capability chips.
 | Where | String |
 |---|---|
 | Page title | "Connect your LLM tools" |
-| Page sub | "Claude, Cursor, or Codex can plant and tend your roadmaps. Pick your tool, paste one snippet — your browser handles the rest." |
-| Copy button | "Copy" → "Copied" (1.4s, olive) |
-| Waiting seat | "Listening for a hello from {tool}…" |
-| Verified seat | "{Tool} said hello — it can see {n} roadmaps" |
+| Page sub | "Use your AI tools with Windmill." |
+| Copy button | "Copy URL" / "Copy" → "Copying…" → "Copied" (1.4s) |
+| ChatGPT heading | "ChatGPT · OpenAI" |
+| ChatGPT approval step | "Choose OAuth, then approve access to Windmill when prompted." |
 | Grant title | "{Tool} wants access to your Windmill account" |
 | Grant actions | "Allow" / "Cancel" · post: "Connected · Returning to {tool}…" / "No changes made" |
 | Disconnect confirm | "{Tool} will lose access now." → "Disconnect" |
 | First-build toast | "Claude planted {tree} · {n} steps" |
-| Advanced pointer | "Advanced — connect with an API key" (tag: NO OAUTH) |
+| Advanced pointer | "API keys" |
 | Key reveal | "This is shown once. Treat it like a password — store it now, you won't see it again." |
 
-One metaphor register throughout ("tend", "plant", "said hello"), sentence case, no keys or
-transport jargon anywhere a user must read.
+Setup copy uses sentence case and names each client’s settings directly. Transport details
+belong to Any client; key handling belongs to the API-key disclosure.
 
 ## 8. Phone
 
-The connect workbench is a desktop errand — it ends in a config file on a machine — so the
-phone gets the short version: what MCP is, the server URL, one Copy button, and a line
-saying the rest wants a desktop. No key generation on a phone, no truncated code blocks. Tap
-targets ≥44px, copy fields in the action lane (`mobile.md` §5).
+The same selected-tool setup remains readable on a phone. The tool grid changes to two columns
+at 380px, setup Copy and tool controls have 44px targets, and settings labels stay with their
+values. Long code wraps inside its well instead of widening the page. ChatGPT setup names the web
+interface; do not imply that the native ChatGPT app provides these settings. The API-key
+fallback starts collapsed.
+
 
 ## 9. Ownership map
 
@@ -159,3 +183,10 @@ targets ≥44px, copy fields in the action lane (`mobile.md` §5).
 | Sign-in door the grant borrows | `auth.md` |
 | Parse door for pasted text | `paste-import.md` |
 | Connect surface, grant, API keys, verify, directory | **this doc** |
+
+## 10. Drawing handoff
+
+The Roadmap Figma Workbench page (`16:2`) covers the list workbench, picker and editing
+affordances. Its drawing gap is this responsive Connect workbench: ChatGPT selected, six-tool
+grid, explicit OAuth settings, theme-inverse snippet well, clipboard success and failure states,
+and collapsed API-key fallback. The setup contract is recorded above.
