@@ -952,8 +952,11 @@ test('the token bridge: one block per skin, and no shared role pointed back at g
   const start = tokens.indexOf('/* ── The bridge —');
   assert.notEqual(start, -1, 'the bridge is a named block, not a scatter of overrides');
   const bridge = tokens.slice(start);
-  const blocks = bridge.match(/\.gym-skin\[data-theme="(dark|light)"\] \{/g) ?? [];
-  assert.deepEqual(blocks, ['.gym-skin[data-theme="dark"] {', '.gym-skin[data-theme="light"] {']);
+  // Each skin block is keyed twice: on a stamped .gym-skin, and on an unstamped one standing in a gym
+  // ground — the brand root's scenes — which takes the theme of that ground.
+  const skin = (theme) => `.gym-skin[data-theme="${theme}"],\n[data-theme="${theme}"][data-brand="gym"] .gym-skin:not([data-theme]) {`;
+  const blocks = bridge.match(/\.gym-skin\[data-theme="(dark|light)"\],\n[^\n]*\{/g) ?? [];
+  assert.deepEqual(blocks, [skin('dark'), skin('light')]);
   for (const role of ['--text-on-accent: var(--gym-on-accent);', '--color-danger: var(--alarm-ink);', '--focus-ring:']) {
     assert.equal((bridge.match(new RegExp(role.replace(/[-()*+?.\\^$|[\]]/g, '\\$&'), 'g')) ?? []).length, 2, role);
   }
@@ -1012,7 +1015,7 @@ test('the picker opens on the six it counted, then the catalogue, and says which
 test('Daylight carries no glow token and no black shadow tuned for the night', () => {
   const css = read('gym.css');
   const tokens = read('gymTokens.css');
-  const light = tokens.slice(tokens.indexOf('.gym-skin[data-theme="light"] {'), tokens.indexOf('/* ── The bridge'));
+  const light = tokens.slice(tokens.indexOf('.gym-skin[data-theme="light"],'), tokens.indexOf('/* ── The bridge'));
   assert.ok(light.length > 0, 'the daylight block is gone from gymTokens.css');
   assert.equal(light.includes('--set-done-glow'), false);
   assert.equal(css.includes('.gym-root[data-theme="light"] .gym-live-dot {\n  box-shadow: none;\n}'), true);

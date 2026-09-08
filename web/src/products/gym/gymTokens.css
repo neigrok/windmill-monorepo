@@ -1,9 +1,12 @@
-/* Windmill Gym's palette, on whatever wears .gym-skin: the product's .gym-root, and the dark islands
-   the landing floats on the cream. Every value derives from the theme's semantic tokens; product
-   meanings get product names (--set-done, --target-ink) so no surface reads a raw ramp index. */
+/* Windmill Gym's palette, on whatever wears .gym-skin: the product's .gym-root, the dark islands the
+   landing floats on the cream, and the brand root's scenes — which carry no stamp of their own and
+   take the theme of the gym ground they stand in. Every value derives from the theme's semantic
+   tokens; product meanings get product names (--set-done, --target-ink) so no surface reads a raw
+   ramp index. */
 
 /* ── Instrument — the room's night, in gym's own vocabulary ── */
-.gym-skin[data-theme="dark"] {
+.gym-skin[data-theme="dark"],
+[data-theme="dark"][data-brand="gym"] .gym-skin:not([data-theme]) {
   --gym-on-accent: #1B1408;                      /* dark ink on verdigris-400 — 9.46:1 */
   --gym-scrim: var(--surface-overlay);
   --alarm-fill: var(--accent-brick-500);         /* 500 in both skins: brick-400 cannot carry white */
@@ -41,7 +44,8 @@
 }
 
 /* ── Daylight ─────────────────────────────────────────────── */
-.gym-skin[data-theme="light"] {
+.gym-skin[data-theme="light"],
+[data-theme="light"][data-brand="gym"] .gym-skin:not([data-theme]) {
   --gym-on-accent: #FFFFFF;                      /* white on iris-600 — 8.9:1 */
   --gym-scrim: var(--surface-overlay);
   --alarm-fill: var(--accent-brick-500);
@@ -88,7 +92,8 @@
 
    What is left is the handful of roles where the room's answer is genuinely its own. One block per
    skin, no per-component override anywhere else. */
-.gym-skin[data-theme="dark"] {
+.gym-skin[data-theme="dark"],
+[data-theme="dark"][data-brand="gym"] .gym-skin:not([data-theme]) {
   /* The ink gym measured against its own brand fill (9.46:1), not the family's. */
   --text-on-accent: var(--gym-on-accent);
   /* One shared role, and gym holds two: an alarm INK and an alarm FILL. A component reads this as
@@ -103,7 +108,8 @@
   --field-focus-edge: var(--color-brand);
   --chip-selected-edge: var(--color-brand);
 }
-.gym-skin[data-theme="light"] {
+.gym-skin[data-theme="light"],
+[data-theme="light"][data-brand="gym"] .gym-skin:not([data-theme]) {
   --text-on-accent: var(--gym-on-accent);
   --color-danger: var(--alarm-ink);
   --focus-ring: 0 0 0 4px rgba(76, 67, 116, 0.4);

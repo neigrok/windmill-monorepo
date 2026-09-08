@@ -70,13 +70,34 @@ test('the landing offers the log itself, and no line on it is dated against the 
     ...gymLandingHead.fallback.notes,
     gymRoutes.label,
     gymRoutes.landing.tagline,
-    gymRoutes.landing.summary,
+    gymRoutes.landing.root.band.title,
+    gymRoutes.landing.root.band.sub,
+    gymRoutes.landing.root.section.title,
+    gymRoutes.landing.root.section.sub,
+    gymRoutes.landing.root.section.trust,
+    ...gymRoutes.landing.root.section.proof.flatMap((card) => [card.title, card.copy]),
   ].join('  ');
   for (const dated of ['when it opens', 'In design', 'in design', 'already open', 'coming soon', 'Coming soon']) {
     assert.equal(words.includes(dated), false, dated);
   }
 
   assert.equal(gymLandingHead.fallback.trust.includes('account'), true);
+});
+
+test('the brand root is handed gym’s words and its two scenes, and its door is the log', () => {
+  const { root } = gymRoutes.landing;
+  assert.equal(gymRoutes.landing.summary, undefined, 'nothing reads landing.summary any more');
+  assert.equal(root.platforms, 'Web · iOS · Android');
+  assert.deepEqual(root.band, {
+    title: 'Log the set. The rest is remembered.',
+    sub: 'Two taps between sets, and the next session opens with last time’s numbers.',
+  });
+  assert.deepEqual(root.section.cta, { href: gymRoutes.home(), label: 'Open the log' });
+  assert.equal(root.section.trust, 'Free to use by hand. Your log stays on your Windmill account.');
+  assert.deepEqual(root.section.proof.map((card) => card.title), ['Two taps a set', 'It remembers', 'Your AI tools, your log']);
+  assert.equal(typeof root.Glimpse, 'object');
+  assert.equal(typeof root.Illustration, 'object');
+  assert.equal(fs.existsSync(path.join(GYM, 'marketing', 'RootScenes.jsx')), true);
 });
 
 test('the /gym shell carries a complete no-JS body and asserts the application it is a page for', () => {
