@@ -10,7 +10,7 @@ struct LoggerScreen: View {
     @ObservedObject var withheld: WithheldWindow
     let isSignedIn: Bool
     // nil once something already reaches this log.
-    let onBuildRoutine: (() -> Void)?
+    let onConnect: (() -> Void)?
     let say: (String?) -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -128,7 +128,7 @@ struct LoggerScreen: View {
                       sessions: store.recent, isSignedIn: isSignedIn,
                       onPick: { move(to: $0) },
                       onCreate: { name, equipment in await mint(name, loadedAs: equipment) },
-                      onBuildRoutine: onBuildRoutine)
+                      onConnect: onConnect)
             .task { await store.loadLastSets() }
     }
 

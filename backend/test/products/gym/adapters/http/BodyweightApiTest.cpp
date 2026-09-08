@@ -310,10 +310,6 @@ TEST(gym_bodyweight_every_route_is_owner_scoped_and_401s_signed_out) {
            std::string(R"({"error":"sign in to open your training log"})"));
   CHECK_EQ(save(h, "2026-08-26", weighIn(82.4), "")->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(remove(h, "2026-08-25", "")->getStatusCode(), drogon::k401Unauthorized);
-  CHECK_EQ(send(h.bodyweight, &BodyweightApi::exportEntries,
-                getRequest("/v1/gym/export/bodyweight"))
-               ->getStatusCode(),
-           drogon::k401Unauthorized);
   CHECK_EQ(h.repo.db.bodyweightRows.size(), std::size_t{1});
   // Another account sees none of it and writes its own day beside it.
   h.signIn("s-other");
@@ -321,25 +317,4 @@ TEST(gym_bodyweight_every_route_is_owner_scoped_and_401s_signed_out) {
   CHECK_EQ(save(h, "2026-08-25", weighIn(70.0), "s-other")->getStatusCode(), drogon::k200OK);
   CHECK_EQ(h.repo.db.bodyweightRows.size(), std::size_t{2});
   CHECK_EQ(bodyOf(list(h))["latest"]["weightKg"].asDouble(), 82.4);
-}
-
-TEST(gym_bodyweight_export_is_a_csv_attachment_day_ascending) {
-  Weighing h;
-  h.signIn("s-live");
-  save(h, "2026-08-25", weighIn(82.4, 1'700'000'000'000ull));
-  save(h, "2026-08-01", weighIn(83.0, 1'700'000'060'000ull));
-  h.repo.db.bodyweightRows.push_back(
-      Bodyweight{UserId{"stranger"}, "2026-08-24", 70.0, 1'786'000'000'000ull});
-
-  const drogon::HttpResponsePtr response =
-      send(h.bodyweight, &BodyweightApi::exportEntries,
-           getRequest("/v1/gym/export/bodyweight", "s-live"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(response->getHeader("Content-Disposition"),
-           std::string(R"(attachment; filename="windmill-gym-bodyweight.csv")"));
-  CHECK_EQ(std::string(response->getBody()),
-           std::string("date,weight_kg,recorded_at\r\n"
-                       "2026-08-01,83.00,2023-11-14T22:14:20Z\r\n"
-                       "2026-08-25,82.40,2023-11-14T22:13:20Z\r\n"));
 }

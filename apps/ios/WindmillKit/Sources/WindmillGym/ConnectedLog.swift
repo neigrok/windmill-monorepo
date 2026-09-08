@@ -10,21 +10,22 @@ struct LogReach: Equatable, Sendable {
         case write
         case delete
 
-        var reach: String {
+        var label: String {
             switch self {
-            case .read:
-                return "Reads your log — sets, workouts, routines, and records."
-            case .write:
-                return """
-                    Records what you lift · adds a movement, or a day the program does not have yet · \
-                    proposes a change to a day that already stands · shares one workout by link, \
-                    readable by anyone holding it for 30 days unless you end it sooner.
-                    """
-            case .delete:
-                return """
-                    Discards a whole workout and every set in it, permanently · ends a share link · \
-                    proposes taking a day out.
-                    """
+            case .read: return "Read"
+            case .write: return "Write"
+            case .delete: return "Delete"
+            }
+        }
+
+        // Each row is a claim about `GymToolCatalog.cpp` at that access and nothing else: the
+        // enumeration is the disclosure. No tool fetches the rest dial or the reading unit, so
+        // nothing needs to say so.
+        var meta: String {
+            switch self {
+            case .read: return "sets, workouts, routines, records, notes, weigh-ins"
+            case .write: return "logs sets · adds routines · shares workouts · proposes changes"
+            case .delete: return "discards a workout · ends a share"
             }
         }
     }
@@ -52,25 +53,20 @@ struct LogReach: Equatable, Sendable {
         accountWide || !levels.isEmpty
     }
 
-    // One line per level held, in the ladder's order rather than a Set's.
-    var lines: [String] {
-        Level.allCases.filter(levels.contains).map(\.reach)
+    // The levels held, in the ladder's order rather than a Set's — or the one phrase for a grant
+    // that is not about this log alone.
+    var line: String {
+        guard !accountWide else { return "whole account" }
+        return Level.allCases.filter(levels.contains).map(\.rawValue).joined(separator: " · ")
     }
 }
 
 // One credential that reaches the training log. `grantedAtMs` is the day it came into being — for a
 // grant, the earliest across every refresh.
 struct ConnectedTool: Equatable, Identifiable, Sendable {
-    enum Credential: String, CaseIterable, Equatable, Sendable {
+    enum Credential: Equatable, Sendable {
         case approved
         case pasted
-
-        var line: String {
-            switch self {
-            case .approved: return "approved in your browser · ended under Connected tools"
-            case .pasted: return "a static key you pasted · ended under API keys"
-            }
-        }
     }
 
     let id: String
@@ -78,141 +74,140 @@ struct ConnectedTool: Equatable, Identifiable, Sendable {
     let grantedAtMs: Int64
     let reach: LogReach
     let credential: Credential
+
+    // The levels it holds, then the day it was made — a date, never today or yesterday, and never a
+    // last read: the wire's `lastUsedMs` is a last-used, and a row would be read as a last-read.
+    func meta(now: Int64) -> String {
+        let since = "since \(Readout.shortDate(grantedAtMs, now: now))"
+        switch credential {
+        case .approved: return [reach.line, since].joined(separator: " · ")
+        case .pasted: return ["API key", reach.line, since].joined(separator: " · ")
+        }
+    }
 }
 
-// `unknown` is a read that did not come back and says nothing at all; `none` is a real answer.
+// `unread` is a read not yet back; `unknown` is one that failed. Neither says anything about the
+// log, and only the second is a refusal a screen may draw. `none` is a real answer.
 enum ConnectedLogState: Equatable {
+    case unread
     case unknown
     case none
     case connected([ConnectedTool])
 
-    func settingsLine(now: Int64) -> String? {
+    var answered: Bool {
         switch self {
-        case .unknown:
-            return nil
-        case .none:
-            return ConnectedLog.nothingReadsIt
-        case .connected(let tools):
-            guard tools.count == 1, let only = tools.first else {
-                return ConnectedLog.count(tools.count)
-            }
-            return "\(only.name) · \(ConnectedLog.since(only.grantedAtMs, now: now))"
+        case .unread, .unknown: return false
+        case .none, .connected: return true
         }
     }
 
-    // `unknown` still invites: an invitation is not a claim about state.
+    // Under the settings row: the state and nothing else.
+    var settingsMeta: String {
+        switch self {
+        case .unread, .unknown:
+            return ConnectedLog.settingsUnknown
+        case .none:
+            return ConnectedLog.settingsNone
+        case .connected(let tools):
+            guard tools.count == 1, let only = tools.first else {
+                return ConnectedLog.settingsMany(tools.count)
+            }
+            return "\(only.name) · \(only.reach.line)"
+        }
+    }
+
+    // An unanswered read still invites: an invitation is not a claim about state.
     var invites: Bool {
         guard case .connected = self else { return true }
         return false
     }
 }
 
+// The room's one reader. A seat is read once: the launch asks from two places within a frame — the
+// seat task and the scene turning active — and a read already in flight is the read. Every return
+// from the background refreshes, because a lifter comes back from Safari having just connected a
+// tool; so does a pull. A screen pushed or popped asks nothing. Signed out there is no read to make:
+// the log is device-local, and a grant belongs to an account.
+@MainActor
+final class ConnectedLogReader: ObservableObject {
+    @Published private(set) var state: ConnectedLogState = .unread
+    private var seat: Account.Seat?
+    private var reading = false
+
+    func read(for account: Account) async {
+        if seat != account.seat {
+            seat = account.seat
+            state = .unread
+        }
+        guard !state.answered else { return }
+        await refresh(account)
+    }
+
+    func refresh(_ account: Account) async {
+        guard !reading else { return }
+        seat = account.seat
+        reading = true
+        defer { reading = false }
+        state = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
+    }
+}
+
+// Every string the screen draws, byte-for-byte from `19-connected-log.md`. The apostrophe is the
+// typographic one; the share window is a numeral.
 enum ConnectedLog {
-    static let headline = "Your training log, inside your own Claude."
+    static let title = "Connected log"
 
-    static let sub = """
-        Not a chat in another tab. The twelve weeks of squats you already logged, readable by the \
-        assistant you already use.
-        """
+    // The precondition in eight words: a lifter who uses none of them reads their own answer.
+    static let head = "Your log, read by Claude, Cursor or Codex."
 
-    static let sundayHead = "Sunday, in Claude"
+    // The screen's one caption, and the surprising half: a write grant acts without asking.
+    static let caption = "A routine change waits for your Apply; the rest lands at once."
 
-    static let sunday = """
-        “Look at my last twelve weeks of bench. Write me a four-week block — heavier triples, and \
-        swap the flies for incline work.”
-        """
+    static let action = "Connect a tool"
 
-    static let mondayHead = "Monday, in gym"
+    // A grant belongs to an account, and signed out the log is device-local.
+    static let signInFirst = "Sign in first"
 
-    static let monday = "A proposal on Push A · 4 changes. You read it, you tap Apply, you train."
+    // The browser glyph's name.
+    static let opensInBrowser = "opens in your browser"
 
-    static let bullets = [
-        "Nothing to install and no tokens to buy — you paste one address, and the first connect opens your browser to approve.",
-        "It reads your log and proposes. A day of your program that already stands never changes until you tap Apply.",
-        "One account across all three Windmill products, and a grant names what it reaches: this log, your roadmap, or both.",
+    static let disclosure = "How this works"
+
+    // The whole of the long form: two levels of disclosure, and no third.
+    static let how = [
+        "One URL pasted into your tool. Your browser opens once to approve.",
+        "A shared workout is public for 30 days, until you end it.",
+        "No tool can apply a proposal or edit a logged set.",
+        "Delete is approved on its own, and a discard is permanent.",
+        "End a connection under Settings → Connected tools; a key under API keys.",
     ]
 
-    static let precondition = """
-        Needs an assistant you already use — Claude, Cursor, Codex, or anything else that speaks \
-        MCP. If you use none of them, this one is not for you yet, and the log stays free regardless.
-        """
+    static let connectedHead = "Connected"
 
-    static let action = "How to connect"
+    static let unnamedGrant = "A connected tool"
 
-    static let accountFirst = "This one needs an account"
+    static let unnamedKey = "A static key"
 
-    static let desk = """
-        It takes a minute at a computer: paste one address into your tool, approve it in the \
-        browser, and it is connected.
-        """
+    static let unread = "Couldn’t read your connections."
 
-    static let free = """
-        Connecting your log is free. So is the rest of this room — logging, history, routines, the \
-        workout share and the CSV.
-        """
+    static let manage = "Manage connections"
 
-    static let canTitle = "What a connection can do"
+    static let settingsUnknown = "your AI tools"
 
-    // The share's window is a NUMERAL here and on every other surface: a consent screen states a
-    // duration the way a reader can check it against a calendar (`share_session` in the tool catalog).
-    static let canLines = [
-        "Read what you have logged — sets, sessions, routines, records and notes.",
-        "Record what you lift, and add a movement or a day the program does not have yet.",
-        "Propose a change to a day that already stands, or propose taking one out.",
-        "Share one workout by link — a page anyone holding that link can read without signing in, for 30 days unless you end it sooner.",
-        "Discard a whole workout — only if it asks for that and you allow it, and you see what it asked for before you do.",
-    ]
+    static let settingsNone = "nothing connected yet"
 
-    static let neverTitle = "What it can never do"
-
-    static let neverLines = [
-        "Apply a proposal. There is no apply tool at any grant level — the diff waits on the routine until you tap it.",
-        "Change or remove a day of your program by itself. Both arrive as a proposal and wait.",
-        "Edit a set you already logged. No tool on a connection rewrites what you lifted.",
-    ]
-
-    static let stateTitle = "Connected log"
-
-    static func count(_ tools: Int) -> String {
-        tools == 1 ? "one tool reads this log" : "\(tools) tools read this log"
+    static func settingsMany(_ tools: Int) -> String {
+        "\(tools) tools"
     }
 
-    static func since(_ ms: Int64, now: Int64) -> String {
-        "connected \(Readout.when(ms, now: now))"
-    }
+    // The movement picker's card, an empty state: a line and the action.
+    static let pickerLine = "A written program? Your AI tool can build it."
 
-    static let nothingReadsIt = "no tool reads this log yet"
+    static let connectPath = "/#/connect"
 
-    static let settingsFallback = "what your own assistant can read here, and what it can never do"
+    static let settingsPath = "/#/settings"
 
-    // Said on a row whose credential is the account-wide one.
-    static let accountWide = """
-        Approved for your whole account rather than for this log alone — every level here is on, and \
-        so is everything outside gym.
-        """
-
-    static let webDoor = "Your connections, on the web"
-
-    static let ending = """
-        Connections are made and ended on the web: the connect page carries the recipe for each \
-        tool, and your account settings end either kind — an approved connection under Connected \
-        tools, a static key under API keys. Ending one stops its reads immediately, and every \
-        proposal already in your history stays.
-        """
-
-    static let inviteTitle = "Your program, read by the assistant you already use."
-
-    static let inviteLine = """
-        Ask it on Sunday for a four-week block; the proposal is waiting on the routine on Monday. \
-        Connecting is free.
-        """
-
-    static let inviteAction = "How it works →"
-
-    static let unread = "this phone couldn’t read your connections just now"
-
-    // One row of `GET /v1/oauth/grants`. `lastUsedMs` is on the wire and not decoded: it is a
-    // last-used, and a card would be read as a last-read.
+    // One row of `GET /v1/oauth/grants`. `lastUsedMs` is on the wire and not decoded.
     struct Grant: Decodable, Equatable {
         let clientId: String
         let name: String
@@ -221,7 +216,7 @@ enum ConnectedLog {
 
         var named: String {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "A connected tool" : trimmed
+            return trimmed.isEmpty ? unnamedGrant : trimmed
         }
     }
 
@@ -233,7 +228,7 @@ enum ConnectedLog {
 
         var named: String {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "A static key" : trimmed
+            return trimmed.isEmpty ? unnamedKey : trimmed
         }
     }
 
@@ -245,7 +240,7 @@ enum ConnectedLog {
         let keys: [Key]
     }
 
-    // Both doors or neither: a static MCP key reaches the same tools and never appears in
+    // Both reads or neither: a static MCP key reaches the same tools and never appears in
     // `/v1/oauth/grants`. Either read failing makes the answer `unknown` rather than an undercount.
     static func read(with api: WindmillApi) async -> ConnectedLogState {
         async let grants = api.get("/v1/oauth/grants", as: Grants.self)
@@ -276,259 +271,153 @@ enum ConnectedLog {
     }
 }
 
-struct ConnectInvite: View {
-    let open: () -> Void
-
-    @Environment(\.gymSkin) private var skin
-
-    var body: some View {
-        Button(action: open) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                Text(ConnectedLog.inviteTitle)
-                    .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(skin.ink)
-                    .multilineTextAlignment(.leading)
-                Text(ConnectedLog.inviteLine)
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkFaint)
-                    .lineSpacing(3)
-                    .multilineTextAlignment(.leading)
-                Text(ConnectedLog.inviteAction)
-                    .font(WindmillFont.body(14, .bold))
-                    .foregroundStyle(skin.accent)
-            }
-            .padding(WindmillSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                .foregroundStyle(skin.accent))
-        }
-    }
-}
-
+// Two states, one screen: the head line while nothing is connected, the `Connected` section once
+// something is. The grant is three rows of facts, the caption is their footer, the long form is one
+// disclosure deep, and the one primary stands in the reach band.
 struct ConnectScreen: View {
     let state: ConnectedLogState
     let isSignedIn: Bool
     let web: URL
-    let onConnect: () -> Void
+    let onSignIn: () -> Void
+    let onRefresh: () async -> Void
 
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                if case .connected(let tools) = state {
-                    connected(tools)
-                } else {
-                    invitation
-                }
-            }
-            .padding(.horizontal, WindmillSpace.x4)
-            .padding(.top, WindmillSpace.x8)
-            .padding(.bottom, WindmillSpace.x8)
+        List {
+            standing
+            levels
+            howThisWorks
+            if case .connected = state { manage }
         }
+        .scrollContentBackground(.hidden)
+        .background(skin.canvas)
+        .refreshable { await onRefresh() }
+        .safeAreaInset(edge: .bottom) { reachBand }
     }
 
-    private var invitation: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                Text(ConnectedLog.headline)
-                    .font(WindmillFont.display(28))
-                    .foregroundStyle(skin.ink)
-                Text(ConnectedLog.sub)
-                    .font(WindmillFont.body(14.5))
-                    .foregroundStyle(skin.inkDim)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
+    // The refusal row is drawn only after a read failed — never while the first one is in flight —
+    // and signed out the room answers `.none` without a read, so only a signed-in `unknown` is one.
+    @ViewBuilder
+    private var standing: some View {
+        switch state {
+        case .connected(let tools):
+            Section(ConnectedLog.connectedHead) {
+                ForEach(tools) { tool in
+                    row(tool.name, meta: tool.meta(now: nowMs))
+                }
             }
-            .padding(.bottom, WindmillSpace.x2)
-
-            exchange
-            bullets
-
-            Text(ConnectedLog.precondition)
-                .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(WindmillSpace.x3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                    .strokeBorder(skin.line, lineWidth: 1))
-
-            panel(ConnectedLog.canTitle, ConnectedLog.canLines, ink: skin.setDone)
-            panel(ConnectedLog.neverTitle, ConnectedLog.neverLines, ink: skin.inkFaint)
-
-            if state == .unknown, isSignedIn {
+            .listRowBackground(skin.surface)
+        case .unknown where isSignedIn:
+            Section(ConnectedLog.connectedHead) {
                 Text(ConnectedLog.unread)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkFaint)
+                    .font(.body)
+                    .foregroundStyle(skin.inkDim)
             }
-
-            Button(action: onConnect) {
-                Text(isSignedIn ? ConnectedLog.action : ConnectedLog.accountFirst)
-                    .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+            .listRowBackground(skin.surface)
+        case .unread, .unknown, .none:
+            Section {
+                Text(ConnectedLog.head)
+                    .font(.body)
+                    .foregroundStyle(skin.ink)
             }
-            .padding(.top, WindmillSpace.x2)
-
-            Text(ConnectedLog.desk)
-                .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.inkDim)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(ConnectedLog.free)
-                .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            .listRowBackground(skin.surface)
         }
     }
 
-    private var exchange: some View {
-        VStack(spacing: 0) {
-            said(ConnectedLog.sundayHead, ConnectedLog.sunday,
-                 mark: skin.inkFaint, fill: skin.surface, edge: skin.line)
-            Text("↓")
-                .font(WindmillFont.body(15))
-                .foregroundStyle(skin.inkFaint)
-                .padding(.vertical, WindmillSpace.x2)
-            said(ConnectedLog.mondayHead, ConnectedLog.monday,
-                 mark: skin.accent, fill: skin.accentSoft, edge: skin.accent)
+    private var levels: some View {
+        Section {
+            ForEach(LogReach.Level.allCases, id: \.rawValue) { level in
+                row(level.label, meta: level.meta)
+            }
+        } footer: {
+            Text(ConnectedLog.caption)
         }
+        .listRowBackground(skin.surface)
     }
 
-    private func said(_ head: String, _ body: String,
-                      mark ink: Color, fill: Color, edge: Color) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(head)
-                .font(GymType.numeral(10.5, .bold))
-                .textCase(.uppercase)
-                .kerning(0.9)
-                .foregroundStyle(ink)
-            Text(body)
-                .font(WindmillFont.body(15))
-                .foregroundStyle(skin.ink)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(WindmillSpace.x4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(fill))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(edge, lineWidth: 1))
-    }
-
-    private var bullets: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            ForEach(ConnectedLog.bullets, id: \.self) { line in
-                HStack(alignment: .top, spacing: WindmillSpace.x2) {
-                    Text("·")
-                        .font(WindmillFont.body(13.5, .bold))
-                        .foregroundStyle(skin.setDone)
+    private var howThisWorks: some View {
+        Section {
+            DisclosureGroup(ConnectedLog.disclosure) {
+                ForEach(ConnectedLog.how, id: \.self) { line in
                     Text(line)
-                        .font(WindmillFont.body(13.5))
+                        .font(.subheadline)
                         .foregroundStyle(skin.inkDim)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .font(.body)
+            .foregroundStyle(skin.ink)
         }
-        .padding(.vertical, WindmillSpace.x2)
+        .listRowBackground(skin.surface)
     }
 
-    private func connected(_ tools: [ConnectedTool]) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(ConnectedLog.count(tools.count))
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkFaint)
-            }
-            .padding(.bottom, WindmillSpace.x2)
-
-            ForEach(tools) { tool in
-                VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                    HStack(spacing: WindmillSpace.x3) {
-                        Text(tool.name)
-                            .font(WindmillFont.body(15, .bold))
-                            .foregroundStyle(skin.ink)
-                        Spacer(minLength: 0)
-                        Text(ConnectedLog.since(tool.grantedAtMs, now: nowMs))
-                            .font(GymType.numeral(11.5))
-                            .foregroundStyle(skin.setDone)
-                    }
-                    ForEach(tool.reach.lines, id: \.self) { line in
-                        Text(line)
-                            .font(GymType.numeral(12))
-                            .foregroundStyle(skin.inkDim)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if tool.reach.accountWide {
-                        Text(ConnectedLog.accountWide)
-                            .font(GymType.numeral(12))
-                            .foregroundStyle(skin.inkDim)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Text(tool.credential.line)
-                        .font(GymType.numeral(11.5))
-                        .foregroundStyle(skin.inkFaint)
-                }
-                .padding(WindmillSpace.x4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                    .strokeBorder(skin.setDone, lineWidth: 1))
-            }
-
-            panel(ConnectedLog.neverTitle, ConnectedLog.neverLines, ink: skin.inkFaint)
-
-            Text(ConnectedLog.ending)
-                .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Link(destination: URL(string: "/#/settings", relativeTo: web) ?? web) {
-                HStack(spacing: WindmillSpace.x2) {
-                    Text(ConnectedLog.webDoor)
-                        .font(WindmillFont.body(14, .semibold))
+    // Disconnecting is the shell's act, so the door leaves for the shell's settings.
+    private var manage: some View {
+        Section {
+            Link(destination: page(ConnectedLog.settingsPath)) {
+                HStack(spacing: WindmillSpace.x3) {
+                    Text(ConnectedLog.manage)
+                        .font(.body)
                         .foregroundStyle(skin.accent)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .semibold))
+                    Spacer(minLength: 0)
+                    browserGlyph
                         .foregroundStyle(skin.accent)
                 }
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
             }
         }
+        .listRowBackground(skin.surface)
     }
 
-    private func panel(_ title: String, _ lines: [String], ink: Color) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(title)
-                .font(GymType.numeral(10.5, .bold))
-                .textCase(.uppercase)
-                .kerning(0.9)
-                .foregroundStyle(ink)
-            ForEach(lines, id: \.self) { line in
-                Text(line)
-                    .font(WindmillFont.body(13.5))
-                    .foregroundStyle(skin.ink)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    // The label names what the tap will do, so no caption explains it.
+    @ViewBuilder
+    private var reachBand: some View {
+        if isSignedIn {
+            Link(destination: page(ConnectedLog.connectPath)) {
+                HStack(spacing: WindmillSpace.x2) {
+                    Text(ConnectedLog.action)
+                    browserGlyph
+                }
+                .font(.headline)
+                .foregroundStyle(skin.onAccent)
+                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.bottom, WindmillSpace.x2)
+        } else {
+            Button(action: onSignIn) {
+                Text(ConnectedLog.signInFirst)
+                    .font(.headline)
+                    .foregroundStyle(skin.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+            }
+            .padding(.horizontal, GymLayout.gutter)
+            .padding(.bottom, WindmillSpace.x2)
         }
-        .padding(WindmillSpace.x4)
+    }
+
+    private var browserGlyph: some View {
+        Image(systemName: "arrow.up.forward")
+            .font(.subheadline.weight(.semibold))
+            .accessibilityLabel(ConnectedLog.opensInBrowser)
+    }
+
+    private func row(_ title: String, meta: String) -> some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            Text(title)
+                .font(.body)
+                .foregroundStyle(skin.ink)
+            Text(meta)
+                .font(.footnote)
+                .foregroundStyle(skin.inkDim)
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.canvas))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+    }
+
+    private func page(_ path: String) -> URL {
+        URL(string: path, relativeTo: web) ?? web
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

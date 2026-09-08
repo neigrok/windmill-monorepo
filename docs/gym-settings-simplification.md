@@ -1,6 +1,6 @@
 # Gym settings simplification verification
 
-Web Gym settings contains weight units, Notes, and the available data exports. Connection setup
+Web Gym settings contains weight units and Notes. Connection setup
 belongs to the shared `/app/connect` page; Coach’s connection links lead there. The legacy
 `#/gym/connect` route replaces itself with shared setup for both visitors and signed-in accounts.
 

@@ -21,12 +21,12 @@ surfaces. What that means in practice:
 
 - **Notes is built end to end.** A `gym_notes` table, four owner-scoped routes under
   `/v1/gym/notes` (`routes.cpp:235-258`: list, reorder, save, delete), a read-level `list_notes` tool
-  that opens every Coach conversation, a third CSV at `/v1/gym/export/notes` (`routes.cpp:305`), the
-  account footprint, and a Notes screen on all three surfaces.
+  that opens every Coach conversation, the account footprint, and a Notes screen on all three
+  surfaces. No CSV: the export is out of the product on every surface (`19-connected-log.md`).
 - **Bodyweight is built end to end** (`11-bodyweight.md`). A `gym_bodyweight` table keyed
   `(user_id, date_local)`, three routes under `/v1/gym/bodyweight`, a read-level `list_bodyweight`
-  tool and — pinned — nothing that writes one, a fourth CSV at `/v1/gym/export/bodyweight`, the
-  footprint, the last slot in both phones' claim replay, and the reading, the chip, the dated
+  tool and — pinned — nothing that writes one, the footprint, the last slot in both phones' claim
+  replay, and the reading, the chip, the dated
   weigh-in sheet and the dot chart on all three surfaces.
 - **The review is a sheet over the conversation on every surface** (`09-coach.md` beat two): one
   Apply, unreachable until the diff has been seen to its end; kept rows folded in place; the
@@ -110,8 +110,6 @@ pinned by `AskApiTest.cpp`; the phone suites carry the same bytes as fixtures (`
 `ask-thread-taken`, `ask-thread-full`, `ask-session-open`, `ask-daily-limit`, `ask-out-of-budget`,
 `ask-not-configured`, the wire enum `from: "lifter" | "ask"` (`TrainingJson.cpp:496`) and the
 proposal door `ask` are machine tokens: copy may change, tokens may not (`ARCHITECTURE.md:1233`).
-The CSV export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadRepository.cpp:224`),
-not the JSON enum.
 
 **P4 · The undo window — ruled: 9000 ms on every surface, and it is two constants.** `fix.js:66`
 `UNDO_MS = 9000` (held by `fix.test.js:171`), `SetQueue.swift:48` and `SetQueue.kt:53`
@@ -313,8 +311,8 @@ Android, the iOS wake lock, and the discard
 confirmation on all three surfaces.
 
 **Wave 2 · Notes — done.** Backend resource, `list_notes` and its phrase on every surface, the
-trust-boundary sentence in the prompt, the settings-zone move on web, three Notes screens, the third
-CSV and the footprint. *Explicitly not in it:* note proposals. See §5.
+trust-boundary sentence in the prompt, the settings-zone move on web, three Notes screens and the
+footprint. *Explicitly not in it:* note proposals. See §5.
 
 **Wave 3 · The Coach rename and the room's copy — done.** Server strings, three clients, the tab
 label and the suites in one change; with it the allowance line above the composer, the cap-reached
@@ -417,16 +415,14 @@ joins on it.
 gated on B7's programme.)* `schema.sql:1057` declares `from_lifter boolean not null`. Blast radius:
 `domain/Thread.h:17`, `ports/AskAgent.h:15`, the model mapping `turn.fromLifter ? "user" :
 "assistant"` (`AnthropicAsk.cpp:112`), the load (`PgAskThreadRepository.cpp:49,54`), the insert
-(`:176,180`), the export CASE (`:221-224`), the wire `turn["from"] = ... : "ask"`
+(`:176,180`), the wire `turn["from"] = ... : "ask"`
 (`TrainingJson.cpp:496`), and the prompt assembly (`AskService.cpp:188-189`).
-*Three failure modes, and the wire one is worst.* `TrainingJson.cpp:496` is a two-value enum today;
+*Two failure modes, and the wire one is worst.* `TrainingJson.cpp:496` is a two-value enum today;
 three clients must tolerate an unknown `from` **before** the server emits one, or a ledger row
 renders as an assistant message on a phone that has not shipped. Second: `AnthropicAsk.cpp:112` maps
 every stored turn onto `user` or `assistant`, so a ledger row falling through that ternary is fed
 back to the model as something it said — precisely the mis-statement `09-coach.md:107-108` says the
-receipt exists to make impossible. Third: the export's `CASE WHEN n.from_lifter IS NULL`
-(`PgAskThreadRepository.cpp:221-224`) carries a comment explaining that a plain CASE sends NULL down
-the ELSE branch; the same trap waits for a third value.
+receipt exists to make impossible.
 
 **B12 · [BUILD / M] The receipt ledger row.** *(Deferred; gated on B11.)*
 `appendTurns` is called from exactly one place — `AskService.cpp:238`, after a model run, through
@@ -456,8 +452,8 @@ precisely because a question and its answer are two turns against eight. What th
 *Both answers are defensible and they are not equivalent.* Hidden, the model can contradict a
 receipt the lifter is looking at. Shown as an assistant message, the model reads a server-authored
 sentence as something it said. Deciding it by filtering the load in the repository is the cheapest
-implementation and the easiest to get silently wrong: `AskService.cpp:192` would count a filtered
-list and the export at `PgAskThreadRepository.cpp:216-232` an unfiltered one.
+implementation and the easiest to get silently wrong: `AskService.cpp:192` counts what it loads, so
+a filtered load caps the thread on fewer turns than the table holds.
 
 ### 4.2 · iOS — `apps/ios`
 
@@ -866,14 +862,14 @@ the phones' lb-only Units line *This phone still draws kg.* (`Bodyweight.kilogra
 **What Wave A executed**, per its builders' and reviewers' reports: the backend built and its whole
 ctest ran, the notes repository against a live Postgres (`WM_PG_TEST=1`) including a ten-thread
 concurrent-save case, and the notes routes were probed on a live server; the web suite (`npm test`)
-and `npm run build` ran green, and the cap-reached state, the export rows and the note bounds were
-driven on the page in headless Chrome; the iOS app built on a simulator and the
+and `npm run build` ran green, and the cap-reached state and the note bounds were driven on the
+page in headless Chrome; the iOS app built on a simulator and the
 `WindmillKit-Package` suite ran green; the Android unit suite and `:app:assembleDebug` ran green and
 the screens were rendered on an API 34 emulator.
 
 **What Wave B executed**, per its builders' and reviewers' reports: the backend's whole ctest
-including every Postgres case, and every bodyweight route, the collision rule, the export,
-`list_bodyweight` and the three superseded sentences probed on a live server; the web suite and
+including every Postgres case, and every bodyweight route, the collision rule, `list_bodyweight`
+and the three superseded sentences probed on a live server; the web suite and
 build, and the review dialog, the weigh-in sheet, the reading and the chart driven in headless
 Chrome at 390 px; the `WindmillKit-Package` suite, the app build and a simulator launch on iOS; the
 Android unit and Robolectric suites, `:app:assembleDebug`, and emulator screenshots of the log
@@ -1483,7 +1479,7 @@ or found by the sweep it was asked to run.
   stance AND its `Build a routine` primary on `program`; `LogList`'s `sessions` beside `shown`, with
   `LogFoot`'s *first session · …* on `sessions`; `SessionDetail`'s `logged` beside `sets`, with
   `closedOnItsOwn` on `logged`; `ThreadsList`'s `conversations` beside `threads`, with `NO_THREADS`
-  and the `Export threads` door on `conversations`. **iOS**: `TrainingStore`'s `allSessions`,
+  on `conversations`. **iOS**: `TrainingStore`'s `allSessions`,
   `allRoutines` and `allWeighIns` beside `recent`, `routines` and `bodyweight`, read by
   `RoutinesScreen`, `LogScreen`, `BodyweightScreen` and `ThreadsScreen` (`standing(_:outside:)`
   beside `drawn`). **Android**: `allSessions`, `allRoutines` and `allThreads` beside `recent`,
@@ -1664,9 +1660,8 @@ surfaces under the programme's standing rules. Everything below is read at the s
   numbers at the rack.* is drawn on the **target sheet only** on all three — the list draw sites,
   `hasOpenEntry`, `TargetEntry.openLineUnder` and the `RoutineRow` protocol are gone. #3 Android's
   unattributed shelf: *Logged before any sign-in. Nothing joins an account until you say it is
-  yours.* #4 `ConnectedLog.onTheWeb` = *Your tool’s first call opens the approval screen.*, and
-  `Connect my log` carries an open-in-new glyph named *opens in your browser*
-  (`ConnectedLog.opensInBrowser`). #5 *One training day, written down.* on all three routine
+  yours.* #4 the connected-log screen's copy is `19-connected-log.md`'s pinned set, and `Connect a
+  tool` carries an open-in-new glyph named *opens in your browser* (`ConnectedLog.opensInBrowser`). #5 *One training day, written down.* on all three routine
   empties. #6 *Sign in to claim it — it opens on the web too.* on both phones' claim cards, the iOS
   card being the sign-in button itself. #7 the three decimal hints are gone — `DECIMAL_NOTE`,
   `DECIMAL_HINT`, `WEIGHT_HINT` on the web; `TargetEntry.decimalHint`, `Bodyweight.hint`,
@@ -1680,11 +1675,9 @@ surfaces under the programme's standing rules. Everything below is read at the s
   surface (`SETTINGS_LINE`, `Settings.coachReads`, `Notes.settingsLine`); the settings Notes door
   reads the notes' own line *what you write for Coach*. #11 the log empty's second line is gone on
   all three. #12 the gap rule is gone from the chart on all three (`GAP_RULE`, `Bodyweight.gapRule`;
-  `DotChart` lost its `rule` prop). #13 `ConnectedLog.notNamedHere` deleted. #14 a `CSV export` row
-  with supporting text *on the web* on both phones, a door to the web's `#/settings` page — iOS a
-  `Link`, Android a `ListItem` with the open-in-new glyph (contract N2-3: never the fifteen words).
-  #15 *Have a written program? An agent can build it — sign in first.* on both phones (iOS's
-  signed-in branch ends *connect it to this log.*). #16 and #19 *e1RM needs your account — sign in
+  `DotChart` lost its `rule` prop). #13 `ConnectedLog.notNamedHere` deleted. #14 no `CSV export` row on
+  either phone — the export is out of the product (`19-connected-log.md`). #15 the picker card is
+  *A written program? Your AI tool can build it.* over `Connect a tool` (`Sign in first` signed out). #16 and #19 *e1RM needs your account — sign in
   for the chart.* (`Record.kt`, `RecordScreen.swift`), drawn only where a load above zero exists
   and the estimate is still missing; where no working set carries a load, both phones draw nothing
   (`Record.noEstimate` null, iOS's `noChart` nil for `.unloaded`). iOS's other three no-chart lines
@@ -1809,8 +1802,8 @@ costs.
   the logger's builder was still editing spacing when it was read, so a later run may differ.
   Twenty-one more: `store/TrainingStoreTests.kt`'s cases for the live queue's fix and delete,
   `ui/LargestTypeTests.kt`'s logger case on a 360 × 780 frame at font scale 1.3 (`Log set` inside
-  the window, the ladder labels unclipped), `ui/SettingsConnectPitchTests.kt`'s
-  cases for the shortened consent lines and the CSV door, and the moved assertions in
+  the window, the ladder labels unclipped), `ui/SettingsScreenTests.kt`'s
+  cases for the settings rows, and the moved assertions in
   `LoggerRestTargetTests` (content description, same bytes), `LoggerMovementWalkTests` (*Movement 1
   of 3*), `LiveSessionTests` (the counter's one string, `lastTimeSet`, the null card),
   `RoutineEditorTests`, `TargetSheetTests`, `TargetSheetSignAndClearTests`, `KeypadEntryTests`,

@@ -124,7 +124,6 @@ public:
   DiscardOutcome discard(const UserId& user, const SessionId& session);
 
   Statistics statistics(const UserId& user);
-  std::vector<ExportedSet> exportedSets(const UserId& user);
   // Absent means this account's catalog holds no such movement.
   std::optional<MovementRecord> movementRecord(const UserId& user, const ExerciseId& exercise);
 

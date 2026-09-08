@@ -205,6 +205,3 @@ export function saveRefusal(error) {
 }
 
 export const DELETE_FAILED = 'That weigh-in wasn’t deleted. Try again in a moment.';
-
-export const EXPORT_BODYWEIGHT_VERB = 'Export weigh-ins';
-export const EXPORT_BODYWEIGHT_LINE = 'every weigh-in as CSV · yours, always';

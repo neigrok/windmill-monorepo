@@ -69,8 +69,8 @@ ThreadOutcome outcomeOf(const AskThread& thread);
 // What a thread may weigh, in turns; it bounds the prompt the server assembles.
 constexpr std::size_t kMaxThreadTurns = 8;
 
-// How many threads the LIST read hands over, newest first; the export reads every thread there is.
-// The reply carries no total, so a client may state a count only while it holds FEWER rows than this.
+// How many threads the list read hands over, newest first. The reply carries no total, so a client
+// may state a count only while it holds FEWER rows than this.
 constexpr int kThreadList = 200;
 
 }

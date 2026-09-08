@@ -155,8 +155,8 @@ final class SheetChromeHostingTests: XCTestCase {
     // fixed-list dials are the platform's segmented control and switch.
     func testSettingsIsAFormWithThePlatformsControlsInside() async throws {
         let store = makeStore()
-        let window = await host(SettingsScreen(store: store, web: URL(string: "https://windmill.works")!,
-                                               connected: .none, onConnectedLog: {}, onNotes: {}, say: { _ in }))
+        let window = await host(SettingsScreen(store: store, connected: .none,
+                                               onConnectedLog: {}, onNotes: {}, say: { _ in }))
         XCTAssertFalse(views(UICollectionView.self, in: window).isEmpty, "a Form lays out as a collection view")
         XCTAssertEqual(views(UISegmentedControl.self, in: window).map(\.numberOfSegments),
                        [Units.allCases.count])

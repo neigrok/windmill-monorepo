@@ -50,7 +50,6 @@ public:
   void lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/last?exercise=
   void lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/exercises/last
   void stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // GET  /v1/gym/stats
-  void exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);      // GET  /v1/gym/export
   void shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                     const std::string& id);                                   // POST /v1/gym/sessions/{id}/share
   void revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

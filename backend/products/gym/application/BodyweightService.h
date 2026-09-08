@@ -24,7 +24,6 @@ public:
   // A day that is not a calendar day names nothing, so it is the same no-op as an absent row: the
   // store never sees a string its date column cannot read.
   void remove(const UserId& user, const std::string& dateLocal);
-  std::vector<ExportedBodyweight> exported(const UserId& user);
 
 private:
   BodyweightRepository& bodyweight_;

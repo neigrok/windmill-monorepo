@@ -26,16 +26,6 @@ struct NotesOrderOutcome {
   NotesOrderError error;
 };
 
-// One line of the notes export: text end to end, rendered by the store. Position ascending.
-struct ExportedNote {
-  std::string position;
-  std::string title;
-  std::string body;
-  std::string updatedAt;
-
-  bool operator==(const ExportedNote&) const = default;
-};
-
 // The notes' door to gym storage. Every read and write is owner-scoped by the UserId it carries;
 // absent is byte-identical to forbidden. Positions are dense 0..n-1 on every answer.
 struct NotesRepository {
@@ -51,7 +41,6 @@ struct NotesRepository {
   // Whole-order replace: refused unless `order` names every note exactly once. Precedence is not the
   // note's text, so `updated_at` does not move.
   virtual NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order) = 0;
-  virtual std::vector<ExportedNote> exportedNotes(const UserId& user) = 0;
 };
 
 }

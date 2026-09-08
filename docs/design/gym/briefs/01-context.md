@@ -32,8 +32,9 @@ The phone owns the **open** session — workout mode, keypad, ladder, sticky car
 timer, wake lock, the offline flush queue. All of it needs a device that is with you, awake, and
 able to log in a basement with no signal.
 
-The web owns everything retrospective and prospective — the log, routines, export, MCP connect,
-settings, the past-workout door. **The web never finishes a live session:** only the device holding
+The web owns everything retrospective and prospective — the log, routines, MCP connect, settings,
+the past-workout door. There is no gym export; the shell's account export is the shell's. **The
+web never finishes a live session:** only the device holding
 the offline queue knows every set landed. A session closes itself after four hours idle and stamps
 its end at the last set.
 

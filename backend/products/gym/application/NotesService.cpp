@@ -16,8 +16,4 @@ NotesOrderOutcome NotesService::reorderNotes(const UserId& user, const std::vect
   return notes_.reorderNotes(user, order);
 }
 
-std::vector<ExportedNote> NotesService::exportedNotes(const UserId& user) {
-  return notes_.exportedNotes(user);
-}
-
 }

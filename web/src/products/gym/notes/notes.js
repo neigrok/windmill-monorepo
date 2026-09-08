@@ -77,9 +77,6 @@ export const NOTE_DELETED = 'Note deleted.';
 
 export const NOTES_FAILED = 'Your notes didn’t load.';
 
-export const EXPORT_NOTES_VERB = 'Export notes';
-export const EXPORT_NOTES_LINE = 'every note as CSV · yours, always';
-
 // The row's meta line is the body's first line: facts, never a sentence of this screen's own.
 export function firstLineOf(body) {
   const line = (body ?? '').split('\n').find((each) => each.trim() !== '');

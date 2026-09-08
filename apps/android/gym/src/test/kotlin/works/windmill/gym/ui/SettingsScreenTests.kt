@@ -1,12 +1,7 @@
 package works.windmill.gym.ui
 
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -18,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
@@ -28,7 +25,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
+import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.Units
+import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -36,20 +35,20 @@ import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
+import works.windmill.platform.Account
+import works.windmill.platform.User
+import works.windmill.platform.net.WindmillApi
 
-// The settings row is Android's only connect door since the routines-list card came off. A door that
-// offers is a door that has to say who it is for: the precondition is the pitch's own honesty line
-// and it came off with the card.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
-class SettingsConnectPitchTests {
+class SettingsScreenTests {
     @get:Rule
     val compose = createComposeRule()
 
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun settings(scope: CoroutineScope): TrainingStore {
+    private fun store(scope: CoroutineScope, server: FakeTraining, signedIn: Boolean): TrainingStore {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
@@ -57,53 +56,87 @@ class SettingsConnectPitchTests {
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
             localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
             scope = scope,
-            sync = { null },
+            sync = { if (it.isSignedIn) server else null },
         )
-        compose.setContent {
-            SettingsScreen(
-                store = store,
-                isSignedIn = true,
-                origin = "https://windmill.works",
-                backTo = "routines",
-                onBack = {},
-                onNotes = {},
-                say = {},
-            )
+        runBlocking {
+            store.connect(Account(
+                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+                user = if (signedIn) User(id = "u1", email = "sam@example.com", name = "Sam") else null,
+            ))
         }
         return store
     }
 
-    // The CSV row is a door, not a sentence: it opens the web's settings page in the browser — the
-    // page the export lives on — and its icon says it leaves the app, the way the connect door's does.
-    @Test
-    fun testTheCsvRowOpensTheWebSettingsPageInTheBrowser() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val opened = mutableListOf<String>()
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
+    private fun settings(store: TrainingStore, signedIn: Boolean, opened: MutableList<String> = mutableListOf()) {
         compose.setContent {
-            val browser = object : UriHandler {
-                override fun openUri(uri: String) { opened += uri }
-            }
-            CompositionLocalProvider(LocalUriHandler provides browser) {
-                SettingsScreen(store = store, isSignedIn = true, origin = "https://windmill.works",
-                               backTo = "routines", onBack = {}, onNotes = {}, say = {})
-            }
+            SettingsScreen(
+                store = store,
+                isSignedIn = signedIn,
+                backTo = "routines",
+                onBack = {},
+                onNotes = {},
+                onConnectedLog = { opened += "connected-log" },
+                say = {},
+            )
         }
+    }
 
-        val row = compose.onNode(hasText("CSV export") and hasClickAction())
-        row.performScrollTo().assertIsDisplayed()
+    // No export door anywhere in gym: the row went, and with it the one browser glyph this screen
+    // carried. Nothing on the screen names an export.
+    @Test
+    fun testThereIsNoCsvDoorAndNoBrowserGlyphOnTheSettingsScreen() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+
+        compose.onNodeWithText("CSV export").assertDoesNotExist()
+        compose.onAllNodesWithText("export", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onAllNodesWithText("CSV", substring = true).assertCountEquals(0)
         compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
-            .assertCountEquals(2)
-        row.performClick()
-        assertEquals(listOf("https://windmill.works/#/settings"), opened)
+            .assertCountEquals(0)
+        scope.cancel()
+    }
+
+    // The row prints the state and nothing else, and opens the screen where the words are. Signed in
+    // with one tool the meta is that tool and its levels; no pitch, no precondition, no caption.
+    @Test
+    fun testTheConnectedLogRowPrintsTheStateAndOpensTheScreen() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read gym:write")
+        val opened = mutableListOf<String>()
+        settings(store(scope, server, signedIn = true), signedIn = true, opened)
+
+        compose.onNodeWithText("Claude Desktop · read · write").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.caption).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+        compose.onAllNodesWithText("free", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onNodeWithText(ConnectedLog.title).performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf("connected-log"), opened) }
+        scope.cancel()
+    }
+
+    // Signed out nothing reaches a device-local log, and the row says so as a state rather than as a
+    // sentence about signing in.
+    @Test
+    fun testSignedOutTheRowSaysNothingIsConnected() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        settings(store(scope, FakeTraining(), signedIn = false), signedIn = false)
+
+        compose.onNodeWithText(ConnectedLog.settingsNone).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.settingsUnknown).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // Either credential read failing leaves the row on the meta that claims nothing.
+    @Test
+    fun testARefusedReadLeavesTheRowClaimingNothing() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        server.refuseKeys = IllegalStateException("down")
+        settings(store(scope, server, signedIn = true), signedIn = true)
+
+        compose.onNodeWithText(ConnectedLog.settingsUnknown).performScrollTo().assertIsDisplayed()
         scope.cancel()
     }
 
@@ -112,7 +145,7 @@ class SettingsConnectPitchTests {
     @Test
     fun testTheBarNamesTheScreenAndNoHeadLineRepeatsIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(scope)
+        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
 
         compose.onNodeWithText("Settings").assertIsDisplayed()
         compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
@@ -124,7 +157,8 @@ class SettingsConnectPitchTests {
     @Test
     fun testThePoundsClauseIsDrawnUnderPoundsAndNowhereElse() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = settings(scope)
+        val store = store(scope, FakeTraining(), signedIn = true)
+        settings(store, signedIn = true)
 
         assertEquals(Units.Kilograms, store.preferences.units)
         compose.onNodeWithText(Bodyweight.kilogramsOnly).assertDoesNotExist()
@@ -138,26 +172,10 @@ class SettingsConnectPitchTests {
     @Test
     fun testThereIsNoRestCard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(scope)
+        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
 
         compose.onNodeWithText("Rest timer").assertDoesNotExist()
         compose.onNodeWithText("Sound when it ends").assertDoesNotExist()
-        scope.cancel()
-    }
-
-    // The offer, its precondition beside it, and nothing on the card said twice: the price rides in
-    // the precondition — the one line that rules a lifter OUT rather than in — and the connections
-    // list with its Disconnect is the web's, reached through the row at the head of this card.
-    @Test
-    fun testTheOfferIsMadeWithItsPreconditionBesideItAndSaysNothingTwice() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(scope)
-
-        compose.onNodeWithText(ConnectedLog.connect).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.precondition).performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("free", substring = true, ignoreCase = true).assertCountEquals(1)
-        compose.onAllNodesWithText("disconnect", substring = true, ignoreCase = true)
-            .assertCountEquals(0)
         scope.cancel()
     }
 
@@ -169,7 +187,8 @@ class SettingsConnectPitchTests {
     fun testDiscardingTheShelfTakesTheWholeRowAndSendsNothingWhileTheWindowRuns() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         File(tmp.root, "local.json").writeText("""{"routines":[{"id":"rt_old","name":"Somebody’s"}]}""")
-        val store = settings(scope)
+        val store = store(scope, FakeTraining(), signedIn = true)
+        settings(store, signedIn = true)
 
         compose.onNodeWithText("Saved on this phone, unclaimed").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("These are mine").performScrollTo().assertIsDisplayed()

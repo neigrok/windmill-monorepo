@@ -309,13 +309,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/llm/HttpEmbedder.cpp
     products/journal/routes.cpp)
 
-  # Gym adapters: the Pg storage, the two wire boundaries (JSON for every client, CSV for the one
-  # artifact a lifter walks away with), the REST surface, the tools an agent drives, the panel that
-  # drives those same tools from inside the app, and the route seam.
+  # Gym adapters: the Pg storage, the one wire boundary (JSON, for every client), the REST surface,
+  # the tools an agent drives, the panel that drives those same tools from inside the app, and the
+  # route seam.
   # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
   target_sources(windmill_gym PRIVATE
     products/gym/adapters/json/TrainingJson.cpp
-    products/gym/adapters/csv/TrainingCsv.cpp
     products/gym/adapters/postgres/PgLogRepository.cpp
     products/gym/adapters/postgres/PgCatalogRepository.cpp
     products/gym/adapters/postgres/PgProgramRepository.cpp
@@ -425,7 +424,6 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/http/ThreadsApiTest.cpp
     test/products/gym/adapters/http/AskApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
-    test/products/gym/adapters/csv/TrainingCsvTest.cpp
     test/products/gym/application/AskServiceTest.cpp
     test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp

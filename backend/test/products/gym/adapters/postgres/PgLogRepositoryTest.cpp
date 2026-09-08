@@ -2,7 +2,7 @@
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 
-// The in-memory twin is included for its three EXPORT renderings alone, asserted against each other.
+// The in-memory twin is included for `straight`, the plan-snapshot builder the fixtures share.
 #include "test/products/gym/Fakes.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -1516,43 +1516,6 @@ TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
   CHECK(log.tops.empty());
   CHECK(log.marks.empty());
   CHECK(log.weeks.empty());
-}
-
-// Every cell is rendered by Postgres and the exact bytes are pinned, beside the in-memory twin's.
-TEST(pg_gym_export_renders_instants_as_iso_utc_and_numerics_at_their_column_scale) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgLogRepository repo{wm::pgTestPool()};
-  const std::uint64_t t1 = 1'700'000'000'000;
-
-  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
-                             std::nullopt, pushA()});
-  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 0,
-                     82.5, 8, SetKind::working, 8.5, "felt heavy, said \"again\"",
-                     t1 + 60'000});
-
-  std::vector<ExportedSet> rows = repo.exportedSets(wm::UserId{kUser});
-
-  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(rows[0],
-           (ExportedSet{"ses_pg000001", "2023-11-14T22:13:20Z", "", "Push A", "set_pg000001",
-                        "back-squat", "Back Squat", "1", "82.50", "8", "working", "8.5",
-                        "felt heavy, said \"again\"", "2023-11-14T22:14:20Z"}));
-  CHECK_EQ(rows[0].startedAt, fake::isoUtc(t1));
-  CHECK_EQ(rows[0].weightKg, fake::scaled(82.5, 2));
-  CHECK_EQ(rows[0].rpe, fake::scaled(8.5, 1));
-}
-
-TEST(pg_gym_export_never_reaches_another_accounts_sets) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgLogRepository repo{wm::pgTestPool()};
-  const std::uint64_t t1 = 1'700'000'000'000;
-  repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1});
-  repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 200, 5, t1 + 60'000));
-
-  CHECK(repo.exportedSets(wm::UserId{kUser}).empty());
-  CHECK_EQ(repo.exportedSets(wm::UserId{kOther}).size(), static_cast<std::size_t>(1));
 }
 
 TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) {

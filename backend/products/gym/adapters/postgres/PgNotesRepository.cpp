@@ -134,23 +134,4 @@ NotesOrderOutcome PgNotesRepository::reorderNotes(const UserId& user,
   txn.commit();
   return {std::move(reordered), NotesOrderError::none};
 }
-
-std::vector<ExportedNote> PgNotesRepository::exportedNotes(const UserId& user) {
-  // Every value is text rendered by Postgres, the instant ISO-8601 UTC, the text byte for byte.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT position::text AS position, title, body, "
-      "       to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
-      "         AS updated_at "
-      "FROM gym_notes WHERE user_id = $1::uuid ORDER BY position",
-      user.str());
-  std::vector<ExportedNote> notes;
-  for (const auto& row : rows)
-    notes.push_back(ExportedNote{row["position"].as<std::string>(), row["title"].as<std::string>(),
-                                 row["body"].as<std::string>(),
-                                 row["updated_at"].as<std::string>()});
-  return notes;
-}
-
 }

@@ -1,7 +1,5 @@
 #include "products/gym/application/ThreadService.h"
 
-#include <unordered_map>
-
 namespace wm::gym {
 
 ThreadService::ThreadService(AskThreadRepository& threads, Clock& clock)
@@ -36,26 +34,6 @@ void ThreadService::appendTurns(const UserId& user, const ThreadId& id,
 
 void ThreadService::discardEmptyThread(const UserId& user, const ThreadId& id) {
   threads_.discardEmptyThread(user, id);
-}
-
-// Two loads and one rule between them: the store renders every turn as text, the domain reads each
-// thread's proposals for what came of it, and the outcome is stamped onto that thread's rows here.
-// `allThreads` and not `threads`: the list read stops at kThreadList and an export may not.
-std::vector<ExportedThreadTurn> ThreadService::exportedThreadTurns(const UserId& user) {
-  std::unordered_map<std::string, ThreadOutcome> outcomes;
-  for (const AskThread& thread : threads_.allThreads(user))
-    outcomes.emplace(thread.id.str(), outcomeOf(thread));
-
-  std::vector<ExportedThreadTurn> turns = threads_.exportedThreadTurns(user);
-  for (ExportedThreadTurn& turn : turns) {
-    const auto found = outcomes.find(turn.threadId);
-    if (found == outcomes.end()) continue;
-    turn.outcome = toString(found->second.kind);
-    // A count of nothing is an empty cell, never a zero somebody could sum.
-    if (found->second.changes > 0) turn.changes = std::to_string(found->second.changes);
-    turn.routine = found->second.routineName;
-  }
-  return turns;
 }
 
 }

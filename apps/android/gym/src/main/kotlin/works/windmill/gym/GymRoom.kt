@@ -62,6 +62,7 @@ import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Coach
 import works.windmill.gym.domain.CoachDoors
+import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.Note
@@ -86,6 +87,7 @@ import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
 import works.windmill.gym.ui.AskSignedOutStance
 import works.windmill.gym.ui.BodyweightScreen
+import works.windmill.gym.ui.ConnectedLogScreen
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
@@ -192,6 +194,7 @@ private sealed interface Away {
     data object Threads : Away
     data class Thread(val threadId: String) : Away
     data object Settings : Away
+    data object Connections : Away
     data object Notes : Away
     data class NoteEditor(val note: Note?, val seedTitle: String) : Away
     data object Bodyweight : Away
@@ -811,6 +814,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         // The noun, not the thread's title: a title is the lifter's first message verbatim.
         is Away.Thread -> Threads.conversation
         Away.Settings -> "Settings"
+        Away.Connections -> ConnectedLog.title
         Away.Notes -> Notes.title
         is Away.NoteEditor -> Notes.title
         Away.Bodyweight -> Bodyweight.title
@@ -897,11 +901,19 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 standing is Away.Settings -> SettingsScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
-                    origin = origin,
                     backTo = beneath,
                     onBack = { back() },
                     onNotes = { look(Away.Notes) },
+                    onConnectedLog = { look(Away.Connections) },
                     say = { note = it },
+                )
+                standing is Away.Connections -> ConnectedLogScreen(
+                    store = store,
+                    isSignedIn = account.isSignedIn,
+                    origin = origin,
+                    backTo = beneath,
+                    onBack = { back() },
+                    onSignIn = LocalShellActions.current.openYou,
                 )
                 standing is Away.Notes -> NotesScreen(
                     store = store,

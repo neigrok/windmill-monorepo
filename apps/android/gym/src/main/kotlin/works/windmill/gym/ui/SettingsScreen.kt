@@ -13,24 +13,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
+import works.windmill.gym.domain.ConnectedLogState
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
@@ -55,14 +51,19 @@ import works.windmill.platform.design.WindmillSpace
 fun SettingsScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
-    origin: String,
     backTo: String,
     onBack: () -> Unit,
     onNotes: () -> Unit,
+    onConnectedLog: () -> Unit,
     say: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
+
+    // The connected-log row prints the state, so it is asked for on the way in and again whenever
+    // the store drops the seat's answer; the store reads only while it holds none.
+    LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
+    ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
 
     fun write(document: GymPreferences) {
         scope.launch {
@@ -87,9 +88,9 @@ fun SettingsScreen(
                 onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
             )
             NotesRow(onNotes)
-            ConnectedLogRow(isSignedIn, origin)
+            ConnectedLogRow(store.connectedLog, onConnectedLog)
             UnattributedRow(store, isSignedIn, say)
-            ClosingNote(origin)
+            ClosingNote()
         }
     }
 }
@@ -145,92 +146,23 @@ private fun NotesRow(onNotes: () -> Unit) {
     }
 }
 
-// The door goes to the CONNECTIONS LIST and not the setup page: that list is the shell's, in account
-// settings, since a grant belongs to the account rather than to one product.
+// The door to the connected-log screen. Its meta is the state and nothing else: the screen behind
+// it is where the words are.
 @Composable
-private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
-    val web = LocalUriHandler.current
+private fun ConnectedLogRow(state: ConnectedLogState, onOpen: () -> Unit) {
     SettingCard {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClickLabel = "open your connections") {
-                    runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
-                },
+                .clickable(role = Role.Button, onClick = onOpen),
         ) {
             Text(ConnectedLog.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
             Spacer(Modifier.weight(1f))
-            Text("your connections", style = GymType.numeral(13), color = GymSkin.accent)
+            Text(state.settingsMeta, style = GymType.numeral(13), color = GymSkin.accent)
             Chevron()
         }
-        // The offer says who it is for BEFORE it is made: the one line on this card that rules a
-        // lifter OUT rather than in, and the only precondition the door states. It also carries the
-        // price, which is none.
-        Text(
-            ConnectedLog.precondition,
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GymSkin.canvas, RoundedCornerShape(WindmillRadius.md))
-                .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
-                .padding(WindmillSpace.x3),
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.row)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                .clickable(role = Role.Button) {
-                    runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
-                },
-        ) {
-            Text(ConnectedLog.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
-            // The button leaves the app: the icon says so, in the bytes a screen reader hears.
-            Icon(
-                GymGlyph.openInNew,
-                contentDescription = ConnectedLog.opensInBrowser,
-                tint = GymSkin.accent,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-        Caption(ConnectedLog.onTheWeb)
-        if (!isSignedIn) Caption(ConnectedLog.deviceOnly)
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GymSkin.canvas, RoundedCornerShape(WindmillRadius.md))
-                .padding(WindmillSpace.x3),
-        ) {
-            Text(
-                ConnectedLog.canDoHead,
-                style = GymType.numeral(10, FontWeight.Bold),
-                color = GymSkin.setDone,
-            )
-            Text(
-                ConnectedLog.canDo,
-                style = WindmillFont.body(13).copy(lineHeight = 20.sp),
-                color = GymSkin.inkDim,
-            )
-            Text(
-                ConnectedLog.cannotDoHead,
-                style = GymType.numeral(10, FontWeight.Bold),
-                color = GymSkin.alarmInk,
-                modifier = Modifier.padding(top = WindmillSpace.x2),
-            )
-            Text(
-                ConnectedLog.cannotDo,
-                style = WindmillFont.body(13).copy(lineHeight = 20.sp),
-                color = GymSkin.inkDim,
-            )
-        }
-        Caption(ConnectedLog.deleteLevel)
     }
 }
 
@@ -317,42 +249,16 @@ private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
 private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 @Composable
-private fun ClosingNote(origin: String) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+private fun ClosingNote() {
+    Text(
+        "Account, appearance, plan, sessions, devices and delete live in You.",
+        style = GymType.numeral(12).copy(lineHeight = 18.sp),
+        color = GymSkin.inkFaint,
         modifier = Modifier
             .fillMaxWidth()
             .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
             .padding(WindmillSpace.x3),
-    ) {
-        Text(
-            "Account, appearance, plan, sessions, devices and delete live in You.",
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
-        )
-        // The export is a web page: this app's one API client reads JSON and that route answers CSV.
-        // The row is a door to the web's settings page — the same page the connections door opens —
-        // and its icon says it leaves the app, in the bytes a screen reader hears.
-        val web = LocalUriHandler.current
-        ListItem(
-            headlineContent = { Text("CSV export", style = WindmillFont.body(14), color = GymSkin.inkDim) },
-            supportingContent = { Caption("on the web") },
-            trailingContent = {
-                Icon(
-                    GymGlyph.openInNew,
-                    contentDescription = ConnectedLog.opensInBrowser,
-                    tint = GymSkin.accent,
-                    modifier = Modifier.size(16.dp),
-                )
-            },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(role = Role.Button) {
-                    runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
-                },
-        )
-    }
+    )
 }
 
 @Composable

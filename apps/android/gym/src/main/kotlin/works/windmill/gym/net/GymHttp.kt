@@ -11,8 +11,10 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.NotesOrder
 import works.windmill.gym.domain.Proposal
@@ -184,6 +186,12 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/bodyweight/$dateLocal")
     }
 
+    override suspend fun grants(): List<OAuthGrant> =
+        api.get<Grants>("/v1/oauth/grants").grants
+
+    override suspend fun mcpKeys(): List<McpKey> =
+        api.get<Keys>("/v1/mcp-keys").keys
+
     private fun escaped(value: String): String = buildString {
         for (byte in value.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xFF
@@ -230,3 +238,9 @@ private data class BodyweightPage(val entries: List<WeighIn> = emptyList())
 
 @Serializable
 private data class WeighInReply(val entry: WeighIn)
+
+@Serializable
+private data class Grants(val grants: List<OAuthGrant> = emptyList())
+
+@Serializable
+private data class Keys(val keys: List<McpKey> = emptyList())

@@ -531,16 +531,18 @@ test('nothing on the fix path refuses a set because its workout is over', () => 
   assert.equal(read('Log.jsx').includes('{fixing && (\n        <FixSheet'), true);
 });
 
-test('the exports are rows of the section: the sets for an account with a log, the notes beside it for one with notes', () => {
-  const source = read('settings/GymSettingsSection.jsx');
-  assert.equal(source.includes('{hasLog && ('), true);
-  assert.equal(source.includes('href={EXPORT_HREF}'), true);
-  assert.equal((source.match(/EXPORT_HREF/g) ?? []).length, 2);
-  assert.equal(source.includes('{hasNotes && ('), true);
-  assert.equal(source.includes('href={EXPORT_NOTES_HREF}'), true);
-  assert.equal(source.includes('{EXPORT_NOTES_VERB}'), true);
-  assert.equal(source.includes('{EXPORT_NOTES_LINE}'), true);
-  assert.ok(source.indexOf('href={EXPORT_HREF}') < source.indexOf('href={EXPORT_NOTES_HREF}'));
+test('the CSV export is out of the product: no door, no string, no href, and no read that gated one', () => {
+  for (const file of gymFiles()) {
+    if (!/\.(jsx?|css)$/.test(file)) continue;
+    const said = fs.readFileSync(file, 'utf8');
+    assert.equal(/EXPORT_|\/export\b|\bCSV\b|gym-threads-export/.test(said), false, file);
+  }
+  const settings = read('settings/GymSettingsSection.jsx');
+  assert.equal(/hasLog|hasNotes|hasWeighIns|api\.sessions|api\.notes|api\.bodyweight/.test(settings), false);
+  assert.equal(read('coach/Threads.jsx').includes('Export conversations'), false);
+  const pricing = fs.readFileSync(path.join(GYM, '../../../public/pricing.html'), 'utf8');
+  assert.equal(pricing.includes('CSV out'), false);
+  assert.equal(pricing.includes('<b>The gym log — all of it</b>Sets, sessions, routines, e1RM.'), true);
 });
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
@@ -893,7 +895,6 @@ test('the settings section carries the Notes door under the line the Notes scree
   assert.equal(source.includes('{HEAD_LINE}'), true);
   assert.equal(speech('notes/notes.js').includes('SETTINGS_LINE'), false);
   assert.equal(source.includes('SETTINGS_LINE'), false);
-  assert.ok(source.indexOf('href={NOTES_HREF}') < source.indexOf('href={EXPORT_HREF}'));
 });
 
 test('the Notes screen is its own room off #/gym/notes, headed by the honesty line, seeded with placeholders and nothing stored', () => {
@@ -1283,9 +1284,6 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
       assert.equal(said.includes(banned), false, `${file} — ${banned}`);
     }
   }
-  const settings = read('settings/GymSettingsSection.jsx');
-  assert.equal(settings.includes('{hasWeighIns && ('), true);
-  assert.ok(settings.indexOf('href={EXPORT_NOTES_HREF}') < settings.indexOf('href={EXPORT_BODYWEIGHT_HREF}'));
   assert.equal(speech('coach/coach.js').includes("list_bodyweight: 'read your bodyweight'"), true);
 });
 

@@ -9,7 +9,7 @@ import {
   firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
   NOTE_PREFIX,
   noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
-  EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, isTitleOverCap, showsByteCount, showsTitleCount,
+  isTitleOverCap, showsByteCount, showsTitleCount,
   TITLE_COUNT_FROM, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../../src/products/gym/notes/notes.js';
 
@@ -67,11 +67,6 @@ test('a title is counted in the code points the store counts, from the last fift
   assert.equal(isTitleOverCap('t'.repeat(60)), false);
   assert.equal(isTitleOverCap('t'.repeat(61)), true);
   assert.equal(isTitleOverCap('🏋'.repeat(60)), false);
-});
-
-test('the notes export is offered in the words the other two exports use', () => {
-  assert.equal(EXPORT_NOTES_VERB, 'Export notes');
-  assert.equal(EXPORT_NOTES_LINE, 'every note as CSV · yours, always');
 });
 
 test('the head is one surprising fact and one line saying whose words these are, and nothing else', () => {

@@ -129,18 +129,14 @@ TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
                        getRequest("/v1/gym/sessions/ses_11111111", "s-live"), "ses_11111111")));
   const std::string logUnderLb =
       dump(bodyOf(send(h.training, &TrainingApi::listSessions, getRequest("/v1/gym/sessions", "s-live"))));
-  const std::string csvUnderLb{
-      send(h.training, &TrainingApi::exportSets, getRequest("/v1/gym/export", "s-live"))->getBody()};
 
   // The set the lifter logged is the kilogram they sent, in every reply that carries it.
   CHECK(sessionUnderLb.find(R"("weightKg":82.5)") != std::string::npos);
   CHECK(logUnderLb.find(R"("tonnageKg":1320.0)") != std::string::npos);
   CHECK(logUnderLb.find(R"("topSet":{"reps":8,"weightKg":82.5})") != std::string::npos);
-  CHECK(csvUnderLb.find(",82.50,8,working,") != std::string::npos);
   // Nothing anywhere on the wire says lb but the settings document itself.
   CHECK(sessionUnderLb.find("lb") == std::string::npos);
   CHECK(logUnderLb.find("lb") == std::string::npos);
-  CHECK(csvUnderLb.find("lb") == std::string::npos);
   // And the stored sets hold plain kilograms — the store never heard about the unit at all.
   CHECK_EQ(h.repo.db.sets.front().weightKg, 82.5);
 
@@ -148,14 +144,10 @@ TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
   toKilos["units"] = "kg";
   send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", toKilos, "s-live"));
 
-  // Switching back rewrites nothing: the same three replies, byte for byte.
+  // Switching back rewrites nothing: the same two replies, byte for byte.
   CHECK_EQ(dump(bodyOf(send(h.training, &TrainingApi::getSession,
                             getRequest("/v1/gym/sessions/ses_11111111", "s-live"), "ses_11111111"))),
            sessionUnderLb);
   CHECK_EQ(dump(bodyOf(send(h.training, &TrainingApi::listSessions, getRequest("/v1/gym/sessions", "s-live")))),
            logUnderLb);
-  CHECK_EQ(std::string{send(h.training, &TrainingApi::exportSets,
-                                getRequest("/v1/gym/export", "s-live"))
-                           ->getBody()},
-           csvUnderLb);
 }

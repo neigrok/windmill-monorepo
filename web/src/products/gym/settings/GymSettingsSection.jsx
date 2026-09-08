@@ -1,17 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
-import { EXPORT_BODYWEIGHT_LINE, EXPORT_BODYWEIGHT_VERB } from '../bodyweight/bodyweight.js';
-import { EXPORT_BODYWEIGHT_HREF, EXPORT_HREF, EXPORT_NOTES_HREF, gymApi } from '../gymApi.js';
+import { gymApi } from '../gymApi.js';
 import { NOTES_HREF } from '../log.js';
-import { EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, HEAD_LINE } from '../notes/notes.js';
+import { HEAD_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
 import { preferenceRefusal, preferencesWrite, readPreferences } from './preferences.js';
 
 export function GymSettingsSection({ api = gymApi } = {}) {
   const [preferences, setPreferences] = useState(null);
-  const [hasLog, setHasLog] = useState(false);
-  const [hasNotes, setHasNotes] = useState(false);
-  const [hasWeighIns, setHasWeighIns] = useState(false);
   const [refused, setRefused] = useState('');
   // The document the store last confirmed; a ref, so a reverting reply cannot close over a stale copy.
   const stored = useRef(null);
@@ -29,15 +25,6 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         setPreferences(held);
         spellWeightsIn(held.units);
       })
-      .catch(() => {});
-    api.sessions({ limit: 1 })
-      .then((sessions) => { if (live) setHasLog(sessions.length > 0); })
-      .catch(() => {});
-    api.notes()
-      .then((notes) => { if (live) setHasNotes(notes.length > 0); })
-      .catch(() => {});
-    api.bodyweight()
-      .then((series) => { if (live) setHasWeighIns((series?.entries ?? []).length > 0); })
       .catch(() => {});
     return () => { live = false; };
   }, [api]);
@@ -93,36 +80,6 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         </span>
         <span aria-hidden="true" style={look.chevron}>›</span>
       </a>
-
-      {hasLog && (
-        <a href={EXPORT_HREF} style={look.door}>
-          <span style={look.doorMain}>
-            <span style={styles.primaryText}>Export</span>
-            <span style={styles.metaText}>every set as CSV · yours, always</span>
-          </span>
-          <span aria-hidden="true" style={look.chevron}>›</span>
-        </a>
-      )}
-
-      {hasNotes && (
-        <a href={EXPORT_NOTES_HREF} style={look.door}>
-          <span style={look.doorMain}>
-            <span style={styles.primaryText}>{EXPORT_NOTES_VERB}</span>
-            <span style={styles.metaText}>{EXPORT_NOTES_LINE}</span>
-          </span>
-          <span aria-hidden="true" style={look.chevron}>›</span>
-        </a>
-      )}
-
-      {hasWeighIns && (
-        <a href={EXPORT_BODYWEIGHT_HREF} style={look.door}>
-          <span style={look.doorMain}>
-            <span style={styles.primaryText}>{EXPORT_BODYWEIGHT_VERB}</span>
-            <span style={styles.metaText}>{EXPORT_BODYWEIGHT_LINE}</span>
-          </span>
-          <span aria-hidden="true" style={look.chevron}>›</span>
-        </a>
-      )}
 
       {refused && <p style={look.refused}>{refused}</p>}
     </Section>

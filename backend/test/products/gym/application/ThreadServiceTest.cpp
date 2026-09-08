@@ -9,7 +9,7 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::servicetest;
 
-TEST(a_thread_past_the_list_ceiling_still_exports_the_outcome_the_app_shows_it) {
+TEST(a_thread_past_the_list_ceiling_still_reads_by_id_with_the_outcome_the_app_shows_it) {
   Harness h;
   h.create(h.pushAWrite());
   const std::uint64_t opened = 1'700'000'000'000ull;
@@ -30,33 +30,22 @@ TEST(a_thread_past_the_list_ceiling_still_exports_the_outcome_the_app_shows_it) 
       1, "Push A", "Push A",
       changesBetween({benchEntry()}, {RoutineEntry{1, ExerciseId{"bench-press"}, straight(5, 5, 90.0), 180}})});
 
-  const std::vector<ExportedThreadTurn> exported = h.threads.exportedThreadTurns(uid());
+  const std::optional<AskThread> oldest = h.threads.thread(uid(), ThreadId{"thr_probe1000"});
 
-  CHECK_EQ(exported.size(), static_cast<std::size_t>(kThreadList) + 1);
-  CHECK_EQ(exported[0].threadId, std::string("thr_probe1000"));
-  CHECK_EQ(exported[0].outcome, std::string("applied"));
-  CHECK_EQ(exported[0].changes, std::string("4"));
-  CHECK_EQ(exported[0].routine, std::string("Push A"));
-  CHECK_EQ(toString(outcomeOf(*h.threads.thread(uid(), ThreadId{"thr_probe1000"})).kind),
-           std::string("applied"));
+  CHECK_EQ(h.threads.threads(uid()).size(), static_cast<std::size_t>(kThreadList));
+  REQUIRE(oldest.has_value());
+  CHECK_EQ(outcomeOf(*oldest),
+           (ThreadOutcome{ThreadOutcomeKind::applied, 4, rtId(), "Push A"}));
 }
 
-TEST(a_conversation_whose_run_never_answered_exports_as_itself_with_nothing_under_it) {
+TEST(a_conversation_whose_run_never_answered_is_listed_as_itself_and_reads_as_read_only) {
   Harness h;
-  h.repo.db.threadRows.push_back(AskThread{ThreadId{"thr_orphan01"}, uid(),
-                                        "a question whose run never came back", 1'700'000'009'000,
-                                        1'700'000'009'000, {}, {}});
+  const AskThread orphan{ThreadId{"thr_orphan01"}, uid(), "a question whose run never came back",
+                         1'700'000'009'000, 1'700'000'009'000, {}, {}};
+  h.repo.db.threadRows.push_back(orphan);
 
-  const std::vector<ExportedThreadTurn> exported = h.threads.exportedThreadTurns(uid());
-
-  REQUIRE(exported.size() == 1u);
-  CHECK_EQ(exported[0].threadId, std::string("thr_orphan01"));
-  CHECK_EQ(exported[0].title, std::string("a question whose run never came back"));
-  CHECK_EQ(exported[0].outcome, std::string("read-only"));
-  CHECK_EQ(exported[0].changes, std::string(""));
-  CHECK_EQ(exported[0].turnNumber, std::string(""));
-  CHECK_EQ(exported[0].from, std::string(""));
-  CHECK_EQ(exported[0].text, std::string(""));
-  CHECK_EQ(exported[0].saidAt, std::string(""));
-  CHECK_EQ(h.threads.threads(uid()).size(), 1u);
+  CHECK_EQ(h.threads.threads(uid()), std::vector<AskThread>{orphan});
+  CHECK_EQ(h.threads.thread(uid(), ThreadId{"thr_orphan01"}), std::optional<AskThread>{orphan});
+  CHECK_EQ(outcomeOf(*h.threads.thread(uid(), ThreadId{"thr_orphan01"})),
+           (ThreadOutcome{ThreadOutcomeKind::readOnly, 0, std::nullopt, ""}));
 }

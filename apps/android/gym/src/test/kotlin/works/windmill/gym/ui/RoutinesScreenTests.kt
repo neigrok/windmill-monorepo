@@ -127,7 +127,7 @@ class RoutinesScreenTests {
         compose.onNodeWithText("Just start logging").assertIsDisplayed()
         compose.onNodeWithText("New routine").assertDoesNotExist()
         compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.connect).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
         compose.onNodeWithText("Gym settings").assertIsDisplayed()
 
         compose.onNodeWithText("Just start logging").performClick()

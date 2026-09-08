@@ -19,9 +19,11 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
+import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.ProposalIntent
@@ -172,6 +174,11 @@ internal class FakeTraining : TrainingSyncing {
     // Keyed by id, in position order; the same rules the server's table keeps.
     val notebook = mutableListOf<Note>()
     var refuseNotes: Exception? = null
+    // The shell's two credential lists, and one refusal each, so a test can fail either read alone.
+    val grants = mutableListOf<OAuthGrant>()
+    val keys = mutableListOf<McpKey>()
+    var refuseGrants: Exception? = null
+    var refuseKeys: Exception? = null
     var noteWrittenAtMs = 7_000L
     // Keyed by the local date; the newer `recordedAt` wins, as the server's row rule says.
     val weighIns = mutableMapOf<String, WeighIn>()
@@ -602,6 +609,20 @@ internal class FakeTraining : TrainingSyncing {
         reachable()
         refuseNotes?.let { throw it }
         return notebook.toList()
+    }
+
+    override suspend fun grants(): List<OAuthGrant> {
+        calls.add("grants")
+        reachable()
+        refuseGrants?.let { throw it }
+        return grants.toList()
+    }
+
+    override suspend fun mcpKeys(): List<McpKey> {
+        calls.add("mcpKeys")
+        reachable()
+        refuseKeys?.let { throw it }
+        return keys.toList()
     }
 
     override suspend fun writeNote(id: String, write: NoteWrite): Note {

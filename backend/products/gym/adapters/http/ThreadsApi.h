@@ -24,7 +24,6 @@ public:
                  const std::string& id);                                      // GET  /v1/gym/threads/{id}
   void deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                     const std::string& id);                                   // DELETE /v1/gym/threads/{id}
-  void exportThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/export/threads
 
 private:
   std::shared_ptr<ThreadService> threads_;

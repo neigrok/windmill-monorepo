@@ -44,8 +44,7 @@ public struct GymRoom: View {
     @State private var conversation = AskConversation()
     // A server with no Anthropic key answers the Coach route's 404, and the entry goes for the rest of the visit.
     @State private var askOnThisDeployment = true
-    // `unknown` asserts nothing.
-    @State private var connected: ConnectedLogState = .unknown
+    @StateObject private var connections = ConnectedLogReader()
 
     public init(account: Account) {
         self.account = account
@@ -106,7 +105,7 @@ public struct GymRoom: View {
             case .thread: return "Conversation"
             case .notes: return Notes.title
             case .settings: return "Settings"
-            case .connect: return "Connected log"
+            case .connect: return ConnectedLog.title
             case .routine(let routineId):
                 return routines.first { $0.id == routineId }?.name ?? "Routine"
             case .building(let draft): return draft.isNamed ? draft.trimmedName : "New routine"
@@ -190,9 +189,7 @@ public struct GymRoom: View {
                 await store.choose(movement)
             }
             // Its own task so a credential list never holds up the read above.
-            .task(id: account.seat) {
-                connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
-            }
+            .task(id: account.seat) { await connections.read(for: account) }
             .onChange(of: scenePhase) { _, phase in
                 WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
                 if phase != .active { Task { await store.flushPendingSets() } }
@@ -201,10 +198,10 @@ public struct GymRoom: View {
                 // destroy a row with the undo already gone. The rows come back and nothing was sent.
                 // `.inactive` is a banner and keeps the window.
                 if phase == .background { Task { await withheld.abandon() } }
-                // `onChange` never fires for the value the scene launched at.
-                if phase == .active, account.isSignedIn {
-                    Task { connected = await ConnectedLog.read(with: account.api) }
-                }
+                // A lifter comes back from Safari having just connected a tool: every return to the
+                // foreground refreshes. At launch this and the seat task fire together; the reader
+                // makes one read of the two.
+                if phase == .active { Task { await connections.refresh(account) } }
             }
             // Held while the room holds an open session, whichever way it opened or closed: finish, discard, a start, a connect.
             // A session outranks the stage the sheet stood over, so the sheet is taken down with it.
@@ -230,7 +227,7 @@ public struct GymRoom: View {
         if store.session != nil {
             NavigationStack {
                 LoggerScreen(store: store, withheld: withheld, isSignedIn: account.isSignedIn,
-                             onBuildRoutine: connected.invites ? openConnect : nil,
+                             onConnect: connections.state.invites ? openConnect : nil,
                              say: { note = $0 })
                     .background(skin.canvas)
                     .navigationBarMargin()
@@ -359,12 +356,13 @@ public struct GymRoom: View {
                     NotesSignedOutStance(onSignIn: { shell.openYou() })
                 }
             case .settings:
-                SettingsScreen(store: store, web: account.api.baseURL, connected: connected,
+                SettingsScreen(store: store, connected: connections.state,
                                onConnectedLog: { look(at: .connect) }, onNotes: { look(at: .notes) },
                                say: { note = $0 })
             case .connect:
-                ConnectScreen(state: connected, isSignedIn: account.isSignedIn,
-                              web: account.api.baseURL, onConnect: openConnect)
+                ConnectScreen(state: connections.state, isSignedIn: account.isSignedIn,
+                              web: account.api.baseURL, onSignIn: { shell.openYou() },
+                              onRefresh: { await connections.refresh(account) })
             case .routine(let routineId):
                 RoutineScreen(routineId: routineId, store: store,
                               onStart: { Task { await open(routineId) } },
@@ -569,7 +567,7 @@ public struct GymRoom: View {
             shell.openYou()
             return
         }
-        openURL(URL(string: "/#/connect", relativeTo: account.api.baseURL) ?? account.api.baseURL)
+        openURL(URL(string: ConnectedLog.connectPath, relativeTo: account.api.baseURL) ?? account.api.baseURL)
     }
 
     // A double tap is a second session, so the door closes while the first one is in flight.

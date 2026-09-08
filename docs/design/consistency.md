@@ -656,11 +656,10 @@ apostrophe (`AskApi.cpp:16-81`), pinned whole by `AskApiTest.cpp` and repeated v
 client suites, because a client never rewrites server text. What does not move: the verdict codes
 `ask-thread-taken`, `ask-thread-full`, `ask-session-open`, `ask-daily-limit`, `ask-out-of-budget`,
 `ask-not-configured`, the thread turn's wire enum `from: "lifter" | "ask"` (`TrainingJson.cpp:496`)
-and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1233`). The CSV
-export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadRepository.cpp:224`), not
-the JSON enum. The human share is "Share this workout" on every surface (`share/share.js:12`,
-`CoachShare.swift:27`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
-not on the room (`connect.js:5-7`, `ConnectedLog.swift:111`).
+and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1233`). The human
+share is "Share this workout" on every surface (`share/share.js:12`, `CoachShare.swift:28`,
+`LogScreen.kt:336`); the connect pitch is off every product screen and has one home,
+`web/public/connect.html` (`gym/briefs/19-connected-log.md`).
 
 **3f · the account's AI ceiling is a dead end with a live composer, and it says the daily cap's
 words** → ruled 2026-08-30, built 2026-08-31 on all three, nothing owed. `ask-out-of-budget` and
@@ -895,20 +894,14 @@ asserts its own copy of the bytes, so the three agree by coincidence of review r
 of that screen whose words nothing written owns — exactly the shape the same brief's closing rule
 exists to prevent.
 
-**2r · Android pitches the connected log to a lifter who has already connected it** → the surface
-needs the read, or the pitch needs a condition. iOS reads the account's connections once per seat
-and suppresses the invitation when there are any (`ConnectedLogState.invites`, `ConnectedLog.swift`;
-the one remaining call site, `GymRoom.swift:223`), and the web's settings row prints what is connected
-(`settings/GymSettingsSection.jsx`). Android has **no connections read anywhere**: its settings row
-is the surface's only connect door, and it draws the precondition and *Connect my log*
-unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only `isSignedIn` gates anything there;
-the pitch above them went with S4's narrowing). A second half of the same gap: `ConnectedLog.head`,
-`sundayLabel`, `sundayLine`, `mondayLabel`, `mondayLine` and `truths` (`domain/ConnectedLog.kt`) are
-live constants with no Android drawing, kept because `ConnectedLogTests` enforces that vocabulary
-across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
-deliberately state-blind and those constants are the gate's only reason to exist. **Ruled
-2026-09-08 by `gym/briefs/19-connected-log.md`**: Android reads its grants and draws the same two
-states as iOS and the web; owed to the build.
+**2r · Android pitches the connected log to a lifter who has already connected it** → built
+2026-09-09 by `gym/briefs/19-connected-log.md`, nothing owed. Android reads its grants at
+`TrainingStore.readConnectedLog` (`store/TrainingStore.kt`) — `GET /v1/oauth/grants` and
+`GET /v1/mcp-keys`, both or neither, once per seat — and both of its doors draw from that one
+answer: the settings row prints the state and nothing else (`ui/SettingsScreen.kt`
+`ConnectedLogRow`) and `ui/ConnectedLogScreen.kt` draws the connected list or the head line, the
+same two states as iOS. The pitch constants are gone from `domain/ConnectedLog.kt`;
+`ConnectedLogTests` pins the brief's strings byte for byte.
 
 **2s · what ends a withheld window early is one answer on all three surfaces** → built 2026-08-27,
 nothing owed. `13-gestures.md` rules it and every surface now spends it: leaving a SCREEN keeps the
@@ -1720,14 +1713,14 @@ Owed on iOS (`LoggerScreen`, `RoutineEditorScreen`) and Android (`LoggerScreen`,
 each of which passes `store.recent` where it wants the account.
 
 **4v · a door that hands the lifter to a browser says nothing when no browser comes** → a ruling,
-on both phones. Android's connect row, its `Connect my log` button and the `CSV export` row all
-fire `runCatching { web.openUri(…) }` (`ui/SettingsScreen.kt:185`, `:215`, `:378`) with no failure
-branch and no `say` passed into the row; iOS's `GymRoom.swift:532` calls `openURL(…)` with no
+on both phones. Android's `Connect a tool` band and its `Manage connections` row both fire
+`runCatching { web.openUri(…) }` (`ui/ConnectedLogScreen.kt:88`, `:144`) with no failure branch
+and no `say` passed into the screen; iOS's `GymRoom.swift:569` calls `openURL(…)` with no
 completion handler.
 On a device with no browser able to take the URL, the tap does nothing and the room says nothing —
 the one shape the programme's own rule (*give every enforced refusal a sentence*) exists to prevent,
 on a door rather than on a verb. The web has no half of this: the setup page is one of its own pages
-(`connect/ConnectLog.jsx`), reached by an anchor rather than by launching anything. What is owed is a
+(`shell/connect/ConnectPage.jsx`), reached by an anchor rather than by launching anything. What is owed is a
 decision on whether a launch that does not land is worth a sentence, and if it is, the same sentence
 on both phones.
 
@@ -2034,18 +2027,13 @@ same rule should decide these three, and `3b` — Android naming neither the sub
 still there when the log answers with words — is the fourth voice in the same room.
 
 **5l · the read grant says `workouts` on one line and `sessions` on the next, and no surface names
-the weigh-ins** → a copy owner's call, with one wire fact behind it. The web's `LEVEL_LINES.read`
-is *Read your log — sets, workouts, routines, records and notes* (`connect.js:39`, drawn by
-`ConnectLog.jsx:44`); iOS draws both words on one screen — `Level.read.reach` *Reads your log —
-sets, workouts, routines, and records.* on a connected tool's grant row (`ConnectedLog.swift:16`,
-drawn at `:464`) and `canLines[0]` *Read what you have logged — sets, sessions, routines, records
-and notes.* on the panel (`:159`, drawn at `:361`); Android's `canDo` says *sessions*
-(`ConnectedLog.kt:21`). The wire itself says both — the tools are `list_sessions` and
-`discard_session`, and the MCP server's own description calls them workouts. And `list_bodyweight` is
-a read-level tool, so a read grant hands an agent every weigh-in, which none of the six lines says —
-a shared omission on all three surfaces rather than a divergence, and the more important half: a
-consent line that enumerates what a read reaches and leaves out a body measurement is the copy the
-mission line forbids. One word for the thing and the weigh-ins named, on all six lines at once.
+the weigh-ins** → built 2026-09-09 by `gym/briefs/19-connected-log.md`, nothing owed. One word for
+the thing and the weigh-ins named: the read row's meta is `sets, workouts, routines, records, notes,
+weigh-ins` on both phones (`LogLevel.Read.meta` in `domain/ConnectedLog.kt`;
+`ConnectedLog.swift:26`), each pinned byte for byte by its own suite, and each a claim about the
+eight `Access::read` tools in `GymToolCatalog.cpp` — `list_bodyweight` among them. The web draws
+no gym level line of its own: the shell's `connect/ConnectPage.jsx` sets a tool up, and the consent
+screen (`shell/auth/OAuthConsent.jsx`) names the levels a tool asked for.
 **Ruled 2026-09-08 by `gym/briefs/19-connected-log.md`**: the six lines become one read row —
 *sets, workouts, routines, records, notes, weigh-ins* — on every surface; owed to the build.
 

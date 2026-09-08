@@ -1,18 +1,14 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 
-// The in-memory twin is included for the thread export alone: both renderings are asserted to match.
-#include "test/products/gym/Fakes.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
 
-#include <algorithm>
 #include <cstdlib>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 // Ask's threads against a real server.
@@ -141,101 +137,4 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchAt(87.5, 3)});
   // Deleting it twice is not a second deletion, and another account's is nobody's.
   CHECK_FALSE(repo.deleteThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}));
-}
-
-// The export: one row per turn, every rendering Postgres's, asserted against the in-memory twin.
-TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgAskThreadRepository repo{wm::pgTestPool()};
-  openedAt(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?");
-  said(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?", "Your top set has not moved.");
-  openedAt(repo, "thr_pg000002", "and the squat?", kNow + 1'000);
-  said(repo, "thr_pg000002", "and the squat?", "That one is moving.", kNow + 1'000);
-
-  fake::FakeGym twin;
-  twin.db.threadRows.push_back(
-      AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser}, "why is my bench, uh, \"stuck\"?",
-                kNow, kNow,
-                {ThreadTurn{true, "why is my bench, uh, \"stuck\"?", kNow},
-                 ThreadTurn{false, "Your top set has not moved.", kNow}},
-                {}});
-  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "and the squat?",
-                                      kNow + 1'000, kNow + 1'000,
-                                      {ThreadTurn{true, "and the squat?", kNow + 1'000},
-                                       ThreadTurn{false, "That one is moving.", kNow + 1'000}},
-                                      {}});
-
-  const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
-  CHECK_EQ(exported, twin.threads.exportedThreadTurns(wm::UserId{kUser}));
-  REQUIRE_EQ(exported.size(), 4u);
-  CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
-  CHECK_EQ(exported[0].turnNumber, std::string("1"));
-  CHECK_EQ(exported[0].from, std::string("lifter"));
-  // The turn as sent, quotes and all — nothing on the way through edits what a lifter typed.
-  CHECK_EQ(exported[0].text, std::string("why is my bench, uh, \"stuck\"?"));
-  // The column a lifter reads names the room; the wire's `from` enum stays "ask".
-  CHECK_EQ(exported[1].from, std::string("coach"));
-  CHECK_EQ(exported[2].threadId, std::string("thr_pg000002"));
-  // The outcome is not the store's to render.
-  CHECK_EQ(exported[0].outcome, std::string(""));
-  CHECK_EQ(exported[0].changes, std::string(""));
-}
-
-// A thread with no turns is in the file with the turn columns empty: the join is a LEFT one.
-TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgAskThreadRepository repo{wm::pgTestPool()};
-  openedAt(repo, "thr_pg000001", "a question whose run never came back");
-  openedAt(repo, "thr_pg000002", "answered once", kNow + 1'000);
-  said(repo, "thr_pg000002", "answered once", "here you go", kNow + 1'000);
-
-  fake::FakeGym twin;
-  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser},
-                                      "a question whose run never came back", kNow, kNow, {}, {}});
-  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "answered once",
-                                      kNow + 1'000, kNow + 1'000,
-                                      {ThreadTurn{true, "answered once", kNow + 1'000},
-                                       ThreadTurn{false, "here you go", kNow + 1'000}},
-                                      {}});
-
-  const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
-  CHECK_EQ(exported, twin.threads.exportedThreadTurns(wm::UserId{kUser}));
-  REQUIRE_EQ(exported.size(), 3u);
-  CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
-  CHECK_EQ(exported[0].title, std::string("a question whose run never came back"));
-  CHECK_EQ(exported[0].turnNumber, std::string(""));
-  CHECK_EQ(exported[0].from, std::string(""));
-  CHECK_EQ(exported[0].text, std::string(""));
-  CHECK_EQ(exported[0].saidAt, std::string(""));
-  CHECK_EQ(exported[1].threadId, std::string("thr_pg000002"));
-  CHECK_EQ(exported[1].turnNumber, std::string("1"));
-  CHECK_EQ(repo.threads(wm::UserId{kUser}).size(), 2u);
-}
-
-// `allThreads` is the archive's read and has no ceiling, oldest first, carrying what each one minted.
-TEST(pg_gym_every_thread_is_read_for_the_archive_past_the_lists_own_ceiling) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgAskThreadRepository repo{wm::pgTestPool()};
-  PgProgramRepository program{wm::pgTestPool()};
-  inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
-  for (int number = 0; number <= kThreadList; ++number) {
-    const std::string id = "thr_pg" + std::string(6 - std::to_string(number).size(), '0') +
-                           std::to_string(number);
-    openedAt(repo, id, "question " + id, kNow + static_cast<std::uint64_t>(number));
-  }
-  program.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
-                                 ProposalDoor::ask, kUser, ThreadId{"thr_pg000000"}));
-
-  const std::vector<AskThread> every = repo.allThreads(wm::UserId{kUser});
-
-  CHECK_EQ(repo.threads(wm::UserId{kUser}).size(), static_cast<std::size_t>(kThreadList));
-  CHECK_EQ(every.size(), static_cast<std::size_t>(kThreadList) + 1);
-  // Oldest first — and the oldest is exactly the one the newest-first list read drops.
-  CHECK_EQ(every[0].id, ThreadId{"thr_pg000000"});
-  REQUIRE_EQ(every[0].minted.size(), 1u);
-  CHECK_EQ(every[0].minted[0].routineName, std::string("Push A"));
-  CHECK(outcomeOf(every[0]).kind == ThreadOutcomeKind::proposed);
 }

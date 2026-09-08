@@ -297,7 +297,7 @@ One fixture, drawn on every board:
 - **Whether `Sets` in the head should survive at all** once `Add set` and the swipe exist. It is
   kept on iOS and Android because typing `5` is one gesture and tapping `Add set` four times is
   four. `../web-form.md` drops it on web, where the ladder is the count; the two surfaces disagree
-  until an owner rules, and the disagreement is ledgered as F7.
+  until an owner rules, and the disagreement is ledgered as F38.
 
 ## The boards — owed to the Gym file
 

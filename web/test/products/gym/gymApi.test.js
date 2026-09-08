@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
-  EXPORT_BODYWEIGHT_HREF, EXPORT_HREF, EXPORT_NOTES_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError,
-  UNCHANGED,
+  failureReason, gymApi, GymError, UNCHANGED,
 } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
@@ -914,10 +913,6 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
   assert.equal(await gymApi.sharedSession('never-existed'), null);
 });
 
-test('EXPORT_HREF — a link the browser follows, on the same origin as every other gym call', () => {
-  assert.equal(EXPORT_HREF, `${API_BASE}/v1/gym/export`);
-});
-
 test('session-open — a discard against a live session is refused, and it is not repairable', async () => {
   serve(refusal(409, 'that session is still running', 'session-open'));
   await assert.rejects(() => gymApi.discardSession('ses_live'), (error) => {
@@ -1531,16 +1526,6 @@ test('deleteThread — 204 and nothing back, for a conversation deleted twice as
   assert.equal(await gymApi.deleteThread('thr_1'), null);
 });
 
-test('EXPORT_THREADS_HREF — the conversations as their own file, on the same origin', () => {
-  assert.equal(EXPORT_THREADS_HREF, `${API_BASE}/v1/gym/export/threads`);
-  assert.notEqual(EXPORT_THREADS_HREF, EXPORT_HREF);
-});
-
-test('EXPORT_NOTES_HREF — the third CSV, the notes as their own file, on the same origin', () => {
-  assert.equal(EXPORT_NOTES_HREF, `${API_BASE}/v1/gym/export/notes`);
-  assert.equal(new Set([EXPORT_HREF, EXPORT_THREADS_HREF, EXPORT_NOTES_HREF]).size, 3);
-});
-
 test('notes — the list is the store’s order, and an account with none is an empty list', async () => {
   serve(ok({ notes: [{ id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1 }] }));
   assert.deepEqual(await gymApi.notes(), [{ id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1 }]);
@@ -1634,7 +1619,3 @@ test('deleteBodyweight — 204 for a date with a row and for one without alike',
   assert.deepEqual(wireOf(calls[0]), { path: '/v1/gym/bodyweight/2026-08-26', method: 'DELETE', credentials: 'include', contentType: 'application/json', body: undefined });
 });
 
-test('EXPORT_BODYWEIGHT_HREF — the weigh-ins as their own file, on the same origin', () => {
-  assert.equal(EXPORT_BODYWEIGHT_HREF, `${API_BASE}/v1/gym/export/bodyweight`);
-  assert.equal(new Set([EXPORT_HREF, EXPORT_THREADS_HREF, EXPORT_NOTES_HREF, EXPORT_BODYWEIGHT_HREF]).size, 4);
-});

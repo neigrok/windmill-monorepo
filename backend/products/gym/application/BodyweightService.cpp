@@ -20,8 +20,4 @@ void BodyweightService::remove(const UserId& user, const std::string& dateLocal)
   bodyweight_.remove(user, dateLocal);
 }
 
-std::vector<ExportedBodyweight> BodyweightService::exported(const UserId& user) {
-  return bodyweight_.exported(user);
-}
-
 }

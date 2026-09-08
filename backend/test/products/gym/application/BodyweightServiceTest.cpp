@@ -117,16 +117,3 @@ TEST(removing_a_weigh_in_is_owner_scoped_and_a_day_that_is_not_a_day_names_nothi
   CHECK_EQ(h.daysOf(), std::vector<std::string>{});
   CHECK_EQ(h.daysOf("u2"), std::vector<std::string>{"2026-08-25"});
 }
-
-// Text end to end, as the SQL renders it: the day as stored, two decimals, the instant ISO UTC.
-TEST(the_bodyweight_export_renders_every_value_as_the_store_does) {
-  Harness h;
-  h.bodyweight.save(h.at("2026-08-25", 82.4, 1'700'000'000'000ull));
-  h.bodyweight.save(h.at("2026-08-01", 83.0, 1'700'000'060'000ull));
-  h.bodyweight.save(h.at("2026-08-02", 70.0, kMorning, "u2"));
-
-  CHECK_EQ(h.bodyweight.exported(uid()),
-           (std::vector<ExportedBodyweight>{{"2026-08-01", "83.00", "2023-11-14T22:14:20Z"},
-                                            {"2026-08-25", "82.40", "2023-11-14T22:13:20Z"}}));
-  CHECK_EQ(h.bodyweight.exported(UserId{"u3"}), std::vector<ExportedBodyweight>{});
-}

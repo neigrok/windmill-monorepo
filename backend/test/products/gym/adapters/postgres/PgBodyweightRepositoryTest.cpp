@@ -69,7 +69,7 @@ TEST(pg_gym_bodyweight_is_one_row_per_day_and_the_later_recorded_at_wins) {
   reset();
 }
 
-TEST(pg_gym_bodyweight_reads_inside_inclusive_bounds_and_exports_as_text) {
+TEST(pg_gym_bodyweight_reads_inside_inclusive_bounds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgBodyweightRepository repo{wm::pgTestPool()};
@@ -92,11 +92,6 @@ TEST(pg_gym_bodyweight_reads_inside_inclusive_bounds_and_exports_as_text) {
            (std::vector<std::string>{"2026-08-01", "2026-08-03"}));
   CHECK_EQ(daysOf(repo), (std::vector<std::string>{"2026-07-04", "2026-08-01", "2026-08-03",
                                                     "2026-08-25"}));
-  CHECK_EQ(repo.exported(wm::UserId{kUser}), twin.bodyweight.exported(wm::UserId{kUser}));
-  CHECK_EQ(repo.exported(wm::UserId{kUser})[1],
-           (ExportedBodyweight{"2026-08-01", "83.25", "2023-11-14T22:15:20Z"}));
-  CHECK_EQ(repo.exported(wm::UserId{kUser})[3],
-           (ExportedBodyweight{"2026-08-25", "82.40", "2023-11-14T22:13:20Z"}));
   reset();
 }
 

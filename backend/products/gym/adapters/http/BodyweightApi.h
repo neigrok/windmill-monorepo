@@ -38,7 +38,6 @@ public:
                  const std::string& dateLocal);                               // PUT    /v1/gym/bodyweight/{dateLocal}
   void deleteEntry(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                    const std::string& dateLocal);                             // DELETE /v1/gym/bodyweight/{dateLocal}
-  void exportEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET    /v1/gym/export/bodyweight
 
 private:
   std::shared_ptr<BodyweightService> bodyweight_;

@@ -8,8 +8,10 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
@@ -130,4 +132,9 @@ interface TrainingSyncing {
 
     // 204 whether or not the row was there.
     suspend fun deleteBodyweight(dateLocal: String)
+
+    // The shell's two credential lists, read here because this room draws what reaches its log: a
+    // grant approved in the browser, and a static key. Every key is the account-wide grant.
+    suspend fun grants(): List<OAuthGrant>
+    suspend fun mcpKeys(): List<McpKey>
 }

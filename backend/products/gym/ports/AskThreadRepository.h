@@ -10,24 +10,6 @@
 
 namespace wm::gym {
 
-// One line of the threads export: text end to end, one row per turn, the thread's facts repeated on
-// each. `text` is the turn as sent, byte for byte. The store leaves `outcome`, `changes` and
-// `routine` empty — ThreadService stamps them on after the load via `outcomeOf` (domain/Thread.h).
-struct ExportedThreadTurn {
-  std::string threadId;
-  std::string title;
-  std::string outcome;
-  std::string changes;      // empty where the outcome counts nothing
-  std::string routine;      // empty where no single routine can be named
-  std::string createdAt;
-  std::string turnNumber;
-  std::string from;         // "lifter" | "ask"
-  std::string text;
-  std::string saidAt;
-
-  bool operator==(const ExportedThreadTurn&) const = default;
-};
-
 // `idTaken` is an id already spent on a thread this account cannot see: the primary key is global,
 // so a write must refuse rather than append.
 enum class ThreadOpenError { none, idTaken };
@@ -49,8 +31,6 @@ struct AskThreadRepository {
   // whole.
   virtual std::vector<AskThread> threads(const UserId& user) = 0;   // newest asked first, bounded
   virtual std::optional<AskThread> thread(const UserId& user, const ThreadId& id) = 0;
-  // Every thread, unbounded: the export may not be bounded the way the list read is.
-  virtual std::vector<AskThread> allThreads(const UserId& user) = 0;   // oldest first, every row
   // Lands before the model runs: a proposal minted mid-conversation points at this row. The title is
   // written once on the insert; a later ask into the same thread passes it and it is ignored.
   virtual ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id,
@@ -64,10 +44,6 @@ struct AskThreadRepository {
   virtual void discardEmptyThread(const UserId& user, const ThreadId& id) = 0;
   // The turns cascade; the proposals do not — the schema sets their `thread_id` null.
   virtual bool deleteThread(const UserId& user, const ThreadId& id) = 0;   // false = nothing to remove
-  // Every turn this account holds, oldest thread first and in turn order; the outcome columns come
-  // back empty and the service fills them. A thread holding no turns still gets a row, with the turn
-  // columns empty.
-  virtual std::vector<ExportedThreadTurn> exportedThreadTurns(const UserId& user) = 0;
 };
 
 }

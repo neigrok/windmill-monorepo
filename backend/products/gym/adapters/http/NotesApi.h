@@ -31,7 +31,6 @@ public:
   void deleteNote(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                   const std::string& id);                                   // DELETE /v1/gym/notes/{id}
   void reorderNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // PUT    /v1/gym/notes
-  void exportNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET    /v1/gym/export/notes
 
 private:
   std::shared_ptr<NotesService> notes_;

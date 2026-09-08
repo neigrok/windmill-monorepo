@@ -91,8 +91,6 @@ TEST(gym_routes_without_a_session_are_401) {
       send(h.training, &TrainingApi::discardSession, deleteRequest("/v1/gym/sessions/ses_11111111"),
            "ses_11111111");
   drogon::HttpResponsePtr stats = send(h.training, &TrainingApi::stats, getRequest("/v1/gym/stats"));
-  drogon::HttpResponsePtr exported =
-      send(h.training, &TrainingApi::exportSets, getRequest("/v1/gym/export"));
   drogon::HttpResponsePtr share =
       send(h.training, &TrainingApi::shareSession,
            postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue)),
@@ -129,7 +127,6 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK_EQ(discard->getStatusCode(), drogon::k401Unauthorized);
   // Only `GET /v1/gym/shared/{token}` is on the other side of the gate.
   CHECK_EQ(stats->getStatusCode(), drogon::k401Unauthorized);
-  CHECK_EQ(exported->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(share->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(revoke->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(rename->getStatusCode(), drogon::k401Unauthorized);
@@ -1715,45 +1712,6 @@ TEST(gym_stats_of_an_untrained_account_is_two_empty_lists) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[],"weeks":[]})"));
-}
-
-// The bytes in full: a header row, CRLF between records, and RFC 4180 quoting; a note is never edited.
-TEST(gym_export_is_a_csv_attachment_and_quotes_only_what_needs_it) {
-  Harness h;
-  h.signIn("s-live");
-  send(h.training, &TrainingApi::startSession,
-       postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'000'000), "s-live"));
-  Json::Value set = setBody("set_11111111", "bench-press", 82.5, 1'700'000'060'000);
-  set["note"] = R"(felt heavy, said "again")";
-  set["rpe"] = 8.5;
-  send(h.training, &TrainingApi::appendSet,
-       postRequest("/v1/gym/sessions/ses_11111111/sets", set, "s-live"), "ses_11111111");
-
-  drogon::HttpResponsePtr response =
-      send(h.training, &TrainingApi::exportSets, getRequest("/v1/gym/export", "s-live"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(response->getHeader("Content-Disposition"),
-           std::string(R"(attachment; filename="windmill-gym-sets.csv")"));
-  CHECK_EQ(std::string(response->getBody()),
-           std::string("session_id,started_at,finished_at,routine,set_id,exercise_id,exercise,"
-                       "set_number,weight_kg,reps,kind,rpe,note,completed_at\r\n"
-                       "ses_11111111,2023-11-14T22:13:20Z,,,set_11111111,bench-press,Bench Press,"
-                       R"(1,82.50,8,working,8.5,"felt heavy, said ""again""",)"
-                       "2023-11-14T22:14:20Z\r\n"));
-}
-
-TEST(gym_export_of_an_empty_log_is_still_a_header_row) {
-  Harness h;
-  h.signIn("s-live");
-
-  drogon::HttpResponsePtr response =
-      send(h.training, &TrainingApi::exportSets, getRequest("/v1/gym/export", "s-live"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(std::string(response->getBody()),
-           std::string("session_id,started_at,finished_at,routine,set_id,exercise_id,exercise,"
-                       "set_number,weight_kg,reps,kind,rpe,note,completed_at\r\n"));
 }
 
 TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one) {

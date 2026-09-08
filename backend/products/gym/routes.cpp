@@ -283,35 +283,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         training->stats(req, std::move(cb));
       },
       {drogon::Get});
-  app.registerHandler(
-      "/v1/gym/export",
-      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        training->exportSets(req, std::move(cb));
-      },
-      {drogon::Get});
-  // The second file, and it hangs off the same path because it is the same promise: everything this
-  // account holds, in a format nothing but a spreadsheet is needed to read. Two files rather than
-  // one because a CSV row is one shape and a set and a sentence are not.
-  app.registerHandler(
-      "/v1/gym/export/threads",
-      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        threads->exportThreads(req, std::move(cb));
-      },
-      {drogon::Get});
-  // The third file: the notes are the lifter's, so they leave with everything else.
-  app.registerHandler(
-      "/v1/gym/export/notes",
-      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        notes->exportNotes(req, std::move(cb));
-      },
-      {drogon::Get});
-  // The fourth: every weigh-in, one row per day.
-  app.registerHandler(
-      "/v1/gym/export/bodyweight",
-      [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        bodyweight->exportEntries(req, std::move(cb));
-      },
-      {drogon::Get});
   // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only
   // where a vendor key does. A conversation a lifter had is their data and not a feature of the model
   // that answered it, so a deployment that loses its key keeps every one of these three doors and

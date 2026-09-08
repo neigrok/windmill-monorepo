@@ -215,8 +215,8 @@ write with the later `recordedAt` wins**; a stale replay is a 200 that answers t
 unchanged, so a replayed old write never overwrites a newer correction. A delete is 204 always.
 
 `GET /v1/gym/bodyweight[?from&to]` answers the window's entries and `latest` — the account's newest
-day **whatever the window**, so one windowed read draws both the chart and the log head. The export is
-a fourth CSV, `date,weight_kg,recorded_at`.
+day **whatever the window**, so one windowed read draws both the chart and the log head. There is
+no export: the CSV is out of the product on every surface (`19-connected-log.md`).
 
 On the phones a weigh-in is local-first like a set: it lands in one store file per seat beside the
 others and is queued to the server, and in the sign-in claim replay it goes **last** — settings,

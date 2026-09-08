@@ -226,14 +226,13 @@ TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
                    t1);
 
   const std::vector<SessionSummary> listed = pageOf(log, wm::UserId{kUser}, page(t1 + 9'000, 50));
-  const std::vector<ExportedSet> exported = log.exportedSets(wm::UserId{kUser});
+  const std::vector<Set> logged = log.setsOf(SessionId{"ses_pg000001"});
   const std::optional<SharedSession> shared = log.sharedSession("tok_pg000001", t1 + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{"Low-bar Squat"});
-  REQUIRE_EQ(exported.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(exported[0].exerciseName, std::string("Low-bar Squat"));
-  CHECK_EQ(exported[0].exerciseId, std::string("back-squat"));   // the id in the file never moved
+  REQUIRE_EQ(logged.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(logged[0].exercise, ExerciseId{"back-squat"});   // the id under the set never moved
   REQUIRE(shared.has_value());
   REQUIRE_EQ(shared->sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(shared->sets[0].exercise, std::string("Low-bar Squat"));

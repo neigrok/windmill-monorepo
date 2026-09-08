@@ -247,11 +247,6 @@ std::optional<MovementRecord> TrainingService::movementRecord(const UserId& user
   return wm::gym::movementRecord(*history.exercise, history, nowMs);
 }
 
-// Settles nothing: hands back every set unconditionally, whatever finished_at says.
-std::vector<ExportedSet> TrainingService::exportedSets(const UserId& user) {
-  return log_.exportedSets(user);
-}
-
 // The token is minted HERE and never parsed from anywhere. The store resolves the write: a live
 // share answers with itself, an expired one is replaced, a session this caller cannot read answers
 // with nothing.

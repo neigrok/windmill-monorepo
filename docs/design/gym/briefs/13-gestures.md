@@ -270,9 +270,9 @@ found clean.
   reads `log.hidden('thread')`, because that screen IS the withheld row and a back gesture may not
   walk into a room the room says is deleted, and `useTrainingLog.js` hands `summaries`, `sets` and
   `catalog` out un-thinned, which is what lets a screen answer twice at all. Clean, with no
-  list-derived state a window reaches: `settings/GymSettingsSection.jsx` — its three export doors
-  read the store directly, and it renders in shell settings, outside the room, where no window
-  reaches it — `Proposals.jsx`, `RoutineEditor` (which shares `Routines.jsx`), `Mirror.jsx`,
+  list-derived state a window reaches: `settings/GymSettingsSection.jsx` — it renders in shell
+  settings, outside the room, where no window reaches it — `Proposals.jsx`, `RoutineEditor` (which
+  shares `Routines.jsx`), `Mirror.jsx`,
   `Finish.jsx`, `Record.jsx`, `logger/MovementPicker.jsx`, `coach/CoachRoom.jsx`,
   `share/SharedSession.jsx`, `share/ShareWorkout.jsx`, `GymApp.jsx`,
   `HomeCard.jsx`, `Back.jsx`, `FixSheet.jsx`, `RoutinesGhost.jsx`,
@@ -293,8 +293,8 @@ found clean.
   records as correct, and a count rather than a stance — `LoggerScreen`, `MovementPicker` and
   `OpeningPicker` (sessions rank rows, and the option list is frozen at open), `RecordScreen`,
   `SettingsScreen`, `ConnectedLog` / `ConnectScreen`, `CoachShare`, `AskScreen`, `ReviewSheet`,
-  `FinishScreen` and `NotesScreen`. iOS draws no `Export threads` door and thins no set list, so two
-  of the web's four have no counterpart at all.
+  `FinishScreen` and `NotesScreen`. iOS thins no set list, so the web's `SessionDetail` has no
+  counterpart here; no surface draws an export door.
 - **Android**. Seven instances — `LogScreen`'s two silences and its foot's *first session · …*, which
   names the day training started and so may not follow a window that is holding the oldest row,
   `RoutinesScreen`'s stance and primary and write position, `ThreadsScreen`'s stance (which also

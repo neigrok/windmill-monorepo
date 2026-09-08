@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.McpKey
+import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
@@ -54,6 +56,26 @@ class GymHttpTests {
             """{"weightKg":82.5,"reps":5,"kind":"working"}""",
             WindmillJson.encodeToString(SetFix.serializer(),
                 SetFix(weightKg = 82.5, reps = 5, kind = SetKind.Working)),
+        )
+    }
+
+    // The wire's `lastUsedMs` is a last-used and is not read: a row would draw it as a last-read. A
+    // blank name and a missing scope both decode, because the server sends both.
+    @Test
+    fun testAGrantAndAKeyDecodeWithoutTheirLastUsedInstant() {
+        assertEquals(
+            OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1_700L, scope = "gym:read gym:write"),
+            WindmillJson.decodeFromString(OAuthGrant.serializer(),
+                """{"clientId":"c1","name":"Claude Desktop","grantedMs":1700,"lastUsedMs":1900,"scope":"gym:read gym:write"}"""),
+        )
+        assertEquals(
+            OAuthGrant(clientId = "c2", name = "", grantedMs = 1_700L, scope = ""),
+            WindmillJson.decodeFromString(OAuthGrant.serializer(), """{"clientId":"c2","grantedMs":1700}"""),
+        )
+        assertEquals(
+            McpKey(id = "k1", name = "laptop", createdMs = 1_500L),
+            WindmillJson.decodeFromString(McpKey.serializer(),
+                """{"id":"k1","name":"laptop","createdMs":1500,"lastUsedMs":null}"""),
         )
     }
 }

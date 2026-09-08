@@ -7,7 +7,6 @@ import WindmillPlatform
 
 struct SettingsScreen: View {
     @ObservedObject var store: TrainingStore
-    let web: URL
     let connected: ConnectedLogState
     let onConnectedLog: () -> Void
     let onNotes: () -> Void
@@ -72,29 +71,16 @@ struct SettingsScreen: View {
     private var doors: some View {
         Section {
             Button(action: onNotes) {
-                door(title: Notes.title, line: Notes.purpose, symbol: "note.text",
-                     lit: false, away: false)
-            }
-            Link(destination: page("/#/settings")) {
-                door(title: "CSV export", line: "on the web",
-                     symbol: "tablecells", lit: false, away: true)
-            }
-            Link(destination: page("/#/gym/coach/threads")) {
-                door(title: "Export conversations", line: "every Coach conversation as CSV",
-                     symbol: "tablecells", lit: false, away: true)
+                door(title: Notes.title, line: Notes.purpose, symbol: "note.text", lit: false)
             }
             Button(action: onConnectedLog) {
-                door(title: ConnectedLog.stateTitle,
-                     line: connected.settingsLine(now: Int64(Date().timeIntervalSince1970 * 1000))
-                        ?? ConnectedLog.settingsFallback,
-                     symbol: "link", lit: true, away: false)
+                door(title: ConnectedLog.title, line: connected.settingsMeta, symbol: "link", lit: true)
             }
         }
         .listRowBackground(skin.surface)
     }
 
-    // `away` draws the arrow that leaves this app for a browser; the chevron stays in the room.
-    private func door(title: String, line: String, symbol: String, lit: Bool, away: Bool) -> some View {
+    private func door(title: String, line: String, symbol: String, lit: Bool) -> some View {
         HStack(spacing: WindmillSpace.x3) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
@@ -109,7 +95,7 @@ struct SettingsScreen: View {
                     .foregroundStyle(lit ? skin.inkDim : skin.inkFaint)
             }
             Spacer(minLength: 0)
-            Image(systemName: away ? "arrow.up.right" : "chevron.right")
+            Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(lit ? skin.accent : skin.inkFaint)
         }
@@ -122,10 +108,6 @@ struct SettingsScreen: View {
             .foregroundStyle(skin.inkDim)
             .tint(skin.accent)
             .frame(minHeight: GymTap.minimum)
-    }
-
-    private func page(_ path: String) -> URL {
-        URL(string: path, relativeTo: web) ?? web
     }
 
     private func write(_ wanted: GymPreferences) {

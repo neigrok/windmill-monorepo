@@ -87,24 +87,4 @@ void PgBodyweightRepository::remove(const UserId& user, const std::string& dateL
                   user.str(), dateLocal);
   txn.commit();
 }
-
-std::vector<ExportedBodyweight> PgBodyweightRepository::exported(const UserId& user) {
-  // Every value is text rendered by Postgres: the day as stored, the weight with the column's two
-  // decimals, the device instant ISO-8601 UTC like every other export's instant.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT date_local::text AS date_local, weight_kg::text AS weight_kg, "
-      "       to_char(to_timestamp(recorded_at / 1000.0) AT TIME ZONE 'UTC', "
-      "               'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS recorded_at "
-      "FROM gym_bodyweight WHERE user_id = $1::uuid ORDER BY date_local",
-      user.str());
-  std::vector<ExportedBodyweight> entries;
-  for (const auto& row : rows)
-    entries.push_back(ExportedBodyweight{row["date_local"].as<std::string>(),
-                                         row["weight_kg"].as<std::string>(),
-                                         row["recorded_at"].as<std::string>()});
-  return entries;
-}
-
 }

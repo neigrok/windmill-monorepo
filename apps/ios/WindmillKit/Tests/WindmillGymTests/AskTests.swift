@@ -526,7 +526,7 @@ final class AskRefusalTests: XCTestCase {
                        "Ask about your training. Coach can propose a routine change — you decide on the diff.")
         XCTAssertTrue(Ask.subtitle.contains("proposes only"))
         XCTAssertTrue(Ask.proposalNote.contains("Your logged sets are never part of a proposal"))
-        XCTAssertTrue(ConnectedLog.neverLines.contains { $0.hasPrefix("Edit a set you already logged.") })
+        XCTAssertEqual(ConnectedLog.how[2], "No tool can apply a proposal or edit a logged set.")
     }
 
     func testTheEmptyStatePointsAtTheFreeDoor() {
@@ -536,7 +536,7 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertTrue(Ask.freeDoor.contains("it reaches what Coach can’t: it knows the rest of your life"))
         XCTAssertFalse(Ask.freeDoor.contains("better"), "the contrast is scope, never quality")
         XCTAssertFalse(Ask.freeDoor.contains("ChatGPT"))
-        XCTAssertFalse(ConnectedLog.precondition.contains("ChatGPT"))
+        XCTAssertFalse(ConnectedLog.head.contains("ChatGPT"))
     }
 
     func testTheProposalNoteNamesBothHalvesOfThePromise() {

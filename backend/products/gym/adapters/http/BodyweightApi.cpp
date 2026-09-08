@@ -2,7 +2,6 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "products/gym/adapters/csv/TrainingCsv.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <optional>
@@ -83,21 +82,6 @@ void BodyweightApi::deleteEntry(const drogon::HttpRequestPtr& req, HttpCallback&
   bodyweight_->remove(*caller, dateLocal);
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
-  cb(response);
-}
-
-void BodyweightApi::exportEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k200OK);
-  response->setContentTypeCode(drogon::CT_TEXT_CSV);
-  response->addHeader("Content-Disposition",
-                      "attachment; filename=\"windmill-gym-bodyweight.csv\"");
-  response->setBody(toCsv(bodyweight_->exported(*caller)));
   cb(response);
 }
 

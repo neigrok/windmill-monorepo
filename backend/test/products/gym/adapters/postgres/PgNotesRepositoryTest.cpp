@@ -62,8 +62,6 @@ TEST(pg_gym_notes_append_last_replay_untouched_and_edit_in_place) {
   CHECK_EQ(edited.note->position, 0);
   CHECK_EQ(edited.note->updatedAtMs, kNow + 180'000);
   CHECK_EQ(repo.notes(wm::UserId{kUser}), twin.notes.notes(wm::UserId{kUser}));
-  CHECK_EQ(repo.exportedNotes(wm::UserId{kUser}), twin.notes.exportedNotes(wm::UserId{kUser}));
-  CHECK_EQ(repo.exportedNotes(wm::UserId{kUser})[0].updatedAt, std::string("2023-11-14T22:16:20Z"));
   reset();
 }
 

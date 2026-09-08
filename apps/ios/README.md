@@ -199,9 +199,9 @@ that app → the first real thing → the house, once.
   holding nothing are absent rather than shown as zero.
 - **Journal's one teaching card** appears after the first page is saved and retires when answered.
 
-Active AI requests require an account. Roadmap AI assistance is being redesigned; its allowance is not announced yet. Automatic Journal echoes are free and outside the active AI allowance. Everything done by hand works signed out. Roadmap's "Plant it" and Gym's "Build
-my routine" open the door at that tap and resume after
-(`docs/design/roadmap/guidelines/auth.md` §2).
+Active AI requests require an account. Roadmap AI assistance is being redesigned; its allowance is not announced yet. Automatic Journal echoes are free and outside the active AI allowance. Everything done by hand works signed out. Roadmap's "Plant it" opens the door at that tap and resumes after
+(`docs/design/roadmap/guidelines/auth.md` §2). Gym's `Connect a tool` reads `Sign in first` while signed
+out and opens You; nothing resumes after the sign-in (see Known gaps).
 
 ## Universal links
 
@@ -248,14 +248,15 @@ be tested without the file on the domain and a signed build.
 - **`ProductModule` has no settings slot** (`room`, `hubLine`, `entry`, `holdings`), so gym's
   settings hang off a row at the foot of Routines rather than from You.
 - **`ShellActions` cannot open the sign-in door** (`openYou`, `openSwitcher`, `goHome` only), so
-  Gym's "Build my routine" opens You — one tap longer than the design.
+  Gym's `Sign in first` opens You — one tap longer than the design.
 - **Choosing `lb` changes nothing this app draws.** The setting is account-level and gym stores
   kilograms either way, but the ladder and keypad here are kilogram instruments. The row says so.
 - **No rest timer.** The web keeps its rest timer and dial; this app draws none and carries the
   settings document's `restSeconds` and `restSound` through untouched. This product sends no
   notifications.
-- **Gym's CSV export and the connected-log grant open the web** — a file this app has nowhere to
-  put, and an entitlements read this client does not have.
+- **The connected-log grant is made and ended on the web** — `Connect a tool` and
+  `Manage connections` are browser doors; the screen itself reads the grants and keys and draws
+  the state (`docs/design/gym/briefs/19-connected-log.md`).
 - **No app icon or launch asset.**
 - **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
   of three products have no phone-side state to report.

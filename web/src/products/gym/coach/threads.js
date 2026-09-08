@@ -93,6 +93,3 @@ export function threadDeleteFailure(error) {
 export const THREAD_ABSENT = 'That conversation isn’t here any more.';
 export const THREAD_FAILED = 'The conversation didn’t load.';
 export const THREADS_FAILED = 'Your conversations didn’t load.';
-
-export const EXPORT_THREADS_VERB = 'Export conversations';
-export const EXPORT_THREADS_LINE = 'every message as CSV · yours, always';

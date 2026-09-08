@@ -1281,54 +1281,6 @@ TEST(statistics_never_reaches_another_accounts_log) {
   CHECK_EQ(answer.weeks.size(), static_cast<std::size_t>(0));
 }
 
-TEST(export_carries_every_set_the_account_holds_including_the_open_session) {
-  Harness h;
-  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 2);
-  h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(uid(), sid("ses_00000002"),
-                   SetWrite{setId("set_99999999"), ExerciseId{"bench-press"}, 82.5, 8,
-                            SetKind::warmup, 8.5, "felt light", h.clock.now + 60'000});
-
-  std::vector<ExportedSet> rows = h.training.exportedSets(uid());
-
-  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(3));
-  CHECK_EQ(rows[0].sessionId, "ses_00000001");
-  CHECK_EQ(rows[0].exerciseId, "back-squat");
-  CHECK_EQ(rows[0].exerciseName, "Back Squat");
-  CHECK_EQ(rows[0].setNumber, "1");
-  CHECK_EQ(rows[0].weightKg, "100.00");
-  CHECK_EQ(rows[0].reps, "5");
-  CHECK_EQ(rows[0].kind, "working");
-  CHECK_EQ(rows[0].rpe, "");
-  CHECK_EQ(rows[0].note, "");
-  CHECK_EQ(rows[2].sessionId, "ses_00000002");
-  CHECK_EQ(rows[2].exerciseName, "Bench Press");
-  CHECK_EQ(rows[2].kind, "warmup");
-  CHECK_EQ(rows[2].rpe, "8.5");
-  CHECK_EQ(rows[2].note, "felt light");
-  CHECK_EQ(rows[2].finishedAt, "");   // the workout still running has no end to name yet
-}
-
-TEST(export_settles_nothing_and_leaves_an_abandoned_session_open) {
-  Harness h;
-  const std::uint64_t began = h.clock.now - 6 * 3'600'000;
-  h.startAt(began, "ses_00000001");
-  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
-
-  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(1));
-
-  CHECK_FALSE(h.repo.db.sessions[0].finishedAtMs);
-}
-
-TEST(export_never_reaches_another_accounts_sets) {
-  Harness h;
-  h.repo.db.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now, h.clock.now + 1});
-  h.repo.db.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"), ExerciseId{"back-squat"}, 1,
-                            200, 5, SetKind::working, std::nullopt, "", h.clock.now});
-
-  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(0));
-}
-
 TEST(share_is_idempotent_on_the_session) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
@@ -1781,13 +1733,9 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   LastTimeOutcome prefill = h.training.lastTime(uid(), ExerciseId{"back-squat"});
   REQUIRE(prefill.lastTime.has_value());
   CHECK_EQ(prefill.lastTime->sets[3].weightKg, 90.0);
-  // and the file a lifter walks away with
-  std::vector<ExportedSet> exported = h.training.exportedSets(uid());
-  REQUIRE_EQ(exported.size(), static_cast<std::size_t>(8));
-  CHECK_EQ(exported[7].weightKg, std::string("90.00"));
 }
 
-TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_export) {
+TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_session) {
   Harness h;
   h.trained("ses_00000001", h.clock.now, 100, 5, 3);
 
@@ -1801,5 +1749,4 @@ TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_export) {
   CHECK_EQ(h.training.review(uid(), sid("ses_00000001"))->stats.workingSets, 2);
   CHECK_EQ(h.training.detail(uid(), sid("ses_00000001"))->sets.size(),
            static_cast<std::size_t>(2));
-  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(2));
 }

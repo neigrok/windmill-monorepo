@@ -12,8 +12,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
-#include <ctime>
 #include <functional>
 #include <map>
 #include <optional>
@@ -39,23 +37,6 @@ inline Exercise backSquat() {
                   2.5, false};
 }
 inline RoutineId rtId(std::string value = "rt_00000001") { return RoutineId{std::move(value)}; }
-
-// The export's three renderings, mirroring the SQL's `to_char(… AT TIME ZONE 'UTC')` and `::text` casts.
-inline std::string isoUtc(std::uint64_t instantMs) {
-  const std::time_t seconds = static_cast<std::time_t>(instantMs / 1000);
-  std::tm parts{};
-  gmtime_r(&seconds, &parts);
-  char text[32] = {0};
-  std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02dZ", parts.tm_year + 1900,
-                parts.tm_mon + 1, parts.tm_mday, parts.tm_hour, parts.tm_min, parts.tm_sec);
-  return text;
-}
-
-inline std::string scaled(double value, int decimals) {
-  char text[32] = {0};
-  std::snprintf(text, sizeof(text), "%.*f", decimals, value);
-  return text;
-}
 
 // Monday 00:00 UTC, as `date_trunc('week', ts AT TIME ZONE 'UTC')` answers, clamped like the adapter.
 inline std::uint64_t weekStartMs(std::uint64_t instantMs) {
@@ -756,43 +737,6 @@ public:
     return log;
   }
 
-  // Every set this account holds, the OPEN session included; the catalog join is an INNER one.
-  std::vector<ExportedSet> exportedSets(const UserId& user) override {
-    std::vector<std::pair<Session, Set>> lived;
-    for (const Set& set : db.sets)
-      for (const Session& ran : db.sessions) {
-        if (!(ran.id == set.session) || !(ran.user == user)) continue;
-        lived.push_back({ran, set});
-      }
-    std::sort(lived.begin(), lived.end(), [](const auto& a, const auto& b) {
-      return std::tuple(a.first.startedAtMs, a.first.id.str(), a.second.completedAtMs,
-                        a.second.setNumber) <
-             std::tuple(b.first.startedAtMs, b.first.id.str(), b.second.completedAtMs,
-                        b.second.setNumber);
-    });
-
-    std::vector<ExportedSet> out;
-    for (const auto& [ran, set] : lived) {
-      std::optional<std::string> movement = db.nameOf(user, set.exercise);
-      if (!movement) continue;
-      out.push_back(ExportedSet{ran.id.str(),
-                                isoUtc(ran.startedAtMs),
-                                ran.finishedAtMs ? isoUtc(*ran.finishedAtMs) : "",
-                                ran.plan ? ran.plan->routineName : "",
-                                set.id.str(),
-                                set.exercise.str(),
-                                *movement,
-                                std::to_string(set.setNumber),
-                                scaled(set.weightKg, 2),
-                                std::to_string(set.reps),
-                                toString(set.kind),
-                                set.rpe ? scaled(*set.rpe, 1) : "",
-                                set.note,
-                                isoUtc(set.completedAtMs)});
-    }
-    return out;
-  }
-
   // The INSERT..SELECT off the caller's own session row; the conflict is on the SESSION, so a live share replays.
   std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                           std::uint64_t nowMs) override {
@@ -1235,17 +1179,6 @@ public:
     return out;
   }
 
-  // The archive's read: every row, no ceiling, oldest first.
-  std::vector<AskThread> allThreads(const UserId& user) override {
-    std::vector<AskThread> out;
-    for (const AskThread& held : db.threadRows)
-      if (held.user == user) out.push_back(withMinted(held, false));
-    std::sort(out.begin(), out.end(), [](const AskThread& a, const AskThread& b) {
-      return std::pair(a.createdAtMs, a.id.str()) < std::pair(b.createdAtMs, b.id.str());
-    });
-    return out;
-  }
-
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id) override {
     for (const AskThread& held : db.threadRows)
       if (held.id == id && held.user == user) return withMinted(held, true);
@@ -1291,34 +1224,6 @@ public:
     for (RoutineProposal& held : db.proposalRows)
       if (held.head.source.thread == id) held.head.source.thread.reset();
     return true;
-  }
-
-  std::vector<ExportedThreadTurn> exportedThreadTurns(const UserId& user) override {
-    std::vector<AskThread> held;
-    for (const AskThread& row : db.threadRows)
-      if (row.user == user) held.push_back(row);
-    std::sort(held.begin(), held.end(), [](const AskThread& a, const AskThread& b) {
-      return std::pair(a.createdAtMs, a.id.str()) < std::pair(b.createdAtMs, b.id.str());
-    });
-    std::vector<ExportedThreadTurn> out;
-    for (const AskThread& row : held) {
-      // A thread that holds no turns is still a row, with the turn columns empty (the store's LEFT JOIN).
-      if (row.turns.empty()) {
-        out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
-                                         isoUtc(row.createdAtMs), "", "", "", ""});
-        continue;
-      }
-      int position = 0;
-      for (const ThreadTurn& turn : row.turns) {
-        ++position;
-        // The outcome columns come back EMPTY: ThreadService stamps that ladder on.
-        out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
-                                         isoUtc(row.createdAtMs), std::to_string(position),
-                                         turn.fromLifter ? "lifter" : "coach", turn.text,
-                                         isoUtc(turn.atMs)});
-      }
-    }
-    return out;
   }
 
 private:
@@ -1436,14 +1341,6 @@ public:
     }
     return {notes(user), NotesOrderError::none};
   }
-
-  std::vector<ExportedNote> exportedNotes(const UserId& user) override {
-    std::vector<ExportedNote> out;
-    for (const Note& note : notes(user))
-      out.push_back(ExportedNote{std::to_string(note.position), note.title, note.body,
-                                 isoUtc(note.updatedAtMs)});
-    return out;
-  }
 };
 
 class FakeBodyweightRepository : public BodyweightRepository {
@@ -1489,14 +1386,6 @@ public:
     std::erase_if(db.bodyweightRows, [&](const Bodyweight& held) {
       return held.user == user && held.dateLocal == dateLocal;
     });
-  }
-
-  std::vector<ExportedBodyweight> exported(const UserId& user) override {
-    std::vector<ExportedBodyweight> out;
-    for (const Bodyweight& held : entries(user, BodyweightRange{}))
-      out.push_back(ExportedBodyweight{held.dateLocal, scaled(held.weightKg, 2),
-                                       isoUtc(held.recordedAtMs)});
-    return out;
   }
 };
 

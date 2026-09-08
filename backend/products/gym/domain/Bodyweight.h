@@ -35,7 +35,7 @@ struct Bodyweight {
 
 // Whether `text` is a real calendar day written `YYYY-MM-DD`: four digits, two, two, years 0001 to
 // 9999, months 1 to 12, days inside that month (leap years included). The one rule for the row's
-// key, a range bound and an export column alike.
+// key and a range bound alike.
 bool wellFormedLocalDate(std::string_view text);
 
 // Whether `dateLocal` (well-formed) lies more than one calendar day past the UTC day `nowMs` falls

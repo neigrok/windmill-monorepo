@@ -110,7 +110,7 @@ The head line steps aside for the list of what is connected; everything else sta
    | approved, account-wide | `whole account · since 12 Aug` |
    | static key | `API key · whole account · since 12 Aug` |
 
-   The date is `Readout.when` on the phones.
+   The date is `Readout.shortDate` on the phones — `since 12 Aug`, never today or yesterday.
 3. **The three level rows**, unchanged — they are what *read · write · delete* in the meta mean.
 4. **The caption**, unchanged.
 5. **The action** — `Connect a tool`, unchanged. A second tool is the same act.
@@ -170,7 +170,7 @@ said; otherwise both native surfaces carry the same bytes, and each surface's su
 | title | `Connected log` | title ≤ 3 |
 | head | `Your log, read by Claude, Cursor or Codex.` | line ≤ 12 · 8 |
 | level.read | `Read` | label |
-| level.read.meta | `sets, workouts, routines, records, notes, weigh-ins` | meta ≤ 8 · 6 |
+| level.read.meta | `sets, workouts, routines, records, notes, weigh-ins` | meta ≤ 8 · 7 (`weigh-ins` counts as two) |
 | level.write | `Write` | label |
 | level.write.meta | `logs sets · adds routines · shares workouts · proposes changes` | meta ≤ 8 · 8 |
 | level.delete | `Delete` | label |
@@ -272,7 +272,7 @@ holds `Connect a tool`, `open_in_new` beside it, `contentDescription` *opens in 
 `PullToRefreshBox` around the list. Edge to edge as the room already is.
 
 **Web.** Uses the shared Connect setup and shared connection-management sections described above.
-Gym settings retains Units, Notes and its export doors. It has no Rest timer, Set confirmation,
+Gym settings retains Units and Notes. It has no Rest timer, Set confirmation,
 or alarm caption; units updates preserve the remaining preference fields.
 
 ## Before and after
@@ -346,3 +346,7 @@ not change.
 Decisions 1–13 ratified whole. The four `/v1/gym/export*` routes and the CSV adapter behind them
 are deleted with their doors: a route with no door is a dark feature. Swipe-to-disconnect on the
 phones (decision 12) stays proposed; the browser door is the shape.
+A tool's `since` day is `Readout.shortDate` on both phones; a signed-out phone says `Sign in first`
+wherever the action is drawn, the picker card included; the credential reads happen once per seat,
+with pull-to-refresh and the retry the only second reads, and the *Couldn’t read* row is drawn
+only after a read has failed, never while the first one is in flight.

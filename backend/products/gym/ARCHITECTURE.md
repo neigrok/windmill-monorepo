@@ -1,7 +1,7 @@
 # Windmill Gym — backend architecture
 
 The backend for gym, the training log. It mirrors journal's product shape — `domain/ · ports/ ·
-application/ · adapters/{json,csv,postgres,http,mcp,llm}` — and plugs in through one seam:
+application/ · adapters/{json,postgres,http,mcp,llm}` — and plugs in through one seam:
 `gym::registerRoutes(app, deps)`. Everything lives in `namespace wm::gym`; id tags are gym's own
 (`ExerciseTag`, `SessionTag`, `SetTag` → `ExerciseId`, `SessionId`, `SetId`, via the platform
 `Id<Tag>` template). `STRUCTURE.md` holds the monorepo layout and the dependency rule.
@@ -9,9 +9,9 @@ application/ · adapters/{json,csv,postgres,http,mcp,llm}` — and plugs in thro
 ## 1. Scope
 
 The backend owns the durable set write, exercise identity, the reads the device cannot fake (the
-log, last-time prefill, the finish review, a movement's record, the statistics engine, the CSV
-exports, the workout share), the notes a lifter writes for Coach, twenty-two MCP tools behind the
-platform grant gate, and the proposal ledger.
+log, last-time prefill, the finish review, a movement's record, the statistics engine, the workout
+share), the notes a lifter writes for Coach, twenty-two MCP tools behind the platform grant gate, and
+the proposal ledger.
 
 Device-side and never here: the weight ladder, workout mode, and the prefill
 arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
@@ -42,7 +42,7 @@ ports/        LogRepository (sessions · sets · revisions · the share) · Cata
               PreferencesRepository · NotesRepository · BodyweightRepository · AskAgent
 application/  TrainingService · CatalogService · ProgramService · ThreadService ·
               PreferencesService · NotesService · BodyweightService · AskService
-adapters/     json/TrainingJson · csv/TrainingCsv · postgres/PgGymRows.h + seven Pg repositories ·
+adapters/     json/TrainingJson · postgres/PgGymRows.h + seven Pg repositories ·
               http/{Training,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
@@ -454,8 +454,7 @@ Both are on `PgAccountFootprint`'s owned list. There is **no outcome column** �
 from `gym_proposals` on every read. Turns are written a **pair at a time** and only once an answer
 lands, but the **thread row lands first**, because a proposal minted mid-conversation points at it. A
 thread holding no turns is therefore a real state: `discardEmptyThread` takes it back when the run
-dies, and it survives a process that died in between. Every read and the export carry such a thread
-as itself.
+dies, and it survives a process that died in between. Every read carries such a thread as itself.
 
 ### 3.9 Notes
 
@@ -495,7 +494,7 @@ holding `gym:read` (`list_notes`), written by nobody but a hand.
   COMMITTED a waiter's snapshot never shows the row the writer ahead of it inserted. The insert is
   `ON CONFLICT (id) DO NOTHING`, so two accounts landing one id at once leave the loser with
   `note-id-taken` rather than a primary-key failure at commit.
-- On `PgAccountFootprint`'s owned list, and in the export as a third CSV.
+- On `PgAccountFootprint`'s owned list.
 
 ### 3.10 Bodyweight
 
@@ -548,9 +547,8 @@ agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing e
   only the lifter observed; an agent writing one would be inventing a number, which the prompt
   already forbids. `GymToolsTest` pins it off the declarations: every tool whose name or argument
   names say bodyweight is `gym:read`, and Coach's door offers reads and `propose_*` only.
-- On `PgAccountFootprint`'s owned list, and in the export as a fourth CSV
-  (`date,weight_kg,recorded_at`). On the phones it is local-first like sessions and replays LAST in
-  the claim (§11.6).
+- On `PgAccountFootprint`'s owned list. On the phones it is local-first like sessions and replays
+  LAST in the claim (§11.6).
 
 ## 4. Domain
 
@@ -694,8 +692,8 @@ under it in a **different** session is `idTaken` → 409.
 - **Check visibility on the WRITE, not from the FK.** Every write naming an exercise id carries the
   catalog read's own predicate — `id = $1 AND (created_by IS NULL OR created_by = $2)` — inside the
   open transaction, resolved against the owner read off the locked session row (or off the routine,
-  for a plan entry). Otherwise a set can name another account's private movement, and the log, the
-  export and the workout share print that account's private name.
+  for a plan entry). Otherwise a set can name another account's private movement, and the log and
+  the workout share print that account's private name.
 - **Drain oldest-first.** Into a session closed as STALE a set lands only within four hours of the
   close's last activity, and each landing moves that activity forward.
 - **The finish boundary.** A set that already landed lands again; a set that never landed may not land
@@ -726,14 +724,14 @@ truth in one round trip — and where there is no row it is entitled to, a refus
 Seven structs, each file carrying its own DTOs. `LogRepository`: `open` · `session` · `setOf` ·
 `lastActivity` · `insertSession` · `close` · `insertSet` · `appendSets` · `importSession` · `sessions` · `updateSet` · `deleteSet` · `log` ·
 `setsOf` · `lastTime` · `lastSets` · `historyFor` · `movementHistory` · `trainingLog` ·
-`exportedSets` · `deleteSession` · `insertShare` · `revokeShare` · `sharedSession`.
+`deleteSession` · `insertShare` · `revokeShare` · `sharedSession`.
 `CatalogRepository`: `catalog` · `insertExercise` · `renameExercise`. `ProgramRepository`: `routines`
 · `routine` · `routineHistory` · `insertRoutine` · `replaceRoutine` · `deleteRoutine` plus the ledger.
-`NotesRepository`: `notes` · `saveNote` · `deleteNote` · `reorderNotes` · `exportedNotes`, every
+`NotesRepository`: `notes` · `saveNote` · `deleteNote` · `reorderNotes`, every
 refusal a value (`NoteWriteOutcome`: `full`, `idTaken`; `NotesOrderOutcome`: `mismatch`), the
 whole-order rule decided once in `domain/Note.h` (`namesEveryNoteOnce`) for the fake and the SQL.
 `BodyweightRepository`: `entries` (inclusive `BodyweightRange`, day ascending) · `latest` · `save`
-(answers the row that stands) · `remove` · `exported` — no refusal value at all, because the only
+(answers the row that stands) · `remove` — no refusal value at all, because the only
 rule (the later `recordedAt` wins) is answered by the row rather than refused.
 
 - **Every method that can resolve a row carries the credential that may see it** — a `UserId`
@@ -761,8 +759,6 @@ rule (the later `recordedAt` wins) is answered by the row rather than refused.
   aggregations, and the store never sees Epley.
 - `historyFor` returns a **domain** value, one read in one transaction, loading the comparison session
   only for a session that named a routine.
-- The **export's row is text end to end**, because a CSV is text and every rendering in one is a
-  decision Postgres already makes better than C++ would.
 - The **share's DTOs name no account and hold no id at any depth**.
 - **The Postgres mapper clamps every instant it reads** into the band §4.1 accepts.
 - **`Fakes.h` applies the same rules as the SQL** — the PK no-op, the partial-unique open-session
@@ -875,17 +871,6 @@ four-hour rule ended would be a hole in the chart.
 axis, volume **as a metric** (a headline, a tracked series, a ranking key), and any grade, score,
 percentage or green/red. That refusal is of volume as a metric, not of the log's tonnage caption.
 
-**Export** (`exportedSets` + `toCsv`) — CSV of every set this account holds, the open session included.
-One shape, no parameters, no pagination, nothing omitted, a fixed filename. **Every value crosses the
-port as text**: instants as ISO-8601 UTC, numerics at their column's scale so 72.5 kg is `72.50`
-forever, an absent rpe as an empty cell. That leaves `TrainingCsv` one thing to decide — framing — by
-RFC 4180: CRLF between records, a field quoted only where it holds a comma, a quote or a line break,
-and a quote inside a quoted field doubled. A note travels byte for byte, with one exception: **a cell a
-spreadsheet would RUN rather than show** — one opening `=`, `@`, or a sign in front of something that
-is not a number — carries a leading apostrophe, because a movement name and a note are writable by any
-MCP client granted `gym:write` and a Coach turn is composed by a model. A negative load is untouched.
-This read settles **nothing**, alone among the reads of the log.
-
 **The workout share** — two owner-scoped doors and the one unauthenticated read.
 `GET /v1/gym/shared/{token}` resolves the token to one session and its sets; the token is the whole
 credential, so the handler never resolves a caller and **never writes**, not even the four-hour close.
@@ -936,13 +921,9 @@ Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every p
 | `PUT  /v1/gym/bodyweight/{dateLocal}` | `{weightKg, recordedAt}` — upsert on the day; answers `{entry}` as it STANDS, the incoming write only when its `recordedAt` is at or after the stored one. `400`, no code, decided in this order: `could not read that date` (the day) → `A weigh-in is not a forecast — today or earlier.` (more than one day past UTC today) → `could not read that weigh-in` (no json, not an object, a weight that is not a number, an instant that is not an integer) → `Between 20 and 400 kg — check the number.` (the band, after rounding) → `could not read that weigh-in` again (an instant outside the band) |
 | `DELETE /v1/gym/bodyweight/{dateLocal}` | `204` always for this account: absent, already gone and a day that is not a day are one answer |
 | `GET  /v1/gym/stats` | the statistics engine — per-movement line, standing bests, weekly counts |
-| `GET  /v1/gym/export` | every set, CSV — `text/csv`, a header row, `Content-Disposition: attachment` |
 | `POST /v1/gym/sessions/{id}/share` | mint — `{token, expiresAt}`, idempotent on the session |
 | `DELETE /v1/gym/sessions/{id}/share` | revoke — `204`; nothing to revoke is `404 no such session` |
 | `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** Revoked, expired and unknown are one `404` |
-| `GET  /v1/gym/export/threads` | every turn of every conversation, CSV — one row per turn; `from` is `lifter` or `coach` |
-| `GET  /v1/gym/export/notes` | every note, CSV — `position,title,body,updated_at`, precedence order |
-| `GET  /v1/gym/export/bodyweight` | every weigh-in, CSV — `date,weight_kg,recorded_at`, day ascending, the instant ISO-8601 UTC |
 | `GET  /v1/gym/threads` | `{threads:[{id,title,createdAt,askedAt,outcome,proposals}]}`, newest asked first, bounded at `kThreadList` (200), no total and no "there are more" flag. No turns. Mounted unconditionally |
 | `GET  /v1/gym/threads/{id}` | one conversation whole, `turns` and all |
 | `DELETE /v1/gym/threads/{id}` | `204`; turns cascade, and every proposal it minted keeps its row, state and place in the routine's history, losing only `source.thread` |
@@ -951,7 +932,7 @@ Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every p
 ### 8.2 Shapes
 
 `adapters/json/TrainingJson` is the one cross-surface codec — web, iOS, Android and the MCP tools all
-speak it, which is why a tool's arguments are the REST body's field names. The exports speak CSV.
+speak it, which is why a tool's arguments are the REST body's field names.
 
 Instants are epoch-ms numbers, weights numbers in kg. Sets are
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`; sessions
@@ -1104,8 +1085,6 @@ in-process).
 - **`PATCH` and `DELETE` on a set have no tool either**: *no agent may edit or delete a logged set —
   not under `gym:write`, not under `gym:delete`, not at any level a future grant invents.* The reason
   is written beside the two mounts in `routes.cpp`, and `GymToolsTest` pins the absence by name.
-  `GET /v1/gym/export` has no tool because `list_sessions` + `get_session` + `get_stats` already give
-  an agent those numbers in a shape it reads.
 - **Every tool goes through a service, never the repository** — `TrainingService`, `CatalogService`,
   `ProgramService`, `NotesService`, `BodyweightService`; no tool reads a thread or the settings, and
   no tool at any level writes a note or a weigh-in: the notes are what a lifter wrote FOR the agent,
@@ -1225,7 +1204,7 @@ API and the MCP tools write through the same services.
 | | Phone | Web |
 |---|---|---|
 | owns | the **open** session | everything retrospective and prospective |
-| | workout mode, keypad, ladder, sticky carry-forward, wake lock, the flush queue | the log, progression, the routines editor, export, MCP connect, settings, backfill |
+| | workout mode, keypad, ladder, sticky carry-forward, wake lock, the flush queue | the log, progression, the routines editor, MCP connect, settings, backfill |
 | writes | `gym_sessions` · `gym_sets` | `gym_routines` · `gym_routine_entries`, and past sessions only |
 
 ### 11.2 The mirror
@@ -1360,8 +1339,7 @@ these bytes to all three clients (the typographic apostrophe, everywhere):
 The cap-reached sentence says what to do next and not the rule: the allowance itself — ten a day,
 three back to back — is drawn by every client immediately above its composer. The thread ceiling
 says **four**, because a question and its answer are two turns against `kMaxThreadTurns` (8). The
-threads CSV's `from` column reads `lifter` / `coach`; the JSON wire's `from` enum stays
-`"lifter" | "ask"`. The design canon is `docs/design/gym/briefs/09-coach.md`.
+JSON wire's `from` enum is `"lifter" | "ask"`. The design canon is `docs/design/gym/briefs/09-coach.md`.
 
 ### 12.1 The narrowing
 
@@ -1478,12 +1456,8 @@ promises no read of "the gym's settings" — no such tool exists.
   land only once an answer has, and a run that never answered takes its own empty thread back — so a
   retry appends the question once rather than twice.
 - **The question meets `storableText`** before a thread is opened: it becomes the title, byte for byte.
-- **Threads are in the CSV export** at `GET /v1/gym/export/threads`: one row per turn, the outcome
-  stamped on by the service rather than rendered in SQL. The outcomes are stamped from `allThreads` and
-  not from the list read, which stops at `kThreadList`; the turns join is a LEFT one, so a thread
-  holding no turns is in the file with empty turn columns.
 - **The three read/delete doors are mounted unconditionally** while `POST /v1/gym/ask` is not: a
-  deployment with no vendor key keeps every conversation readable, exportable and deletable.
+  deployment with no vendor key keeps every conversation readable and deletable.
 
 ## 13. Open items
 

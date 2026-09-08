@@ -1,5 +1,7 @@
+import Foundation
 import XCTest
 @testable import WindmillGym
+@testable import WindmillPlatform
 
 final class ConnectedLogTests: XCTestCase {
     func testTheEmptyScopeIsTheAccountWideGrantAndNotAnEmptyOne() {
@@ -8,7 +10,7 @@ final class ConnectedLogTests: XCTestCase {
         XCTAssertTrue(reach.accountWide)
         XCTAssertEqual(reach.levels, Set(LogReach.Level.allCases))
         XCTAssertTrue(reach.reachesTheLog)
-        XCTAssertEqual(reach.lines, LogReach.Level.allCases.map(\.reach))
+        XCTAssertEqual(reach.line, "whole account")
     }
 
     func testWhitespaceAloneIsStillTheAccountWideGrant() {
@@ -29,7 +31,7 @@ final class ConnectedLogTests: XCTestCase {
         XCTAssertFalse(reach.accountWide)
         XCTAssertEqual(reach.levels, [])
         XCTAssertFalse(reach.reachesTheLog)
-        XCTAssertEqual(reach.lines, [])
+        XCTAssertEqual(reach.line, "")
     }
 
     func testAnUnreadableTokenConfersNothing() {
@@ -47,37 +49,83 @@ final class ConnectedLogTests: XCTestCase {
                        "the product here is `gym:extra`, which is not this log")
     }
 
-    func testTheRowNamesEveryLevelTheGrantHoldsInTheLaddersOrder() {
-        XCTAssertEqual(LogReach(scope: "gym:read").lines, [LogReach.Level.read.reach])
-        XCTAssertEqual(LogReach(scope: "gym:delete gym:read").lines,
-                       [LogReach.Level.read.reach, LogReach.Level.delete.reach])
-        XCTAssertEqual(LogReach(scope: "gym:delete gym:read gym:write").lines,
-                       LogReach.Level.allCases.map(\.reach))
+    func testTheLevelsHeldAreNamedInTheLaddersOrder() {
+        XCTAssertEqual(LogReach(scope: "gym:read").line, "read")
+        XCTAssertEqual(LogReach(scope: "gym:delete gym:read").line, "read · delete")
+        XCTAssertEqual(LogReach(scope: "gym:delete gym:read gym:write").line, "read · write · delete")
     }
 
-    func testTheWriteAndDeleteLevelsNameTheToolsThatLeaveTheAccount() {
-        XCTAssertTrue(LogReach.Level.write.reach.contains("shares one workout by link"))
-        XCTAssertTrue(LogReach.Level.write.reach.contains("readable by anyone holding it"))
-        XCTAssertTrue(LogReach.Level.write.reach.contains("adds a movement, or a day the program does not have yet"))
-        XCTAssertTrue(LogReach.Level.delete.reach.contains("Discards a whole workout and every set in it, permanently"))
-        XCTAssertTrue(LogReach.Level.delete.reach.contains("ends a share link"))
-        XCTAssertTrue(ConnectedLog.canLines.contains { $0.contains("Share one workout by link") })
+    // Three rows of facts, worded off the tool catalog: read is the eight read tools, write the
+    // seven, delete the three. `workouts` is the one word, and the weigh-ins are named.
+    func testTheGrantIsThreeRowsOfFacts() {
+        XCTAssertEqual(LogReach.Level.allCases.map(\.label), ["Read", "Write", "Delete"])
+        XCTAssertEqual(LogReach.Level.read.meta, "sets, workouts, routines, records, notes, weigh-ins")
+        XCTAssertEqual(LogReach.Level.write.meta, "logs sets · adds routines · shares workouts · proposes changes")
+        XCTAssertEqual(LogReach.Level.delete.meta, "discards a workout · ends a share")
     }
 
-    // A consent screen states a duration the way a reader can check it against a calendar, so the
-    // share window is a NUMERAL on both lines that carry it — the way `share_session` states it in
-    // the tool catalogue and the way the web and Android already write it.
-    func testTheShareWindowIsSaidInNumeralsOnBothLinesThatCarryIt() {
-        let shared = ConnectedLog.canLines.filter { $0.contains("Share one workout by link") }
-        XCTAssertEqual(shared.count, 1, "one line names the share")
+    func testTheScreenSaysEveryPinnedStringByteForByte() {
+        XCTAssertEqual(ConnectedLog.title, "Connected log")
+        XCTAssertEqual(ConnectedLog.head, "Your log, read by Claude, Cursor or Codex.")
+        XCTAssertEqual(ConnectedLog.caption, "A routine change waits for your Apply; the rest lands at once.")
+        XCTAssertEqual(ConnectedLog.action, "Connect a tool")
+        XCTAssertEqual(ConnectedLog.signInFirst, "Sign in first")
+        XCTAssertEqual(ConnectedLog.opensInBrowser, "opens in your browser")
+        XCTAssertEqual(ConnectedLog.disclosure, "How this works")
+        XCTAssertEqual(ConnectedLog.how, [
+            "One URL pasted into your tool. Your browser opens once to approve.",
+            "A shared workout is public for 30 days, until you end it.",
+            "No tool can apply a proposal or edit a logged set.",
+            "Delete is approved on its own, and a discard is permanent.",
+            "End a connection under Settings → Connected tools; a key under API keys.",
+        ])
+        XCTAssertEqual(ConnectedLog.connectedHead, "Connected")
+        XCTAssertEqual(ConnectedLog.unnamedGrant, "A connected tool")
+        XCTAssertEqual(ConnectedLog.unnamedKey, "A static key")
+        XCTAssertEqual(ConnectedLog.unread, "Couldn’t read your connections.")
+        XCTAssertEqual(ConnectedLog.manage, "Manage connections")
+        XCTAssertEqual(ConnectedLog.settingsUnknown, "your AI tools")
+        XCTAssertEqual(ConnectedLog.settingsNone, "nothing connected yet")
+        XCTAssertEqual(ConnectedLog.settingsMany(2), "2 tools")
+        XCTAssertEqual(ConnectedLog.pickerLine, "A written program? Your AI tool can build it.")
+    }
 
-        for line in [LogReach.Level.write.reach] + shared {
-            XCTAssertTrue(line.contains("for 30 days unless you end it sooner"), line)
-            XCTAssertFalse(line.lowercased().contains("thirty"), line)
+    // A decision surface gets forty words of chrome on first paint (`text-budget.md`); the three
+    // level rows are content. 52 with them drawn, 110 with the one disclosure open, and no third layer.
+    func testFirstPaintIsFiftyTwoWordsAndTheOpenDisclosureOneHundredAndTen() {
+        let firstPaint = [ConnectedLog.title, ConnectedLog.head]
+            + LogReach.Level.allCases.flatMap { [$0.label, $0.meta] }
+            + [ConnectedLog.caption, ConnectedLog.action, ConnectedLog.disclosure]
+
+        XCTAssertEqual(Self.words(in: firstPaint), 52)
+        XCTAssertEqual(Self.words(in: firstPaint + ConnectedLog.how), 110)
+    }
+
+    func testEveryLineKeepsItsBudget() {
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.title]), 3)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.head]), 12)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.caption]), 12)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.action]), 3)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.signInFirst]), 3)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.disclosure]), 3)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.manage]), 3)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.unread]), 12)
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.connectedHead]), 2)
+        for level in LogReach.Level.allCases {
+            XCTAssertLessThanOrEqual(Self.words(in: [level.meta]), 8, level.meta)
         }
+        for line in ConnectedLog.how {
+            XCTAssertLessThanOrEqual(Self.words(in: [line]), 12, line)
+        }
+        XCTAssertLessThanOrEqual(Self.words(in: [ConnectedLog.pickerLine, ConnectedLog.action]), 15)
+    }
+
+    // A consent screen states a duration the way a reader can check it against a calendar.
+    func testTheShareWindowIsANumeral() {
+        XCTAssertTrue(ConnectedLog.how[1].contains("for 30 days"))
         for line in Self.everyLine {
-            XCTAssertFalse(line.contains("until it expires"),
-                           "a window without its number, on: \(line)")
+            XCTAssertFalse(line.lowercased().contains("thirty"), line)
+            XCTAssertFalse(line.contains("until it expires"), line)
         }
     }
 
@@ -106,7 +154,7 @@ final class ConnectedLogTests: XCTestCase {
                           reach: LogReach(scope: ""), credential: .pasted),
         ]))
         XCTAssertFalse(state.invites, "the invitation is withdrawn by either door")
-        XCTAssertEqual(state.settingsLine(now: 5_000), "laptop · connected today")
+        XCTAssertEqual(state.settingsMeta, "laptop · whole account")
     }
 
     func testBothDoorsAreCountedTogether() {
@@ -116,15 +164,30 @@ final class ConnectedLogTests: XCTestCase {
             ConnectedLog.Key(id: "k1", name: "laptop", createdMs: 5_000),
         ])
 
-        XCTAssertEqual(state.settingsLine(now: 5_000), "2 tools read this log")
-        XCTAssertEqual(ConnectedLog.count(2), "2 tools read this log")
+        XCTAssertEqual(state.settingsMeta, "2 tools")
     }
 
-    func testARowSaysWhichDoorTheCredentialCameThrough() {
-        XCTAssertEqual(ConnectedTool.Credential.approved.line,
-                       "approved in your browser · ended under Connected tools")
-        XCTAssertEqual(ConnectedTool.Credential.pasted.line,
-                       "a static key you pasted · ended under API keys")
+    // The levels it holds, then the day it was made as a date — `since 12 Aug`, never today or
+    // yesterday — and never a last read.
+    func testARowsMetaIsTheLevelsHeldAndTheDateItWasMade() {
+        // Noon instants, so the calendar day is the same in every zone the suite runs in.
+        let day: Int64 = 86_400_000
+        let now = 41 * day + day / 2
+        let listed = ConnectedTool(id: "c1", name: "Claude Desktop", grantedAtMs: 40 * day + day / 2,
+                                   reach: LogReach(scope: "gym:delete gym:read gym:write"), credential: .approved)
+        let narrow = ConnectedTool(id: "c2", name: "Cursor", grantedAtMs: now,
+                                   reach: LogReach(scope: "gym:read"), credential: .approved)
+        let wide = ConnectedTool(id: "c3", name: "An old client", grantedAtMs: 40 * day + day / 2,
+                                 reach: LogReach(scope: ""), credential: .approved)
+        let key = ConnectedTool(id: "k1", name: "laptop", grantedAtMs: 40 * day + day / 2,
+                                reach: LogReach(scope: ""), credential: .pasted)
+
+        XCTAssertEqual(listed.meta(now: now), "read · write · delete · since 10 Feb")
+        XCTAssertEqual(narrow.meta(now: now), "read · since 11 Feb")
+        XCTAssertEqual(wide.meta(now: now), "whole account · since 10 Feb")
+        XCTAssertEqual(key.meta(now: now), "API key · whole account · since 10 Feb")
+        XCTAssertEqual(listed.meta(now: 400 * day + day / 2), "read · write · delete · since 10 Feb 1970",
+                       "the year is named only once it is not this one")
     }
 
     func testACredentialWithNoNameIsStillNamed() {
@@ -151,25 +214,22 @@ final class ConnectedLogTests: XCTestCase {
             .none)
     }
 
-    func testAReadThatDidNotComeBackSaysNothingUnderTheSettingsRow() {
-        XCTAssertNil(ConnectedLogState.unknown.settingsLine(now: 0))
-        XCTAssertEqual(ConnectedLogState.none.settingsLine(now: 0), "no tool reads this log yet")
-    }
-
-    func testTheSettingsRowNamesOneToolAndCountsMore() {
-        let day: Int64 = 86_400_000
-        let claude = ConnectedTool(id: "c1", name: "Claude", grantedAtMs: 40 * day,
-                                   reach: LogReach(scope: "gym:read"), credential: .approved)
-        let cursor = ConnectedTool(id: "c2", name: "Cursor", grantedAtMs: 41 * day,
+    // The settings row prints the state only: no precondition, no caption, no pitch.
+    func testTheSettingsRowPrintsTheStateAndNothingElse() {
+        let claude = ConnectedTool(id: "c1", name: "Claude Desktop", grantedAtMs: 0,
+                                   reach: LogReach(scope: "gym:read gym:write"), credential: .approved)
+        let cursor = ConnectedTool(id: "c2", name: "Cursor", grantedAtMs: 0,
                                    reach: LogReach(scope: "gym:read"), credential: .approved)
 
-        XCTAssertEqual(ConnectedLogState.connected([claude]).settingsLine(now: 40 * day),
-                       "Claude · connected today")
-        XCTAssertEqual(ConnectedLogState.connected([claude, cursor]).settingsLine(now: 41 * day),
-                       "2 tools read this log")
+        XCTAssertEqual(ConnectedLogState.unread.settingsMeta, "your AI tools")
+        XCTAssertEqual(ConnectedLogState.unknown.settingsMeta, "your AI tools")
+        XCTAssertEqual(ConnectedLogState.none.settingsMeta, "nothing connected yet")
+        XCTAssertEqual(ConnectedLogState.connected([claude]).settingsMeta, "Claude Desktop · read · write")
+        XCTAssertEqual(ConnectedLogState.connected([claude, cursor]).settingsMeta, "2 tools")
     }
 
     func testTheInvitationIsOfferedUntilSomethingActuallyReachesTheLog() {
+        XCTAssertTrue(ConnectedLogState.unread.invites)
         XCTAssertTrue(ConnectedLogState.unknown.invites)
         XCTAssertTrue(ConnectedLogState.none.invites)
         XCTAssertFalse(ConnectedLogState.connected([
@@ -178,89 +238,151 @@ final class ConnectedLogTests: XCTestCase {
         ]).invites)
     }
 
-    func testNoWordOnTheConnectedLogSellsAnything() {
-        let sold = ["Windmill One", "upgrade", "Upgrade", "subscribe", "Subscribe", "plan", "Plan",
+    // Nothing in gym is for sale, nothing in gym exports, and a product screen does not pitch a
+    // feature to someone standing on it.
+    func testNoWordOnTheConnectedLogSellsAnythingOrPitches() {
+        let gone = ["Windmill One", "upgrade", "Upgrade", "subscribe", "Subscribe", "plan", "Plan",
                     "trial", "Trial", "$", "€", "£", "per month", "/mo", "unlock", "Unlock",
-                    "premium", "Premium", "founder", "limited time", "paid", "billing"]
+                    "premium", "Premium", "founder", "limited time", "paid", "billing",
+                    "free", "Free", "CSV", "csv", "export", "Sunday", "Monday", "MCP", "ChatGPT"]
         for line in Self.everyLine {
-            for word in sold {
-                XCTAssertFalse(line.contains(word), "“\(word)” is sold on: \(line)")
+            for word in gone {
+                XCTAssertFalse(line.contains(word), "“\(word)” is on: \(line)")
             }
         }
     }
 
-    func testWhereThePriceWasTheCardSaysConnectingIsFree() {
-        XCTAssertTrue(ConnectedLog.free.hasPrefix("Connecting your log is free."))
-        XCTAssertTrue(ConnectedLog.inviteLine.contains("Connecting is free."))
-        for line in Self.everyLine {
-            XCTAssertFalse(line.contains("free for now"), line)
-            XCTAssertFalse(line.contains("for a limited"), line)
-        }
-    }
-
-    // The word coach names the room and nothing else; the pitch contrasts on where the log lives, not on quality.
-    func testTheConnectPitchNeverSaysCoach() {
+    // The word coach names the room and nothing else.
+    func testTheConnectedLogNeverSaysCoach() {
         for line in Self.everyLine {
             XCTAssertFalse(line.lowercased().contains("coach"), line)
         }
-        XCTAssertEqual(ConnectedLog.sub,
-                       "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the assistant you already use.")
-        XCTAssertTrue(ConnectedLog.free.contains("the workout share and the CSV"), ConnectedLog.free)
     }
 
     func testNothingClaimsAFreshnessThisSurfaceCannotObserve() {
         for line in Self.everyLine {
-            XCTAssertFalse(line.contains("read 2h"), line)
             XCTAssertFalse(line.lowercased().contains("last read"), line)
+            XCTAssertFalse(line.lowercased().contains("last used"), line)
             XCTAssertFalse(line.lowercased().contains("last active"), line)
         }
     }
 
-    // `get_preferences` does not exist at any grant level and nothing replaced it: the rest target and
-    // the reading unit are the lifter's own dials, not context a connection can fetch.
-    func testNoLineOnTheConsentSurfaceClaimsAConnectionReadsHowTheGymIsSetUp() {
+    // `get_preferences` does not exist at any grant level: the read row's enumeration is the
+    // disclosure, and nothing needs to say what is not in it. The one mention of Settings is the
+    // disclosure's fifth line naming where a connection ends.
+    func testNoLineClaimsAConnectionReadsHowTheGymIsSetUp() {
         for line in Self.everyLine {
             XCTAssertFalse(line.contains("how your gym is set up"), line)
-            XCTAssertFalse(line.contains("preferences"), line)
+            XCTAssertFalse(line.lowercased().contains("preferences"), line)
         }
+        XCTAssertEqual(Self.everyLine.filter { $0.lowercased().contains("settings") }, [ConnectedLog.how[4]])
     }
 
-    func testTheNeverPanelPromisesTheThreeThingsTheToolCatalogActuallyRefuses() {
-        XCTAssertEqual(ConnectedLog.neverLines.count, 3)
-        XCTAssertTrue(ConnectedLog.neverLines[0].contains("no apply tool at any grant level"))
-        XCTAssertTrue(ConnectedLog.neverLines[1].contains("arrive as a proposal"))
-        XCTAssertTrue(ConnectedLog.neverLines[2].contains("Edit a set you already logged"))
+    // `unread` and `unknown` both say nothing about the log, and only the second is a read that
+    // failed — the state a screen may draw as a refusal.
+    func testOnlyARealAnswerIsAnswered() {
+        XCTAssertFalse(ConnectedLogState.unread.answered)
+        XCTAssertFalse(ConnectedLogState.unknown.answered)
+        XCTAssertTrue(ConnectedLogState.none.answered)
+        XCTAssertTrue(ConnectedLogState.connected([
+            ConnectedTool(id: "c1", name: "Claude", grantedAtMs: 0,
+                          reach: LogReach(scope: "gym:read"), credential: .approved),
+        ]).answered)
     }
 
-    func testThePitchDoesNotPromiseThatNothingIsEverWritten() {
-        for line in Self.everyLine {
-            XCTAssertFalse(line.contains("never writes"), line)
-        }
-        XCTAssertTrue(ConnectedLog.bullets[1].contains("never changes until you tap Apply"))
-        XCTAssertTrue(ConnectedLog.canLines.contains { $0.contains("add a movement or a day") })
-        XCTAssertTrue(ConnectedLog.canLines.contains { $0.contains("Discard a whole workout") })
+    // A seat is read once — the launch asks from two places within a frame — every return from the
+    // background and every pull refreshes, a screen pushed or popped asks nothing, a new seat reads.
+    @MainActor
+    func testTheWireIsReadOncePerSeatAndOnEveryReturnFromTheBackground() async {
+        ConnectionsWire.reset()
+        let reader = ConnectedLogReader()
+        let sam = Self.seat("u1")
+
+        async let seatTask: () = reader.read(for: sam)
+        async let sceneActive: () = reader.refresh(sam)
+        _ = await (seatTask, sceneActive)
+        XCTAssertEqual(ConnectionsWire.fetched.sorted(), ["/v1/mcp-keys", "/v1/oauth/grants"], "a cold open fetches once")
+        XCTAssertEqual(reader.state, .connected([
+            ConnectedTool(id: "k1", name: "laptop", grantedAtMs: 5_000, reach: LogReach(scope: ""), credential: .pasted),
+        ]))
+
+        await reader.refresh(sam)
+        XCTAssertEqual(ConnectionsWire.fetched.count, 4, "back from the background fetches")
+
+        await reader.read(for: sam)
+        XCTAssertEqual(ConnectionsWire.fetched.count, 4, "a screen pushed or popped on the same seat fetches nothing")
+
+        await reader.refresh(sam)
+        XCTAssertEqual(ConnectionsWire.fetched.count, 6, "a pull-to-refresh fetches")
+
+        await reader.read(for: Self.seat("u2"))
+        XCTAssertEqual(ConnectionsWire.fetched.count, 8, "a new seat fetches")
     }
 
-    func testTheAccountBulletDoesNotPromiseAGrantJournalCannotName() {
-        XCTAssertTrue(ConnectedLog.bullets[2].contains("One account across all three Windmill products"))
-        XCTAssertTrue(ConnectedLog.bullets[2].contains("this log, your roadmap, or both"))
-        XCTAssertFalse(ConnectedLog.bullets[2].contains("which of them"))
+    @MainActor
+    func testTheLaunchReadsOnceWhicheverCallerFiresFirst() async {
+        ConnectionsWire.reset()
+        let reader = ConnectedLogReader()
+        let sam = Self.seat("u1")
+
+        async let sceneActive: () = reader.refresh(sam)
+        async let seatTask: () = reader.read(for: sam)
+        _ = await (sceneActive, seatTask)
+
+        XCTAssertEqual(ConnectionsWire.fetched.sorted(), ["/v1/mcp-keys", "/v1/oauth/grants"])
     }
 
-    func testThePreconditionNamesOnlyToolsTheConnectPageHasARecipeFor() {
-        XCTAssertTrue(ConnectedLog.precondition.contains("Claude, Cursor, Codex"))
-        XCTAssertTrue(ConnectedLog.precondition.contains("speaks MCP"))
-        XCTAssertTrue(ConnectedLog.precondition.contains("the log stays free regardless"))
-        XCTAssertFalse(ConnectedLog.precondition.contains("ChatGPT"))
+    @MainActor
+    func testAFailedReadIsUnknownAndTheNextForegroundTriesAgain() async {
+        ConnectionsWire.reset()
+        ConnectionsWire.refusing = true
+        let reader = ConnectedLogReader()
+        let sam = Self.seat("u1")
+
+        await reader.read(for: sam)
+        XCTAssertEqual(reader.state, .unknown)
+        XCTAssertEqual(ConnectionsWire.fetched.count, 2)
+
+        ConnectionsWire.refusing = false
+        await reader.read(for: sam)
+        XCTAssertEqual(ConnectionsWire.fetched.count, 4, "a failed read is not an answer, so the seat reads again")
+        XCTAssertEqual(reader.state, .connected([
+            ConnectedTool(id: "k1", name: "laptop", grantedAtMs: 5_000, reach: LogReach(scope: ""), credential: .pasted),
+        ]))
     }
 
-    func testTheEndingLineSaysWhatRevokingActuallyDoesAndNamesNoHost() {
-        XCTAssertTrue(ConnectedLog.ending.contains("an approved connection under Connected tools"))
-        XCTAssertTrue(ConnectedLog.ending.contains("a static key under API keys"))
-        XCTAssertTrue(ConnectedLog.ending.contains("stops its reads immediately"))
-        XCTAssertTrue(ConnectedLog.ending.contains("every proposal already in your history stays"))
+    @MainActor
+    func testSignedOutThereIsNoReadToMake() async {
+        ConnectionsWire.reset()
+        let reader = ConnectedLogReader()
+
+        await reader.read(for: Self.seat(nil))
+        await reader.refresh(Self.seat(nil))
+
+        XCTAssertEqual(reader.state, .none)
+        XCTAssertEqual(ConnectionsWire.fetched, [])
+    }
+
+    private static func seat(_ userId: String?) -> Account {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ConnectionsWire.self]
+        let api = WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { "secret" },
+                              session: URLSession(configuration: configuration))
+        return Account(api: api, user: userId.map { User(id: $0, email: "\($0)@example.com", name: "Sam") })
+    }
+
+    func testTheScreenNamesNoHost() {
         for line in Self.everyLine {
             XCTAssertFalse(line.contains("windmill.works"), line)
+        }
+        XCTAssertEqual(ConnectedLog.connectPath, "/#/connect")
+        XCTAssertEqual(ConnectedLog.settingsPath, "/#/settings")
+    }
+
+    // Words as the brief counts them: runs of letters and digits, so `weigh-ins` is two and `·` is none.
+    private static func words(in lines: [String]) -> Int {
+        lines.reduce(0) { count, line in
+            count + line.split { !($0.isLetter || $0.isNumber) }.count
         }
     }
 
@@ -270,30 +392,46 @@ final class ConnectedLogTests: XCTestCase {
                                      reach: LogReach(scope: ""), credential: .approved)
         let pasted = ConnectedTool(id: "k1", name: "laptop", grantedAtMs: 41 * day,
                                    reach: LogReach(scope: "gym:read"), credential: .pasted)
-        let rendered = [ConnectedLogState.none, .connected([approved]), .connected([approved, pasted])]
-            .compactMap { $0.settingsLine(now: 41 * day) }
+        let rendered = [ConnectedLogState.unread, .unknown, .none, .connected([approved]), .connected([approved, pasted])]
+            .map(\.settingsMeta)
 
-        return ConnectedLog.bullets + ConnectedLog.canLines + ConnectedLog.neverLines
-            + LogReach.Level.allCases.map(\.reach)
-            + ConnectedTool.Credential.allCases.map(\.line)
+        return LogReach.Level.allCases.flatMap { [$0.label, $0.meta] }
+            + ConnectedLog.how
             + rendered
-            + [ConnectedLog.count(1), ConnectedLog.count(2), ConnectedLog.since(0, now: 41 * day)]
+            + [approved.meta(now: 41 * day), pasted.meta(now: 41 * day)]
             + [
-                ConnectedLog.headline, ConnectedLog.sub, ConnectedLog.sundayHead, ConnectedLog.sunday,
-                ConnectedLog.mondayHead, ConnectedLog.monday, ConnectedLog.precondition,
-                ConnectedLog.action, ConnectedLog.accountFirst, ConnectedLog.desk, ConnectedLog.free,
-                ConnectedLog.canTitle, ConnectedLog.neverTitle, ConnectedLog.ending,
-                ConnectedLog.inviteTitle, ConnectedLog.inviteLine, ConnectedLog.inviteAction,
-                ConnectedLog.unread, ConnectedLog.stateTitle, ConnectedLog.nothingReadsIt,
-                ConnectedLog.settingsFallback, ConnectedLog.accountWide, ConnectedLog.webDoor,
+                ConnectedLog.title, ConnectedLog.head, ConnectedLog.caption, ConnectedLog.action,
+                ConnectedLog.signInFirst, ConnectedLog.opensInBrowser, ConnectedLog.disclosure,
+                ConnectedLog.connectedHead, ConnectedLog.unnamedGrant, ConnectedLog.unnamedKey,
+                ConnectedLog.unread, ConnectedLog.manage, ConnectedLog.pickerLine,
             ]
     }
+}
 
-    // The read line names notes the way the web and Android do (ledger 3m): a grant that reads the
-    // log reads the notes on it, and a consent screen that leaves that out is asking for less than
-    // it takes.
-    func testTheReadLineNamesNotesAsTheOtherSurfacesDo() {
-        XCTAssertEqual(ConnectedLog.canLines[0],
-                       "Read what you have logged — sets, sessions, routines, records and notes.")
+// The two reads behind the connected log, answered from a script: no grants, one static key.
+final class ConnectionsWire: URLProtocol {
+    static var fetched: [String] = []
+    static var refusing = false
+
+    static func reset() {
+        fetched = []
+        refusing = false
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        Self.fetched.append(path)
+        let body = path == "/v1/oauth/grants"
+            ? #"{"grants":[]}"#
+            : #"{"keys":[{"id":"k1","name":"laptop","createdMs":5000}]}"#
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.refusing ? 500 : 200,
+                                       httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
     }
 }

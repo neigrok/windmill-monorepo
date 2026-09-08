@@ -3,7 +3,6 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/json/JsonText.h"
-#include "products/gym/adapters/csv/TrainingCsv.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <algorithm>
@@ -391,20 +390,6 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
   cb(jsonResponse(toJson(training_->statistics(*caller))));
-}
-
-void TrainingApi::exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k200OK);
-  response->setContentTypeCode(drogon::CT_TEXT_CSV);
-  response->addHeader("Content-Disposition", "attachment; filename=\"windmill-gym-sets.csv\"");
-  response->setBody(toCsv(training_->exportedSets(*caller)));
-  cb(response);
 }
 
 // Idempotent on the session, not on a client-minted id. An expired share is replaced, so the reply

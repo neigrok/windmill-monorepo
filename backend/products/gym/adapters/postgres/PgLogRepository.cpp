@@ -914,55 +914,6 @@ TrainingLog PgLogRepository::trainingLog(const UserId& user) {
   return log;
 }
 
-std::vector<ExportedSet> PgLogRepository::exportedSets(const UserId& user) {
-  // Every value comes back as text rendered by Postgres: instants ISO-8601 UTC, numerics at their
-  // column's own scale (72.5 kg is "72.50"), an absent rpe as an empty cell and never a zero. Ordered
-  // by the session's (started_at, id) pair, then by the sets inside it. Nothing is excluded, the open
-  // session included. The routine name is the frozen snapshot.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT st.session_id, "
-      "       to_char(s.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
-      "         AS started_at, "
-      "       coalesce(to_char(s.finished_at AT TIME ZONE 'UTC', "
-      "                        'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') AS finished_at, "
-      "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
-      "            ELSE '' END AS routine, "
-      // The movement travels under the name this file's owner calls it.
-      "       st.id AS set_id, st.exercise_id, coalesce(n.name, e.name) AS exercise, "
-      "       st.set_number::text AS set_number, st.weight_kg::text AS weight_kg, "
-      "       st.reps::text AS reps, st.kind, coalesce(st.rpe::text, '') AS rpe, st.note, "
-      "       to_char(st.completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
-      "         AS completed_at "
-      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-      "                 JOIN gym_exercises e ON e.id = st.exercise_id "
-      "                 LEFT JOIN gym_exercise_names n "
-      "                   ON n.exercise_id = e.id AND n.user_id = $1::uuid "
-      // Scoped on both halves, never through the invariant that a set row inherits its session's
-      // owner.
-      "WHERE st.user_id = $1::uuid AND s.user_id = $1::uuid "
-      "ORDER BY s.started_at ASC, s.id ASC, st.completed_at ASC, st.set_number ASC",
-      user.str());
-
-  std::vector<ExportedSet> out;
-  for (const auto& row : rows)
-    out.push_back(ExportedSet{row["session_id"].as<std::string>(),
-                              row["started_at"].as<std::string>(),
-                              row["finished_at"].as<std::string>(),
-                              row["routine"].as<std::string>(),
-                              row["set_id"].as<std::string>(),
-                              row["exercise_id"].as<std::string>(),
-                              row["exercise"].as<std::string>(),
-                              row["set_number"].as<std::string>(),
-                              row["weight_kg"].as<std::string>(),
-                              row["reps"].as<std::string>(),
-                              row["kind"].as<std::string>(),
-                              row["rpe"].as<std::string>(),
-                              row["note"].as<std::string>(),
-                              row["completed_at"].as<std::string>()});
-  return out;
-}
 
 std::optional<SessionShare> PgLogRepository::insertShare(const SessionShare& incoming,
                                                               std::uint64_t nowMs) {

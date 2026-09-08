@@ -238,30 +238,7 @@ TEST(gym_notes_are_owner_scoped_on_every_door) {
            drogon::k401Unauthorized);
   CHECK_EQ(send(h.notes, &NotesApi::reorderNotes, putRequest("/v1/gym/notes", order))->getStatusCode(),
            drogon::k401Unauthorized);
-  CHECK_EQ(send(h.notes, &NotesApi::exportNotes, getRequest("/v1/gym/export/notes"))->getStatusCode(),
-           drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(list(h, ""))),
            std::string(R"({"error":"sign in to open your training log"})"));
   CHECK_EQ(h.repo.db.noteRows.size(), std::size_t{0});
-}
-
-TEST(gym_notes_export_is_a_csv_attachment_in_precedence_order) {
-  Harness h;
-  h.signIn("s-live");
-  h.clock.now = 1'700'000'000'000;
-  save(h, "note_00000001", noteBody("How I want to be talked to", "Blunt, no praise.\nNumbers first."));
-  save(h, "note_00000002", noteBody("What I am training for", ""));
-  h.repo.db.noteRows.push_back(Note{NoteId{"note_00000009"}, UserId{"stranger"}, "Theirs", "", 0, 1});
-
-  const drogon::HttpResponsePtr response =
-      send(h.notes, &NotesApi::exportNotes, getRequest("/v1/gym/export/notes", "s-live"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(response->getHeader("Content-Disposition"),
-           std::string(R"(attachment; filename="windmill-gym-notes.csv")"));
-  CHECK_EQ(std::string(response->getBody()),
-           std::string("position,title,body,updated_at\r\n"
-                       "0,How I want to be talked to,\"Blunt, no praise.\nNumbers first.\","
-                       "2023-11-14T22:13:20Z\r\n"
-                       "1,What I am training for,,2023-11-14T22:13:20Z\r\n"));
 }

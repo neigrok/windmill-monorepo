@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { EXPORT_THREADS_HREF, gymApi } from '../gymApi.js';
+import { gymApi } from '../gymApi.js';
 import { COACH_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
 import { changeLabel, isPending, receiptLine, stateChip, STILL_WAITING } from '../proposals.js';
 import { ProposalReview } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import {
-  askedLabel, conversationsLine, DELETE_VERB, EXPORT_THREADS_LINE,
-  EXPORT_THREADS_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
+  askedLabel, conversationsLine, DELETE_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
   THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure,
   THREADS_FAILED, THREADS_TITLE,
 } from './threads.js';
@@ -21,7 +20,7 @@ export function ThreadsList({ log }) {
   // transient is the only place it still exists, and the only way back — and off it for good once
   // the store has answered. A refused delete needs no re-read: the read this list already holds was
   // taken while the conversation was there, and there is where the store kept it. The other question
-  // is what the ACCOUNT holds, which is the stance's and the export door's, and the settled delete
+  // is what the ACCOUNT holds, which is the stance's, and the settled delete
   // leaves that read as well as the rows: this list is never read again inside one visit.
   const settled = log.gone('thread');
   const withheld = log.hidden('thread');
@@ -66,15 +65,6 @@ export function ThreadsList({ log }) {
       ))}
 
       <a className="gym-threads-new" href={COACH_HREF}>{NEW_THREAD_VERB}</a>
-
-      {/* The door reads the ACCOUNT: the export carries every message the store holds, which one
-          held delete has not changed, and a door to all of it may not disappear for nine seconds. */}
-      {conversations.length > 0 && (
-        <a className="gym-threads-export" href={EXPORT_THREADS_HREF}>
-          <span className="gym-threads-export-verb">{EXPORT_THREADS_VERB}</span>
-          <span className="gym-threads-export-line">{EXPORT_THREADS_LINE}</span>
-        </a>
-      )}
     </section>
   );
 }

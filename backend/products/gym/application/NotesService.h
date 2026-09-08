@@ -18,7 +18,6 @@ public:
   NoteWriteOutcome saveNote(const Note& incoming);
   void deleteNote(const UserId& user, const NoteId& id);
   NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order);
-  std::vector<ExportedNote> exportedNotes(const UserId& user);
 
 private:
   NotesRepository& notes_;

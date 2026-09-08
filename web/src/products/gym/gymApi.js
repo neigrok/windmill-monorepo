@@ -410,9 +410,3 @@ export const gymApi = {
     return json(await call(`/bodyweight/${encodeURIComponent(dateLocal)}`, { method: 'DELETE' }));
   },
 };
-
-// Links the browser follows, not methods; the session cookie rides the navigation.
-export const EXPORT_HREF = `${base}/export`;
-export const EXPORT_THREADS_HREF = `${base}/export/threads`;
-export const EXPORT_NOTES_HREF = `${base}/export/notes`;
-export const EXPORT_BODYWEIGHT_HREF = `${base}/export/bodyweight`;

@@ -363,7 +363,7 @@ struct OpeningPicker: View {
     let isSignedIn: Bool
     let onPick: (String) -> Void
     let onCreate: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
-    let onBuildRoutine: (() -> Void)?
+    let onConnect: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
     @State private var query = ""
@@ -377,7 +377,7 @@ struct OpeningPicker: View {
          sessions: [SessionSummary], isSignedIn: Bool,
          onPick: @escaping (String) -> Void,
          onCreate: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>,
-         onBuildRoutine: (() -> Void)?) {
+         onConnect: (() -> Void)?) {
         self.catalog = catalog
         self.taken = taken
         self.lastSets = lastSets
@@ -385,7 +385,7 @@ struct OpeningPicker: View {
         self.isSignedIn = isSignedIn
         self.onPick = onPick
         self.onCreate = onCreate
-        self.onBuildRoutine = onBuildRoutine
+        self.onConnect = onConnect
         _opened = State(initialValue: PickerOptions.window(of: sessions))
     }
 
@@ -415,20 +415,19 @@ struct OpeningPicker: View {
         .minting($minting, onCreate: onCreate, onPick: onPick)
     }
 
-    // The room hands `onBuildRoutine` over only while nothing already reaches this log; nil withdraws the card.
+    // The room hands `onConnect` over only while nothing already reaches this log; nil withdraws
+    // the card. An empty state: a line and the action, and the action names what the tap will do.
     @ViewBuilder
     private var agent: some View {
-        if let onBuildRoutine {
-            Button(action: onBuildRoutine) {
+        if let onConnect {
+            Button(action: onConnect) {
                 VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                    Text(isSignedIn
-                         ? "Have a written program? An agent can build it — connect it to this log."
-                         : "Have a written program? An agent can build it — sign in first.")
+                    Text(ConnectedLog.pickerLine)
                         .font(WindmillFont.body(14))
                         .foregroundStyle(skin.inkDim)
                         .lineSpacing(3)
                         .multilineTextAlignment(.leading)
-                    Text("Build my routine →")
+                    Text(isSignedIn ? ConnectedLog.action : ConnectedLog.signInFirst)
                         .font(WindmillFont.body(14, .bold))
                         .foregroundStyle(skin.accent)
                 }

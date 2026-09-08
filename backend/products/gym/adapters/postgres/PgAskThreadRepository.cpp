@@ -81,19 +81,20 @@ std::optional<AskThread> loadThread(pqxx::work& txn, const UserId& user, const T
   return thread;
 }
 
-// The turns stay behind in both readings. `order` and `limit` are all the two callers differ by: the
-// list is newest first and stops at kThreadList; the export is oldest first and stops nowhere.
-std::vector<AskThread> threadsUnder(pqxx::work& txn, const UserId& user, std::string_view order,
-                                    std::optional<int> limit) {
-  pqxx::result rows =
-      limit ? txn.exec_params("SELECT " + std::string(kThreadColumns) +
-                                  " FROM gym_ask_threads t WHERE t.user_id = $1::uuid ORDER BY " +
-                                  std::string(order) + " LIMIT $2",
-                              user.str(), *limit)
-            : txn.exec_params("SELECT " + std::string(kThreadColumns) +
-                                  " FROM gym_ask_threads t WHERE t.user_id = $1::uuid ORDER BY " +
-                                  std::string(order),
-                              user.str());
+}
+
+PgAskThreadRepository::PgAskThreadRepository(std::shared_ptr<PgPool> pool)
+    : pool_(std::move(pool)) {}
+
+// The turns stay behind: every thread's proposals ride along, newest asked first, kThreadList deep.
+std::vector<AskThread> PgAskThreadRepository::threads(const UserId& user) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT " + std::string(kThreadColumns) +
+          " FROM gym_ask_threads t WHERE t.user_id = $1::uuid"
+          " ORDER BY t.asked_at DESC, t.id DESC LIMIT $2",
+      user.str(), kThreadList);
 
   std::vector<AskThread> threads;
   std::string ids;
@@ -106,23 +107,6 @@ std::vector<AskThread> threadsUnder(pqxx::work& txn, const UserId& user, std::st
     for (AskThread& thread : threads)
       if (thread.id.str() == from) thread.minted.push_back(minted);
   return threads;
-}
-}
-
-PgAskThreadRepository::PgAskThreadRepository(std::shared_ptr<PgPool> pool)
-    : pool_(std::move(pool)) {}
-
-std::vector<AskThread> PgAskThreadRepository::threads(const UserId& user) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  return threadsUnder(txn, user, "t.asked_at DESC, t.id DESC", kThreadList);
-}
-
-std::vector<AskThread> PgAskThreadRepository::allThreads(const UserId& user) {
-  // No ceiling, and ordered like the turns beside it so the two halves of one file share an order.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  return threadsUnder(txn, user, "t.created_at, t.id", std::nullopt);
 }
 
 std::optional<AskThread> PgAskThreadRepository::thread(const UserId& user, const ThreadId& id) {
@@ -204,46 +188,6 @@ bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id)
       user.str());
   txn.commit();
   return !removed.empty();
-}
-
-std::vector<ExportedThreadTurn> PgAskThreadRepository::exportedThreadTurns(const UserId& user) {
-  // Every value is text rendered by Postgres: instants ISO-8601 UTC, numbers at their own scale, the
-  // turn byte for byte. The outcome columns come back empty; ThreadService stamps that ladder on.
-  // Ordered by the thread's own (created_at, id), then by the turns inside it. A LEFT JOIN with the
-  // three turn columns coalesced, because a thread with no turns is real.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT t.id AS thread_id, t.title, "
-      "       to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
-      "         AS created_at, "
-      "       coalesce(n.position::text, '') AS turn_number, "
-      // `n.from_lifter IS NULL` is asked first: a plain CASE sends a NULL down the ELSE branch, so an
-      // absent turn would export as one Ask had said.
-      "       CASE WHEN n.from_lifter IS NULL THEN '' "
-      "            WHEN n.from_lifter THEN 'lifter' ELSE 'coach' END AS turn_from, "
-      "       coalesce(n.text, '') AS text, "
-      "       coalesce(to_char(n.said_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') "
-      "         AS said_at "
-      "FROM gym_ask_threads t "
-      "     LEFT JOIN gym_ask_turns n ON n.thread_id = t.id AND n.user_id = $1::uuid "
-      "WHERE t.user_id = $1::uuid "
-      "ORDER BY t.created_at, t.id, n.position",
-      user.str());
-
-  std::vector<ExportedThreadTurn> turns;
-  for (const auto& row : rows)
-    turns.push_back(ExportedThreadTurn{row["thread_id"].as<std::string>(),
-                                       row["title"].as<std::string>(),
-                                       "",
-                                       "",
-                                       "",
-                                       row["created_at"].as<std::string>(),
-                                       row["turn_number"].as<std::string>(),
-                                       row["turn_from"].as<std::string>(),
-                                       row["text"].as<std::string>(),
-                                       row["said_at"].as<std::string>()});
-  return turns;
 }
 
 }

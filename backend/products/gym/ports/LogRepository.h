@@ -124,27 +124,6 @@ struct SessionRows {
   std::vector<Set> sets;
 };
 
-// Text end to end, instants ISO-8601 UTC, numerics at their column's own scale (72.5 kg is "72.50"),
-// an absent rpe an empty cell rather than a zero.
-struct ExportedSet {
-  std::string sessionId;
-  std::string startedAt;
-  std::string finishedAt;    // empty while the workout is still running
-  std::string routineName;   // empty for an ad-hoc session
-  std::string setId;
-  std::string exerciseId;
-  std::string exerciseName;
-  std::string setNumber;
-  std::string weightKg;
-  std::string reps;
-  std::string kind;
-  std::string rpe;           // empty where none was logged
-  std::string note;
-  std::string completedAt;
-
-  bool operator==(const ExportedSet&) const = default;
-};
-
 // The token is minted server-side, never accepted from a client; the session id is resolved against
 // the caller's own log before a share is built from it.
 struct SessionShare {
@@ -236,8 +215,6 @@ struct LogRepository {
 
   // `tops` come back grouped by movement, oldest first within each group; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
-  // Every set this account holds, oldest first, including the workout still open.
-  virtual std::vector<ExportedSet> exportedSets(const UserId& user) = 0;
 
   // Idempotent ON THE SESSION: a second call while a share is live hands back the same token; an
   // expired share is replaced rather than returned. Absent, another account's, and

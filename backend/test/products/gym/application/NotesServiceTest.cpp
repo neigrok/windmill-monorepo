@@ -162,17 +162,3 @@ TEST(reordering_replaces_the_whole_order_or_refuses_it) {
   // An account with nothing reorders nothing, and that is the one empty order that is not a mismatch.
   CHECK(h.notes.reorderNotes(UserId{"u3"}, {}).error == NotesOrderError::none);
 }
-
-TEST(the_notes_export_is_text_in_precedence_order) {
-  Harness h;
-  h.clock.now = 1'700'000'000'000;
-  h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt."));
-  h.notes.saveNote(h.note("note_00000002", "Goal", ""));
-  h.notes.saveNote(h.note("note_00000009", "Theirs", "", "u2"));
-  h.notes.reorderNotes(uid(), {NoteId{"note_00000002"}, NoteId{"note_00000001"}});
-
-  CHECK_EQ(h.notes.exportedNotes(uid()),
-           (std::vector<ExportedNote>{{"0", "Goal", "", "2023-11-14T22:13:20Z"},
-                                      {"1", "Tone", "Blunt.", "2023-11-14T22:13:20Z"}}));
-  CHECK_EQ(h.notes.exportedNotes(UserId{"u3"}), std::vector<ExportedNote>{});
-}

@@ -2,7 +2,6 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "products/gym/adapters/csv/TrainingCsv.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <optional>
@@ -106,20 +105,6 @@ void NotesApi::reorderNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     return;
   }
   cb(jsonResponse(wrapped(outcome.notes)));
-}
-
-void NotesApi::exportNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k200OK);
-  response->setContentTypeCode(drogon::CT_TEXT_CSV);
-  response->addHeader("Content-Disposition", "attachment; filename=\"windmill-gym-notes.csv\"");
-  response->setBody(toCsv(notes_->exportedNotes(*caller)));
-  cb(response);
 }
 
 }

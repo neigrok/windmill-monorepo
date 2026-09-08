@@ -193,16 +193,12 @@ test('the row is off the list at once, and the window runs the full nine seconds
 });
 
 // 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
-// The door is the sharp half here: `Export conversations` opens on everything the ACCOUNT holds, and
-// a delete that has not been sent may not take a door to all of it off the screen for nine seconds.
-test('the list’s stance and its export door read the store: every conversation held draws neither, and the settled deletes draw both', async (t) => {
+test('the list’s stance reads the store: every conversation held draws no empty line, and the settled deletes draw it', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_3');
-  const door = () => findByClass(room.list(), 'gym-threads-export');
   const quiet = () => findByClass(room.list(), 'gym-quiet').map(textOf);
-  assert.equal(door().length, 1);
   assert.deepEqual(quiet(), []);
 
   deleteVerb(room.detail()).props.onClick();
@@ -214,7 +210,6 @@ test('the list’s stance and its export door read the store: every conversation
 
   assert.deepEqual(titles(room.list()), [], 'all three rows are off the list, which is all the window decides');
   assert.deepEqual(quiet(), [], 'the account still holds all three, so nothing says it holds none');
-  assert.equal(door().length, 1, 'least of all by closing the door to everything it holds');
   assert.equal(room.log().transient.text, '3 deleted.');
   assert.deepEqual(deletes(wire), []);
 
@@ -225,7 +220,6 @@ test('the list’s stance and its export door read the store: every conversation
     ['DELETE /threads/thr_1', 'DELETE /threads/thr_2', 'DELETE /threads/thr_3'],
   );
   assert.deepEqual(quiet(), [NO_THREADS], 'the store answered for all three, and only now is the account empty');
-  assert.deepEqual(door(), [], 'and the door goes with the last conversation it would have carried');
 });
 
 test('Undo puts the conversation back at its own position, and the delete is never sent', async (t) => {

@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -17,6 +18,8 @@ import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AutoClose
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.ConnectedLog
+import works.windmill.gym.domain.ConnectedLogState
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -86,6 +89,11 @@ class TrainingStore(
     // Filled by `connect` from the copy the device holds FOR THE SEAT NOW ASKING: a name is
     // per-account the moment a rename exists.
     var catalog: List<Exercise> by mutableStateOf(emptyList())
+        private set
+    // What reaches this account's log, as the shell last answered for the seat in hand. Held by the
+    // ROOM so the settings row and the connected-log screen read one answer, and read once per
+    // seat: `connect` drops it on arrival and `readConnectedLog` asks only while nothing is held.
+    var connectedLog: ConnectedLogState by mutableStateOf(ConnectedLogState.Unknown)
         private set
     // Published from here so the settings screen and the logger read one document.
     var preferences: GymPreferences by mutableStateOf(GymPreferences())
@@ -392,6 +400,7 @@ class TrainingStore(
             deletedSets = emptySet()
             notebook = emptyList()
             conversations = emptyList()
+            connectedLog = ConnectedLogState.Unknown
         }
         // A workout both finished on the shelf and live in the queue: the shelf's copy wins, after
         // its sets merge in.
@@ -1112,6 +1121,36 @@ class TrainingStore(
             conversations = conversations.filterNot { it.id == id }
             GymResult.Ok(Unit)
         }
+    }
+
+    // What a screen asks on the way in: the answer already held for this seat, or the read that
+    // gets one. A refused read is not an answer, so the next screen in asks again.
+    suspend fun readConnectedLog(): ConnectedLogState {
+        if (connectedLog.answered) return connectedLog
+        return refreshConnectedLog()
+    }
+
+    // The forced read — pull-to-refresh. Both lists or neither: a static key reaches the same tools
+    // and never appears among the grants, so either read failing makes the answer a refusal rather
+    // than an undercount. Signed out the log is this device's and nothing reaches it.
+    suspend fun refreshConnectedLog(): ConnectedLogState {
+        val log = gym
+        if (log == null) {
+            connectedLog = ConnectedLogState.None
+            return connectedLog
+        }
+        connectedLog = try {
+            coroutineScope {
+                val grants = async { log.grants() }
+                val keys = async { log.mcpKeys() }
+                ConnectedLog.state(grants.await(), keys.await())
+            }
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            ConnectedLogState.Refused
+        }
+        return connectedLog
     }
 
     // Notes are the account's and this phone keeps none between runs: every screen reads on the way

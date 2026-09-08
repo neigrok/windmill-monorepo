@@ -21,7 +21,6 @@ public:
   std::optional<Bodyweight> latest(const UserId& user) override;
   Bodyweight save(const Bodyweight& incoming) override;
   void remove(const UserId& user, const std::string& dateLocal) override;
-  std::vector<ExportedBodyweight> exported(const UserId& user) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

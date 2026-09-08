@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,9 +49,36 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
+
+// A screen that reads the account again when the app comes back from elsewhere: ON_RESUME after an
+// ON_STOP, which is the browser a door opened closing over a tool just connected. A dialog or a
+// permission sheet only pauses, and the first ON_RESUME on the way in is not a return. Nothing
+// fires while the screen is not showing, because the observer leaves with it.
+@Composable
+fun ReadsAgainOnReturn(onReturn: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var stopped = false
+        val watcher = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> stopped = true
+                Lifecycle.Event.ON_RESUME -> if (stopped) {
+                    stopped = false
+                    onReturn()
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(watcher)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(watcher) }
+    }
+}
 
 // One container, so every screen in the room says its name in the same place: the platform's top app
 // bar. The back arrow carries WHERE it leads in its description rather than in a drawn label —

@@ -125,6 +125,11 @@ public enum Readout {
         let days = daysAgo(ms, now: now)
         if days <= 0 { return "today" }
         if days == 1 { return "yesterday" }
+        return shortDate(ms, now: now)
+    }
+
+    // The day as a date, never today or yesterday; the year only when it is not this one.
+    public static func shortDate(_ ms: Int64, now: Int64) -> String {
         guard components(ms).year == components(now).year else { return dateWithYear(ms) }
         return date(ms)
     }

@@ -3136,28 +3136,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   text-decoration: none;
 }
-.gym-threads-export {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--gym-line);
-  color: var(--gym-ink-dim);
-  text-decoration: none;
-}
-.gym-threads-export:hover .gym-threads-export-verb {
-  color: var(--color-brand);
-}
-.gym-threads-export-verb {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-.gym-threads-export-line {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--gym-ink-faint);
-}
 
 /* The same bubbles Coach draws, with the instant each turn was said under it. */
 .gym-thread {
