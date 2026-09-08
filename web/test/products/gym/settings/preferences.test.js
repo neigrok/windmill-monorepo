@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DEFAULT_PREFERENCES, preferenceRefusal, preferencesWrite, readPreferences, REST_CHOICES,
+  DEFAULT_PREFERENCES, preferenceRefusal, preferencesWrite, readPreferences,
   restLabel,
 } from '../../../../src/products/gym/settings/preferences.js';
 
@@ -14,7 +14,6 @@ test('the defaults are the whole document, with the rest timer off', () => {
     confirmHaptic: true,
     confirmSound: false,
   });
-  assert.deepEqual(REST_CHOICES, [null, 90, 120, 180]);
 });
 
 test('a document with nothing in it reads as the defaults, whole', () => {

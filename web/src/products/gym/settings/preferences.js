@@ -10,9 +10,6 @@ export const DEFAULT_PREFERENCES = {
   confirmSound: false,
 };
 
-// Off is `null` and never a zero: the wire spells it by omission.
-export const REST_CHOICES = [null, 90, 120, 180];
-
 export function restLabel(seconds) {
   if (seconds == null) return 'off';
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;

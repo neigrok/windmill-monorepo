@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { gymApi } from '../gymApi.js';
-import { CONNECT_HREF, NOTES_HREF, proposalHref, THREADS_HREF } from '../log.js';
+import { NOTES_HREF, proposalHref, THREADS_HREF } from '../log.js';
 import { mintId } from '../mint.js';
 import {
   CARD_ROW_CAP, CARD_ROW_KINDS, countedLabel, diffRows, isPending, moreRowsLabel, receiptLine,
@@ -187,7 +187,7 @@ function FreeDoor() {
   return (
     <section className="gym-coach-empty">
       <p className="gym-coach-free">{FREE_DOOR_LINE}</p>
-      <a className="gym-coach-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>
+      <a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>
     </section>
   );
 }
@@ -200,7 +200,7 @@ function FreeDoor() {
 // unrationed door leads and `Ask something new` goes quiet beneath it — a way out of this
 // conversation, and not a way to an answer.
 function CapReached({ capped, onStartAgain }) {
-  const door = <a className="gym-coach-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>;
+  const door = <a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>;
   const again = <button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>;
   return (
     <div className={capped.ceiling ? 'gym-coach-capped is-ceiling' : 'gym-coach-capped'} role="status">

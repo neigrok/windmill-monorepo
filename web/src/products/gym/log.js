@@ -61,7 +61,6 @@ export const NOTES_HREF = '#/gym/notes';
 // The chart screen; the log's head reads the number and the reach band writes it.
 export const BODYWEIGHT_HREF = '#/gym/bodyweight';
 
-export const CONNECT_HREF = '#/gym/connect';
 
 // The id is minted by whoever wrote the proposal, so the parse takes the whole charset the wire
 // allows (`^[A-Za-z0-9_-]{8,64}$`) rather than gym's own narrower mint.
@@ -109,7 +108,6 @@ export function screenOf(hash) {
   if (/^#\/gym\/(coach|ask)\/threads(\/|$|\?)/.test(hash || '')) return 'threads';
   if (/^#\/gym\/(coach|ask)(\/|$|\?)/.test(hash || '')) return 'coach';
   if (/^#\/gym\/notes(\/|$|\?)/.test(hash || '')) return 'notes';
-  if (/^#\/gym\/connect(\/|$|\?)/.test(hash || '')) return 'connect';
   if (/^#\/gym\/(movement|stats)(\/|$|\?)/.test(hash || '')) return 'record';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
   if (/^#\/gym\/bodyweight(\/|$|\?)/.test(hash || '')) return 'bodyweight';

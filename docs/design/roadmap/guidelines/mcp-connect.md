@@ -24,6 +24,12 @@ things: which tool, what to paste, what happens next.
 - **Entry:** account business, never canvas chrome — one row in the account menu ("Connect
   your LLM tools"), plus settings and the marketing footer. The tree canvas never learns
   about MCP. Signed out, the same page shows with a sign-in gate on Copy.
+- **Gym on web:** the Coach connection action opens the shared `/app/connect` setup. The
+  legacy `#/gym/connect` route replaces itself with that page, so Back does not return to
+  a redirect. Gym settings has no separate Connected log row or connection-status reads;
+  Connected tools and API keys remain shared settings sections. Its product settings retain
+  Units, Notes and export doors, with no Rest timer, Set confirmation or alarm caption.
+  Units changes preserve the other fields in the preferences document.
 - **Return:** Connect and Settings share a quiet left-arrow "Back" control at the card’s top,
   in both shell and standalone views, with a muted "Esc" hint. The control has a 44px target
   and visible keyboard focus. Back and unhandled Escape return to the previous in-app

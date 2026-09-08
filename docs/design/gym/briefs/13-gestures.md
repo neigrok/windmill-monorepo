@@ -274,7 +274,7 @@ found clean.
   read the store directly, and it renders in shell settings, outside the room, where no window
   reaches it — `Proposals.jsx`, `RoutineEditor` (which shares `Routines.jsx`), `Mirror.jsx`,
   `Finish.jsx`, `Record.jsx`, `logger/MovementPicker.jsx`, `coach/CoachRoom.jsx`,
-  `connect/ConnectLog.jsx`, `share/SharedSession.jsx`, `share/ShareWorkout.jsx`, `GymApp.jsx`,
+  `share/SharedSession.jsx`, `share/ShareWorkout.jsx`, `GymApp.jsx`,
   `HomeCard.jsx`, `Back.jsx`, `FixSheet.jsx`, `RoutinesGhost.jsx`,
   `logger/Keypad.jsx` and `marketing/GymLanding.jsx` (the routine row's overflow menu has since
   left the room for the design system's `Menu`, and reads no list at all).

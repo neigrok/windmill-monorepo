@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, TabRail, Toast } from '../../design-system/index.js';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
+import { navigate } from '../../shell/navigation.js';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
@@ -8,7 +9,6 @@ import { Backfill } from './Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
 import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
-import { ConnectLog } from './connect/ConnectLog.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { LogList, SessionDetail } from './Log.jsx';
 import { Notes } from './notes/Notes.jsx';
@@ -33,7 +33,12 @@ export function GymApp({ hash, inShell = false }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
+  const legacyConnect = /^#\/gym\/connect(\/|$|\?)/.test(hash || '');
+  React.useEffect(() => {
+    if (legacyConnect) navigate('/app/connect', { replace: true });
+  }, [legacyConnect]);
   const sharedToken = sharedTokenOf(hash);
+  if (legacyConnect) return null;
   // The token is the whole credential; this early return must stay below every hook.
   if (sharedToken) {
     return (
@@ -113,7 +118,6 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'threads' && <ThreadsList log={log} />}
         {screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}
         {screen === 'notes' && <Notes log={log} />}
-        {screen === 'connect' && <ConnectLog />}
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
       <Transient transient={log.transient} />

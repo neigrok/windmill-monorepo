@@ -74,6 +74,7 @@ test('the AI ceiling reaches the cap-reached state and says the SERVER’s sente
     .filter((each) => each.props?.className === 'gym-coach-free-door' || each.props?.className === 'gym-coach-again')
     .map((each) => each.props.className);
   assert.deepEqual(doorsOf(moment), ['gym-coach-free-door', 'gym-coach-again']);
+  assert.equal(findByClass(moment, 'gym-coach-free-door')[0].props.href, '/app/connect');
   // Ten a day is not the rule that stopped this question, so the promise is not drawn over the
   // sentence that refuses it.
   assert.equal(findByClass(drawn, 'gym-coach-allowance').length, 0);
@@ -91,6 +92,7 @@ test('the AI ceiling reaches the cap-reached state and says the SERVER’s sente
   // The other order, and it is the phones' too: under the day's ten a new conversation is the way
   // back to a composer that will answer, so it leads and the connect door sits beneath it.
   assert.deepEqual(doorsOf(second), ['gym-coach-again', 'gym-coach-free-door']);
+  assert.equal(findByClass(second, 'gym-coach-free-door')[0].props.href, '/app/connect');
   // And here ten a day is still the standing promise, so it keeps its place above the moment.
   assert.equal(textOf(findByClass(again, 'gym-coach-allowance')[0]), 'Ten questions a day, three back to back.');
 });

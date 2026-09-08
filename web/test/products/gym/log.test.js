@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
-  CONNECT_HREF,
   dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
   groupByExercise,
@@ -177,10 +176,6 @@ test('screenOf — one grammar decides which of the fifteen rooms a hash names, 
   assert.equal(threadIdOf('#/gym/ask/threads/A-b_9'), 'A-b_9');
   assert.equal(threadIdOf(THREADS_HREF), null);
   assert.equal(threadIdOf('#/gym/ask'), null);
-  assert.equal(screenOf(CONNECT_HREF), 'connect');
-  assert.equal(screenOf('#/gym/connect'), 'connect');
-  assert.equal(screenOf('#/gym/connect/'), 'connect');
-  assert.equal(screenOf('#/gym/connect?from=routines'), 'connect');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
   assert.equal(screenOf(MOVEMENTS_HREF), 'record');
   assert.equal(screenOf(recordHref('back-squat')), 'record');

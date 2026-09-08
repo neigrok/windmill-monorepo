@@ -1389,8 +1389,8 @@ it closed.
 
 - **Three rulings that had been recorded as settled and were not true.** iOS's share window says
   **`30 days`, in numerals** in both consent lines — `LogReach.Level.write.reach` and `canLines` in
-  `ConnectedLog.swift` — matching the web's `connect/connect.js` and Android's
-  `domain/ConnectedLog.kt` clause for clause (`3k`, closed). **Both phones' proposal promise is now
+  `ConnectedLog.swift` — matching Android's `domain/ConnectedLog.kt` clause for clause
+  (`3k`, closed). **Both phones' proposal promise is now
   gated on the state**: `(found?.state ?? .pending) == .pending` on iOS, `if (proposal.isPending)`
   on Android, so a card reading *Applied* no longer promises that nothing has been applied. A
   DECISION is the only thing that spends it: where the state is not yet known there is no card to

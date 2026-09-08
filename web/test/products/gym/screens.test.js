@@ -181,7 +181,7 @@ test('the allowance is the line above the composer, and the spent allowance repl
   assert.equal(moment.includes('{capped.note}'), true);
   assert.equal(moment.includes('CAP_REACHED_NOTE'), false);
   assert.equal(read('coach/CoachRoom.jsx').includes('CAP_REACHED_NOTE'), false, 'no constant left over the state');
-  assert.equal(moment.includes('href={CONNECT_HREF}'), true);
+  assert.equal(moment.includes('href="/app/connect"'), true);
   // Which door leads is the ceiling's to decide and is decided on the code, never on the sentence.
   // Both orders are held against a rendered room in CoachRoom.test.js; this is the branch itself.
   assert.equal(moment.includes('{capped.ceiling ? <>{door}{again}</> : <>{again}{door}</>}'), true);
@@ -285,7 +285,7 @@ test('an empty Coach contrasts the free door on scope, and walks to it', () => {
   assert.equal(said.includes('it knows the rest of your life'), true);
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('{turns.length === 0 && <FreeDoor />}'), true);
-  assert.equal(room.includes('<a className="gym-coach-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>'), true);
+  assert.equal(room.includes('<a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>'), true);
 });
 
 test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
@@ -531,49 +531,6 @@ test('nothing on the fix path refuses a set because its workout is over', () => 
   assert.equal(read('Log.jsx').includes('{fixing && (\n        <FixSheet'), true);
 });
 
-test('the set-confirmation row names the true reason nothing here confirms a set', () => {
-  const said = speech('settings/GymSettingsSection.jsx');
-  assert.equal(said.includes('No set is logged at this desk'), true);
-  assert.equal(said.includes('it does not act here'), true);
-  assert.equal(said.includes('Vibration API'), false);
-  assert.equal(said.includes('label="Haptic"'), true);
-});
-
-test('the rest row names the phone as the clock even with the timer off', () => {
-  const said = speech('settings/GymSettingsSection.jsx');
-  assert.equal(said.includes('your phone runs the clock between sets and sounds it'), true);
-  assert.equal(said.includes('Off, and off is the default'), true);
-  assert.equal(/restSeconds == null\s*\n?\s*&&/.test(said), true);
-});
-
-test('the settings section promises no alarm this surface cannot keep', () => {
-  const said = speech('settings/GymSettingsSection.jsx');
-  for (const promise of ['navigator.vibrate', 'new Audio', 'new Notification', 'requestPermission', 'setInterval']) {
-    assert.equal(said.includes(promise), false, promise);
-  }
-  assert.equal(speech('settings/GymSettingsSection.jsx').includes('never sounds an alarm of its own'), true);
-});
-
-test('the desk’s silence is said once for the whole section, and no row claims a difference the phones do not have', () => {
-  const said = speech('settings/GymSettingsSection.jsx');
-  // `text-budget.md`: a section caption is at most one per screen. It sits above the rows, so the
-  // rest row states the clock and nothing restates the silence under it.
-  assert.equal((said.match(/never sounds an alarm of its own/g) ?? []).length, 1);
-  assert.ok(said.indexOf('never sounds an alarm of its own') < said.indexOf('<Row title="Units"'));
-  // Both phones have a haptic AND a sound, and honour each switch on its own — `GymConfirm.swift`
-  // and `GymConfirm.kt` read `confirmHaptic` and `confirmSound` independently — so a clause telling
-  // the platforms apart was false on both.
-  assert.equal(said.includes('a haptic where the platform has one'), false);
-  assert.equal(said.includes('a sound where it does not'), false);
-  assert.equal(said.includes('Sets are logged on your phone, and that is where these are honoured.'), true);
-  // The lb clause enumerates because the enumeration is the disclosure: the three fields typed here
-  // stay in kilograms, and the weigh-in — the one field typed in the display unit — is not among them.
-  assert.equal(said.includes("'A backfill, a correction, a routine target — typed in kg.'"), true);
-  assert.equal(said.includes('preferences.units === LB &&'), true);
-  // A display unit that rewrote data would be the surprise; that it does not is not said.
-  assert.equal(said.includes('Display only'), false);
-});
-
 test('the exports are rows of the section: the sets for an account with a log, the notes beside it for one with notes', () => {
   const source = read('settings/GymSettingsSection.jsx');
   assert.equal(source.includes('{hasLog && ('), true);
@@ -584,19 +541,6 @@ test('the exports are rows of the section: the sets for an account with a log, t
   assert.equal(source.includes('{EXPORT_NOTES_VERB}'), true);
   assert.equal(source.includes('{EXPORT_NOTES_LINE}'), true);
   assert.ok(source.indexOf('href={EXPORT_HREF}') < source.indexOf('href={EXPORT_NOTES_HREF}'));
-  assert.ok(source.indexOf('href={EXPORT_NOTES_HREF}') < source.indexOf('<ConnectedLog />'));
-});
-
-test('the connected-log row names the grant state without rebuilding it', () => {
-  const source = read('settings/GymSettingsSection.jsx');
-  assert.equal(source.includes('listGrants'), true);
-  assert.equal(source.includes('revokeGrant'), false);
-  assert.equal(source.includes('href={CONNECT_HREF}'), true);
-  assert.equal(source.includes('"#/connect"'), false);
-  assert.equal(source.includes('connectionsToTheLog(grants, keys)'), true);
-  assert.equal(source.includes('readScope'), false);
-  assert.equal(source.includes('Promise.all([listGrants(), listMcpKeys()])'), true);
-  assert.equal(source.includes('${connectedLabel(row)}'), true);
 });
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
@@ -857,7 +801,7 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
   assert.equal(said.includes('it never rewrites a day you already have'), true);
   assert.equal(said.includes('adds lands right away: it takes nothing away'), true);
   assert.equal(said.includes('Propose next week’s routine — you read the diff and tap Apply.'), true);
-  const levels = fs.readFileSync(path.join(GYM, 'connect', 'connect.js'), 'utf8');
+  const levels = read('marketing/GymLanding.jsx');
   assert.equal(levels.includes('Record what happened · add a new day or a new movement · propose changes to the days you have'), true);
   assert.equal(levels.includes('Discard a workout · end a share link · propose a removal'), true);
   assert.equal(said.includes('LEVEL_LINES.write'), true);
@@ -868,25 +812,6 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
   assert.equal(connect.includes('keep your routines'), false);
   assert.equal(connect.includes('What it cannot do is change a routine you already have'), true);
   assert.equal(connect.includes('nothing moves until you tap Apply'), true);
-});
-
-test('the connect pitch keeps two homes — the settings row and the page — and the invitation card is gone', () => {
-  for (const file of gymFiles()) {
-    const source = fs.readFileSync(file, 'utf8');
-    assert.equal(/ConnectInvitation|InvitationCard|gym-connect-invite|INVITATION_/.test(source), false, file);
-  }
-  assert.equal(read('settings/GymSettingsSection.jsx').includes('href={CONNECT_HREF}'), true);
-  assert.equal(read('connect/ConnectLog.jsx').includes('export function ConnectLog()'), true);
-  assert.equal(read('connect/ConnectLog.jsx').includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
-});
-
-test('the connected log is a room off one hash, and never a tab', () => {
-  const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'connect' && <ConnectLog />}"), true);
-  assert.equal(app.includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true);
-  for (const file of ['settings/GymSettingsSection.jsx', 'coach/CoachRoom.jsx']) {
-    assert.equal(read(file).includes('CONNECT_HREF'), true, file);
-  }
 });
 
 test('every pushed screen draws its back link through one component, and none points at Today', () => {
@@ -966,10 +891,8 @@ test('the settings section carries the Notes door under the line the Notes scree
   const source = read('settings/GymSettingsSection.jsx');
   assert.equal(source.includes('href={NOTES_HREF}'), true);
   assert.equal(source.includes('{HEAD_LINE}'), true);
-  // "Not your settings" is no lifter's question at this door; `NEVER` on the connect page says it.
   assert.equal(speech('notes/notes.js').includes('SETTINGS_LINE'), false);
   assert.equal(source.includes('SETTINGS_LINE'), false);
-  assert.ok(source.indexOf('href={NOTES_HREF}') > source.indexOf('Set confirmation'));
   assert.ok(source.indexOf('href={NOTES_HREF}') < source.indexOf('href={EXPORT_HREF}'));
 });
 
@@ -1098,38 +1021,6 @@ test('Daylight carries no glow token and no black shadow tuned for the night', (
   const toast = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Toast.jsx'), 'utf8');
   assert.equal(toast.includes("boxShadow: 'var(--shadow-lg)'"), true, 'the transient’s depth is the token’s');
   assert.equal(/\.gym-entry\.is-dragging \{[^}]*box-shadow: var\(--shadow-md\)/.test(css), true);
-});
-
-test('the connected-log room reads the grant and rebuilds none of it', () => {
-  const room = read('connect/ConnectLog.jsx');
-  assert.equal(room.includes('listGrants'), true);
-  assert.equal(room.includes('listMcpKeys'), true);
-  for (const machinery of [
-    'revokeGrant', 'postDecision', 'fetchConsentClient', 'McpKeyPanel', 'mintKey', 'createMcpKey',
-    'revokeMcpKey',
-  ]) {
-    assert.equal(room.includes(machinery), false, machinery);
-  }
-  assert.equal(read('connect/connect.js').includes("export const WORKBENCH_HREF = '#/connect';"), true);
-});
-
-test('the connected log reads no entitlement and offers nothing to buy', () => {
-  for (const file of ['connect/connect.js', 'connect/ConnectLog.jsx']) {
-    const said = speech(file);
-    for (const door of ['useEntitlements', 'paidPlansOpen', 'beginUpgrade', 'windmillOne', 'checkout', 'Paddle']) {
-      assert.equal(said.includes(door), false, `${file} reaches for ${door}`);
-    }
-    assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d|[Ll]ocked|free for now/.test(said), false, file);
-  }
-  assert.equal(/\.gym-connect[a-z-]*\.is-locked/.test(read('gym.css')), false);
-});
-
-test('nothing on the connected-log surface reads a last-used stamp, or spells a read time', () => {
-  for (const file of ['connect/connect.js', 'connect/ConnectLog.jsx', 'settings/GymSettingsSection.jsx']) {
-    const said = speech(file);
-    assert.equal(said.includes('lastUsedMs'), false, file);
-    assert.equal(/read \d+h ago|hours ago|minutes ago/.test(said), false, file);
-  }
 });
 
 test('the exchange and the precondition are on the landing and on the crawlable workbench', () => {
@@ -1393,7 +1284,6 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
   const settings = read('settings/GymSettingsSection.jsx');
   assert.equal(settings.includes('{hasWeighIns && ('), true);
   assert.ok(settings.indexOf('href={EXPORT_NOTES_HREF}') < settings.indexOf('href={EXPORT_BODYWEIGHT_HREF}'));
-  assert.ok(settings.indexOf('href={EXPORT_BODYWEIGHT_HREF}') < settings.indexOf('<ConnectedLog />'));
   assert.equal(speech('coach/coach.js').includes("list_bodyweight: 'read your bodyweight'"), true);
 });
 

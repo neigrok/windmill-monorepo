@@ -1072,8 +1072,9 @@ atomic promise · turn down.
 
 **3g · the routine's own rest outranks the dial, and one surface says so** → **built**, nothing
 owed. The rest timer is the web's alone: neither phone draws a rest row, a rest dial or a rest
-chime, and both carry the settings document's `restSeconds` and `restSound` through untouched, so a
-tap on a phone never resets a rest set on the web. The fact lives on the web's timer, once, and on
+chime, and both carry the settings document's `restSeconds` and `restSound` through untouched.
+Web settings also preserves these fields when changing units; it exposes neither Rest timer nor
+Set confirmation controls. The fact lives on the web's timer, once, and on
 no settings screen: the unit is `target m:ss` plus the bytes ` · from the routine` when the entry's
 own `restSeconds` is in force and nothing when the dial is — `restInForce` and `FROM_THE_ROUTINE`
 (`log.js:461-468`), drawn on the mirror's meta as *target 2:00 · from the routine* (`Mirror.jsx:66`),

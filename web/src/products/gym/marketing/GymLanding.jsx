@@ -1,9 +1,28 @@
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
-import { EXCHANGE, LEVEL_LINES, PRECONDITION } from '../connect/connect.js';
 import { mountMoat, mountSetLogger, mountRemembered, mountE1rmLine } from './gymScenes.js';
 import './gymLanding.css';
+
+const EXCHANGE = {
+  askedLabel: 'Sunday, in your own tool',
+  asked:
+    '“Look at my last twelve weeks of bench. Write me a four-week block — heavier triples, and '
+    + 'swap the flies for incline work.”',
+  landedLabel: 'Monday, in gym',
+  landed: 'A proposal on Push A. You read the diff, you tap Apply, you train.',
+};
+
+const PRECONDITION =
+  'Needs an AI tool of your own that speaks MCP — Claude Desktop, Claude Code, Cursor, Codex, or any '
+  + 'other MCP client. If you haven’t got one, this one is not for you yet, and the log stays free '
+  + 'regardless.';
+
+const LEVEL_LINES = {
+  read: 'Read your log — sets, workouts, routines, records and notes',
+  write: 'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link · anybody holding that link reads it without signing in, for 30 days unless you end it sooner',
+  delete: 'Discard a workout · end a share link · propose a removal',
+};
 
 const SECTION_LINKS = [
   { href: '#how', label: 'How it works' },
