@@ -100,7 +100,7 @@ struct SettingsScreen: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(lit ? skin.accent : skin.inkFaint)
                 .frame(width: 22)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                 Text(title)
                     .font(WindmillFont.body(15, .bold))
                     .foregroundStyle(lit ? skin.accent : skin.ink)

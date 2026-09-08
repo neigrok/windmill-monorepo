@@ -334,7 +334,7 @@ private struct TargetSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+                VStack(alignment: .leading, spacing: WindmillSpace.x4) {
                     Text(place)
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
@@ -438,7 +438,7 @@ private struct TargetSheet: View {
                     }
                 if signed { sign(text) }
             }
-            .frame(minHeight: GymTap.primary - 8)
+            .frame(minHeight: GymTap.secondary)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                 .strokeBorder(refusal == nil ? skin.lineStrong : skin.alarmInk, lineWidth: 1))

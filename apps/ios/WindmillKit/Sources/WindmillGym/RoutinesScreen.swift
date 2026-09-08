@@ -134,7 +134,7 @@ struct RoutinesScreen: View {
                 Text("Just start logging")
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.inkDim)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary - 10)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
@@ -158,7 +158,7 @@ struct RoutinesScreen: View {
     // The whole card is the sign-in door, so the sentence is not the only affordance.
     private var claimOffer: some View {
         Button(action: onSignIn) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                 Text("Your log is saved on this device.")
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
@@ -236,8 +236,9 @@ struct RoutinesScreen: View {
             // one holding more keeps this row, which is where the count is said.
             if let newest = store.waitingOnTheRow(of: routine.id) { waiting(newest, of: pending.count) }
         }
-        .padding(WindmillSpace.x4)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.vertical, WindmillSpace.x2)
+        .frame(maxWidth: .infinity, minHeight: GymTap.row, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(pending.isEmpty ? skin.line : skin.accent, lineWidth: 1))

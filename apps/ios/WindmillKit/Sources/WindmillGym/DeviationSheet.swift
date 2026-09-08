@@ -69,7 +69,7 @@ struct DeviationSheet: View {
                 Text("Today only")
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.inkDim)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.row)
             }
         }
         .padding(WindmillSpace.x5)

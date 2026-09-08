@@ -59,7 +59,7 @@ struct JumpSheet: View {
                 Text("+ Add next movement")
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary - 8)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }

@@ -195,7 +195,7 @@ struct KeypadSheet: View {
                         Text(key)
                             .font(WindmillFont.display(24, .semibold).monospacedDigit())
                             .foregroundStyle(KeypadEntry.isLive(key, in: mode) ? skin.ink : skin.inkFaint)
-                            .frame(maxWidth: .infinity, minHeight: 58)
+                            .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.raised))
                     }
                     .accessibilityLabel(KeypadEntry.spoken(key))
@@ -206,7 +206,7 @@ struct KeypadSheet: View {
                 Text("Set")
                     .font(WindmillFont.body(17, .bold))
                     .foregroundStyle(reading.isValid ? skin.onAccent : skin.inkFaint)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.row)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                         .fill(reading.isValid ? skin.accent : skin.raised))
             }

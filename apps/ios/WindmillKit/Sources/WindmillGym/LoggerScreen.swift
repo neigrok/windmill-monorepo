@@ -67,13 +67,15 @@ struct LoggerScreen: View {
                 todayColumn
                 value
                 Spacer(minLength: 0)
-                kindPill
-                ladder
-                repsRow
-                logButton
+                VStack(spacing: WindmillSpace.x3) {
+                    kindPill
+                    ladder
+                    repsRow
+                    logButton.padding(.top, WindmillSpace.x2)
+                }
             }
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, WindmillSpace.x5)
         .padding(.top, WindmillSpace.x2)
         .padding(.bottom, WindmillSpace.x3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -139,7 +141,7 @@ struct LoggerScreen: View {
     private var movementHead: some View {
         HStack(spacing: WindmillSpace.x2) {
             Button { sheet = .jump } label: {
-                VStack(spacing: 2) {
+                VStack(spacing: WindmillSpace.x1) {
                     Text(Readout.movement(store.exerciseId ?? "", in: store.catalog))
                         .font(WindmillFont.display(26))
                         .foregroundStyle(skin.ink)
@@ -159,7 +161,7 @@ struct LoggerScreen: View {
                                     .frame(width: 7, height: 7)
                             }
                         }
-                        .padding(.top, 2)
+                        .padding(.top, WindmillSpace.x1)
                         .accessibilityHidden(true)
                         Text(position)
                             .font(GymType.numeral(10.5))
@@ -219,7 +221,7 @@ struct LoggerScreen: View {
             let rows = LiveLines.column(store.sets, of: store.exerciseId, undoable: undoable,
                                         catalog: store.catalog, stalled: store.stalled)
             ScrollView {
-                VStack(spacing: 6) {
+                VStack(spacing: WindmillSpace.x2) {
                     ForEach(rows) { row in done(row) }
                 }
                 .frame(maxWidth: .infinity)
@@ -233,7 +235,7 @@ struct LoggerScreen: View {
     }
 
     // Named rather than measured: the column claims its height before its rows are laid out.
-    private static let rowHeight: CGFloat = 52
+    private static let rowHeight: CGFloat = GymTap.minimum + WindmillSpace.x2
     private static let columnCap: CGFloat = rowHeight * 3
 
     private func done(_ row: LiveLines.Row) -> some View {
@@ -262,7 +264,7 @@ struct LoggerScreen: View {
     // MARK: - the value
 
     private var value: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: WindmillSpace.x2) {
             Text(counter.count)
                 .font(GymType.numeral(10.5))
                 .textCase(.uppercase)
@@ -345,7 +347,7 @@ struct LoggerScreen: View {
                     Text(label)
                         .font(GymType.numeral(plate ? 13 : 18, .semibold))
                         .foregroundStyle(plate ? skin.inkFaint : skin.ink)
-                        .frame(maxWidth: plate ? 54 : .infinity, minHeight: 60)
+                        .frame(maxWidth: plate ? 54 : .infinity, minHeight: GymTap.row)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                             .fill(plate ? skin.surface : skin.raised))
                         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
@@ -570,7 +572,7 @@ struct RefusalRows: View {
     var body: some View {
         ForEach(refusals) { refused in
             HStack(alignment: .top, spacing: WindmillSpace.x3) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                     Text(Self.headline(of: refused, in: catalog))
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.alarmInk)

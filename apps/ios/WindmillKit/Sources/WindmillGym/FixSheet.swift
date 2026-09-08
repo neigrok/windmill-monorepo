@@ -178,7 +178,7 @@ struct FixSheet: View {
                     Text(label)
                         .font(GymType.numeral(15.5, .semibold))
                         .foregroundStyle(skin.ink)
-                        .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                        .frame(maxWidth: .infinity, minHeight: GymTap.row)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.raised))
                 }
             }
@@ -245,7 +245,7 @@ struct FixSheet: View {
                     Button(SetRecord.rpeUnrated) { rpe = nil }
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.inkFaint)
-                        .frame(minHeight: GymTap.minimum - 12)
+                        .frame(minHeight: GymTap.minimum)
                 }
             }
             Picker(SetRecord.rpeLabel, selection: Binding(get: { rpe ?? 0 },

@@ -163,14 +163,14 @@ struct LogScreen: View {
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 3, leading: WindmillSpace.x5,
-                                              bottom: 3, trailing: WindmillSpace.x5))
+                    .listRowInsets(EdgeInsets(top: WindmillSpace.x1, leading: WindmillSpace.x5,
+                                              bottom: WindmillSpace.x1, trailing: WindmillSpace.x5))
                 }
                 Section { foot }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: WindmillSpace.x3, leading: WindmillSpace.x5,
-                                              bottom: WindmillSpace.x6, trailing: WindmillSpace.x5))
+                                              bottom: WindmillSpace.x4, trailing: WindmillSpace.x5))
             }
         }
         .listStyle(.plain)
@@ -209,7 +209,7 @@ struct LogScreen: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(skin.inkFaint)
                     }
-                    .frame(minHeight: GymTap.minimum - 18)
+                    .frame(minHeight: GymTap.minimum)
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Bodyweight \(reading)")
@@ -284,8 +284,8 @@ struct LogScreen: View {
                     .foregroundStyle(skin.inkDim)
             }
         }
-        .padding(.top, WindmillSpace.x3)
-        .padding(.bottom, WindmillSpace.x1)
+        .padding(.top, WindmillSpace.x4)
+        .padding(.bottom, WindmillSpace.x2)
     }
 
     private func row(_ row: LogWeeks.Row) -> some View {
@@ -319,7 +319,8 @@ struct LogScreen: View {
                     if let e1rm = row.e1rm { fact(e1rm) }
                 }
             }
-            .padding(WindmillSpace.x4)
+            .padding(.horizontal, WindmillSpace.x4)
+            .padding(.vertical, WindmillSpace.x3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))

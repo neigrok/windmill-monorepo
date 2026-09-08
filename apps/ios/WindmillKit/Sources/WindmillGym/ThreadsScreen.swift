@@ -120,7 +120,8 @@ struct ThreadsScreen: View {
                     .foregroundStyle(skin.inkFaint)
             }
         }
-        .padding(WindmillSpace.x3)
+        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.vertical, WindmillSpace.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
@@ -134,7 +135,7 @@ struct ThreadsScreen: View {
             .kerning(0.5)
             .foregroundStyle(lit ? skin.accent : skin.inkDim)
             .padding(.horizontal, WindmillSpace.x2)
-            .frame(minHeight: 20)
+            .frame(minHeight: WindmillSpace.x5)
             .background(Capsule().fill(lit ? skin.accentSoft : skin.raised))
     }
 
@@ -175,7 +176,7 @@ struct ThreadsScreen: View {
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, WindmillSpace.x5)
         .padding(.bottom, WindmillSpace.x2)
     }
 
@@ -235,7 +236,7 @@ struct ThreadScreen: View {
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
+            .padding(.top, WindmillSpace.x4)
             .padding(.bottom, WindmillSpace.x8)
         }
         .task { await read() }
@@ -312,7 +313,7 @@ struct ThreadScreen: View {
             .font(GymType.numeral(12.5, .bold))
             .foregroundStyle(skin.inkDim)
             .padding(.horizontal, WindmillSpace.x3)
-            .frame(minHeight: 30)
+            .frame(minHeight: WindmillSpace.x8)
             .background(Capsule().fill(skin.raised))
     }
 
@@ -352,7 +353,7 @@ private struct ThreadRow: ViewModifier {
         content
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x4,
-                                      bottom: 4, trailing: WindmillSpace.x4))
+            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x5,
+                                      bottom: 4, trailing: WindmillSpace.x5))
     }
 }

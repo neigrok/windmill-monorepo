@@ -75,5 +75,20 @@ public enum GymType {
 public enum GymTap {
     public static let minimum: CGFloat = 46
     public static let primary: CGFloat = 64
+    public static let row: CGFloat = 52
+    public static let secondary: CGFloat = 56
+}
+
+public enum GymLayout {
+    public static let gutter = WindmillSpace.x5
+    public static let cardInset = WindmillSpace.x4
+    public static let rowInset = WindmillSpace.x3
+    public static let cardGap = WindmillSpace.x2
+    public static let blockGap = WindmillSpace.x3
+    public static let sectionGap = WindmillSpace.x4
+    public static let pair = WindmillSpace.x1
+    public static let scrollTail = WindmillSpace.x8
+    public static let scrollTailBand = WindmillSpace.x4
+    public static let contentTop = WindmillSpace.x4
 }
 

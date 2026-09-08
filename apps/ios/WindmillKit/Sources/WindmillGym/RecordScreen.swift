@@ -45,7 +45,7 @@ struct RecordScreen: View {
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
+            .padding(.top, WindmillSpace.x4)
             .padding(.bottom, WindmillSpace.x8)
         }
         // Shaped once, outside the body; a second visit asks again.
@@ -166,9 +166,9 @@ struct RecordScreen: View {
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
                 }
-                .padding(.horizontal, WindmillSpace.x3)
-                .padding(.vertical, WindmillSpace.x3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, WindmillSpace.x4)
+                .padding(.vertical, WindmillSpace.x2)
+                .frame(maxWidth: .infinity, minHeight: WindmillSpace.x10, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                     .fill(leading ? skin.prInk.opacity(0.12) : skin.surface))
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
@@ -184,7 +184,7 @@ struct RecordScreen: View {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(day.when)
                         .foregroundStyle(skin.inkFaint)
-                        .frame(width: 66, alignment: .leading)
+                        .frame(width: WindmillSpace.x16, alignment: .leading)
                     Text(day.sets)
                         .foregroundStyle(skin.ink)
                 }

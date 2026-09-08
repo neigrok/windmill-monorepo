@@ -324,7 +324,7 @@ struct FinishScreen: View {
                 }
                 .padding(.horizontal, WindmillSpace.x5)
                 .padding(.top, WindmillSpace.x4)
-                .padding(.bottom, WindmillSpace.x12)
+                .padding(.bottom, WindmillSpace.x8)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

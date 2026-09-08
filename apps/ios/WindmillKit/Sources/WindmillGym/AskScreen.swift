@@ -31,7 +31,7 @@ struct AskScreen: View {
             head
             NotesDoorRow(action: doors.openNotes)
             ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+                VStack(alignment: .leading, spacing: WindmillSpace.x4) {
                     if conversation.exchanges.isEmpty { opening }
                     ForEach(conversation.exchanges) { exchange in
                         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
@@ -40,7 +40,7 @@ struct AskScreen: View {
                         }
                     }
                 }
-                .padding(.horizontal, WindmillSpace.x4)
+                .padding(.horizontal, WindmillSpace.x5)
                 .padding(.vertical, WindmillSpace.x4)
             }
             .defaultScrollAnchor(.bottom)
@@ -56,11 +56,9 @@ struct AskScreen: View {
 
     private var head: some View {
         HStack(spacing: WindmillSpace.x3) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(Ask.subtitle)
-                    .font(GymType.numeral(11))
-                    .foregroundStyle(skin.inkFaint)
-            }
+            Text(Ask.subtitle)
+                .font(GymType.numeral(11))
+                .foregroundStyle(skin.inkFaint)
             Spacer(minLength: 0)
             Button(action: doors.openThreads) {
                 Text(AskThreads.door)
@@ -69,8 +67,8 @@ struct AskScreen: View {
                     .frame(minHeight: GymTap.minimum)
             }
         }
-        .padding(.horizontal, WindmillSpace.x4)
-        .padding(.top, WindmillSpace.x6)
+        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.top, WindmillSpace.x4)
         .padding(.bottom, WindmillSpace.x3)
         .overlay(alignment: .bottom) {
             Rectangle().fill(skin.line).frame(height: 1)
@@ -173,7 +171,7 @@ struct AskScreen: View {
                             .foregroundStyle(skin.inkFaint)
                     }
                 }
-                .frame(minHeight: GymTap.minimum - 18)
+                .frame(minHeight: GymTap.minimum)
                 .contentShape(Rectangle())
             }
             .disabled(lines.isEmpty)
@@ -184,7 +182,7 @@ struct AskScreen: View {
     }
 
     private func steps(_ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line)
                     .font(GymType.numeral(12))
@@ -259,7 +257,7 @@ struct AskScreen: View {
             .font(GymType.numeral(12.5, .bold))
             .foregroundStyle(skin.inkDim)
             .padding(.horizontal, WindmillSpace.x3)
-            .frame(minHeight: 30)
+            .frame(minHeight: WindmillSpace.x8)
             .background(Capsule().fill(skin.raised))
             .accessibilityLabel(line)
     }
@@ -345,7 +343,7 @@ struct AskScreen: View {
             }
             if conversation.capReached { capReachedState } else { input }
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, WindmillSpace.x5)
         .padding(.top, WindmillSpace.x3)
     }
 
@@ -356,8 +354,8 @@ struct AskScreen: View {
                     .font(WindmillFont.body(15))
                     .foregroundStyle(skin.ink)
                     .lineLimit(1...4)
-                    .padding(.horizontal, 15)
-                    .frame(minHeight: 54)
+                    .padding(.horizontal, WindmillSpace.x4)
+                    .frame(minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
                     .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
@@ -365,7 +363,7 @@ struct AskScreen: View {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 19, weight: .bold))
                         .foregroundStyle(skin.onAccent)
-                        .frame(width: 54, height: 54)
+                        .frame(width: GymTap.secondary, height: GymTap.secondary)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
                 }
                 .accessibilityLabel("Send")
@@ -424,13 +422,13 @@ struct AskSignedOutStance: View {
                 Text(Ask.signIn)
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.row)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, WindmillSpace.x5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -452,7 +450,7 @@ struct AskAbsentStance: View {
             NotesDoorRow(action: onNotes)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.horizontal, WindmillSpace.x5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -474,7 +472,7 @@ struct NotesDoorRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(skin.inkFaint)
             }
-            .padding(.horizontal, WindmillSpace.x4)
+            .padding(.horizontal, WindmillSpace.x5)
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -491,6 +489,6 @@ private struct AskStanceHead: View {
             .font(GymType.numeral(11))
             .foregroundStyle(skin.inkFaint)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, WindmillSpace.x6)
+            .padding(.top, WindmillSpace.x4)
     }
 }

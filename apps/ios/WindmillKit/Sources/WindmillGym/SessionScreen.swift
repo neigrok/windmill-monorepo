@@ -185,7 +185,7 @@ struct SessionScreen: View {
         Button(Finish.Discard.action, action: onDiscard)
             .font(WindmillFont.body(16, .semibold))
             .foregroundStyle(skin.alarmInk)
-            .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+            .frame(maxWidth: .infinity, minHeight: GymTap.row)
             .padding(.top, WindmillSpace.x2)
     }
 
@@ -234,6 +234,8 @@ struct SessionScreen: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
+                            .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x4,
+                                                      bottom: 0, trailing: WindmillSpace.x4))
                     }
                 } header: {
                     HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
@@ -274,14 +276,16 @@ struct SessionScreen: View {
         }
     }
 
+    private static let ordinalColumn: CGFloat = 18
+
     private func row(_ set: Performed.Row, of movement: String) -> some View {
         Button { open(set, of: movement) } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(set.number)
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.inkFaint)
-                        .frame(width: 18, alignment: .trailing)
+                        .frame(width: Self.ordinalColumn, alignment: .trailing)
                     Text(set.effort)
                         .font(GymType.numeral(15))
                         .foregroundStyle(set.kind == .working ? skin.ink : skin.warmupInk)
@@ -304,7 +308,7 @@ struct SessionScreen: View {
                         .foregroundStyle(skin.inkDim)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 18 + WindmillSpace.x3)
+                        .padding(.leading, Self.ordinalColumn + WindmillSpace.x3)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)

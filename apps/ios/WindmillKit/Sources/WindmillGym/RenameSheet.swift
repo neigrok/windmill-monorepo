@@ -90,7 +90,7 @@ struct RenameSheet: View {
             }
         }
         .padding(.horizontal, WindmillSpace.x4)
-        .frame(height: GymTap.primary - 6)
+        .frame(height: GymTap.secondary)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.canvas))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(skin.accent, lineWidth: 1.5))
@@ -106,12 +106,12 @@ struct RenameSheet: View {
                     .font(WindmillFont.body(13, .bold))
                     .foregroundStyle(skin.setDone)
             }
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                 ForEach(proof) { line in
                     HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                         Text(line.label)
                             .foregroundStyle(skin.inkFaint)
-                            .frame(width: 82, alignment: .leading)
+                            .frame(width: 80, alignment: .leading)
                         Text(line.said)
                             .foregroundStyle(skin.inkDim)
                         Spacer(minLength: 0)

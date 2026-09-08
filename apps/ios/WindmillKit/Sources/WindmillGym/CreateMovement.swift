@@ -93,7 +93,7 @@ struct CreateMovementSheet: View {
                 }
             }
             .padding(.horizontal, WindmillSpace.x4)
-            .frame(height: GymTap.primary - 8)
+            .frame(height: GymTap.secondary)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                 .strokeBorder(skin.accent, lineWidth: 1.5))
@@ -114,7 +114,7 @@ struct CreateMovementSheet: View {
                         Text(label)
                             .font(WindmillFont.body(14, picked ? .bold : .semibold))
                             .foregroundStyle(picked ? skin.accent : skin.inkDim)
-                            .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                            .frame(maxWidth: .infinity, minHeight: GymTap.row)
                             .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                                 .fill(picked ? skin.accentSoft : skin.surface))
                             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)

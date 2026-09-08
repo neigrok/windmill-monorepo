@@ -191,7 +191,7 @@ struct MovementList: View {
 
     private func row(_ movement: PickerOptions.Row) -> some View {
         Button { onPick(movement.id) } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x2) {
                     Text(movement.name)
                         .font(WindmillFont.body(17))

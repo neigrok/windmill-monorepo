@@ -71,7 +71,7 @@ struct ReviewSheet: View {
                         }
                     }
                     .padding(.horizontal, WindmillSpace.x5)
-                    .padding(.top, WindmillSpace.x6)
+                    .padding(.top, WindmillSpace.x4)
                     .padding(.bottom, WindmillSpace.x4)
                     // The end is the diff's, never the loading line's: the marker exists only once a proposal is
                     // drawn, so a diff landing after the first layout cannot inherit a gate the placeholder opened.
@@ -115,7 +115,7 @@ struct ReviewSheet: View {
             .kerning(0.7)
             .foregroundStyle(ink)
             .padding(.horizontal, WindmillSpace.x2)
-            .padding(.vertical, 5)
+            .padding(.vertical, WindmillSpace.x1)
             .background(Capsule().fill(ground))
     }
 
@@ -174,7 +174,7 @@ struct ReviewSheet: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, WindmillSpace.x3)
-                .frame(minHeight: GymTap.minimum - 6)
+                .frame(minHeight: GymTap.minimum)
                 .contentShape(Rectangle())
             }
             .accessibilityHint("Shows the unchanged lines")
@@ -194,7 +194,7 @@ struct ReviewSheet: View {
             }
         }
         .padding(.horizontal, WindmillSpace.x3)
-        .frame(minHeight: 34)
+        .frame(minHeight: WindmillSpace.x10)
     }
 
     @ViewBuilder
@@ -274,7 +274,7 @@ struct ReviewSheet: View {
                 Text(proposal.applyLabel)
                     .font(WindmillFont.body(17, .bold))
                     .foregroundStyle(canApply ? skin.onAccent : skin.inkFaint)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary - 8)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.secondary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .fill(canApply ? skin.accent : skin.raised))
             }

@@ -37,7 +37,7 @@ struct BodyweightScreen: View {
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
+            .padding(.top, WindmillSpace.x4)
             .padding(.bottom, WindmillSpace.x8)
         }
         .sheet(item: $repairing) { held in
@@ -274,7 +274,7 @@ struct WeighInSheet: View {
                     .font(WindmillFont.display(44, .heavy).monospacedDigit())
                     .foregroundStyle(text.isEmpty || reading.isValid ? skin.weightInk : skin.alarmInk)
                     .padding(.horizontal, WindmillSpace.x3)
-                    .frame(minHeight: 64)
+                    .frame(minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
                     .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))

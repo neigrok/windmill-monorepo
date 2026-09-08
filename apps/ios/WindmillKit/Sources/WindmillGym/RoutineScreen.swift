@@ -38,8 +38,8 @@ struct RoutineScreen: View {
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x8)
+            .padding(.top, WindmillSpace.x4)
+            .padding(.bottom, WindmillSpace.x4)
         }
         .safeAreaInset(edge: .bottom) { reachBand }
         .task { await read() }
@@ -63,7 +63,7 @@ struct RoutineScreen: View {
                         .textCase(.uppercase)
                         .foregroundStyle(skin.inkDim)
                         .padding(.horizontal, WindmillSpace.x2)
-                        .frame(minHeight: 22)
+                        .frame(minHeight: WindmillSpace.x5)
                         .background(Capsule().fill(skin.raised))
                         .overlay(Capsule().strokeBorder(skin.lineStrong, lineWidth: 1))
                 }

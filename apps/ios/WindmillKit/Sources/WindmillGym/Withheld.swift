@@ -277,7 +277,7 @@ struct WithheldTransient: View {
         if let newest = window.newest {
             VStack(alignment: .leading, spacing: WindmillSpace.x2) {
                 HStack(spacing: WindmillSpace.x3) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: WindmillSpace.x1) {
                         Text(window.line)
                             .font(WindmillFont.body(14, .semibold))
                             .foregroundStyle(skin.ink)
@@ -305,7 +305,7 @@ struct WithheldTransient: View {
                     }
                         .font(WindmillFont.body(15, .bold))
                         .foregroundStyle(skin.accent)
-                        .frame(minWidth: 64, minHeight: GymTap.minimum - 8)
+                        .frame(minWidth: 64, minHeight: GymTap.minimum)
                 }
                 // The window closing is the half a drawn Undo never showed: one animation, no timer.
                 Capsule()
@@ -324,7 +324,7 @@ struct WithheldTransient: View {
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                 .strokeBorder(skin.lineStrong, lineWidth: 1))
-            .padding(.horizontal, WindmillSpace.x4)
+            .padding(.horizontal, WindmillSpace.x5)
             .padding(.bottom, WindmillSpace.x3)
             .accessibilityElement(children: .contain)
             .transition(.move(edge: .bottom).combined(with: .opacity))
