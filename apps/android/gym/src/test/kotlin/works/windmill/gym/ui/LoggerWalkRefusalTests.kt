@@ -23,6 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
@@ -72,7 +73,7 @@ class LoggerWalkRefusalTests {
                 RoutineDraft(name = "Push A")
                     .adding("bench-press")
                     .adding("barbell-row")
-                    .targeting("bench-press", sets = 5, reps = 5, weightKg = 82.5)
+                    .targeting("bench-press", List(5) { SetTarget(5, 82.5) })
             ) as GymResult.Ok).value
             store.start(routine.id)
             // The walk is what the session HOLDS, in the order it was walked.

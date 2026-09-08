@@ -3,11 +3,11 @@
 // the routine would take on, in order, and the rest are what it takes away, so all of them are drawn
 // — the order is part of what applies and the wire carries it nowhere else. A run of kept rows
 // collapses to a count IN ITS PLACE and expands there, so the document never reads out of order.
-// The count under Apply is the store's. A proposal names its fields `sets` · `reps` · `weightKg` ·
-// `restSeconds` where a routine entry names them `target…`, and both hand the reading to `entryLabel`.
+// The count under Apply is the store's. A change's `before` and `after` are routine entries — `sets`
+// per set and `restSeconds` — so every reading here is `entryLabel`'s and `setReading`'s.
 
 import {
-  agoLabel, entryLabel, fmt, numberWord, OPEN_TARGET, shortDayLabel, targetLoadOf, timeLabel,
+  agoLabel, entryLabel, numberWord, sameSet, setReading, shortDayLabel, timeLabel,
 } from './log.js';
 import { restLabel } from './settings/preferences.js';
 
@@ -211,35 +211,42 @@ export function receiptLine({ verb, proposal }) {
   return `Applied · ${name} · ${changeLabel(proposal.changeCount)}`;
 }
 
-// `sets` is the pair — the sets and the reps moving together — and an absent rep target is `max`.
-// An absent `sets` is the OPEN line and never a missing side; the missing side is the row's `kind`.
-function setsReading(side) {
-  if (side.sets == null) return OPEN_TARGET;
-  return `${side.sets} × ${side.reps ?? 'max'}`;
-}
-
-// Zero is the absence of a load and an absent load is "last time"; neither prints a number, and
-// neither may print the other's word.
-function weightReading(side) {
-  const target = targetLoadOf(side.weightKg);
-  if (target == null) return 'last time';
-  return fmt(target);
-}
-
 // An absent rest is the account's own target and not the settings screen's `off`.
 function restReading(side) {
   if (side.restSeconds == null) return 'your rest target';
   return restLabel(side.restSeconds);
 }
 
-// Only what moved.
+// The scheme moved: both readings in the scheme's formula, and the ladder behind them for the
+// review to unfold. An open side has no rows.
+function schemeMove(before, after) {
+  return {
+    field: 'sets',
+    from: entryLabel(before),
+    to: entryLabel(after),
+    ladder: { from: (before.sets ?? []).map(setReading), to: (after.sets ?? []).map(setReading) },
+  };
+}
+
+// Only what moved. A shape that held and one set that moved prints that set alone — a week's
+// progression on a top set is one line; anything else that differs is the scheme moving.
 function movesBetween(before = {}, after = {}) {
   const moves = [];
-  for (const [field, reading] of [['sets', setsReading], ['weight', weightReading], ['rest', restReading]]) {
-    const from = reading(before);
-    const to = reading(after);
-    if (from !== to) moves.push({ field, from, to });
+  const from = before.sets ?? null;
+  const to = after.sets ?? null;
+  if (from && to && from.length === to.length) {
+    const moved = from.map((set, index) => (sameSet(set, to[index]) ? null : index)).filter((index) => index != null);
+    if (moved.length === 1) {
+      const [index] = moved;
+      moves.push({ field: `set ${index + 1}`, from: setReading(from[index]), to: setReading(to[index]) });
+    } else if (moved.length > 1) {
+      moves.push(schemeMove(before, after));
+    }
+  } else if (from != null || to != null) {
+    moves.push(schemeMove(before, after));
   }
+  const rest = [restReading(before), restReading(after)];
+  if (rest[0] !== rest[1]) moves.push({ field: 'rest', from: rest[0], to: rest[1] });
   return moves;
 }
 
@@ -249,14 +256,6 @@ export function logKeptLabel(loggedSets) {
   if (loggedSets === 0) return 'nothing logged against it yet';
   if (loggedSets === 1) return '1 logged set kept';
   return `${loggedSets} logged sets kept`;
-}
-
-function targetsReading(side) {
-  return entryLabel({
-    targetSets: side.sets,
-    targetReps: side.reps,
-    targetWeightKg: side.weightKg,
-  });
 }
 
 // The rows are the whole routine and not a filtered changelog — the one line that asserts it, and
@@ -284,14 +283,14 @@ export function diffRows(proposal) {
   }
   changes.forEach((change, index) => {
     if (change.kind === 'kept') {
-      rows.push({ kind: 'kept', exerciseId: change.exerciseId, targets: targetsReading(change.after) });
+      rows.push({ kind: 'kept', exerciseId: change.exerciseId, targets: entryLabel(change.after) });
       return;
     }
     if (change.kind === 'added') {
       rows.push({
         kind: 'added',
         exerciseId: change.exerciseId,
-        targets: targetsReading(change.after),
+        targets: entryLabel(change.after),
         // An absent rest sets nothing — the line takes the account's own target — and draws no words.
         rest: change.after.restSeconds == null ? null : restLabel(change.after.restSeconds),
         // Where it lands: the run is in order and removals sort last, so the row before an added one

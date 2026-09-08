@@ -11,92 +11,114 @@
 using namespace wm::gym;
 
 namespace {
-RoutineEntry bench(int position = 1, int targetSets = 5, std::optional<int> targetReps = 5,
-                   std::optional<double> targetWeightKg = 82.5,
+// A straight scheme: `sets` identical items.
+std::vector<SetTarget> straight(int sets, std::optional<int> reps, std::optional<double> weightKg) {
+  return std::vector<SetTarget>(static_cast<std::size_t>(sets), SetTarget{reps, weightKg});
+}
+
+// The Lower A / Back Squat ramp: 60×5 · 80×5 · 90×3 · 100×1 · 80×5.
+std::vector<SetTarget> ramp() {
+  return {SetTarget{5, 60.0}, SetTarget{5, 80.0}, SetTarget{3, 90.0}, SetTarget{1, 100.0},
+          SetTarget{5, 80.0}};
+}
+
+RoutineEntry bench(int position = 1, std::vector<SetTarget> sets = straight(5, 5, 82.5),
                    std::optional<int> restSeconds = 180) {
-  return RoutineEntry{position, ExerciseId{"bench-press"}, targetSets, targetReps, targetWeightKg,
-                      restSeconds};
+  return RoutineEntry{position, ExerciseId{"bench-press"}, std::move(sets), restSeconds};
 }
 
 RoutineEntry squat(int position) {
-  return RoutineEntry{position, ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt};
+  return RoutineEntry{position, ExerciseId{"back-squat"}, straight(3, 8, std::nullopt),
+                      std::nullopt};
 }
 
 Routine pushA(std::vector<RoutineEntry> entries) {
   return Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push A", 0, std::move(entries)};
 }
 
-bool rejects(const std::function<void()>& build) {
+std::string refusal(const std::function<void()>& build) {
   try {
     build();
-    return false;
-  } catch (const InvalidTraining&) {
-    return true;
+    return "";
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
+
+bool rejects(const std::function<void()>& build) { return !refusal(build).empty(); }
+}
+
+TEST(set_target_accepts_the_full_legal_range_and_keeps_every_absence) {
+  CHECK_EQ(SetTarget(1, -500.0), SetTarget(1, -500.0));
+  CHECK_EQ(SetTarget(100, 500.0).reps, std::optional<int>(100));
+  CHECK_EQ(SetTarget(100, 500.0).weightKg, std::optional<double>(500.0));
+  // Band-assisted work is a negative load on the same number line the sets are logged on.
+  CHECK_EQ(SetTarget(5, -20.0).weightKg, std::optional<double>(-20.0));
+  // No reps is `max`, no load is last time's set of the same number, neither is bodyweight to max.
+  CHECK_EQ(SetTarget(std::nullopt, 100.0).reps, std::optional<int>());
+  CHECK_EQ(SetTarget(5, std::nullopt).weightKg, std::optional<double>());
+  CHECK_EQ(SetTarget(std::nullopt, std::nullopt), SetTarget(std::nullopt, std::nullopt));
+}
+
+TEST(set_target_refuses_its_bounds_with_the_pinned_sentences) {
+  CHECK_EQ(refusal([] { SetTarget(0, 82.5); }), std::string("a set names its reps 1 to 100"));
+  CHECK_EQ(refusal([] { SetTarget(101, 82.5); }), std::string("a set names its reps 1 to 100"));
+  CHECK_EQ(refusal([] { SetTarget(5, 500.5); }),
+           std::string("a set names its load inside ±500 kg"));
+  CHECK_EQ(refusal([] { SetTarget(5, -500.5); }),
+           std::string("a set names its load inside ±500 kg"));
+}
+
+// The column holds two decimals, so the entity does too: two schemes compare as the store compares
+// them, and a load that rounds inside the band is inside it.
+TEST(set_target_rounds_its_load_to_the_two_decimals_the_column_holds) {
+  CHECK_EQ(SetTarget(5, 82.333).weightKg, std::optional<double>(82.33));
+  CHECK_EQ(SetTarget(5, 82.335), SetTarget(5, 82.34));
+  CHECK_EQ(SetTarget(5, 500.004).weightKg, std::optional<double>(500.0));
+  CHECK_EQ(SetTarget(5, 82.5), SetTarget(5, 82.5000001));
+  CHECK(!(SetTarget(5, 82.5) == SetTarget(5, 82.51)));
 }
 
 TEST(routine_entry_accepts_the_full_legal_range) {
-  CHECK_EQ(bench().targetSets, 5);
-  CHECK_EQ(bench(1, 1, 1).targetSets, 1);
-  CHECK_EQ(bench(1, 20, 100).targetSets, 20);
-  CHECK_EQ(bench(1, 20, 100).targetReps, std::optional<int>(100));
-  // Every optional means something by its absence: open, `3 × max`, last time's weight, rest.
-  CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).targetWeightKg, std::optional<double>());
-  CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).restSeconds, std::optional<int>());
-  // Band-assisted work is a negative load on the same number line the sets are logged on.
-  CHECK_EQ(bench(1, 5, 5, -20.0).targetWeightKg, std::optional<double>(-20.0));
-  CHECK_EQ(bench(1, 5, 5, -500.0).targetWeightKg, std::optional<double>(-500.0));
-  CHECK_EQ(bench(1, 5, 5, 500.0).targetWeightKg, std::optional<double>(500.0));
-  CHECK_EQ(bench(1, 5, 5, 82.5, 15).restSeconds, std::optional<int>(15));
-  CHECK_EQ(bench(1, 5, 5, 82.5, 900).restSeconds, std::optional<int>(900));
+  CHECK_EQ(bench().sets.size(), static_cast<std::size_t>(5));
+  CHECK_EQ(bench(1, straight(1, 1, 82.5)).sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(bench(1, straight(20, 100, 500.0)).sets.size(), static_cast<std::size_t>(20));
+  CHECK_EQ(bench(1, ramp()).sets, ramp());
+  CHECK_EQ(bench(1, straight(5, 5, 82.5), std::nullopt).restSeconds, std::optional<int>());
+  CHECK_EQ(bench(1, straight(5, 5, 82.5), 15).restSeconds, std::optional<int>(15));
+  CHECK_EQ(bench(1, straight(5, 5, 82.5), 900).restSeconds, std::optional<int>(900));
 }
 
 TEST(routine_entry_rejects_out_of_range_fields) {
   CHECK(rejects([] { bench(0); }));                       // positions start at 1
   CHECK(rejects([] { bench(-1); }));
-  CHECK(rejects([] { bench(1, 0, 5); }));                 // zero sets is a target of nothing
-  CHECK(rejects([] { bench(1, 21, 5); }));
-  CHECK(rejects([] { bench(1, 5, 0); }));
-  CHECK(rejects([] { bench(1, 5, 101); }));
-  CHECK(rejects([] { bench(1, 5, 5, 500.5); }));
-  CHECK(rejects([] { bench(1, 5, 5, -500.5); }));
-  CHECK(rejects([] { bench(1, 5, 5, 82.5, 14); }));       // a rest the timer could not count
-  CHECK(rejects([] { bench(1, 5, 5, 82.5, 901); }));
-  CHECK(rejects([] {
-    RoutineEntry{1, ExerciseId{""}, 5, 5, std::nullopt, std::nullopt};
-  }));
+  CHECK_EQ(refusal([] { bench(1, straight(21, 5, 82.5)); }), std::string("sets, 1 to 20"));
+  CHECK(rejects([] { bench(1, straight(5, 5, 82.5), 14); }));   // a rest the timer could not count
+  CHECK(rejects([] { bench(1, straight(5, 5, 82.5), 901); }));
+  CHECK(rejects([] { RoutineEntry{1, ExerciseId{""}, straight(5, 5, 82.5), std::nullopt}; }));
 }
 
-TEST(routine_entry_holds_a_line_that_names_no_rep_target) {
-  RoutineEntry chinUp{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 180};
+// A scheme whose sets disagree is the same object as one whose sets agree; there is no second kind
+// of line, and each set's absences keep their meaning inside it.
+TEST(routine_entry_holds_a_scheme_whose_sets_disagree) {
+  RoutineEntry lowerA{1, ExerciseId{"back-squat"}, ramp(), 180};
+  RoutineEntry topSetToMax{2, ExerciseId{"back-squat"},
+                           {SetTarget{5, 100.0}, SetTarget{5, 100.0}, SetTarget{std::nullopt, 100.0}},
+                           std::nullopt};
 
-  CHECK_EQ(chinUp.targetSets, 3);
-  CHECK_EQ(chinUp.targetReps, std::optional<int>());
-  CHECK_EQ(bench(1, 5, std::nullopt).targetReps, std::optional<int>());
-  CHECK(rejects([] { bench(1, 5, 0); }));
-  CHECK(rejects([] { bench(1, 5, 101); }));
+  REQUIRE_EQ(lowerA.sets.size(), static_cast<std::size_t>(5));
+  CHECK_EQ(lowerA.sets[3], SetTarget(1, 100.0));
+  CHECK_EQ(topSetToMax.sets[2].reps, std::optional<int>());
+  CHECK_EQ(topSetToMax.sets[2].weightKg, std::optional<double>(100.0));
 }
 
 TEST(routine_entry_holds_an_open_line_that_names_no_target_at_all) {
-  RoutineEntry open{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt,
-                    std::nullopt};
+  RoutineEntry open{1, ExerciseId{"barbell-row"}, {}, std::nullopt};
 
-  CHECK_EQ(open.targetSets, std::optional<int>());
-  CHECK_EQ(open.targetReps, std::optional<int>());
-  CHECK_EQ(open.targetWeightKg, std::optional<double>());
+  CHECK(open.sets.empty());
   // Rest is a wait, not a target, so it rides on an open line.
-  CHECK_EQ(RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt, 180)
-               .restSeconds,
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"barbell-row"}, {}, 180).restSeconds,
            std::optional<int>(180));
-  CHECK(rejects([] { bench(1, 0); }));
-}
-
-TEST(routine_entry_refuses_a_half_open_line) {
-  CHECK(rejects(
-      [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, 5, std::nullopt, std::nullopt); }));
-  CHECK(rejects(
-      [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, 60.0, std::nullopt); }));
 }
 
 TEST(routine_construction_guards_the_id_the_name_and_the_position) {
@@ -165,44 +187,42 @@ TEST(routine_positions_run_one_to_n_in_order) {
 }
 
 TEST(routine_holds_the_same_movement_twice_at_two_positions) {
-  Routine routine = pushA({bench(1, 5, 5, 82.5), bench(2, 3, 12, 60.0)});
+  Routine routine = pushA({bench(1, straight(5, 5, 82.5)), bench(2, straight(3, 12, 60.0))});
 
   REQUIRE_EQ(routine.entries.size(), static_cast<std::size_t>(2));
   CHECK_EQ(routine.entries[0].exercise, routine.entries[1].exercise);
-  CHECK_EQ(routine.entries[0].targetWeightKg, std::optional<double>(82.5));
-  CHECK_EQ(routine.entries[1].targetWeightKg, std::optional<double>(60.0));
+  CHECK_EQ(routine.entries[0].sets, straight(5, 5, 82.5));
+  CHECK_EQ(routine.entries[1].sets, straight(3, 12, 60.0));
 }
 
 TEST(snapshot_copies_the_name_and_every_line_in_order) {
-  Routine routine = pushA({bench(1, 5, 5, 82.5, 180), squat(2)});
+  Routine routine = pushA({bench(1, straight(5, 5, 82.5), 180), squat(2)});
 
   PlanSnapshot snapshot = snapshotOf(routine);
 
   CHECK_EQ(snapshot,
            (PlanSnapshot{"Push A",
-                         {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
-                          PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}}));
+                         {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180},
+                          PlanEntry{ExerciseId{"back-squat"}, straight(3, 8, std::nullopt),
+                                    std::nullopt}}}));
 }
 
-TEST(snapshot_copies_a_line_that_names_no_rep_target_as_naming_none) {
-  Routine routine = pushA({RoutineEntry{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt,
-                                        180}});
+TEST(snapshot_copies_a_scheme_set_for_set) {
+  Routine routine = pushA({RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}});
 
   PlanSnapshot snapshot = snapshotOf(routine);
 
-  CHECK_EQ(snapshot, (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"chin-up"}, 3, std::nullopt,
-                                                        std::nullopt, 180}}}));
+  CHECK_EQ(snapshot,
+           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"back-squat"}, ramp(), 180}}}));
 }
 
 TEST(snapshot_copies_an_open_line_as_naming_nothing) {
-  Routine routine = pushA({RoutineEntry{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt,
-                                        std::nullopt, std::nullopt}});
+  Routine routine = pushA({RoutineEntry{1, ExerciseId{"barbell-row"}, {}, std::nullopt}});
 
   PlanSnapshot snapshot = snapshotOf(routine);
 
-  CHECK_EQ(snapshot, (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"barbell-row"}, std::nullopt,
-                                                        std::nullopt, std::nullopt,
-                                                        std::nullopt}}}));
+  CHECK_EQ(snapshot,
+           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"barbell-row"}, {}, std::nullopt}}}));
 }
 
 TEST(snapshot_keeps_no_link_to_the_routine_it_was_taken_from) {

@@ -300,8 +300,9 @@ export function SessionDetail({ id, log }) {
       {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
         const reading = planReadingOf(session, exerciseId);
-        // The note lands on the first WORKING set; a warmup never carries it.
-        const opener = group.find((set) => set.kind === 'working');
+        // A working set is measured against the slot its place among the working sets names; a
+        // warmup has no place there and carries only its kind.
+        const working = group.filter((set) => set.kind === 'working');
         return (
           <section className="gym-exercise" key={exerciseId}>
             <div className="gym-exercise-head">
@@ -316,7 +317,7 @@ export function SessionDetail({ id, log }) {
             </div>
             <ul className="gym-sets">
               {group.map((set) => {
-                const note = setNoteOf(set, reading, set === opener);
+                const note = setNoteOf(set, reading, working.indexOf(set));
                 return (
                   <li key={set.id}>
                     <button

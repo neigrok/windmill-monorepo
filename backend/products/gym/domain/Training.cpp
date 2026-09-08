@@ -1,5 +1,6 @@
 #include "products/gym/domain/Training.h"
 
+#include <cmath>
 #include <utility>
 #include <cmath>
 #include <set>
@@ -169,6 +170,16 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
   if (stepKg < kMinStepKg || stepKg > kMaxStepKg) throw InvalidTraining("step out of range");
 }
 
+// Rounded before it is bounded, as the column checks the value it stores.
+SetTarget::SetTarget(std::optional<int> reps, std::optional<double> weightKg)
+    : reps(reps), weightKg(weightKg) {
+  if (this->weightKg) this->weightKg = std::round(*this->weightKg * 100.0) / 100.0;
+  if (this->reps && (*this->reps < 1 || *this->reps > 100))
+    throw InvalidTraining("a set names its reps 1 to 100");
+  if (this->weightKg && (*this->weightKg < -kMaxLoadKg || *this->weightKg > kMaxLoadKg))
+    throw InvalidTraining("a set names its load inside ±500 kg");
+}
+
 Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
                  std::optional<std::uint64_t> finishedAtMs, std::optional<RoutineId> routine,
                  std::optional<PlanSnapshot> plan, std::optional<ClosedBy> closedBy)
@@ -193,7 +204,7 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (this->session.empty()) throw InvalidTraining("a set belongs to a session");
   if (this->exercise.empty()) throw InvalidTraining("a set names an exercise");
   if (setNumber < 0) throw InvalidTraining("set number cannot be negative");
-  if (!std::isfinite(weightKg) || weightKg < -500 || weightKg > 500) throw InvalidTraining("weight out of range");
+  if (!std::isfinite(weightKg) || weightKg < -kMaxLoadKg || weightKg > kMaxLoadKg) throw InvalidTraining("weight out of range");
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
   if (rpe && (!std::isfinite(*rpe) || *rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
   if (this->note.size() > kMaxSetNoteBytes) throw InvalidTraining("note too long");

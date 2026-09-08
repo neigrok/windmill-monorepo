@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,11 +50,13 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.DocumentRow
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.FieldMove
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.TrainingStore
@@ -422,26 +423,66 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
         // A retarget, and everything this build cannot name, read off whichever side arrived.
         else -> ChangeCard(GymSkin.line) {
             Text(name, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            val moved = change.before?.let { before ->
-                change.after?.let { after -> Proposal.moves(before, after) }
-            }.orEmpty()
+            val before = change.before
+            val after = change.after
+            val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
             if (moved.isEmpty()) {
                 Text(
-                    (change.after ?: change.before)?.let { Proposal.asks(it) } ?: "no targets",
+                    (after ?: before)?.let { Proposal.asks(it) } ?: "no targets",
                     style = GymType.numeral(12),
                     color = GymSkin.targetInk,
                 )
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
-                moved.forEach { MoveLine(it.label, it.before, it.after) }
+            moved.forEach { move ->
+                if (move.label == Proposal.setsLabel && before != null && after != null) {
+                    SchemeMove(move, before.sets, after.sets, change)
+                } else {
+                    MoveLine(move.label, move.before, move.after)
+                }
             }
         }
     }
 }
 
+// A scheme that changed shape prints both schemes in the readout formula and unfolds on tap to the
+// two ladders, set by set in the deviation sheet's own shape — what stands, the arrow, what is
+// proposed, `—` on a side that has no such set — because a lifter deciding on a ramp has to see the
+// ramp against what it replaces. Folded again per change, where it stands.
 @Composable
-private fun MoveLine(label: String, before: String, after: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1), verticalAlignment = Alignment.CenterVertically) {
+private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: List<SetTarget>, change: ProposalChange) {
+    var unfolded by remember(change) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+        MoveLine(
+            move.label, move.before, move.after,
+            Modifier
+                .fillMaxWidth()
+                .semantics { stateDescription = if (unfolded) "expanded" else "collapsed" }
+                .clickable(role = Role.Button, onClickLabel = if (unfolded) "hide the sets" else "show the sets") {
+                    unfolded = !unfolded
+                },
+        )
+        if (unfolded) {
+            repeat(maxOf(standing.size, proposed.size)) { at ->
+                MoveLine(
+                    label = "set ${at + 1}",
+                    before = standing.getOrNull(at)?.let(Readout::setTarget) ?: "—",
+                    after = proposed.getOrNull(at)?.let(Readout::setTarget) ?: "—",
+                    modifier = Modifier.padding(start = WindmillSpace.x3),
+                )
+            }
+        }
+    }
+}
+
+// One moved field, in the shape every diff on this surface shares: the label, what stood, the arrow,
+// what is proposed. The deviation sheet draws its ladder in the same shape.
+@Composable
+internal fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.semantics(mergeDescendants = true) {},
+    ) {
         Text(label, style = GymType.numeral(12), color = GymSkin.inkFaint)
         Text(
             before,

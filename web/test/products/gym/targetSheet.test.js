@@ -4,66 +4,76 @@ import assert from 'node:assert/strict';
 import { round } from '../../../src/products/gym/logger/ladder.js';
 import {
   isOpenFields, NOT_A_NUMBER, ONE_DECIMAL, OVER_MAX_LOAD, REPS_BAND, SETS_BAND,
-  targetEntryOf, targetFieldsOf, targetRefusal, withSignFlipped,
+  targetEntryOf, targetFieldsOf, targetRefusal, withHead, withRow, withSets, withSignFlipped,
 } from '../../../src/products/gym/routines.js';
 
-const fields = (over = {}) => ({ sets: '', reps: '', weight: '', clearRefused: false, ...over });
+const fields = (over = {}) => ({ sets: '', rows: [], addRefused: false, ...over });
+const row = (reps, weight) => ({ reps, weight });
 
 test('the sheet draws exactly one refusal, computed for the sheet and not one per field', () => {
-  // Every one of the three is illegal at once. The sheet says one thing: the topmost.
-  const allWrong = fields({ sets: '99', reps: '400', weight: '900' });
-  assert.deepEqual(targetRefusal(allWrong), { field: 'sets', message: SETS_BAND });
-  // Fix the sets and the next one surfaces — still one, never two.
-  assert.deepEqual(targetRefusal({ ...allWrong, sets: '3' }), { field: 'reps', message: REPS_BAND });
-  assert.deepEqual(targetRefusal({ ...allWrong, sets: '3', reps: '5' }), { field: 'weight', message: OVER_MAX_LOAD });
-  assert.equal(targetRefusal({ ...allWrong, sets: '3', reps: '5', weight: '100' }), null);
-  // The sheet's own shape is checked before any field is: a line with no sets and a weight typed on
-  // it is one refusal about the line, not a refusal per field.
-  assert.deepEqual(targetRefusal(fields({ reps: '9,9,9', weight: '900' })), {
-    field: 'sets', message: 'Name the sets first — an open line names neither.',
-  });
-  assert.deepEqual(targetRefusal(fields({ sets: '3', reps: '5,5,5' })), { field: 'reps', message: ONE_DECIMAL });
-  assert.deepEqual(targetRefusal(fields({ sets: '3', weight: '5-' })), { field: 'weight', message: NOT_A_NUMBER });
-  // A refused clear is a refusal of the sheet's shape and outranks every field.
-  assert.deepEqual(targetRefusal(fields({ sets: '900', reps: '5', clearRefused: true })), {
-    field: 'sets', message: 'Clear reps and weight first — an open line names neither.',
-  });
+  // Every field is illegal at once. The sheet says one thing: the topmost.
+  const allWrong = fields({ sets: '99', rows: [row('400', '900')] });
+  assert.deepEqual(targetRefusal(allWrong), { field: 'sets', row: null, message: SETS_BAND });
+  // Fix the count and the next one surfaces — still one, never two.
+  assert.deepEqual(targetRefusal({ ...allWrong, sets: '1' }), { field: 'reps', row: 0, message: REPS_BAND });
+  assert.deepEqual(targetRefusal(withRow({ ...allWrong, sets: '1' }, 0, 'reps', '5')), { field: 'weight', row: 0, message: OVER_MAX_LOAD });
+  assert.equal(targetRefusal(fields({ sets: '1', rows: [row('5', '100')] })), null);
+  // The rows carry the fault, each under its own row, the topmost first.
+  const two = fields({ sets: '2', rows: [row('9,9,9', '900'), row('5-', '5-')] });
+  assert.deepEqual(targetRefusal(two), { field: 'reps', row: 0, message: ONE_DECIMAL });
+  assert.deepEqual(targetRefusal(withRow(two, 0, 'reps', '5')), { field: 'weight', row: 0, message: OVER_MAX_LOAD });
+  assert.deepEqual(targetRefusal(withRow(withRow(two, 0, 'reps', '5'), 0, 'weight', '')), { field: 'reps', row: 1, message: NOT_A_NUMBER });
+  // A ladder with a fault on it is not judged while the count is empty: the commit is the open line.
+  assert.equal(targetRefusal(withSets(two, '')), null);
+  // A twenty-first row never landed, and that outranks every field.
+  assert.deepEqual(targetRefusal({ ...two, addRefused: true }), { field: 'add', row: null, message: SETS_BAND });
 });
 
-test('± flips the sign of the text and never leaves a bare minus behind', () => {
-  assert.equal(withSignFlipped(fields({ weight: '60' })).weight, '-60');
-  assert.equal(withSignFlipped(fields({ weight: '-60' })).weight, '60');
-  assert.equal(withSignFlipped(fields({ weight: '22,5' })).weight, '-22,5');
+test('± flips the sign of one row’s load text and never leaves a bare minus behind', () => {
+  const one = (weight) => fields({ sets: '1', rows: [row('8', weight)] });
+  assert.equal(withSignFlipped(one('60'), 0).rows[0].weight, '-60');
+  assert.equal(withSignFlipped(one('-60'), 0).rows[0].weight, '60');
+  assert.equal(withSignFlipped(one('22,5'), 0).rows[0].weight, '-22,5');
   // Nothing typed, nothing to flip: the press is a no-op, not a `-` the field then has to refuse.
-  const empty = fields();
-  assert.equal(withSignFlipped(empty), empty);
-  assert.equal(withSignFlipped(fields({ weight: '   ' })).weight, '   ');
+  const empty = one('');
+  assert.equal(withSignFlipped(empty, 0), empty);
+  assert.deepEqual(withSignFlipped(one('   '), 0), one('   '));
   // A `-` the lifter typed themselves is cleared by the flip rather than doubled.
-  assert.equal(withSignFlipped(fields({ weight: '-' })).weight, '');
-  // The flip is a keystroke like any other, so it settles a refused clear.
-  assert.equal(withSignFlipped(fields({ weight: '60', clearRefused: true })).clearRefused, false);
+  assert.equal(withSignFlipped(one('-'), 0).rows[0].weight, '');
+  // One row, not the ladder: the other rows keep their sign.
+  const two = fields({ sets: '2', rows: [row('8', '20'), row('8', '20')] });
+  assert.deepEqual(withSignFlipped(two, 1).rows, [row('8', '20'), row('8', '-20')]);
+  // The flip is a keystroke like any other, so it settles a refused Add set.
+  assert.equal(withSignFlipped({ ...two, addRefused: true }, 0).addRefused, false);
   // And a band-assisted target is what comes out the other side.
-  const assisted = withSignFlipped(fields({ sets: '3', reps: '8', weight: '20' }));
+  const assisted = withSignFlipped(fields({ sets: '1', rows: [row('8', '20')] }), 0);
   assert.equal(targetRefusal(assisted), null);
-  assert.equal(targetEntryOf({ exerciseId: 'chin-up' }, assisted).targetWeightKg, -20);
+  assert.deepEqual(targetEntryOf({ exerciseId: 'chin-up' }, assisted).sets, [{ reps: 8, weightKg: -20 }]);
+  // The head's own flip is the copy-down of the flipped text.
+  assert.deepEqual(withHead(two, 'weight', '-20').rows, [row('8', '-20'), row('8', '-20')]);
+  // The head's `±` is the same flip written into every ladder row; a head reading `varies` has no
+  // sign to flip.
+  assert.deepEqual(withSignFlipped(two).rows, [row('8', '-20'), row('8', '-20')]);
+  assert.deepEqual(withSignFlipped(withSignFlipped(two)).rows, two.rows);
+  assert.deepEqual(withSignFlipped(withRow(two, 1, 'weight', '25')).rows, [row('8', '20'), row('8', '25')]);
 });
 
-test('the target weight is put on the ladder’s grid before it is stored', () => {
-  const typed = (weight) => targetEntryOf({ exerciseId: 'back-squat' }, fields({ sets: '3', reps: '5', weight }));
-  assert.equal(typed('100,333').targetWeightKg, 100.33);
-  assert.equal(typed('-100,336').targetWeightKg, -100.34, 'half away from zero, as the rack rounds');
-  assert.equal(typed('102.5').targetWeightKg, 102.5);
-  assert.equal(typed('0.005').targetWeightKg, round(0.005));
+test('a target load is put on the ladder’s grid before it is stored', () => {
+  const typed = (weight) => targetEntryOf({ exerciseId: 'back-squat' }, fields({ sets: '1', rows: [row('5', weight)] })).sets[0].weightKg;
+  assert.equal(typed('100,333'), 100.33);
+  assert.equal(typed('-100,336'), -100.34, 'half away from zero, as the rack rounds');
+  assert.equal(typed('102.5'), 102.5);
+  assert.equal(typed('0.005'), round(0.005));
   // What the rack commits and what the plan asks for are then the same number, never two.
-  assert.equal(typed('60,127').targetWeightKg, round(60.127));
-  // An empty weight is still `last time` and not a zero.
-  assert.equal(typed('').targetWeightKg, null);
+  assert.equal(typed('60,127'), round(60.127));
+  // An empty load is still `last time` and not a zero: the key is absent.
+  assert.equal(typed(''), undefined);
 });
 
 test('the open line is a property of the SHEET, and it is one question', () => {
   assert.equal(isOpenFields(targetFieldsOf({ exerciseId: 'chin-up' })), true);
-  assert.equal(isOpenFields(targetFieldsOf({ exerciseId: 'back-squat', targetSets: 3 })), false);
+  assert.equal(isOpenFields(targetFieldsOf({ exerciseId: 'back-squat', sets: [{}] })), false);
   assert.equal(isOpenFields(fields({ sets: '  ' })), true);
-  // The sheet is not open while a clear stands refused: the field kept its value.
-  assert.equal(isOpenFields(fields({ sets: '3', reps: '5', clearRefused: true })), false);
+  // The rows do not make a line: a hidden ladder under an empty count is still the open line.
+  assert.equal(isOpenFields(fields({ sets: '', rows: [row('5', '80')] })), true);
 });

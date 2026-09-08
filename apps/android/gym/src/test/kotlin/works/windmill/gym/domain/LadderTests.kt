@@ -192,4 +192,17 @@ class LadderTests {
             }
         }
     }
+    // The plate grid under a load is the small step of the band the load stands in, half away from
+    // zero; `Ladder.round` is the log's hundredths and never the grid.
+    @Test
+    fun testOnGridLandsOnTheBandsSmallStep() {
+        assertEquals(22.5, Ladder.onGrid(21.25), tolerance)
+        assertEquals(20.0, Ladder.onGrid(19.9), tolerance)
+        assertEquals(20.0, Ladder.onGrid(20.4), tolerance)
+        assertEquals(70.0, Ladder.onGrid(70.0), tolerance)
+        assertEquals(72.5, Ladder.onGrid(73.33), tolerance)
+        assertEquals(87.5, Ladder.onGrid(86.67), tolerance)
+        assertEquals("half away from zero on both sides", -22.5, Ladder.onGrid(-21.25), tolerance)
+        assertEquals(21.25, Ladder.round(21.25), tolerance)
+    }
 }

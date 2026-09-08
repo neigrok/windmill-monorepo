@@ -1,54 +1,12 @@
 import XCTest
 @testable import WindmillGym
 
-// What the routine editor and its target sheet SAY, pinned in their bytes: the one refusal a sheet of
-// three broken fields computes and the order it computes it in, the two sentences an open line is
-// refused with, the one sentence a list of open rows draws, the name field's counter, and the two
-// Save refusals.
+// What the routine editor and its target sheet SAY, pinned in their bytes: the one sentence an open
+// line draws and the one screen that draws it, the name field's counter, and the two Save refusals.
 //
 // A sentence that drifts by a hyphen, a full stop or a straight quote is a different sentence on a
 // surface that is supposed to say the same thing as the other two.
 final class RoutineEditorCopyTests: XCTestCase {
-
-    // ── C5 · one refusal for the sheet ──────────────────────────────────────────────────────────
-
-    func testTheSheetComputesOneRefusalInTheOrderShapeThenSetsThenRepsThenWeight() {
-        // Illegal shape first: the fields below it are nonsense until the line has a shape.
-        XCTAssertEqual(TargetEntry.refusal(sets: "", reps: "101", weight: "501"),
-                       TargetEntry.Refusal(field: .sets, said: TargetEntry.nameSetsFirst))
-        // Then the fields, topmost first, and never two at once.
-        XCTAssertEqual(TargetEntry.refusal(sets: "21", reps: "101", weight: "501"),
-                       TargetEntry.Refusal(field: .sets, said: TargetEntry.outOfSetsBand))
-        XCTAssertEqual(TargetEntry.refusal(sets: "3", reps: "101", weight: "501"),
-                       TargetEntry.Refusal(field: .reps, said: TargetEntry.outOfRepsBand))
-        XCTAssertEqual(TargetEntry.refusal(sets: "3", reps: "5", weight: "501"),
-                       TargetEntry.Refusal(field: .weight, said: TargetEntry.overWeight))
-        XCTAssertNil(TargetEntry.refusal(sets: "3", reps: "5", weight: "82.5"))
-        XCTAssertNil(TargetEntry.refusal(sets: "", reps: "", weight: ""),
-                     "three empty fields are the open line, which is a target and not a fault")
-    }
-
-    // The refused KEYSTROKE outranks the state it left behind: the lifter is told what they just did.
-    func testARefusedClearIsSaidBeforeAnythingTheFieldsSay() {
-        XCTAssertEqual(TargetEntry.refusal(sets: "", reps: "5", weight: "", clearRefused: true),
-                       TargetEntry.Refusal(field: .sets, said: TargetEntry.clearOthersFirst))
-        XCTAssertEqual(TargetEntry.refusal(sets: "3", reps: "5", weight: "", clearRefused: true),
-                       TargetEntry.Refusal(field: .sets, said: TargetEntry.clearOthersFirst))
-    }
-
-    // The second way into an open line, and the opposite remedy: telling a lifter to clear what they
-    // just typed would be telling them to abandon what they asked for.
-    func testALineThatArrivedOpenRefusesATypedNumberByNameRatherThanByClear() {
-        XCTAssertEqual(TargetEntry.nameSetsFirst, "Name the sets first — an open line names neither.")
-        XCTAssertEqual(TargetEntry.clearOthersFirst,
-                       "Clear reps and weight first — an open line names neither.")
-
-        for (reps, weight) in [("8", ""), ("", "82.5"), ("8", "82.5")] {
-            XCTAssertEqual(TargetEntry.refusal(sets: "", reps: reps, weight: weight),
-                           TargetEntry.Refusal(field: .sets, said: TargetEntry.nameSetsFirst),
-                           "reps \(reps) · weight \(weight) landed on an open line without a word")
-        }
-    }
 
     // ── C1 · the open line's one sentence, and the one screen that draws it ─────────────────────
 
@@ -62,7 +20,7 @@ final class RoutineEditorCopyTests: XCTestCase {
             .appendingPathComponent("Sources/WindmillGym")
         let editor = try String(contentsOf: sources.appendingPathComponent("RoutineBuilderScreens.swift"),
                                 encoding: .utf8)
-        let sheet = try XCTUnwrap(editor.range(of: "private struct TargetSheet: View"))
+        let sheet = try XCTUnwrap(editor.range(of: "struct TargetSheet: View"))
         XCTAssertFalse(editor[..<sheet.lowerBound].contains("TargetEntry.openLine"),
                        "the editor's list draws the sentence beneath the movements")
         XCTAssertEqual(editor[sheet.upperBound...].components(separatedBy: "Text(TargetEntry.openLine)").count - 1, 1,

@@ -8,7 +8,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.PlanEntry
+import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TrainingSet
 
 class SetQueueTests {
@@ -42,6 +45,67 @@ class SetQueueTests {
         val queue = SetQueue(file)
         assertNull(queue.session)
         assertTrue(queue.pending.isEmpty())
+    }
+
+    // The previous app version's bytes: a live session on a plan in the scalar `sets · reps ·
+    // weightKg` shape and one owed set. Opening rewrites the plan on the way in; the set is still
+    // owed, the session still unclaimed, and the next flush writes this version's shape.
+    @Test
+    fun testAQueueWrittenByThePreviousVersionIsRewrittenOnOpenAndNothingIsLost() {
+        val file = queueFile()
+        file.writeText(
+            """{"queues":{"anon":{"session":{"id":"ses_9","startedAt":5000,"routineId":"rt_1","plan":{"routine":"Push A","entries":[""" +
+            """{"exerciseId":"bench-press","sets":3,"reps":8,"weightKg":60.0,"restSeconds":90},{"exerciseId":"chin-up","sets":2},{"exerciseId":"face-pull"}]}},""" +
+            """"entries":{"set_z":{"set":{"id":"set_z","exerciseId":"bench-press","weightKg":60.0,"reps":8,"kind":"working","completedAt":5100},""" +
+            """"sessionId":"ses_9","needsPush":true,"remints":0}},"order":["bench-press"],"unclaimed":true}}}"""
+        )
+        val plan = PlanSnapshot(routine = "Push A", entries = listOf(
+            PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(8, 60.0) }, restSeconds = 90),
+            PlanEntry(exerciseId = "chin-up", sets = List(2) { SetTarget() }),
+            PlanEntry(exerciseId = "face-pull"),
+        ))
+        fun SetQueue.assertWhole() {
+            assertEquals("ses_9", session?.id)
+            assertEquals(plan, session?.plan)
+            assertTrue(sessionIsUnclaimed)
+            assertEquals(listOf("bench-press"), order)
+            assertEquals(listOf("set_z"), pending.map { it.set.id })
+        }
+
+        val queue = SetQueue(file)
+        queue.assertWhole()
+        assertTrue("not written back until the next flush", file.readText().contains("\"sets\":3"))
+
+        queue.flush()
+        val written = file.readText()
+        assertFalse(written.contains("\"sets\":3") || written.contains("\"sets\":2"))
+        assertTrue(written.contains("\"sets\":[{\"reps\":8,\"weightKg\":60.0}"))
+        assertTrue(written.contains("{\"exerciseId\":\"face-pull\"}"))
+        SetQueue(file).assertWhole()
+    }
+
+    // A row this build cannot read costs that row and never the queue around it: an owed set beside
+    // an unreadable one is still owed, and an unreadable live session leaves its owed sets in place.
+    @Test
+    fun testOneUnreadableRowCostsThatRowAndNeverTheQueue() {
+        val file = queueFile()
+        file.writeText(
+            """{"queues":{"anon":{"session":{"id":"ses_1","startedAt":1000},"entries":{""" +
+            """"set_a":{"set":{"id":"set_a","exerciseId":"bench-press","weightKg":82.5,"reps":5,"completedAt":1100},"sessionId":"ses_1","needsPush":true,"remints":0},""" +
+            """"set_b":{"set":{"id":"set_b","exerciseId":"bench-press","weightKg":82.5,"reps":"eight","completedAt":1200},"sessionId":"ses_1","needsPush":true,"remints":0}},""" +
+            """"order":["bench-press"]},""" +
+            """"u.alice":{"session":{"id":"ses_2","startedAt":"noon"},"entries":{""" +
+            """"set_c":{"set":{"id":"set_c","exerciseId":"deadlift","weightKg":140.0,"reps":3,"completedAt":2100},"sessionId":"ses_2","needsPush":true,"remints":0}}}}}"""
+        )
+
+        val anonymous = SetQueue(file)
+        assertEquals("ses_1", anonymous.session?.id)
+        assertEquals(listOf("set_a"), anonymous.pending.map { it.set.id })
+        assertEquals(listOf("bench-press"), anonymous.order)
+
+        val alice = SetQueue(file, deviceOwner = "alice")
+        assertNull(alice.session)
+        assertEquals(listOf("set_c"), alice.pending.map { it.set.id })
     }
 
     @Test
@@ -165,7 +229,7 @@ class SetQueueTests {
         val queue = SetQueue(queueFile())
         queue.hold(Session(id = "ses_1", startedAtMs = 1_000,
             plan = works.windmill.gym.domain.PlanSnapshot(routine = "Push",
-                entries = listOf(works.windmill.gym.domain.PlanEntry(exerciseId = "ex_spent", sets = 3)))))
+                entries = listOf(works.windmill.gym.domain.PlanEntry(exerciseId = "ex_spent", sets = List(3) { works.windmill.gym.domain.SetTarget() })))))
         queue.append("ex_spent")
         queue.store(aSet("set_a", "ex_spent", at = 1_100), sessionId = "ses_1", needsPush = true)
         queue.remapExercise("ex_spent", fresh = "ex_fresh")

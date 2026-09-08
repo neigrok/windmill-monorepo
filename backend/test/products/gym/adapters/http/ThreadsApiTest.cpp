@@ -104,8 +104,7 @@ TEST(gym_thread_export_is_a_csv_attachment_carrying_every_turn_and_the_outcome) 
   Harness h;
   const UserId lifter = h.signIn("s-live");
   h.repo.db.routineRows.push_back(Routine{RoutineId{"rt_00000001"}, lifter, "Push A", 0,
-                                       {RoutineEntry{1, ExerciseId{"bench-press"}, 5, 5, 82.5,
-                                                     180}}});
+                                       {benchEntry()}});
   seedThread(h, lifter, "thr_00000001", R"(why is my bench, uh, "stuck"?)");
   h.repo.db.proposalRows.push_back(RoutineProposal{
       ProposalHead{ProposalId{"prop_00000001"}, RoutineId{"rt_00000001"}, lifter,
@@ -114,7 +113,8 @@ TEST(gym_thread_export_is_a_csv_attachment_carrying_every_turn_and_the_outcome) 
                    "Heavier triples.", 4, 1'700'000'000'000, 1'700'000'000'000},
       1, "Push A", "Push A",
       {RoutineChange{1, ChangeKind::retargeted, ExerciseId{"bench-press"},
-                     EntryTargets{5, 5, 82.5, 180}, EntryTargets{5, 3, 87.5, 180}, 0}}});
+                     EntryTargets{straight(5, 5, 82.5), 180},
+                     EntryTargets{straight(5, 3, 87.5), 180}, 0}}});
 
   drogon::HttpResponsePtr response =
       send(h.threads, &ThreadsApi::exportThreads, getRequest("/v1/gym/export/threads", "s-live"));

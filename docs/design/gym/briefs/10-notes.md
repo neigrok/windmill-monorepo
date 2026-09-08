@@ -36,8 +36,8 @@ sentences in a column, which is not four times as honest as one — it is a para
 not read, and stacking them made the product **less** honest.
 
 - *"…and nothing else you have set"* is a fact about what a connected agent cannot reach, and it is
-  said there — in the connect panel's cannot column, beside the other things a grant never reaches
-  (Android's `ConnectedLog.cannotDo` ends *your rest dial and the unit you read in are yours alone*).
+  said there — by the connected log's read row, which enumerates exactly what a read grant reaches
+  and names no dial (`19-connected-log.md`: the enumeration is the disclosure).
   It is drawn nowhere else: the settings screen's Notes door carries the notes' own purpose line,
   *what you write for Coach* (`HEAD_LINE` in `notes.js`, `Notes.purpose` in `Notes.swift`,
   `Notes.sub` in `Notes.kt`), and no caption about the dials. Among the dials the sentence answered a

@@ -69,18 +69,19 @@ final class SessionScreenTests: XCTestCase {
     }
 
     func testASetIsReadAgainstTheLoadThePlanNamedAndThenAgainstItsReps() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))])
 
         XCTAssertEqual(notes([
             set("s1", "bench-press", 82.5, 5, at: 1_000),
             set("s2", "bench-press", 82.5, 3, at: 2_000),
             set("s3", "bench-press", 85, 5, at: 3_000),
             set("s4", "bench-press", 80, 5, at: 4_000),
-        ], planned), ["on plan", "two short", "+2.5 over plan", "2.5 under plan"])
+        ], planned), ["on plan", "two short", "+2.5 over plan", nil],
+                       "each set is read against its own slot, and a set past the plan against nothing")
     }
 
     func testAShortfallIsSpelledAsAWordAndIsTheOneEmphasisedLine() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))])
         let rows = Performed.movements([set("s1", "bench-press", 82.5, 4, at: 1_000),
                                         set("s2", "bench-press", 82.5, 5, at: 2_000)],
                                        catalog: catalog, plan: planned)[0].rows
@@ -90,13 +91,13 @@ final class SessionScreenTests: XCTestCase {
     }
 
     func testAMovementTakenToMaxIsNeverShort() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: nil, weightKg: 82.5)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(weightKg: 82.5), count: 3))])
 
         XCTAssertEqual(notes([set("s1", "bench-press", 82.5, 1, at: 1_000)], planned), ["on plan"])
     }
 
     func testASetIsNotComparedToAWeightThePlanNeverNamed() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: nil)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8), count: 3))])
 
         XCTAssertEqual(notes([set("s1", "bench-press", 60, 8, at: 1_000),
                               set("s2", "bench-press", 60, 6, at: 2_000)], planned),
@@ -104,7 +105,7 @@ final class SessionScreenTests: XCTestCase {
     }
 
     func testAMovementThePlanNeverNamedIsSaidOnceAndNotScolded() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))])
         let movement = Performed.movements([
             set("s1", "row", 40, 8, at: 1_000, kind: .warmup),
             set("s2", "row", 60, 9, at: 2_000),
@@ -116,7 +117,7 @@ final class SessionScreenTests: XCTestCase {
     }
 
     func testAWarmupIsNeverComparedToThePlan() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))])
 
         XCTAssertEqual(notes([set("s1", "bench-press", 40, 8, at: 1_000, kind: .warmup),
                               set("s2", "bench-press", 82.5, 5, at: 2_000)], planned),
@@ -124,8 +125,8 @@ final class SessionScreenTests: XCTestCase {
     }
 
     func testAMovementThePlanNamesTwiceIsAnnotatedWithNothingAtAll() {
-        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5),
-                            PlanEntry(exerciseId: "bench-press", sets: 2, reps: 8, weightKg: 60)])
+        let planned = plan([PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3)),
+                            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 2))])
         let movement = Performed.movements([set("s1", "bench-press", 82.5, 5, at: 1_000),
                                             set("s2", "bench-press", 60, 8, at: 2_000)],
                                            catalog: catalog, plan: planned)[0]

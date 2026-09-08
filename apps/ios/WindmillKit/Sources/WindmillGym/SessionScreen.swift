@@ -54,21 +54,24 @@ enum Performed {
         return order.map { exerciseId in
             let mine = performed.filter { $0.exerciseId == exerciseId }
             let against = planned(plan, for: exerciseId)
-            // A warmup counts toward nothing, so it is never compared to a plan line.
-            let opening = mine.first { $0.kind == .working }?.id
+            // A warmup counts toward nothing, so it is never compared to a plan line and fills no slot.
+            var workingOrdinal = 0
             return Movement(
                 id: exerciseId,
                 movement: Readout.movement(exerciseId, in: catalog),
                 against: against,
                 rows: mine.enumerated().map { index, set in
-                    Row(id: set.id,
-                        number: String(set.setNumber ?? index + 1),
-                        effort: Readout.effort(weightKg: set.weightKg, reps: set.reps),
-                        kind: set.kind,
-                        note: set.kind == .working
-                            ? note(for: set, against: against, opening: set.id == opening)
-                            : nil,
-                        said: said(of: set))
+                    var note: Note?
+                    if set.kind == .working {
+                        note = Self.note(for: set, against: against, workingOrdinal: workingOrdinal)
+                        workingOrdinal += 1
+                    }
+                    return Row(id: set.id,
+                               number: String(set.setNumber ?? index + 1),
+                               effort: Readout.effort(weightKg: set.weightKg, reps: set.reps),
+                               kind: set.kind,
+                               note: note,
+                               said: said(of: set))
                 })
         }
     }
@@ -94,16 +97,18 @@ enum Performed {
         return .plan(named[0])
     }
 
-    // In the order the facts outrank each other: the load, then the reps. Both heavier and short reads as heavier.
-    static func note(for set: TrainingSet, against: Against, opening: Bool) -> Note? {
-        if case .unplanned = against { return opening ? Note("added today") : nil }
-        guard case .plan(let entry) = against else { return nil }
-        if let target = entry.weightKg, target != 0, set.weightKg != target {
+    // The Nth working set (0-based) is read against its own slot in the plan — a set past the plan
+    // against nothing. In the order the facts outrank each other: the load, then the reps. Both
+    // heavier and short reads as heavier.
+    static func note(for set: TrainingSet, against: Against, workingOrdinal: Int) -> Note? {
+        if case .unplanned = against { return workingOrdinal == 0 ? Note("added today") : nil }
+        guard case .plan(let entry) = against, let slot = entry.slot(workingOrdinal) else { return nil }
+        if let target = slot.weightKg, set.weightKg != target {
             let delta = Readout.weight(abs(set.weightKg - target))
             if set.weightKg > target { return Note("+\(delta) over plan") }
             return Note("\(delta) under plan")
         }
-        guard let target = entry.reps, set.reps < target else { return Note("on plan") }
+        guard let target = slot.reps, set.reps < target else { return Note("on plan") }
         return Note(short: target - set.reps)
     }
 }
@@ -264,7 +269,7 @@ struct SessionScreen: View {
     private func planLine(_ against: Performed.Against) -> some View {
         switch against {
         case .plan(let entry):
-            Text("plan \(Readout.target(sets: entry.sets, reps: entry.reps, weightKg: entry.weightKg))")
+            Text("plan \(Readout.target(entry.sets))")
                 .font(GymType.numeral(11.5))
                 .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
         case .unplanned:

@@ -101,13 +101,11 @@ final class FixSetTests: XCTestCase {
                           routineId: routineId,
                           plan: routineId == nil ? nil
                               : PlanSnapshot(routine: "Push A",
-                                             entries: [PlanEntry(exerciseId: "bench-press", sets: 3,
-                                                                 reps: 5, weightKg: 82.5)])),
+                                             entries: [PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))])),
                   sets: [set("set_1", 82.5, 5, at: 2_000), set("set_2", 100, 4, at: 3_000)])
         if let routineId {
             kept.keep(Routine(id: routineId, name: "Push A", position: 0, entries: [
-                RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 3, targetReps: 5,
-                             targetWeightKg: 82.5),
+                RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3)),
             ]))
         }
         kept.flush()

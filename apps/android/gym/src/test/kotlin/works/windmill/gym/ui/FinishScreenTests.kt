@@ -30,13 +30,17 @@ import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetKind
-import works.windmill.gym.domain.Target
+import works.windmill.gym.domain.PlannedLine
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TrainingSet
 
 private val catalog = listOf(
     Exercise(id = "back-squat", name = "Back Squat"),
     Exercise(id = "leg-press", name = "Leg Press"),
 )
+
+private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): List<SetTarget> =
+    List(sets) { SetTarget(reps, weightKg) }
 
 class FinishTests {
     private val started = 1_754_308_320_000L     // Tue 4 Aug 2025, 18:12 local
@@ -126,7 +130,7 @@ class FinishTests {
                 AgainstMovement(exerciseId = "back-squat",
                                 now = Effort(sets = 5, reps = 5, weightKg = 105.0),
                                 before = Effort(sets = 5, reps = 5, weightKg = 102.5),
-                                planned = Target(sets = 5, reps = 5, weightKg = 102.5)),
+                                planned = PlannedLine(straight(5, 5, 102.5))),
                 AgainstMovement(exerciseId = "leg-press",
                                 now = Effort(sets = 3, reps = 12, weightKg = 140.0),
                                 before = Effort(sets = 3, reps = 12, weightKg = 135.0)),
@@ -134,7 +138,7 @@ class FinishTests {
         val comparison = Finish.comparison(against, catalog)
         assertEquals("Against last Legs", comparison?.title)
         assertEquals(listOf("Back Squat", "Leg Press"), comparison?.rows?.map { it.movement })
-        assertEquals(listOf("5×5 @ 102.5 → 5×5 @ 105", "3×12 @ 135 → 3×12 @ 140"),
+        assertEquals(listOf("5 × 5 · 102.5 → 5 × 5 · 105", "3 × 12 · 135 → 3 × 12 · 140"),
                      comparison?.rows?.map { it.detail })
     }
 
@@ -144,9 +148,9 @@ class FinishTests {
             movements = listOf(
                 AgainstMovement(exerciseId = "leg-press",
                                 now = Effort(sets = 3, reps = 10, weightKg = 140.0),
-                                planned = Target(sets = 3, reps = 12, weightKg = 140.0)),
+                                planned = PlannedLine(straight(3, 12, 140.0))),
             ))
-        assertEquals(listOf("planned 3×12 · did 3×10"),
+        assertEquals(listOf("planned 3 × 12 · 140 — did 3 × 10 · 140"),
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
@@ -158,7 +162,7 @@ class FinishTests {
                                 now = Effort(sets = 3, reps = 8, weightKg = 0.0),
                                 before = Effort(sets = 3, reps = 7, weightKg = 0.0)),
             ))
-        assertEquals(listOf("3×7 → 3×8"), Finish.comparison(against, catalog)?.rows?.map { it.detail })
+        assertEquals(listOf("3 × 7 → 3 × 8"), Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
     @Test
@@ -167,9 +171,9 @@ class FinishTests {
             movements = listOf(
                 AgainstMovement(exerciseId = "chin-up",
                                 now = Effort(sets = 3, reps = 6, weightKg = 0.0),
-                                planned = Target(sets = 3)),
+                                planned = PlannedLine(straight(3))),
             ))
-        assertEquals(listOf("3 × max → 3×6"),
+        assertEquals(listOf("3 × max → 3 × 6"),
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
@@ -179,9 +183,9 @@ class FinishTests {
             movements = listOf(
                 AgainstMovement(exerciseId = "chin-up",
                                 now = Effort(sets = 2, reps = 4, weightKg = 0.0),
-                                planned = Target(sets = 3)),
+                                planned = PlannedLine(straight(3))),
             ))
-        assertEquals(listOf("3 × max → 2×4"),
+        assertEquals(listOf("3 × max → 2 × 4"),
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
@@ -192,9 +196,9 @@ class FinishTests {
                 AgainstMovement(exerciseId = "back-squat",
                                 now = Effort(sets = 3, reps = 5, weightKg = 110.0),
                                 before = Effort(sets = 3, reps = 5, weightKg = 105.0),
-                                planned = Target(sets = 5, reps = 5, weightKg = 100.0)),
+                                planned = PlannedLine(straight(5, 5, 100.0))),
             ))
-        assertEquals(listOf("5×5 @ 100 → 3×5 @ 110"),
+        assertEquals(listOf("5 × 5 · 100 → 3 × 5 · 110"),
                      Finish.comparison(ramped, catalog)?.rows?.map { it.detail })
     }
 
@@ -204,9 +208,9 @@ class FinishTests {
             movements = listOf(
                 AgainstMovement(exerciseId = "leg-press",
                                 now = Effort(sets = 5, reps = 8, weightKg = 160.0),
-                                planned = Target(sets = 3, reps = 12, weightKg = 140.0)),
+                                planned = PlannedLine(straight(3, 12, 140.0))),
             ))
-        assertEquals(listOf("3×12 @ 140 → 5×8 @ 160"),
+        assertEquals(listOf("3 × 12 · 140 → 5 × 8 · 160"),
                      Finish.comparison(heavier, catalog)?.rows?.map { it.detail })
     }
 
@@ -216,18 +220,18 @@ class FinishTests {
             movements = listOf(
                 AgainstMovement(exerciseId = "leg-press",
                                 now = Effort(sets = 3, reps = 10, weightKg = 140.0),
-                                planned = Target(sets = 3, reps = 12, weightKg = 140.0)),
+                                planned = PlannedLine(straight(3, 12, 140.0))),
             ))
-        assertEquals(listOf("planned 3×12 · did 3×10"),
+        assertEquals(listOf("planned 3 × 12 · 140 — did 3 × 10 · 140"),
                      Finish.comparison(heldLoad, catalog)?.rows?.map { it.detail })
 
         val noLoadNamed = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
             movements = listOf(
                 AgainstMovement(exerciseId = "chin-up",
                                 now = Effort(sets = 3, reps = 6, weightKg = 0.0),
-                                planned = Target(sets = 3, reps = 8)),
+                                planned = PlannedLine(straight(3, 8))),
             ))
-        assertEquals(listOf("planned 3×8 · did 3×6"),
+        assertEquals(listOf("planned 3 × 8 — did 3 × 6"),
                      Finish.comparison(noLoadNamed, catalog)?.rows?.map { it.detail })
     }
 
@@ -238,19 +242,39 @@ class FinishTests {
                 AgainstMovement(exerciseId = "barbell-row",
                                 now = Effort(sets = 3, reps = 10, weightKg = 60.0),
                                 before = Effort(sets = 3, reps = 10, weightKg = 57.5),
-                                planned = Target()),
+                                planned = PlannedLine()),
             ))
-        assertEquals(listOf("3×10 @ 57.5 → 3×10 @ 60"),
+        assertEquals(listOf("3 × 10 · 57.5 → 3 × 10 · 60"),
                      Finish.comparison(open, catalog)?.rows?.map { it.detail })
 
         val firstRun = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
             movements = listOf(
                 AgainstMovement(exerciseId = "barbell-row",
                                 now = Effort(sets = 3, reps = 10, weightKg = 60.0),
-                                planned = Target()),
+                                planned = PlannedLine()),
             ))
-        assertEquals(listOf("3×10 @ 60"),
+        assertEquals(listOf("3 × 10 · 60"),
                      Finish.comparison(firstRun, catalog)?.rows?.map { it.detail })
+    }
+
+    @Test
+    fun aRampReadsAsItsRangeAndTheTopSetStandsAgainstThePlansTopSet() {
+        val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
+        fun detail(now: Effort, planned: List<SetTarget>) =
+            Finish.comparison(Against(sessionId = "ses_0", routine = "Lower A", startedAtMs = 1,
+                movements = listOf(AgainstMovement(exerciseId = "back-squat", now = now, planned = PlannedLine(planned)))),
+                catalog)?.rows?.single()?.detail
+
+        assertEquals("5 × 1–5 · 60–100 → 1 × 1 · 100", detail(Effort(sets = 1, reps = 1, weightKg = 100.0), ramp))
+        assertEquals("5 × 1–5 · 60–100 → 1 × 3 · 90", detail(Effort(sets = 1, reps = 3, weightKg = 90.0), ramp))
+        assertEquals("planned 3 × 3–5 · 60–100 — did 1 × 2 · 100",
+                     detail(Effort(sets = 1, reps = 2, weightKg = 100.0),
+                            listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 100.0))))
+        // A top set to max: the first set at the heaviest load names the 5 a 100 × 3 fell short of.
+        assertEquals("planned 3 × 5–max · 100 — did 1 × 3 · 100",
+                     detail(Effort(sets = 1, reps = 3, weightKg = 100.0),
+                            listOf(SetTarget(5, 100.0), SetTarget(5, 100.0), SetTarget(null, 100.0))))
+        assertEquals("3 × 8 · −20", detail(Effort(sets = 3, reps = 8, weightKg = -20.0), emptyList()))
     }
 
     @Test
@@ -466,6 +490,31 @@ class KeepAsRoutineTests {
         assertTrue(
             compose.onNodeWithText("Keep this as a routine").fetchSemanticsNode().positionInRoot.y >
                 compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().positionInRoot.y,
+        )
+    }
+
+    // 17-set-targets: the routine the receipt mints transcribes the working sets per set, and the
+    // card's preview prints each line's scheme in the one readout formula — a ramp reads its ranges.
+    @Test
+    fun thePreviewPrintsTheSetsAsLiftedInTheReadoutFormula() {
+        val ramped = ordinary.copy(
+            sets = listOf(
+                TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 60.0, reps = 5, completedAtMs = 2_000),
+                TrainingSet(id = "set_2", exerciseId = "back-squat", weightKg = 80.0, reps = 5, completedAtMs = 3_000),
+                TrainingSet(id = "set_3", exerciseId = "back-squat", weightKg = 100.0, reps = 1, completedAtMs = 4_000),
+                TrainingSet(id = "set_4", exerciseId = "leg-press", weightKg = 140.0, reps = 12, completedAtMs = 5_000),
+                TrainingSet(id = "set_5", exerciseId = "leg-press", weightKg = 140.0, reps = 12, completedAtMs = 6_000),
+            ),
+        )
+        compose.setContent {
+            FinishScreen(finished = ramped, catalog = catalog, kept = false, onKeepRoutine = {}, onShareWithCoach = {})
+        }
+        compose.onNodeWithText("3 × 1–5 · 60–100").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("2 × 12 · 140").performScrollTo().assertIsDisplayed()
+        assertTrue(
+            "each scheme stands beside its movement",
+            compose.onNodeWithText("3 × 1–5 · 60–100").fetchSemanticsNode().positionInRoot.y ==
+                compose.onNodeWithText("Back Squat").fetchSemanticsNode().positionInRoot.y,
         )
     }
 

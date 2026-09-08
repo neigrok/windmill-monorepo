@@ -6,6 +6,8 @@ import {
 } from '../../../src/products/gym/review.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
+const straight = (count, reps, weightKg) => Array.from({ length: count }, () => ({ reps, weightKg }));
+
 const CATALOG = [
   { id: 'back-squat', name: 'Back Squat' },
   { id: 'romanian-deadlift', name: 'Romanian Deadlift' },
@@ -98,28 +100,28 @@ test('comparison — the plan on the left, what happened on the right, and short
         exerciseId: 'back-squat',
         now: { weightKg: 105, reps: 5, sets: 5 },
         before: { weightKg: 102.5, reps: 5, sets: 5 },
-        planned: { sets: 5, reps: 5, weightKg: 102.5 },
+        planned: { sets: straight(5, 5, 102.5) },
       },
       {
         exerciseId: 'romanian-deadlift',
         now: { weightKg: 90, reps: 8, sets: 3 },
         before: { weightKg: 90, reps: 8, sets: 3 },
-        planned: { sets: 3, reps: 8, weightKg: 90 },
+        planned: { sets: straight(3, 8, 90) },
       },
       {
         exerciseId: 'leg-press',
         now: { weightKg: 140, reps: 10, sets: 3 },
         before: { weightKg: 140, reps: 12, sets: 3 },
-        planned: { sets: 3, reps: 12, weightKg: 140 },
+        planned: { sets: straight(3, 12, 140) },
       },
     ],
   };
   assert.deepEqual(comparison(against, CATALOG), {
     title: 'Against last Legs',
     rows: [
-      { exerciseId: 'back-squat', movement: 'Back Squat', detail: '5×5 @ 102.5 → 5×5 @ 105' },
-      { exerciseId: 'romanian-deadlift', movement: 'Romanian Deadlift', detail: '3×8 @ 90 → 3×8 @ 90' },
-      { exerciseId: 'leg-press', movement: 'Leg Press', detail: 'planned 3×12 · did 3×10' },
+      { exerciseId: 'back-squat', movement: 'Back Squat', detail: '5 × 5 · 102.5 → 5 × 5 · 105' },
+      { exerciseId: 'romanian-deadlift', movement: 'Romanian Deadlift', detail: '3 × 8 · 90 → 3 × 8 · 90' },
+      { exerciseId: 'leg-press', movement: 'Leg Press', detail: 'planned 3 × 12 · 140 — did 3 × 10 · 140' },
     ],
   });
 });
@@ -130,19 +132,19 @@ test('comparison — the plan that sets no target, the bodyweight movement, and 
     routine: 'Push A',
     startedAt: 1_750_723_200_000,
     movements: [
-      { exerciseId: 'chin-up', now: { weightKg: 0, reps: 8, sets: 3 }, planned: { sets: 3 } },
+      { exerciseId: 'chin-up', now: { weightKg: 0, reps: 8, sets: 3 }, planned: { sets: straight(3) } },
       { exerciseId: 'back-squat', now: { weightKg: 105, reps: 5, sets: 5 }, before: { weightKg: 100, reps: 5, sets: 5 } },
       { exerciseId: 'leg-press', now: { weightKg: 140, reps: 12, sets: 3 } },
     ],
   };
   assert.deepEqual(comparison(against, CATALOG).rows.map((row) => row.detail), [
-    '3 × max → 3×8',
-    '5×5 @ 100 → 5×5 @ 105',
-    '3×12 @ 140',
+    '3 × max → 3 × 8',
+    '5 × 5 · 100 → 5 × 5 · 105',
+    '3 × 12 · 140',
   ]);
   assert.equal(
-    comparison({ routine: 'Push A', movements: [{ exerciseId: 'chin-up', now: { weightKg: 0, reps: 4, sets: 2 }, planned: { sets: 3 } }] }, CATALOG).rows[0].detail,
-    '3 × max → 2×4',
+    comparison({ routine: 'Push A', movements: [{ exerciseId: 'chin-up', now: { weightKg: 0, reps: 4, sets: 2 }, planned: { sets: straight(3) } }] }, CATALOG).rows[0].detail,
+    '3 × max → 2 × 4',
   );
 });
 
@@ -153,33 +155,57 @@ test('comparison — a session that ramped through its whole plan is never told 
       exerciseId: 'back-squat',
       now: { weightKg: 110, reps: 5, sets: 3 },
       before: { weightKg: 105, reps: 5, sets: 3 },
-      planned: { sets: 5, reps: 5, weightKg: 100 },
+      planned: { sets: straight(5, 5, 100) },
     }],
   };
-  assert.equal(comparison(ramped, CATALOG).rows[0].detail, '5×5 @ 100 → 3×5 @ 110');
+  assert.equal(comparison(ramped, CATALOG).rows[0].detail, '5 × 5 · 100 → 3 × 5 · 110');
 
   const heavier = {
     routine: 'Legs',
     movements: [{
       exerciseId: 'leg-press',
       now: { weightKg: 160, reps: 8, sets: 5 },
-      planned: { sets: 3, reps: 12, weightKg: 140 },
+      planned: { sets: straight(3, 12, 140) },
     }],
   };
-  assert.equal(comparison(heavier, CATALOG).rows[0].detail, '3×12 @ 140 → 5×8 @ 160');
+  assert.equal(comparison(heavier, CATALOG).rows[0].detail, '3 × 12 · 140 → 5 × 8 · 160');
 
   const short = {
     routine: 'Legs',
     movements: [{
       exerciseId: 'leg-press',
       now: { weightKg: 140, reps: 10, sets: 3 },
-      planned: { sets: 3, reps: 12, weightKg: 140 },
+      planned: { sets: straight(3, 12, 140) },
     }],
   };
-  assert.equal(comparison(short, CATALOG).rows[0].detail, 'planned 3×12 · did 3×10');
+  assert.equal(comparison(short, CATALOG).rows[0].detail, 'planned 3 × 12 · 140 — did 3 × 10 · 140');
   assert.equal(
-    comparison({ routine: 'Legs', movements: [{ exerciseId: 'chin-up', now: { weightKg: 0, reps: 6, sets: 3 }, planned: { sets: 3, reps: 8 } }] }, CATALOG).rows[0].detail,
-    'planned 3×8 · did 3×6',
+    comparison({ routine: 'Legs', movements: [{ exerciseId: 'chin-up', now: { weightKg: 0, reps: 6, sets: 3 }, planned: { sets: straight(3, 8) } }] }, CATALOG).rows[0].detail,
+    'planned 3 × 8 — did 3 × 6',
+  );
+});
+
+test('comparison — a ramp reads as its range, an open line falls through to last time, and the top set stands against the plan\'s top set', () => {
+  const ramp = [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 90 }, { reps: 1, weightKg: 100 }, { reps: 5, weightKg: 80 }];
+  const detail = (now, planned) => comparison({ routine: 'Lower A', movements: [{ exerciseId: 'back-squat', now, planned }] }, CATALOG).rows[0].detail;
+  assert.equal(detail({ weightKg: 100, reps: 1, sets: 1 }, { sets: ramp }), '5 × 1–5 · 60–100 → 1 × 1 · 100');
+  assert.equal(detail({ weightKg: 90, reps: 3, sets: 1 }, { sets: ramp }), '5 × 1–5 · 60–100 → 1 × 3 · 90');
+  assert.equal(
+    detail({ weightKg: 100, reps: 2, sets: 1 }, { sets: [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 100 }] }),
+    'planned 3 × 3–5 · 60–100 — did 1 × 2 · 100',
+  );
+  // A top set to max: the first set at the heaviest load names the 5 a 100 × 3 fell short of.
+  assert.equal(
+    detail({ weightKg: 100, reps: 3, sets: 1 }, { sets: [{ reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }, { weightKg: 100 }] }),
+    'planned 3 × 5–max · 100 — did 1 × 3 · 100',
+  );
+  assert.equal(
+    comparison({ routine: 'Lower A', movements: [{ exerciseId: 'back-squat', now: { weightKg: 70, reps: 8, sets: 3 }, before: { weightKg: 65, reps: 8, sets: 3 }, planned: {} }] }, CATALOG).rows[0].detail,
+    '3 × 8 · 65 → 3 × 8 · 70',
+  );
+  assert.equal(
+    comparison({ routine: 'Lower A', movements: [{ exerciseId: 'chin-up', now: { weightKg: -20, reps: 8, sets: 3 }, planned: {} }] }, CATALOG).rows[0].detail,
+    '3 × 8 · −20',
   );
 });
 
@@ -194,5 +220,5 @@ test('comparison — an absent comparison draws no section, and an id names its 
   assert.equal(comparison(undefined, CATALOG), null);
   assert.equal(comparison(null, CATALOG), null);
   const rows = comparison({ routine: 'Legs', movements: [{ exerciseId: 'zercher-squat', now: { weightKg: 80, reps: 5, sets: 3 } }] }, CATALOG).rows;
-  assert.deepEqual(rows, [{ exerciseId: 'zercher-squat', movement: 'zercher-squat', detail: '3×5 @ 80' }]);
+  assert.deepEqual(rows, [{ exerciseId: 'zercher-squat', movement: 'zercher-squat', detail: '3 × 5 · 80' }]);
 });

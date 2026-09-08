@@ -110,16 +110,47 @@ final class ReadoutTests: XCTestCase {
                        "a SUM is the one way a number here goes non-finite — `inf t` is not a caption")
     }
 
-    func testATargetIsSpelledOneWayForTheWholeProduct() {
-        XCTAssertEqual(Readout.target(sets: 5, reps: 5, weightKg: 82.5), "5 × 5 · 82.5")
-        XCTAssertEqual(Readout.target(sets: 3, reps: nil, weightKg: nil), "3 × max")
-        XCTAssertEqual(Readout.target(sets: 3, reps: 8, weightKg: 0), "3 × 8")
-        XCTAssertEqual(Readout.target(sets: 3, reps: 8, weightKg: -20), "3 × 8 · \u{2212}20")
+    // R4: `{sets} × {reps} · {load}`, a column whose sets disagree printing its range with an en dash.
+    func testASchemeIsSpelledOneWayForTheWholeProduct() {
+        XCTAssertEqual(Readout.target(Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)), "5 × 5 · 82.5")
+        XCTAssertEqual(Readout.target(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)), "3 × 8 · 60")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                                       SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                                       SetTarget(reps: 5, weightKg: 80)]), "5 × 1\u{2013}5 · 60\u{2013}100")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5, weightKg: 100), SetTarget(reps: 5, weightKg: 100),
+                                       SetTarget(weightKg: 100)]), "3 × 5\u{2013}max · 100")
+        XCTAssertEqual(Readout.target(Array(repeating: SetTarget(), count: 3)), "3 × max")
+        XCTAssertEqual(Readout.target(Array(repeating: SetTarget(reps: 8), count: 3)), "3 × 8")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 12, weightKg: 80), SetTarget(reps: 8, weightKg: 80)]), "2 × 8\u{2013}12 · 80")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 8)]), "2 × 8 · 60\u{2013}last")
+        XCTAssertEqual(Readout.target(Array(repeating: SetTarget(reps: 8, weightKg: -20), count: 3)), "3 × 8 · \u{2212}20")
+    }
+
+    // F5, matching the web: a one-set scheme is still the scheme formula, and a placeholder stands as
+    // the hi end of a mixed column whatever named value sits above the low one.
+    func testAOneSetSchemeAndAMixedColumnReadTheWayTheWebReadsThem() {
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5, weightKg: 100)]), "1 × 5 · 100")
+        XCTAssertEqual(Readout.target([SetTarget(weightKg: 100)]), "1 × max · 100")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5)]), "1 × 5")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 8, weightKg: 80), SetTarget(weightKg: 100)]),
+                       "3 × 5\u{2013}max · 60\u{2013}100")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 5)]),
+                       "3 × 5 · 60\u{2013}last")
+        XCTAssertEqual(Readout.target([SetTarget(reps: 5), SetTarget(reps: 5, weightKg: 60)]), "2 × 5 · 60\u{2013}last",
+                       "wherever the placeholder falls in the column")
+    }
+
+    // One set is `{load} × {reps}` — the logged pill's own shape — with the nulls as their placeholders.
+    func testOneSetIsSpelledAsItsLoadAndItsReps() {
+        XCTAssertEqual(Readout.set(SetTarget(reps: 5, weightKg: 100)), "100 × 5")
+        XCTAssertEqual(Readout.set(SetTarget(weightKg: 100)), "100 × max")
+        XCTAssertEqual(Readout.set(SetTarget(reps: 5)), "last × 5")
+        XCTAssertEqual(Readout.set(SetTarget()), "last × max")
     }
 
     func testATargetTheRoutineNeverNamedIsOneWordAndNeverAZero() {
-        XCTAssertEqual(Readout.target(sets: nil, reps: nil, weightKg: nil), "open")
-        XCTAssertEqual(Readout.target(sets: nil, reps: nil, weightKg: nil), Readout.openTarget)
+        XCTAssertEqual(Readout.target([]), "open")
+        XCTAssertEqual(Readout.target([]), Readout.openTarget)
     }
 
     func testADateDropsTheWeekdayAndKeepsTheYearOnlyAtTheBottom() {

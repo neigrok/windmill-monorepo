@@ -70,23 +70,75 @@ object TheSix {
         movements.filter { six -> catalog.none { it.id == six.id } }
 }
 
-// No `sets` is the open line, frozen as the absence itself and never as a zero.
+// One set of a scheme. No `reps` is max; no `weightKg` is last time's Nth working set.
+@Serializable
+data class SetTarget(val reps: Int? = null, val weightKg: Double? = null)
+
+// A line's target is a scheme: its sets in lifting order, each naming its own reps and load. A
+// straight scheme is one whose sets all agree; `5 × 5 · 80` is five sets that do. Loads are compared
+// on the ladder's grid and never on raw doubles.
+object Scheme {
+    const val maxSets = 20
+
+    fun rounded(sets: List<SetTarget>): List<SetTarget> =
+        sets.map { it.copy(weightKg = it.weightKg?.let(Ladder::round)) }
+
+    fun same(a: List<SetTarget>, b: List<SetTarget>): Boolean = rounded(a) == rounded(b)
+
+    fun straight(sets: List<SetTarget>): Boolean = rounded(sets).distinct().size == 1
+
+    // The slot the coming working set fills, counted off the working sets already lifted today.
+    fun slot(sets: List<SetTarget>, workingSetsToday: Int): SetTarget? = sets.getOrNull(workingSetsToday)
+
+    // There is nothing to ramp between two sets — a two-row ramp is its own ends — or between ends
+    // that agree.
+    fun canRamp(sets: List<SetTarget>): Boolean {
+        if (sets.size < 3) return false
+        return rounded(sets).let { it.first() != it.last() }
+    }
+
+    // Set 1 to set n in a straight line: the two ends stand as typed, each set between takes its
+    // reps to the nearest whole and its load onto the plate grid where that load stands
+    // (`Ladder.onGrid`), and a column whose ends are not both named is left as it stands.
+    fun rampUp(sets: List<SetTarget>): List<SetTarget> {
+        if (!canRamp(sets)) return sets
+        val first = sets.first()
+        val last = sets.last()
+        val steps = sets.size - 1
+        return sets.mapIndexed { index, set ->
+            if (index == 0) return@mapIndexed first
+            if (index == steps) return@mapIndexed last
+            val along = index.toDouble() / steps
+            SetTarget(
+                reps = if (first.reps == null || last.reps == null) set.reps
+                       else floor(first.reps + (last.reps - first.reps) * along + 0.5).toInt(),
+                weightKg = if (first.weightKg == null || last.weightKg == null) set.weightKg
+                           else Ladder.onGrid(first.weightKg + (last.weightKg - first.weightKg) * along),
+            )
+        }
+    }
+
+    // What was lifted, as a scheme: one set per working set in the order they landed.
+    fun lifted(working: List<TrainingSet>): List<SetTarget> =
+        working.sortedBy { it.completedAtMs }.map { SetTarget(it.reps, Ladder.round(it.weightKg)) }
+}
+
+// No `sets` is the open line, frozen as the absence itself: the wire never carries an empty array.
 @Serializable
 data class PlanEntry(
     val exerciseId: String,
-    val sets: Int? = null,
-    val reps: Int? = null,
-    val weightKg: Double? = null,
+    val sets: List<SetTarget> = emptyList(),
     val restSeconds: Int? = null,
-)
+) {
+    val isOpen: Boolean get() = sets.isEmpty()
+}
 
 @Serializable
 data class PlanSnapshot(val routine: String, val entries: List<PlanEntry> = emptyList()) {
     constructor(routine: Routine) : this(
         routine = routine.name,
         entries = routine.entries.sortedBy { it.position }.map {
-            PlanEntry(exerciseId = it.exerciseId, sets = it.targetSets, reps = it.targetReps,
-                weightKg = it.targetWeightKg, restSeconds = it.restSeconds)
+            PlanEntry(exerciseId = it.exerciseId, sets = it.sets, restSeconds = it.restSeconds)
         },
     )
 
@@ -229,17 +281,17 @@ data class LastSet(
     }
 }
 
-// No `targetSets` is the open row and the ABSENCE is the state; an open row carries no reps and no
-// weight either, since the log refuses a half-open line.
+// No `sets` is the open row and the ABSENCE is the state: the wire omits the key and never sends
+// an empty array, which the log refuses like a zero target.
 @Serializable
 data class RoutineEntry(
     val position: Int = 0,
     val exerciseId: String,
-    val targetSets: Int? = null,
-    val targetReps: Int? = null,
-    val targetWeightKg: Double? = null,
+    val sets: List<SetTarget> = emptyList(),
     val restSeconds: Int? = null,
-)
+) {
+    val isOpen: Boolean get() = sets.isEmpty()
+}
 
 // `revision` is READ-ONLY on the wire; a PUT bumps it and supersedes every pending proposal.
 @Serializable
@@ -263,19 +315,18 @@ data class Routine(
         position = write.position,
         entries = write.entries.mapIndexed { index, entry ->
             RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,
-                targetSets = entry.targetSets, targetReps = entry.targetReps,
-                targetWeightKg = entry.targetWeightKg, restSeconds = entry.restSeconds)
+                sets = entry.sets, restSeconds = entry.restSeconds)
         },
     )
 
     // Addressed by POSITION (plan index + 1), never by movement name; a PUT of an unchanged document
-    // still supersedes pending proposals.
-    fun retargeting(position: Int, exerciseId: String, toWeightKg: Double): Routine? {
+    // still supersedes pending proposals. An open line stays open: nothing is written onto it.
+    fun retargeting(position: Int, exerciseId: String, sets: List<SetTarget>): Routine? {
         val row = entries.firstOrNull { it.position == position } ?: return null
         if (row.exerciseId != exerciseId) return null
-        if (row.targetSets == null) return null
+        if (row.isOpen) return null
         return copy(entries = entries.map {
-            if (it.position == position) it.copy(targetWeightKg = toWeightKg) else it
+            if (it.position == position) it.copy(sets = Scheme.rounded(sets)) else it
         })
     }
 }
@@ -319,16 +370,23 @@ data class PersonalRecord(
 @Serializable
 data class Effort(val sets: Int, val reps: Int, val weightKg: Double)
 
-// A routine that decided at the rack sends `"planned": {}`, so every field here must stay optional.
+// What the frozen plan asked of this movement: its scheme, or nothing. A line that decided at the
+// rack rides as `"planned": {}` — an open line, with no set to stand against.
 @Serializable
-data class Target(val sets: Int? = null, val reps: Int? = null, val weightKg: Double? = null)
+data class PlannedLine(val sets: List<SetTarget> = emptyList()) {
+    val isOpen: Boolean get() = sets.isEmpty()
+
+    // The set the effort stands against — the heaviest named load, ties to the earlier set (the
+    // log's own TopSet rule read over the plan) — and the first set when no set names a load.
+    val top: SetTarget? get() = sets.filter { it.weightKg != null }.maxByOrNull { it.weightKg!! } ?: sets.firstOrNull()
+}
 
 @Serializable
 data class AgainstMovement(
     val exerciseId: String,
     val now: Effort,
     val before: Effort? = null,
-    val planned: Target? = null,
+    val planned: PlannedLine? = null,
 )
 
 @Serializable
@@ -607,14 +665,12 @@ data class ExerciseWrite(
 @Serializable
 data class ExerciseRename(val name: String)
 
-// `null` is the only default these fields may have: a non-null default is omitted from the wire and
-// lands as an open line. Omit the key, never send 0.
+// An empty scheme is the default and so leaves the wire (encodeDefaults is off): an open line
+// travels as no `sets` key, never as `[]`, which the log refuses.
 @Serializable
 data class RoutineEntryWrite(
     val exerciseId: String,
-    val targetSets: Int? = null,
-    val targetReps: Int? = null,
-    val targetWeightKg: Double? = null,
+    val sets: List<SetTarget> = emptyList(),
     val restSeconds: Int? = null,
 )
 
@@ -631,12 +687,13 @@ data class RoutineWrite(
         routine.name,
         routine.position,
         routine.entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.targetSets, it.targetReps, it.targetWeightKg, it.restSeconds)
+            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
         },
     )
 
     companion object {
-        // targetReps is the modal count, ties to the smaller; a warmup-only session yields null.
+        // Each movement's working sets, set by set, as they were lifted; a warmup-only session
+        // keeps no routine.
         fun from(name: String, detail: SessionDetail, position: Int = 0): RoutineWrite? {
             val working = detail.sets
                 .filter { it.kind == SetKind.Working }
@@ -645,14 +702,9 @@ data class RoutineWrite(
             val order = mutableListOf<String>()
             for (set in working) if (set.exerciseId !in order) order.add(set.exerciseId)
             val entries = order.map { movement ->
-                val sets = working.filter { it.exerciseId == movement }
-                val modalReps = sets.groupingBy { it.reps }.eachCount().entries
-                    .maxWith(compareBy({ it.value }, { -it.key })).key
                 RoutineEntryWrite(
                     exerciseId = movement,
-                    targetSets = sets.size,
-                    targetReps = modalReps,
-                    targetWeightKg = sets.maxOf { it.weightKg },
+                    sets = Scheme.lifted(working.filter { it.exerciseId == movement }),
                 )
             }
             return RoutineWrite(Ids.routine(), name, position, entries)
@@ -660,19 +712,31 @@ data class RoutineWrite(
     }
 }
 
-// Sticky beats the plan beats last time beats the empty bar; weight from the LAST non-warmup set of
-// last time, reps from the FIRST.
+// On a scheme whose sets disagree the pad follows the slot: the Nth working set takes the Nth set's
+// numbers, then last time's Nth, then today's last set, then the bar. On a straight scheme, and on
+// no scheme, sticky beats the plan beats last time beats the empty bar — weight from the LAST
+// non-warmup set of last time, reps from the FIRST.
 data class Prefill(val weightKg: Double, val reps: Int) {
     companion object {
         const val EMPTY_BAR_KG = 20.0
         const val EMPTY_BAR_REPS = 5
 
         fun of(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): Prefill {
+            val scheme = planEntry?.sets.orEmpty()
             val sticky = todaySets.lastOrNull { it.kind == SetKind.Working }
-            if (sticky != null) return Prefill(sticky.weightKg, max(1, sticky.reps))
             val history = lastTime?.sets ?: emptyList()
-            val weight = planEntry?.weightKg ?: history.lastOrNull()?.weightKg ?: EMPTY_BAR_KG
-            val reps = planEntry?.reps ?: history.firstOrNull()?.reps ?: EMPTY_BAR_REPS
+            if (scheme.isNotEmpty() && !Scheme.straight(scheme)) {
+                val lifted = todaySets.count { it.kind == SetKind.Working }
+                val slot = Scheme.slot(scheme, lifted)
+                val lastNth = history.filter { it.kind == SetKind.Working }.getOrNull(lifted)
+                val weight = slot?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: EMPTY_BAR_KG
+                val reps = slot?.reps ?: lastNth?.reps ?: sticky?.reps ?: EMPTY_BAR_REPS
+                return Prefill(weight, max(1, reps))
+            }
+            if (sticky != null) return Prefill(sticky.weightKg, max(1, sticky.reps))
+            val planned = scheme.firstOrNull()
+            val weight = planned?.weightKg ?: history.lastOrNull()?.weightKg ?: EMPTY_BAR_KG
+            val reps = planned?.reps ?: history.firstOrNull()?.reps ?: EMPTY_BAR_REPS
             return Prefill(weight, max(1, reps))
         }
     }

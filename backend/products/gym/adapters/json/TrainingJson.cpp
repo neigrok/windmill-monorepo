@@ -134,6 +134,34 @@ std::uint64_t parseFinish(const Json::Value& body) {
 }
 
 namespace {
+// The wire's scheme, refused strictly: an empty array is a zero target, and the entity refuses the
+// per-set bounds and the length with the pinned sentences.
+std::vector<SetTarget> schemeFrom(const Json::Value& sets) {
+  if (!sets.isArray()) throw InvalidTraining("sets must be an array");
+  if (sets.empty()) throw InvalidTraining("a zero target is no target — leave out the sets instead");
+  std::vector<SetTarget> scheme;
+  for (const Json::Value& set : sets) {
+    if (!set.isObject()) throw InvalidTraining("a set target must be a json object");
+    for (const std::string& field : set.getMemberNames()) {
+      if (field == "reps" || field == "weightKg") continue;
+      throw InvalidTraining("unknown set field \"" + field + "\". A set takes: reps, weightKg.");
+    }
+    // Both mean something by their absence: never fill one in with a zero.
+    std::optional<int> reps;
+    if (set.isMember("reps") && !set["reps"].isNull()) {
+      if (!set["reps"].isInt()) throw InvalidTraining("reps must be a whole number");
+      reps = set["reps"].asInt();
+    }
+    std::optional<double> weightKg;
+    if (set.isMember("weightKg") && !set["weightKg"].isNull()) {
+      if (!set["weightKg"].isNumeric()) throw InvalidTraining("weightKg must be a number");
+      weightKg = set["weightKg"].asDouble();
+    }
+    scheme.push_back(SetTarget{reps, weightKg});
+  }
+  return scheme;
+}
+
 // Shared by the lifter's routine write and an agent's proposal.
 std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
   if (!body["entries"].isArray()) throw InvalidTraining("entries must be an array");
@@ -143,31 +171,15 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
     // An unknown field name is refused rather than ignored. `position` is accepted and ignored:
     // lines are renumbered 1..n in arrival order.
     for (const std::string& field : entry.getMemberNames()) {
-      if (field == "exerciseId" || field == "targetSets" || field == "targetReps" ||
-          field == "targetWeightKg" || field == "restSeconds" || field == "position")
+      if (field == "exerciseId" || field == "sets" || field == "restSeconds" || field == "position")
         continue;
       throw InvalidTraining("unknown routine entry field \"" + field +
-                            "\". An entry takes: exerciseId, targetSets, targetReps, "
-                            "targetWeightKg, restSeconds.");
+                            "\". An entry takes: exerciseId, sets, restSeconds.");
     }
     if (!entry["exerciseId"].isString()) throw InvalidTraining("exerciseId must be a string");
-    // All four optionals mean something by their absence: never fill one in with a zero.
-    std::optional<int> targetSets;
-    if (entry.isMember("targetSets") && !entry["targetSets"].isNull()) {
-      if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
-      targetSets = entry["targetSets"].asInt();
-    }
-    std::optional<int> targetReps;
-    if (entry.isMember("targetReps") && !entry["targetReps"].isNull()) {
-      if (!entry["targetReps"].isInt()) throw InvalidTraining("targetReps must be a whole number");
-      targetReps = entry["targetReps"].asInt();
-    }
-    std::optional<double> targetWeightKg;
-    if (entry.isMember("targetWeightKg") && !entry["targetWeightKg"].isNull()) {
-      if (!entry["targetWeightKg"].isNumeric())
-        throw InvalidTraining("targetWeightKg must be a number");
-      targetWeightKg = entry["targetWeightKg"].asDouble();
-    }
+    // No `sets` is the open line; a present array is the scheme, refused strictly.
+    std::vector<SetTarget> sets;
+    if (entry.isMember("sets") && !entry["sets"].isNull()) sets = schemeFrom(entry["sets"]);
     std::optional<int> restSeconds;
     if (entry.isMember("restSeconds") && !entry["restSeconds"].isNull()) {
       if (!entry["restSeconds"].isInt()) throw InvalidTraining("restSeconds must be a whole number");
@@ -175,8 +187,8 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
     }
     // The entity refuses anything but 1..n.
     entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1,
-                                   ExerciseId{entry["exerciseId"].asString()}, targetSets,
-                                   targetReps, targetWeightKg, restSeconds});
+                                   ExerciseId{entry["exerciseId"].asString()}, std::move(sets),
+                                   restSeconds});
   }
   return entries;
 }
@@ -409,9 +421,7 @@ Json::Value toJson(const Routine& routine) {
     Json::Value line(Json::objectValue);
     line["position"] = entry.position;
     line["exerciseId"] = entry.exercise.str();
-    if (entry.targetSets) line["targetSets"] = *entry.targetSets;
-    if (entry.targetReps) line["targetReps"] = *entry.targetReps;
-    if (entry.targetWeightKg) line["targetWeightKg"] = *entry.targetWeightKg;
+    if (!entry.sets.empty()) line["sets"] = toJson(entry.sets);
     if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
     entries.append(line);
   }
@@ -536,11 +546,9 @@ Json::Value toJson(const std::vector<RoutineEvent>& history) {
 namespace {
 Json::Value targetsJson(const EntryTargets& targets) {
   Json::Value body(Json::objectValue);
-  // Absences carry through the diff: no sets is the open line, no reps is `max`, no weight is the
-  // last one used, no rest falls back to the global target.
-  if (targets.sets) body["sets"] = *targets.sets;
-  if (targets.reps) body["reps"] = *targets.reps;
-  if (targets.weightKg) body["weightKg"] = *targets.weightKg;
+  // Absences carry through the diff: no scheme is the open line, no rest falls back to the global
+  // target.
+  if (!targets.sets.empty()) body["sets"] = toJson(targets.sets);
   if (targets.restSeconds) body["restSeconds"] = *targets.restSeconds;
   return body;
 }
@@ -574,6 +582,18 @@ Json::Value toJson(const RoutineProposal& proposal) {
   return body;
 }
 
+// Each set's absences stay absent: no `reps` is `max`, no `weightKg` is last time's set.
+Json::Value toJson(const std::vector<SetTarget>& sets) {
+  Json::Value array(Json::arrayValue);
+  for (const SetTarget& set : sets) {
+    Json::Value line(Json::objectValue);
+    if (set.reps) line["reps"] = *set.reps;
+    if (set.weightKg) line["weightKg"] = *set.weightKg;
+    array.append(line);
+  }
+  return array;
+}
+
 Json::Value toJson(const PlanSnapshot& plan) {
   Json::Value body(Json::objectValue);
   body["routine"] = plan.routineName;
@@ -581,9 +601,7 @@ Json::Value toJson(const PlanSnapshot& plan) {
   for (const PlanEntry& entry : plan.entries) {
     Json::Value line(Json::objectValue);
     line["exerciseId"] = entry.exercise.str();
-    if (entry.sets) line["sets"] = *entry.sets;
-    if (entry.reps) line["reps"] = *entry.reps;
-    if (entry.weightKg) line["weightKg"] = *entry.weightKg;
+    if (!entry.sets.empty()) line["sets"] = toJson(entry.sets);
     if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
     entries.append(line);
   }
@@ -591,8 +609,8 @@ Json::Value toJson(const PlanSnapshot& plan) {
   return body;
 }
 
-// `planned` carries the target only; `routine` is dropped when the session it stands against holds
-// no name.
+// `planned` carries the scheme only — an open line is `{}`; `routine` is dropped when the session it
+// stands against holds no name.
 Json::Value toJson(const Review& review) {
   Json::Value stats(Json::objectValue);
   stats["durationMs"] = Json::Value::UInt64(review.stats.durationMs);
@@ -622,9 +640,7 @@ Json::Value toJson(const Review& review) {
     if (movement.before) line["before"] = topSetJson(*movement.before);
     if (movement.planned) {
       Json::Value planned(Json::objectValue);
-      if (movement.planned->sets) planned["sets"] = *movement.planned->sets;
-      if (movement.planned->reps) planned["reps"] = *movement.planned->reps;
-      if (movement.planned->weightKg) planned["weightKg"] = *movement.planned->weightKg;
+      if (!movement.planned->sets.empty()) planned["sets"] = toJson(movement.planned->sets);
       line["planned"] = planned;
     }
     movements.append(line);
@@ -747,27 +763,50 @@ Json::Value toJson(const SharedSession& shared) {
 }
 
 // Clamps instead of throwing: an unreadable stored blob must still leave the session readable. A
-// non-object is no plan; a name that is not a string is no name, as the prefill's SQL decides it.
+// non-object is no plan; a name that is not a string is no name, as the prefill's SQL decides it. A
+// `sets` that is not an array is a defect in stored data and drops the line; a set inside it that
+// cannot be read opens the line instead (setTargetsFrom), so the movement is never lost.
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
   if (!stored.isObject()) return std::nullopt;
   PlanSnapshot plan;
   if (stored["routine"].isString()) plan.routineName = stored["routine"].asString();
   for (const Json::Value& entry : stored["entries"]) {
     if (!entry.isObject() || !entry["exerciseId"].isString()) continue;
-    // sets and reps may both be absent: the open line and `max`. A wrong-typed value drops the line.
-    if (entry.isMember("sets") && !entry["sets"].isInt()) continue;
-    std::optional<int> sets;
-    if (entry["sets"].isInt()) sets = entry["sets"].asInt();
-    std::optional<int> reps;
-    if (entry["reps"].isInt()) reps = entry["reps"].asInt();
-    std::optional<double> weightKg;
-    if (entry["weightKg"].isNumeric()) weightKg = entry["weightKg"].asDouble();
+    // `sets` may be absent: the open line. A `sets` that is not an array drops the line.
+    if (entry.isMember("sets") && !entry["sets"].isArray()) continue;
     std::optional<int> restSeconds;
     if (entry["restSeconds"].isInt()) restSeconds = entry["restSeconds"].asInt();
-    plan.entries.push_back(
-        PlanEntry{ExerciseId{entry["exerciseId"].asString()}, sets, reps, weightKg, restSeconds});
+    plan.entries.push_back(PlanEntry{ExerciseId{entry["exerciseId"].asString()},
+                                     setTargetsFrom(entry["sets"]), restSeconds});
   }
   return plan;
+}
+
+// The whole scheme or none: one set that cannot be read — not an object, a wrong-typed value, or a
+// value outside the band the entity keeps today — answers the open line rather than a ladder short
+// by one, which would move every set after it up a slot.
+std::vector<SetTarget> setTargetsFrom(const Json::Value& stored) {
+  std::vector<SetTarget> sets;
+  if (!stored.isArray()) return sets;
+  for (const Json::Value& set : stored) {
+    if (!set.isObject()) return {};
+    std::optional<int> reps;
+    if (!set["reps"].isNull()) {
+      if (!set["reps"].isInt()) return {};
+      reps = set["reps"].asInt();
+    }
+    std::optional<double> weightKg;
+    if (!set["weightKg"].isNull()) {
+      if (!set["weightKg"].isNumeric()) return {};
+      weightKg = set["weightKg"].asDouble();
+    }
+    try {
+      sets.push_back(SetTarget{reps, weightKg});
+    } catch (const InvalidTraining&) {
+      return {};
+    }
+  }
+  return sets;
 }
 
 // The title and the body are the whole write; the id comes off the path and the owner off the

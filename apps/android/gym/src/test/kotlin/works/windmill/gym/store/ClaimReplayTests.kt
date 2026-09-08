@@ -17,6 +17,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
@@ -48,7 +49,7 @@ class ClaimReplayTests {
         val localLog = shelf()
         localLog.hold(Exercise(id = "ex_1", name = "Zercher Squat", custom = true))
         localLog.hold(Routine(id = "rt_1", name = "Legs",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "ex_1", targetSets = 3))))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "ex_1", sets = List(3) { SetTarget() }))))
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_new", startedAtMs = 5_000, finishedAtMs = 6_000),
             listOf(aSet("set_b", at = 5_100))))
@@ -202,7 +203,7 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val localLog = shelf()
         localLog.hold(Routine(id = "rt_spent", name = "Push Day",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5))))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() }))))
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000, routineId = "rt_spent"),
             listOf(aSet("set_a", at = 1_100))))
@@ -226,7 +227,7 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val localLog = shelf()
         localLog.hold(Routine(id = "rt_stuck", name = "Push Day",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5))))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() }))))
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000, routineId = "rt_stuck"),
             emptyList()))
@@ -460,7 +461,7 @@ class ClaimReplayTests {
         val localLog = shelf()
         localLog.hold(Routine(
             id = "rt_1", name = "Push A", revision = 7,
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5)),
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() })),
             pendingProposal = Proposal(id = "prop_1", routineId = "rt_1", changeCount = 3)))
 
         val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
@@ -509,7 +510,7 @@ class ClaimReplayTests {
             Session(id = "ses_past", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
         localLog.hold(Routine(id = "rt_1", name = "Legs",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 3))))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(3) { SetTarget() }))))
 
         val outcome = ClaimReplay(server, localLog, queue, settings(), weights()).run()
 

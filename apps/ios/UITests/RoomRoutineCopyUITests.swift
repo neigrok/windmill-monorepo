@@ -3,8 +3,8 @@ import XCTest
 // What the routines list, the routine editor, its target sheet and a saved routine's own screen SAY
 // once they are drawn: which sentence a lifter is shown, where it sits, how many times it is drawn
 // (C1), what the list names and what it leaves to the screen behind it, the two Save refusals
-// under the name field (C4), the single refusal a broken target sheet shows (C5), and the number a
-// refused clear keeps and selects (C6).
+// under the name field (C4), the single refusal a broken target sheet shows (C5), and the head that
+// writes every row of the ladder and reads `varies` when they disagree.
 //
 // None of it can be asserted from a unit test — a footer, a selection and a sheet over a sheet only
 // exist once a screen has been laid out — so it is asserted with real touches on a simulator.
@@ -195,27 +195,31 @@ final class RoomRoutineCopyUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Whole reps, 1 to 100."].exists)
     }
 
-    // C6 · the refused clear keeps its number AND selects it, so the next digit REPLACES what the
-    // lifter has already tried to be rid of instead of appending to it.
-    func testARefusedClearSelectsTheValueItKeptSoTheNextDigitReplacesIt() {
+    // The head writes every row and reads `varies` the moment the rows disagree; typing over it
+    // writes every row again (brief 17).
+    func testTheHeadWritesEveryRowAndReadsVariesWhenTheRowsDisagree() {
         openTheTargetSheet()
 
         app.textFields["Sets"].tap()
         app.typeText("3")
         app.textFields["Reps"].tap()
         app.typeText("5")
+        XCTAssertTrue(app.buttons["Set · 3 × 5"].waitForExistence(timeout: 10), "the head did not write every set")
+        XCTAssertEqual(app.textFields["Set 3 reps"].value as? String, "5")
 
-        app.textFields["Sets"].tap()
+        app.textFields["Set 3 reps"].tap()
         app.typeText(XCUIKeyboardKey.delete.rawValue)
-        XCTAssertTrue(app.staticTexts["Clear reps and weight first — an open line names neither."]
-                        .waitForExistence(timeout: 10),
-                      "the clear was allowed to cascade without a word")
-        XCTAssertEqual(app.textFields["Sets"].value as? String, "3",
-                       "the refused keystroke took the number with it")
+        app.typeText("3")
+        XCTAssertTrue(app.buttons["Set · 3 sets"].waitForExistence(timeout: 10),
+                      "a ladder whose rows disagree is not named by its count")
+        XCTAssertEqual(app.textFields["Reps"].value as? String, "varies",
+                       "the head still names one reps target over rows that disagree")
 
-        app.typeText("4")
-        XCTAssertEqual(app.textFields["Sets"].value as? String, "4",
-                       "the kept number was not selected, so the next digit was appended to it")
+        app.textFields["Reps"].tap()
+        app.typeText("8")
+        XCTAssertTrue(app.buttons["Set · 3 × 8"].waitForExistence(timeout: 10),
+                      "typing over `varies` did not write every row")
+        XCTAssertEqual(app.textFields["Set 3 reps"].value as? String, "8")
     }
 
     // MARK: - the ways in

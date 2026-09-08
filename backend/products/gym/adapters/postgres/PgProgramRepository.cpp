@@ -1,10 +1,13 @@
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 
+#include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
 
 #include <pqxx/pqxx>
 
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <string>
@@ -23,9 +26,11 @@ constexpr std::string_view kRoutineColumns =
     "                     WHERE s.routine_id = r.id AND s.user_id = r.user_id)) * 1000)::bigint "
     "  AS last_trained_ms";
 
-constexpr std::string_view kEntryColumns =
-    "routine_id, position, exercise_id, target_sets, target_reps, "
-    "target_weight_kg::float8 AS target_weight_kg, rest_seconds";
+constexpr std::string_view kEntryColumns = "routine_id, position, exercise_id, rest_seconds";
+
+// The scheme rows, read beside the lines and joined to them by (routine, position) in memory.
+constexpr std::string_view kEntrySetColumns =
+    "routine_id, position, set_index, reps, weight_kg::float8 AS weight_kg";
 
 // `changes` is a stored count, not a count of these rows: a `kept` row is not a change and a renamed
 // routine is one.
@@ -35,28 +40,44 @@ constexpr std::string_view kProposalColumns =
     "(extract(epoch from p.created_at) * 1000)::bigint AS created_ms, "
     "(extract(epoch from p.settled_at) * 1000)::bigint AS settled_ms";
 
+// The two sides travel as text: jsonb the wire codec wrote and reads back, clamping.
 constexpr std::string_view kProposalChangeColumns =
-    "position, kind, exercise_id, before_sets, before_reps, "
-    "before_weight_kg::float8 AS before_weight_kg, before_rest_seconds, "
-    "after_sets, after_reps, after_weight_kg::float8 AS after_weight_kg, after_rest_seconds";
+    "position, kind, exercise_id, "
+    "coalesce(before_sets::text, '') AS before_sets, before_rest_seconds, "
+    "coalesce(after_sets::text, '') AS after_sets, after_rest_seconds";
 
+// A line's key inside its routine: the store's own (routine_id, position).
+using LineKey = std::pair<std::string, int>;
+
+// The schemes of every line the rows cover, in set_index order as the query returned them. A line
+// with no rows is absent here, which reads as the open line.
+std::map<LineKey, std::vector<SetTarget>> schemesFrom(const pqxx::result& rows) {
+  std::map<LineKey, std::vector<SetTarget>> schemes;
+  for (const auto& row : rows) {
+    // A null reps is `max` and a null weight is last time's set; neither is a zero.
+    std::optional<int> reps;
+    if (!row["reps"].is_null()) reps = row["reps"].as<int>();
+    std::optional<double> weightKg;
+    if (!row["weight_kg"].is_null()) weightKg = row["weight_kg"].as<double>();
+    schemes[LineKey{row["routine_id"].as<std::string>(), row["position"].as<int>()}].push_back(
+        SetTarget{reps, weightKg});
+  }
+  return schemes;
+}
 
 // The position comes from the order the rows came back in, not from the column, so a run left with a
-// gap stays legible.
+// gap stays legible; the scheme is looked up by the column, which is what its rows are keyed on.
 template <typename Row>
-RoutineEntry entryFrom(const Row& row, int position) {
-  // A null target_sets is the open line and a null target_reps is `max`; neither is a zero.
-  std::optional<int> targetSets;
-  if (!row["target_sets"].is_null()) targetSets = row["target_sets"].template as<int>();
-  std::optional<int> targetReps;
-  if (!row["target_reps"].is_null()) targetReps = row["target_reps"].template as<int>();
-  std::optional<double> targetWeightKg;
-  if (!row["target_weight_kg"].is_null())
-    targetWeightKg = row["target_weight_kg"].template as<double>();
+RoutineEntry entryFrom(const Row& row, int position,
+                       const std::map<LineKey, std::vector<SetTarget>>& schemes) {
+  std::vector<SetTarget> sets;
+  const auto scheme = schemes.find(
+      LineKey{row["routine_id"].template as<std::string>(), row["position"].template as<int>()});
+  if (scheme != schemes.end()) sets = scheme->second;
   std::optional<int> restSeconds;
   if (!row["rest_seconds"].is_null()) restSeconds = row["rest_seconds"].template as<int>();
   return RoutineEntry{position, ExerciseId{row["exercise_id"].template as<std::string>()},
-                      targetSets, targetReps, targetWeightKg, restSeconds};
+                      std::move(sets), restSeconds};
 }
 
 template <typename Row>
@@ -101,25 +122,18 @@ RoutineChange changeFrom(const Row& row) {
                           : kindText == "removed"  ? ChangeKind::removed
                           : kindText == "retargeted" ? ChangeKind::retargeted
                                                      : ChangeKind::kept;
-  const auto targets = [&row](bool missing, const char* sets, const char* reps, const char* weight,
+  // A null scheme is the open line; the codec clamps rather than throws on a stored side.
+  const auto targets = [&row](bool missing, const char* sets,
                               const char* rest) -> std::optional<EntryTargets> {
     if (missing) return std::nullopt;
-    std::optional<int> targetSets;
-    if (!row[sets].is_null()) targetSets = row[sets].template as<int>();
-    std::optional<int> targetReps;
-    if (!row[reps].is_null()) targetReps = row[reps].template as<int>();
-    std::optional<double> targetWeight;
-    if (!row[weight].is_null()) targetWeight = row[weight].template as<double>();
     std::optional<int> restSeconds;
     if (!row[rest].is_null()) restSeconds = row[rest].template as<int>();
-    return EntryTargets{targetSets, targetReps, targetWeight, restSeconds};
+    return EntryTargets{setTargetsFrom(parse(row[sets].template as<std::string>())), restSeconds};
   };
   return RoutineChange{row["position"].template as<int>(), kind,
                        ExerciseId{row["exercise_id"].template as<std::string>()},
-                       targets(kind == ChangeKind::added, "before_sets", "before_reps",
-                               "before_weight_kg", "before_rest_seconds"),
-                       targets(kind == ChangeKind::removed, "after_sets", "after_reps",
-                               "after_weight_kg", "after_rest_seconds"),
+                       targets(kind == ChangeKind::added, "before_sets", "before_rest_seconds"),
+                       targets(kind == ChangeKind::removed, "after_sets", "after_rest_seconds"),
                        0};
 }
 
@@ -134,15 +148,20 @@ std::optional<Routine> loadRoutine(pqxx::work& txn, const UserId& user, const Ro
       "SELECT " + std::string(kEntryColumns) +
           " FROM gym_routine_entries WHERE routine_id = $1 ORDER BY position",
       id.str());
+  const std::map<LineKey, std::vector<SetTarget>> schemes = schemesFrom(txn.exec_params(
+      "SELECT " + std::string(kEntrySetColumns) +
+          " FROM gym_routine_entry_sets WHERE routine_id = $1 ORDER BY position, set_index",
+      id.str()));
   std::vector<RoutineEntry> entries;
   for (const auto& line : lines)
-    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1));
+    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1, schemes));
   if (entries.empty()) return std::nullopt;
   return routineFrom(rows[0], std::move(entries));
 }
 
 // `false` means a line named a movement this account may not see; the caller must return at once so
-// the transaction rolls back every line already laid down.
+// the transaction rolls back every line already laid down. The line lands first and its scheme
+// after it in one statement, one row per set; the Routine entity already bounded both counts.
 bool insertEntries(pqxx::work& txn, const Routine& incoming) {
   for (const RoutineEntry& entry : incoming.entries) {
     if (!namesVisibleMovement(txn, incoming.user.str(), entry.exercise)) return false;
@@ -150,18 +169,30 @@ bool insertEntries(pqxx::work& txn, const Routine& incoming) {
     params.append(incoming.id.str());
     params.append(entry.position);
     params.append(entry.exercise.str());
-    if (entry.targetSets) params.append(*entry.targetSets);
-    else params.append();
-    if (entry.targetReps) params.append(*entry.targetReps);
-    else params.append();
-    if (entry.targetWeightKg) params.append(*entry.targetWeightKg);
-    else params.append();
     if (entry.restSeconds) params.append(*entry.restSeconds);
     else params.append();
-    txn.exec("INSERT INTO gym_routine_entries (routine_id, position, exercise_id, target_sets, "
-             "                                 target_reps, target_weight_kg, rest_seconds) "
-             "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    txn.exec("INSERT INTO gym_routine_entries (routine_id, position, exercise_id, rest_seconds) "
+             "VALUES ($1, $2, $3, $4)",
              params);
+    if (entry.sets.empty()) continue;
+    pqxx::params setParams;
+    std::string rows;
+    for (std::size_t at = 0; at < entry.sets.size(); ++at) {
+      const SetTarget& set = entry.sets[at];
+      setParams.append(incoming.id.str());
+      setParams.append(entry.position);
+      setParams.append(static_cast<int>(at) + 1);
+      if (set.reps) setParams.append(*set.reps);
+      else setParams.append();
+      if (set.weightKg) setParams.append(*set.weightKg);
+      else setParams.append();
+      const auto slot = [at](int column) { return "$" + std::to_string(at * 5 + column); };
+      rows += std::string(at == 0 ? "(" : ", (") + slot(1) + ", " + slot(2) + ", " + slot(3) + ", " +
+              slot(4) + ", " + slot(5) + ")";
+    }
+    txn.exec("INSERT INTO gym_routine_entry_sets (routine_id, position, set_index, reps, weight_kg) "
+             "VALUES " + rows,
+             setParams);
   }
   return true;
 }
@@ -214,27 +245,17 @@ bool insertProposalChanges(pqxx::work& txn, const RoutineProposal& incoming) {
     else if (change.kind == ChangeKind::retargeted) params.append("retargeted");
     else params.append("kept");
     params.append(change.exercise.str());
+    // A side that is absent and a side that is an open line both store a null scheme: `kind`
+    // tells them apart on the way back.
     for (const std::optional<EntryTargets>& side : {change.before, change.after}) {
-      if (!side) {
-        params.append();
-        params.append();
-        params.append();
-        params.append();
-        continue;
-      }
-      if (side->sets) params.append(*side->sets);
+      if (side && !side->sets.empty()) params.append(dump(toJson(side->sets)));
       else params.append();
-      if (side->reps) params.append(*side->reps);
-      else params.append();
-      if (side->weightKg) params.append(*side->weightKg);
-      else params.append();
-      if (side->restSeconds) params.append(*side->restSeconds);
+      if (side && side->restSeconds) params.append(*side->restSeconds);
       else params.append();
     }
     txn.exec("INSERT INTO gym_proposal_changes (proposal_id, position, user_id, kind, exercise_id, "
-             "  before_sets, before_reps, before_weight_kg, before_rest_seconds, "
-             "  after_sets, after_reps, after_weight_kg, after_rest_seconds) "
-             "VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+             "  before_sets, before_rest_seconds, after_sets, after_rest_seconds) "
+             "VALUES ($1, $2, $3::uuid, $4, $5, $6::jsonb, $7, $8::jsonb, $9)",
              params);
   }
   return true;
@@ -308,11 +329,17 @@ std::vector<Routine> PgProgramRepository::routines(const UserId& user) {
           "  (SELECT id FROM gym_routines WHERE user_id = $1::uuid) "
           "ORDER BY routine_id, position",
       user.str());
+  const std::map<LineKey, std::vector<SetTarget>> schemes = schemesFrom(txn.exec_params(
+      "SELECT " + std::string(kEntrySetColumns) +
+          " FROM gym_routine_entry_sets WHERE routine_id IN "
+          "  (SELECT id FROM gym_routines WHERE user_id = $1::uuid) "
+          "ORDER BY routine_id, position, set_index",
+      user.str()));
 
   std::map<std::string, std::vector<RoutineEntry>> linesByRoutine;
   for (const auto& line : lines) {
     std::vector<RoutineEntry>& entries = linesByRoutine[line["routine_id"].as<std::string>()];
-    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1));
+    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1, schemes));
   }
 
   std::vector<Routine> out;

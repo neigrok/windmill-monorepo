@@ -4,6 +4,7 @@
 #include "products/gym/ports/LogRepository.h"
 #include "products/gym/ports/ProgramRepository.h"
 #include "test/PgTestPool.h"
+#include "test/products/gym/Fakes.h"
 
 #include <pqxx/pqxx>
 
@@ -61,11 +62,9 @@ inline RoutineWriteOutcome inserted(ProgramRepository& repo, const Routine& inco
 }
 
 inline RoutineEntry entryAt(int position, const std::string& exercise,
-                            std::optional<int> targetSets = 5, std::optional<int> targetReps = 5,
-                            std::optional<double> targetWeightKg = 82.5,
+                            std::vector<SetTarget> sets = fake::straight(5, 5, 82.5),
                             std::optional<int> restSeconds = 180) {
-  return RoutineEntry{position, ExerciseId{exercise}, targetSets, targetReps, targetWeightKg,
-                      restSeconds};
+  return RoutineEntry{position, ExerciseId{exercise}, std::move(sets), restSeconds};
 }
 
 inline Routine routineAt(const std::string& id, const std::string& name,
@@ -74,7 +73,7 @@ inline Routine routineAt(const std::string& id, const std::string& name,
 }
 
 inline PlanSnapshot pushA() {
-  return PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}};
+  return PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, fake::straight(5, 5, 82.5), 180}}};
 }
 
 inline LogCursor page(std::uint64_t beforeMs, int limit) {
@@ -119,7 +118,7 @@ inline RoutineProposal proposalAt(const std::string& id, const std::string& rout
 }
 
 inline RoutineEntry benchAt(double weightKg, int reps) {
-  return RoutineEntry{1, ExerciseId{"bench-press"}, 5, reps, weightKg, 180};
+  return RoutineEntry{1, ExerciseId{"bench-press"}, fake::straight(5, reps, weightKg), 180};
 }
 
 // The two writes an ask makes, in order: the thread lands before the model runs, the turns once an answer has.

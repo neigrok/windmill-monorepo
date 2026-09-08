@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -135,14 +136,24 @@ inline drogon::HttpRequestPtr deleteRequest(const std::string& path, const std::
   return request;
 }
 
+// A scheme as a client sends it: the wire's `sets` array, one object per set.
+inline Json::Value setsBody(const std::vector<SetTarget>& sets) {
+  Json::Value array(Json::arrayValue);
+  for (const SetTarget& set : sets) {
+    Json::Value line(Json::objectValue);
+    if (set.reps) line["reps"] = *set.reps;
+    if (set.weightKg) line["weightKg"] = *set.weightKg;
+    array.append(line);
+  }
+  return array;
+}
+
 // One line of a plan, as a client sends it: entries carry no position — the order IS the order.
-inline Json::Value entryBody(const std::string& exercise = "bench-press", int targetSets = 5,
-                      int targetReps = 5) {
+inline Json::Value entryBody(const std::string& exercise = "bench-press", int sets = 5,
+                             int reps = 5) {
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = exercise;
-  entry["targetSets"] = targetSets;
-  entry["targetReps"] = targetReps;
-  entry["targetWeightKg"] = 82.5;
+  entry["sets"] = setsBody(straight(sets, reps, 82.5));
   entry["restSeconds"] = 180;
   return entry;
 }

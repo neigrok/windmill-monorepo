@@ -20,6 +20,12 @@ export function round(weight) {
   return Math.sign(weight) * Math.round(Math.abs(weight) * 100) / 100;
 }
 
+// Onto the plate grid: the nearest multiple of the band's small step, half away from zero.
+export function snap(weight) {
+  const [small] = steps(weight);
+  return round(Math.sign(weight) * Math.round(Math.abs(weight) / small) * small);
+}
+
 // Lightening is reducing the MAGNITUDE, not going down; at 0 no direction lightens.
 export function bump(weight, direction, big) {
   const [small, large] = steps(weight, direction * weight < 0);

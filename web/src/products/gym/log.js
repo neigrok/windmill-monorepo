@@ -326,17 +326,50 @@ export function targetLoadOf(weightKg) {
   return round(weightKg);
 }
 
-// An entry with no `targetSets` is open. The absence is the whole state — no flag and no zero — and
-// the wire refuses an open line that still names reps or a weight.
+// An entry with no `sets` is open. The absence is the whole state — no flag and no zero — and an
+// empty list is refused by the store like a zero target.
 export const OPEN_TARGET = 'open';
 
-// An absent weight prints nothing; an absent rep target prints `max`.
+const roundedLoad = (set) => (set.weightKg == null ? null : round(set.weightKg));
+
+// Two sets agree element-wise after the ladder's rounding of each load (R5); an absent load and a
+// zero are different answers here, since zero is what was sent.
+export function sameSet(left, right) {
+  return (left.reps ?? null) === (right.reps ?? null) && roundedLoad(left) === roundedLoad(right);
+}
+
+// A straight scheme: every set agrees with the first. One set agrees with itself.
+export function schemeAgrees(sets) {
+  return sets.every((set) => sameSet(set, sets[0]));
+}
+
+// ONE set's vocabulary on every surface — the logged pill's own shape — with the nulls printed as
+// their placeholders: `100 × max`, `last × 5`.
+export function setReading(set) {
+  const load = targetLoadOf(set.weightKg);
+  return `${load == null ? 'last' : fmt(load)} × ${set.reps ?? 'max'}`;
+}
+
+// A scheme's vocabulary, whatever its size: `{n} × {reps} · {load}`, a column whose sets disagree
+// printing its range `lo–hi` — a placeholder standing as the top: `max` of a reps column, `last` of a
+// load column —
+// and a load column no set names printing nothing. One set inside a strip or a ladder is read by
+// setReading; a scheme of one set is still a scheme, `1 × 5 · 100`.
 export function entryLabel(entry) {
-  if (entry.targetSets == null) return OPEN_TARGET;
-  const reps = entry.targetReps ?? 'max';
-  const target = targetLoadOf(entry.targetWeightKg);
-  if (target == null) return `${entry.targetSets} × ${reps}`;
-  return `${entry.targetSets} × ${reps} · ${fmt(target)}`;
+  if (entry.sets == null) return OPEN_TARGET;
+  const { sets } = entry;
+  const reps = sets.map((set) => set.reps ?? null);
+  const named = reps.filter((each) => each != null);
+  const repsColumn = reps.every((each) => each === reps[0])
+    ? String(reps[0] ?? 'max')
+    : `${Math.min(...named)}–${named.length < reps.length ? 'max' : Math.max(...named)}`;
+  const loads = sets.map((set) => targetLoadOf(set.weightKg));
+  const known = loads.filter((each) => each != null);
+  if (known.length === 0) return `${sets.length} × ${repsColumn}`;
+  const loadColumn = loads.every((each) => each === loads[0])
+    ? fmt(loads[0])
+    : `${fmt(Math.min(...known))}–${known.length < loads.length ? 'last' : fmt(Math.max(...known))}`;
+  return `${sets.length} × ${repsColumn} · ${loadColumn}`;
 }
 
 // Only a `working` set counts toward a target, a record or a count; the kinds are warmup · working ·
@@ -467,8 +500,8 @@ export const FROM_THE_ROUTINE = ' · from the routine';
 
 export const NOT_IN_PLAN = 'not in the plan';
 
-// Read off the frozen snapshot, never off today's routine. A snapshot entry names its fields
-// `sets` · `reps` · `weightKg` where a routine entry names them `target…`.
+// Read off the frozen snapshot, never off today's routine; a snapshot entry is the routine entry's
+// own shape, `sets` per set, so the reading is the entry itself.
 // A plan may name one movement twice and a `PlanEntry` carries no id, so nothing can tell which a
 // logged set was performed against; that case answers `ambiguous`.
 export function planReadingOf(session, exerciseId) {
@@ -480,10 +513,7 @@ export function planReadingOf(session, exerciseId) {
   if (entries.length === 0) return { kind: 'added', line: NOT_IN_PLAN, entry: null };
   if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
   const entry = entries[0];
-  const line = entryLabel({
-    targetSets: entry.sets, targetReps: entry.reps, targetWeightKg: entry.weightKg,
-  });
-  return { kind: 'planned', line: `plan ${line}`, entry };
+  return { kind: 'planned', line: `plan ${entryLabel(entry)}`, entry };
 }
 
 // Spelled out to ten; past ten the numeral is what is left.
@@ -493,14 +523,18 @@ export function numberWord(count) {
   return NUMBER_WORDS[count] ?? String(count);
 }
 
-// A set that is not `working` says only its own kind and is measured against no target.
+// A set that is not `working` says only its own kind and is measured against no target. `slot` is
+// the set's place among the movement's working sets, and the Nth working set is measured against the
+// Nth slot of the scheme; a set past the plan is measured against nothing.
 // Short only when the bar did not go up: heavier for fewer reps is not short.
-export function setNoteOf(set, reading, first) {
+export function setNoteOf(set, reading, slot) {
   if (set.kind !== 'working') return set.kind;
-  if (reading.kind === 'added') return first ? 'added today' : null;
+  if (reading.kind === 'added') return slot === 0 ? 'added today' : null;
   if (reading.kind !== 'planned') return null;
-  const { reps, weightKg } = reading.entry;
-  // A plan that named no weight can be neither gone over nor met.
+  const planned = reading.entry.sets?.[slot];
+  if (!planned) return null;
+  const { reps, weightKg } = planned;
+  // A slot that named no weight can be neither gone over nor met.
   const target = targetLoadOf(weightKg);
   const load = round(set.weightKg);
   if (reps != null && set.reps < reps && (target == null || load <= target)) {
@@ -510,6 +544,23 @@ export function setNoteOf(set, reading, first) {
   if (load > target) return `+${fmt(load - target)} over plan`;
   if (load === target) return 'on plan';
   return null;
+}
+
+// The slot strip as rows, for one movement: what was lifted, in order, then the slots still to
+// come. Every set that is not working stands before slot 1 wearing its kind; a working set logged
+// past the plan appends as lifted. A planned row is spoken as `set 4, target 100 × 1`.
+export function slotRows(sets, entry) {
+  const others = sets.filter((set) => set.kind !== 'working').map((set) => ({
+    key: set.id, kind: 'warmup', label: `${fmt(set.weightKg)} × ${set.reps} (${set.kind})`,
+  }));
+  const lifted = sets.filter((set) => set.kind === 'working').map((set) => ({
+    key: set.id, kind: 'lifted', label: `${fmt(set.weightKg)} × ${set.reps}`,
+  }));
+  const coming = (entry?.sets ?? []).slice(lifted.length).map((slot, index) => {
+    const n = lifted.length + index + 1;
+    return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: `set ${n}, target ${setReading(slot)}` };
+  });
+  return [...others, ...lifted, ...coming];
 }
 
 // Zero is the absence of a load: the movement done at bodyweight. A band-assisted −20 prints itself.

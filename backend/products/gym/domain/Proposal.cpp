@@ -44,7 +44,7 @@ ProposalDoor proposalDoorFromStored(std::string_view text) {
 }
 
 EntryTargets targetsOf(const RoutineEntry& entry) {
-  return EntryTargets{entry.targetSets, entry.targetReps, entry.targetWeightKg, entry.restSeconds};
+  return EntryTargets{entry.sets, entry.restSeconds};
 }
 
 RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::string baseName,
@@ -191,8 +191,7 @@ std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal) {
   for (const RoutineChange& change : proposal.changes) {
     if (change.kind == ChangeKind::removed) break;   // the rows past here are what it takes away
     entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1, change.exercise,
-                                   change.after->sets, change.after->reps, change.after->weightKg,
-                                   change.after->restSeconds});
+                                   change.after->sets, change.after->restSeconds});
   }
   return entries;
 }

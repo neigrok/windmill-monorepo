@@ -15,8 +15,10 @@ import org.junit.Test
 import org.junit.runners.MethodSorters
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PlanEntry
+import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEntryWrite
 import works.windmill.gym.domain.RoutineWrite
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
@@ -30,6 +32,7 @@ import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.auth.UserResponse
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.WindmillJson
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class LiveWireTests {
@@ -78,20 +81,21 @@ class LiveWireTests {
     }
 
     @Test
-    fun t02_aRoutineRoundTripsAndAbsentTargetRepsStaysAbsent() = runBlocking {
+    fun t02_aRoutineRoundTripsAndAnAbsentRepOrLoadStaysAbsent() = runBlocking {
         val write = RoutineWrite(routineId, "Probe Day A", 0, listOf(
-            RoutineEntryWrite("bench-press", 3),
-            RoutineEntryWrite("back-squat", 2, 5, 100.0, 120),
+            RoutineEntryWrite("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())),
+            RoutineEntryWrite("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120),
         ))
         val created = wire.createRoutine(write)
         assertEquals(routineId, created.id)
         assertEquals("Probe Day A", created.name)
-        assertEquals(listOf(1, 2), created.entries.map { it.position })
-        assertNull("absent targetReps means max and must come back absent", created.entries[0].targetReps)
-        assertNull(created.entries[0].targetWeightKg)
-        assertEquals(5, created.entries[1].targetReps)
-        assertEquals(100.0, created.entries[1].targetWeightKg!!, 0.0)
-        assertEquals(120, created.entries[1].restSeconds)
+        assertEquals(
+            listOf(
+                RoutineEntry(1, "bench-press", listOf(SetTarget(), SetTarget(), SetTarget())),
+                RoutineEntry(2, "back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120),
+            ),
+            created.entries,
+        )
 
         assertEquals(created, wire.routine(routineId))
 
@@ -113,8 +117,8 @@ class LiveWireTests {
         val plan = opened.plan
         assertNotNull("a routine start answers with the frozen plan", plan)
         assertEquals("Probe Day A", plan!!.routine)
-        assertEquals(PlanEntry("bench-press", 3, null, null, null), plan.entry("bench-press"))
-        assertEquals(PlanEntry("back-squat", 2, 5, 100.0, 120), plan.entry("back-squat"))
+        assertEquals(PlanEntry("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())), plan.entry("bench-press"))
+        assertEquals(PlanEntry("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120), plan.entry("back-squat"))
 
         val warmup = wire.appendSet(sessionAId,
             SetWrite(warmupId, "bench-press", 40.0, 8, SetKind.Warmup, startA + 60_000))
@@ -368,5 +372,20 @@ class LiveWireTests {
 
         val me = WindmillApi(base, { captured }).get<UserResponse>("/v1/me").user
         assertEquals(user, me)
+    }
+}
+
+// Not gated: the open line's wire shape needs no server to pin.
+class OpenLineWireTests {
+    @Test
+    fun anOpenLineTravelsAsNoSetsKeyAndReadsBackOpen() {
+        assertEquals(
+            """{"exerciseId":"face-pull"}""",
+            WindmillJson.encodeToString(RoutineEntryWrite.serializer(), RoutineEntryWrite("face-pull")),
+        )
+        val read = WindmillJson.decodeFromString(
+            RoutineEntry.serializer(), """{"position":2,"exerciseId":"face-pull"}""")
+        assertEquals(RoutineEntry(2, "face-pull"), read)
+        assertTrue(read.isOpen)
     }
 }

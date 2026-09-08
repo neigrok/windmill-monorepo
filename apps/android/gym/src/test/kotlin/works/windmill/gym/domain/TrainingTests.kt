@@ -13,10 +13,18 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import works.windmill.platform.net.WindmillJson
 
 private val json = Json { ignoreUnknownKeys = true }
 
 private inline fun <reified T> fields(value: T): JsonObject = json.encodeToJsonElement(value).jsonObject
+
+private val lowerARamp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
+                                SetTarget(1, 100.0), SetTarget(5, 80.0))
+
+private const val lowerARampWire =
+    """{"position":1,"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},""" +
+        """{"reps":3,"weightKg":90.0},{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}],"restSeconds":180}"""
 
 class TrainingWireTests {
     @Test
@@ -24,8 +32,10 @@ class TrainingWireTests {
         val session = json.decodeFromString(Session.serializer(), """
         { "id": "ses_9f", "startedAt": 1754300000000, "routineId": "rt_1",
           "plan": { "routine": "Push A",
-                    "entries": [ { "exerciseId": "bench-press", "sets": 5, "reps": 5,
-                                   "weightKg": 82.5, "restSeconds": 180 } ] } }
+                    "entries": [ { "exerciseId": "bench-press",
+                                   "sets": [ { "reps": 5, "weightKg": 82.5 }, { "reps": 5, "weightKg": 82.5 },
+                                             { "reps": 5, "weightKg": 82.5 } ],
+                                   "restSeconds": 180 } ] } }
         """)
 
         assertEquals("ses_9f", session.id)
@@ -34,33 +44,82 @@ class TrainingWireTests {
         assertTrue(session.isOpen)
         assertEquals("rt_1", session.routineId)
         assertEquals("Push A", session.plan?.routine)
-        assertEquals(PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5, restSeconds = 180),
+        assertEquals(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) }, restSeconds = 180),
                      session.plan?.entry("bench-press"))
     }
 
     @Test
-    fun testAPlanLineWithNoTargetWeightIsAnAbsenceAndNotAZero() {
-        val entry = json.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"chin-up","sets":3,"reps":8}""")
+    fun testASetWithNoLoadIsAnAbsenceAndNotAZero() {
+        val entry = json.decodeFromString(PlanEntry.serializer(),
+                                          """{"exerciseId":"chin-up","sets":[{"reps":8},{"reps":8},{"reps":8}]}""")
 
-        assertNull(entry.weightKg)
+        assertEquals(PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget(reps = 8) }), entry)
         assertNull(entry.restSeconds)
     }
 
     @Test
-    fun testARepTargetIsOmittedWhenTheRoutineDeclinesToNameOne() {
-        val entry = json.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"chin-up","sets":3}""")
-        assertNull(entry.reps)
-        assertEquals(3, entry.sets)
+    fun testASetWithNoRepsIsMaxOnEveryCarrierAndIsNeverSentAsNull() {
+        val entry = json.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"chin-up","sets":[{},{},{}]}""")
+        assertEquals(PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget() }), entry)
 
         val line = json.decodeFromString(RoutineEntry.serializer(),
-                                         """{"position":3,"exerciseId":"chin-up","targetSets":3}""")
-        assertNull(line.targetReps)
+                                         """{"position":3,"exerciseId":"chin-up","sets":[{"weightKg":100}]}""")
+        assertEquals(RoutineEntry(position = 3, exerciseId = "chin-up", sets = listOf(SetTarget(weightKg = 100.0))), line)
 
-        val planned = json.decodeFromString(Target.serializer(), """{"sets":3}""")
-        assertNull(planned.reps)
+        assertEquals("""{"exerciseId":"chin-up","sets":[{"weightKg":100.0}]}""",
+            WindmillJson.encodeToString(RoutineEntryWrite.serializer(),
+                                        RoutineEntryWrite(exerciseId = "chin-up", sets = listOf(SetTarget(weightKg = 100.0)))))
+    }
 
-        val write = fields(RoutineEntryWrite(exerciseId = "chin-up", targetSets = 3))
-        assertNull("an absent rep target is omitted, never sent as null", write["targetReps"])
+    @Test
+    fun testTheRampEncodesToItsExactBytesAndRoundTrips() {
+        val entry = RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180)
+
+        val written = WindmillJson.encodeToString(RoutineEntry.serializer(), entry)
+        assertEquals(lowerARampWire, written)
+
+        val read = WindmillJson.decodeFromString(RoutineEntry.serializer(), written)
+        assertEquals(entry, read)
+        assertEquals(lowerARampWire, WindmillJson.encodeToString(RoutineEntry.serializer(), read))
+    }
+
+    @Test
+    fun testTheContractsWholeNumberSpellingReadsAsTheSameScheme() {
+        val read = WindmillJson.decodeFromString(RoutineEntry.serializer(),
+            """{"position":1,"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60},{"reps":5,"weightKg":80},""" +
+                """{"reps":3,"weightKg":90},{"reps":1,"weightKg":100},{"reps":5,"weightKg":80}],"restSeconds":180}""")
+
+        assertEquals(RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180), read)
+    }
+
+    @Test
+    fun testAnOpenLineTravelsWithNoSetsKeyOnEveryCarrier() {
+        assertEquals("""{"position":2,"exerciseId":"face-pull"}""",
+            WindmillJson.encodeToString(RoutineEntry.serializer(), RoutineEntry(position = 2, exerciseId = "face-pull")))
+        assertEquals("""{"exerciseId":"face-pull"}""",
+            WindmillJson.encodeToString(PlanEntry.serializer(), PlanEntry(exerciseId = "face-pull")))
+        assertEquals("""{"exerciseId":"face-pull"}""",
+            WindmillJson.encodeToString(RoutineEntryWrite.serializer(), RoutineEntryWrite(exerciseId = "face-pull")))
+        assertEquals("""{"restSeconds":90}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(restSeconds = 90)))
+        assertEquals("{}", WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets()))
+
+        assertTrue(WindmillJson.decodeFromString(RoutineEntry.serializer(), """{"position":2,"exerciseId":"face-pull"}""").isOpen)
+        assertTrue(WindmillJson.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"face-pull"}""").isOpen)
+    }
+
+    @Test
+    fun testAProposalSideEncodesItsSchemeAndItsRest() {
+        assertEquals(
+            """{"sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},{"reps":3,"weightKg":90.0},""" +
+                """{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}],"restSeconds":180}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = lowerARamp, restSeconds = 180)))
+        assertEquals("""{"sets":[{"weightKg":100.0}]}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = listOf(SetTarget(weightKg = 100.0)))))
+        assertEquals("""{"sets":[{"reps":5}]}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = listOf(SetTarget(reps = 5)))))
+        assertEquals("""{"sets":[{}]}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = listOf(SetTarget()))))
     }
 
     @Test
@@ -150,7 +209,8 @@ class TrainingWireTests {
             "movements": [ { "exerciseId": "back-squat",
                              "now": { "weightKg": 105, "reps": 5, "sets": 5 },
                              "before": { "weightKg": 102.5, "reps": 5, "sets": 5 },
-                             "planned": { "sets": 3, "reps": 12, "weightKg": 140 } } ] } }
+                             "planned": { "sets": [ { "reps": 5, "weightKg": 100 }, { "reps": 5, "weightKg": 100 },
+                                                    { "reps": 5, "weightKg": 100 } ] } } ] } }
         """)
 
         assertEquals(ReviewStats(durationMs = 3_720_000, workingSets = 16, topE1rm = 122.5), review.stats)
@@ -159,7 +219,41 @@ class TrainingWireTests {
         assertEquals(1_750_723_200_000L, review.record?.previousAtMs)
         assertEquals("Legs", review.against?.routine)
         assertEquals(Effort(sets = 5, reps = 5, weightKg = 105.0), review.against?.movements?.first()?.now)
-        assertEquals(Target(sets = 3, reps = 12, weightKg = 140.0), review.against?.movements?.first()?.planned)
+        assertEquals(PlannedLine(List(3) { SetTarget(reps = 5, weightKg = 100.0) }), review.against?.movements?.first()?.planned)
+    }
+
+    // The log's own bytes (TrainingApiTest gym_review_carries_the_three_facts_the_record_and_the_band
+    // and the Lower A ramp): a planned line is its scheme, an open line is `{}`, and a movement the
+    // plan never named has no `planned` at all.
+    @Test
+    fun testAPlannedLineDecodesAsTheSchemeTheLogFroze() {
+        val review = json.decodeFromString(Review.serializer(),
+            """{"against":{"movements":[{"before":{"reps":10,"sets":4,"weightKg":90.0},""" +
+            """"exerciseId":"back-squat","now":{"reps":5,"sets":4,"weightKg":105.0},""" +
+            """"planned":{"sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},{"reps":3,"weightKg":90.0},""" +
+            """{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}]}},""" +
+            """{"exerciseId":"face-pull","now":{"reps":15,"sets":3,"weightKg":20.0},"planned":{}},""" +
+            """{"exerciseId":"chin-up","now":{"reps":8,"sets":3,"weightKg":0.0}}],"routine":"Lower A",""" +
+            """"sessionId":"ses_22222222","startedAt":1699000000000},"slight":false,""" +
+            """"stats":{"durationMs":3720000,"topE1rm":122.5,"workingSets":4}}""")
+
+        val ramp = PlannedLine(listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
+                                      SetTarget(1, 100.0), SetTarget(5, 80.0)))
+        assertEquals(
+            listOf(AgainstMovement(exerciseId = "back-squat",
+                                   now = Effort(sets = 4, reps = 5, weightKg = 105.0),
+                                   before = Effort(sets = 4, reps = 10, weightKg = 90.0),
+                                   planned = ramp),
+                   AgainstMovement(exerciseId = "face-pull",
+                                   now = Effort(sets = 3, reps = 15, weightKg = 20.0),
+                                   planned = PlannedLine()),
+                   AgainstMovement(exerciseId = "chin-up",
+                                   now = Effort(sets = 3, reps = 8, weightKg = 0.0))),
+            review.against?.movements,
+        )
+        assertEquals(SetTarget(1, 100.0), ramp.top)
+        assertTrue(PlannedLine().isOpen)
+        assertNull(PlannedLine().top)
     }
 
     @Test
@@ -178,7 +272,7 @@ class TrainingWireTests {
             listOf(AgainstMovement(exerciseId = "barbell-row",
                                    now = Effort(sets = 3, reps = 10, weightKg = 60.0),
                                    before = Effort(sets = 3, reps = 10, weightKg = 57.5),
-                                   planned = Target())),
+                                   planned = PlannedLine())),
             review.against?.movements,
         )
     }
@@ -197,13 +291,17 @@ class TrainingWireTests {
     fun testARoutineCarriesItsOwnOrderAndItsLastTrainedStamp() {
         val routine = json.decodeFromString(Routine.serializer(), """
         { "id": "rt_9f", "name": "Push A", "position": 0, "lastTrainedAt": 1754300000000,
-          "entries": [ { "position": 1, "exerciseId": "bench-press", "targetSets": 5, "targetReps": 5,
-                         "targetWeightKg": 82.5, "restSeconds": 180 } ] }
+          "entries": [ { "position": 1, "exerciseId": "bench-press",
+                         "sets": [ { "reps": 5, "weightKg": 82.5 }, { "reps": 5, "weightKg": 82.5 },
+                                   { "reps": 5, "weightKg": 82.5 } ],
+                         "restSeconds": 180 } ] }
         """)
 
         assertEquals(1_754_300_000_000L, routine.lastTrainedAtMs)
-        assertEquals(listOf(1), routine.entries.map { it.position })
-        assertEquals(82.5, routine.entries.first().targetWeightKg)
+        assertEquals(
+            listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+                                sets = List(3) { SetTarget(5, 82.5) }, restSeconds = 180)),
+            routine.entries)
     }
 
     @Test
@@ -212,6 +310,67 @@ class TrainingWireTests {
                                             """{"id":"rt_1","name":"Pull A","position":1,"entries":[]}""")
 
         assertNull(routine.lastTrainedAtMs)
+    }
+}
+
+class SchemeTests {
+    @Test
+    fun testRampingUpDrawsAStraightLineFromSetOneToTheTopSet() {
+        val ends = listOf(SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(1, 100.0))
+
+        assertTrue(Scheme.canRamp(ends))
+        assertEquals(
+            listOf(SetTarget(5, 60.0), SetTarget(4, 70.0), SetTarget(3, 80.0), SetTarget(2, 90.0), SetTarget(1, 100.0)),
+            Scheme.rampUp(ends))
+    }
+
+    @Test
+    fun testAColumnWhoseEndsAreNotBothNamedIsLeftAsItStands() {
+        val loadsOnly = listOf(SetTarget(null, 60.0), SetTarget(3, 70.0), SetTarget(5, 100.0))
+        assertEquals(listOf(SetTarget(null, 60.0), SetTarget(3, 80.0), SetTarget(5, 100.0)), Scheme.rampUp(loadsOnly))
+
+        val repsOnly = listOf(SetTarget(8, null), SetTarget(3, 70.0), SetTarget(2, 100.0))
+        assertEquals(listOf(SetTarget(8, null), SetTarget(5, 70.0), SetTarget(2, 100.0)), Scheme.rampUp(repsOnly))
+    }
+
+    @Test
+    fun testThereIsNothingToRampBetweenTwoSetsOrBetweenEndsThatAgree() {
+        val two = listOf(SetTarget(5, 60.0), SetTarget(1, 100.0))
+        assertFalse(Scheme.canRamp(two))
+        assertEquals(two, Scheme.rampUp(two))
+
+        val flat = listOf(SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(5, 80.000001))
+        assertFalse("the ends agree on the ladder's grid", Scheme.canRamp(flat))
+        assertEquals(flat, Scheme.rampUp(flat))
+    }
+
+    // Each interpolated load lands on the plate grid of the band it stands in — the band's SMALL
+    // step, half away from zero — never on hundredths. Over 20 → 22.5 the middle set's 21.25 sits
+    // in the 20–50 band, whose small step is 2.5, and lands on 22.5.
+    @Test
+    fun testTheLoadsBetweenTheEndsLandOnThePlateGrid() {
+        val fives = listOf(SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 100.0))
+        assertEquals(listOf(60.0, 70.0, 80.0, 90.0, 100.0), Scheme.rampUp(fives).map { it.weightKg })
+
+        val light = listOf(SetTarget(5, 20.0), SetTarget(5, 20.0), SetTarget(5, 22.5))
+        assertEquals(listOf(20.0, 22.5, 22.5), Scheme.rampUp(light).map { it.weightKg })
+
+        val thirds = listOf(SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 60.0), SetTarget(5, 100.0))
+        assertEquals("73.33 and 86.67 are 72.5 and 87.5 on the grid",
+                     listOf(60.0, 72.5, 87.5, 100.0), Scheme.rampUp(thirds).map { it.weightKg })
+
+        val ends = listOf(SetTarget(5, 61.0), SetTarget(5, 61.0), SetTarget(5, 101.0))
+        assertEquals("the two ends stand as typed; only the sets between are snapped",
+                     listOf(61.0, 80.0, 101.0), Scheme.rampUp(ends).map { it.weightKg })
+    }
+
+    @Test
+    fun testAStraightSchemeIsOneWhoseSetsAgreeOnTheLaddersGrid() {
+        assertTrue(Scheme.straight(List(3) { SetTarget(8, 60.0) }))
+        assertTrue(Scheme.straight(listOf(SetTarget(8, 60.0), SetTarget(8, 60.004))))
+        assertFalse(Scheme.straight(lowerARamp))
+        assertFalse("an open line is not a straight scheme", Scheme.straight(emptyList()))
+        assertTrue(Scheme.same(listOf(SetTarget(5, 82.5)), listOf(SetTarget(5, 82.500000001))))
     }
 }
 
@@ -319,43 +478,49 @@ class RoutineWriteTests {
     private fun aDetail(sets: List<TrainingSet>): SessionDetail =
         SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
 
+    private val lowerA = Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
+        RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180),
+        RoutineEntry(position = 2, exerciseId = "barbell-row"),
+    ))
+
     @Test
-    fun testARoutineKeptFromASessionIsWhatWasActuallyLifted() {
-        val write = RoutineWrite.from("Push A", aDetail(listOf(
-            aSet("bench-press", 40.0, 10, SetKind.Warmup, at = 100),
-            aSet("bench-press", 82.5, 5, at = 200),
-            aSet("bench-press", 82.5, 5, at = 300),
-            aSet("bench-press", 85.0, 3, at = 400),
-            aSet("back-squat", 100.0, 5, at = 500),
-            aSet("back-squat", 60.0, 12, SetKind.Drop, at = 600),
+    fun testARoutineKeptFromASessionIsEveryWorkingSetAsItWasLifted() {
+        val write = RoutineWrite.from("Lower A", aDetail(listOf(
+            aSet("back-squat", 40.0, 10, SetKind.Warmup, at = 100),
+            aSet("back-squat", 60.0, 5, at = 200),
+            aSet("back-squat", 80.0, 5, at = 300),
+            aSet("back-squat", 90.0, 3, at = 400),
+            aSet("back-squat", 60.0, 12, SetKind.Drop, at = 500),
+            aSet("barbell-row", 70.0, 8, at = 600),
         )), position = 2)
 
         assertNotNull(write)
         assertTrue("the kept routine mints its own id", write!!.id.startsWith("rt_"))
         assertEquals(2, write.position)
-        assertEquals("in the order they were performed",
-                     listOf("bench-press", "back-squat"), write.entries.map { it.exerciseId })
-        assertEquals(RoutineEntryWrite(exerciseId = "bench-press", targetSets = 3,
-                                       targetReps = 5, targetWeightKg = 85.0),
-                     write.entries[0])
-        assertEquals("a drop set is not what next week is aimed at",
-                     RoutineEntryWrite(exerciseId = "back-squat", targetSets = 1,
-                                       targetReps = 5, targetWeightKg = 100.0),
-                     write.entries[1])
+        assertEquals("Lower A", write.name)
+        assertEquals(
+            listOf(
+                RoutineEntryWrite(exerciseId = "back-squat",
+                                  sets = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0))),
+                RoutineEntryWrite(exerciseId = "barbell-row", sets = listOf(SetTarget(8, 70.0))),
+            ),
+            write.entries)
     }
 
     @Test
-    fun testATiedModalRepCountGoesToTheSmallerTarget() {
-        val write = RoutineWrite.from("Legs", aDetail(listOf(
-            aSet("back-squat", 100.0, 5, at = 100),
-            aSet("back-squat", 100.0, 5, at = 200),
-            aSet("back-squat", 110.0, 3, at = 300),
-            aSet("back-squat", 110.0, 3, at = 400),
+    fun testAMovementLiftedInTwoBlocksIsOneLineInTheOrderItWasFirstPerformed() {
+        val write = RoutineWrite.from("Push A", aDetail(listOf(
+            aSet("bench-press", 82.5, 5, at = 200),
+            aSet("overhead-press", 45.0, 8, at = 300),
+            aSet("bench-press", 85.0, 3, at = 400),
         )), position = 0)
 
-        assertNotNull(write)
-        assertEquals(listOf(3), write!!.entries.map { it.targetReps })
-        assertEquals(listOf(110.0), write.entries.map { it.targetWeightKg })
+        assertEquals(
+            listOf(
+                RoutineEntryWrite(exerciseId = "bench-press", sets = listOf(SetTarget(5, 82.5), SetTarget(3, 85.0))),
+                RoutineEntryWrite(exerciseId = "overhead-press", sets = listOf(SetTarget(8, 45.0))),
+            ),
+            write?.entries)
     }
 
     @Test
@@ -367,41 +532,39 @@ class RoutineWriteTests {
     }
 
     @Test
-    fun testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
-        val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
-                         targetWeightKg = 100.0, restSeconds = 180),
-            RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 3, targetReps = 8,
-                         targetWeightKg = 80.0, restSeconds = 120),
-            RoutineEntry(position = 3, exerciseId = "overhead-press", targetSets = 3, targetReps = 8,
-                         targetWeightKg = 45.0),
-        ))
+    fun testRetargetingReplacesTheWholeSchemeAndKeepsTheRest() {
+        val heavierTop = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
+                                SetTarget(1, 102.5), SetTarget(5, 80.0))
 
-        val retargeted = routine.retargeting(1, "bench-press", toWeightKg = 105.0)
+        val retargeted = lowerA.retargeting(1, "back-squat", heavierTop)
 
         assertEquals(
-            Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
-                             targetWeightKg = 105.0, restSeconds = 180),
-                RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 3, targetReps = 8,
-                             targetWeightKg = 80.0, restSeconds = 120),
-                RoutineEntry(position = 3, exerciseId = "overhead-press", targetSets = 3, targetReps = 8,
-                             targetWeightKg = 45.0),
+            Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = heavierTop, restSeconds = 180),
+                RoutineEntry(position = 2, exerciseId = "barbell-row"),
             )),
             retargeted)
     }
 
     @Test
-    fun testRetargetingARowThatNoLongerHoldsTheMovementWritesNothing() {
-        val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
-                         targetWeightKg = 82.5),
-        ))
+    fun testRetargetingWritesTheLoadsOnTheLaddersGrid() {
+        val retargeted = lowerA.retargeting(1, "back-squat", listOf(SetTarget(5, 82.499999999999996)))
 
-        assertNull("position 1 is the bench now, not the squat",
-                   routine.retargeting(1, "back-squat", toWeightKg = 140.0))
-        assertNull("no row stands at position 2",
-                   routine.retargeting(2, "bench-press", toWeightKg = 87.5))
+        assertEquals(listOf(SetTarget(5, 82.5)), retargeted?.entries?.first()?.sets)
+    }
+
+    @Test
+    fun testRetargetingLeavesAnOpenRowOpen() {
+        assertNull("nothing is written onto an open line",
+                   lowerA.retargeting(2, "barbell-row", listOf(SetTarget(8, 60.0))))
+    }
+
+    @Test
+    fun testRetargetingARowThatNoLongerHoldsTheMovementWritesNothing() {
+        assertNull("position 1 is the squat, not the row",
+                   lowerA.retargeting(1, "barbell-row", listOf(SetTarget(8, 60.0))))
+        assertNull("no row stands at position 3",
+                   lowerA.retargeting(3, "back-squat", listOf(SetTarget(5, 100.0))))
     }
 }
 
@@ -410,6 +573,10 @@ class PrefillTests {
                      kind: SetKind = SetKind.Working): TrainingSet =
         TrainingSet(id = "set_$at", exerciseId = "bench-press", weightKg = weightKg,
                     reps = reps, kind = kind, completedAtMs = at)
+
+    private val pushA = PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })
+
+    private val lowerA = PlanEntry(exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180)
 
     @Test
     fun testWithNoPlanAndNoHistoryThePadOpensOnTheEmptyBar() {
@@ -422,7 +589,7 @@ class PrefillTests {
     fun testTodaysLastSetWinsOverThePlanAndOverLastTime() {
         val prefill = Prefill.of(
             todaySets = listOf(aSet(82.5, 5, at = 100), aSet(85.0, 3, at = 200)),
-            planEntry = PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5),
+            planEntry = pushA,
             lastTime = LastTime(exerciseId = "bench-press", session = Session(id = "ses_p", startedAtMs = 1),
                                 sets = listOf(aSet(80.0, 8, at = 1)))
         )
@@ -434,12 +601,54 @@ class PrefillTests {
     fun testThePlansTargetBeatsLastTimeBeforeAnythingIsLifted() {
         val prefill = Prefill.of(
             todaySets = emptyList(),
-            planEntry = PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5),
+            planEntry = pushA,
             lastTime = LastTime(exerciseId = "bench-press", session = Session(id = "ses_p", startedAtMs = 1),
                                 sets = listOf(aSet(80.0, 8, at = 1)))
         )
 
         assertEquals(Prefill(weightKg = 82.5, reps = 5), prefill)
+    }
+
+    @Test
+    fun testOnASchemeWhoseSetsDisagreeThePadFollowsTheSlot() {
+        val rack = Prefill.of(
+            todaySets = listOf(aSet(60.0, 5, at = 100), aSet(80.0, 5, at = 200)),
+            planEntry = lowerA,
+            lastTime = null
+        )
+        assertEquals("two working sets landed, so the third set's numbers", Prefill(90.0, 3), rack)
+
+        assertEquals("before anything is lifted, set 1", Prefill(60.0, 5),
+                     Prefill.of(todaySets = emptyList(), planEntry = lowerA, lastTime = null))
+        assertEquals("a warmup does not advance the slot", Prefill(60.0, 5),
+                     Prefill.of(todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup)),
+                                planEntry = lowerA, lastTime = null))
+    }
+
+    @Test
+    fun testPastTheEndOfTheSchemeThePadFallsToLastTimesNthSetThenToday() {
+        val fiveLanded = lowerARamp.mapIndexed { index, set -> aSet(set.weightKg!!, set.reps!!, at = 100L * (index + 1)) }
+        val lastTime = LastTime(exerciseId = "back-squat", session = Session(id = "ses_p", startedAtMs = 1),
+                                sets = List(6) { aSet(70.0, 6, at = 1L + it) })
+
+        assertEquals("last time's sixth working set", Prefill(70.0, 6),
+                     Prefill.of(todaySets = fiveLanded, planEntry = lowerA, lastTime = lastTime))
+        assertEquals("and with no sixth set last time, today's last working set", Prefill(80.0, 5),
+                     Prefill.of(todaySets = fiveLanded, planEntry = lowerA, lastTime = null))
+    }
+
+    @Test
+    fun testASlotThatNamesNoLoadTakesLastTimesNthSetsLoad() {
+        val topSetToLastTime = PlanEntry(exerciseId = "back-squat",
+                                         sets = listOf(SetTarget(5, 60.0), SetTarget(3, null), SetTarget(null, null)))
+        val lastTime = LastTime(exerciseId = "back-squat", session = Session(id = "ses_p", startedAtMs = 1),
+                                sets = listOf(aSet(60.0, 5, at = 1), aSet(95.0, 3, at = 2), aSet(100.0, 2, at = 3)))
+
+        assertEquals(Prefill(95.0, 3),
+                     Prefill.of(todaySets = listOf(aSet(60.0, 5, at = 100)), planEntry = topSetToLastTime, lastTime = lastTime))
+        assertEquals("a max set takes last time's reps too", Prefill(100.0, 2),
+                     Prefill.of(todaySets = listOf(aSet(60.0, 5, at = 100), aSet(95.0, 3, at = 200)),
+                                planEntry = topSetToLastTime, lastTime = lastTime))
     }
 
     @Test
@@ -458,7 +667,7 @@ class PrefillTests {
     fun testAWarmupIsNotCarriedForwardAsTheStickyWeight() {
         val afterAWarmup = Prefill.of(
             todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup)),
-            planEntry = PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5),
+            planEntry = pushA,
             lastTime = null
         )
         assertEquals("the dial stays on the plan", Prefill(weightKg = 82.5, reps = 5), afterAWarmup)
@@ -467,7 +676,7 @@ class PrefillTests {
             todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup),
                                aSet(85.0, 5, at = 200),
                                aSet(65.0, 3, at = 300, kind = SetKind.Warmup)),
-            planEntry = PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5),
+            planEntry = pushA,
             lastTime = null
         )
         assertEquals("the last working set is the one the thumb is following",
@@ -476,9 +685,10 @@ class PrefillTests {
 
     @Test
     fun testAPlanWithNoRepTargetFallsThroughToLastTimeRatherThanToZero() {
+        val threeToMax = PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget() })
         val prefill = Prefill.of(
             todaySets = emptyList(),
-            planEntry = PlanEntry(exerciseId = "chin-up", sets = 3),
+            planEntry = threeToMax,
             lastTime = LastTime(exerciseId = "chin-up", session = Session(id = "ses_p", startedAtMs = 1),
                                 sets = listOf(aSet(0.0, 9, at = 1), aSet(0.0, 6, at = 2)))
         )
@@ -486,15 +696,14 @@ class PrefillTests {
         assertEquals(Prefill(weightKg = 0.0, reps = 9), prefill)
         assertEquals("and with no history at all, the empty bar",
                      Prefill(weightKg = 20.0, reps = 5),
-                     Prefill.of(todaySets = emptyList(), planEntry = PlanEntry(exerciseId = "chin-up", sets = 3),
-                                lastTime = null))
+                     Prefill.of(todaySets = emptyList(), planEntry = threeToMax, lastTime = null))
     }
 
     @Test
     fun testAPlanWithNoTargetWeightStillGivesItsReps() {
         val prefill = Prefill.of(
             todaySets = emptyList(),
-            planEntry = PlanEntry(exerciseId = "chin-up", sets = 3, reps = 8),
+            planEntry = PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget(reps = 8) }),
             lastTime = LastTime(exerciseId = "chin-up", session = Session(id = "ses_p", startedAtMs = 1),
                                 sets = listOf(aSet(0.0, 12, at = 1)))
         )

@@ -56,6 +56,7 @@ import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
+import works.windmill.gym.domain.Scheme
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetEffort
@@ -112,11 +113,12 @@ object Performed {
                 movement = Readout.movement(exerciseId, catalog),
                 against = against,
                 rows = mine.mapIndexed { index, set ->
+                    val slot = mine.take(index).count { it.kind == SetKind.Working }
                     Row(
                         set = set,
                         number = set.setNumber ?: (index + 1),
                         note = if (set.kind != SetKind.Working) Note(set.kind.wire)
-                               else note(set, against, opening = set.id == opening),
+                               else note(set, against, opening = set.id == opening, slot = slot),
                     )
                 },
             )
@@ -130,16 +132,18 @@ object Performed {
         if (named.isEmpty()) return Against.Unplanned
         if (named.size > 1) return Against.Silent
         val entry = named.single()
-        if (entry.sets == null) return Against.Silent
+        if (entry.isOpen) return Against.Silent
         return Against.Plan(entry, planLine(entry))
     }
 
-    // Fail-fast in the order the facts outrank each other: the load the plan named, then the reps.
-    private fun note(set: TrainingSet, against: Against, opening: Boolean): Note? {
+    // Read against the slot this working set filled — the Nth working set against the plan's Nth
+    // set — fail-fast in the order the facts outrank each other: the load the plan named, then the
+    // reps. A set logged past the plan has no slot and is read against nothing.
+    private fun note(set: TrainingSet, against: Against, opening: Boolean, slot: Int): Note? {
         if (against is Against.Unplanned) return if (opening) Note("added today") else null
         if (against !is Against.Plan) return null
-        val entry = against.entry
-        val target = entry.weightKg
+        val planned = Scheme.slot(against.entry.sets, slot) ?: return null
+        val target = planned.weightKg
         if (target != null && target != 0.0) {
             // Rounded on the LADDER's grid before it is compared to zero.
             val delta = Ladder.round(set.weightKg - target)
@@ -147,16 +151,12 @@ object Performed {
             // THE MAGNITUDE, never the signed difference: the word already carries the direction.
             if (delta < 0) return Note("${Readout.weight(-delta)} under plan")
         }
-        val reps = entry.reps
+        val reps = planned.reps
         if (reps != null && set.reps < reps) return Note(Readout.spelled(reps - set.reps) + " short", short = true)
         return Note("on plan")
     }
 
-    private fun planLine(entry: PlanEntry): String {
-        val weight = entry.weightKg
-        if (weight == null || weight == 0.0) return "plan ${Readout.repTarget(entry.reps)} reps"
-        return "plan ${Readout.repTarget(entry.reps)} × ${Readout.weight(weight)}"
-    }
+    private fun planLine(entry: PlanEntry): String = "plan ${Readout.target(entry.sets)}"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -178,41 +178,56 @@ alter table gym_routines add column if not exists created_door text      -- null
   check (created_door in ('mcp','ask'));
 
 create table if not exists gym_routine_entries (
-  routine_id       text not null references gym_routines(id) on delete cascade,
-  position         int  not null check (position >= 1),
-  exercise_id      text not null references gym_exercises(id),
-  target_sets      int  check (target_sets between 1 and 20),                   -- null = open
-  target_reps      int  check (target_reps between 1 and 100),                  -- null = max
-  target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
-  rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
+  routine_id   text not null references gym_routines(id) on delete cascade,
+  position     int  not null check (position >= 1),
+  exercise_id  text not null references gym_exercises(id),
+  rest_seconds int check (rest_seconds between 15 and 900),   -- null = client default
   primary key (routine_id, position)
 );
-alter table gym_routine_entries alter column target_reps drop not null;
-alter table gym_routine_entries alter column target_reps drop default;
-alter table gym_routine_entries alter column target_sets drop not null;
-alter table gym_routine_entries alter column target_sets drop default;
+
+create table if not exists gym_routine_entry_sets (
+  routine_id text not null,
+  position   int  not null,
+  set_index  int  not null check (set_index between 1 and 20),
+  reps       int  check (reps between 1 and 100),                    -- null = max
+  weight_kg  numeric(6,2) check (weight_kg between -500 and 500),    -- null = last time's Nth set
+  primary key (routine_id, position, set_index),
+  foreign key (routine_id, position) references gym_routine_entries (routine_id, position)
+    on delete cascade
+);
 ```
 
 - `revision` is the concurrency token: what a proposal is minted AGAINST, and what stops a
   read-modify-write PUT from destroying that base.
 - Entries are relational, never a blob; the only legitimate blob is the session's frozen snapshot.
   The same movement twice in one routine is two rows with two positions.
-- **Four entry columns mean something by being null**, and the absence is never a zero: no target at
-  all is `open` and asks at the rack; no rep target is `max`; no target weight is "whatever you did
-  last time"; no rest falls back to the lifter's global rest target. `Routine` refuses reps or a load
-  beside an absent set target.
-- **A routine is written as a whole document**, on create and replace alike: the row and its entries
-  land in one transaction, and a replace deletes the run and lays it down again. An entry has no
-  identity — its key *is* its position. Positions are dense and 1-based, checked by the `Routine`
-  constructor against arrival order.
+- **A line's target is a SCHEME**: one `gym_routine_entry_sets` row per set, in lifting order, each
+  naming its own reps and load. A straight `5 × 5 · 80` is five identical rows; a ramp is five that
+  disagree. There is no second kind of line and no compressed spelling. In C++ it is
+  `std::vector<SetTarget>` on `RoutineEntry`, `EntryTargets` and `PlanEntry` alike.
+- **Every absence means something, and none is a zero.** A line with NO set rows is `open` and asks
+  at the rack; a set with no `reps` is `max`; a set with no `weight_kg` is last time's set of the
+  same number; no `rest_seconds` falls back to the lifter's global rest target. Rest rides on an
+  open line.
+- **`SetTarget` rounds its load to the two decimals the column holds** at construction, so the
+  entity compares as the store compares: the `moved` test on a replace, a proposal's `kept`, and a
+  replay's list equality all see the value the row would hold.
+- **A routine is written as a whole document**, on create and replace alike: the row, its lines and
+  their set rows land in one transaction, and a replace deletes the run — the set rows cascade off
+  the line — and lays it down again. An entry has no identity — its key *is* its position. Positions
+  are dense and 1-based, checked by the `Routine` constructor against arrival order; the scheme's
+  length is checked there too, so one transaction holds at most 50 × 20 set INSERTs.
 
-**The plan snapshot.** `gym_sessions.plan` freezes at start, every field of a line but `exerciseId`
-omitted when the routine named none:
+**The plan snapshot.** `gym_sessions.plan` freezes at start, each line carrying its scheme under
+`sets` and omitting the key on an open line:
 
 ```json
-{ "routine": "Upper A",
-  "entries": [ { "exerciseId": "bench-press", "sets": 3, "reps": 8,
-                 "weightKg": 82.5, "restSeconds": 180 } ] }
+{ "routine": "Lower A",
+  "entries": [ { "exerciseId": "back-squat", "restSeconds": 180,
+                 "sets": [ {"reps":5,"weightKg":60}, {"reps":5,"weightKg":80},
+                           {"reps":3,"weightKg":90}, {"reps":1,"weightKg":100},
+                           {"reps":5,"weightKg":80} ] },
+               { "exerciseId": "face-pull" } ] }
 ```
 
 **The server composes it, always**, from its own routine row inside `TrainingService::start`; a start
@@ -221,7 +236,9 @@ ad-hoc. Mid-session changes are session-scoped; writing one back is a client iss
 `PUT /v1/gym/routines/{id}`. In C++ it is a typed `PlanSnapshot`, and **one codec pair in
 `adapters/json/TrainingJson` serves both edges** — the jsonb column and the wire — so the stored
 object and the one a client reads back cannot drift. The read half clamps rather than throws:
-`routine` is a name only when it is a string, and a plan that is not an object is no plan at all.
+`routine` is a name only when it is a string, a plan that is not an object is no plan at all, a
+`sets` that is not an array drops its line, and a set that cannot be read opens its line — the
+whole scheme or none, never a ladder shifted by the one missing.
 
 ### 3.4 The workout share
 
@@ -337,13 +354,15 @@ create unique index if not exists gym_proposals_one_pending
   on gym_proposals (routine_id, door, connection) where state = 'pending';
 
 create table if not exists gym_proposal_changes (
-  proposal_id text not null references gym_proposals(id) on delete cascade,
-  position    int  not null check (position >= 1),
-  user_id     uuid not null references users(id) on delete cascade,
-  kind        text not null check (kind in ('kept','added','removed','retargeted')),
-  exercise_id text not null references gym_exercises(id),
-  before_sets int, before_reps int, before_weight_kg numeric(6,2), before_rest_seconds int,
-  after_sets  int, after_reps  int, after_weight_kg  numeric(6,2), after_rest_seconds  int,
+  proposal_id         text not null references gym_proposals(id) on delete cascade,
+  position            int  not null check (position >= 1),
+  user_id             uuid not null references users(id) on delete cascade,
+  kind                text not null check (kind in ('kept','added','removed','retargeted')),
+  exercise_id         text not null references gym_exercises(id),
+  before_sets         jsonb,   -- the wire's `sets` array; null on an open line
+  before_rest_seconds int,
+  after_sets          jsonb,
+  after_rest_seconds  int,
   primary key (proposal_id, position)
 );
 ```
@@ -395,8 +414,18 @@ create table if not exists gym_proposal_changes (
   client treats that as the removal having landed.
 - **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
   proposal reorders. It is what `noChange` is decided off.
-- **No CHECKs on the change rows' target columns**, so a bound tightened on `gym_routine_entries`
-  later cannot make a minted proposal unreadable. The entity refuses out-of-band values at the mint.
+- **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, written and
+  read through `TrainingJson`'s `toJson(std::vector<SetTarget>)` / `setTargetsFrom`, null on an
+  open line — beside its rest. An absent side and an open line both store null; `kind` tells them
+  apart. `setTargetsFrom` reads the whole scheme or none: one set it cannot make out (not an object,
+  a wrong-typed value, a value outside the band) answers the open line, never a ladder short by one. **No CHECKs on the sides**, so a bound tightened on `gym_routine_entry_sets` later cannot
+  make a minted proposal unreadable; the entity refuses out-of-band values at the mint and the
+  read half clamps.
+- **`kept` is list equality.** `changesBetween` still matches proposed lines to base lines by
+  movement, first unmatched first; a matched line is `kept` when its `EntryTargets` — the whole
+  scheme, set for set, plus the rest — are equal, and `retargeted` otherwise. Moving one set of a
+  ramp is one `retargeted` row whose two sides each carry the full list; the review sheet draws the
+  one set that moved from those lists, not from the store.
 - Both tables are in `PgAccountFootprint`'s owned list. Every proposal route is owner-scoped and 401s
   before it reads anything.
 
@@ -555,9 +584,10 @@ reps?, weightKg?, restSeconds? — an absent sets is `open`, an absent reps is `
   `step_kg numeric(4,2)`. Above it Postgres raises a numeric overflow the ladder calls retryable;
   below it the value rounds to `0.00` and the next read refuses it.
 - **A routine**: at least one entry, at most `kMaxRoutineEntries` (50), positions `1..n` in order,
-  `targetSets` 1–20 when named, `targetReps` 1–100 when named, `targetWeightKg` within ±500,
-  `restSeconds` 15–900. The document's size is bounded beside every field's value, because a routine's
-  lines are one INSERT each inside a single transaction.
+  each line's scheme at most `kMaxSetTargets` (20) sets — none is the open line — every set's `reps`
+  1–100 when named and its `weightKg` inside ±500 after rounding to two decimals, `restSeconds`
+  15–900. The document's size is bounded beside every field's value, because a routine's lines are
+  one INSERT each and each line's scheme one more, inside a single transaction: at most 50 × 20 rows.
 - `parseSetKind` is **strict on write** (an unknown kind is a 400); `setKindFromStored` clamps to
   `working` on read, so a kind added by a newer deploy cannot crash an older reader.
 - Id shape is one rule: `^[A-Za-z0-9_-]{8,64}$`, recommended prefixes `ses_` / `set_` / `rt_`, opaque
@@ -926,8 +956,10 @@ speak it, which is why a tool's arguments are the REST body's field names. The e
 Instants are epoch-ms numbers, weights numbers in kg. Sets are
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`; sessions
 `{id, startedAt, finishedAt?, routineId?, plan?}`; routines
-`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, targetSets?,
-targetReps?, targetWeightKg?, restSeconds?}], pendingProposal?, history?}`. List replies wrap
+`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, sets?, restSeconds?}],
+pendingProposal?, history?}`, where `sets` is the line's scheme — `[{reps?, weightKg?}]`, one object
+per set in lifting order, 1 to 20, `reps` 1–100, `weightKg` inside ±500 — and a plan line and a
+proposal side carry the same array. List replies wrap
 (`{"exercises":[…]}`, `{"sessions":[…]}`, `{"routines":[…]}`, `{"proposals":[…]}`); detail is
 `{"session":…, "sets":[…]}`. A log row is a session plus `{setCount, workingSetCount, tonnageKg,
 exercises:[…], topSet?: {weightKg, reps}, topE1rm?, record, closedItself}` — `record` always present.
@@ -935,8 +967,24 @@ exercises:[…], topSet?: {weightKg, reps}, topE1rm?, record, closedItself}` —
 A proposal's head is `{id, routineId, intent, state, summary, changeCount, createdAt, settledAt?,
 source:{door, connection?, agent?}}`; the whole adds `{baseRevision, baseName, name,
 changes:[{position, kind, exerciseId, before?, after?, loggedSets?}]}`, each side
-`{sets, reps?, weightKg?, restSeconds?}` — `before` absent on an added line, `after` on a removed one,
-`loggedSets` on removed lines alone. `revision` is read-only on the wire.
+`{sets?, restSeconds?}` — `before` absent on an added line, `after` on a removed one, `loggedSets` on
+removed lines alone. `revision` is read-only on the wire.
+
+The ramp fixture every surface's tests share, as a routine entry reads (jsoncpp writes keys in
+alphabetical order, and clients parse rather than compare bytes):
+
+```json
+{ "exerciseId": "back-squat", "position": 1, "restSeconds": 180,
+  "sets": [ {"reps":5,"weightKg":60}, {"reps":5,"weightKg":80}, {"reps":3,"weightKg":90},
+            {"reps":1,"weightKg":100}, {"reps":5,"weightKg":80} ] }
+```
+
+Parsing a routine entry refuses an unknown key (`unknown routine entry field "…"`), an unknown set
+key (`unknown set field "…"`), and an empty `sets` array — *a zero target is no target — leave out
+the sets instead*; the entity refuses *a set names its reps 1 to 100*, *a set names its load inside
+±500 kg* and *sets, 1 to 20*. `ProgramApi` forwards the sentence verbatim as the 400's `error`, the
+way the notes and bodyweight edges do, because the target sheet draws it under the row that carries
+the fault.
 
 A weigh-in is `{dateLocal, weightKg, recordedAt}` — the day a `YYYY-MM-DD` string that is the
 lifter's own calendar, kilograms rounded to two decimals and written as such (`82.4`, never
@@ -949,9 +997,11 @@ the log cursor's "no cursor: from now".
 
 Absences that carry meaning:
 
-- **An absent `targetReps` is `max`** and an **absent `targetSets` is `open`** — omitted in and out, on
-  the routine entry, the frozen plan's line, the review's `planned`, and a proposal's two sides. On a
-  diff row, which side is missing is `kind`'s to say, never a null.
+- **An absent `sets` is `open`**, never an empty array — omitted in and out, on the routine entry,
+  the frozen plan's line, the review's `planned` (which is then `{}`), and a proposal's two sides.
+  Inside a set, an **absent `reps` is `max`** and an **absent `weightKg` is last time's set of the
+  same number**; `{}` is a bodyweight set to max. On a diff row, which side is missing is `kind`'s to
+  say, never an empty scheme.
 - **An absent `lastTrainedAt` is `untested`.** No field beside it says so.
 - **`history` rides on the single-routine read alone.** Rows are `{kind:"created", at, by?, movements?}`
   and `{kind:"proposal", at, proposal}`, newest first with the creation row last. `by` absent means the
@@ -1069,13 +1119,23 @@ in-process).
   core*, not a second client of the HTTP API. **Every tool acts as the caller**: the `ToolCaller`'s
   `UserId` scopes every read and write, exactly as `callerOf(req, auth)` scopes the handlers.
 - **The refusals are the HTTP ones in words a model can act on**, each naming the tool that answers the
-  question it should ask next. The domain's `InvalidTraining` sentence is forwarded **verbatim** here,
-  where the browser edge flattens every one into `could not read that set`.
+  question it should ask next. The domain's `InvalidTraining` sentence is forwarded **verbatim** here
+  and on the routine routes; the set routes flatten theirs into `could not read that set`.
 - **Retry semantics are explicit per tool.** Batch logging matches immutable normalized set input;
   import matches the original completed-session request, including ordered sets. A different payload
   under an accepted id is a conflict. Exact retries return the current standing rows or explicit
   deleted status, preserving user corrections and deletions. Single logging retains its existing
   stored-row replay behavior and participates in the same durable id reservation.
+- **`entryArray()` speaks the scheme and nothing else.** A line is `{exerciseId, sets?, restSeconds?}`
+  with `sets` an array of `{reps?, weightKg?}` (1–20 items, `reps` 1–100, `additionalProperties:
+  false`), and every bound in the schema is the domain's own, pinned by `GymToolsTest`. The
+  descriptions of `create_routine`, `propose_routine_change`, `list_routines`, `get_session` and
+  `last_time` each carry the same ramp example beside the straight one, because an agent shown only
+  `5 × 5` writes only straight schemes; the Coach system prompt carries it too. To move one set of a
+  ramp an agent sends the ramp with that one item changed, and the lifter reads one `retargeted` row.
+- **Client-minted ids, said out loud in the description**, on all six write tools that take one, each
+  saying a replay answers with the stored row. **A replay is the same id carrying the SAME document**;
+  the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
   `list_routines` and sending it back under a fresh id, so `position`, `lastTrainedAt`, `revision` and
   `pendingProposal` are declared on `create_routine` and ignored. `additionalProperties: false` is

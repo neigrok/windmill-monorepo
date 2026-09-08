@@ -378,8 +378,7 @@ internal class FakeTraining : TrainingSyncing {
         val made = Routine(id = write.id, name = write.name, position = write.position,
             entries = write.entries.mapIndexed { index, entry ->
                 RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,
-                    targetSets = entry.targetSets, targetReps = entry.targetReps,
-                    targetWeightKg = entry.targetWeightKg, restSeconds = entry.restSeconds)
+                    sets = entry.sets, restSeconds = entry.restSeconds)
             })
         written[made.id] = made
         creations[made.id] = RoutineEvent(kind = "created", atMs = createdAtMs,
@@ -458,8 +457,7 @@ internal class FakeTraining : TrainingSyncing {
                 .mapIndexed { index, change ->
                     val asks = change.after ?: ProposalTargets()
                     RoutineEntry(position = index + 1, exerciseId = change.exerciseId,
-                        targetSets = asks.sets, targetReps = asks.reps,
-                        targetWeightKg = asks.weightKg, restSeconds = asks.restSeconds)
+                        sets = asks.sets, restSeconds = asks.restSeconds)
                 },
         )
         written[moved.id] = moved

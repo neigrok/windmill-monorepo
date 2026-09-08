@@ -53,6 +53,7 @@ import works.windmill.gym.domain.ProposalSource
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
@@ -163,7 +164,7 @@ class LargestTypeTests {
             baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
             changes = (1..8).map {
                 ProposalChange(position = it, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
-                    before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))
+                    before = ProposalTargets(List(3) { SetTarget(5) }), after = ProposalTargets(List(5) { SetTarget(3) }))
             },
         ))
         compose.setContent {

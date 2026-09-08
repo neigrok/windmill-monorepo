@@ -192,15 +192,15 @@ final class RoomFinishSheetUITests: XCTestCase {
         deleteTheKeptRoutine(named: seeded)
     }
 
-    // The counter over the weight names the set the NEXT tap will log (`LiveLines.counter`), so each
-    // tap is waited out by name rather than counted. Four working sets is exactly the line between a
+    // The set line over the weight names the set the NEXT tap will log (`LiveLines.counter`, `Set 2`
+    // alone on a session with no plan), so each tap is waited out by name rather than counted. Four working sets is exactly the line between a
     // slight session and an ordinary one (`LocalLog.slightWorkingSets`), so a tap the run drops would
     // otherwise flip the branch these walks are about.
     private func logWorkingSets(_ wanted: Int) {
         let logSet = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Log set")).firstMatch
         XCTAssertTrue(logSet.waitForExistence(timeout: 15), "the logger drew no Log set")
         for set in 1...wanted {
-            let next = app.staticTexts["set \(set + 1)"]
+            let next = app.staticTexts["Set \(set + 1)"]
             logSet.tap()
             if next.waitForExistence(timeout: 6) { continue }
             // A dropped tap is the harness, not the thing under test: one retry, and only then red.

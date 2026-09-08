@@ -147,27 +147,39 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         case retargeted
     }
 
-    // Absent reps is `max`, absent weight is last time's, absent rest is the global target, and absent sets is the open row.
-    // Which side of a diff is missing is `kind`, never an absent `sets`.
+    // Absent rest is the global target, and no sets is the open row. Which side of a diff is missing is
+    // `kind`, never an absent `sets`.
     public struct Targets: Equatable, Decodable, Sendable {
-        public let sets: Int?
-        public let reps: Int?
-        public let weightKg: Double?
+        public let sets: [SetTarget]
         public let restSeconds: Int?
 
-        public init(sets: Int? = nil, reps: Int? = nil, weightKg: Double? = nil,
-                    restSeconds: Int? = nil) {
+        public init(sets: [SetTarget] = [], restSeconds: Int? = nil) {
             self.sets = sets
-            self.reps = reps
-            self.weightKg = weightKg
             self.restSeconds = restSeconds
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case sets, restSeconds
+        }
+
+        public init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            sets = try fields.decodeIfPresent([SetTarget].self, forKey: .sets) ?? []
+            restSeconds = try fields.decodeIfPresent(Int.self, forKey: .restSeconds)
         }
     }
 
+    // The ladder a `sets` move unfolds to on tap: one `Readout.set` per row, before and after.
+    public struct Unfolded: Equatable, Sendable {
+        public let before: [String]
+        public let after: [String]
+    }
+
     public struct Move: Equatable, Sendable {
-        public let field: String
+        public let field: String  // "sets" · "set 4" · "rest"
         public let before: String
         public let after: String
+        public let unfolded: Unfolded?  // only on a "sets" move
     }
 
     public let position: Int
@@ -187,34 +199,40 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         self.loggedSets = loggedSets
     }
 
-    // Sets and reps are one move rather than two.
+    // A scheme whose shape held and whose one set moved prints that set; any other change to the scheme
+    // prints the whole scheme in the readout formula and carries the ladder to unfold.
     public var moves: [Move] {
         guard let before, let after else { return [] }
         var moved: [Move] = []
-        if before.sets != after.sets || before.reps != after.reps {
-            // The load is its own row, so no weight is passed here.
-            moved.append(Move(field: "sets",
-                              before: Readout.target(sets: before.sets, reps: before.reps,
-                                                     weightKg: nil),
-                              after: Readout.target(sets: after.sets, reps: after.reps,
-                                                    weightKg: nil)))
-        }
-        if before.weightKg != after.weightKg {
-            moved.append(Move(field: "weight",
-                              before: before.weightKg.map(Readout.weight) ?? "—",
-                              after: after.weightKg.map(Readout.weight) ?? "—"))
+        if before.sets != after.sets {
+            let differing = before.sets.count == after.sets.count
+                ? before.sets.indices.filter { before.sets[$0] != after.sets[$0] }
+                : []
+            if differing.count == 1, let index = differing.first {
+                moved.append(Move(field: "set \(index + 1)",
+                                  before: Readout.set(before.sets[index]),
+                                  after: Readout.set(after.sets[index]),
+                                  unfolded: nil))
+            } else {
+                moved.append(Move(field: "sets",
+                                  before: Readout.target(before.sets),
+                                  after: Readout.target(after.sets),
+                                  unfolded: Unfolded(before: before.sets.map(Readout.set),
+                                                     after: after.sets.map(Readout.set))))
+            }
         }
         if before.restSeconds != after.restSeconds {
             moved.append(Move(field: "rest",
                               before: before.restSeconds.map { Readout.clock(Int64($0) * 1000) } ?? "—",
-                              after: after.restSeconds.map { Readout.clock(Int64($0) * 1000) } ?? "—"))
+                              after: after.restSeconds.map { Readout.clock(Int64($0) * 1000) } ?? "—",
+                              unfolded: nil))
         }
         return moved
     }
 
     public func addedLine(after previous: String?) -> String {
         var said = ["added"]
-        if let after { said.append(Readout.target(sets: after.sets, reps: after.reps, weightKg: after.weightKg)) }
+        if let after { said.append(Readout.target(after.sets)) }
         said.append(previous.map { "after \($0)" } ?? "first in the routine")
         return said.joined(separator: " · ")
     }

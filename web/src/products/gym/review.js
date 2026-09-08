@@ -1,4 +1,4 @@
-import { dayLabel, durLabel, fmt, nameOfMovement, NO_ROUTINE, timeLabel } from './log.js';
+import { dayLabel, durLabel, entryLabel, fmt, nameOfMovement, NO_ROUTINE, timeLabel } from './log.js';
 import { weightUnit } from './units.js';
 
 export const RECORD_TITLE = 'Personal record';
@@ -32,26 +32,35 @@ export function recordSentence(record, catalog) {
   return null;
 }
 
-// A missing `reps` means max.
-function countLabel({ sets, reps }) {
-  if (reps == null) return `${sets} × max`;
-  return `${sets}×${reps}`;
+// `{sets} × {reps} · {load}`, the scheme's own formula, for the top set and how many of them. Zero is
+// the absence of a load, not a load, so a bodyweight effort leaves the column out; a negative
+// (band-assisted) load is real.
+function effortLabel({ weightKg, reps, sets }) {
+  if (weightKg === 0) return `${sets} × ${reps}`;
+  return `${sets} × ${reps} · ${fmt(weightKg)}`;
 }
 
-// Zero is the absence of a load; a negative (band-assisted) load is real.
-function topLabel(top) {
-  if (top.weightKg == null || top.weightKg === 0) return countLabel(top);
-  return `${countLabel(top)} @ ${fmt(top.weightKg)}`;
+// The plan's own top set — the heaviest named load, ties to the earlier set (the backend's TopSet rule
+// over the plan) — and the first set when no load is named at all.
+function topSetOf(sets) {
+  const loaded = sets.filter((set) => set.weightKg != null);
+  return loaded.reduce((top, set) => (set.weightKg > top.weightKg ? set : top), loaded[0]) ?? sets[0];
 }
 
-// `now.sets` counts only the sets at the top load, so shortfall is read on reps alone.
+// The plan reads in the readout formula and the effort in the same shape. The top set stands against
+// the plan's own top set, and `now.sets` counts only the sets at the top load, so short is read on
+// reps alone, at a load that did not go up. An open line (`planned: {}`) is nothing to measure
+// against, so the row falls through to last time.
 function detailOf({ now, before, planned }) {
-  const short = planned != null && planned.reps != null && now.reps < planned.reps
-    && (planned.weightKg == null || now.weightKg <= planned.weightKg);
-  if (short) return `planned ${countLabel(planned)} · did ${countLabel(now)}`;
-  if (planned) return `${topLabel(planned)} → ${topLabel(now)}`;
-  if (before) return `${topLabel(before)} → ${topLabel(now)}`;
-  return topLabel(now);
+  const scheme = planned?.sets ?? [];
+  if (scheme.length > 0) {
+    const top = topSetOf(scheme);
+    const short = top.reps != null && now.reps < top.reps && (top.weightKg == null || now.weightKg <= top.weightKg);
+    if (short) return `planned ${entryLabel(planned)} — did ${effortLabel(now)}`;
+    return `${entryLabel(planned)} → ${effortLabel(now)}`;
+  }
+  if (before) return `${effortLabel(before)} → ${effortLabel(now)}`;
+  return effortLabel(now);
 }
 
 export function comparison(against, catalog) {

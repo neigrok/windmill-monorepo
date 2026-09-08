@@ -8,8 +8,8 @@ private func aSet(_ exerciseId: String, _ weightKg: Double, _ reps: Int,
 }
 
 private let pushA = PlanSnapshot(routine: "Push A", entries: [
-    PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
-    PlanEntry(exerciseId: "overhead-press", sets: 3, reps: 8, weightKg: 45),
+    PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
+    PlanEntry(exerciseId: "overhead-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3)),
 ])
 
 final class LiveOrderTests: XCTestCase {
@@ -66,17 +66,78 @@ final class WalkGuardTests: XCTestCase {
 }
 
 final class LiveLinesTests: XCTestCase {
-    func testTheCounterKeepsCountingPastThePlansSetCount() {
-        let entry = PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)
-        let counter = LiveLines.counter(workingSetsToday: 3, planEntry: entry)
-        XCTAssertEqual(counter.count, "set 4 of 3")
-        XCTAssertEqual(counter.plan, "plan 3 × 5 @ 82.5")
+    private let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                        SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                        SetTarget(reps: 5, weightKg: 80)]
+
+    // The rack fixture: sets 1 and 2 landed, set 3 current, and the tail is that slot's own.
+    func testTheSetLineReadsTheCurrentSlotOfTheScheme() {
+        let entry = PlanEntry(exerciseId: "back-squat", sets: ramp)
+        let counter = LiveLines.counter(workingSetsToday: 2, planEntry: entry)
+        XCTAssertEqual(counter.count, "set 3 of 5")
+        XCTAssertEqual(counter.target, "target 3 @ 90")
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 0, planEntry: entry).target, "target 5 @ 60")
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 3, planEntry: entry).target, "target 1 @ 100")
     }
 
-    func testAMovementWithNoPlanSaysSoRatherThanBorrowingATarget() {
+    // F5: a set past the plan keeps the count and has no slot to read a tail from.
+    func testTheCounterKeepsCountingPastThePlansSetCountWithNoTail() {
+        let counter = LiveLines.counter(workingSetsToday: 5, planEntry: PlanEntry(exerciseId: "back-squat", sets: ramp))
+        XCTAssertEqual(counter.count, "set 6 of 5")
+        XCTAssertNil(counter.target)
+        let straight = PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 3))
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 3, planEntry: straight), LiveLines.Counter(count: "set 4 of 3", target: nil))
+    }
+
+    func testAMovementWithNoPlanCountsAloneAndDrawsNoTail() {
         let counter = LiveLines.counter(workingSetsToday: 0, planEntry: nil)
         XCTAssertEqual(counter.count, "set 1")
-        XCTAssertEqual(counter.plan, "no target")
+        XCTAssertNil(counter.target)
+        let open = LiveLines.counter(workingSetsToday: 2, planEntry: PlanEntry(exerciseId: "face-pull"))
+        XCTAssertEqual(open.count, "set 3")
+        XCTAssertNil(open.target)
+    }
+
+    func testAPlanWithNoTargetWeightPrintsNoLoad() {
+        let entry = PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(reps: 8), count: 3))
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 1, planEntry: entry).target, "target 8")
+    }
+
+    func testAPlanWithNoRepTargetReadsAsMaxAndOneNamingNothingDrawsNoTail() {
+        let bare = PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(), count: 3))
+        let counter = LiveLines.counter(workingSetsToday: 2, planEntry: bare)
+        XCTAssertEqual(counter.count, "set 3 of 3")
+        XCTAssertNil(counter.target)
+
+        let loaded = PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(weightKg: 10), count: 3))
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 0, planEntry: loaded).target, "target max @ 10")
+    }
+
+    // The slot strip on the rack fixture: two landed pills as lifted, the third slot current, two to come.
+    func testTheSlotStripLandsTheLiftedSetsAndDrawsTheRestOfTheSchemeAsSlots() {
+        let landed = [aSet("back-squat", 60, 5, at: 1_000, id: "s1"), aSet("back-squat", 80, 5, at: 2_000, id: "s2")]
+        let slots = LiveLines.slots(landed, plan: PlanEntry(exerciseId: "back-squat", sets: ramp), stalled: [])
+        XCTAssertEqual(slots, [
+            .landed(LiveLines.Row(id: "s1", index: "1", value: "60 × 5", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s2", index: "2", value: "80 × 5", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .current(ordinal: 3, target: "90 × 3", spoken: "set 3, target 90 × 3"),
+            .coming(ordinal: 4, target: "100 × 1", spoken: "set 4, target 100 × 1"),
+            .coming(ordinal: 5, target: "80 × 5", spoken: "set 5, target 80 × 5"),
+        ])
+        XCTAssertEqual(slots.map(\.id), ["s1", "s2", "slot-3", "slot-4", "slot-5"])
+    }
+
+    func testAWarmupStandsWhereItWasLoggedAndASetPastThePlanIsJustALandedRow() {
+        let sets = [aSet("chin-up", 0, 8, at: 1_000, kind: .warmup, id: "w1"),
+                    aSet("chin-up", 10, 8, at: 2_000, id: "s1"),
+                    aSet("chin-up", 10, 8, at: 3_000, id: "s2")]
+        let slots = LiveLines.slots(sets, plan: PlanEntry(exerciseId: "chin-up", sets: [SetTarget(reps: 8, weightKg: 10)]), stalled: ["s2"])
+        XCTAssertEqual(slots, [
+            .landed(LiveLines.Row(id: "w1", index: "w", value: "0 × 8", note: "warmup", countsTowardNothing: true, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s1", index: "1", value: "10 × 8", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s2", index: "2", value: "10 × 8", note: "on this device", countsTowardNothing: false, isOnThisDevice: true)),
+        ])
+        XCTAssertEqual(LiveLines.slots([], plan: nil, stalled: []), [])
     }
 
     func testTheMovementPositionCountsTheMergedOrderNotThePlan() {
@@ -94,22 +155,6 @@ final class LiveLinesTests: XCTestCase {
         XCTAssertNil(LiveLines.movementPosition(order: ["romanian-deadlift"],
                                                 current: "romanian-deadlift"),
                      "a walk of one is not a position worth a line")
-    }
-
-    func testAPlanWithNoTargetWeightPrintsNoLoad() {
-        let entry = PlanEntry(exerciseId: "chin-up", sets: 3, reps: 8)
-        XCTAssertEqual(LiveLines.counter(workingSetsToday: 1, planEntry: entry).plan, "plan 3 × 8")
-    }
-
-    func testAPlanWithNoRepTargetReadsAsMax() {
-        let entry = PlanEntry(exerciseId: "chin-up", sets: 3)
-        let counter = LiveLines.counter(workingSetsToday: 2, planEntry: entry)
-        XCTAssertEqual(counter.count, "set 3 of 3")
-        XCTAssertEqual(counter.plan, "plan 3 × max")
-
-        let loaded = PlanEntry(exerciseId: "chin-up", sets: 3, weightKg: 10)
-        XCTAssertEqual(LiveLines.counter(workingSetsToday: 0, planEntry: loaded).plan,
-                       "plan 3 × max @ 10")
     }
 
     func testWarmupsCarryAWAndNeverAdvanceTheOrdinal() {

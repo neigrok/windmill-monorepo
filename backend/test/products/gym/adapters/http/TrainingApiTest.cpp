@@ -1481,10 +1481,45 @@ TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
   // The snapshot is the SERVER's copy: the routine as a plain string and the plan's numbers, no pointer back.
   CHECK_EQ(dump(bodyOf(started)),
            std::string(R"({"id":"ses_11111111",)"
-                       R"("plan":{"entries":[{"exerciseId":"bench-press","reps":5,)"
-                       R"("restSeconds":180,"sets":5,"weightKg":82.5}],"routine":"Push A"},)"
+                       R"("plan":{"entries":[{"exerciseId":"bench-press","restSeconds":180,)"
+                       R"("sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":82.5}]}],"routine":"Push A"},)"
                        R"("routineId":"rt_11111111","startedAt":1700000000000})"));
   CHECK_EQ(dump(bodyOf(detail)["session"]), dump(bodyOf(started)));
+}
+
+// A ramp freezes into the plan set by set, and the session read carries it back byte for byte.
+TEST(gym_start_from_a_routine_freezes_the_ramp_into_the_plan) {
+  Harness h;
+  h.signIn("s-live");
+  Json::Value routine = routineBody("rt_11111111", "Lower A");
+  Json::Value squat(Json::objectValue);
+  squat["exerciseId"] = "back-squat";
+  squat["sets"] = setsBody(ramp());
+  squat["restSeconds"] = 180;
+  routine["entries"] = Json::Value(Json::arrayValue);
+  routine["entries"].append(squat);
+  send(h.program, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", routine, "s-live"));
+  Json::Value start = startBody();
+  start["routineId"] = "rt_11111111";
+
+  drogon::HttpResponsePtr started =
+      send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", start, "s-live"));
+  drogon::HttpResponsePtr detail = send(h.training, &TrainingApi::getSession,
+                                        getRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+                                        "ses_11111111");
+
+  CHECK_EQ(started->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(started)),
+           std::string(R"({"id":"ses_11111111",)"
+                       R"("plan":{"entries":[{"exerciseId":"back-squat","restSeconds":180,)"
+                       R"("sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},)"
+                       R"({"reps":3,"weightKg":90.0},{"reps":1,"weightKg":100.0},)"
+                       R"({"reps":5,"weightKg":80.0}]}],"routine":"Lower A"},)"
+                       R"("routineId":"rt_11111111","startedAt":1700000000000})"));
+  CHECK_EQ(dump(bodyOf(detail)["session"]), dump(bodyOf(started)));
+  CHECK(h.repo.db.sessions[0].plan->entries[0].sets == ramp());
 }
 
 TEST(gym_start_naming_a_routine_this_account_cannot_read_is_404) {
@@ -1526,7 +1561,7 @@ namespace {
 // A finished session of the Legs day, its sets and the routine behind it, pushed straight in.
 void trained(Harness& h, const wm::UserId& caller, const std::string& session,
              std::uint64_t startedAtMs, double weightKg, int reps) {
-  const PlanSnapshot plan{"Legs", {PlanEntry{ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}};
+  const PlanSnapshot plan{"Legs", {PlanEntry{ExerciseId{"back-squat"}, straight(5, 5, 100.0), 180}}};
   h.repo.db.sessions.push_back(Session{sid(session), caller, startedAtMs, startedAtMs + 3'720'000,
                                     rtId("rt_11111111"), plan});
   for (int number = 1; number <= 4; ++number)
@@ -1542,7 +1577,7 @@ TEST(gym_review_carries_the_three_facts_the_record_and_the_band) {
   UserId caller = h.signIn("s-live");
   h.repo.db.routineRows.push_back(Routine{
       rtId("rt_11111111"), caller, "Legs", 0,
-      {RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}});
+      {RoutineEntry{1, ExerciseId{"back-squat"}, straight(5, 5, 100.0), 180}}});
   trained(h, caller, "ses_22222222", 1'699'000'000'000, 90, 10);   // e1RM 120 — the mark
   trained(h, caller, "ses_11111111", 1'700'000'000'000, 105, 5);   // e1RM 122.5 — the record
 
@@ -1554,7 +1589,9 @@ TEST(gym_review_carries_the_three_facts_the_record_and_the_band) {
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"against":{"movements":[{"before":{"reps":10,"sets":4,"weightKg":90.0},)"
                        R"("exerciseId":"back-squat","now":{"reps":5,"sets":4,"weightKg":105.0},)"
-                       R"("planned":{"reps":5,"sets":5,"weightKg":100.0}}],"routine":"Legs",)"
+                       R"("planned":{"sets":[{"reps":5,"weightKg":100.0},{"reps":5,"weightKg":100.0},)"
+                       R"({"reps":5,"weightKg":100.0},{"reps":5,"weightKg":100.0},)"
+                       R"({"reps":5,"weightKg":100.0}]}}],"routine":"Legs",)"
                        R"("sessionId":"ses_22222222","startedAt":1699000000000},)"
                        // previousAt is the SESSION that set the mark, not the set inside it (domain/Review.h).
                        R"("record":{"exerciseId":"back-squat","kind":"e1rm","previous":120.0,)"

@@ -55,28 +55,86 @@ public struct Exercise: Equatable, Codable, Sendable, Identifiable {
     }
 }
 
-// Absent `weightKg` names no target, absent `reps` means max, absent `sets` is the open line, which
-// carries no reps and no weight either. None of the three is ever a zero.
-public struct PlanEntry: Equatable, Codable, Sendable {
-    public let exerciseId: String
-    public let sets: Int?
+// One planned set. Absent reps is max, absent load is last time's Nth working set. The load is rounded
+// onto the ladder's hundredths grid in the constructor — the server's own two decimals, so a decoded
+// load is the load the server holds — and `==` is the element-wise comparison every reader makes.
+public struct SetTarget: Equatable, Codable, Sendable {
     public let reps: Int?
     public let weightKg: Double?
-    public let restSeconds: Int?
 
-    public var isOpen: Bool { sets == nil }
-
-    public init(exerciseId: String, sets: Int? = nil, reps: Int? = nil,
-                weightKg: Double? = nil, restSeconds: Int? = nil) {
-        self.exerciseId = exerciseId
-        self.sets = sets
+    public init(reps: Int? = nil, weightKg: Double? = nil) {
         self.reps = reps
-        self.weightKg = weightKg
-        self.restSeconds = restSeconds
+        self.weightKg = weightKg.map(Ladder.round)
+    }
+
+    // Whether every set names the same reps and the same load — a straight scheme. True of an empty list.
+    public static func agree(_ sets: [SetTarget]) -> Bool {
+        guard let first = sets.first else { return true }
+        return sets.allSatisfy { $0 == first }
     }
 
     enum CodingKeys: String, CodingKey {
-        case exerciseId, sets, reps, weightKg, restSeconds
+        case reps, weightKg
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(reps: try fields.decodeIfPresent(Int.self, forKey: .reps),
+                  weightKg: try fields.decodeIfPresent(Double.self, forKey: .weightKg))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encodeIfPresent(reps, forKey: .reps)
+        try fields.encodeIfPresent(weightKg, forKey: .weightKg)
+    }
+}
+
+// An open line has no `sets` key on the wire — never an empty array, which the log refuses as a zero target.
+extension KeyedEncodingContainer {
+    mutating func encodeScheme(_ sets: [SetTarget], forKey key: Key) throws {
+        guard !sets.isEmpty else { return }
+        try encode(sets, forKey: key)
+    }
+}
+
+// A line's target is its scheme: the sets in lifting order, each naming its own reps and load. No sets
+// is the open line. Rest is still allowed on an open line.
+public struct PlanEntry: Equatable, Codable, Sendable {
+    public let exerciseId: String
+    public let sets: [SetTarget]
+    public let restSeconds: Int?
+
+    public var isOpen: Bool { sets.isEmpty }
+
+    public init(exerciseId: String, sets: [SetTarget] = [], restSeconds: Int? = nil) {
+        self.exerciseId = exerciseId
+        self.sets = sets
+        self.restSeconds = restSeconds
+    }
+
+    // The planned set the Nth working set (0-based) fills; nil when the line is open or past its plan.
+    public func slot(_ workingOrdinal: Int) -> SetTarget? {
+        guard sets.indices.contains(workingOrdinal) else { return nil }
+        return sets[workingOrdinal]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case exerciseId, sets, restSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        exerciseId = try fields.decode(String.self, forKey: .exerciseId)
+        sets = try fields.decodeIfPresent([SetTarget].self, forKey: .sets) ?? []
+        restSeconds = try fields.decodeIfPresent(Int.self, forKey: .restSeconds)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(exerciseId, forKey: .exerciseId)
+        try fields.encodeScheme(sets, forKey: .sets)
+        try fields.encodeIfPresent(restSeconds, forKey: .restSeconds)
     }
 }
 
@@ -372,30 +430,41 @@ public struct LastSet: Equatable, Codable, Sendable, Identifiable {
     }
 }
 
-// Absent `targetReps` is max. Absent `targetSets` is the open row, which carries no reps and no
-// weight either; the server refuses the half-open line. Rest is still allowed on an open row.
+// The scheme is `sets`, one to twenty in lifting order; no sets is the open row. Rest is still allowed
+// on an open row.
 public struct RoutineEntry: Equatable, Codable, Sendable {
     public let position: Int
     public let exerciseId: String
-    public let targetSets: Int?
-    public let targetReps: Int?
-    public let targetWeightKg: Double?
+    public let sets: [SetTarget]
     public let restSeconds: Int?
 
-    public var isOpen: Bool { targetSets == nil }
+    public var isOpen: Bool { sets.isEmpty }
 
-    public init(position: Int, exerciseId: String, targetSets: Int? = nil, targetReps: Int? = nil,
-                targetWeightKg: Double? = nil, restSeconds: Int? = nil) {
+    public init(position: Int, exerciseId: String, sets: [SetTarget] = [], restSeconds: Int? = nil) {
         self.position = position
         self.exerciseId = exerciseId
-        self.targetSets = targetSets
-        self.targetReps = targetReps
-        self.targetWeightKg = targetWeightKg
+        self.sets = sets
         self.restSeconds = restSeconds
     }
 
     enum CodingKeys: String, CodingKey {
-        case position, exerciseId, targetSets, targetReps, targetWeightKg, restSeconds
+        case position, exerciseId, sets, restSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        position = try fields.decode(Int.self, forKey: .position)
+        exerciseId = try fields.decode(String.self, forKey: .exerciseId)
+        sets = try fields.decodeIfPresent([SetTarget].self, forKey: .sets) ?? []
+        restSeconds = try fields.decodeIfPresent(Int.self, forKey: .restSeconds)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(position, forKey: .position)
+        try fields.encode(exerciseId, forKey: .exerciseId)
+        try fields.encodeScheme(sets, forKey: .sets)
+        try fields.encodeIfPresent(restSeconds, forKey: .restSeconds)
     }
 }
 
@@ -432,14 +501,14 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
         }
     }
 
-    // Addressed by position, not movement: a program may hold the same movement twice. nil is nothing
-    // to write — the position is gone, names another movement, or is open.
-    public func retargeting(position: Int, exerciseId: String, toWeightKg weightKg: Double) -> Routine? {
+    // Replaces one line's whole scheme. Addressed by position, not movement: a program may hold the
+    // same movement twice. nil is nothing to write — the position is gone, names another movement, or
+    // is open.
+    public func retargeting(position: Int, exerciseId: String, to sets: [SetTarget]) -> Routine? {
         guard let entry = entries.first(where: { $0.position == position }),
               entry.exerciseId == exerciseId, !entry.isOpen else { return nil }
         let moved = RoutineEntry(position: entry.position, exerciseId: entry.exerciseId,
-                                 targetSets: entry.targetSets, targetReps: entry.targetReps,
-                                 targetWeightKg: weightKg, restSeconds: entry.restSeconds)
+                                 sets: sets, restSeconds: entry.restSeconds)
         return Routine(id: id, name: name, position: self.position, lastTrainedAtMs: lastTrainedAtMs,
                        entries: entries.map { $0.position == position ? moved : $0 },
                        history: history)
@@ -608,32 +677,15 @@ public struct Against: Equatable, Codable, Sendable {
         }
     }
 
-    // Every field optional: an open row has no target to be measured against.
-    public struct Target: Equatable, Codable, Sendable {
-        public let sets: Int?
-        public let reps: Int?
-        public let weightKg: Double?
-
-        public var isOpen: Bool { sets == nil }
-
-        public init(sets: Int? = nil, reps: Int? = nil, weightKg: Double? = nil) {
-            self.sets = sets
-            self.reps = reps
-            self.weightKg = weightKg
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case sets, reps, weightKg
-        }
-    }
-
+    // `planned` is the scheme the frozen plan asked for — `{}` on the wire for an open line, so an
+    // empty list here — and absent when the session had no plan or the plan never named the movement.
     public struct Movement: Equatable, Codable, Sendable {
         public let exerciseId: String
         public let now: Effort
         public let before: Effort?
-        public let planned: Target?
+        public let planned: [SetTarget]?
 
-        public init(exerciseId: String, now: Effort, before: Effort? = nil, planned: Target? = nil) {
+        public init(exerciseId: String, now: Effort, before: Effort? = nil, planned: [SetTarget]? = nil) {
             self.exerciseId = exerciseId
             self.now = now
             self.before = before
@@ -642,6 +694,33 @@ public struct Against: Equatable, Codable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case exerciseId, now, before, planned
+        }
+
+        enum PlannedKeys: String, CodingKey {
+            case sets
+        }
+
+        public init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            exerciseId = try fields.decode(String.self, forKey: .exerciseId)
+            now = try fields.decode(Effort.self, forKey: .now)
+            before = try fields.decodeIfPresent(Effort.self, forKey: .before)
+            guard fields.contains(.planned) else {
+                planned = nil
+                return
+            }
+            let scheme = try fields.nestedContainer(keyedBy: PlannedKeys.self, forKey: .planned)
+            planned = try scheme.decodeIfPresent([SetTarget].self, forKey: .sets) ?? []
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(exerciseId, forKey: .exerciseId)
+            try fields.encode(now, forKey: .now)
+            try fields.encodeIfPresent(before, forKey: .before)
+            guard let planned else { return }
+            var scheme = fields.nestedContainer(keyedBy: PlannedKeys.self, forKey: .planned)
+            try scheme.encodeScheme(planned, forKey: .sets)
         }
     }
 
@@ -671,7 +750,10 @@ public struct Against: Equatable, Codable, Sendable {
     }
 }
 
-// Within "last time" the weight comes from the last of its rows and the reps from the first.
+// What the pad opens on for the coming working set. On a scheme whose sets disagree it is that set's
+// own slot, filled from last time's Nth working set where the slot is silent; everywhere else the last
+// working set carries forward, and before any is lifted the plan's first set, then last time (the
+// weight it ended on, the reps it started on), then the empty bar.
 public struct Prefill: Equatable, Sendable {
     public static let emptyBarKg = 20.0
     public static let emptyBarReps = 5
@@ -685,17 +767,26 @@ public struct Prefill: Equatable, Sendable {
         self.reps = reps
     }
 
-    // The sticky carry-forward crosses working sets only. Reps are floored at 1 — the server refuses
+    // Only working sets count, today's and last time's. Reps are floored at 1 — the server refuses
     // 0 — and weight takes no such clamp: the load is signed and unbounded.
     public init(todaySets: [TrainingSet], planEntry: PlanEntry?, lastTime: LastTime?) {
-        if let sticky = todaySets.last(where: { $0.kind == .working }) {
+        let working = todaySets.filter { $0.kind == .working }
+        let history = lastTime?.sets.filter { $0.kind == .working } ?? []
+        let scheme = planEntry?.sets ?? []
+        let coming = working.count
+
+        if !SetTarget.agree(scheme), let slot = planEntry?.slot(coming) {
+            let nth = history.indices.contains(coming) ? history[coming] : nil
+            self.init(weightKg: slot.weightKg ?? nth?.weightKg ?? working.last?.weightKg ?? Prefill.emptyBarKg,
+                      reps: max(1, slot.reps ?? nth?.reps ?? working.last?.reps ?? Prefill.emptyBarReps))
+            return
+        }
+        if let sticky = working.last {
             self.init(weightKg: sticky.weightKg, reps: max(1, sticky.reps))
             return
         }
-        let history = lastTime?.sets ?? []
-        let weight = planEntry?.weightKg ?? history.last?.weightKg ?? Prefill.emptyBarKg
-        let reps = planEntry.flatMap(\.reps) ?? history.first?.reps ?? Prefill.emptyBarReps
-        self.init(weightKg: weight, reps: max(1, reps))
+        self.init(weightKg: scheme.first?.weightKg ?? history.last?.weightKg ?? Prefill.emptyBarKg,
+                  reps: max(1, scheme.first?.reps ?? history.first?.reps ?? Prefill.emptyBarReps))
     }
 }
 
@@ -867,28 +958,37 @@ public struct ExerciseRename: Equatable, Codable, Sendable {
 }
 
 public struct RoutineWrite: Equatable, Codable, Sendable {
-    // No `position`: entry order is the routine order. An open line omits `targetSets` and carries no
-    // reps and no weight either; a zero is refused.
+    // No `position`: entry order is the routine order. An open line omits `sets`; an empty array is
+    // refused as a zero target.
     public struct Entry: Equatable, Codable, Sendable {
         public let exerciseId: String
-        public let targetSets: Int?
-        public let targetReps: Int?
-        public let targetWeightKg: Double?
+        public let sets: [SetTarget]
         public let restSeconds: Int?
 
-        public var isOpen: Bool { targetSets == nil }
+        public var isOpen: Bool { sets.isEmpty }
 
-        public init(exerciseId: String, targetSets: Int? = nil, targetReps: Int? = nil,
-                    targetWeightKg: Double? = nil, restSeconds: Int? = nil) {
+        public init(exerciseId: String, sets: [SetTarget] = [], restSeconds: Int? = nil) {
             self.exerciseId = exerciseId
-            self.targetSets = targetSets
-            self.targetReps = targetReps
-            self.targetWeightKg = targetWeightKg
+            self.sets = sets
             self.restSeconds = restSeconds
         }
 
         enum CodingKeys: String, CodingKey {
-            case exerciseId, targetSets, targetReps, targetWeightKg, restSeconds
+            case exerciseId, sets, restSeconds
+        }
+
+        public init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            exerciseId = try fields.decode(String.self, forKey: .exerciseId)
+            sets = try fields.decodeIfPresent([SetTarget].self, forKey: .sets) ?? []
+            restSeconds = try fields.decodeIfPresent(Int.self, forKey: .restSeconds)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(exerciseId, forKey: .exerciseId)
+            try fields.encodeScheme(sets, forKey: .sets)
+            try fields.encodeIfPresent(restSeconds, forKey: .restSeconds)
         }
     }
 
@@ -909,8 +1009,7 @@ public struct RoutineWrite: Equatable, Codable, Sendable {
         Routine(id: id, name: name, position: position,
                 entries: entries.enumerated().map { index, entry in
                     RoutineEntry(position: index + 1, exerciseId: entry.exerciseId,
-                                 targetSets: entry.targetSets, targetReps: entry.targetReps,
-                                 targetWeightKg: entry.targetWeightKg, restSeconds: entry.restSeconds)
+                                 sets: entry.sets, restSeconds: entry.restSeconds)
                 })
     }
 
@@ -919,13 +1018,11 @@ public struct RoutineWrite: Equatable, Codable, Sendable {
         self.init(id: routine.id, name: routine.name, position: routine.position,
                   entries: routine.entries
                       .sorted { $0.position < $1.position }
-                      .map { Entry(exerciseId: $0.exerciseId, targetSets: $0.targetSets,
-                                   targetReps: $0.targetReps, targetWeightKg: $0.targetWeightKg,
-                                   restSeconds: $0.restSeconds) })
+                      .map { Entry(exerciseId: $0.exerciseId, sets: $0.sets, restSeconds: $0.restSeconds) })
     }
 
-    // Movements in the order performed, `targetSets` the count of working sets, `targetReps` the modal
-    // reps (a tie goes to the smaller), `targetWeightKg` the heaviest load. nil when there are none.
+    // Movements in the order performed, each line's scheme the working sets as lifted, one planned set
+    // per set. nil when there are none.
     public init?(named name: String, from sets: [TrainingSet], position: Int, id: String = Ids.routine()) {
         let working = sets.filter { $0.kind == .working }.sorted { $0.completedAtMs < $1.completedAtMs }
         var order: [String] = []
@@ -933,16 +1030,9 @@ public struct RoutineWrite: Equatable, Codable, Sendable {
         guard !order.isEmpty else { return nil }
 
         self.init(id: id, name: name, position: position, entries: order.map { exerciseId in
-            let performed = working.filter { $0.exerciseId == exerciseId }
-            let counts = Dictionary(grouping: performed, by: \.reps).mapValues(\.count)
-            let modal = counts.sorted { left, right in
-                if left.value != right.value { return left.value > right.value }
-                return left.key < right.key
-            }.first?.key ?? 1
-            return Entry(exerciseId: exerciseId,
-                         targetSets: performed.count,
-                         targetReps: modal,
-                         targetWeightKg: performed.map(\.weightKg).max())
+            Entry(exerciseId: exerciseId,
+                  sets: working.filter { $0.exerciseId == exerciseId }
+                      .map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) })
         })
     }
 

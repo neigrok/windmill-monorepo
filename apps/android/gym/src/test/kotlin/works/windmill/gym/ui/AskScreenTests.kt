@@ -4,10 +4,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,6 +43,7 @@ import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Threads
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
@@ -232,6 +235,47 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    // The card is a skim: its rows draw the compact readout only — one set moved, or both schemes in
+    // the readout formula — never the ladder the review sheet unfolds to.
+    @Test
+    fun theCardDrawsTheCompactReadoutAndNeverTheLadder() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        val routine = runBlocking {
+            (store.saveRoutine(RoutineDraft(name = "Lower A").adding("back-squat").adding("deadlift")) as GymResult.Ok).value
+        }
+        val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
+        val setFourMoved = ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
+            before = ProposalTargets(ramp),
+            after = ProposalTargets(ramp.mapIndexed { at, set -> if (at == 3) SetTarget(1, 102.5) else set }))
+        val reshaped = ProposalChange(position = 2, kind = ChangeKind.Retargeted, exerciseId = "deadlift",
+            before = ProposalTargets(List(5) { SetTarget(5, 80.0) }), after = ProposalTargets(ramp))
+        server.propose(Proposal(
+            id = "prop_1", routineId = routine.id, state = ProposalState.Pending, summary = "A ramp.",
+            changeCount = 2, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
+            baseRevision = routine.revision, baseName = "Lower A", name = "Lower A",
+            changes = listOf(setFourMoved, reshaped),
+        ))
+        val answered = AskExchange(
+            question = "ramp it?",
+            answer = AskAnswer(answer = "A ramp.", read = read, proposals = listOf("prop_1")),
+        )
+        room(store, thread = listOf(answered), cap = null, doors = mutableListOf())
+
+        compose.onNodeWithText("Proposal · Lower A").assertIsDisplayed()
+        compose.onNodeWithText("Back Squat").assertIsDisplayed()
+        compose.onNodeWithText(setFourMoved.compactLine).assertIsDisplayed()
+        compose.onNodeWithText("Deadlift").assertIsDisplayed()
+        compose.onNodeWithText(reshaped.compactLine).assertIsDisplayed()
+        assertEquals(listOf("set 4 · 100 × 1 → 102.5 × 1", "sets · 5 × 5 · 80 → 5 × 1–5 · 60–100"),
+                     listOf(setFourMoved.compactLine, reshaped.compactLine))
+        compose.onAllNodes(hasText("60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5")).assertCountEquals(0)
+        compose.onAllNodes(hasText("sets")).assertCountEquals(0)
+        compose.onAllNodes(hasText("show the sets")).assertCountEquals(0)
+        scope.cancel()
+    }
+
     // The card was minted off one read of the log; the decision is the log's reply, and the two must
     // not stand on one screen saying different things about one act.
     @Test
@@ -247,7 +291,7 @@ class AskScreenTests {
             changeCount = 1, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
             baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
             changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
-                before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))),
+                before = ProposalTargets(List(3) { SetTarget(5) }), after = ProposalTargets(List(5) { SetTarget(3) }))),
         ))
         val answered = AskExchange(
             question = "heavier?",
@@ -289,7 +333,7 @@ class AskScreenTests {
             changeCount = 1, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
             baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
             changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
-                before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))),
+                before = ProposalTargets(List(3) { SetTarget(5) }), after = ProposalTargets(List(5) { SetTarget(3) }))),
         ))
         val answered = AskExchange(
             question = "heavier?",

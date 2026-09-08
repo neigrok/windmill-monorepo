@@ -40,8 +40,9 @@ void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
     outcome = program_->createRoutine(*caller, parseRoutineWrite(*json), std::nullopt);
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that routine"));
+  } catch (const InvalidTraining& refused) {
+    // The domain's own sentence, verbatim: a target sheet draws it under the row that carries it.
+    cb(error(drogon::k400BadRequest, refused.what()));
     return;
   }
   if (outcome.error == RoutineWriteError::idTaken) {
@@ -93,8 +94,8 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
     outcome = program_->replaceRoutine(*caller, RoutineId{id}, parseRoutineWrite(*json));
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that routine"));
+  } catch (const InvalidTraining& refused) {
+    cb(error(drogon::k400BadRequest, refused.what()));
     return;
   }
   if (outcome.error == RoutineWriteError::notFound) {

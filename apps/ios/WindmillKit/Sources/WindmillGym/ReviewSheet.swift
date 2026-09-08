@@ -20,6 +20,8 @@ struct ReviewSheet: View {
     @State private var deciding = false
     @State private var confirmingTurnDown = false
     @State private var expanded: Set<Int> = []
+    // The `sets` moves whose ladder is open, keyed `"{position}-{field}"`.
+    @State private var unfolded: Set<String> = []
     @State private var gate = ReviewGate()
 
     var body: some View {
@@ -144,7 +146,7 @@ struct ReviewSheet: View {
                 switch block {
                 case .row(_, .renamed(let before, let after)):
                     card(title: "The routine’s name", ink: skin.ink, ground: skin.surface, edge: skin.line) {
-                        move(ProposalChange.Move(field: "", before: before, after: after))
+                        MoveLine(field: "", before: before, after: after)
                     }
                 case .row(_, .entry(let change, let follows)):
                     entry(change, follows: follows)
@@ -188,7 +190,7 @@ struct ReviewSheet: View {
                 .foregroundStyle(skin.inkDim)
             Spacer(minLength: WindmillSpace.x2)
             if let after = change.after {
-                Text(Readout.target(sets: after.sets, reps: after.reps, weightKg: after.weightKg))
+                Text(Readout.target(after.sets))
                     .font(GymType.numeral(12.5))
                     .foregroundStyle(skin.inkFaint)
             }
@@ -215,31 +217,48 @@ struct ReviewSheet: View {
             }
         case .retargeted:
             card(title: name, ink: skin.ink, ground: skin.surface, edge: skin.line) {
-                ForEach(Array(change.moves.enumerated()), id: \.offset) { _, moved in move(moved) }
+                ForEach(Array(change.moves.enumerated()), id: \.offset) { _, moved in
+                    move(moved, at: change.position)
+                }
             }
         case .kept:
             kept(change)
         }
     }
 
-    private func move(_ moved: ProposalChange.Move) -> some View {
-        HStack(spacing: WindmillSpace.x2) {
-            if !moved.field.isEmpty {
-                Text(moved.field)
-                    .foregroundStyle(skin.inkFaint)
+    // A scheme that changed shape prints the readout and unfolds on tap to the ladder, set by set,
+    // because a lifter deciding on a ramp has to see the ramp; folded until asked, since the card is
+    // the skim and the ladder is the document. Every other move is one line.
+    @ViewBuilder
+    private func move(_ moved: ProposalChange.Move, at position: Int) -> some View {
+        if let ladder = moved.unfolded {
+            let key = "\(position)-\(moved.field)"
+            let open = unfolded.contains(key)
+            let line = MoveLine(field: moved.field, before: moved.before, after: moved.after)
+            Button {
+                if open { unfolded.remove(key) } else { unfolded.insert(key) }
+            } label: {
+                HStack(spacing: WindmillSpace.x2) {
+                    line
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(skin.inkFaint)
+                }
+                .contentShape(Rectangle())
             }
-            Text(moved.before)
-                .foregroundStyle(skin.inkDim)
-                .strikethrough(true, color: skin.inkFaint)
-            Text("→")
-                .foregroundStyle(skin.inkFaint)
-            Text(moved.after)
-                .font(GymType.numeral(12.5, .bold))
-                .foregroundStyle(skin.targetInk)
-            Spacer(minLength: 0)
+            .accessibilityLabel(line.spoken)
+            .accessibilityHint(open ? Self.foldsTheLadder : Self.showsTheLadder)
+            if open {
+                LadderLines(before: ladder.before, after: ladder.after)
+                    .padding(.leading, WindmillSpace.x3)
+            }
+        } else {
+            MoveLine(field: moved.field, before: moved.before, after: moved.after)
         }
-        .font(GymType.numeral(12.5))
     }
+
+    static let showsTheLadder = "Shows the sets one by one"
+    static let foldsTheLadder = "Folds the sets away"
 
     private func card<Body: View>(title: String, ink: Color, ground: Color, edge: Color,
                                   @ViewBuilder body: () -> Body) -> some View {
@@ -357,6 +376,64 @@ struct ReviewSheet: View {
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+}
+
+// One moved value in the diff's own shape: the field leading in the faint ink, what stood struck
+// through in the dim ink, what would stand bold in the target ink. The review's rows and the
+// deviation sheet's ladder are this one row.
+struct MoveLine: View {
+    let field: String
+    let before: String
+    let after: String
+
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        HStack(spacing: WindmillSpace.x2) {
+            if !field.isEmpty {
+                Text(field)
+                    .foregroundStyle(skin.inkFaint)
+            }
+            Text(before)
+                .foregroundStyle(skin.inkDim)
+                .strikethrough(true, color: skin.inkFaint)
+            Text("→")
+                .foregroundStyle(skin.inkFaint)
+            Text(after)
+                .font(GymType.numeral(12.5, .bold))
+                .foregroundStyle(skin.targetInk)
+            Spacer(minLength: 0)
+        }
+        .font(GymType.numeral(12.5))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    // The line as written: `set 4 · 100 × 1 → 102.5 × 1`.
+    var spoken: String {
+        guard !field.isEmpty else { return "\(before) → \(after)" }
+        return "\(field) · \(before) → \(after)"
+    }
+}
+
+// A scheme before and after, one `MoveLine` per set; a side the shorter scheme never reached prints a dash.
+struct LadderLines: View {
+    let before: [String]
+    let after: [String]
+
+    var rows: [MoveLine] {
+        (0..<max(before.count, after.count)).map { index in
+            MoveLine(field: "set \(index + 1)",
+                     before: before.indices.contains(index) ? before[index] : "—",
+                     after: after.indices.contains(index) ? after[index] : "—")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in row }
+        }
+    }
 }
 
 // Apply opens only once the diff's last row has been inside the viewport — or the whole diff fits without a scroll

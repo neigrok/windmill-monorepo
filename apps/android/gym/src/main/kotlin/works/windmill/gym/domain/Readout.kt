@@ -31,15 +31,43 @@ object Readout {
     // A rep target a routine declines to set is `max` — never a zero and never a blank.
     fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
 
-    // An absent weight — and a literal zero, which is the absence of a load — prints nothing, while a
-    // band-assisted −20 prints.
     const val openTarget = "open"
 
-    fun target(sets: Int?, reps: Int?, weightKg: Double?): String {
-        if (sets == null) return openTarget
-        val count = "$sets × ${repTarget(reps)}"
-        if (weightKg == null || weightKg == 0.0) return count
-        return "$count · ${weight(weightKg)}"
+    // One set in the logged pill's own shape, `{load} × {reps}`, with the nulls as their placeholders:
+    // `100 × 5` · `100 × max` · `last × 5`.
+    fun setTarget(set: SetTarget): String =
+        "${set.weightKg?.let(::weight) ?: "last"} × ${repTarget(set.reps)}"
+
+    // A scheme: `{n} × {reps or lo–hi} · {load or lo–hi}`, a one-set scheme included — `1 × 5 · 100`.
+    // A column whose sets agree prints its one value; one whose sets disagree prints its range over
+    // the named values with the placeholder as the high end — `5–max` when any set is max, `60–last`
+    // when any set is last time's — and the load column is left off where no set names a load.
+    fun target(sets: List<SetTarget>): String {
+        if (sets.isEmpty()) return openTarget
+        return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
+    }
+
+    // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
+    fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)
+
+    private fun repsColumn(sets: List<SetTarget>): String {
+        val named = sets.mapNotNull { it.reps }
+        if (named.isEmpty()) return repTarget(null)
+        val low = named.min()
+        if (sets.any { it.reps == null }) return "$low–max"
+        val high = named.max()
+        if (low == high) return low.toString()
+        return "$low–$high"
+    }
+
+    private fun loadColumn(sets: List<SetTarget>): String {
+        val named = sets.mapNotNull { it.weightKg }.map(Ladder::round)
+        if (named.isEmpty()) return ""
+        val low = named.min()
+        if (sets.any { it.weightKg == null }) return " · ${weight(low)}–last"
+        val high = named.max()
+        if (low == high) return " · ${weight(low)}"
+        return " · ${weight(low)}–${weight(high)}"
     }
 
     fun time(ms: Long): String {

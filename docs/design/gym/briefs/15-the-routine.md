@@ -29,14 +29,15 @@ So Save is disabled until the field has a character. That is a field with the ke
 a screen — the interstitial existed because a name is required, and the requirement survives while the
 screen does not.
 
-## The target sheet is three fields
+## The target sheet is typed
 
-It held **five affordances for a three-field object** — tap-to-type, *use last time*, a ± plate
-ladder, *take it to max*, and *leave it open · decide at the rack*. One remains, and it is the
-typing.
+The sheet is `17-set-targets.md`'s: a **head** of three fields — sets, reps, weight — that speaks
+about every set at once, and a **ladder** of one row per set beneath it. Typing is the only
+affordance; there is no *use last time*, no ± plate ladder, no *take it to max* and no
+*leave it open* control.
 
-> **Three fields — sets, reps, weight. No escape hatch, because clearing the first one *is* the
-> escape.**
+> **Three head fields — sets, reps, weight. No escape hatch, because clearing the first one *is*
+> the escape.**
 
 And the move that removes four affordances without losing a single state:
 
@@ -51,14 +52,11 @@ already in the domain and was previously exposed as **two extra buttons**. Now t
 the null, and it explains itself where it is, in one word, instead of in a control the lifter has to
 find and a caption explaining what the control does.
 
-**And *leave it open · decide at the rack* is not a separate act at all.** The domain says so:
-`Routine.cpp:17` refuses an entry that names reps or a load without naming sets — *"an open entry
-names no sets, so it names no reps and no weight either."* So an open line is exactly a line whose
-sets are cleared — and clearing that field while the other two hold values is **refused**, not
-cascaded. See the strings below: the illegal shape has two ways in and each takes its own sentence.
-
-Five affordances are **three fields**, the escape is one of them, and the rule the domain has always
-enforced is visible in the interface instead of hidden behind a button that did it silently.
+**And *leave it open · decide at the rack* is not a separate act at all.** An open line is exactly a
+line whose sets are cleared: while Sets is empty the other two head fields are disabled and the
+ladder is hidden, not thrown away (`17-set-targets.md`), so nothing typed can be lost and nothing
+has to be refused. Retyping a count brings the same rows back; only the commit of an open line
+drops them.
 
 **The ± ladder comes off this sheet.** It belongs at the rack, where plate granularity is what you are
 actually reasoning about, and it is drawn there already. In a planning sheet you know the number you
@@ -239,20 +237,10 @@ shows what was typed, so there is nothing to explain. Refusing a comma would be 
 the world writes a number. No hint stands under the field — on any surface, on this sheet or on the
 rack keypad — because a hint whose deletion breaks nothing is decoration.
 
-**The illegal shape has two ways in, and each takes its own sentence, because each has its own way
-out.** Only one refusal is ever drawn at a time — the refused keystroke first, then the line's shape,
-then the three fields topmost first.
-
-> **Clearing sets while reps or weight hold values: Clear reps and weight first — an open line names
-> neither.** The keystroke does not land: the field **keeps its value and that value is selected**,
-> so the next digit replaces the number rather than appending to it. Retyping a one-digit count is
-> the commonest edit on this sheet and it must not turn `5` into `54`.
-
-> **Typing reps or weight onto a line whose sets are already empty: Name the sets first — an open
-> line names neither.** That keystroke *does* land — refusing it would throw away what the lifter
-> just asked for — and the **commit** is refused instead. Nothing typed is ever dropped in silence,
-> and the remedy named is the one that fits: the other sentence would tell them to clear what they
-> have just typed.
+**Only one refusal is ever drawn at a time** — the count first, then the ladder top to bottom, reps
+before load — under the head field when every row shares the fault and under the row that carries
+it otherwise (`17-set-targets.md`). An open line has no illegal shape to refuse: the fields that
+could produce one are disabled while Sets is empty.
 
 **Save with no name** keeps the two strings the product already ships, shown one at a time, not
 concatenated: *Name it to save it.* then *A routine is at least one movement.* The first of them is
@@ -263,7 +251,7 @@ because the finish card's keep-as-routine form draws the same sentence under the
 
 **The open line** keeps its sentence on every surface, not just one:
 *You decide the numbers at the rack.* It has **one placement**: the target sheet, while the line on
-that sheet is open, drawn **above** the three fields beside the never-logged note (anything under a
+that sheet is open, drawn **above** the head's fields beside the never-logged note (anything under a
 field is that field's own note) — the moment a lifter leaves a line open. The lists — the editor's
 and the routine's own screen — draw the word `open` in a row's target column and no sentence: the
 word says *which* rows, and the sheet says what it means the moment a line is touched. It is
@@ -271,12 +259,14 @@ suppressed while a refusal stands: a blessing and a refusal of the same state ar
 together. One constant per surface — `OPEN_LINE` (`routines.js`), `TargetEntry.openLine`
 (`TargetEntry.swift`, `Program.kt`) — and one draw site each.
 
-**The sign control is `±`, everywhere**, and **its spoken name is *Flip the sign — band-assisted***.
-A standalone `−` reads as *decrement* in this product — that is what it means in the stepper on the
+**The sign control is `±`**, and **its spoken name is *Flip the sign — band-assisted***. A
+standalone `−` reads as *decrement* in this product — that is what it means in the stepper on the
 adjacent sheet — and it cannot express "back to positive". The name is pinned because the glyph reads
-as nothing aloud, and it is one control met on two screens: the planning sheet's weight field and the
-rack keypad. The name's second half is where the one fact about a negative load lives — it is
-band-assisted work — now that no hint beside the field or under the pad spells it.
+as nothing aloud, and it is one control met on two screens: the load fields of a **bodyweight**
+movement's target sheet — the one equipment on which a negative load means something — and the rack
+keypad, which keeps it for every movement. A barbell's sheet has no sign key
+(`17-set-targets.md`). The name's second half is where the one fact about a negative load lives —
+it is band-assisted work — now that no hint beside the field or under the pad spells it.
 
 **A key that is not a character says what it does.** The rack pad is thirteen keys — a twelve-key
 grid of the ten digits, `±` and the decimal separator, plus `⌫` in the action row. Eleven of them

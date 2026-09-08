@@ -4,25 +4,21 @@
 // optional is omitted, never null. Nothing here mints an id, invents a name, or reads a routine out
 // of a plan snapshot: an edit is always a read of the routine itself, changed and written whole.
 
-import { round } from './logger/ladder.js';
+import { round, snap } from './logger/ladder.js';
 import {
-  groupByExercise, isUntested, proposalHref, shortDayLabel, weekdayName, workingSetsOf,
+  entryLabel, groupByExercise, isUntested, OPEN_TARGET, proposalHref, schemeAgrees, shortDayLabel,
+  weekdayName, workingSetsOf,
 } from './log.js';
 import { conversationOf, historyLabel, isPending, sourceLabel } from './proposals.js';
 
-// THE ROUTINE TARGET'S BANDS, and nothing else's. A target may ask for 1–100 reps (Routine.cpp:23)
-// and 1–20 sets; the LIVE LOGGER's reps band is 1–99 and lives in logger/entry.js, which enforces it
-// for the fix sheet. The two are different numbers on two screens and each file says which it holds.
+// THE ROUTINE TARGET'S BANDS, and nothing else's. A set may ask for 1–100 reps (Routine.cpp:23) and a
+// scheme holds 1–20 sets; the LIVE LOGGER's reps band is 1–99 and lives in logger/entry.js, which
+// enforces it for the fix sheet. The two are different numbers on two screens and each file says
+// which it holds.
 export const ENTRY_SETS_MIN = 1;
 export const ENTRY_SETS_MAX = 20;
 export const ENTRY_REPS_MIN = 1;
 export const ENTRY_REPS_MAX = 100;
-
-// An absent set target is the OPEN line, not a clamped one, and passes through.
-function clampSets(sets) {
-  if (sets == null) return null;
-  return Math.min(ENTRY_SETS_MAX, Math.max(ENTRY_SETS_MIN, sets));
-}
 
 // An absent rep target is the wire's `max`, not a clamped one, and passes through.
 function clampReps(reps) {
@@ -30,27 +26,21 @@ function clampReps(reps) {
   return Math.min(ENTRY_REPS_MAX, Math.max(ENTRY_REPS_MIN, reps));
 }
 
-// The most common rep count, a tie going to the set performed earliest.
-function modalReps(performed) {
-  const counted = new Map();
-  for (const set of performed) counted.set(set.reps, (counted.get(set.reps) ?? 0) + 1);
-  return performed.reduce((best, set) => (counted.get(set.reps) > counted.get(best.reps) ? set : best)).reps;
+// One set on the wire: `reps` then `weightKg`, each present only when named. The one place a set's
+// key order is written, so a draft set and a written set are the same bytes.
+function setWrite(set) {
+  return {
+    ...(set.reps == null ? {} : { reps: set.reps }),
+    ...(set.weightKg == null ? {} : { weightKg: set.weightKg }),
+  };
 }
 
-// An entry as a write carries no position, and an unset target is omitted rather than sent as a zero.
-// An open line carries nothing but its rest: the store refuses a half-open one 400.
+// An entry as a write carries no position. An open line carries nothing but its rest: an entry with
+// no `sets` key is the open line, and an empty list is refused by the store like a zero target.
 function entryWrite(entry) {
-  if (entry.targetSets == null) {
-    return {
-      exerciseId: entry.exerciseId,
-      ...(entry.restSeconds == null ? {} : { restSeconds: entry.restSeconds }),
-    };
-  }
   return {
     exerciseId: entry.exerciseId,
-    targetSets: entry.targetSets,
-    ...(entry.targetReps == null ? {} : { targetReps: entry.targetReps }),
-    ...(entry.targetWeightKg == null ? {} : { targetWeightKg: entry.targetWeightKg }),
+    ...(entry.sets == null ? {} : { sets: entry.sets.map(setWrite) }),
     ...(entry.restSeconds == null ? {} : { restSeconds: entry.restSeconds }),
   };
 }
@@ -69,8 +59,9 @@ export function routineWrite(routine, readRevision = null) {
   return write;
 }
 
-// In the order performed: targetSets is how many working sets there were, targetWeightKg the heaviest
-// load, targetReps the modal count. Rest is omitted. A movement with no working set is not in it.
+// In the order performed, every working set transcribed as its own slot — the load as lifted, zero
+// included — clipped at the scheme's twenty. Rest is omitted. A movement with no working set is not
+// in it.
 export function routineFromSession({ id, name, position = 0, sets }) {
   const performed = groupByExercise(workingSetsOf(sets));
   return {
@@ -79,9 +70,7 @@ export function routineFromSession({ id, name, position = 0, sets }) {
     position,
     entries: performed.map(([exerciseId, done]) => ({
       exerciseId,
-      targetSets: clampSets(done.length),
-      targetReps: clampReps(modalReps(done)),
-      targetWeightKg: done.reduce((top, set) => Math.max(top, set.weightKg), done[0].weightKg),
+      sets: done.slice(0, ENTRY_SETS_MAX).map((set) => ({ reps: clampReps(set.reps), weightKg: set.weightKg })),
     })),
   };
 }
@@ -124,18 +113,7 @@ export function entryDroppedLine(movement) {
 
 // Both conditions: the routine untested — the store's `lastTrainedAt` absent — AND the row still open.
 export function saysNeverLogged(routine, entry) {
-  return isUntested(routine) && entry.targetSets == null;
-}
-
-// No absence here is a clamped value: null weight, null rep target and null set target each mean
-// something, so the clamp lets each pass and clearing one is the only way back.
-export function withTarget(entry, change) {
-  const changed = { ...entry, ...change };
-  return {
-    ...changed,
-    targetSets: clampSets(changed.targetSets),
-    targetReps: clampReps(changed.targetReps),
-  };
+  return isUntested(routine) && isOpenEntry(entry);
 }
 
 // The sheet hands back a WHOLE entry and this swaps one row for it — never a merge, because the row
@@ -155,53 +133,106 @@ export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';
 export const OPEN_LINE = 'You decide the numbers at the rack.';
 
 export function isOpenEntry(entry) {
-  return entry.targetSets == null;
+  return entry.sets == null;
 }
 
-// ── The three typed fields ──────────────────────────────────────────────────────────────────────
+// The one button is the sheet's own readout: the scheme's reading while every set agrees, and the
+// count alone once they do not — the ladder above it has already said the rest.
+export function commitLabel(entry) {
+  if (isOpenEntry(entry)) return `Set · ${OPEN_TARGET}`;
+  if (schemeAgrees(entry.sets)) return `Set · ${entryLabel(entry)}`;
+  return `Set · ${entry.sets.length} sets`;
+}
+
+// ── The sheet's fields ──────────────────────────────────────────────────────────────────────────
 // The sheet holds TEXT, not numbers: what was typed is what is drawn, and a field that refuses keeps
 // what the lifter put in it so they can see the thing being refused. Emptying a field IS how it is
-// cleared, and the placeholder says what empty means.
+// cleared, and the placeholder says what empty means. `sets` is the head's count; `rows` is the
+// ladder, one row per set, and it outlives an emptied count — hidden, not thrown away.
 export const OPEN_PLACEHOLDER = 'open';
 export const MAX_PLACEHOLDER = 'max';
 export const LAST_TIME_PLACEHOLDER = 'last time';
+// The head's one new word: a column whose rows disagree.
+export const VARIES_PLACEHOLDER = 'varies';
+
+// The sheet's chrome, pinned in briefs/17-set-targets.md: with the commit `Set · 5 sets` it is
+// fourteen words at first paint.
+export const EVERY_SET = 'Every set';
+export const SET_BY_SET = 'Set by set';
+export const FILL = 'Fill';
+export const RAMP_UP = 'Ramp up';
+export const MATCH_SET_ONE = 'Match set 1';
+export const ADD_SET = 'Add set';
+export const SHEET_CHROME = [EVERY_SET, 'Sets', 'Reps', 'Weight', SET_BY_SET, FILL, ADD_SET];
 
 // Pinned in briefs/15-the-routine.md. The reps band here is the ROUTINE TARGET's 1–100; the live
-// logger's 1–99 sentence is logger/entry.js's.
+// logger's 1–99 sentence is logger/entry.js's. Each is drawn under the row that carries the fault.
 export const ONE_DECIMAL = 'One decimal point only.';
 export const NOT_A_NUMBER = 'That is not a number yet.';
 export const OVER_MAX_LOAD = 'Over 500 kg — check the number.';
 export const REPS_BAND = 'Whole reps, 1 to 100.';
 export const SETS_BAND = 'Sets, 1 to 20.';
 export const ZERO_TARGET = 'A zero target is no target — clear the field instead.';
-export const CLEAR_REPS_AND_WEIGHT = 'Clear reps and weight first — an open line names neither.';
-// The same shape reached from the other side — a number typed onto a line whose sets are empty — and
-// the remedy is the opposite one, so it cannot be said in the sentence above. Not pinned by the
-// brief: the second half is the pinned sentence's, and the first names the only way out.
-export const NAME_SETS_FIRST = 'Name the sets first — an open line names neither.';
 
 // The store's ceiling on a load, the same number the live logger refuses past.
 export const MAX_LOAD_KG = 500;
 
-const FIELDS = ['sets', 'reps', 'weight'];
+const BLANK_ROW = { reps: '', weight: '' };
 
-// The sheet opens on what the row HOLDS and invents nothing: an open row opens with three empty
-// fields, so the placeholders — `open`, `max`, `last time` — are read on the row they are true of
+// The sheet opens on what the row HOLDS and invents nothing: an open row opens with no count and no
+// rows, so the placeholders — `open`, `max`, `last time` — are read on the row they are true of
 // rather than hidden behind numbers nobody typed.
 export function targetFieldsOf(entry) {
   return {
-    sets: entry.targetSets == null ? '' : String(entry.targetSets),
-    reps: entry.targetReps == null ? '' : String(entry.targetReps),
-    weight: entry.targetWeightKg == null ? '' : String(entry.targetWeightKg),
-    // The one refusal that cannot be re-derived from the text, because the keystroke never landed.
-    clearRefused: false,
+    sets: entry.sets == null ? '' : String(entry.sets.length),
+    rows: (entry.sets ?? []).map((set) => ({
+      reps: set.reps == null ? '' : String(set.reps),
+      weight: set.weightKg == null ? '' : String(set.weightKg),
+    })),
+    // The one refusal that cannot be re-derived from the text: a twenty-first row never landed.
+    addRefused: false,
   };
 }
 
-// The line the sheet holds is OPEN while its sets field is empty — the one emptiness the sheet reads
-// three ways: the sentence it draws, the refusal it computes, and the entry it hands back.
+// The line the sheet holds is OPEN while its count is empty — the one emptiness the sheet reads
+// three ways: the sentence it draws, the ladder it hides, and the entry it hands back.
 export function isOpenFields(fields) {
   return fields.sets.trim() === '';
+}
+
+const numberOf = (text) => Number(text.trim().replace(/,/g, '.'));
+
+// Two weights agree as numbers, so `80` and `80,0` are one load; two empties agree as one absence.
+function sameWeightText(left, right) {
+  if (left.trim() === '' || right.trim() === '') return left.trim() === right.trim();
+  return numberOf(left) === numberOf(right);
+}
+
+function sameRow(left, right) {
+  return left.reps.trim() === right.reps.trim() && sameWeightText(left.weight, right.weight);
+}
+
+// The rows the count names, drawn one per set: none while the line is open, and every row the
+// sheet holds while the count is one it refuses — a refused count changes nothing but its own field.
+export function ladderOf(fields) {
+  if (isOpenFields(fields)) return [];
+  if (refusalOf('sets', fields.sets) != null) return fields.rows;
+  return fields.rows.slice(0, numberOf(fields.sets));
+}
+
+// The head speaks about every ladder row at once: a column whose rows agree reads that text, and one
+// whose rows disagree reads empty under `varies` — typing over it writes every row again.
+export function headOf(fields) {
+  const column = (field, placeholder) => {
+    const [first, ...rest] = ladderOf(fields);
+    if (!first) return { value: '', placeholder };
+    const agree = field === 'reps'
+      ? rest.every((row) => row.reps.trim() === first.reps.trim())
+      : rest.every((row) => sameWeightText(row.weight, first.weight));
+    if (!agree) return { value: '', placeholder: VARIES_PLACEHOLDER };
+    return { value: first[field], placeholder };
+  };
+  return { reps: column('reps', MAX_PLACEHOLDER), weight: column('weight', LAST_TIME_PLACEHOLDER) };
 }
 
 // Null for a field that is empty — an empty field is a null target and not a fault.
@@ -220,63 +251,142 @@ export function refusalOf(field, text) {
   return Number.isInteger(value) && value >= ENTRY_SETS_MIN && value <= ENTRY_SETS_MAX ? null : SETS_BAND;
 }
 
-// One refusal on the sheet at a time, drawn under the field it belongs to, topmost first — the same
-// shape as the editor's two Save refusals.
-//
-// The open line's shape is checked before the fields are, and it has TWO ways in, which are opposite
-// acts and so take opposite sentences: the lifter cleared sets while the other two held values (the
-// keystroke was refused, `clearRefused`, and the way out is to clear those two), or they typed into
-// reps or weight on a line whose sets are already empty (that keystroke lands, the commit is refused,
-// and the way out is to name the sets — telling them to clear what they just typed would be telling
-// them to abandon what they asked for). Nothing typed is ever dropped without a word.
+// The count grows or shrinks the ladder: a new row copies the row above it, so `5 → 6` on a ramp
+// adds a sixth set at the top set's numbers and not a blank. A count below the rows hides the rest
+// rather than discarding them — the same rule as an emptied count — so `5 → 1 → 12` on the way to
+// typing twelve keeps sets 2 to 5, and a refused count leaves the rows alone.
+export function withSets(fields, text) {
+  const next = { ...fields, sets: text, addRefused: false };
+  if (text.trim() === '' || refusalOf('sets', text) != null) return next;
+  const count = numberOf(text);
+  const rows = [...fields.rows];
+  while (rows.length < count) rows.push({ ...(rows[rows.length - 1] ?? BLANK_ROW) });
+  return { ...next, rows };
+}
+
+// The copy-down: the head's reps or weight is written into every ladder row.
+export function withHead(fields, field, text) {
+  const shown = ladderOf(fields).length;
+  return {
+    ...fields,
+    rows: fields.rows.map((row, at) => (at < shown ? { ...row, [field]: text } : row)),
+    addRefused: false,
+  };
+}
+
+export function withRow(fields, index, field, text) {
+  return {
+    ...fields,
+    rows: fields.rows.map((row, at) => (at === index ? { ...row, [field]: text } : row)),
+    addRefused: false,
+  };
+}
+
+// The ladder's last row: one more set at the numbers of the one above it, beneath the rows the
+// count names. Inert at twenty, and the refusal is remembered here because the row it would have
+// been never landed.
+export function withRowAdded(fields) {
+  const shown = ladderOf(fields);
+  if (shown.length >= ENTRY_SETS_MAX) return { ...fields, addRefused: true };
+  const rows = [...shown, { ...(shown[shown.length - 1] ?? BLANK_ROW) }];
+  return { ...fields, sets: String(rows.length), rows, addRefused: false };
+}
+
+// Deleting a row decrements the count; deleting the last one is the same act as clearing the count
+// and lands on the same open line.
+export function withRowRemoved(fields, index) {
+  const rows = ladderOf(fields).filter((row, at) => at !== index);
+  return { ...fields, sets: rows.length === 0 ? '' : String(rows.length), rows, addRefused: false };
+}
+
+// Nothing to ramp between: fewer than three rows, or a first and last row that agree.
+export function rampDisabled(fields) {
+  const rows = ladderOf(fields);
+  return rows.length < 3 || sameRow(rows[0], rows[rows.length - 1]);
+}
+
+// The pyramid in two typed ends and one tap: reps and load interpolated from set 1 to set n, the
+// ends left exactly as typed and each load between them snapped onto the plate grid — the band's
+// small step, half away from zero — the same rule on all three surfaces. A column with an empty end
+// is left as it stands.
+export function withRampUp(fields) {
+  const rows = ladderOf(fields);
+  const last = rows.length - 1;
+  const ends = (field) => {
+    const from = rows[0][field];
+    const to = rows[last][field];
+    if (from.trim() === '' || to.trim() === '') return null;
+    return [numberOf(from), numberOf(to)];
+  };
+  const reps = ends('reps');
+  const weight = ends('weight');
+  const at = (pair, index, put) => String(put(pair[0] + ((pair[1] - pair[0]) * index) / last));
+  const between = (index) => index !== 0 && index !== last;
+  return withLadder(fields, rows.map((row, index) => ({
+    reps: reps && between(index) ? at(reps, index, Math.round) : row.reps,
+    weight: weight && between(index) ? at(weight, index, snap) : row.weight,
+  })));
+}
+
+// The way back from a ladder to a straight scheme without retyping the head.
+export function withMatchedToFirst(fields) {
+  const rows = ladderOf(fields);
+  return withLadder(fields, rows.map(() => ({ ...rows[0] })));
+}
+
+// A fill writes the ladder's rows and leaves the hidden ones as they were.
+function withLadder(fields, ladder) {
+  return {
+    ...fields,
+    rows: fields.rows.map((row, at) => (at < ladder.length ? ladder[at] : row)),
+    addRefused: false,
+  };
+}
+
+// `±` on a bodyweight movement's load field — one row's, or with no row named the head's, which
+// writes every ladder row: band-assisted work is a negative load and a decimal keyboard offers no
+// sign. It flips the leading sign of the TEXT and never leaves a bare `-` behind — an empty field
+// has no sign to flip, so the press is a no-op rather than a refusal.
+export function withSignFlipped(fields, index = null) {
+  const text = (index == null ? headOf(fields).weight.value : fields.rows[index].weight).trim();
+  if (text === '') return fields;
+  const flipped = text.startsWith('-') ? text.slice(1) : `-${text}`;
+  if (index == null) return withHead(fields, 'weight', flipped);
+  return withRow(fields, index, 'weight', flipped);
+}
+
+// One refusal on the sheet at a time, drawn under the field it belongs to, topmost first: the
+// twenty-first row that never landed, then the count, then the rows top to bottom — and the rows
+// only while the count names them, since a hidden ladder is not what the commit hands back.
 export function targetRefusal(fields) {
-  if (fields.clearRefused) return { field: 'sets', message: CLEAR_REPS_AND_WEIGHT };
-  const open = isOpenFields(fields);
-  const named = fields.reps.trim() !== '' || fields.weight.trim() !== '';
-  if (open && named) return { field: 'sets', message: NAME_SETS_FIRST };
-  for (const field of FIELDS) {
-    const message = refusalOf(field, fields[field]);
-    if (message) return { field, message };
+  if (fields.addRefused) return { field: 'add', row: null, message: SETS_BAND };
+  const sets = refusalOf('sets', fields.sets);
+  if (sets) return { field: 'sets', row: null, message: sets };
+  for (const [row, texts] of ladderOf(fields).entries()) {
+    for (const field of ['reps', 'weight']) {
+      const message = refusalOf(field, texts[field]);
+      if (message) return { field, row, message };
+    }
   }
   return null;
 }
 
-// Clearing sets is how a line is left open, and an open line names no reps and no weight — so while
-// either of those holds a value the clear is REFUSED and the field keeps what it had. Every other
-// keystroke lands as typed.
-export function withField(fields, field, text) {
-  if (field === 'sets' && text.trim() === '' && (fields.reps.trim() !== '' || fields.weight.trim() !== '')) {
-    return { ...fields, clearRefused: true };
-  }
-  return { ...fields, [field]: text, clearRefused: false };
-}
-
-// `±` on the weight field, the one the rack keypad also carries: band-assisted work is a negative
-// load and a decimal keyboard offers no sign. It flips the leading sign of the TEXT and never leaves
-// a bare `-` behind — an empty field has no sign to flip, so the press is a no-op rather than a
-// refusal nobody asked for.
-export function withSignFlipped(fields) {
-  const text = fields.weight.trim();
-  if (text === '') return fields;
-  const flipped = text.startsWith('-') ? text.slice(1) : `-${text}`;
-  return { ...fields, weight: flipped, clearRefused: false };
-}
-
-const numberOf = (text) => Number(text.trim().replace(/,/g, '.'));
-
-// What the row becomes. Sets cleared is the open line, which carries nothing but its rest; the
-// clamps stay as the last guard, so no value this screen let through can reach the store out of band.
-// The weight is put on the ladder's grid before it is stored — the same `round` the rack keypad
-// commits through — so a target and the set that meets it are the same number and not two.
+// What the row becomes: the rows the count names, and never a hidden one. A count cleared is the
+// open line, which carries nothing but its rest; the clamp stays as the last guard, so no value this
+// screen let through can reach the store out of band. A load is put on the ladder's grid before it
+// is stored — the same `round` the rack keypad commits through — so a target and the set that meets
+// it are the same number and not two.
 export function targetEntryOf(entry, fields) {
   if (isOpenFields(fields)) {
     return { exerciseId: entry.exerciseId, ...(entry.restSeconds == null ? {} : { restSeconds: entry.restSeconds }) };
   }
-  return withTarget(entry, {
-    targetSets: clampSets(numberOf(fields.sets)),
-    targetReps: fields.reps.trim() === '' ? null : clampReps(numberOf(fields.reps)),
-    targetWeightKg: fields.weight.trim() === '' ? null : round(numberOf(fields.weight)),
-  });
+  return {
+    ...entry,
+    sets: ladderOf(fields).map((row) => setWrite({
+      reps: row.reps.trim() === '' ? null : clampReps(numberOf(row.reps)),
+      weightKg: row.weight.trim() === '' ? null : round(numberOf(row.weight)),
+    })),
+  };
 }
 
 // The numbering is rewritten from the new order every time. A drop below the last row arrives as an

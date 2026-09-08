@@ -69,13 +69,11 @@ data class ProposalSource(
     }
 }
 
-// The absences: no reps is `max`, no weight is last time, no rest is the global dial, no sets is an
-// open line. Which SIDE is missing is `kind`.
+// The absences: no `sets` is an open line, a set's missing reps is `max` and its missing load is
+// last time, no rest is the global dial. Which SIDE is missing is `kind`.
 @Serializable
 data class ProposalTargets(
-    val sets: Int? = null,
-    val reps: Int? = null,
-    val weightKg: Double? = null,
+    val sets: List<SetTarget> = emptyList(),
     val restSeconds: Int? = null,
 )
 
@@ -126,9 +124,10 @@ data class ProposalChange(
         get() {
             if (kind == ChangeKind.Added) return after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
             if (kind == ChangeKind.Removed) return "− $removedLine"
-            // A retarget, and any kind this build cannot name: read off whichever side arrived.
+            // A retarget, and any kind this build cannot name: read off whichever side arrived. Each
+            // move carries its label — `set 4 · 100 × 1 → 102.5 × 1` — the review row's own line.
             val moved = before?.let { was -> after?.let { now -> Proposal.moves(was, now) } }.orEmpty()
-            if (moved.isNotEmpty()) return moved.joinToString(" · ") { "${it.before} → ${it.after}" }
+            if (moved.isNotEmpty()) return moved.joinToString(" · ") { "${it.label} · ${it.before} → ${it.after}" }
             return (after ?: before)?.let { Proposal.asks(it) } ?: "no targets"
         }
 }
@@ -292,14 +291,20 @@ data class Proposal(
         const val turnDownBody = "Nothing changes, and it stays in the routine’s history as a record."
         const val turnDown = "Turn down"
 
-        // The load is compared on the LADDER's grid and never on raw doubles.
+        // The row the review sheet unfolds to the ladder on tap.
+        const val setsLabel = "sets"
+
+        // Loads are compared on the LADDER's grid and never on raw doubles. A scheme whose shape held
+        // and whose one set moved prints that set — `set 4 · 100 × 1 → 102.5 × 1`; any other move
+        // of the sets prints both schemes in the readout formula.
         fun moves(before: ProposalTargets, after: ProposalTargets): List<FieldMove> {
             val moved = mutableListOf<FieldMove>()
-            if (before.sets != after.sets || before.reps != after.reps) {
-                moved += FieldMove("sets", countOf(before), countOf(after))
-            }
-            if (!sameLoad(before.weightKg, after.weightKg)) {
-                moved += FieldMove("weight", loadOf(before.weightKg), loadOf(after.weightKg))
+            if (!Scheme.same(before.sets, after.sets)) {
+                val movedSets = if (before.sets.size != after.sets.size) emptyList()
+                    else before.sets.indices.filterNot { Scheme.same(listOf(before.sets[it]), listOf(after.sets[it])) }
+                moved += movedSets.singleOrNull()?.let { at ->
+                    FieldMove("set ${at + 1}", Readout.setTarget(before.sets[at]), Readout.setTarget(after.sets[at]))
+                } ?: FieldMove(setsLabel, Readout.target(before.sets), Readout.target(after.sets))
             }
             if (before.restSeconds != after.restSeconds) {
                 moved += FieldMove("rest", restOf(before.restSeconds), restOf(after.restSeconds))
@@ -307,23 +312,9 @@ data class Proposal(
             return moved
         }
 
-        fun asks(targets: ProposalTargets): String =
-            Readout.target(targets.sets, targets.reps, targets.weightKg)
-
-        fun countOf(targets: ProposalTargets): String {
-            val sets = targets.sets ?: return Readout.openTarget
-            return "$sets × ${Readout.repTarget(targets.reps)}"
-        }
-
-        fun loadOf(weightKg: Double?): String =
-            weightKg?.let { Readout.weight(it) } ?: "last time"
+        fun asks(targets: ProposalTargets): String = Readout.target(targets.sets)
 
         fun restOf(seconds: Int?): String = seconds?.let { "${it}s" } ?: "the dial"
-
-        private fun sameLoad(before: Double?, after: Double?): Boolean {
-            if (before == null || after == null) return before == null && after == null
-            return Ladder.round(before) == Ladder.round(after)
-        }
     }
 }
 

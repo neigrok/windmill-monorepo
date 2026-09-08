@@ -95,39 +95,36 @@ public enum Finish {
         )
     }
 
-    // The predicate for "fell short" is review.js `detailOf`'s exactly: reps are the only axis, and only when the bar did
-    // not go up — `now.sets` counts the sets at the top load alone.
+    // review.js `detailOf`'s rule exactly. The plan reads in the readout formula and the effort — the top
+    // set and how many of them — in the same shape. The top set stands against the plan's own top set,
+    // and short is the reps at a load that did not go up; an open line is nothing to measure against, so
+    // the row falls through to last time.
     private static func detail(_ movement: Against.Movement) -> String {
-        // An open target is nothing to measure against, so the row falls through to last time.
-        let planned = movement.planned.flatMap { $0.isOpen ? nil : $0 }
-        if let planned, let target = planned.reps, let sets = planned.sets,
-           movement.now.reps < target,
-           planned.weightKg.map({ movement.now.weightKg <= $0 }) ?? true {
-            return "planned \(count(sets, target)) · did \(count(movement.now.sets, movement.now.reps))"
-        }
-        if let planned, let sets = planned.sets {
-            return "\(top(sets, planned.reps, planned.weightKg)) → \(top(movement.now))"
+        if let planned = movement.planned, let top = topSet(of: planned) {
+            let short = (top.reps.map { movement.now.reps < $0 } ?? false)
+                && (top.weightKg.map { movement.now.weightKg <= $0 } ?? true)
+            if short { return "planned \(Readout.target(planned)) — did \(effort(movement.now))" }
+            return "\(Readout.target(planned)) → \(effort(movement.now))"
         }
         if let before = movement.before {
-            return "\(top(before)) → \(top(movement.now))"
+            return "\(effort(before)) → \(effort(movement.now))"
         }
-        return top(movement.now)
+        return effort(movement.now)
     }
 
-    // Spacing is review.js `countLabel`'s: `3 × max` when the target is absent, `5×5` when it is named.
-    private static func count(_ sets: Int, _ reps: Int?) -> String {
-        guard let reps else { return "\(sets) × \(Readout.repTarget(nil))" }
-        return "\(sets)×\(reps)"
+    // The heaviest named load, ties to the earlier set — TopSet's own rule over the plan — and the first
+    // set when no load is named at all. Nil on an open line.
+    private static func topSet(of scheme: [SetTarget]) -> SetTarget? {
+        let loaded = scheme.filter { $0.weightKg != nil }
+        return loaded.max { ($0.weightKg ?? 0) < ($1.weightKg ?? 0) } ?? scheme.first
     }
 
-    // Zero is the absence of a load, not a load: a band-assisted −20 still reads its own.
-    private static func top(_ sets: Int, _ reps: Int?, _ weightKg: Double?) -> String {
-        guard let weightKg, weightKg != 0 else { return count(sets, reps) }
-        return "\(count(sets, reps)) @ \(Readout.weight(weightKg))"
-    }
-
-    private static func top(_ effort: Against.Effort) -> String {
-        top(effort.sets, effort.reps, effort.weightKg)
+    // `{sets} × {reps} · {load}`, the scheme's own formula. Zero is the absence of a load, not a load,
+    // so a bodyweight effort leaves the column out; a band-assisted −20 still reads its own.
+    private static func effort(_ effort: Against.Effort) -> String {
+        let count = "\(effort.sets) × \(effort.reps)"
+        guard effort.weightKg != 0 else { return count }
+        return "\(count) · \(Readout.weight(effort.weightKg))"
     }
 }
 
@@ -399,7 +396,7 @@ struct FinishScreen: View {
                         .font(WindmillFont.body(15))
                         .foregroundStyle(skin.inkDim)
                     Spacer(minLength: WindmillSpace.x3)
-                    Text(target(entry))
+                    Text(Readout.target(entry.sets))
                         .font(GymType.numeral(13))
                         .foregroundStyle(skin.targetInk)
                 }
@@ -442,9 +439,5 @@ struct FinishScreen: View {
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private func target(_ entry: RoutineWrite.Entry) -> String {
-        Readout.target(sets: entry.targetSets, reps: entry.targetReps, weightKg: entry.targetWeightKg)
     }
 }

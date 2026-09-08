@@ -11,12 +11,18 @@ final class TrainingWireTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    private let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                        SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                        SetTarget(reps: 5, weightKg: 80)]
+
     func testASessionCarriesItsFrozenPlanSnapshot() throws {
         let session = try decode(Session.self, """
         { "id": "ses_9f", "startedAt": 1754300000000, "routineId": "rt_1",
           "plan": { "routine": "Push A",
-                    "entries": [ { "exerciseId": "bench-press", "sets": 5, "reps": 5,
-                                   "weightKg": 82.5, "restSeconds": 180 } ] } }
+                    "entries": [ { "exerciseId": "bench-press",
+                                   "sets": [ { "reps": 5, "weightKg": 82.5 }, { "reps": 5, "weightKg": 82.5 } ],
+                                   "restSeconds": 180 },
+                                 { "exerciseId": "face-pull" } ] } }
         """)
 
         XCTAssertEqual(session.id, "ses_9f")
@@ -26,30 +32,75 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(session.routineId, "rt_1")
         XCTAssertEqual(session.plan?.routine, "Push A")
         XCTAssertEqual(session.plan?.entry(for: "bench-press"),
-                       PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180))
+                       PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 2), restSeconds: 180))
+        XCTAssertEqual(session.plan?.entry(for: "face-pull"), PlanEntry(exerciseId: "face-pull"))
+        XCTAssertEqual(session.plan?.entry(for: "face-pull")?.isOpen, true)
     }
 
-    func testAPlanLineWithNoTargetWeightIsAnAbsenceAndNotAZero() throws {
-        let entry = try decode(PlanEntry.self, #"{"exerciseId":"chin-up","sets":3,"reps":8}"#)
-
-        XCTAssertNil(entry.weightKg)
-        XCTAssertNil(entry.restSeconds)
+    // The contract's bytes and back. `JSONEncoder` orders keys as it likes, so the pin is its sorted spelling.
+    private func sorted(_ value: some Encodable) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try XCTUnwrap(String(data: encoder.encode(value), encoding: .utf8))
     }
 
-    func testARepTargetIsOmittedWhenTheRoutineDeclinesToNameOne() throws {
-        let entry = try decode(PlanEntry.self, #"{"exerciseId":"chin-up","sets":3}"#)
-        XCTAssertNil(entry.reps)
-        XCTAssertEqual(entry.sets, 3)
+    func testTheRampEntryRoundTripsByteExact() throws {
+        let wire = #"{"position":1,"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60},{"reps":5,"weightKg":80},{"reps":3,"weightKg":90},{"reps":1,"weightKg":100},{"reps":5,"weightKg":80}],"restSeconds":180}"#
+        let entry = RoutineEntry(position: 1, exerciseId: "back-squat", sets: ramp, restSeconds: 180)
+        XCTAssertEqual(try decode(RoutineEntry.self, wire), entry)
+        XCTAssertEqual(try sorted(entry),
+                       #"{"exerciseId":"back-squat","position":1,"restSeconds":180,"sets":[{"reps":5,"weightKg":60},{"reps":5,"weightKg":80},{"reps":3,"weightKg":90},{"reps":1,"weightKg":100},{"reps":5,"weightKg":80}]}"#)
+        XCTAssertEqual(try decode(RoutineEntry.self, try sorted(entry)), entry)
 
-        let line = try decode(RoutineEntry.self,
-                              #"{"position":3,"exerciseId":"chin-up","targetSets":3}"#)
-        XCTAssertNil(line.targetReps)
+        let write = RoutineWrite.Entry(exerciseId: "back-squat", sets: [SetTarget(reps: 5, weightKg: 60)], restSeconds: 180)
+        XCTAssertEqual(try sorted(write), #"{"exerciseId":"back-squat","restSeconds":180,"sets":[{"reps":5,"weightKg":60}]}"#)
+        let plan = PlanEntry(exerciseId: "back-squat", sets: [SetTarget(reps: 5, weightKg: 60)], restSeconds: 180)
+        XCTAssertEqual(try sorted(plan), #"{"exerciseId":"back-squat","restSeconds":180,"sets":[{"reps":5,"weightKg":60}]}"#)
+        XCTAssertEqual(try decode(PlanEntry.self, #"{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60}],"restSeconds":180}"#), plan)
+    }
 
-        let planned = try decode(Against.Target.self, #"{"sets":3}"#)
-        XCTAssertNil(planned.reps)
+    // An open line has no `sets` key — never an empty array, which the log refuses as a zero target.
+    func testAnOpenEntryHasNoSetsKeyOnTheWire() throws {
+        let open = RoutineEntry(position: 2, exerciseId: "face-pull")
+        XCTAssertEqual(try sorted(open), #"{"exerciseId":"face-pull","position":2}"#)
+        XCTAssertEqual(try decode(RoutineEntry.self, #"{"position":2,"exerciseId":"face-pull"}"#), open)
+        XCTAssertTrue(open.isOpen)
+        XCTAssertEqual(try sorted(RoutineWrite.Entry(exerciseId: "face-pull")), #"{"exerciseId":"face-pull"}"#)
+        XCTAssertEqual(try sorted(PlanEntry(exerciseId: "face-pull", restSeconds: 90)),
+                       #"{"exerciseId":"face-pull","restSeconds":90}"#)
+    }
 
-        let write = try fields(of: RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        XCTAssertNil(write["targetReps"], "an absent rep target is omitted, never sent as null")
+    // A set's nulls keep their meaning: no reps is max, no load is last time, neither is ever null.
+    func testASetsAbsencesAreOmittedRatherThanWrittenAsNull() throws {
+        XCTAssertEqual(try sorted(SetTarget(weightKg: 100)), #"{"weightKg":100}"#)
+        XCTAssertEqual(try sorted(SetTarget(reps: 5)), #"{"reps":5}"#)
+        XCTAssertEqual(try sorted(SetTarget()), "{}")
+        XCTAssertEqual(try decode(SetTarget.self, "{}"), SetTarget())
+        XCTAssertEqual(try decode(RoutineEntry.self, #"{"position":3,"exerciseId":"chin-up","sets":[{},{},{}]}"#).sets,
+                       Array(repeating: SetTarget(), count: 3))
+    }
+
+    // The review's `planned` is the scheme alone: `{}` is an open line, no key is no plan for the
+    // movement, and neither is ever a null.
+    func testTheReviewsPlannedSchemeReadsOpenAsEmptyAndAbsentAsNil() throws {
+        let effort = #""now":{"reps":5,"sets":5,"weightKg":105}"#
+        let open = try decode(Against.Movement.self, #"{"exerciseId":"face-pull",\#(effort),"planned":{}}"#)
+        XCTAssertEqual(open.planned, [])
+        XCTAssertEqual(try sorted(open), #"{"exerciseId":"face-pull","now":{"reps":5,"sets":5,"weightKg":105},"planned":{}}"#)
+        let unplanned = try decode(Against.Movement.self, #"{"exerciseId":"face-pull",\#(effort)}"#)
+        XCTAssertNil(unplanned.planned)
+        XCTAssertEqual(try sorted(unplanned), #"{"exerciseId":"face-pull","now":{"reps":5,"sets":5,"weightKg":105}}"#)
+        let ramped = Against.Movement(exerciseId: "back-squat", now: Against.Effort(weightKg: 100, reps: 1, sets: 1), planned: ramp)
+        XCTAssertEqual(try decode(Against.Movement.self, try sorted(ramped)), ramped)
+    }
+
+    // A load arriving off the grid is rounded onto it once, so two readers never disagree by a cent.
+    func testASetsLoadIsRoundedOntoTheLaddersGridOnTheWayIn() throws {
+        XCTAssertEqual(SetTarget(reps: 5, weightKg: 82.505), SetTarget(reps: 5, weightKg: 82.51))
+        XCTAssertEqual(try decode(SetTarget.self, #"{"weightKg":82.505}"#).weightKg, 82.51)
+        XCTAssertTrue(SetTarget.agree(Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)))
+        XCTAssertTrue(SetTarget.agree([]))
+        XCTAssertFalse(SetTarget.agree(ramp))
     }
 
     func testASetDecodesTheLogsOwnNumberingAndDefaultsTheRest() throws {
@@ -132,7 +183,8 @@ final class TrainingWireTests: XCTestCase {
             "movements": [ { "exerciseId": "back-squat",
                              "now": { "weightKg": 105, "reps": 5, "sets": 5 },
                              "before": { "weightKg": 102.5, "reps": 5, "sets": 5 },
-                             "planned": { "sets": 3, "reps": 12, "weightKg": 140 } } ] } }
+                             "planned": { "sets": [ { "reps": 12, "weightKg": 140 }, { "reps": 12, "weightKg": 140 },
+                                                    { "reps": 12, "weightKg": 140 } ] } } ] } }
         """)
 
         XCTAssertEqual(review.stats, Review.Stats(durationMs: 3_720_000, workingSets: 16, topE1rm: 122.5))
@@ -141,7 +193,8 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(review.record?.previousAtMs, 1_750_723_200_000)
         XCTAssertEqual(review.against?.routine, "Legs")
         XCTAssertEqual(review.against?.movements.first?.now, Against.Effort(weightKg: 105, reps: 5, sets: 5))
-        XCTAssertEqual(review.against?.movements.first?.planned, Against.Target(sets: 3, reps: 12, weightKg: 140))
+        XCTAssertEqual(review.against?.movements.first?.planned,
+                       Array(repeating: SetTarget(reps: 12, weightKg: 140), count: 3))
     }
 
     func testAnOrdinarySessionCarriesNoRecordAndNoComparison() throws {
@@ -155,13 +208,13 @@ final class TrainingWireTests: XCTestCase {
     func testARoutineCarriesItsOwnOrderAndItsLastTrainedStamp() throws {
         let routine = try decode(Routine.self, """
         { "id": "rt_9f", "name": "Push A", "position": 0, "lastTrainedAt": 1754300000000,
-          "entries": [ { "position": 1, "exerciseId": "bench-press", "targetSets": 5, "targetReps": 5,
-                         "targetWeightKg": 82.5, "restSeconds": 180 } ] }
+          "entries": [ { "position": 1, "exerciseId": "bench-press",
+                         "sets": [ { "reps": 5, "weightKg": 82.5 } ], "restSeconds": 180 } ] }
         """)
 
         XCTAssertEqual(routine.lastTrainedAtMs, 1_754_300_000_000)
         XCTAssertEqual(routine.entries.map(\.position), [1])
-        XCTAssertEqual(routine.entries.first?.targetWeightKg, 82.5)
+        XCTAssertEqual(routine.entries.first?.sets, [SetTarget(reps: 5, weightKg: 82.5)])
     }
 
     func testARoutineNeverTrainedHasNoStampAtAll() throws {
@@ -192,23 +245,24 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertEqual(write.position, 2)
         XCTAssertEqual(write.entries.map(\.exerciseId), ["bench-press", "back-squat"],
                        "in the order they were performed")
-        XCTAssertEqual(write.entries[0], RoutineWrite.Entry(exerciseId: "bench-press", targetSets: 3,
-                                                            targetReps: 5, targetWeightKg: 85))
-        XCTAssertEqual(write.entries[1], RoutineWrite.Entry(exerciseId: "back-squat", targetSets: 1,
-                                                            targetReps: 5, targetWeightKg: 100),
+        XCTAssertEqual(write.entries[0], RoutineWrite.Entry(exerciseId: "bench-press", sets: [
+            SetTarget(reps: 5, weightKg: 82.5), SetTarget(reps: 5, weightKg: 82.5), SetTarget(reps: 3, weightKg: 85),
+        ]), "every working set, in order, as lifted")
+        XCTAssertEqual(write.entries[1], RoutineWrite.Entry(exerciseId: "back-squat", sets: [SetTarget(reps: 5, weightKg: 100)]),
                        "a drop set is not what next week is aimed at")
     }
 
-    func testATiedModalRepCountGoesToTheSmallerTarget() throws {
+    // A ramp lifted is a ramp kept: every working set becomes its own planned set, in order.
+    func testARoutineKeptFromARampTranscribesEveryWorkingSet() throws {
         let write = try XCTUnwrap(RoutineWrite(named: "Legs", from: [
-            aSet("back-squat", 100, 5, at: 100),
-            aSet("back-squat", 100, 5, at: 200),
-            aSet("back-squat", 110, 3, at: 300),
-            aSet("back-squat", 110, 3, at: 400),
+            aSet("back-squat", 60, 5, at: 100),
+            aSet("back-squat", 80, 5, at: 200),
+            aSet("back-squat", 90, 3, at: 300),
         ], position: 0))
-
-        XCTAssertEqual(write.entries.map(\.targetReps), [3])
-        XCTAssertEqual(write.entries.map(\.targetWeightKg), [110])
+        XCTAssertEqual(write.entries, [RoutineWrite.Entry(exerciseId: "back-squat", sets: [
+            SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 3, weightKg: 90),
+        ])])
+        XCTAssertEqual(Readout.target(write.entries[0].sets), "3 × 3\u{2013}5 · 60\u{2013}90")
     }
 
     func testASessionOfNothingButWarmupsKeepsNoRoutine() {
@@ -218,37 +272,31 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertNil(RoutineWrite(named: "Push A", from: [], position: 0))
     }
 
-    func testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
+    func testSavingASchemeReplacesOneLineAndKeepsTheRest() {
         let routine = Routine(id: "rt_1", name: "Push A", position: 0, lastTrainedAtMs: 9_000, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 100, restSeconds: 180),
-            RoutineEntry(position: 2, exerciseId: "bench-press", targetSets: 3, targetReps: 8,
-                         targetWeightKg: 80, restSeconds: 120),
-            RoutineEntry(position: 3, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
-                         targetWeightKg: 45),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 5), restSeconds: 180),
+            RoutineEntry(position: 2, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 80), count: 3), restSeconds: 120),
+            RoutineEntry(position: 3, exerciseId: "overhead-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3)),
         ])
 
-        let changed = routine.retargeting(position: 1, exerciseId: "bench-press", toWeightKg: 105)
+        let changed = routine.retargeting(position: 1, exerciseId: "bench-press",
+                                          to: Array(repeating: SetTarget(reps: 5, weightKg: 105), count: 5))
 
         XCTAssertEqual(changed, Routine(id: "rt_1", name: "Push A", position: 0, lastTrainedAtMs: 9_000, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 105, restSeconds: 180),
-            RoutineEntry(position: 2, exerciseId: "bench-press", targetSets: 3, targetReps: 8,
-                         targetWeightKg: 80, restSeconds: 120),
-            RoutineEntry(position: 3, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
-                         targetWeightKg: 45),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 105), count: 5), restSeconds: 180),
+            RoutineEntry(position: 2, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 80), count: 3), restSeconds: 120),
+            RoutineEntry(position: 3, exerciseId: "overhead-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3)),
         ]))
-        XCTAssertEqual(RoutineWrite(changed!).entries.map(\.targetWeightKg), [105, 80, 45])
+        XCTAssertEqual(RoutineWrite(changed!).entries.map { $0.sets.map(\.weightKg) }, [Array(repeating: 105, count: 5), Array(repeating: 80, count: 3), Array(repeating: 45, count: 3)])
     }
 
     func testRetargetingAPositionThatNoLongerHoldsTheMovementIsNothingToWrite() {
         let routine = Routine(id: "rt_1", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 140),
+            RoutineEntry(position: 1, exerciseId: "back-squat", sets: Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 5)),
         ])
 
-        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "bench-press", toWeightKg: 87.5))
-        XCTAssertNil(routine.retargeting(position: 2, exerciseId: "back-squat", toWeightKg: 145))
+        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "bench-press", to: [SetTarget(reps: 5, weightKg: 87.5)]))
+        XCTAssertNil(routine.retargeting(position: 2, exerciseId: "back-squat", to: [SetTarget(reps: 5, weightKg: 145)]))
     }
 
     func testRetargetingAnOpenLineIsNothingToWrite() {
@@ -256,7 +304,7 @@ final class RoutineWriteTests: XCTestCase {
             RoutineEntry(position: 1, exerciseId: "chin-up"),
         ])
 
-        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "chin-up", toWeightKg: 10))
+        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "chin-up", to: [SetTarget(reps: 8, weightKg: 10)]))
     }
 }
 
@@ -276,7 +324,7 @@ final class PrefillTests: XCTestCase {
     func testTodaysLastSetWinsOverThePlanAndOverLastTime() {
         let prefill = Prefill(
             todaySets: [aSet(82.5, 5, at: 100), aSet(85, 3, at: 200)],
-            planEntry: PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            planEntry: PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
             lastTime: LastTime(exerciseId: "bench-press", session: Session(id: "ses_p", startedAtMs: 1),
                                sets: [aSet(80, 8, at: 1)])
         )
@@ -287,7 +335,7 @@ final class PrefillTests: XCTestCase {
     func testThePlansTargetBeatsLastTimeBeforeAnythingIsLifted() {
         let prefill = Prefill(
             todaySets: [],
-            planEntry: PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            planEntry: PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
             lastTime: LastTime(exerciseId: "bench-press", session: Session(id: "ses_p", startedAtMs: 1),
                                sets: [aSet(80, 8, at: 1)])
         )
@@ -309,7 +357,7 @@ final class PrefillTests: XCTestCase {
     func testAWarmupIsNotCarriedForwardAsTheStickyWeight() {
         let afterAWarmup = Prefill(
             todaySets: [aSet(40, 10, at: 100, kind: .warmup)],
-            planEntry: PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            planEntry: PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
             lastTime: nil
         )
         XCTAssertEqual(afterAWarmup, Prefill(weightKg: 82.5, reps: 5), "the dial stays on the plan")
@@ -318,7 +366,7 @@ final class PrefillTests: XCTestCase {
             todaySets: [aSet(40, 10, at: 100, kind: .warmup),
                         aSet(85, 5, at: 200),
                         aSet(65, 3, at: 300, kind: .warmup)],
-            planEntry: PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            planEntry: PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
             lastTime: nil
         )
         XCTAssertEqual(afterAWorkingSet, Prefill(weightKg: 85, reps: 5),
@@ -328,21 +376,58 @@ final class PrefillTests: XCTestCase {
     func testAPlanWithNoRepTargetFallsThroughToLastTimeRatherThanToZero() {
         let prefill = Prefill(
             todaySets: [],
-            planEntry: PlanEntry(exerciseId: "chin-up", sets: 3),
+            planEntry: PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(), count: 3)),
             lastTime: LastTime(exerciseId: "chin-up", session: Session(id: "ses_p", startedAtMs: 1),
                                sets: [aSet(0, 9, at: 1), aSet(0, 6, at: 2)])
         )
 
         XCTAssertEqual(prefill, Prefill(weightKg: 0, reps: 9))
-        XCTAssertEqual(Prefill(todaySets: [], planEntry: PlanEntry(exerciseId: "chin-up", sets: 3),
+        XCTAssertEqual(Prefill(todaySets: [], planEntry: PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(), count: 3)),
                                lastTime: nil),
                        Prefill(weightKg: 20, reps: 5), "and with no history at all, the empty bar")
+    }
+
+    // R8: on a scheme whose sets disagree the Nth working set opens on the Nth slot, not on the last set.
+    func testOnADisagreeingSchemeThePadFollowsTheSlot() {
+        let ramp = PlanEntry(exerciseId: "bench-press", sets: [
+            SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 3, weightKg: 90),
+            SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 80),
+        ])
+        XCTAssertEqual(Prefill(todaySets: [], planEntry: ramp, lastTime: nil), Prefill(weightKg: 60, reps: 5))
+        XCTAssertEqual(Prefill(todaySets: [aSet(60, 5, at: 1), aSet(80, 5, at: 2)], planEntry: ramp, lastTime: nil),
+                       Prefill(weightKg: 90, reps: 3), "the rack fixture: set 3 opens on its own slot")
+        XCTAssertEqual(Prefill(todaySets: [aSet(60, 5, at: 1), aSet(40, 10, at: 2, kind: .warmup), aSet(80, 5, at: 3)],
+                               planEntry: ramp, lastTime: nil),
+                       Prefill(weightKg: 90, reps: 3), "a warmup between does not advance the slot")
+        XCTAssertEqual(Prefill(todaySets: (1...5).map { aSet(100, 1, at: Int64($0)) }, planEntry: ramp, lastTime: nil),
+                       Prefill(weightKg: 100, reps: 1), "past the plan the last set carries forward again")
+    }
+
+    func testASilentSlotTakesLastTimesNthWorkingSetThenTodaysLastThenTheBar() {
+        let scheme = PlanEntry(exerciseId: "bench-press", sets: [SetTarget(reps: 5, weightKg: 60), SetTarget(), SetTarget(reps: 3)])
+        let history = LastTime(exerciseId: "bench-press", session: Session(id: "ses_p", startedAtMs: 1),
+                               sets: [aSet(70, 8, at: 1, kind: .warmup), aSet(80, 8, at: 2), aSet(85, 6, at: 3)])
+        XCTAssertEqual(Prefill(todaySets: [aSet(60, 5, at: 10)], planEntry: scheme, lastTime: history),
+                       Prefill(weightKg: 85, reps: 6), "last time's second WORKING set, the warmup not counted")
+        XCTAssertEqual(Prefill(todaySets: [aSet(60, 5, at: 10)], planEntry: scheme, lastTime: nil),
+                       Prefill(weightKg: 60, reps: 5), "then today's last set")
+        XCTAssertEqual(Prefill(todaySets: [aSet(60, 5, at: 10), aSet(62.5, 5, at: 11)], planEntry: scheme, lastTime: nil),
+                       Prefill(weightKg: 62.5, reps: 3), "the third slot names reps and borrows today's load")
+        XCTAssertEqual(Prefill(todaySets: [], planEntry: PlanEntry(exerciseId: "bench-press", sets: [SetTarget(), SetTarget(reps: 3)]),
+                               lastTime: nil),
+                       Prefill(weightKg: 20, reps: 5), "and the empty bar when nothing has been lifted anywhere")
+    }
+
+    func testOnAStraightSchemeTheLastWorkingSetStaysSticky() {
+        let straight = PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 5))
+        XCTAssertEqual(Prefill(todaySets: [aSet(82.5, 5, at: 1)], planEntry: straight, lastTime: nil),
+                       Prefill(weightKg: 82.5, reps: 5), "a lifter who chose 82.5 on set 1 chose it for the day")
     }
 
     func testAPlanWithNoTargetWeightStillGivesItsReps() {
         let prefill = Prefill(
             todaySets: [],
-            planEntry: PlanEntry(exerciseId: "chin-up", sets: 3, reps: 8),
+            planEntry: PlanEntry(exerciseId: "chin-up", sets: Array(repeating: SetTarget(reps: 8), count: 3)),
             lastTime: LastTime(exerciseId: "chin-up", session: Session(id: "ses_p", startedAtMs: 1),
                                sets: [aSet(0, 12, at: 1)])
         )

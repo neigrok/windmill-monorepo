@@ -58,7 +58,9 @@ surfaces. What that means in practice:
   The web takes no swipes — a pointer drag would be its only path — and reaches the same acts
   through the row overflow and the editor's `×`.
 - **The routine is planned by typing.** The naming interstitial and the suggestion chips are gone;
-  the target sheet is three typed fields with the six pinned refusals, one at a time; the picker
+  the target sheet is `17-set-targets.md`'s head and ladder — a scheme of up to twenty sets, each
+  its own reps and load — with the six pinned refusals under the field or row that carries the
+  fault, one at a time; the picker
   shows the six and then the whole catalogue on an empty query and keeps the seven-row cap on a
   typed one; the open line says the one pinned sentence on all three.
 - **Check the line, not the sentence.** Citations drift by a few lines between edits. Trust the
@@ -1670,7 +1672,7 @@ surfaces under the programme's standing rules. Everything below is read at the s
   `DECIMAL_HINT`, `WEIGHT_HINT` on the web; `TargetEntry.decimalHint`, `Bodyweight.hint`,
   `KeypadEntry.weightHint` on iOS; `TargetEntry.decimalHint`, `Bodyweight.fieldHint` on Android —
   a valid weight's line is `kg`, and `±` is named *Flip the sign — band-assisted* on the keypad and
-  the target sheet of every surface. #8 *Display only — nothing stored changes.* is gone from all
+  on a bodyweight movement's load fields in the target sheet, on every surface. #8 *Display only — nothing stored changes.* is gone from all
   three; the phones draw *This phone still draws kg.* under Units, lb only, and nowhere on the
   bodyweight screen or the weigh-in sheet; the web keeps *A backfill, a correction, a routine
   target — typed in kg.*, lb only (`5n`). #9 *Silenced if Android’s touch feedback is off.* as the

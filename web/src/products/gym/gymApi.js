@@ -115,11 +115,12 @@
 // weights are kg, and ids are client-minted ('ses_<hex>' / 'set_<hex>' / 'rt_<hex>', 'ex_<hex>' for a
 // lifter's own movement — the catalog's are slugs). A proposal's id ('prop_<hex>') is never minted here.
 // Routines serialize as {id, name, position, revision, lastTrainedAt?, pendingProposal?, history?,
-// entries: [{position, exerciseId, targetSets?, targetReps?, targetWeightKg?, restSeconds?}]}; a write
-// sends no `position` on an entry and the server renumbers from the entry order.
-// An entry with no `targetSets` is open: it must carry no `targetReps` and no `targetWeightKg` or the
-// write is refused 400, and `restSeconds` is allowed on one. Bounds when named: sets 1–20, reps 1–100,
-// weight ±500 kg, rest 15–900 s, one to fifty entries per routine. No `lastTrainedAt` is `untested`.
+// entries: [{position, exerciseId, sets?: [{reps?, weightKg?}], restSeconds?}]}; a write sends no
+// `position` on an entry and the server renumbers from the entry order.
+// An entry with no `sets` key is open, and `restSeconds` is allowed on one; an empty `sets` is refused
+// 400 like a zero target. A set's absent `reps` is max, its absent `weightKg` is last time's Nth set.
+// Bounds: 1–20 sets per entry, reps 1–100 and weight ±500 kg per set, rest 15–900 s, one to fifty
+// entries per routine. No `lastTrainedAt` is `untested`.
 // `revision` is the store's to move and is what a proposal is frozen against. `pendingProposal` is a
 // head — {id, routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
 // connection?, agent?, thread?}} — present only while one is waiting; `source.thread` is offered only

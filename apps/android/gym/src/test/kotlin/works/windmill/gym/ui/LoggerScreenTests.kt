@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -38,12 +39,15 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetKind
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.net.TrainingSyncing
 import works.windmill.gym.store.DeviceCopy
+import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
@@ -113,6 +117,52 @@ class LoggerScreenTests {
         }
         return store
     }
+
+    // The rack fixture: Lower A, whose back squat is the ramp 60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 ·
+    // 80 × 5, with the first two sets landed as planned. Signed out, so the plan is the routine the
+    // device holds and nothing here depends on a server.
+    private fun rack(scope: CoroutineScope): TrainingStore {
+        val store = TrainingStore(
+            queue = SetQueue(File(tmp.root, "queue.json")),
+            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
+            localLog = LocalLog(File(tmp.root, "local.json")),
+            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
+            scope = scope,
+            mintSession = { "ses_1" },
+            mintSet = Ids::set,
+            undoWindowMs = 0,
+            sync = { null },
+        )
+        runBlocking {
+            store.connect(Account(
+                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+                user = null))
+            val lowerA = (store.saveRoutine(
+                RoutineDraft(name = "Lower A")
+                    .adding("back-squat")
+                    .targeting("back-squat", listOf(
+                        SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)))
+            ) as GymResult.Ok).value
+            store.start(lowerA.id)
+            store.choose("back-squat")
+            store.logSet(60.0, 5)
+            store.logSet(80.0, 5)
+        }
+        compose.setContent {
+            LoggerScreen(store = store, isSignedIn = false, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+        }
+        return store
+    }
+
+    // The strip's pills left to right, each as what it says and whether it is a door. A pill still on
+    // this device merges the cloud's own words after its name, so the name is the first said.
+    private fun strip(): List<Pair<String, Boolean>> = compose
+        .onAllNodes(hasContentDescription("Set ", substring = true) or hasContentDescription("set ", substring = true))
+        .fetchSemanticsNodes()
+        .filter { it.config[SemanticsProperties.ContentDescription].first().matches(Regex("(Set|set) \\d+, .*")) }
+        .sortedBy { it.boundsInRoot.left }
+        .map { it.config[SemanticsProperties.ContentDescription].first() to (SemanticsActions.OnClick in it.config) }
 
     // The fake log with its last-time read down and nothing else.
     private fun down(server: FakeTraining): TrainingSyncing = object : TrainingSyncing by server {
@@ -331,6 +381,77 @@ class LoggerScreenTests {
         compose.onNodeWithText("82.5 × 3").performClick()
         compose.onNode(hasContentDescription("Weight 82.5 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    // The strip is the slot strip: what landed as it was lifted, the set about to be lifted as its
+    // target behind the accent outline, the sets after it in the faint ink — and only a landed pill
+    // is a door. The set line and the rack read the CURRENT slot, never set 2.
+    @Test
+    fun theStripDrawsTheSlotsAndTheRackReadsTheCurrentOne() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        rack(scope)
+
+        compose.onNodeWithText("Set 3 of 5 · target 3 @ 90").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
+        assertEquals(
+            listOf(
+                "Set 1, 60 × 5" to true,
+                "Set 2, 80 × 5" to true,
+                "set 3, target 90 × 3" to false,
+                "set 4, target 100 × 1" to false,
+                "set 5, target 80 × 5" to false,
+            ),
+            strip(),
+        )
+        compose.onNode(hasContentDescription("set 3, target 90 × 3")).assert(hasText("90 × 3"))
+        compose.onNode(hasContentDescription("set 3, target 90 × 3"))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
+
+        compose.onNodeWithText("Log set").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Set 4 of 5 · target 1 @ 100").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Weight 100 kg")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Reps 1")).assertIsDisplayed()
+        assertEquals(
+            listOf(
+                "Set 1, 60 × 5" to true,
+                "Set 2, 80 × 5" to true,
+                "Set 3, 90 × 3" to true,
+                "set 4, target 100 × 1" to false,
+                "set 5, target 80 × 5" to false,
+            ),
+            strip(),
+        )
+        scope.cancel()
+    }
+
+    // A set logged past the plan appends a plain landed pill, and the set line counts on past the
+    // plan with no target tail — the log is right where it and the plan disagree.
+    @Test
+    fun aSetLoggedPastThePlanAppendsAPlainPill() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        rack(scope)
+
+        repeat(4) {
+            compose.onNodeWithText("Log set").performClick()
+            compose.waitForIdle()
+        }
+
+        compose.onNodeWithText("Set 7 of 5").assertIsDisplayed()
+        compose.onAllNodes(hasText("target", substring = true)).assertCountEquals(0)
+        assertEquals(
+            listOf(
+                "Set 1, 60 × 5" to true,
+                "Set 2, 80 × 5" to true,
+                "Set 3, 90 × 3" to true,
+                "Set 4, 100 × 1" to true,
+                "Set 5, 80 × 5" to true,
+                "Set 6, 80 × 5" to true,
+            ),
+            strip(),
+        )
         scope.cancel()
     }
 

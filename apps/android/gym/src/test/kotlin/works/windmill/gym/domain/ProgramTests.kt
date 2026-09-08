@@ -94,7 +94,7 @@ class ProgramTests {
     fun testARoutineWithNoStoredCountSaysWhatItHoldsAndNothingItCannotKnow() {
         val now = at(2026, 8, 10)
         val old = Routine(id = "rt_1", name = "Push A",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5),
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() }),
                              RoutineEntry(position = 2, exerciseId = "chin-up")))
 
         assertEquals("built 1 Jun · 2 movements",
@@ -105,7 +105,7 @@ class ProgramTests {
     fun testWithNoCreatedRowTheHeadFallsBackToWhatTheListsPrint() {
         val now = at(2026, 8, 10)
         val shelved = Routine(id = "rt_1", name = "Push A",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5)))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() })))
 
         val head = Program.head(shelved, emptyList(), now)
         assertTrue(head.untested)
@@ -132,27 +132,25 @@ class ProgramTests {
     }
 
     @Test
-    fun testLeavingARowOpenClearsEveryTargetOnIt() {
+    fun testLeavingARowOpenDropsItsWholeScheme() {
         val draft = RoutineDraft(name = "Heavy Thursday")
             .adding("back-squat")
             .adding("deadlift")
-            .targeting("deadlift", sets = 3, reps = 5, weightKg = 140.0)
+            .targeting("deadlift", List(3) { SetTarget(5, 140.0) })
 
-        assertEquals(RoutineEntry(position = 2, exerciseId = "deadlift", targetSets = 3,
-            targetReps = 5, targetWeightKg = 140.0), draft.entry("deadlift"))
+        assertEquals(RoutineEntry(position = 2, exerciseId = "deadlift", sets = List(3) { SetTarget(5, 140.0) }),
+            draft.entry("deadlift"))
 
         val opened = draft.opening("deadlift")
         assertEquals(RoutineEntry(position = 2, exerciseId = "deadlift"), opened.entry("deadlift"))
-        assertNull(opened.entry("deadlift")?.targetSets)
-        assertNull(opened.entry("deadlift")?.targetReps)
-        assertNull(opened.entry("deadlift")?.targetWeightKg)
+        assertTrue(opened.entry("deadlift")!!.isOpen)
     }
 
     @Test
     fun testATypedTargetIsRoundedOnTheLaddersOwnGrid() {
         val draft = RoutineDraft(name = "Push A").adding("bench-press")
-            .targeting("bench-press", sets = 3, reps = 5, weightKg = 82.499999999999996)
-        assertEquals(82.5, draft.entry("bench-press")?.targetWeightKg)
+            .targeting("bench-press", listOf(SetTarget(5, 82.499999999999996), SetTarget(3, 90.004)))
+        assertEquals(listOf(SetTarget(5, 82.5), SetTarget(3, 90.0)), draft.entry("bench-press")?.sets)
     }
 
     @Test
@@ -191,12 +189,12 @@ class ProgramTests {
         val draft = RoutineDraft(name = "Heavy Thursday")
             .adding("back-squat")
             .adding("barbell-row")
-            .targeting("back-squat", sets = 5, reps = 3, weightKg = 110.0)
+            .targeting("back-squat", listOf(SetTarget(3, 110.0), SetTarget(1, 120.0)))
 
         val written = json.encodeToString(
             kotlinx.serialization.builtins.ListSerializer(RoutineEntryWrite.serializer()), draft.write)
         assertEquals(
-            """[{"exerciseId":"back-squat","targetSets":5,"targetReps":3,"targetWeightKg":110.0},""" +
+            """[{"exerciseId":"back-squat","sets":[{"reps":3,"weightKg":110.0},{"reps":1,"weightKg":120.0}]},""" +
                 """{"exerciseId":"barbell-row"}]""",
             written)
     }
@@ -206,7 +204,7 @@ class ProgramTests {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", position = 2,
             lastTrainedAtMs = 5_000,
             entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5, targetReps = 3),
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(3) }),
                 RoutineEntry(position = 2, exerciseId = "barbell-row"),
             ))
 
@@ -233,17 +231,16 @@ class ProgramTests {
 
     @Test
     fun testATargetWithNoSetsIsTheWordOpenAndNothingElse() {
-        assertEquals("open", Readout.target(null, null, null))
-        assertEquals("open", Readout.target(null, 5, 140.0))
-        assertEquals("3 × 5 · 140", Readout.target(3, 5, 140.0))
-        assertEquals("3 × max", Readout.target(3, null, null))
+        assertEquals("open", Readout.target(emptyList()))
+        assertEquals("3 × 5 · 140", Readout.target(List(3) { SetTarget(5, 140.0) }))
+        assertEquals("3 × max", Readout.target(List(3) { SetTarget() }))
     }
 
     @Test
     fun testAnOpenLineFreezesAsAnAbsenceAndTheCounterCountsWithoutIt() {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
             RoutineEntry(position = 1, exerciseId = "barbell-row"),
-            RoutineEntry(position = 2, exerciseId = "back-squat", targetSets = 5, targetReps = 3),
+            RoutineEntry(position = 2, exerciseId = "back-squat", sets = List(5) { SetTarget(3) }),
         ))
         val plan = PlanSnapshot(routine)
 
@@ -277,18 +274,18 @@ class ProgramTests {
     @Test
     fun testRetargetingLeavesAnOpenRowOpen() {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5, targetWeightKg = 110.0),
+            RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(weightKg = 110.0) }),
             RoutineEntry(position = 2, exerciseId = "barbell-row"),
         ))
 
         assertEquals(
             Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5, targetWeightKg = 115.0),
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(weightKg = 115.0) }),
                 RoutineEntry(position = 2, exerciseId = "barbell-row"),
             )),
-            routine.retargeting(1, "back-squat", toWeightKg = 115.0))
+            routine.retargeting(1, "back-squat", List(5) { SetTarget(weightKg = 115.0) }))
 
-        assertNull("no sets, so no weight — the log would refuse the pair, so nothing is written",
-            routine.retargeting(2, "barbell-row", toWeightKg = 60.0))
+        assertNull("an open line takes no scheme from the rack — nothing is written",
+            routine.retargeting(2, "barbell-row", listOf(SetTarget(10, 60.0))))
     }
 }

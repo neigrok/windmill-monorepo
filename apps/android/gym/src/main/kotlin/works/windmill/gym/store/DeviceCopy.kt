@@ -2,6 +2,7 @@ package works.windmill.gym.store
 
 import java.io.File
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Routine
@@ -22,9 +23,18 @@ class DeviceCopy(private val file: File) {
         val lastSets: List<LastSet>? = null,
     )
 
-    private var held: Held = runCatching {
-        diskJson.decodeFromString(Held.serializer(), file.readText())
-    }.getOrElse { Held() }
+    private var held: Held = open()
+
+    // Row by row, so one routine this build cannot read never empties the copy.
+    private fun open(): Held {
+        val document = StoredDocument.tree(file) ?: return Held()
+        return Held(
+            owner = StoredDocument.one(document["owner"], String.serializer()),
+            movements = StoredDocument.each(document["movements"], Exercise.serializer()).orEmpty(),
+            routines = StoredDocument.each(document["routines"], Routine.serializer()).orEmpty(),
+            lastSets = StoredDocument.each(document["lastSets"], LastSet.serializer()),
+        )
+    }
 
     fun movements(owner: String?): List<Exercise> =
         if (held.owner == owner) held.movements else emptyList()

@@ -3,8 +3,9 @@ import WindmillPlatform
 
 // The log as this device holds it: finished sessions with their sets, routines, movements and the
 // settings. Signing in claims it — TrainingStore walks these shelves oldest first and empties them as
-// the log answers. Whole-file atomic writes; a file this build cannot read opens EMPTY. No local read
-// carries an Epley estimate.
+// the log answers. Whole-file atomic writes, read through `DeviceDocument`: a document an older build
+// wrote is rewritten on load, a row this build cannot read is dropped alone, and only a file that is
+// not JSON opens EMPTY. No local read carries an Epley estimate.
 
 public final class LocalLog {
     public struct LocalSession: Equatable, Codable {
@@ -18,10 +19,24 @@ public final class LocalLog {
     }
 
     // Every shelf optional: a file written by a build with fewer shelves must not decode to empty.
+    // Read row by row: a session, routine or movement this build cannot read is the one thing dropped.
     private struct Shelf: Codable {
         var sessions: [LocalSession]?
         var routines: [Routine]?
         var exercises: [ExerciseWrite]?
+
+        init() {}
+
+        enum CodingKeys: String, CodingKey {
+            case sessions, routines, exercises
+        }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            sessions = try fields.decodeKept([LocalSession].self, forKey: .sessions)
+            routines = try fields.decodeKept([Routine].self, forKey: .routines)
+            exercises = try fields.decodeKept([ExerciseWrite].self, forKey: .exercises)
+        }
     }
 
     // One shelf per seat, and the seat is the key: `open(under:)` names it and nothing else does.
@@ -34,6 +49,23 @@ public final class LocalLog {
         var preferences: GymPreferences?
         var preferencesOwed: Bool?
         var preferencesSeat: String?
+
+        init() {}
+
+        enum CodingKeys: String, CodingKey {
+            case sessions, routines, exercises, shelves, preferences, preferencesOwed, preferencesSeat
+        }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            sessions = try fields.decodeKept([LocalSession].self, forKey: .sessions)
+            routines = try fields.decodeKept([Routine].self, forKey: .routines)
+            exercises = try fields.decodeKept([ExerciseWrite].self, forKey: .exercises)
+            shelves = try fields.decodeKept([String: Shelf].self, forKey: .shelves)
+            preferences = try fields.decodeIfPresent(GymPreferences.self, forKey: .preferences)
+            preferencesOwed = try fields.decodeIfPresent(Bool.self, forKey: .preferencesOwed)
+            preferencesSeat = try fields.decodeIfPresent(String.self, forKey: .preferencesSeat)
+        }
     }
 
     // Mirrors backend/products/gym/domain/Review.h kSlightWorkingSets.
@@ -55,7 +87,7 @@ public final class LocalLog {
                 deviceHolds: @escaping @autoclosure () -> String? = KeychainSessions().readUser()?.id) {
         self.url = url
         let data = (try? Data(contentsOf: url)) ?? Data()
-        held = (try? JSONDecoder().decode(Held.self, from: data)) ?? Held()
+        held = DeviceDocument.read(Held.self, from: data) ?? Held()
         retireThePreSeatShelves(heldBy: deviceHolds)
     }
 
@@ -305,9 +337,7 @@ public final class LocalLog {
                     entries: routine.entries.map { entry in
                         guard entry.exerciseId == old else { return entry }
                         return RoutineEntry(position: entry.position, exerciseId: fresh,
-                                            targetSets: entry.targetSets, targetReps: entry.targetReps,
-                                            targetWeightKg: entry.targetWeightKg,
-                                            restSeconds: entry.restSeconds)
+                                            sets: entry.sets, restSeconds: entry.restSeconds)
                     })
         }
         shelf.sessions = (shelf.sessions ?? []).map { local in

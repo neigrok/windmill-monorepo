@@ -32,6 +32,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -156,7 +157,7 @@ class RoutineEditorTests {
     fun testTheEditorPrintsOpenPerRowAndLeavesTheSentenceToTheTargetSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat")
-            .targeting("squat", sets = 3, reps = 5, weightKg = 60.0))
+            .targeting("squat", List(3) { SetTarget(5, 60.0) }))
 
         compose.onNodeWithText("open").assertIsDisplayed()
         compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
@@ -174,7 +175,7 @@ class RoutineEditorTests {
     fun testARoutineWhoseEveryLineNamesItsNumbersSaysNothingAboutTheRack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, RoutineDraft(name = "Push Day").adding("bench-press")
-            .targeting("bench-press", sets = 3, reps = 5, weightKg = 60.0))
+            .targeting("bench-press", List(3) { SetTarget(5, 60.0) }))
 
         compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
         scope.cancel()

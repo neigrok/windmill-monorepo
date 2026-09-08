@@ -6,9 +6,7 @@ final class RoutineDraftTests: XCTestCase {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         draft.add("deadlift")
         XCTAssertEqual(draft.lines.count, 1)
-        XCTAssertNil(draft.entries[0].targetSets)
-        XCTAssertNil(draft.entries[0].targetReps)
-        XCTAssertNil(draft.entries[0].targetWeightKg)
+        XCTAssertEqual(draft.entries[0].sets, [])
         XCTAssertTrue(draft.entries[0].isOpen)
         XCTAssertTrue(draft.isSavable, "rows with no targets ask at the rack — they do not block Save")
     }
@@ -21,76 +19,54 @@ final class RoutineDraftTests: XCTestCase {
                                    entries: [.init(exerciseId: "deadlift")], position: 0).isSavable)
     }
 
-    func testLeaveItOpenClearsTheRepsAndTheWeightAndNotJustTheSets() {
-        var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
-        let line = draft.add("deadlift")
-        draft.set(line.id, sets: 3, reps: 5, weightKg: 140)
-        XCTAssertEqual(draft.entries[0].targetSets, 3)
-        XCTAssertEqual(draft.entries[0].targetReps, 5)
-        XCTAssertEqual(draft.entries[0].targetWeightKg, 140)
+    // An empty scheme is the open line: the whole target goes, and rest stays.
+    func testSettingAnEmptySchemeLeavesTheLineOpenAndKeepsItsRest() {
+        var draft = RoutineDraft(name: "Heavy Thursday",
+                                 entries: [.init(exerciseId: "deadlift", restSeconds: 180)], position: 0)
+        let line = draft.lines[0].id
+        draft.set(line, sets: Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 3))
+        XCTAssertEqual(draft.entries[0].sets, Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 3))
+        XCTAssertEqual(draft.entries[0].restSeconds, 180)
 
-        draft.leaveOpen(line.id)
-        XCTAssertNil(draft.entries[0].targetSets)
-        XCTAssertNil(draft.entries[0].targetReps)
-        XCTAssertNil(draft.entries[0].targetWeightKg)
+        draft.set(line, sets: [])
+        XCTAssertEqual(draft.entries[0], RoutineWrite.Entry(exerciseId: "deadlift", restSeconds: 180))
+        XCTAssertTrue(draft.entries[0].isOpen)
     }
 
-    func testACommitCarriesTheAbsencesRatherThanFillingThem() {
+    func testACommitCarriesTheAbsencesRatherThanFillingThem() throws {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let line = draft.add("chin-up")
-        draft.set(line.id, sets: 3, reps: nil, weightKg: nil)
-        XCTAssertEqual(draft.entries[0].targetSets, 3)
-        XCTAssertNil(draft.entries[0].targetReps)
-        XCTAssertNil(draft.entries[0].targetWeightKg)
+        draft.set(line.id, sets: Array(repeating: SetTarget(), count: 3))
         XCTAssertFalse(draft.entries[0].isOpen, "no reps is `3 × max`, which is a target and not an open row")
-        XCTAssertEqual(Readout.target(sets: draft.entries[0].targetSets,
-                                      reps: draft.entries[0].targetReps,
-                                      weightKg: draft.entries[0].targetWeightKg), "3 × max")
-    }
-
-    func testARowOpenedAndCommittedUntouchedComesBackTheWayItWentIn() throws {
-        var draft = RoutineDraft(name: "Heavy Thursday",
-                                 entries: [.init(exerciseId: "back-squat", targetSets: 5, targetReps: 5),
-                                           .init(exerciseId: "chin-up", targetSets: 3)],
-                                 position: 0)
-        // The sheet opens on what the row holds and commits the same three fields back.
-        for line in draft.lines {
-            let held = line.entry
-            draft.set(line.id, sets: held.targetSets ?? 0, reps: held.targetReps,
-                      weightKg: held.targetWeightKg)
-        }
-        XCTAssertEqual(draft.entries.map(\.targetSets), [5, 3])
-        XCTAssertEqual(draft.entries.map(\.targetReps), [5, nil])
-        XCTAssertEqual(draft.entries.map(\.targetWeightKg), [nil, nil])
+        XCTAssertEqual(Readout.target(draft.entries[0].sets), "3 × max")
 
         let body = try XCTUnwrap(String(data: JSONEncoder().encode(draft.write), encoding: .utf8))
-        XCTAssertFalse(body.contains("targetWeightKg"), "no weight named is no weight sent")
-        XCTAssertEqual(body.components(separatedBy: "targetReps").count - 1, 1,
-                       "one of the two lines names reps, and only that one sends them")
+        XCTAssertTrue(body.contains(#""sets":[{},{},{}]"#), "three sets naming nothing, never a null")
     }
 
-    func testRestIsCarriedThroughBothWrites() {
+    func testARowOpenedAndCommittedUntouchedComesBackTheWayItWentIn() {
         var draft = RoutineDraft(name: "Heavy Thursday",
-                                 entries: [.init(exerciseId: "deadlift", restSeconds: 180)],
+                                 entries: [.init(exerciseId: "back-squat", sets: Array(repeating: SetTarget(reps: 5), count: 5)),
+                                           .init(exerciseId: "chin-up", sets: Array(repeating: SetTarget(), count: 3))],
                                  position: 0)
-        let line = draft.lines[0].id
-        draft.set(line, sets: 3, reps: 5, weightKg: 140)
-        XCTAssertEqual(draft.entries[0].restSeconds, 180)
-        draft.leaveOpen(line)
-        XCTAssertEqual(draft.entries[0].restSeconds, 180)
+        let opened = draft
+        for line in draft.lines {
+            let sheet = TargetEntry.Draft(line.entry.sets)
+            draft.set(line.id, sets: sheet.scheme ?? [])
+        }
+        XCTAssertEqual(draft, opened)
     }
 
     func testEditKeepsTheIdAndPosition() {
         let routine = Routine(id: "rt_1", name: "Heavy Thursday", position: 2,
                               entries: [RoutineEntry(position: 1, exerciseId: "deadlift",
-                                                     targetSets: 3, targetReps: 5,
-                                                     targetWeightKg: 140)])
+                                                     sets: Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 3))])
         let edit = RoutineDraft(editing: routine)
         XCTAssertEqual(edit.id, "rt_1")
         XCTAssertEqual(edit.position, 2)
         XCTAssertEqual(edit.name, "Heavy Thursday")
         XCTAssertEqual(edit.entries.map(\.exerciseId), ["deadlift"])
-        XCTAssertEqual(edit.entries.map(\.targetSets), [3])
+        XCTAssertEqual(edit.entries.map(\.sets), [Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 3)])
     }
 
     // The counter's silence below the last fifth is `RoutineEditorCopyTests`; this is what it counts
@@ -177,8 +153,9 @@ final class RoutineDraftTests: XCTestCase {
     }
 }
 
-// The routine target's three typed fields. Six refusals, two bands that are not the logger's, and a
-// clear that is refused rather than cascaded.
+// The target sheet's typed fields and its draft: six refusals under the field or row that carries the
+// fault, two bands that are not the logger's, a head that writes every row and a ladder that is hidden
+// rather than thrown away.
 final class TargetEntryTests: XCTestCase {
     func testAnEmptyFieldIsTheNullTargetAndNotARefusal() {
         for typed in ["", "   "] {
@@ -249,18 +226,6 @@ final class TargetEntryTests: XCTestCase {
                        "A zero target is no target — clear the field instead.")
     }
 
-    // `Routine.cpp:18`: an open entry names no sets, so it names no reps and no weight either.
-    func testClearingSetsIsRefusedWhileEitherOfTheOtherTwoHoldsAValue() {
-        XCTAssertEqual(TargetEntry.clearingSets(reps: "5", weight: ""),
-                       "Clear reps and weight first — an open line names neither.")
-        XCTAssertEqual(TargetEntry.clearingSets(reps: "", weight: "100"),
-                       "Clear reps and weight first — an open line names neither.")
-        XCTAssertEqual(TargetEntry.clearingSets(reps: "5", weight: "100"),
-                       "Clear reps and weight first — an open line names neither.")
-        XCTAssertNil(TargetEntry.clearingSets(reps: "", weight: ""))
-        XCTAssertNil(TargetEntry.clearingSets(reps: "  ", weight: " "))
-    }
-
     // Every refusal the six name is one sentence, ending in a full stop, and none of them is a hint.
     func testTheSixRefusalsAreThePinnedSentences() {
         XCTAssertEqual([TargetEntry.oneDecimalPoint, TargetEntry.notANumber, TargetEntry.overWeight,
@@ -276,6 +241,218 @@ final class TargetEntryTests: XCTestCase {
     // A typed load lands on the same grid the rack's ladder moves on.
     func testATypedWeightIsRoundedOnTheLaddersGrid() {
         XCTAssertEqual(TargetEntry.readWeight("102,505").value, 102.51)
+    }
+
+    private let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                        SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                        SetTarget(reps: 5, weightKg: 80)]
+
+    // Ramp up: two typed ends and one tap; the loads between on their band's plate grid, reps to the
+    // nearest whole. F10: 60 → 100 over 5 is 60/70/80/90/100; 20 → 22.5 over 3 puts 21.25 on the
+    // 2.5 grid of its band, 22.5 — half away from zero, never to hundredths.
+    func testRampUpInterpolatesRepsAndLoadFromSetOneToSetN() {
+        let ends = [SetTarget(reps: 5, weightKg: 60), SetTarget(), SetTarget(), SetTarget(), SetTarget(reps: 1, weightKg: 100)]
+        XCTAssertEqual(TargetEntry.rampUp(ends).map(\.weightKg), [60, 70, 80, 90, 100])
+        XCTAssertEqual(TargetEntry.rampUp(ends).map(\.reps), [5, 4, 3, 2, 1])
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: 20), SetTarget(), SetTarget(reps: 5, weightKg: 22.5)]).map(\.weightKg),
+                       [20, 22.5, 22.5])
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: -20), SetTarget(), SetTarget(reps: 5, weightKg: -22.5)]).map(\.weightKg),
+                       [-20, -22.5, -22.5], "half away from zero below zero too")
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 8, weightKg: 70),
+                                           SetTarget(reps: 1, weightKg: 100)]).map(\.weightKg), [60, 80, 100])
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 8, weightKg: 60), SetTarget(), SetTarget(reps: 1, weightKg: 62)]).map(\.weightKg),
+                       [60, 60, 62], "61 is not on the 2.5 grid; the typed ends stay as typed")
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 9, weightKg: 70), SetTarget(reps: 1)]).map(\.weightKg),
+                       [60, 70, nil], "a column with an absent end is left as it is")
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 9, weightKg: 70), SetTarget(reps: 1)]).map(\.reps), [5, 3, 1])
+        XCTAssertEqual(TargetEntry.rampUp([SetTarget(reps: 5, weightKg: 60)]), [SetTarget(reps: 5, weightKg: 60)])
+    }
+
+    // F6: two rows have nothing between their ends.
+    func testRampUpNeedsThreeRows() {
+        let two = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 1, weightKg: 100)]
+        XCTAssertEqual(TargetEntry.rampUp(two), two)
+        XCTAssertFalse(TargetEntry.Draft(two).canRamp)
+        XCTAssertTrue(TargetEntry.Draft(two + [SetTarget(reps: 1, weightKg: 100)]).canRamp)
+    }
+
+    func testMatchSetOneWritesTheFirstRowIntoEveryRow() {
+        XCTAssertEqual(TargetEntry.matchSetOne(ramp), Array(repeating: SetTarget(reps: 5, weightKg: 60), count: 5))
+        XCTAssertEqual(TargetEntry.matchSetOne([]), [])
+    }
+
+    func testTheDraftOpensOnTheSchemeAndCommitsItBackUnchanged() {
+        let draft = TargetEntry.Draft(ramp)
+        XCTAssertEqual(draft.sets, "5")
+        XCTAssertEqual(draft.ladder.map(\.reps), ["5", "5", "3", "1", "5"])
+        XCTAssertEqual(draft.ladder.map(\.weight), ["60", "80", "90", "100", "80"])
+        XCTAssertEqual(draft.headReps, "")
+        XCTAssertEqual(draft.headWeight, "")
+        XCTAssertEqual(draft.repsPlaceholder, "varies")
+        XCTAssertEqual(draft.weightPlaceholder, "varies")
+        XCTAssertEqual(draft.scheme, ramp)
+        XCTAssertEqual(draft.commitLabel, "Set · 5 sets")
+        XCTAssertTrue(draft.canRamp)
+
+        let straight = TargetEntry.Draft(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3))
+        XCTAssertEqual(straight.headReps, "8")
+        XCTAssertEqual(straight.headWeight, "60")
+        XCTAssertEqual(straight.repsPlaceholder, "max")
+        XCTAssertEqual(straight.weightPlaceholder, "last time")
+        XCTAssertEqual(straight.commitLabel, "Set · 3 × 8 · 60")
+        XCTAssertFalse(straight.canRamp, "set 1 and set n agree — nothing to ramp between")
+    }
+
+    func testSetsGrowsTheLadderByCopyingTheRowAboveAndNeverThrowsRowsAway() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.typeSets("6")
+        XCTAssertEqual(draft.scheme, ramp + [SetTarget(reps: 5, weightKg: 80)])
+
+        draft.typeSets("1")
+        XCTAssertEqual(draft.scheme, [SetTarget(reps: 5, weightKg: 60)])
+        draft.typeSets("12")
+        XCTAssertEqual(draft.scheme, ramp + Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 7),
+                       "typing 5 → 1 → 12 keeps rows 2–5 and copies row 5 into 6–12")
+
+        var fresh = TargetEntry.Draft([])
+        fresh.typeSets("3")
+        XCTAssertEqual(fresh.scheme, Array(repeating: SetTarget(), count: 3))
+        XCTAssertEqual(fresh.commitLabel, "Set · 3 × max")
+    }
+
+    func testAnEmptySetsHidesTheLadderWithoutDiscardingIt() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.typeSets("")
+        XCTAssertTrue(draft.isOpen)
+        XCTAssertEqual(draft.ladder, [])
+        XCTAssertEqual(draft.scheme, [])
+        XCTAssertEqual(draft.commitLabel, "Set · open")
+        XCTAssertNil(draft.refusal, "the open line is a target, not a fault")
+
+        draft.typeSets("5")
+        XCTAssertEqual(draft.scheme, ramp, "the ladder was hidden, not thrown away")
+    }
+
+    func testTheHeadWritesEveryRow() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.typeReps("5")
+        XCTAssertEqual(draft.ladder.map(\.reps), Array(repeating: "5", count: 5))
+        XCTAssertEqual(draft.headReps, "5")
+        XCTAssertEqual(draft.repsPlaceholder, "max")
+        XCTAssertEqual(draft.headWeight, "", "the loads still disagree")
+        draft.typeWeight("80")
+        XCTAssertEqual(draft.scheme, Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 5))
+        XCTAssertEqual(draft.commitLabel, "Set · 5 × 5 · 80")
+    }
+
+    func testARowEditsThatSetAlone() {
+        var draft = TargetEntry.Draft(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3))
+        draft.typeWeight("65", row: 2)
+        draft.typeReps("6", row: 2)
+        XCTAssertEqual(draft.scheme, [SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 6, weightKg: 65)])
+        XCTAssertEqual(draft.headReps, "")
+        XCTAssertEqual(draft.repsPlaceholder, "varies")
+        XCTAssertEqual(draft.commitLabel, "Set · 3 sets")
+    }
+
+    func testAddSetCopiesTheLastRowAndIsInertAtTwenty() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.addSet()
+        XCTAssertEqual(draft.sets, "6")
+        XCTAssertEqual(draft.scheme, ramp + [SetTarget(reps: 5, weightKg: 80)])
+
+        var full = TargetEntry.Draft(Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 20))
+        full.addSet()
+        XCTAssertEqual(full.ladder.count, 20)
+        XCTAssertEqual(full.refusal, TargetEntry.Refusal(field: .addSet, said: "Sets, 1 to 20."))
+        XCTAssertNil(full.scheme)
+        XCTAssertEqual(full.commitLabel, "Set")
+        full.typeReps("6", row: 0)
+        XCTAssertNil(full.refusal, "any keystroke clears it")
+    }
+
+    // F3: a shrunken count hides rows and never discards them — Add set reveals the next hidden row,
+    // a Delete takes one row out of the array, and the rows past the count are still there after both.
+    func testAShrunkenCountKeepsItsHiddenRowsThroughAddSetAndDelete() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.typeSets("1")
+        draft.addSet()
+        XCTAssertEqual(draft.sets, "2")
+        XCTAssertEqual(draft.scheme, [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80)],
+                       "Add set reveals row 2 rather than copying row 1")
+        draft.typeSets("12")
+        XCTAssertEqual(draft.scheme, ramp + Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 7),
+                       "5 → 1 → Add set → 12 keeps 60/80/90/100/80")
+
+        var trimmed = TargetEntry.Draft(ramp)
+        trimmed.typeSets("2")
+        trimmed.delete(row: 0)
+        XCTAssertEqual(trimmed.sets, "1")
+        XCTAssertEqual(trimmed.scheme, [SetTarget(reps: 5, weightKg: 80)])
+        trimmed.typeSets("4")
+        XCTAssertEqual(trimmed.scheme, [SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 3, weightKg: 90),
+                                        SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 80)],
+                       "the delete took row 1 out and the hidden rows 3–5 moved up behind the count")
+
+        var opened = TargetEntry.Draft(ramp)
+        opened.typeSets("")
+        opened.addSet()
+        XCTAssertEqual(opened.scheme, [SetTarget(reps: 5, weightKg: 60)], "Add set on the open line reveals row 1")
+    }
+
+    func testDeletingARowDecrementsSetsAndDeletingTheLastLandsOnTheOpenLine() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.delete(row: 2)
+        XCTAssertEqual(draft.sets, "4")
+        XCTAssertEqual(draft.scheme, [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                                      SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 80)])
+
+        var one = TargetEntry.Draft([SetTarget(reps: 8, weightKg: 60)])
+        one.delete(row: 0)
+        XCTAssertEqual(one.sets, "")
+        XCTAssertTrue(one.isOpen)
+        XCTAssertEqual(one.scheme, [])
+        XCTAssertEqual(one.commitLabel, "Set · open")
+    }
+
+    func testRampUpAndMatchSetOneRewriteTheLadderInPlace() {
+        var draft = TargetEntry.Draft([SetTarget(reps: 5, weightKg: 60), SetTarget(), SetTarget(), SetTarget(), SetTarget(reps: 1, weightKg: 100)])
+        draft.rampUp()
+        XCTAssertEqual(draft.ladder.map(\.weight), ["60", "70", "80", "90", "100"])
+        XCTAssertEqual(draft.ladder.map(\.reps), ["5", "4", "3", "2", "1"])
+        draft.matchSetOne()
+        XCTAssertEqual(draft.scheme, Array(repeating: SetTarget(reps: 5, weightKg: 60), count: 5))
+        XCTAssertFalse(draft.canRamp)
+    }
+
+    // The one refusal, under the field that carries the fault: the head when every row shares it,
+    // the row when it was typed there; sets first, then the ladder top to bottom, reps before weight.
+    // F7: while any refusal stands the commit reads `Set` and has nothing to commit.
+    func testTheOneRefusalSitsUnderTheFieldThatCarriesTheFault() {
+        var draft = TargetEntry.Draft(ramp)
+        draft.typeSets("21")
+        XCTAssertEqual(draft.refusal, TargetEntry.Refusal(field: .sets, said: "Sets, 1 to 20."))
+        XCTAssertEqual(draft.scheme, nil)
+        XCTAssertEqual(draft.ladder.count, 5, "an unreadable count leaves the rows alone")
+        XCTAssertEqual(draft.commitLabel, "Set")
+
+        draft.typeSets("5")
+        XCTAssertEqual(draft.commitLabel, "Set · 5 sets")
+        draft.typeReps("101", row: 2)
+        XCTAssertEqual(draft.refusal, TargetEntry.Refusal(field: .rowReps(2), said: "Whole reps, 1 to 100."))
+        XCTAssertEqual(draft.commitLabel, "Set")
+        draft.typeWeight("501", row: 0)
+        XCTAssertEqual(draft.refusal, TargetEntry.Refusal(field: .rowWeight(0), said: "Over 500 kg — check the number."),
+                       "topmost first, and never two at once")
+
+        var head = TargetEntry.Draft(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3))
+        head.typeReps("0")
+        XCTAssertEqual(head.refusal, TargetEntry.Refusal(field: .reps, said: "A zero target is no target — clear the field instead."))
+        XCTAssertEqual(head.commitLabel, "Set")
+        head.typeReps("8")
+        head.typeWeight("10.2.5")
+        XCTAssertEqual(head.refusal, TargetEntry.Refusal(field: .weight, said: "One decimal point only."))
+        XCTAssertEqual(head.commitLabel, "Set")
     }
 }
 
@@ -298,13 +475,11 @@ final class RoutineReadoutTests: XCTestCase {
     // The target column's `open` is what says which rows are open; the sentence about what that
     // means is the target sheet's (`RoutineEditorCopyTests`), and a list draws none.
     func testAnOpenRowIsOneThatNamesNoSets() {
-        let named = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
-                                          targetReps: 3, targetWeightKg: 110),
+        let named = routine([RoutineEntry(position: 1, exerciseId: "back-squat", sets: Array(repeating: SetTarget(reps: 3, weightKg: 110), count: 5)),
                              RoutineEntry(position: 2, exerciseId: "barbell-row")])
         XCTAssertEqual(named.entries.filter(\.isOpen).map(\.exerciseId), ["barbell-row"])
 
-        let none = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
-                                         targetReps: 3, targetWeightKg: 110)])
+        let none = routine([RoutineEntry(position: 1, exerciseId: "back-squat", sets: Array(repeating: SetTarget(reps: 3, weightKg: 110), count: 5))])
         XCTAssertTrue(none.entries.filter(\.isOpen).isEmpty)
     }
 
@@ -358,25 +533,24 @@ final class RoutineReadoutTests: XCTestCase {
 }
 
 final class OpenRoutineEntryWireTests: XCTestCase {
-    func testAnOpenEntryOmitsItsSetCountRatherThanSendingZero() throws {
+    func testAnOpenEntryOmitsItsSetsRatherThanSendingAnEmptyArray() throws {
         let write = RoutineWrite(id: "rt_1", name: "Heavy Thursday", position: 0,
                                  entries: [RoutineWrite.Entry(exerciseId: "barbell-row",
                                                               restSeconds: 120),
-                                           RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 3,
-                                                              targetReps: 5, targetWeightKg: 140)])
-        let sent = String(data: try JSONEncoder().encode(write), encoding: .utf8) ?? ""
-        XCTAssertFalse(sent.contains("targetSets\":0"), "a zero is a target of nothing")
-        XCTAssertTrue(sent.contains("\"restSeconds\":120"),
-                      "rest is legal on an open line — it is how long you wait, not what you are asked to do")
-        XCTAssertTrue(sent.contains("\"targetSets\":3"))
+                                           RoutineWrite.Entry(exerciseId: "deadlift", sets: Array(repeating: SetTarget(reps: 5, weightKg: 140), count: 3))])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let sent = String(data: try encoder.encode(write.entries), encoding: .utf8) ?? ""
+        XCTAssertEqual(sent, #"[{"exerciseId":"barbell-row","restSeconds":120},{"exerciseId":"deadlift","sets":[{"reps":5,"weightKg":140},{"reps":5,"weightKg":140},{"reps":5,"weightKg":140}]}]"#,
+                       "an open line has no `sets` key — rest is legal on it, an empty array is not")
     }
 
     func testAnOpenEntryComesBackAsAnAbsenceAndReadsAsOneWord() throws {
         let wire = """
         {"id":"rt_1","name":"Heavy Thursday","position":1,"revision":4,
          "entries":[{"position":1,"exerciseId":"barbell-row","restSeconds":120},
-                    {"position":2,"exerciseId":"deadlift","targetSets":3,"targetReps":5,
-                     "targetWeightKg":140}],
+                    {"position":2,"exerciseId":"deadlift","sets":[{"reps":5,"weightKg":140},
+                     {"reps":5,"weightKg":140},{"reps":5,"weightKg":140}]}],
          "history":[{"kind":"proposal","at":1000,
                      "proposal":{"id":"pr_1","routineId":"rt_1","intent":"revise","state":"applied",
                                  "summary":"","changeCount":3,"createdAt":900,"settledAt":1000,
@@ -385,14 +559,10 @@ final class OpenRoutineEntryWireTests: XCTestCase {
         """
         let routine = try JSONDecoder().decode(Routine.self, from: Data(wire.utf8))
         XCTAssertTrue(routine.entries[0].isOpen)
-        XCTAssertNil(routine.entries[0].targetSets)
+        XCTAssertEqual(routine.entries[0].sets, [])
         XCTAssertEqual(routine.entries[0].restSeconds, 120)
-        XCTAssertEqual(Readout.target(sets: routine.entries[0].targetSets,
-                                      reps: routine.entries[0].targetReps,
-                                      weightKg: routine.entries[0].targetWeightKg), "open")
-        XCTAssertEqual(Readout.target(sets: routine.entries[1].targetSets,
-                                      reps: routine.entries[1].targetReps,
-                                      weightKg: routine.entries[1].targetWeightKg), "3 × 5 · 140")
+        XCTAssertEqual(Readout.target(routine.entries[0].sets), "open")
+        XCTAssertEqual(Readout.target(routine.entries[1].sets), "3 × 5 · 140")
 
         XCTAssertEqual(routine.history.map(\.kind), [.proposal, .created])
         XCTAssertEqual(routine.history[0].proposal?.id, "pr_1")
@@ -424,7 +594,7 @@ final class OpenRoutineEntryWireTests: XCTestCase {
         XCTAssertTrue(plan.isOpen)
         let counter = LiveLines.counter(workingSetsToday: 2, planEntry: plan)
         XCTAssertEqual(counter.count, "set 3")
-        XCTAssertEqual(counter.plan, "no target")
+        XCTAssertNil(counter.target)
     }
 
     func testTheFinishComparisonDoesNotDrawAnArrowFromAnOpenTarget() {
@@ -433,9 +603,9 @@ final class OpenRoutineEntryWireTests: XCTestCase {
                                   exerciseId: "barbell-row",
                                   now: Against.Effort(weightKg: 70, reps: 8, sets: 3),
                                   before: Against.Effort(weightKg: 65, reps: 8, sets: 3),
-                                  planned: Against.Target())])
+                                  planned: [])])
         let rows = Finish.comparison(against, catalog: [Exercise(id: "barbell-row", name: "Barbell Row")])
-        XCTAssertEqual(rows?.rows.map(\.detail), ["3×8 @ 65 → 3×8 @ 70"])
+        XCTAssertEqual(rows?.rows.map(\.detail), ["3 × 8 · 65 → 3 × 8 · 70"])
     }
 }
 
@@ -471,17 +641,17 @@ final class RoutineWritingTests: XCTestCase {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let squat = draft.add("back-squat")
         draft.add("barbell-row")
-        draft.set(squat.id, sets: 5, reps: 3, weightKg: 110)
+        draft.set(squat.id, sets: Array(repeating: SetTarget(reps: 3, weightKg: 110), count: 5))
 
         guard case .success(let made) = await store.create(draft) else {
             return XCTFail("a routine can be written on this device")
         }
         XCTAssertEqual(made.name, "Heavy Thursday")
         XCTAssertEqual(made.entries.map(\.position), [1, 2])
-        XCTAssertEqual(made.entries.map(\.targetSets), [5, nil])
+        XCTAssertEqual(made.entries.map(\.sets.count), [5, 0])
         XCTAssertTrue(made.isUntested)
         XCTAssertEqual(store.routines.map(\.id), [made.id])
-        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).routine(made.id)?.entries.map(\.targetSets), [5, nil],
+        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).routine(made.id)?.entries.map(\.sets.count), [5, 0],
                        "the absence survives the disk as well as the wire")
     }
 
@@ -510,7 +680,7 @@ final class RoutineWritingTests: XCTestCase {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let squat = draft.add("back-squat")
         draft.add("barbell-row")
-        draft.set(squat.id, sets: 5, reps: 3, weightKg: 110)
+        draft.set(squat.id, sets: Array(repeating: SetTarget(reps: 3, weightKg: 110), count: 5))
         guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
 
         var renamed = RoutineDraft(editing: made)
@@ -518,7 +688,7 @@ final class RoutineWritingTests: XCTestCase {
         guard case .success = await store.replace(renamed) else { return XCTFail("no replace") }
         XCTAssertEqual(store.routines.first?.name, "Thursday")
         XCTAssertEqual(store.routines.first?.id, made.id, "a rename never forks the record")
-        XCTAssertEqual(store.routines.first?.entries.map(\.targetSets), [5, nil])
+        XCTAssertEqual(store.routines.first?.entries.map(\.sets.count), [5, 0])
     }
 
     func testTheDeviceAnswersForItsOwnRoutineAndCarriesNoHistoryForIt() async {

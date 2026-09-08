@@ -26,8 +26,8 @@ namespace wm::gym {
 //   fix in      : { "weightKg"?: n, "reps"?: n, "kind"?: "…", "rpe"?: n|null, "note"?: "…" }
 //                                                       PATCH /v1/gym/sessions/{id}/sets/{setId}
 //   routine in  : { "id": "rt_…", "name": "…", "position": n,
-//                   "entries": [ { "exerciseId": "…", "targetSets"?: n, "targetReps"?: n,
-//                                  "targetWeightKg"?: n, "restSeconds"?: n } ] }
+//                   "entries": [ { "exerciseId": "…", "sets"?: [ <set target> ], "restSeconds"?: n } ] }
+//   set target  : { "reps"?: 1–100, "weightKg"?: ±500 }   one per set, in lifting order, 1 to 20
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
 //   rename in   : { "name": "…" }                       PATCH /v1/gym/exercises/{id}
@@ -45,15 +45,21 @@ namespace wm::gym {
 //   last sets out: { "movements": [ { "exerciseId", "weightKg", "reps", "at" } ] }
 //                                                       GET /v1/gym/exercises/last
 //   routine out : { "id", "name", "position", "revision", "lastTrainedAt"?,
-//                   "entries": [ { "position", "exerciseId", "targetSets"?, "targetReps"?,
-//                                  "targetWeightKg"?, "restSeconds"? } ],
+//                   "entries": [ { "position", "exerciseId", "sets"?: [ <set target> ],
+//                                  "restSeconds"? } ],
 //                   "pendingProposal"?: <proposal head>,
 //                   "history"?: [ … ] }        the single read only; the list omits it
 //   history out : [ { "kind": "created", "at": ms, "by"?: "mcp"|"ask", "movements"?: n },
 //                   { "kind": "proposal", "at": ms, "proposal": <proposal head> } ]  newest first
 //
-// A line with no `targetSets` is open: the absence, never a zero, in both directions.
-// A routine with no `lastTrainedAt` has never been trained.
+// A line's target is its SCHEME, `sets`: one object per set in the order lifted, each naming its own
+// `reps` (absent = max) and `weightKg` (absent = last time's set of the same number). A line with no
+// `sets` key is OPEN — the absence, never an empty array, in both directions; an empty array is
+// refused as a zero target would be. The ramp `60×5 · 80×5 · 90×3 · 100×1 · 80×5` travels as
+//   "sets": [ {"reps":5,"weightKg":60}, {"reps":5,"weightKg":80}, {"reps":3,"weightKg":90},
+//             {"reps":1,"weightKg":100}, {"reps":5,"weightKg":80} ]
+// and a straight `3 × 8 · 60` as three identical items. Loads are written as the two-decimal values
+// the column holds. A routine with no `lastTrainedAt` has never been trained.
 // `history` rides on GET /v1/gym/routines/{id} alone; its `created` row is always last and always
 // present. `by` is absent when the day was the lifter's own.
 //   proposal in : { "id": "prop_…", "routineId": "rt_…", "name"?: "…", "summary"?: "…",
@@ -66,8 +72,8 @@ namespace wm::gym {
 //   proposal out: the head, plus { "baseRevision": n, "baseName": "…", "name": "…",
 //                   "changes": [ { "position", "kind": "kept"|"added"|"removed"|"retargeted",
 //                                  "exerciseId",
-//                                  "before"?: { "sets", "reps"?, "weightKg"?, "restSeconds"? },
-//                                  "after"?:  { "sets", "reps"?, "weightKg"?, "restSeconds"? },
+//                                  "before"?: { "sets"?: [ <set target> ], "restSeconds"? },
+//                                  "after"?:  { "sets"?: [ <set target> ], "restSeconds"? },
 //                                  "loggedSets"?: n } ] }
 //
 // `revision` is the routine's concurrency token: a client reads it and never sends it.
@@ -76,9 +82,9 @@ namespace wm::gym {
 // the rest are the lines it takes away. `before` is absent on an `added` row, `after` on a `removed`
 // one; `loggedSets` rides on a `removed` row alone.
 //   plan        : { "routine": "Push A",
-//                   "entries": [ { "exerciseId", "sets", "reps"?, "weightKg"?, "restSeconds"? } ] }
+//                   "entries": [ { "exerciseId", "sets"?: [ <set target> ], "restSeconds"? } ] }
 //
-// An absent rep target means `max`.
+// A plan line is a routine entry frozen: the same `sets` scheme, absent on an open line.
 //   stats out   : { "weeks": [ { "startedAt", "sessions", "workingSets" } ],
 //                   "movements": [ { "exerciseId", "lastTrainedAt",
 //                                    "points":    [ { "at", "weightKg", "reps", "e1rm"? } ],
@@ -103,7 +109,7 @@ namespace wm::gym {
 //                                 "movements": [ { "exerciseId",
 //                                                  "now":     { "weightKg", "reps", "sets" },
 //                                                  "before"?: { "weightKg", "reps", "sets" },
-//                                                  "planned"?: { "sets", "reps"?, "weightKg"? } } ] } }
+//                                                  "planned"?: { "sets"?: [ <set target> ] } } ] } }
 
 // Entry order is the routine's order: entries in carry no position, the codec numbers them 1..n in
 // arrival order, and entries out carry the number.
@@ -193,6 +199,8 @@ Json::Value toJson(const std::vector<AskThread>& threads);
 // Composed onto the single-routine read by the handler; the list read must not carry it.
 Json::Value toJson(const std::vector<RoutineEvent>& history);
 Json::Value toJson(const PlanSnapshot& plan);
+// The `sets` array alone — the shape a proposal side stores as jsonb and every entry carries.
+Json::Value toJson(const std::vector<SetTarget>& sets);
 // An omitted `restSeconds` means the timer is off.
 Json::Value toJson(const GymPreferences& preferences);
 Json::Value toJson(const Note& note);
@@ -206,6 +214,9 @@ Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
 Json::Value toJson(const ReadTally& tally);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
+// A stored `sets` array read back: anything that is not an array is the open line, and a set that
+// cannot be read is dropped rather than failing the row it sits on.
+std::vector<SetTarget> setTargetsFrom(const Json::Value& stored);   // clamps, never throws
 
 // Takes the app's base url — where the browser app is served — not the API's.
 std::string shareUrl(const std::string& appBaseUrl, const std::string& token);

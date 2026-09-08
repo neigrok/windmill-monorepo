@@ -104,6 +104,18 @@ final class LadderTests: XCTestCase {
         }
     }
 
+    // A load a ramp worked out lands on its own band's small step, half away from zero.
+    func testSnappingPutsALoadOnItsBandsSmallStep() {
+        XCTAssertEqual(Ladder.snapped(21.25), 22.5)
+        XCTAssertEqual(Ladder.snapped(-21.25), -22.5)
+        XCTAssertEqual(Ladder.snapped(61), 60)
+        XCTAssertEqual(Ladder.snapped(63.75), 65)
+        XCTAssertEqual(Ladder.snapped(17.4), 17, "under 20 the small step is 1")
+        XCTAssertEqual(Ladder.snapped(17.5), 18)
+        XCTAssertEqual(Ladder.snapped(70), 70)
+        XCTAssertEqual(Ladder.snapped(0), 0)
+    }
+
     func testEveryRepCase() {
         for expected in golden.repCases {
             XCTAssertEqual(Ladder.bumpReps(expected.reps, direction: -1), expected.down, "down from \(expected.reps) reps")

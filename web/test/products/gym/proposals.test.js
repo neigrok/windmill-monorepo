@@ -16,6 +16,13 @@ const CREATED_AT = new Date(2026, 7, 2, 21, 14).getTime();
 const SETTLED_AT = new Date(2026, 7, 3, 7, 12).getTime();
 const READ_AT = new Date(2026, 7, 3, 9, 41).getTime();
 
+const straight = (count, reps, weightKg) => Array.from({ length: count }, () => ({ reps, weightKg }));
+const RAMP = [
+  { reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 90 },
+  { reps: 1, weightKg: 100 }, { reps: 5, weightKg: 80 },
+];
+const RAMP_LADDER = ['60 × 5', '80 × 5', '90 × 3', '100 × 1', '80 × 5'];
+
 function proposal(over = {}) {
   return {
     id: 'prop_2f9c40a1',
@@ -34,29 +41,29 @@ function proposal(over = {}) {
         position: 1,
         kind: 'retargeted',
         exerciseId: 'bench-press',
-        before: { sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180 },
-        after: { sets: 5, reps: 3, weightKg: 87.5, restSeconds: 180 },
+        before: { sets: straight(5, 5, 82.5), restSeconds: 180 },
+        after: { sets: straight(5, 3, 87.5), restSeconds: 180 },
       },
       {
         position: 2,
         kind: 'added',
         exerciseId: 'incline-db-press',
-        after: { sets: 3, reps: 10, weightKg: 24 },
+        after: { sets: straight(3, 10, 24) },
       },
       {
         position: 3,
         kind: 'retargeted',
         exerciseId: 'overhead-press',
-        before: { sets: 3, reps: 8, weightKg: 45 },
-        after: { sets: 3, reps: 8, weightKg: 47.5 },
+        before: { sets: straight(3, 8, 45) },
+        after: { sets: straight(3, 8, 47.5) },
       },
-      { position: 4, kind: 'kept', exerciseId: 'chin-up', before: { sets: 3 }, after: { sets: 3 } },
-      { position: 5, kind: 'kept', exerciseId: 'barbell-row', before: { sets: 4, reps: 8, weightKg: 70 }, after: { sets: 4, reps: 8, weightKg: 70 } },
+      { position: 4, kind: 'kept', exerciseId: 'chin-up', before: { sets: [{}, {}, {}] }, after: { sets: [{}, {}, {}] } },
+      { position: 5, kind: 'kept', exerciseId: 'barbell-row', before: { sets: straight(4, 8, 70) }, after: { sets: straight(4, 8, 70) } },
       {
         position: 6,
         kind: 'removed',
         exerciseId: 'cable-fly',
-        before: { sets: 3, reps: 12, weightKg: 22.5 },
+        before: { sets: straight(3, 12, 22.5) },
         loggedSets: 41,
       },
     ],
@@ -69,10 +76,12 @@ test('diffRows — every line the routine would run, in order, with the four cha
     {
       kind: 'retargeted',
       exerciseId: 'bench-press',
-      moves: [
-        { field: 'sets', from: '5 × 5', to: '5 × 3' },
-        { field: 'weight', from: '82.5', to: '87.5' },
-      ],
+      moves: [{
+        field: 'sets',
+        from: '5 × 5 · 82.5',
+        to: '5 × 3 · 87.5',
+        ladder: { from: Array(5).fill('82.5 × 5'), to: Array(5).fill('87.5 × 3') },
+      }],
     },
     {
       kind: 'added',
@@ -84,7 +93,12 @@ test('diffRows — every line the routine would run, in order, with the four cha
     {
       kind: 'retargeted',
       exerciseId: 'overhead-press',
-      moves: [{ field: 'weight', from: '45', to: '47.5' }],
+      moves: [{
+        field: 'sets',
+        from: '3 × 8 · 45',
+        to: '3 × 8 · 47.5',
+        ladder: { from: Array(3).fill('45 × 8'), to: Array(3).fill('47.5 × 8') },
+      }],
     },
     { kind: 'kept', exerciseId: 'chin-up', targets: '3 × max' },
     { kind: 'kept', exerciseId: 'barbell-row', targets: '4 × 8 · 70' },
@@ -108,13 +122,13 @@ test('diffRows — a movement that only changed position is still on the screen,
   const reordered = proposal({
     changeCount: 1,
     changes: [
-      { position: 1, kind: 'kept', exerciseId: 'cable-fly', before: { sets: 3, reps: 12, weightKg: 22.5 }, after: { sets: 3, reps: 12, weightKg: 22.5 } },
+      { position: 1, kind: 'kept', exerciseId: 'cable-fly', before: { sets: straight(3, 12, 22.5) }, after: { sets: straight(3, 12, 22.5) } },
       {
         position: 2,
         kind: 'retargeted',
         exerciseId: 'bench-press',
-        before: { sets: 5, reps: 5, weightKg: 82.5 },
-        after: { sets: 5, reps: 3, weightKg: 87.5 },
+        before: { sets: straight(5, 5, 82.5) },
+        after: { sets: straight(5, 3, 87.5) },
       },
     ],
   });
@@ -124,10 +138,12 @@ test('diffRows — a movement that only changed position is still on the screen,
     {
       kind: 'retargeted',
       exerciseId: 'bench-press',
-      moves: [
-        { field: 'sets', from: '5 × 5', to: '5 × 3' },
-        { field: 'weight', from: '82.5', to: '87.5' },
-      ],
+      moves: [{
+        field: 'sets',
+        from: '5 × 5 · 82.5',
+        to: '5 × 3 · 87.5',
+        ladder: { from: Array(5).fill('82.5 × 5'), to: Array(5).fill('87.5 × 3') },
+      }],
     },
   ]);
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, reordered.changeCount);
@@ -138,13 +154,13 @@ test('diffRows — a reorder the store counted is a row of its own, so the count
   const swapped = proposal({
     changeCount: 2,
     changes: [
-      { position: 1, kind: 'kept', exerciseId: 'cable-fly', before: { sets: 3, reps: 12, weightKg: 22.5 }, after: { sets: 3, reps: 12, weightKg: 22.5 } },
+      { position: 1, kind: 'kept', exerciseId: 'cable-fly', before: { sets: straight(3, 12, 22.5) }, after: { sets: straight(3, 12, 22.5) } },
       {
         position: 2,
         kind: 'retargeted',
         exerciseId: 'bench-press',
-        before: { sets: 5, reps: 5, weightKg: 82.5 },
-        after: { sets: 5, reps: 3, weightKg: 87.5 },
+        before: { sets: straight(5, 5, 82.5) },
+        after: { sets: straight(5, 3, 87.5) },
       },
     ],
   });
@@ -155,10 +171,12 @@ test('diffRows — a reorder the store counted is a row of its own, so the count
     {
       kind: 'retargeted',
       exerciseId: 'bench-press',
-      moves: [
-        { field: 'sets', from: '5 × 5', to: '5 × 3' },
-        { field: 'weight', from: '82.5', to: '87.5' },
-      ],
+      moves: [{
+        field: 'sets',
+        from: '5 × 5 · 82.5',
+        to: '5 × 3 · 87.5',
+        ladder: { from: Array(5).fill('82.5 × 5'), to: Array(5).fill('87.5 × 3') },
+      }],
     },
   ]);
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, swapped.changeCount);
@@ -185,8 +203,8 @@ test('diffRows — an added movement names the line it lands after, or says it i
   const opener = proposal({
     changeCount: 1,
     changes: [
-      { position: 1, kind: 'added', exerciseId: 'incline-db-press', after: { sets: 3, reps: 10, weightKg: 24, restSeconds: 300 } },
-      { position: 2, kind: 'kept', exerciseId: 'bench-press', before: { sets: 5 }, after: { sets: 5 } },
+      { position: 1, kind: 'added', exerciseId: 'incline-db-press', after: { sets: straight(3, 10, 24), restSeconds: 300 } },
+      { position: 2, kind: 'kept', exerciseId: 'bench-press', before: { sets: [{}, {}, {}, {}, {}] }, after: { sets: [{}, {}, {}, {}, {}] } },
     ],
   });
   assert.deepEqual(diffRows(opener), [
@@ -202,15 +220,15 @@ test('diffRows — an omitted target reads as the word the wire means by omittin
       position: 1,
       kind: 'retargeted',
       exerciseId: 'chin-up',
-      before: { sets: 3, reps: 8, weightKg: 0, restSeconds: 120 },
-      after: { sets: 3 },
+      before: { sets: straight(3, 8, 0), restSeconds: 120 },
+      after: { sets: [{}, {}, {}] },
     }],
   }));
   assert.deepEqual(rows, [{
     kind: 'retargeted',
     exerciseId: 'chin-up',
     moves: [
-      { field: 'sets', from: '3 × 8', to: '3 × max' },
+      { field: 'sets', from: '3 × 8', to: '3 × max', ladder: { from: Array(3).fill('last × 8'), to: Array(3).fill('last × max') } },
       { field: 'rest', from: '2:00', to: 'your rest target' },
     ],
   }]);
@@ -218,16 +236,17 @@ test('diffRows — an omitted target reads as the word the wire means by omittin
 
 test('diffRows — a line that asks at the rack reads as open, on either side of the arrow', () => {
   const rows = diffRows(proposal({
-    changeCount: 2,
+    changeCount: 3,
     changes: [
       {
         position: 1,
         kind: 'retargeted',
         exerciseId: 'barbell-row',
-        before: { sets: 4, reps: 8, weightKg: 70 },
+        before: { sets: straight(4, 8, 70) },
         after: { restSeconds: 120 },
       },
       { position: 2, kind: 'added', exerciseId: 'deadlift', after: {} },
+      { position: 3, kind: 'retargeted', exerciseId: 'face-pull', before: {}, after: { sets: [{ reps: 15 }] } },
     ],
   }));
   assert.deepEqual(rows, [
@@ -235,22 +254,88 @@ test('diffRows — a line that asks at the rack reads as open, on either side of
       kind: 'retargeted',
       exerciseId: 'barbell-row',
       moves: [
-        { field: 'sets', from: '4 × 8', to: 'open' },
-        { field: 'weight', from: '70', to: 'last time' },
+        { field: 'sets', from: '4 × 8 · 70', to: 'open', ladder: { from: Array(4).fill('70 × 8'), to: [] } },
         { field: 'rest', from: 'your rest target', to: '2:00' },
       ],
     },
     { kind: 'added', exerciseId: 'deadlift', targets: 'open', rest: null, follows: 'barbell-row' },
+    {
+      kind: 'retargeted',
+      exerciseId: 'face-pull',
+      moves: [{ field: 'sets', from: 'open', to: '1 × 15', ladder: { from: [], to: ['last × 15'] } }],
+    },
   ]);
+  // Open on both sides with only the rest moving: no scheme move at all.
+  assert.deepEqual(diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'face-pull', before: { restSeconds: 60 }, after: { restSeconds: 90 } }],
+  }))[0].moves, [{ field: 'rest', from: '1:00', to: '1:30' }]);
+});
+
+test('diffRows — a shape that held and one set that moved prints that set alone; more than one is the scheme moving', () => {
+  const moved = RAMP.map((set, index) => (index === 3 ? { reps: 1, weightKg: 102.5 } : set));
+  const review = proposal({
+    baseName: 'Lower A',
+    name: 'Lower A',
+    changeCount: 1,
+    changes: [
+      { position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP, restSeconds: 180 }, after: { sets: moved, restSeconds: 180 } },
+      { position: 2, kind: 'kept', exerciseId: 'face-pull', before: {}, after: {} },
+    ],
+  });
+  assert.deepEqual(diffRows(review), [
+    { kind: 'retargeted', exerciseId: 'back-squat', moves: [{ field: 'set 4', from: '100 × 1', to: '102.5 × 1' }] },
+    { kind: 'kept', exerciseId: 'face-pull', targets: 'open' },
+  ]);
+  assert.equal(applyLabel(review), 'Apply');
+
+  // The shape changed: the scheme in the formula, and the ladder behind it, en dash and all.
+  const reshaped = diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: straight(5, 5, 80) }, after: { sets: RAMP } }],
+  }));
+  assert.deepEqual(reshaped[0].moves, [{
+    field: 'sets',
+    from: '5 × 5 · 80',
+    to: '5 × 1–5 · 60–100',
+    ladder: { from: Array(5).fill('80 × 5'), to: RAMP_LADDER },
+  }]);
+  // A sixth set: a different length is the scheme moving, whatever the first five did.
+  const longer = diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP }, after: { sets: [...RAMP, { reps: 5, weightKg: 80 }] } }],
+  }));
+  assert.deepEqual(longer[0].moves[0].from, '5 × 1–5 · 60–100');
+  assert.deepEqual(longer[0].moves[0].to, '6 × 1–5 · 60–100');
+  assert.deepEqual(longer[0].moves[0].ladder.to, [...RAMP_LADDER, '80 × 5']);
+  // Two sets moved at one length: the scheme, not two lines.
+  const two = diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP }, after: { sets: RAMP.map((set) => ({ ...set, weightKg: set.weightKg + 2.5 })) } }],
+  }));
+  assert.deepEqual(two[0].moves.map((move) => move.field), ['sets']);
+  // A load that only moved inside the ladder's rounding has not moved.
+  const same = diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP, restSeconds: 120 }, after: { sets: RAMP.map((set) => ({ ...set, weightKg: set.weightKg + 0.001 })), restSeconds: 180 } }],
+  }));
+  assert.deepEqual(same[0].moves, [{ field: 'rest', from: '2:00', to: '3:00' }]);
 });
 
 test('diffRows — the weights move with the unit the account reads in', () => {
   spellWeightsIn(LB);
   const rows = diffRows(proposal());
-  assert.deepEqual(rows[0].moves, [
-    { field: 'sets', from: '5 × 5', to: '5 × 3' },
-    { field: 'weight', from: '181.9', to: '192.9' },
-  ]);
+  assert.deepEqual(rows[0].moves, [{
+    field: 'sets',
+    from: '5 × 5 · 181.9',
+    to: '5 × 3 · 192.9',
+    ladder: { from: Array(5).fill('181.9 × 5'), to: Array(5).fill('192.9 × 3') },
+  }]);
+  const moved = diffRows(proposal({
+    changeCount: 1,
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP }, after: { sets: RAMP.map((set, index) => (index === 3 ? { reps: 1, weightKg: 102.5 } : set)) } }],
+  }));
+  assert.deepEqual(moved[0].moves, [{ field: 'set 4', from: '220.5 × 1', to: '226 × 1' }]);
   spellWeightsIn(KG);
 });
 
@@ -382,9 +467,9 @@ test('CARD_ROW_CAP and moreRowsLabel — the card’s vocabulary for a skim, and
   const wide = proposal({
     changeCount: 2,
     changes: [
-      { position: 1, kind: 'retargeted', exerciseId: 'bench-press', before: { sets: 5, reps: 5, weightKg: 80 }, after: { sets: 5, reps: 3, weightKg: 90 } },
-      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } })),
-      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: 3, reps: 10 } },
+      { position: 1, kind: 'retargeted', exerciseId: 'bench-press', before: { sets: straight(5, 5, 80) }, after: { sets: straight(5, 3, 90) } },
+      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: [{}, {}, {}] }, after: { sets: [{}, {}, {}] } })),
+      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: straight(3, 10, null) } },
     ],
   });
   const changed = diffRows(wide).filter((row) => row.kind !== 'kept');
@@ -394,7 +479,7 @@ test('CARD_ROW_CAP and moreRowsLabel — the card’s vocabulary for a skim, and
   const many = proposal({
     changeCount: 5,
     changes: Array.from({ length: 5 }, (_, at) => ({
-      position: at + 1, kind: 'retargeted', exerciseId: `mv-${at}`, before: { sets: 3, reps: 8, weightKg: 60 }, after: { sets: 3, reps: 8, weightKg: 62.5 },
+      position: at + 1, kind: 'retargeted', exerciseId: `mv-${at}`, before: { sets: straight(3, 8, 60) }, after: { sets: straight(3, 8, 62.5) },
     })),
   });
   const drawn = diffRows(many).filter((row) => row.kind !== 'kept');

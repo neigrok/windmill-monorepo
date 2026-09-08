@@ -34,14 +34,40 @@ public enum Readout {
         return String(reps)
     }
 
+    // nil load is `last` — last time's — not a zero and not a blank.
+    public static func loadTarget(_ kg: Double?) -> String {
+        guard let kg else { return "last" }
+        return weight(kg)
+    }
+
     public static let openTarget = "open"
 
-    // An absent weight and a zero both print nothing; a band-assisted −20 prints. Absent sets read `open` alone.
-    public static func target(sets: Int?, reps: Int?, weightKg: Double?) -> String {
-        guard let sets else { return openTarget }
-        let count = "\(sets) × \(repTarget(reps))"
-        guard let weightKg, weightKg != 0 else { return count }
-        return "\(count) · \(weight(weightKg))"
+    // A scheme: `{sets} × {reps} · {load}`, a column whose sets disagree printing its range `lo–hi`.
+    // No sets read `open` alone; a load column nobody named is left out.
+    public static func target(_ sets: [SetTarget]) -> String {
+        guard !sets.isEmpty else { return openTarget }
+        let count = "\(sets.count) × \(column(sets.map(\.reps), absent: "max", print: { String($0) }))"
+        let loads = sets.map(\.weightKg)
+        guard loads.contains(where: { $0 != nil }) else { return count }
+        return "\(count) · \(column(loads, absent: "last", print: weight))"
+    }
+
+    // One set: `{load} × {reps}`, the logged pill's own shape, with the nulls as their placeholders.
+    public static func set(_ target: SetTarget) -> String {
+        "\(loadTarget(target.weightKg)) × \(repTarget(target.reps))"
+    }
+
+    // The one value when every set agrees, else `lo–hi` over the named values — the placeholder standing
+    // as the hi end when any set leaves the column out. The dash is an en dash.
+    private static func column<Value: Comparable>(_ values: [Value?], absent: String,
+                                                  print: (Value) -> String) -> String {
+        guard let first = values.first, !values.allSatisfy({ $0 == first }) else {
+            return values.first.flatMap { $0 }.map(print) ?? absent
+        }
+        let named = values.compactMap { $0 }.sorted()
+        guard let lowest = named.first, let highest = named.last else { return absent }
+        let high = values.contains { $0 == nil } ? absent : print(highest)
+        return "\(print(lowest))\u{2013}\(high)"
     }
 
     public static func time(_ ms: Int64) -> String {

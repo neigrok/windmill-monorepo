@@ -110,17 +110,12 @@ public struct RoutineDraft: Equatable {
         return made
     }
 
-    // Absent reps is `3 × max` and absent weight is whatever you did last time. Rest is untouched.
-    public mutating func set(_ lineId: String, sets: Int, reps: Int?, weightKg: Double?) {
-        edit(lineId) { entry in
-            RoutineWrite.Entry(exerciseId: entry.exerciseId, targetSets: sets, targetReps: reps,
-                               targetWeightKg: weightKg, restSeconds: entry.restSeconds)
-        }
-    }
-
-    // Clears the whole row, not just the set count: the server refuses the half-open line.
-    public mutating func leaveOpen(_ lineId: String) {
-        edit(lineId) { RoutineWrite.Entry(exerciseId: $0.exerciseId, restSeconds: $0.restSeconds) }
+    // The line's whole scheme; an empty one is the open line. Rest is untouched.
+    public mutating func set(_ lineId: String, sets: [SetTarget]) {
+        guard let place = lines.firstIndex(where: { $0.id == lineId }) else { return }
+        let entry = lines[place].entry
+        lines[place].entry = RoutineWrite.Entry(exerciseId: entry.exerciseId, sets: sets,
+                                                restSeconds: entry.restSeconds)
     }
 
     public mutating func remove(_ lineId: String) {
@@ -129,12 +124,6 @@ public struct RoutineDraft: Equatable {
 
     public mutating func move(from source: IndexSet, to destination: Int) {
         lines.move(fromOffsets: source, toOffset: destination)
-    }
-
-    private mutating func edit(_ lineId: String,
-                               _ rewrite: (RoutineWrite.Entry) -> RoutineWrite.Entry) {
-        guard let place = lines.firstIndex(where: { $0.id == lineId }) else { return }
-        lines[place].entry = rewrite(lines[place].entry)
     }
 }
 

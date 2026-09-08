@@ -62,13 +62,11 @@ ProposalIntent proposalIntentFromStored(std::string_view text);
 ProposalState proposalStateFromStored(std::string_view text);
 ProposalDoor proposalDoorFromStored(std::string_view text);
 
-// A routine entry with its identity and its place taken off. No sets is an open line, no reps is
-// `max`, no weight is "whatever you did last time", no rest falls back to the global target. Only
-// `kind` says which side of a diff is missing, never an absent `sets`.
+// A routine entry with its identity and its place taken off: the scheme and the rest. An empty
+// scheme is an open line, and no rest falls back to the global target. Only `kind` says which side
+// of a diff is missing, never an empty scheme.
 struct EntryTargets {
-  std::optional<int> sets;
-  std::optional<int> reps;
-  std::optional<double> weightKg;
+  std::vector<SetTarget> sets;
   std::optional<int> restSeconds;
 
   bool operator==(const EntryTargets&) const = default;

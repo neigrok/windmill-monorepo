@@ -122,89 +122,109 @@ final class RoomContainersUITests: XCTestCase {
                       "Discard did not leave the editor")
     }
 
-    // Clearing sets is what opens a line, and `Routine.cpp:18` refuses a line that names reps or a load
-    // without sets. The clear is REFUSED and the field keeps what it held — one of the two moments the
-    // two phones used to draw differently (ledger `2l`).
-    func testClearingSetsIsRefusedInPlaceAndTheFieldKeepsItsValue() {
+    // Clearing Sets is what opens a line, and it destroys nothing: the ladder is hidden, Reps and
+    // Weight sleep, and retyping the count brings the same rows back (brief 17).
+    func testClearingSetsHidesTheLadderAndRetypingTheCountBringsItBack() {
         openTheTargetSheet()
 
         app.textFields["Sets"].tap()
         app.typeText("3")
         app.textFields["Reps"].tap()
         app.typeText("5")
+        XCTAssertTrue(app.buttons["Set · 3 × 5"].waitForExistence(timeout: 10),
+                      "the head did not write every set")
+        XCTAssertEqual(app.textFields["Set 3 reps"].value as? String, "5", "the head skipped a row")
 
         app.textFields["Sets"].tap()
         app.typeText(XCUIKeyboardKey.delete.rawValue)
-
-        XCTAssertTrue(app.staticTexts["Clear reps and weight first — an open line names neither."]
-                        .waitForExistence(timeout: 10),
-                      "the clear was allowed to cascade without a word")
-        XCTAssertEqual(app.textFields["Sets"].value as? String, "3",
-                       "the refused keystroke took the number with it")
-
-        // Clear reps first and the sets field lets go.
-        app.textFields["Reps"].tap()
-        app.typeText(XCUIKeyboardKey.delete.rawValue)
-        app.textFields["Sets"].tap()
-        app.typeText(XCUIKeyboardKey.delete.rawValue)
+        XCTAssertTrue(app.buttons["Set · open"].waitForExistence(timeout: 10),
+                      "an emptied Sets is the open line, and the commit did not say so")
+        XCTAssertTrue(app.buttons["Set · open"].isEnabled)
         XCTAssertEqual(app.textFields["Sets"].value as? String, "open",
                        "an emptied sets field does not read as the open line it is")
+        XCTAssertFalse(app.textFields["Reps"].isEnabled, "Reps still takes a number on an open line")
+        XCTAssertFalse(app.textFields["Weight · kg"].isEnabled, "Weight still takes a number on an open line")
+        XCTAssertFalse(app.textFields["Set 1 reps"].exists, "the ladder is drawn under an open line")
+        XCTAssertTrue(app.staticTexts[openLine].exists, "an open line stopped saying what open means")
+
+        app.typeText("3")
+        XCTAssertTrue(app.buttons["Set · 3 × 5"].waitForExistence(timeout: 10),
+                      "retyping the count did not bring the rows back")
+        XCTAssertEqual(app.textFields["Set 3 reps"].value as? String, "5", "the hidden ladder was thrown away")
+        XCTAssertFalse(app.staticTexts[openLine].exists, "the sentence outlived the open line")
     }
 
-    // The other way into an open line: the row ARRIVED open and the two other fields still take a
-    // number. The refusal is a property of the three fields as they stand, not of the one keystroke
-    // that empties sets — otherwise the commit writes `open` and two typed numbers go without a word.
-    //
-    // The remedy is the opposite of the cleared field's, so the sentence is too: this keystroke LANDED
-    // and telling the lifter to clear it would be telling them to abandon what they just asked for.
-    func testALineThatArrivedOpenRefusesTypedRepsRatherThanDroppingThem() {
+    // A line that ARRIVED open: Reps and Weight sleep until a count is named, so no number can land
+    // on a line that names no sets. A row leaves by its trailing swipe, and deleting the last row is
+    // the same act as clearing Sets — it lands on the same open line.
+    func testALineThatArrivedOpenSleepsUntilACountIsNamedAndDeletingTheLastRowReopensIt() {
         openTheTargetSheet()
         XCTAssertEqual(app.textFields["Sets"].value as? String, "open",
                        "this fixture is not a line that arrived open")
-
-        app.textFields["Reps"].tap()
-        app.typeText("5")
-
-        XCTAssertTrue(app.staticTexts["Name the sets first — an open line names neither."]
-                        .waitForExistence(timeout: 10),
-                      "a rep target was taken on a line that names no sets, and nothing was said")
-        XCTAssertFalse(app.staticTexts["Clear reps and weight first — an open line names neither."].exists,
-                       "the lifter is being told to throw away the number they just typed")
-        XCTAssertFalse(app.buttons["Set · open"].isEnabled,
-                       "the band would have written `open` over the number that was just typed")
-
-        // Clear it and the line is an open line again, with nothing left to drop.
-        app.textFields["Reps"].tap()
-        app.typeText(XCUIKeyboardKey.delete.rawValue)
-        XCTAssertTrue(app.staticTexts[openLine].waitForExistence(timeout: 10),
-                      "an open line stopped saying what open means")
+        XCTAssertFalse(app.textFields["Reps"].isEnabled, "Reps takes a number on a line with no sets")
+        XCTAssertFalse(app.textFields["Weight · kg"].isEnabled)
+        XCTAssertTrue(app.staticTexts[openLine].exists, "an open line does not say what open means")
         XCTAssertTrue(app.buttons["Set · open"].isEnabled, "an open line cannot be committed")
+
+        app.textFields["Sets"].tap()
+        app.typeText("2")
+        XCTAssertTrue(app.textFields["Set 2 reps"].waitForExistence(timeout: 10), "the ladder never drew")
+        XCTAssertTrue(app.textFields["Reps"].isEnabled)
+        XCTAssertFalse(app.staticTexts[openLine].exists, "the sentence outlived the open line")
+
+        // A swipe on a focused field is the field's own, so the row is swiped by its ordinal.
+        app.staticTexts["set-row-2"].swipeLeft()
+        XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 10), "the row revealed no Delete")
+        app.buttons["Delete"].tap()
+        XCTAssertFalse(app.textFields["Set 2 reps"].waitForExistence(timeout: 2), "the row stayed")
+        XCTAssertEqual(app.textFields["Sets"].value as? String, "1", "deleting a row did not decrement Sets")
+
+        app.staticTexts["set-row-1"].swipeLeft()
+        XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 10))
+        app.buttons["Delete"].tap()
+        XCTAssertTrue(app.buttons["Set · open"].waitForExistence(timeout: 10),
+                      "deleting the last row did not land on the open line")
+        XCTAssertEqual(app.textFields["Sets"].value as? String, "open")
+        XCTAssertTrue(app.staticTexts[openLine].exists)
     }
 
-    // A load may be band-assisted, so the sign is a number the lifter names — and `.decimalPad` has no
-    // key for it. `±` and never a bare `−`, which reads as *decrement* elsewhere in this product.
+    // A bodyweight movement's load may be band-assisted, so its load fields carry `±` — never a bare
+    // `−`, which reads as *decrement* elsewhere in this product. A barbell's sheet has no sign key (R7).
     func testTheWeightFieldCanNameABandAssistedLoad() {
-        openTheTargetSheet()
+        openTheTargetSheet(movement: "Dip")
 
         app.textFields["Sets"].tap()
         app.typeText("3")
         app.textFields["Weight · kg"].tap()
         app.typeText("20")
 
-        let sign = app.buttons["Flip the sign — band-assisted"]
+        let sign = app.buttons["Flip the sign — band-assisted"].firstMatch
         XCTAssertTrue(sign.waitForExistence(timeout: 10), "the weight field has no sign control")
         sign.tap()
         XCTAssertEqual(app.textFields["Weight · kg"].value as? String, "-20",
                        "the sign control did not take the load below zero")
+        XCTAssertEqual(app.textFields["Set 3 weight"].value as? String, "-20",
+                       "the head's sign did not reach every row")
         XCTAssertFalse(app.staticTexts["That is not a number yet."].exists,
                        "a band-assisted load is refused as if it were not a number")
 
         sign.tap()
         XCTAssertEqual(app.textFields["Weight · kg"].value as? String, "20",
                        "the sign control cannot say `back to positive`")
+
+        app.navigationBars["Dip"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10), "the target sheet never closed")
+        app.buttons["Add movement"].tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back Squat")).firstMatch.tap()
+        XCTAssertTrue(app.textFields["Sets"].waitForExistence(timeout: 10))
+        app.textFields["Sets"].tap()
+        app.typeText("3")
+        XCTAssertTrue(app.textFields["Set 3 weight"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Flip the sign — band-assisted"].exists, "a barbell's sheet drew a sign key")
     }
 
-    // Three typed fields and no ladder: the ± ladder is a rack control and stays at the rack.
+    // Three typed fields in the head and no plate ladder: the ± ladder is a rack control and stays at the rack.
     func testTheTargetSheetIsThreeTypedFieldsAndNothingElse() {
         openTheTargetSheet()
 
@@ -233,12 +253,14 @@ final class RoomContainersUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Set · open"].exists, "the band does not say what it will write")
     }
 
-    private func openTheTargetSheet() {
+    private func openTheTargetSheet(movement: String = "Back Squat") {
         app.navigationBars.buttons["New routine"].tap()
         XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 10))
         app.buttons["Add movement"].tap()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back Squat")).firstMatch.tap()
+        app.searchFields.firstMatch.tap()
+        app.typeText(movement)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", movement)).firstMatch.tap()
         XCTAssertTrue(app.textFields["Sets"].waitForExistence(timeout: 10),
                       "the target sheet drew no typed fields")
     }

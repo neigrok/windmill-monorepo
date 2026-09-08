@@ -1,40 +1,56 @@
 package works.windmill.gym.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,12 +59,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -58,10 +78,9 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -89,15 +108,15 @@ val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
     },
 )
 
-// No pad over a sheet over a screen: the target sheet's three fields take the platform's own
-// keyboard. The picker's create step is drawn by the picker itself, so minting stacks a sheet
-// rather than swapping one out from under a typed search.
+// No pad over a sheet over a screen: the target sheet's fields take the platform's own keyboard.
+// The picker's create step is drawn by the picker itself, so minting stacks a sheet rather than
+// swapping one out from under a typed search.
 private sealed interface BuilderSheet {
     data class Target(val exerciseId: String) : BuilderSheet
     data object Picker : BuilderSheet
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RoutineBuilder(
     draft: RoutineDraft,
@@ -111,10 +130,23 @@ fun RoutineBuilder(
     val scope = rememberCoroutineScope()
     var sheet by remember { mutableStateOf<BuilderSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // Compose fires no dismiss callback on a programmatic close, so nothing waits for one.
     fun close() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
+    }
+
+    // A sheet is its own window, and Material pads that window by whatever keyboard is up when it
+    // opens. The keyboard belongs to the screen underneath — the name field opens with it up — so
+    // a sheet raised over it painted its fields a keyboard's height higher than the same sheet
+    // raised a moment later with the keyboard down. The screen gives its keyboard up as the sheet
+    // rises, and the sheet's first paint is the same every time.
+    LaunchedEffect(sheet) {
+        if (sheet == null) return@LaunchedEffect
+        focusManager.clearFocus()
+        keyboard?.hide()
     }
 
     // `savable` is the domain's (named, ≥1 movement); `changed` is read against the routine as it stands.
@@ -148,6 +180,11 @@ fun RoutineBuilder(
             sheetState = sheetState,
             containerColor = GymSkin.surface,
         ) {
+            // Back with the keyboard up puts the keyboard down and nothing else: read and hidden
+            // inside the sheet's own window, ahead of the sheet's own back.
+            val sheetKeyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+
             when (open) {
                 is BuilderSheet.Target -> TargetSheet(
                     draft = draft,
@@ -156,8 +193,8 @@ fun RoutineBuilder(
                     onSet = { reading ->
                         when (reading) {
                             TargetEntry.Reading.Open -> onDraft(draft.opening(open.exerciseId))
-                            is TargetEntry.Reading.Targeted -> onDraft(
-                                draft.targeting(open.exerciseId, reading.sets, reading.reps, reading.weightKg)
+                            is TargetEntry.Reading.Scheme -> onDraft(
+                                draft.targeting(open.exerciseId, reading.sets)
                             )
                             is TargetEntry.Reading.Refused -> return@TargetSheet
                         }
@@ -415,9 +452,9 @@ private fun BuildStep(
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    Readout.target(entry.targetSets, entry.targetReps, entry.targetWeightKg),
+                    Readout.target(entry.sets),
                     style = GymType.numeral(13),
-                    color = if (entry.targetSets == null) GymSkin.inkFaint else GymSkin.targetInk,
+                    color = if (entry.isOpen) GymSkin.inkFaint else GymSkin.targetInk,
                 )
             }
         }
@@ -458,11 +495,18 @@ private fun BuildStep(
 
 // `Never logged — these are your numbers.` is a fact about this ROUTINE and not the movement.
 //
-// Three fields and no escape hatch, because emptying a field IS the escape and the placeholder says
-// what empty means: no sets is an open line, no reps is `max`, no load is `last time`. The plate
-// LADDER belongs at the rack, where plate granularity is what you are reasoning about; here you
-// already know the number you want. The SIGN is a different thing and stays: no number pad carries a
-// minus, and without it a band-assisted target could not be planned at all.
+// One scheme at two zooms, both always on the sheet: the head speaks about every set at once and
+// the ladder gives each set its own row. The sheet holds TEXT until the commit — `TargetEntry` reads
+// it — and the head is derived from the rows: Reps and Weight print what every shown row shares and
+// write every row when typed; Sets is the count of rows shown, the rows past it hidden rather than
+// lost, so a count typed low and back high keeps the ladder; a blank Sets hides the ladder the same
+// way. The plate ladder belongs at the rack; here you already know the number you want. The `±` is
+// drawn only on the load fields of a movement loaded by bodyweight, where a negative load — band
+// assistance — is a plan a lifter can mean.
+//
+// The body — head, ladder, Add set — is ONE scroll container and the commit is pinned under it;
+// on a 412 × 731 phone the ramp's five rows and Add set stand inside the first paint
+// (`TargetSheetLayoutTests`), which is why the ladder's fields are the compact kind.
 @Composable
 private fun TargetSheet(
     draft: RoutineDraft,
@@ -471,132 +515,292 @@ private fun TargetSheet(
     onSet: (TargetEntry.Reading) -> Unit,
 ) {
     val entry = draft.entry(exerciseId)
-    // TEXT AND ITS SELECTION, not text alone: a refused clear has to hand the value back highlighted,
-    // and a plain string cannot say where the caret went.
-    var sets by remember(exerciseId) {
-        mutableStateOf(TextFieldValue(entry?.targetSets?.toString().orEmpty()))
-    }
-    var reps by remember(exerciseId) {
-        mutableStateOf(TextFieldValue(entry?.targetReps?.toString().orEmpty()))
-    }
-    var weight by remember(exerciseId) {
-        mutableStateOf(TextFieldValue(entry?.targetWeightKg?.let { Readout.weight(it) }.orEmpty()))
-    }
-    // The clear that was refused, said until the lifter types again. It is not a reading: the field
-    // kept its value, so nothing about the three numbers changed.
-    var clearRefused by remember(exerciseId) { mutableStateOf<String?>(null) }
+    var rows by remember(exerciseId) { mutableStateOf(TargetEntry.rows(entry?.sets.orEmpty())) }
+    var sets by remember(exerciseId) { mutableStateOf(rows.size.takeIf { it > 0 }?.toString().orEmpty()) }
+    // Add set was tapped at the ceiling; the next keystroke anywhere on the sheet clears it.
+    var atCeiling by remember(exerciseId) { mutableStateOf(false) }
+    // A deleted row's neighbours are NEW rows with their own settled swipe (`RowSwipe.kt`): the
+    // ladder's row keys carry the count of deletions so no row inherits a spent one.
+    var deletions by remember(exerciseId) { mutableIntStateOf(0) }
+    var fillMenuOnHead by remember { mutableStateOf(false) }
+    var fillMenuOnRow by remember { mutableStateOf<Int?>(null) }
 
-    val reading = TargetEntry.reading(sets.text, reps.text, weight.text)
+    val bandAssisted = store.catalog.firstOrNull { it.id == exerciseId }?.equipment == "bodyweight"
+    val shown = TargetEntry.shown(rows, sets)
+    val reading = TargetEntry.reading(sets, rows)
     val refused = reading as? TargetEntry.Reading.Refused
+    val headFault = refused?.takeIf { TargetEntry.inTheHead(it, shown) }
+    val rowFault = refused?.takeIf { headFault == null }
+    val ladderShown = sets.isNotBlank()
+
+    fun count(typed: String) {
+        sets = typed
+        atCeiling = false
+        typed.trim().toIntOrNull()?.takeIf { it in TargetEntry.setsBand }?.let { rows = TargetEntry.grown(rows, it) }
+    }
+    fun headTyped(reps: String? = null, weight: String? = null) {
+        atCeiling = false
+        reps?.let { rows = TargetEntry.withReps(rows, it) }
+        weight?.let { rows = TargetEntry.withWeight(rows, it) }
+    }
+    // The next hidden row is revealed before a new one is copied off the last shown.
+    fun addSet() {
+        if (shown.size >= Program.maxSets) {
+            atCeiling = true
+            return
+        }
+        if (shown.size < rows.size) {
+            sets = (shown.size + 1).toString()
+            return
+        }
+        rows = TargetEntry.resized(rows, shown.size + 1)
+        sets = rows.size.toString()
+    }
+    fun delete(index: Int) {
+        rows = rows.filterIndexed { at, _ -> at != index }
+        sets = (shown.size - 1).takeIf { it > 0 }?.toString().orEmpty()
+        atCeiling = false
+        deletions += 1
+    }
+    fun rowTyped(index: Int, reps: String = rows[index].reps, weight: String = rows[index].weight) {
+        atCeiling = false
+        rows = rows.mapIndexed { at, row -> if (at == index) row.copy(reps = reps, weight = weight) else row }
+    }
+    // Fill works the shown rows; the hidden tail stands as it was.
+    fun fill(filled: List<TargetEntry.TypedSet>) {
+        rows = filled + rows.drop(shown.size)
+    }
+    val fillMenu: @Composable (Boolean, () -> Unit) -> Unit = { expanded, dismiss ->
+        DropdownMenu(expanded = expanded, onDismissRequest = dismiss) {
+            DropdownMenuItem(
+                text = { Text(TargetEntry.rampUp) },
+                enabled = TargetEntry.canRamp(shown),
+                onClick = {
+                    fill(TargetEntry.rampUp(shown))
+                    dismiss()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(TargetEntry.matchSetOne) },
+                onClick = {
+                    fill(TargetEntry.matchFirst(shown))
+                    dismiss()
+                },
+            )
+        }
+    }
 
     Column(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
-            .imePadding()
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-            Text(
-                Readout.movement(exerciseId, store.catalog),
-                style = WindmillFont.display(22),
-                color = GymSkin.ink,
-                maxLines = 1,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            draft.placeOf(exerciseId)?.let { place ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .testTag("target-sheet-body"),
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
+                    Text(
+                        Readout.movement(exerciseId, store.catalog),
+                        style = WindmillFont.display(22),
+                        color = GymSkin.ink,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    draft.placeOf(exerciseId)?.let { place ->
+                        Text(
+                            "$place of ${draft.entries.size} · ${draft.name}",
+                            style = GymType.numeral(12),
+                            color = GymSkin.inkFaint,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (!draft.trained) {
+                    Text(
+                        "Never logged — these are your numbers.",
+                        style = GymType.numeral(12),
+                        color = GymSkin.inkDim,
+                    )
+                }
+            }
+
+            SectionHead(TargetEntry.everySet)
+
+            // What leaving the count empty MEANS, said here and nowhere else — the lists behind
+            // this sheet print the compact `open` token per row and no sentence. Said ABOVE the
+            // fields: everything drawn UNDER a field is that field's own note, while this is a
+            // statement about the whole line.
+            if (!ladderShown) {
                 Text(
-                    "$place of ${draft.entries.size} · ${draft.name}",
-                    style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
-                    maxLines = 1,
+                    TargetEntry.openLine,
+                    style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                    color = GymSkin.inkDim,
                 )
             }
-        }
 
-        if (!draft.trained) {
-            Text(
-                "Never logged — these are your numbers.",
-                style = GymType.numeral(12),
-                color = GymSkin.inkDim,
-            )
-        }
-
-        // What leaving the fields empty MEANS, said here and nowhere else — the lists behind this
-        // sheet print the compact `open` token per row and no sentence. Said ABOVE the fields,
-        // beside the never-logged line: everything drawn UNDER a field is that field's own note,
-        // while this is a statement about the whole line. A refusal and a blessing of the same
-        // state are never drawn together.
-        if (reading == TargetEntry.Reading.Open && clearRefused == null) {
-            Text(
-                TargetEntry.openLine,
-                style = WindmillFont.body(14).copy(lineHeight = 20.sp),
-                color = GymSkin.inkDim,
-            )
-        }
-
-        // Four abreast on a phone: the gap is the tightest of the sheet so that three labels and the
-        // sign key all keep their own line at the largest font scale.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TargetField(
-                label = "Sets",
-                value = sets,
-                placeholder = TargetEntry.setsPlaceholder,
-                decimal = false,
-                bad = clearRefused != null || refused?.field == TargetEntry.Field.Sets,
-                modifier = Modifier.weight(1f),
-            ) { typed ->
-                // Clearing sets is how a line is opened, and an open line names neither reps nor a
-                // load — so the clear is refused rather than taking two numbers away silently. The
-                // kept value comes back SELECTED, because the gesture this refusal interrupts is
-                // backspace-then-retype: with the caret after the value the next digit would append
-                // and earn a second refusal for a number nobody typed.
-                val stop = if (typed.text.isBlank()) TargetEntry.clearingSets(reps.text, weight.text) else null
-                clearRefused = stop
-                sets = if (stop == null) typed else TextFieldValue(sets.text, TextRange(0, sets.text.length))
-            }
-            TargetField(
-                label = "Reps",
-                value = reps,
-                placeholder = TargetEntry.repsPlaceholder,
-                decimal = false,
-                bad = refused?.field == TargetEntry.Field.Reps,
-                modifier = Modifier.weight(1.1f),
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                clearRefused = null
-                reps = it
+                TargetField(
+                    label = "Sets",
+                    value = sets,
+                    placeholder = TargetEntry.setsPlaceholder,
+                    decimal = false,
+                    bad = headFault?.field == TargetEntry.Field.Sets,
+                    description = "Sets target",
+                    last = false,
+                    modifier = Modifier.weight(1f),
+                    onTyped = ::count,
+                )
+                TargetField(
+                    label = "Reps",
+                    value = TargetEntry.sharedReps(shown),
+                    placeholder = if (TargetEntry.repsVary(shown)) TargetEntry.varies else TargetEntry.repsPlaceholder,
+                    decimal = false,
+                    bad = headFault?.field == TargetEntry.Field.Reps,
+                    enabled = ladderShown,
+                    description = "Reps target",
+                    last = false,
+                    modifier = Modifier.weight(1.1f),
+                    onTyped = { headTyped(reps = it) },
+                )
+                TargetField(
+                    label = "Weight",
+                    value = TargetEntry.sharedWeight(shown),
+                    placeholder = if (TargetEntry.weightVaries(shown)) TargetEntry.varies else TargetEntry.weightPlaceholder,
+                    decimal = true,
+                    bad = headFault?.field == TargetEntry.Field.Weight,
+                    enabled = ladderShown,
+                    description = "Weight target",
+                    last = !ladderShown,
+                    modifier = Modifier.weight(1.3f),
+                    onTyped = { headTyped(weight = it) },
+                )
+                if (bandAssisted) {
+                    SignKey { headTyped(weight = signFlipped(TargetEntry.sharedWeight(shown))) }
+                }
             }
-            TargetField(
-                label = "Weight",
-                value = weight,
-                placeholder = TargetEntry.weightPlaceholder,
-                decimal = true,
-                bad = refused?.field == TargetEntry.Field.Weight,
-                // The widest of the three: it holds a decimal and a sign.
-                modifier = Modifier.weight(1.3f),
-            ) {
-                clearRefused = null
-                weight = it
-            }
-            // The number pad has no minus key, so without this the plan cannot say what the rack can:
-            // band-assisted work is a negative load. `±` and never a bare `−`, because the control is
-            // also the way back to a loaded lift.
-            SignKey {
-                clearRefused = null
-                weight = signFlipped(weight)
-            }
-        }
 
-        // One refusal at a time, and the clear's own outranks the rest because it is what just
-        // happened. Nothing stands in the row otherwise: a comma and a point both read, and the
-        // field shows what was typed.
-        (clearRefused ?: refused?.said)?.let { said ->
-            Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
+            // The head's own refusal, under the head; a row's fault is drawn under its row.
+            headFault?.let { FaultLine(it.said) }
+
+            if (ladderShown) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    SectionHead(TargetEntry.setBySet)
+                    Spacer(Modifier.weight(1f))
+                    Box {
+                        TextButton(onClick = { fillMenuOnHead = true }) {
+                            Text(TargetEntry.fill, style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
+                        }
+                        fillMenu(fillMenuOnHead) { fillMenuOnHead = false }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+                    shown.forEachIndexed { index, row ->
+                        key("row-$deletions-$index") {
+                            val fault = rowFault?.takeIf { it.row == index }
+                            val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
+                                delete(index)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+                                SwipeToDismissBox(
+                                    state = swipe,
+                                    enableDismissFromStartToEnd = false,
+                                    // The lane is drawn once the stroke begins: at rest the row says
+                                    // nothing about leaving.
+                                    backgroundContent = {
+                                        if (swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart) RowDeleteGround()
+                                    },
+                                ) {
+                                    Box {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = GymTap.minimum)
+                                                .background(GymSkin.surface)
+                                                // Law 1: the swipe is half-built until its custom
+                                                // action exists. The long press is a shortcut to
+                                                // Fill, never the only path, so it carries no
+                                                // action of its own.
+                                                .semantics {
+                                                    customActions = listOf(CustomAccessibilityAction(TargetEntry.delete) {
+                                                        delete(index)
+                                                        true
+                                                    })
+                                                }
+                                                .pointerInput(index) {
+                                                    detectTapGestures(onLongPress = { fillMenuOnRow = index })
+                                                },
+                                        ) {
+                                            Text(
+                                                "${index + 1}",
+                                                style = GymType.numeral(13),
+                                                color = GymSkin.inkFaint,
+                                                modifier = Modifier.width(24.dp),
+                                            )
+                                            TargetField(
+                                                label = null,
+                                                value = row.reps,
+                                                placeholder = TargetEntry.repsPlaceholder,
+                                                decimal = false,
+                                                bad = fault?.field == TargetEntry.Field.Reps,
+                                                description = "Set ${index + 1} reps",
+                                                last = false,
+                                                modifier = Modifier.weight(1f),
+                                                onTyped = { rowTyped(index, reps = it) },
+                                            )
+                                            TargetField(
+                                                label = null,
+                                                value = row.weight,
+                                                placeholder = TargetEntry.weightPlaceholder,
+                                                decimal = true,
+                                                bad = fault?.field == TargetEntry.Field.Weight,
+                                                description = "Set ${index + 1} load",
+                                                last = index == shown.lastIndex,
+                                                modifier = Modifier.weight(1.3f),
+                                                onTyped = { rowTyped(index, weight = it) },
+                                            )
+                                            if (bandAssisted) {
+                                                SignKey { rowTyped(index, weight = signFlipped(row.weight)) }
+                                            }
+                                        }
+                                        fillMenu(fillMenuOnRow == index) { fillMenuOnRow = null }
+                                    }
+                                }
+                                fault?.let { FaultLine(it.said) }
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = GymTap.minimum)
+                            .clickable(role = Role.Button, onClick = ::addSet),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.accent)
+                        Text(TargetEntry.addSet, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                    }
+                    if (atCeiling) FaultLine(TargetEntry.outsideSets)
+                }
+            }
         }
 
         Box(
@@ -609,7 +813,7 @@ private fun TargetSheet(
                 .clickable(enabled = refused == null, role = Role.Button) { onSet(reading) },
         ) {
             Text(
-                "Set  ·  ${preview(reading)}",
+                TargetEntry.commitLabel(reading),
                 style = WindmillFont.body(17, FontWeight.Bold),
                 color = if (refused == null) GymSkin.onAccent else GymSkin.inkFaint,
             )
@@ -617,20 +821,24 @@ private fun TargetSheet(
     }
 }
 
-// What the three fields name, in the words the row itself will print.
-private fun preview(reading: TargetEntry.Reading): String = when (reading) {
-    TargetEntry.Reading.Open -> Readout.openTarget
-    is TargetEntry.Reading.Targeted -> Readout.target(reading.sets, reading.reps, reading.weightKg)
-    is TargetEntry.Reading.Refused -> "—"
+@Composable
+private fun SectionHead(words: String) {
+    Text(words, style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+}
+
+// One refusal at a time, in the alarm ink, under the field or the row that carries it.
+@Composable
+private fun FaultLine(said: String) {
+    Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
 }
 
 // A sign the lifter can reach without a keyboard that has one. Empty stays empty: a sign with no
-// number behind it is not a load, and an empty weight field already means `last time`.
-private fun signFlipped(typed: TextFieldValue): TextFieldValue {
-    val text = typed.text.trim()
+// number behind it is not a load, and an empty load already means `last time`.
+private fun signFlipped(typed: String): String {
+    val text = typed.trim()
     if (text.isEmpty()) return typed
-    val flipped = if (text.startsWith("-") || text.startsWith("−")) text.drop(1) else "−$text"
-    return TextFieldValue(flipped, TextRange(flipped.length))
+    if (text.startsWith("-") || text.startsWith("−")) return text.drop(1)
+    return "−$text"
 }
 
 @Composable
@@ -642,7 +850,7 @@ private fun SignKey(onFlip: () -> Unit) {
             .background(GymSkin.raised)
             .clickable(role = Role.Button, onClickLabel = KeypadEntry.signName, onClick = onFlip)
             // The glyph reads as nothing out loud, so the control says what it is — and what a
-            // negative load is, since no sentence beside the fields says it any more.
+            // negative load is, since no sentence beside the fields says it.
             .semantics(mergeDescendants = true) { contentDescription = KeypadEntry.signName },
         contentAlignment = Alignment.Center,
     ) {
@@ -650,33 +858,104 @@ private fun SignKey(onFlip: () -> Unit) {
     }
 }
 
+// The head's three labelled fields and the ladder's compact pair are one field. A label stands
+// ABOVE the field rather than floating inside it, so an empty head field still reads its
+// placeholder — `varies` is the one word the head has to say about a ladder that disagrees. The
+// unlabelled kind is the ladder's: the same outline at the room's minimum tap height, so five
+// rows and Add set fit a small phone's first paint. `last` is the one field whose keyboard action
+// is Done — every other field's Next walks the sheet top to bottom, reps before load on each row,
+// without leaving the keyboard.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TargetField(
-    label: String,
-    value: TextFieldValue,
+    label: String?,
+    value: String,
     placeholder: String,
     decimal: Boolean,
     bad: Boolean,
+    description: String,
+    last: Boolean,
     modifier: Modifier,
-    onTyped: (TextFieldValue) -> Unit,
+    enabled: Boolean = true,
+    onTyped: (String) -> Unit,
 ) {
-    OutlinedTextField(
-        value = value,
-        // A keystroke that does not fit is refused WHOLE rather than truncated: a field that
-        // silently drops the last character types a number nobody chose.
-        onValueChange = { if (it.text.length <= 8) onTyped(it) },
-        singleLine = true,
-        isError = bad,
-        label = { Text(label) },
-        placeholder = { Text(placeholder, maxLines = 1) },
-        textStyle = GymType.numeral(19, FontWeight.Bold),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
-            autoCorrectEnabled = false,
-        ),
-        shape = RoundedCornerShape(WindmillRadius.md),
-        colors = gymFieldColours(),
-        // `Sets` alone is ambiguous read out of its row; the field says what it targets.
-        modifier = modifier.semantics { contentDescription = "$label target" },
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val interaction = remember { MutableInteractionSource() }
+    val colours = gymFieldColours()
+    val shape = RoundedCornerShape(WindmillRadius.md)
+    val keyboardOptions = KeyboardOptions(
+        keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
+        autoCorrectEnabled = false,
+        imeAction = if (last) ImeAction.Done else ImeAction.Next,
     )
+    val keyboardActions = KeyboardActions(
+        onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        onDone = { keyboard?.hide() },
+    )
+    // A keystroke that does not fit is refused WHOLE rather than truncated: a field that silently
+    // drops the last character types a number nobody chose.
+    val typed = { it: String -> if (it.length <= 8) onTyped(it) }
+    // `Sets` alone is ambiguous read out of its row; the field says what it targets.
+    val described = Modifier.fillMaxWidth().semantics { contentDescription = description }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
+        if (label == null) {
+            BasicTextField(
+                value = value,
+                onValueChange = typed,
+                singleLine = true,
+                enabled = enabled,
+                textStyle = GymType.numeral(17, FontWeight.Bold).copy(color = GymSkin.ink),
+                keyboardOptions = keyboardOptions,
+                keyboardActions = keyboardActions,
+                interactionSource = interaction,
+                cursorBrush = SolidColor(GymSkin.accent),
+                modifier = described.height(GymTap.minimum),
+                decorationBox = { inner ->
+                    OutlinedTextFieldDefaults.DecorationBox(
+                        value = value,
+                        innerTextField = inner,
+                        enabled = enabled,
+                        singleLine = true,
+                        visualTransformation = VisualTransformation.None,
+                        interactionSource = interaction,
+                        isError = bad,
+                        placeholder = { Text(placeholder, maxLines = 1) },
+                        colors = colours,
+                        contentPadding = PaddingValues(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
+                        container = {
+                            OutlinedTextFieldDefaults.Container(
+                                enabled = enabled,
+                                isError = bad,
+                                interactionSource = interaction,
+                                colors = colours,
+                                shape = shape,
+                            )
+                        },
+                    )
+                },
+            )
+            return@Column
+        }
+        Text(
+            label,
+            style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
+            color = if (enabled) GymSkin.inkFaint else GymSkin.inkFaint.copy(alpha = 0.5f),
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = typed,
+            singleLine = true,
+            enabled = enabled,
+            isError = bad,
+            placeholder = { Text(placeholder, maxLines = 1) },
+            textStyle = GymType.numeral(19, FontWeight.Bold),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            interactionSource = interaction,
+            shape = shape,
+            colors = colours,
+            modifier = described,
+        )
+    }
 }

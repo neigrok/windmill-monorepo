@@ -47,6 +47,7 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
@@ -836,11 +837,11 @@ class TrainingStore(
     // this device last read would delete every line added since. Addressed by POSITION and refused
     // out loud when that row is gone, because a PUT of an unchanged document still moves the revision
     // and supersedes every pending proposal.
-    suspend fun save(weightKg: Double, toRoutine: String, atPosition: Int,
+    suspend fun save(sets: List<SetTarget>, toRoutine: String, atPosition: Int,
                      forExercise: String): WriteFailure? {
         // A routine still on the shelf is the device's to move.
         localLog.routine(toRoutine)?.let { mine ->
-            val moved = mine.retargeting(atPosition, forExercise, toWeightKg = weightKg)
+            val moved = mine.retargeting(atPosition, forExercise, sets)
                 ?: return WriteFailure.Refused("${mine.name} has changed since this session started")
             localLog.hold(moved)
             routines = if (gym == null) localLog.routines
@@ -852,7 +853,7 @@ class TrainingStore(
             // Absent and another account's fold into null, so there is no sentence to repeat.
             val routine = log.routine(toRoutine)
                 ?: return WriteFailure.Refused("that routine is no longer on the log")
-            val moved = routine.retargeting(atPosition, forExercise, toWeightKg = weightKg)
+            val moved = routine.retargeting(atPosition, forExercise, sets)
                 ?: return WriteFailure.Refused("${routine.name} has changed since this session started")
             val saved = log.replaceRoutine(toRoutine, RoutineWrite(moved))
             routines = program.map { if (it.id == saved.id) saved else it }

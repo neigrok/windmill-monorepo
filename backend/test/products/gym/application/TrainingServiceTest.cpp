@@ -991,15 +991,15 @@ TEST(last_time_names_the_routine_the_session_was_trained_under_not_the_one_store
   CHECK_EQ(afterDelete.lastTime->session.routine, std::optional<RoutineId>());
   CHECK_EQ(afterDelete.lastTime->session.plan,
            std::optional<PlanSnapshot>(PlanSnapshot{
-               "Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}}));
+               "Push A", {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}}));
   CHECK_EQ(afterDelete.lastTime->sets, std::vector<Set>{*landed.set});
 }
 
 TEST(start_from_a_routine_freezes_its_name_and_entries_onto_the_session) {
   Harness h;
-  h.create(h.pushAWrite({benchEntry(1), RoutineEntry{
-                                                  2, ExerciseId{"back-squat"}, 3, 8, std::nullopt,
-                                                  std::nullopt}}));
+  h.create(h.pushAWrite(
+      {benchEntry(1),
+       RoutineEntry{2, ExerciseId{"back-squat"}, straight(3, 8, std::nullopt), std::nullopt}}));
 
   StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
 
@@ -1008,8 +1008,8 @@ TEST(start_from_a_routine_freezes_its_name_and_entries_onto_the_session) {
   CHECK_EQ(started.session->plan,
            std::optional<PlanSnapshot>(PlanSnapshot{
                "Push A",
-               {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
-                PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}}));
+               {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180},
+                PlanEntry{ExerciseId{"back-squat"}, straight(3, 8, std::nullopt), std::nullopt}}}));
   CHECK_EQ(h.repo.db.sessions[0], *started.session);
 }
 
@@ -1017,18 +1017,37 @@ TEST(a_routine_line_with_no_rep_target_survives_the_write_and_the_freeze) {
   Harness h;
   h.repo.db.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5,
                        false});
-  RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt,
-                                        180}}));
+  RoutineWriteOutcome created = h.create(h.pushAWrite(
+      {RoutineEntry{1, ExerciseId{"chin-up"}, straight(3, std::nullopt, std::nullopt), 180}}));
 
   StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
 
   CHECK(created.error == RoutineWriteError::none);
-  CHECK_EQ(created.routine->entries[0].targetReps, std::optional<int>());
-  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].targetReps, std::optional<int>());
+  CHECK_EQ(created.routine->entries[0].sets, straight(3, std::nullopt, std::nullopt));
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].sets,
+           straight(3, std::nullopt, std::nullopt));
   CHECK(started.error == StartError::none);
   CHECK_EQ(started.session->plan,
            std::optional<PlanSnapshot>(PlanSnapshot{
-               "Push A", {PlanEntry{ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 180}}}));
+               "Push A", {PlanEntry{ExerciseId{"chin-up"}, straight(3, std::nullopt, std::nullopt), 180}}}));
+}
+
+// A ramp freezes set for set: the snapshot is the scheme as it stood, not a summary of it.
+TEST(start_from_a_routine_holding_a_ramp_freezes_the_ramp_set_for_set) {
+  Harness h;
+  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 240}, benchEntry(2)},
+                        "rt_00000001", "Lower A"));
+
+  StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
+
+  CHECK(started.error == StartError::none);
+  const PlanSnapshot frozen{"Lower A",
+                            {PlanEntry{ExerciseId{"back-squat"}, ramp(), 240},
+                             PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}};
+  CHECK_EQ(started.session->plan, std::optional<PlanSnapshot>(frozen));
+  CHECK_EQ(h.repo.db.sessions[0].plan, std::optional<PlanSnapshot>(frozen));
+  CHECK_EQ(h.training.detail(uid(), sid("ses_00000001"))->session.plan,
+           std::optional<PlanSnapshot>(frozen));
 }
 
 TEST(start_naming_a_routine_this_account_cannot_read_is_refused) {
@@ -1162,7 +1181,7 @@ TEST(review_never_takes_a_session_still_running_as_history) {
 
 TEST(review_stands_against_the_last_session_of_the_same_routine) {
   Harness h;
-  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
+  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, straight(5, 5, 100.0), 180}}));
   h.trained("ses_00000001", h.clock.now - 2 * kWeek, 95, 5, 4, "rt_00000001");
   h.trained("ses_00000002", h.clock.now - kWeek, 100, 5, 4);   // the same movement, no day behind it
   h.trained("ses_00000003", h.clock.now - 3'600'000, 105, 5, 4, "rt_00000001");
@@ -1171,7 +1190,7 @@ TEST(review_stands_against_the_last_session_of_the_same_routine) {
 
   const std::vector<AgainstMovement> movements{
       AgainstMovement{ExerciseId{"back-squat"}, TopSet{105, 5, 4}, TopSet{95, 5, 4},
-                      PlanEntry{ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}};
+                      PlanEntry{ExerciseId{"back-squat"}, straight(5, 5, 100.0), 180}}};
   REQUIRE(result.has_value());
   REQUIRE(result->against.has_value());
   CHECK_EQ(result->against->session, sid("ses_00000001"));
@@ -1482,7 +1501,7 @@ TEST(a_slight_session_gets_no_dot_however_heavy_it_was) {
 
 TEST(a_movements_record_answers_the_whole_page_from_one_read) {
   Harness h;
-  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
+  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, straight(5, 5, 100.0), 180}}));
   h.trained("ses_00000001", h.clock.now, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
   h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
@@ -1703,7 +1722,7 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
 
   CHECK_EQ(h.repo.db.sessions[0].plan, frozen);
   CHECK_EQ(*h.repo.db.sessions[0].plan,
-           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}}));
+           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}}));
   CHECK_EQ(h.repo.db.routineRows[0].entries, planned);
   CHECK_EQ(h.repo.db.routineRows[0].name, std::string("Push A"));
   CHECK_EQ(h.repo.db.sessions[0].routine, std::optional<RoutineId>(rtId()));

@@ -270,8 +270,7 @@ final class TrainingStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
         server.open(Session(id: "ses_live", startedAtMs: 500,
                             plan: PlanSnapshot(routine: "Push A",
-                                               entries: [PlanEntry(exerciseId: "bench-press", sets: 5,
-                                                                   reps: 5, weightKg: 82.5)])))
+                                               entries: [PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5))])))
         server.sets["ses_live"] = [TrainingSet(id: "set_old", exerciseId: "bench-press", setNumber: 1,
                                                weightKg: 82.5, reps: 5, completedAtMs: 600)]
 
@@ -290,8 +289,7 @@ final class TrainingStoreTests: XCTestCase {
         let server = FakeTraining()
         server.open(Session(id: "ses_1", startedAtMs: 1_000,
                             plan: PlanSnapshot(routine: "Push A",
-                                               entries: [PlanEntry(exerciseId: "bench-press", sets: 5,
-                                                                   reps: 5, weightKg: 82.5)])))
+                                               entries: [PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5))])))
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
         await store.choose("bench-press")
@@ -305,7 +303,7 @@ final class TrainingStoreTests: XCTestCase {
     func testAWarmupIsWrittenAsAWarmupAndCarriesNothingForward() async {
         let server = FakeTraining()
         let plan = PlanSnapshot(routine: "Legs", entries: [
-            PlanEntry(exerciseId: "back-squat", sets: 5, reps: 5, weightKg: 100),
+            PlanEntry(exerciseId: "back-squat", sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 5)),
         ])
         let store = await liveStore(server, movement: "back-squat", plan: plan)
         XCTAssertEqual(store.prefill, Prefill(weightKg: 100, reps: 5))
@@ -369,8 +367,7 @@ final class TrainingStoreTests: XCTestCase {
     func testAStartWithNoSignalComposesOnTheDeviceFromTheAccountsRoutineAndTheClaimLandsIt() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ])
         let online = makeStore(sync: server)
         await online.connect(to: account(signedIn: true))
@@ -385,7 +382,7 @@ final class TrainingStoreTests: XCTestCase {
             return XCTFail("a basement start composes on the device")
         }
         XCTAssertEqual(opened.plan, PlanSnapshot(routine: "Push A", entries: [
-            PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ]), "the plan froze off the routine the store holds")
         XCTAssertEqual(basement.session?.id, opened.id)
         XCTAssertTrue(queueOnDisk(of: "u1").sessionIsUnclaimed, "held unclaimed until the claim lands it")
@@ -482,8 +479,7 @@ final class TrainingStoreTests: XCTestCase {
         server.catalog = [Exercise(id: "bench-press", name: "Bench (renamed)", pattern: "press",
                                    equipment: "barbell", stepKg: 2.5)]
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ])
         server.lastSets = [LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5, atMs: 900)]
         server.settings = GymPreferences.defaults.with(units: .lb)
@@ -517,8 +513,7 @@ final class TrainingStoreTests: XCTestCase {
     func testARoutineReadWithNoSignalComesOffTheDeviceCopyAndItsHistoryIsSaidToBeOutOfReach() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ])
         let online = makeStore(sync: server)
         await online.connect(to: account(signedIn: true))
@@ -554,8 +549,7 @@ final class TrainingStoreTests: XCTestCase {
     func testARoutineReadTheLogRefusesIsSaidInTheLogsOwnWordsAndNotRememberedQuietly() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ])
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
@@ -576,46 +570,46 @@ final class TrainingStoreTests: XCTestCase {
     func testAWriteBackThatDidNotLandSaysWhatDidNotHappen() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ])
         let store = await liveStore(server)
 
         server.online = false
-        let quiet = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
+        let heavier = Array(repeating: SetTarget(reps: 5, weightKg: 87.5), count: 5)
+        let quiet = await store.save(heavier, toRoutine: "rt_push_a", at: 1, for: "bench-press")
         XCTAssertEqual(quiet, .noAnswer)
         XCTAssertEqual(quiet?.line("Push A wasn’t changed"),
                        "the log didn’t answer — Push A wasn’t changed")
-        XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.targetWeightKg, 82.5,
+        XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.sets.first?.weightKg, 82.5,
                        "and nothing moved")
 
         server.online = true
-        let gone = await store.save(87.5, toRoutine: "rt_gone", at: 1, for: "bench-press")
+        let gone = await store.save(heavier, toRoutine: "rt_gone", at: 1, for: "bench-press")
         XCTAssertEqual(gone, .refused("that routine is no longer on the log"))
 
-        let landed = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
+        let landed = await store.save(heavier, toRoutine: "rt_push_a", at: 1, for: "bench-press")
         XCTAssertNil(landed, "a write that landed says nothing at all")
-        XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.targetWeightKg, 87.5)
+        XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.sets, heavier)
     }
 
     func testAWriteBackAgainstALineTheRoutineNoLongerHoldsIsRefusedWithoutAPut() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
-                         targetWeightKg: 45),
+            RoutineEntry(position: 1, exerciseId: "overhead-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3)),
         ])
         let store = await liveStore(server)
 
-        let moved = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
+        let heavier = Array(repeating: SetTarget(reps: 5, weightKg: 87.5), count: 5)
+        let moved = await store.save(heavier, toRoutine: "rt_push_a", at: 1, for: "bench-press")
         XCTAssertEqual(moved, .refused("Push A has changed since this session started"))
         XCTAssertEqual(moved?.line("Push A wasn’t changed"), "Push A has changed since this session started")
 
-        let gone = await store.save(87.5, toRoutine: "rt_push_a", at: 2, for: "bench-press")
+        let gone = await store.save(heavier, toRoutine: "rt_push_a", at: 2, for: "bench-press")
         XCTAssertEqual(gone, .refused("Push A has changed since this session started"))
 
         XCTAssertFalse(server.calls.contains("replaceRoutine"), "nothing to write, so nothing was PUT")
         XCTAssertEqual(server.routineWrites, [])
-        XCTAssertEqual(server.written["rt_push_a"]?.entries.map(\.targetWeightKg), [45])
+        XCTAssertEqual(server.written["rt_push_a"]?.entries.map(\.sets), [Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3)])
     }
 
     func testAMovementThatWasNotCreatedSaysSoInTheLogsOwnWords() async {
@@ -684,7 +678,7 @@ final class TrainingStoreTests: XCTestCase {
     func testASwipeCanOnlyTakeAMovementNothingIsHoldingOnTo() async {
         let server = FakeTraining()
         let plan = PlanSnapshot(routine: "Push A",
-                                entries: [PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5)])
+                                entries: [PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5), count: 5))])
         let store = await liveStore(server, plan: plan)
         await store.logSet(weightKg: 82.5, reps: 5)
         await store.choose("cable-fly")
@@ -1368,8 +1362,8 @@ final class SetQueueTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let plan = PlanSnapshot(routine: "Push A", entries: [
-            PlanEntry(exerciseId: "ex_local", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 120),
-            PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: 60),
+            PlanEntry(exerciseId: "ex_local", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5), restSeconds: 120),
+            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)),
         ])
         queue.hold(Session(id: "ses_1", startedAtMs: 1_000, routineId: "rt_1", plan: plan),
                    unclaimed: true)
@@ -1382,8 +1376,8 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.pending.map(\.set.exerciseId), ["ex_fresh"])
         XCTAssertEqual(queue.order, ["ex_fresh", "bench-press"])
         XCTAssertEqual(queue.session?.plan, PlanSnapshot(routine: "Push A", entries: [
-            PlanEntry(exerciseId: "ex_fresh", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 120),
-            PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: 60),
+            PlanEntry(exerciseId: "ex_fresh", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5), restSeconds: 120),
+            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)),
         ]), "the plan lines follow the fresh id and keep everything else")
         XCTAssertEqual(queue.session?.routineId, "rt_1")
     }
@@ -1540,9 +1534,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         let plan = start.routineId.flatMap { written[$0] }.map { routine in
             PlanSnapshot(routine: routine.name,
                          entries: routine.entries.sorted { $0.position < $1.position }.map {
-                             PlanEntry(exerciseId: $0.exerciseId, sets: $0.targetSets,
-                                       reps: $0.targetReps, weightKg: $0.targetWeightKg,
-                                       restSeconds: $0.restSeconds)
+                             PlanEntry(exerciseId: $0.exerciseId, sets: $0.sets, restSeconds: $0.restSeconds)
                          })
         }
         if start.routineId != nil, plan == nil {
@@ -1694,9 +1686,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         let made = Routine(id: write.id, name: write.name, position: write.position,
                            entries: write.entries.enumerated().map { index, entry in
                                RoutineEntry(position: index + 1, exerciseId: entry.exerciseId,
-                                            targetSets: entry.targetSets, targetReps: entry.targetReps,
-                                            targetWeightKg: entry.targetWeightKg,
-                                            restSeconds: entry.restSeconds)
+                                            sets: entry.sets, restSeconds: entry.restSeconds)
                            })
         written[made.id] = made
         return made
@@ -1761,9 +1751,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
                               lastTrainedAtMs: base?.lastTrainedAtMs,
                               entries: held.changes.filter { $0.kind != .removed }.map { change in
                                   RoutineEntry(position: change.position, exerciseId: change.exerciseId,
-                                               targetSets: change.after?.sets ?? 0,
-                                               targetReps: change.after?.reps,
-                                               targetWeightKg: change.after?.weightKg,
+                                               sets: change.after?.sets ?? [],
                                                restSeconds: change.after?.restSeconds)
                               })
         written[changed.id] = changed

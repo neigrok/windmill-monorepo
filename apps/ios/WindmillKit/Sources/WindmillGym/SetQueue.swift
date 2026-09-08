@@ -7,7 +7,9 @@ import WindmillPlatform
 // A set that never landed is refused once its session is finished, so the queue flushes before finish
 // and before the boot read. Entries are keyed by identity, never by position; order is per session and
 // movement, the only order the server keeps, so a set that cannot land holds up its own lane alone.
-// Flushed to one atomic file; a file this build cannot read opens EMPTY.
+// Flushed to one atomic file, read through `DeviceDocument`: a document an older build wrote is
+// rewritten on load, an owed set this build cannot read is dropped alone, and only a file that is not
+// JSON opens EMPTY.
 
 public enum Owed: String, Codable, Sendable {
     case append     // the log has never seen this row
@@ -47,6 +49,7 @@ public final class SetQueue {
     // Android's window (SetQueue.kt) to the millisecond: both phones must agree.
     public static let undoWindowMs: Int64 = 9_000
 
+    // Read entry by entry: an owed set this build cannot read is the one thing dropped.
     private struct Queue: Codable {
         var session: Session?
         var entries: [String: Entry]
@@ -54,6 +57,23 @@ public final class SetQueue {
         var order: [String]?
         // Composed on this device with no account asked; the claim turns it false, and nil reads claimed.
         var unclaimed: Bool?
+
+        init(session: Session?, entries: [String: Entry]) {
+            self.session = session
+            self.entries = entries
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case session, entries, order, unclaimed
+        }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            session = try fields.decodeIfPresent(Session.self, forKey: .session)
+            entries = try fields.decodeKept([String: Entry].self, forKey: .entries) ?? [:]
+            order = try fields.decodeIfPresent([String].self, forKey: .order)
+            unclaimed = try fields.decodeIfPresent(Bool.self, forKey: .unclaimed)
+        }
     }
 
     // One queue per seat, and the seat is the key: `open(under:)` names it and nothing else does.
@@ -63,6 +83,21 @@ public final class SetQueue {
         var order: [String]?
         var unclaimed: Bool?
         var queues: [String: Queue]?
+
+        init() {}
+
+        enum CodingKeys: String, CodingKey {
+            case session, entries, order, unclaimed, queues
+        }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            session = try fields.decodeIfPresent(Session.self, forKey: .session)
+            entries = try fields.decodeKept([String: Entry].self, forKey: .entries)
+            order = try fields.decodeIfPresent([String].self, forKey: .order)
+            unclaimed = try fields.decodeIfPresent(Bool.self, forKey: .unclaimed)
+            queues = try fields.decodeKept([String: Queue].self, forKey: .queues)
+        }
     }
 
     private let url: URL
@@ -77,7 +112,7 @@ public final class SetQueue {
                 deviceHolds: @escaping @autoclosure () -> String? = KeychainSessions().readUser()?.id) {
         self.url = url
         let data = (try? Data(contentsOf: url)) ?? Data()
-        held = (try? JSONDecoder().decode(Held.self, from: data)) ?? Held()
+        held = DeviceDocument.read(Held.self, from: data) ?? Held()
         retireThePreSeatQueue(heldBy: deviceHolds)
     }
 
@@ -195,8 +230,7 @@ public final class SetQueue {
               plan.entries.contains(where: { $0.exerciseId == old }) else { return }
         let entries = plan.entries.map { entry in
             guard entry.exerciseId == old else { return entry }
-            return PlanEntry(exerciseId: fresh, sets: entry.sets, reps: entry.reps,
-                             weightKg: entry.weightKg, restSeconds: entry.restSeconds)
+            return PlanEntry(exerciseId: fresh, sets: entry.sets, restSeconds: entry.restSeconds)
         }
         queue.session = Session(id: live.id, startedAtMs: live.startedAtMs,
                                finishedAtMs: live.finishedAtMs, routineId: live.routineId,

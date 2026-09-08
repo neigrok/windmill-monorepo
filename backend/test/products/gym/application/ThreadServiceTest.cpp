@@ -28,7 +28,7 @@ TEST(a_thread_past_the_list_ceiling_still_exports_the_outcome_the_app_shows_it) 
                    ProposalSource{ProposalDoor::ask, "", "", ThreadId{"thr_probe1000"}}, "", 4,
                    opened, std::nullopt},
       1, "Push A", "Push A",
-      changesBetween({benchEntry()}, {RoutineEntry{1, ExerciseId{"bench-press"}, 5, 5, 90.0, 180}})});
+      changesBetween({benchEntry()}, {RoutineEntry{1, ExerciseId{"bench-press"}, straight(5, 5, 90.0), 180}})});
 
   const std::vector<ExportedThreadTurn> exported = h.threads.exportedThreadTurns(uid());
 

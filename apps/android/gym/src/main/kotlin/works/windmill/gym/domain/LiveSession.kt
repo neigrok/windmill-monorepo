@@ -105,11 +105,32 @@ object LiveLines {
         val canDrop: Boolean,
     )
 
-    // "set 3 of 5". A plan line with no set count answers like no line at all — "set 3", never
-    // "set 3 of 0".
+    // "set 3 of 5". An open plan line answers like no line at all — "set 3", never "set 3 of 0".
     fun counter(workingSetsToday: Int, planEntry: PlanEntry?): String {
-        val sets = planEntry?.sets ?: return "set ${workingSetsToday + 1}"
+        val sets = planEntry?.sets?.size?.takeIf { it > 0 } ?: return "set ${workingSetsToday + 1}"
         return "set ${workingSetsToday + 1} of $sets"
+    }
+
+    // One pill of the slot strip: a set that landed reads what was lifted; a planned slot still to
+    // come reads its target, and the first of those is the set about to be lifted.
+    sealed interface Slot {
+        data class Landed(val row: Row) : Slot
+
+        data class Planned(val index: Int, val target: SetTarget, val current: Boolean) : Slot {
+            val value: String get() = Readout.setTarget(target)
+            val spoken: String get() = "set $index, target $value"
+        }
+    }
+
+    // Landed rows first, warmups where they were lifted, then one pill per planned slot the working
+    // count has not reached. A set logged past the plan is a landed pill with no slot behind it.
+    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>): List<Slot> {
+        val landed = rows(sets, stalled).map { Slot.Landed(it) }
+        val lifted = workingCount(sets)
+        val coming = planEntry?.sets.orEmpty().drop(lifted).mapIndexed { offset, target ->
+            Slot.Planned(index = lifted + offset + 1, target = target, current = offset == 0)
+        }
+        return landed + coming
     }
 
     // The set the last-time chip draws for the coming working set: last time's Nth WORKING set, past
@@ -173,7 +194,7 @@ object LiveLines {
             val performed = sets.filter { it.exerciseId == exerciseId }
             val done = workingCount(performed)
             val entry = plan?.entry(exerciseId)
-            val planned = entry?.sets
+            val planned = entry?.sets?.size?.takeIf { it > 0 }
             // Off the plan LINE and never off its set count: an open row is still a written line.
             val justAdded = performed.isEmpty() && exerciseId == foot && entry == null
             MovementRow(

@@ -180,16 +180,13 @@ struct RoutineEditorScreen: View {
                                 movement: Readout.movement(line.entry.exerciseId, in: catalog),
                                 place: draft.place(of: lineId),
                                 untested: untested,
-                                onSet: { sets, reps, weightKg in
-                                    draft.set(lineId, sets: sets, reps: reps, weightKg: weightKg)
-                                    sheet = nil
-                                },
-                                onOpen: {
-                                    draft.leaveOpen(lineId)
+                                signed: catalog.first { $0.id == line.entry.exerciseId }?.equipment == "bodyweight",
+                                onSet: { sets in
+                                    draft.set(lineId, sets: sets)
                                     sheet = nil
                                 },
                                 onCancel: { sheet = nil })
-                        .presentationBackground(skin.surface)
+                        .presentationBackground(skin.canvas)
                         .presentationDetents([.large])
                 }
             }
@@ -202,8 +199,7 @@ struct RoutineEditorScreen: View {
                 .font(WindmillFont.body(15, .bold))
                 .foregroundStyle(skin.ink)
             Spacer(minLength: WindmillSpace.x2)
-            Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
-                                weightKg: entry.targetWeightKg))
+            Text(Readout.target(entry.sets))
                 .font(GymType.numeral(13))
                 .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
             Image(systemName: "chevron.right")
@@ -259,103 +255,183 @@ struct RoutineEditorScreen: View {
     }
 }
 
-// Three typed fields and nothing else: emptying one is how you clear it, and the placeholder says what
-// empty means — `open`, `max`, `last time`. The ± ladder is a rack control and is drawn at the rack,
-// never here (`16-the-workout.md`). The bands are the routine target's, `TargetEntry`.
-private struct TargetSheet: View {
-    let entry: RoutineWrite.Entry
+// The target sheet of brief 17: a head that speaks about every set, a ladder that speaks about
+// each, one Fill menu and one commit. `TargetEntry.Draft` is its whole state — every field reads
+// the draft and hands its keystroke back, so no text lives twice.
+struct TargetSheet: View {
     let movement: String
     let place: String
     let untested: Bool
-    // Reps and weight are optional: either may be the absence the row arrived with, and both absences are targets.
-    let onSet: (Int, Int?, Double?) -> Void
-    let onOpen: () -> Void
+    // A bodyweight movement's load may be band-assisted, so its load fields carry `±` (R7).
+    let signed: Bool
+    // An empty scheme is the open line.
+    let onSet: ([SetTarget]) -> Void
     let onCancel: () -> Void
 
+    // The words the sheet's chrome is made of, pinned so the view and the count cannot part.
+    enum Chrome {
+        static let everySet = "Every set"
+        static let sets = "Sets"
+        static let reps = "Reps"
+        static let weight = "Weight"
+        static let weightLabel = "Weight · kg"
+        static let setBySet = "Set by set"
+        static let fill = "Fill"
+        static let rampUp = "Ramp up"
+        static let matchSetOne = "Match set 1"
+        static let addSet = "Add set"
+        static let delete = "Delete"
+        static let next = "Next"
+        static let done = "Done"
+
+        static func rowReps(_ ordinal: Int) -> String { "Set \(ordinal) reps" }
+        static func rowWeight(_ ordinal: Int) -> String { "Set \(ordinal) weight" }
+        // The row's handle for a driven swipe: a swipe on a focused field is the field's own.
+        static func row(_ ordinal: Int) -> String { "set-row-\(ordinal)" }
+    }
+
+    // What stands on the sheet at first paint besides the commit: with `Set · 5 sets`, the fourteen
+    // words of brief 17. The head — title, Cancel, the place line, the never-logged card — is outside it.
+    static let chrome = [Chrome.everySet, Chrome.sets, Chrome.reps, Chrome.weight, Chrome.setBySet,
+                         Chrome.fill, Chrome.addSet]
+
     @Environment(\.gymSkin) private var skin
-    @State private var sets: String
-    @State private var reps: String
-    @State private var weight: String
-    // The one input a refusal cannot be re-derived from the fields for, because the keystroke it is
-    // about never landed. Cleared by the next keystroke anywhere.
-    @State private var clearRefused = false
-    // The restore below writes the field back, which fires `onChange` a second time; that pass is not
-    // a keystroke and must not wipe the refusal it just raised.
-    @State private var restoring = false
+    @State private var draft: TargetEntry.Draft
     @FocusState private var typing: TargetEntry.Field?
 
-    init(entry: RoutineWrite.Entry, movement: String, place: String, untested: Bool,
-         onSet: @escaping (Int, Int?, Double?) -> Void,
-         onOpen: @escaping () -> Void,
-         onCancel: @escaping () -> Void) {
-        self.entry = entry
+    init(entry: RoutineWrite.Entry, movement: String, place: String, untested: Bool, signed: Bool,
+         onSet: @escaping ([SetTarget]) -> Void, onCancel: @escaping () -> Void) {
         self.movement = movement
         self.place = place
         self.untested = untested
+        self.signed = signed
         self.onSet = onSet
-        self.onOpen = onOpen
         self.onCancel = onCancel
-        _sets = State(initialValue: entry.targetSets.map(String.init) ?? "")
-        _reps = State(initialValue: entry.targetReps.map(String.init) ?? "")
-        _weight = State(initialValue: entry.targetWeightKg.map(Readout.weight) ?? "")
-    }
-
-    private var setsReading: TargetEntry.Reading<Int> { TargetEntry.readSets(sets) }
-    private var repsReading: TargetEntry.Reading<Int> { TargetEntry.readReps(reps) }
-    private var weightReading: TargetEntry.Reading<Double> { TargetEntry.readWeight(weight) }
-
-    // ONE refusal for the sheet, computed for the sheet and handed only to the field it belongs to
-    // (C5) — never one per field, which is three ways of saying the lifter got it wrong at once.
-    private var refusal: TargetEntry.Refusal? {
-        TargetEntry.refusal(sets: sets, reps: reps, weight: weight, clearRefused: clearRefused)
+        _draft = State(initialValue: TargetEntry.Draft(entry.sets))
     }
 
     private func refusal(under field: TargetEntry.Field) -> String? {
-        guard let refusal, refusal.field == field else { return nil }
+        guard let refusal = draft.refusal, refusal.field == field else { return nil }
         return refusal.said
+    }
+
+    // The head reads the draft and writes every row; a ladder field writes its own.
+    private var setsText: Binding<String> {
+        Binding(get: { draft.sets }, set: { draft.typeSets($0) })
+    }
+
+    private var repsText: Binding<String> {
+        Binding(get: { draft.headReps }, set: { draft.typeReps($0) })
+    }
+
+    private var weightText: Binding<String> {
+        Binding(get: { draft.headWeight }, set: { draft.typeWeight($0) })
+    }
+
+    // A row being removed is still asked for its text on its way out.
+    private func rowReps(_ index: Int) -> Binding<String> {
+        Binding(get: { draft.ladder.indices.contains(index) ? draft.ladder[index].reps : "" },
+                set: { draft.typeReps($0, row: index) })
+    }
+
+    private func rowWeight(_ index: Int) -> Binding<String> {
+        Binding(get: { draft.ladder.indices.contains(index) ? draft.ladder[index].weight : "" },
+                set: { draft.typeWeight($0, row: index) })
+    }
+
+    // The keyboard's Next walks the head then the ladder, reps before load, and leaves after the last.
+    private func next(after field: TargetEntry.Field) -> TargetEntry.Field? {
+        let last = draft.ladder.count - 1
+        switch field {
+        case .sets: return draft.isOpen ? nil : .reps
+        case .reps: return .weight
+        case .weight: return last < 0 ? nil : .rowReps(0)
+        case .rowReps(let index): return .rowWeight(index)
+        case .rowWeight(let index): return index < last ? .rowReps(index + 1) : nil
+        case .addSet: return nil
+        }
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: GymLayout.blockGap) {
                     Text(place)
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
-
                     if untested { neverLogged }
-
-                    // Said once while the line on this sheet is open — and said ABOVE the fields,
-                    // beside the other statement about the whole line (C15). Everything drawn UNDER
-                    // a field is that field's own note.
-                    if TargetEntry.blank(sets), refusal == nil {
+                    // Said once while the line is open, above the fields beside the other statement
+                    // about the whole line; everything under a field is that field's own note.
+                    if draft.isOpen, draft.refusal == nil {
                         Text(TargetEntry.openLine)
                             .font(WindmillFont.body(13.5))
                             .foregroundStyle(skin.inkDim)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+                .padding(.horizontal, GymLayout.gutter)
+                .padding(.top, GymLayout.contentTop)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(alignment: .top, spacing: WindmillSpace.x3) {
-                        field("Sets", text: $sets, placeholder: TargetEntry.setsPlaceholder,
-                              refusal: refusal(under: .sets), focus: .sets)
-                        field("Reps", text: $reps, placeholder: TargetEntry.repsPlaceholder,
-                              refusal: refusal(under: .reps), focus: .reps)
+                List {
+                    Section {
+                        head
+                    } header: {
+                        Text(Chrome.everySet).foregroundStyle(skin.inkFaint)
                     }
 
-                    field("Weight · kg", text: $weight, placeholder: TargetEntry.weightPlaceholder,
-                          refusal: refusal(under: .weight), focus: .weight, signed: true)
-
-                    commit
+                    if !draft.isOpen {
+                        Section {
+                            ForEach(Array(draft.ladder.enumerated()), id: \.element.id) { index, _ in
+                                ladderRow(index)
+                            }
+                            addSet
+                        } header: {
+                            HStack {
+                                Text(Chrome.setBySet).foregroundStyle(skin.inkFaint)
+                                Spacer()
+                                Menu {
+                                    fillItems
+                                } label: {
+                                    Text(Chrome.fill)
+                                        .font(WindmillFont.body(13, .semibold))
+                                        .foregroundStyle(skin.accent)
+                                        .textCase(nil)
+                                }
+                            }
+                        }
+                    }
                 }
-                .padding(GymLayout.gutter)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, GymTap.row)
+                // The commit stands under the list while nothing is being typed; over a keyboard it
+                // would ride up onto the ladder's first rows, and the keyboard's bar has the way on.
+                .safeAreaInset(edge: .bottom) {
+                    if typing == nil {
+                        commit
+                            .padding(.horizontal, GymLayout.gutter)
+                            .padding(.vertical, GymLayout.blockGap)
+                            .background(skin.canvas)
+                    }
+                }
             }
-            .background(skin.surface)
+            .background(skin.canvas)
             .navigationTitle(movement)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel", action: onCancel)
+                }
+                // The decimal pad has no return key, so Next rides the keyboard's own bar — and Done
+                // where there is no next field, so the keyboard can be put down to reach the commit.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    if let typing, let following = next(after: typing) {
+                        Button(Chrome.next) { self.typing = following }
+                    } else {
+                        Button(Chrome.done) { typing = nil }
+                    }
                 }
             }
         }
@@ -379,80 +455,120 @@ private struct TargetSheet: View {
             .foregroundStyle(skin.lineStrong))
     }
 
-    // One refusal at a time, inline, under the field it belongs to. `signed` puts the sign control
-    // inside the field, and only the load has one.
-    private func field(_ caption: String, text: Binding<String>, placeholder: String,
-                       refusal: String?, focus: TargetEntry.Field,
-                       signed: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(caption.uppercased())
+    // Sets · Reps · Weight, each speaking about every set. Reps and Weight sleep while the line is open.
+    private var head: some View {
+        HStack(alignment: .top, spacing: WindmillSpace.x3) {
+            headField(Chrome.sets, label: Chrome.sets, text: setsText,
+                      placeholder: TargetEntry.setsPlaceholder, focus: .sets, signed: false)
+            headField(Chrome.reps, label: Chrome.reps, text: repsText,
+                      placeholder: draft.repsPlaceholder, focus: .reps, signed: false)
+                .disabled(draft.isOpen)
+            headField(Chrome.weight, label: Chrome.weightLabel, text: weightText,
+                      placeholder: draft.weightPlaceholder, focus: .weight, signed: signed)
+                .disabled(draft.isOpen)
+        }
+        .padding(.vertical, WindmillSpace.x2)
+        .listRowBackground(skin.surface)
+    }
+
+    private func headField(_ caption: String, label: String, text: Binding<String>, placeholder: String,
+                           focus: TargetEntry.Field, signed: Bool) -> some View {
+        let refusal = refusal(under: focus)
+        let asleep = draft.isOpen && focus != .sets
+        return VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+            Text(caption)
                 .font(GymType.numeral(10.5))
+                .textCase(.uppercase)
                 .tracking(0.7)
                 .foregroundStyle(skin.inkFaint)
             HStack(spacing: 0) {
-                TextField("", text: text,
-                          prompt: Text(placeholder).foregroundStyle(skin.inkFaint))
-                    .font(GymType.numeral(24, .bold))
-                    .foregroundStyle(refusal == nil ? skin.weightInk : skin.alarmInk)
-                    .keyboardType(.decimalPad)
-                    .focused($typing, equals: focus)
-                    .padding(.leading, GymLayout.rowInset)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(caption)
-                    .onChange(of: text.wrappedValue) { was, typed in
-                        if restoring {
-                            restoring = false
-                            return
-                        }
-                        guard focus == .sets else {
-                            clearRefused = false
-                            return
-                        }
-                        // Clearing sets is what opens a line, and an open line names neither of the
-                        // other two. The clear is refused and the field keeps what it held (`2l`).
-                        guard TargetEntry.blank(typed), !was.isEmpty,
-                              TargetEntry.clearingSets(reps: reps, weight: weight) != nil else {
-                            clearRefused = false
-                            return
-                        }
-                        restoring = true
-                        clearRefused = true
-                        text.wrappedValue = was
-                        selectTheKeptValue()
-                    }
+                numeralField(label: label, text: text, placeholder: placeholder, focus: focus,
+                             ink: refusal == nil ? (asleep ? skin.inkDim : skin.weightInk) : skin.alarmInk)
                 if signed { sign(text) }
             }
-            .frame(minHeight: GymTap.secondary)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                .strokeBorder(refusal == nil ? skin.lineStrong : skin.alarmInk, lineWidth: 1))
-            if let refusal {
-                Text(refusal)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.alarmInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            if let refusal { said(refusal) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // A refused clear keeps the value AND selects it, so the next digit REPLACES the number the lifter
-    // has already tried to be rid of instead of appending to it (C6). SwiftUI's `TextField` exposes no
-    // selection at this deployment target; `selectAll` is the responder-chain verb the field under it
-    // already implements, and the field that was just typed into is the first responder. Deferred one
-    // turn because the restore above is still being applied when this runs.
-    private func selectTheKeptValue() {
-        DispatchQueue.main.async {
-            UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)),
-                                            to: nil, from: nil, for: nil)
+    // The ordinal, then reps and load for this set alone.
+    private func ladderRow(_ index: Int) -> some View {
+        let ordinal = index + 1
+        let reps = refusal(under: .rowReps(index))
+        let weight = refusal(under: .rowWeight(index))
+        return VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            HStack(spacing: WindmillSpace.x3) {
+                Text(String(ordinal))
+                    .font(GymType.numeral(13))
+                    .foregroundStyle(skin.inkFaint)
+                    .frame(width: WindmillSpace.x6, alignment: .leading)
+                    .accessibilityIdentifier(Chrome.row(ordinal))
+                numeralField(label: Chrome.rowReps(ordinal), text: rowReps(index),
+                             placeholder: TargetEntry.repsPlaceholder, focus: .rowReps(index),
+                             ink: reps == nil ? skin.weightInk : skin.alarmInk)
+                HStack(spacing: 0) {
+                    numeralField(label: Chrome.rowWeight(ordinal), text: rowWeight(index),
+                                 placeholder: TargetEntry.weightPlaceholder, focus: .rowWeight(index),
+                                 ink: weight == nil ? skin.weightInk : skin.alarmInk)
+                    if signed { sign(rowWeight(index)) }
+                }
+            }
+            if let fault = reps ?? weight { said(fault) }
+        }
+        .listRowBackground(skin.surface)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { draft.delete(row: index) } label: {
+                Label(Chrome.delete, systemImage: "trash")
+            }
+        }
+        .contextMenu { fillItems }
+    }
+
+    private var addSet: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+            Button { draft.addSet() } label: {
+                Label(Chrome.addSet, systemImage: "plus.circle")
+                    .font(WindmillFont.body(15, .semibold))
+                    .foregroundStyle(skin.accent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let refusal = refusal(under: .addSet) { said(refusal) }
+        }
+        .listRowBackground(skin.surface)
+    }
+
+    private var fillItems: some View {
+        Group {
+            Button { draft.rampUp() } label: { Label(Chrome.rampUp, systemImage: "arrow.up.right") }
+                .disabled(!draft.canRamp)
+            Button { draft.matchSetOne() } label: { Label(Chrome.matchSetOne, systemImage: "equal") }
         }
     }
 
-    // The decimal keyboard has no sign key, so without this the planning sheet cannot name a load the
-    // rack can log and the domain stores: band-assisted work is negative kilograms. `±` and never a
-    // bare `−`, which reads as *decrement* everywhere else in this product (`15-the-routine.md`).
-    // One accessible name on all three surfaces, pinned beside the glyph (C17), and the same bytes the
-    // rack keypad's ± carries — the two are one control met on two screens.
+    private func numeralField(label: String, text: Binding<String>, placeholder: String,
+                              focus: TargetEntry.Field, ink: Color) -> some View {
+        TextField("", text: text, prompt: Text(placeholder).foregroundStyle(skin.inkFaint))
+            .font(GymType.numeral(24, .bold))
+            .foregroundStyle(ink)
+            .keyboardType(.decimalPad)
+            .submitLabel(.next)
+            .focused($typing, equals: focus)
+            .onSubmit { typing = next(after: focus) }
+            .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
+            .accessibilityLabel(label)
+    }
+
+    private func said(_ refusal: String) -> some View {
+        Text(refusal)
+            .font(GymType.numeral(12))
+            .foregroundStyle(skin.alarmInk)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // `±` and never a bare `−`, which reads as *decrement* elsewhere in this product; the same bytes
+    // the rack keypad's ± carries — one control met on two screens.
     private func sign(_ text: Binding<String>) -> some View {
         Button { text.wrappedValue = TargetEntry.flipped(text.wrappedValue) } label: {
             Text("±")
@@ -465,15 +581,14 @@ private struct TargetSheet: View {
         .accessibilityLabel(KeypadEntry.flipTheSign)
     }
 
-    // Naming no sets is what an open line is, so the one button commits either shape.
+    // One button commits either shape: an empty scheme is the open line.
     private var commit: some View {
-        let refused = refusal != nil
+        let refused = draft.refusal != nil
         return Button {
-            guard !refused else { return }
-            guard let named = setsReading.value else { return onOpen() }
-            onSet(named, repsReading.value, weightReading.value)
+            guard let scheme = draft.scheme else { return }
+            onSet(scheme)
         } label: {
-            Text("Set · \(Readout.target(sets: setsReading.value, reps: repsReading.value, weightKg: weightReading.value))")
+            Text(draft.commitLabel)
                 .font(WindmillFont.body(16, .bold))
                 .foregroundStyle(refused ? skin.inkFaint : skin.onAccent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)

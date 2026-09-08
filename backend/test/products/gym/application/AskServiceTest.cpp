@@ -1,5 +1,6 @@
 #include "products/gym/application/AskService.h"
 
+#include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "test/platform/Fakes.h"
@@ -138,9 +139,7 @@ TEST(ask_tools_refuse_a_second_proposal_in_one_run_before_anything_is_minted) {
   const auto proposal = [](const char* id, const char* routine, double kg) {
     Json::Value entry(Json::objectValue);
     entry["exerciseId"] = "bench-press";
-    entry["targetSets"] = 5;
-    entry["targetReps"] = 3;
-    entry["targetWeightKg"] = kg;
+    entry["sets"] = toJson(straight(5, 3, kg));
     Json::Value entries(Json::arrayValue);
     entries.append(entry);
     Json::Value args(Json::objectValue);
@@ -328,9 +327,7 @@ TEST(a_proposal_ask_mints_is_recorded_by_id_and_carries_its_own_door) {
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 3;
-  entry["targetWeightKg"] = 87.5;
+  entry["sets"] = toJson(straight(5, 3, 87.5));
   Json::Value entries(Json::arrayValue);
   entries.append(entry);
 
@@ -596,9 +593,7 @@ TEST(the_reply_carries_the_servers_own_read_line_and_the_proposals_the_run_minte
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 3;
-  entry["targetWeightKg"] = 87.5;
+  entry["sets"] = toJson(straight(5, 3, 87.5));
   Json::Value entries(Json::arrayValue);
   entries.append(entry);
   Json::Value propose(Json::objectValue);
@@ -705,9 +700,7 @@ TEST(a_proposal_minted_in_a_conversation_carries_that_conversation) {
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 3;
-  entry["targetWeightKg"] = 87.5;
+  entry["sets"] = toJson(straight(5, 3, 87.5));
   Json::Value entries(Json::arrayValue);
   entries.append(entry);
   Json::Value propose(Json::objectValue);
@@ -737,9 +730,7 @@ TEST(a_proposal_from_the_mcp_door_carries_no_conversation) {
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 3;
-  entry["targetWeightKg"] = 87.5;
+  entry["sets"] = toJson(straight(5, 3, 87.5));
   Json::Value entries(Json::arrayValue);
   entries.append(entry);
   Json::Value propose(Json::objectValue);

@@ -32,6 +32,13 @@ public enum Ladder {
         (weight * 100).rounded() / 100
     }
 
+    // A load nobody typed — one a ramp worked out — put onto the plate grid of its own band: the
+    // band's small step, half away from zero, so 21.25 lands on 22.5 and −21.25 on −22.5.
+    public static func snapped(_ weight: Double) -> Double {
+        let step = steps(magnitude: abs(weight), lightening: false).small
+        return round((weight / step).rounded() * step)
+    }
+
     public static func bump(weight: Double, direction: Int, big: Bool) -> Double {
         let step = steps(magnitude: abs(weight), lightening: Double(direction) * weight < 0)
         return round(weight + Double(direction) * (big ? step.large : step.small))

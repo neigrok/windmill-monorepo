@@ -567,8 +567,7 @@ public final class TrainingStore: ObservableObject {
             plan = PlanSnapshot(routine: routine.name,
                                 entries: routine.entries
                                     .sorted { $0.position < $1.position }
-                                    .map { PlanEntry(exerciseId: $0.exerciseId, sets: $0.targetSets,
-                                                     reps: $0.targetReps, weightKg: $0.targetWeightKg,
+                                    .map { PlanEntry(exerciseId: $0.exerciseId, sets: $0.sets,
                                                      restSeconds: $0.restSeconds) })
         }
         let opened = Session(id: attempted.id, startedAtMs: attempted.startedAtMs, routineId: routineId,
@@ -886,11 +885,10 @@ public final class TrainingStore: ObservableObject {
 
     // The read is not optional: a PUT replaces the whole document, so an older copy would delete every
     // line added since. The line is addressed by position; a routine that moved under it is refused.
-    public func save(_ weightKg: Double, toRoutine routineId: String, at position: Int,
+    public func save(_ sets: [SetTarget], toRoutine routineId: String, at position: Int,
                      for exerciseId: String) async -> WriteFailure? {
         if let local = localLog.routine(routineId) {
-            guard let changed = local.retargeting(position: position, exerciseId: exerciseId,
-                                                  toWeightKg: weightKg) else {
+            guard let changed = local.retargeting(position: position, exerciseId: exerciseId, to: sets) else {
                 return .refused("\(local.name) has changed since this session started")
             }
             localLog.replace(changed)
@@ -903,8 +901,7 @@ public final class TrainingStore: ObservableObject {
             guard let routine = try await gym.routine(routineId) else {
                 return .refused("that routine is no longer on the log")
             }
-            guard let changed = routine.retargeting(position: position, exerciseId: exerciseId,
-                                                    toWeightKg: weightKg) else {
+            guard let changed = routine.retargeting(position: position, exerciseId: exerciseId, to: sets) else {
                 return .refused("\(routine.name) has changed since this session started")
             }
             let saved = try await gym.replaceRoutine(routineId, with: RoutineWrite(changed))

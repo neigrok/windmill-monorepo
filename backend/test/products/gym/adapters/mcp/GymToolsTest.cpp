@@ -1,6 +1,7 @@
 #include "products/gym/adapters/mcp/GymTools.h"
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
+#include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/BodyweightService.h"
@@ -84,21 +85,35 @@ struct Harness {
   }
 };
 
-// One line of a document as an agent sends it.
-Json::Value entryOf(const char* exercise, int sets, int reps, double weightKg) {
+// One line of a document as an agent sends it: the scheme spelled out one set at a time.
+Json::Value entryOf(const char* exercise, const std::vector<SetTarget>& scheme) {
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = exercise;
-  entry["targetSets"] = sets;
-  entry["targetReps"] = reps;
-  entry["targetWeightKg"] = weightKg;
+  entry["sets"] = toJson(scheme);
   return entry;
 }
 
-Json::Value oneEntry(const char* exercise, int sets, int reps, double weightKg) {
+Json::Value oneEntry(const char* exercise, const std::vector<SetTarget>& scheme) {
   Json::Value entries(Json::arrayValue);
-  entries.append(entryOf(exercise, sets, reps, weightKg));
+  entries.append(entryOf(exercise, scheme));
   return entries;
 }
+
+// The routine write as an agent sends it, one line long.
+Json::Value routineArgs(const char* id, const char* name, Json::Value entries) {
+  Json::Value args(Json::objectValue);
+  args["id"] = id;
+  args["name"] = name;
+  args["position"] = 0;
+  args["entries"] = std::move(entries);
+  return args;
+}
+
+// The Lower A ramp on the wire, as list_routines and get_session hand it back: two decimals dropped
+// to the shortest digits, keys alphabetical.
+const char* kRampJson =
+    R"([{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},{"reps":3,"weightKg":90.0},)"
+    R"({"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}])";
 
 Json::Value with(const char* field, const char* value) {
   Json::Value args(Json::objectValue);
@@ -871,10 +886,23 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   REQUIRE(entries.isObject());
   const Json::Value& fields = entries["items"]["properties"];
 
-  CHECK_EQ(fields["targetSets"]["minimum"].asInt(), 1);
-  CHECK_EQ(fields["targetSets"]["maximum"].asInt(), 20);
-  CHECK_EQ(fields["targetReps"]["minimum"].asInt(), 1);
-  CHECK_EQ(fields["targetReps"]["maximum"].asInt(), 100);
+  // An entry takes exactly these four, and the scheme is a list, never a count.
+  CHECK_EQ(fields.getMemberNames(),
+           (std::vector<std::string>{"exerciseId", "position", "restSeconds", "sets"}));
+  CHECK_EQ(fields["sets"]["type"].asString(), std::string("array"));
+  CHECK_EQ(fields["sets"]["minItems"].asInt(), 1);
+  CHECK_EQ(fields["sets"]["maxItems"].asInt(), static_cast<int>(kMaxSetTargets));
+  const Json::Value& set = fields["sets"]["items"];
+  CHECK_EQ(set["type"].asString(), std::string("object"));
+  CHECK_EQ(set["properties"].getMemberNames(), (std::vector<std::string>{"reps", "weightKg"}));
+  CHECK_EQ(set["properties"]["reps"]["type"].asString(), std::string("integer"));
+  CHECK_EQ(set["properties"]["reps"]["minimum"].asInt(), 1);
+  CHECK_EQ(set["properties"]["reps"]["maximum"].asInt(), 100);
+  CHECK_EQ(set["properties"]["weightKg"]["type"].asString(), std::string("number"));
+  CHECK_EQ(set["properties"]["weightKg"]["minimum"].asDouble(), -500.0);
+  CHECK_EQ(set["properties"]["weightKg"]["maximum"].asDouble(), 500.0);
+  CHECK_EQ(set["additionalProperties"].asBool(), false);
+  CHECK(set["required"].isNull());   // each set's two absences mean something
   CHECK_EQ(fields["restSeconds"]["minimum"].asInt(), 15);
   CHECK_EQ(fields["restSeconds"]["maximum"].asInt(), 900);
   // The document's own size is published beside its fields' values.
@@ -882,22 +910,49 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   CHECK_EQ(entries["maxItems"].asInt(), kMaxRoutineEntries);
   CHECK_EQ(entries["items"]["additionalProperties"].asBool(), false);
 
-  // The promise, kept at both ends: each published extreme builds.
-  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, 20, 100, 500.0, 900).targetReps,
-           std::optional<int>(100));
-  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, 1, 1, -500.0, 15).restSeconds,
+  // The promise, kept at both ends: each published extreme builds, and one past it does not.
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, straight(20, 100, 500.0), 900).sets,
+           straight(20, 100, 500.0));
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, straight(1, 1, -500.0), 15).restSeconds,
            std::optional<int>(15));
-  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, 5, 101, 82.5, 180); }));
-  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, 5, 5, 82.5, 3600); }));
+  CHECK(refuses([] { SetTarget(101, 82.5); }));
+  CHECK(refuses([] { SetTarget(0, 82.5); }));
+  CHECK(refuses([] { SetTarget(5, 500.01); }));
+  CHECK(refuses([] { SetTarget(5, -500.01); }));
+  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, straight(21, 5, 82.5), 180); }));
+  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, straight(5, 5, 82.5), 3600); }));
+}
+
+// The wire refuses the two shapes the schema forbids with the domain's own sentences: an empty list
+// is a zero target, and twenty-one sets is one past the entity's ceiling.
+TEST(gym_an_empty_scheme_and_one_past_twenty_sets_are_refused_with_the_domains_sentences) {
+  Harness h;
+  Json::Value zero(Json::objectValue);
+  zero["exerciseId"] = "bench-press";
+  zero["sets"] = Json::Value(Json::arrayValue);
+  Json::Value entries(Json::arrayValue);
+  entries.append(zero);
+
+  const ToolResult noTarget = h.call("create_routine", routineArgs("rt_00000001", "Push A", entries));
+
+  CHECK(noTarget.isError);
+  CHECK_EQ(message(noTarget),
+           std::string("create_routine: a zero target is no target — leave out the sets instead"));
+
+  const ToolResult tooLong = h.call(
+      "create_routine",
+      routineArgs("rt_00000001", "Push A", oneEntry("bench-press", straight(21, 5, 82.5))));
+
+  CHECK(tooLong.isError);
+  CHECK_EQ(message(tooLong), std::string("create_routine: sets, 1 to 20"));
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 // A key an entry never declared is refused, never dropped.
 TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
-  Json::Value entry(Json::objectValue);
-  entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
+  Json::Value entry = entryOf("bench-press", straight(5, 5, 82.5));
   entry["targetRepsl"] = 5;
   Json::Value entries(Json::arrayValue);
   entries.append(entry);
@@ -907,8 +962,20 @@ TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("propose_routine_change: unknown routine entry field \"targetRepsl\". An "
-                       "entry takes: exerciseId, targetSets, targetReps, targetWeightKg, "
-                       "restSeconds."));
+                       "entry takes: exerciseId, sets, restSeconds."));
+  CHECK(h.repo.db.proposalRows.empty());
+
+  // And a key a SET never declared, one level down, is refused by the same rule.
+  Json::Value misspelled = entryOf("bench-press", straight(5, 5, 82.5));
+  misspelled["sets"][2]["weight"] = 85.0;
+  Json::Value lines(Json::arrayValue);
+  lines.append(misspelled);
+  const ToolResult alsoRefused = h.propose("prop_00000001", "rt_00000001", lines);
+
+  CHECK(alsoRefused.isError);
+  CHECK_EQ(message(alsoRefused),
+           std::string("propose_routine_change: unknown set field \"weight\". A set takes: reps, "
+                       "weightKg."));
   CHECK(h.repo.db.proposalRows.empty());
 }
 
@@ -922,7 +989,7 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   REQUIRE(!listed.isError);
   Json::Value document = body(listed)["routines"][0];
   CHECK_EQ(document["entries"][0]["position"].asInt(), 1);
-  document["entries"][0]["targetWeightKg"] = 85.0;
+  document["entries"][0]["sets"][4]["weightKg"] = 85.0;
 
   const ToolResult minted = h.propose("prop_00000001", "rt_00000001", document["entries"]);
 
@@ -930,9 +997,49 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   const Json::Value& proposal = body(minted)["proposal"];
   REQUIRE_EQ(proposal["changes"].size(), 1u);
   CHECK_EQ(proposal["changes"][0]["kind"].asString(), std::string("retargeted"));
-  CHECK_EQ(proposal["changes"][0]["before"]["weightKg"].asDouble(), 82.5);
-  CHECK_EQ(proposal["changes"][0]["after"]["weightKg"].asDouble(), 85.0);
-  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  // Both sides carry the whole scheme, so a card can draw the one set that moved.
+  CHECK_EQ(dump(proposal["changes"][0]["before"]["sets"]),
+           std::string(R"([{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":82.5}])"));
+  CHECK_EQ(dump(proposal["changes"][0]["after"]["sets"]),
+           std::string(R"([{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+                       R"({"reps":5,"weightKg":85.0}])"));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].sets, straight(5, 5, 82.5));
+}
+
+// Moving ONE set of a ramp is one retargeted line, and the diff hands over both whole schemes rather
+// than the one item — the scheme is the unit a lifter reads and a card draws.
+TEST(gym_moving_one_set_of_a_ramp_is_one_retargeted_line_carrying_both_whole_schemes) {
+  Harness h;
+  h.repo.db.routineRows.push_back(
+      Routine{rtId(), uid(), "Lower A", 0, {RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}}});
+  Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
+  REQUIRE_EQ(dump(document["entries"][0]["sets"]), std::string(kRampJson));
+  document["entries"][0]["sets"][3]["weightKg"] = 102.5;
+
+  const ToolResult minted = h.propose("prop_00000001", "rt_00000001", document["entries"]);
+
+  REQUIRE(!minted.isError);
+  const Json::Value& changes = body(minted)["proposal"]["changes"];
+  REQUIRE_EQ(changes.size(), 1u);
+  CHECK_EQ(changes[0]["kind"].asString(), std::string("retargeted"));
+  CHECK_EQ(changes[0]["position"].asInt(), 1);
+  CHECK_EQ(changes[0]["exerciseId"].asString(), std::string("back-squat"));
+  CHECK_EQ(dump(changes[0]["before"]["sets"]), std::string(kRampJson));
+  CHECK_EQ(dump(changes[0]["after"]["sets"]),
+           std::string(R"([{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},)"
+                       R"({"reps":3,"weightKg":90.0},{"reps":1,"weightKg":102.5},)"
+                       R"({"reps":5,"weightKg":80.0}])"));
+  CHECK_EQ(changes[0]["before"]["restSeconds"].asInt(), 180);
+  CHECK_EQ(changes[0]["after"]["restSeconds"].asInt(), 180);
+  REQUIRE_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
+  std::vector<SetTarget> moved = ramp();
+  moved[3] = SetTarget{1, 102.5};
+  CHECK_EQ(h.repo.db.proposalRows[0].changes[0].before, std::optional<EntryTargets>(EntryTargets{ramp(), 180}));
+  CHECK_EQ(h.repo.db.proposalRows[0].changes[0].after, std::optional<EntryTargets>(EntryTargets{moved, 180}));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].sets, ramp());
 }
 
 // Nothing an agent can call changes an existing routine: the stored rows are compared whole, before and after.
@@ -942,7 +1049,7 @@ TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
   const std::vector<Routine> before = h.repo.db.routineRows;
 
   const ToolResult minted =
-      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   REQUIRE(!minted.isError);
   CHECK_EQ(h.repo.db.routineRows, before);
@@ -961,11 +1068,11 @@ TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
 TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_history) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
-  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
   h.clock.now += 60'000;
 
   const ToolResult second =
-      h.propose("prop_00000002", "rt_00000001", oneEntry("bench-press", 5, 3, 90.0));
+      h.propose("prop_00000002", "rt_00000001", oneEntry("bench-press", straight(5, 3, 90.0)));
 
   REQUIRE(!second.isError);
   const std::vector<ProposalHead> heads =
@@ -987,7 +1094,7 @@ TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_nam
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
-  args["entries"] = oneEntry("bench-press", 5, 3, 87.5);
+  args["entries"] = oneEntry("bench-press", straight(5, 3, 87.5));
   const ToolCaller claude{uid(), ToolScope::everything(), ToolConnection{"cli_x", "Claude Desktop"}};
 
   const ToolResult minted = h.tools.callTool("propose_routine_change", args, claude);
@@ -1017,7 +1124,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
     Json::Value args(Json::objectValue);
     args["id"] = id;
     args["routineId"] = "rt_00000001";
-    args["entries"] = oneEntry("bench-press", 5, 3, kg);
+    args["entries"] = oneEntry("bench-press", straight(5, 3, kg));
     return h.tools.callTool("propose_routine_change", args, who);
   };
 
@@ -1044,10 +1151,10 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
 TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
-  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   const ToolResult replayed =
-      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   REQUIRE(!replayed.isError);
   CHECK_EQ(body(replayed)["proposal"]["state"].asString(), std::string("pending"));
@@ -1058,10 +1165,10 @@ TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
 TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_answered_ok) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
-  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   const ToolResult second =
-      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 3, 12, 50.0));
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(3, 12, 50.0)));
 
   CHECK(second.isError);
   CHECK(message(second).find("DIFFERENT proposal") != std::string::npos);
@@ -1069,7 +1176,7 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
   REQUIRE_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
   CHECK_EQ(h.repo.db.proposalRows[0].head.state, ProposalState::pending);
   CHECK_EQ(h.repo.db.proposalRows[0].changes[0].after,
-           std::optional<EntryTargets>(EntryTargets{5, 3, 87.5, std::nullopt}));
+           std::optional<EntryTargets>(EntryTargets{straight(5, 3, 87.5), std::nullopt}));
 }
 
 // Every field list_routines puts on a routine survives a read-and-send-back.
@@ -1077,7 +1184,7 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_rou
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
   h.repo.db.routineRows.push_back(pushA());
-  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
   REQUIRE_EQ(document["revision"].asInt(), 1);
@@ -1101,7 +1208,7 @@ TEST(gym_list_routines_carries_the_proposal_waiting_on_a_day_of_the_program) {
   h.repo.db.routineRows.push_back(pushA());
 
   const Json::Value quiet = body(h.call("list_routines", Json::Value(Json::objectValue)));
-  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
   const Json::Value waiting = body(h.call("list_routines", Json::Value(Json::objectValue)));
 
   CHECK(quiet["routines"][0]["pendingProposal"].isNull());
@@ -1120,11 +1227,7 @@ TEST(gym_list_routines_carries_the_proposal_waiting_on_a_day_of_the_program) {
 // A day of the program that does not exist yet is `fresh` and lands; one that already stands is not this tool's.
 TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
   Harness h;
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Push A";
-  args["position"] = 0;
-  args["entries"] = oneEntry("bench-press", 5, 5, 82.5);
+  Json::Value args = routineArgs("rt_00000001", "Push A", oneEntry("bench-press", straight(5, 5, 82.5)));
 
   const ToolResult created = h.call("create_routine", args);
   REQUIRE(!created.isError);
@@ -1146,24 +1249,22 @@ TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
   CHECK_EQ(h.repo.db.routineRows[0].name, std::string("Push A"));   // the edit did not land
 }
 
-// A line with no `targetSets` is OPEN and the rack decides; the created day names the door it came through.
+// A line with no `sets` is OPEN and the rack decides; the created day names the door it came through.
 TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
   Harness h;
   h.repo.db.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
                        2.5, false});
   Json::Value open(Json::objectValue);
   open["exerciseId"] = "barbell-row";
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Heavy Thursday";
-  args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(open);
+  Json::Value entries(Json::arrayValue);
+  entries.append(open);
 
-  const ToolResult created = h.call("create_routine", args);
+  const ToolResult created =
+      h.call("create_routine", routineArgs("rt_00000001", "Heavy Thursday", entries));
 
   REQUIRE(!created.isError);
-  CHECK(body(created)["entries"][0]["targetSets"].isNull());   // omitted: the line asks at the rack
+  CHECK_FALSE(body(created)["entries"][0].isMember("sets"));   // omitted: the line asks at the rack
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].sets, std::vector<SetTarget>{});
   const std::vector<RoutineEvent> history =
       h.program.routineHistory(uid(), RoutineId{"rt_00000001"});
   REQUIRE_EQ(history.size(), std::size_t{1});
@@ -1180,13 +1281,88 @@ TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
     }
 }
 
+// A ramp lands set by set and reads back in lifting order, byte for byte.
+TEST(gym_create_routine_lands_a_ramp_and_list_routines_reads_the_five_sets_back_in_order) {
+  Harness h;
+
+  const ToolResult created =
+      h.call("create_routine", routineArgs("rt_00000001", "Lower A", oneEntry("back-squat", ramp())));
+
+  REQUIRE(!created.isError);
+  CHECK_EQ(dump(body(created)["entries"][0]["sets"]), std::string(kRampJson));
+  const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
+  REQUIRE(!listed.isError);
+  REQUIRE_EQ(body(listed)["routines"].size(), 1u);
+  CHECK_EQ(dump(body(listed)["routines"][0]["entries"]),
+           std::string(R"([{"exerciseId":"back-squat","position":1,"sets":)") + kRampJson + "}]");
+  REQUIRE_EQ(h.repo.db.routineRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.routineRows[0].entries,
+           (std::vector<RoutineEntry>{RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), std::nullopt}}));
+}
+
+// A replay is decided on the SCHEME, set by set: the same ramp answers the stored day, and the same
+// id with one set moved is an edit that this tool refuses toward the proposal door.
+TEST(gym_a_replayed_create_routine_matches_the_scheme_set_by_set) {
+  Harness h;
+  const ToolResult first =
+      h.call("create_routine", routineArgs("rt_00000001", "Lower A", oneEntry("back-squat", ramp())));
+  REQUIRE(!first.isError);
+
+  const ToolResult replayed =
+      h.call("create_routine", routineArgs("rt_00000001", "Lower A", oneEntry("back-squat", ramp())));
+
+  REQUIRE(!replayed.isError);
+  CHECK_EQ(body(replayed), body(first));
+  CHECK_EQ(h.repo.db.routineRows.size(), std::size_t{1});
+
+  std::vector<SetTarget> moved = ramp();
+  moved[3] = SetTarget{1, 102.5};
+  const ToolResult edited =
+      h.call("create_routine", routineArgs("rt_00000001", "Lower A", oneEntry("back-squat", moved)));
+
+  CHECK(edited.isError);
+  CHECK_EQ(message(edited),
+           std::string("create_routine: that routine already stands and this document is not the "
+                       "one it holds, so this is a change rather than the replay of a lost reply. A "
+                       "day of the program that already stands is not this tool's to rewrite: send "
+                       "it to propose_routine_change, which hands the lifter a typed diff and "
+                       "changes nothing until they tap Apply."));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].sets, ramp());
+  CHECK_EQ(h.repo.db.routineRows[0].revision, 1);
+}
+
+// The plan a workout starts under is a COPY of the routine's scheme, and the session read hands it
+// back set by set.
+TEST(gym_a_workout_started_from_a_ramp_carries_the_five_sets_on_its_plan) {
+  Harness h;
+  REQUIRE(!h.call("create_routine",
+                  routineArgs("rt_00000001", "Lower A", oneEntry("back-squat", ramp())))
+               .isError);
+  Json::Value args(Json::objectValue);
+  args["id"] = "ses_00000001";
+  args["startedAt"] = Json::Value::UInt64(h.clock.now);
+  args["routineId"] = "rt_00000001";
+  REQUIRE(!h.call("start_session", args).isError);
+
+  const ToolResult read = h.call("get_session", with("sessionId", "ses_00000001"));
+
+  REQUIRE(!read.isError);
+  CHECK_EQ(body(read)["session"]["routineId"].asString(), std::string("rt_00000001"));
+  CHECK_EQ(dump(body(read)["session"]["plan"]),
+           std::string(R"({"entries":[{"exerciseId":"back-squat","sets":)") + kRampJson +
+               R"(}],"routine":"Lower A"})");
+  REQUIRE(h.repo.db.sessions[0].plan.has_value());
+  CHECK_EQ(h.repo.db.sessions[0].plan->entries,
+           (std::vector<PlanEntry>{PlanEntry{ExerciseId{"back-squat"}, ramp(), std::nullopt}}));
+}
+
 // Refused at the mint, not at the tap.
 TEST(gym_a_proposal_naming_no_movement_is_refused_before_it_is_ever_minted) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
 
   const ToolResult refused =
-      h.propose("prop_00000001", "rt_00000001", oneEntry("zercher-squat", 5, 5, 82.5));
+      h.propose("prop_00000001", "rt_00000001", oneEntry("zercher-squat", straight(5, 5, 82.5)));
 
   CHECK(refused.isError);
   CHECK(message(refused).find("was not minted") != std::string::npos);
@@ -1197,7 +1373,7 @@ TEST(gym_proposing_a_change_to_a_routine_that_is_not_yours_points_at_the_two_doo
   Harness h;
 
   const ToolResult refused =
-      h.propose("prop_00000001", "rt_00000009", oneEntry("bench-press", 5, 5, 82.5));
+      h.propose("prop_00000001", "rt_00000009", oneEntry("bench-press", straight(5, 5, 82.5)));
 
   CHECK(refused.isError);
   CHECK(message(refused).find("list_routines") != std::string::npos);
@@ -1391,22 +1567,17 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
   Harness h;
   h.preferences.savePreferences(GymPreferences{uid(), Unit::kg, 120, true, true, false});
 
-  Json::Value entry(Json::objectValue);
-  entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 5;
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Push A";
-  args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(entry);
-  CHECK(!h.call("create_routine", args).isError);
+  CHECK(!h.call("create_routine", routineArgs("rt_00000001", "Push A",
+                                               oneEntry("bench-press", straight(5, 5, std::nullopt))))
+             .isError);
 
   const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
 
   CHECK_FALSE(listed.isError);
   CHECK(body(listed)["routines"][0]["entries"][0]["restSeconds"].isNull());
+  // A set naming reps alone carries exactly that: the load is last time's, filled in by nobody here.
+  CHECK_EQ(dump(body(listed)["routines"][0]["entries"][0]["sets"]),
+           std::string(R"([{"reps":5},{"reps":5},{"reps":5},{"reps":5},{"reps":5}])"));
   CHECK_EQ(h.preferences.preferences(uid()).restSeconds, std::optional<int>(120));
 }
 
@@ -1418,7 +1589,7 @@ TEST(gym_read_alone_cannot_mint_a_proposal) {
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
-  args["entries"] = oneEntry("bench-press", 5, 3, 87.5);
+  args["entries"] = oneEntry("bench-press", straight(5, 3, 87.5));
 
   const ToolResult refused =
       surface.callTool("propose_routine_change", args, ToolCaller{uid(), parseToolScope("gym:read")});
@@ -1433,7 +1604,7 @@ TEST(gym_read_alone_cannot_mint_a_proposal) {
                   .isError);
   CHECK_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
   CHECK_EQ(h.repo.db.routineRows[0].revision, 1);
-  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].sets, straight(5, 5, 82.5));
 }
 
 // A removal is `gym:delete`'s: the three levels are a grant vocabulary and none implies another.
@@ -1516,7 +1687,7 @@ TEST(gym_a_proposal_minted_over_mcp_carries_the_mcp_door) {
   h.repo.db.routineRows.push_back(pushA());
 
   const ToolResult minted =
-      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   CHECK_FALSE(minted.isError);
   CHECK_EQ(body(minted)["proposal"]["source"]["door"].asString(), std::string("mcp"));

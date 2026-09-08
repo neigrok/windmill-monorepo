@@ -29,8 +29,23 @@ public enum LiveOrder {
 
 public enum LiveLines {
     public struct Counter: Equatable {
-        public let count: String  // "set 3 of 5"
-        public let plan: String  // "plan 5 × 5 @ 82.5" · "no target"
+        public let count: String  // "set 3 of 5" · "set 3"
+        public let target: String?  // "target 3 @ 90" · "target max @ 90" · "target 3" · nil when nothing is named
+    }
+
+    // One pill per planned set: the landed ones as lifted (a door to the fix sheet), the one about to be
+    // lifted in target ink, the rest to come in faint ink.
+    public enum Slot: Equatable, Identifiable {
+        case landed(Row)
+        case current(ordinal: Int, target: String, spoken: String)
+        case coming(ordinal: Int, target: String, spoken: String)
+
+        public var id: String {
+            switch self {
+            case .landed(let row): return row.id
+            case .current(let ordinal, _, _), .coming(let ordinal, _, _): return "slot-\(ordinal)"
+            }
+        }
     }
 
     public struct Row: Equatable, Identifiable {
@@ -53,14 +68,35 @@ public enum LiveLines {
         public let canDrop: Bool
     }
 
-    // Only working sets advance the counter, and a plan line with no set count reads like no plan at all.
+    // Only working sets advance the counter. The tail is the CURRENT slot's; a set past the plan
+    // (`set 6 of 5`) has no slot and no tail; an open line reads like no plan at all.
     public static func counter(workingSetsToday: Int, planEntry: PlanEntry?) -> Counter {
-        guard let planEntry, let sets = planEntry.sets else {
-            return Counter(count: "set \(workingSetsToday + 1)", plan: "no target")
+        guard let planEntry, !planEntry.isOpen else {
+            return Counter(count: "set \(workingSetsToday + 1)", target: nil)
         }
-        let load = planEntry.weightKg.map { " @ \(Readout.weight($0))" } ?? ""
-        return Counter(count: "set \(workingSetsToday + 1) of \(sets)",
-                       plan: "plan \(sets) × \(Readout.repTarget(planEntry.reps))\(load)")
+        let count = "set \(workingSetsToday + 1) of \(planEntry.sets.count)"
+        guard let slot = planEntry.slot(workingSetsToday), slot.reps != nil || slot.weightKg != nil else {
+            return Counter(count: count, target: nil)
+        }
+        let load = slot.weightKg.map { " @ \(Readout.weight($0))" } ?? ""
+        return Counter(count: count, target: "target \(Readout.repTarget(slot.reps))\(load)")
+    }
+
+    // This movement's sets in the order performed (warmups where they were logged), then one slot per
+    // planned set not yet landed — the first `current`, the rest `coming`. Sets past the plan are just
+    // landed rows.
+    public static func slots(_ sets: [TrainingSet], plan: PlanEntry?, stalled: Set<String>) -> [Slot] {
+        let landed = rows(sets, stalled: stalled).map(Slot.landed)
+        let done = workingCount(sets)
+        let planned = plan?.sets ?? []
+        guard done < planned.count else { return landed }
+        let waiting = planned.indices.dropFirst(done).map { index -> Slot in
+            let target = Readout.set(planned[index])
+            let spoken = "set \(index + 1), target \(target)"
+            guard index == done else { return .coming(ordinal: index + 1, target: target, spoken: spoken) }
+            return .current(ordinal: index + 1, target: target, spoken: spoken)
+        }
+        return landed + waiting
     }
 
     // What a walk asked for right now may do. A stroke makes two-in-a-moment ordinary where a tap
@@ -135,7 +171,7 @@ public enum LiveLines {
                                ? "just added"
                                : meta(done: workingCount(sets, of: exerciseId),
                                       // Absent for a movement the plan does not name and for one it left open.
-                                      planned: plan?.entry(for: exerciseId).flatMap(\.sets)),
+                                      planned: plan?.entry(for: exerciseId).flatMap { $0.isOpen ? nil : $0.sets.count }),
                            note: performed.isEmpty ? "no sets yet — logging one starts it" : nil,
                            isJustAdded: justAdded,
                            sets: rows(performed, stalled: stalled),

@@ -41,6 +41,7 @@ import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
@@ -103,8 +104,7 @@ class RoutinesScreenTests {
 
     private fun routine(id: String, name: String, position: Int) = Routine(
         id = id, name = name, position = position, revision = 1,
-        entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-            targetReps = 5, targetWeightKg = 82.5)))
+        entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })))
 
     private fun proposal(id: String, routineId: String, name: String, createdAtMs: Long) = Proposal(
         id = id, routineId = routineId, state = ProposalState.Pending,
@@ -112,8 +112,8 @@ class RoutinesScreenTests {
         source = ProposalSource(agent = "Claude"), baseRevision = 1,
         baseName = name, name = name,
         changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
-            exerciseId = "bench-press", before = ProposalTargets(5, 5, 82.5),
-            after = ProposalTargets(5, 3, 87.5))))
+            exerciseId = "bench-press", before = ProposalTargets(List(5) { SetTarget(5, 82.5) }),
+            after = ProposalTargets(List(5) { SetTarget(3, 87.5) }))))
 
     // The reach band holds what a lifter does with a bar in their hands; planning work rides the top
     // bar, where nobody has to reach one-handed. And the connect pitch is not on this screen at all.

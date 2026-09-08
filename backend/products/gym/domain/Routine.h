@@ -10,21 +10,17 @@
 namespace wm::gym {
 
 // No id: the table's key is (routine_id, position), which makes the same movement twice in one
-// routine representable. Four fields mean something by their ABSENCE and never by a zero: no
-// targetSets is an OPEN line, no targetReps is `max`, no targetWeightKg is "whatever you did last
-// time", and no restSeconds falls back to the lifter's global rest target, applied by the surface
-// running the timer and never by this server.
-// An open line carries no targetSets, targetReps or targetWeightKg. Rest stays legal on one.
+// routine representable. The target is a SCHEME — one SetTarget per set, in lifting order — and an
+// empty scheme is the OPEN line: the movement is in the day and the numbers are decided at the rack.
+// No restSeconds falls back to the lifter's global rest target, applied by the surface running the
+// timer and never by this server. Rest stays legal on an open line.
 struct RoutineEntry {
   int position;
   ExerciseId exercise;
-  std::optional<int> targetSets;
-  std::optional<int> targetReps;
-  std::optional<double> targetWeightKg;
+  std::vector<SetTarget> sets;
   std::optional<int> restSeconds;
 
-  RoutineEntry(int position, ExerciseId exercise, std::optional<int> targetSets,
-               std::optional<int> targetReps, std::optional<double> targetWeightKg,
+  RoutineEntry(int position, ExerciseId exercise, std::vector<SetTarget> sets,
                std::optional<int> restSeconds);
 
   bool operator==(const RoutineEntry&) const = default;

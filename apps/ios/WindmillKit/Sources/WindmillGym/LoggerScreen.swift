@@ -64,7 +64,7 @@ struct LoggerScreen: View {
             } else {
                 movementHead
                 Spacer(minLength: 0)
-                todayColumn
+                slotColumn
                 value
                 Spacer(minLength: 0)
                 VStack(spacing: GymLayout.blockGap) {
@@ -147,10 +147,6 @@ struct LoggerScreen: View {
                         .foregroundStyle(skin.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text(counter.plan)
-                        .font(GymType.numeral(12.5))
-                        .foregroundStyle(skin.targetInk)
-                        .lineLimit(1)
                     if let position = LiveLines.movementPosition(order: store.order,
                                                                  current: store.exerciseId),
                        let standing = store.exerciseId.flatMap({ store.order.firstIndex(of: $0) }) {
@@ -212,24 +208,35 @@ struct LoggerScreen: View {
         return store.order[next]
     }
 
-    // The set a window is still open on is carried here under its own movement's name; taking it back
-    // is the transient's job, not this row's.
-    private var todayColumn: some View {
+    // The slot strip: this movement's landed sets, the slot about to be lifted, the slots still to
+    // come — and, last, the set a window is still open on, carried under its own movement's name;
+    // taking it back is the transient's job, not this row's.
+    private var slotColumn: some View {
         // Rows and height are both read on the beat: nothing publishes the window closing.
         TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let undoable = store.undoable
-            let rows = LiveLines.column(store.sets, of: store.exerciseId, undoable: undoable,
-                                        catalog: store.catalog, stalled: store.stalled)
-            ScrollView {
-                VStack(spacing: WindmillSpace.x2) {
-                    ForEach(rows) { row in done(row) }
+            let slots = slots(undoable: store.undoable)
+            let current = slots.first { slot in
+                guard case .current = slot else { return false }
+                return true
+            }?.id
+            ScrollViewReader { column in
+                ScrollView {
+                    VStack(spacing: WindmillSpace.x2) {
+                        ForEach(slots) { slot in SlotRow(slot: slot).id(slot.id) }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .scrollBounceBehavior(.basedOnSize)
+                .defaultScrollAnchor(.bottom)
+                // Only this column is elastic, and it asks for exactly what it holds; past three rows it scrolls inside itself.
+                .frame(maxHeight: min(Self.columnCap, CGFloat(slots.count) * Self.rowHeight))
+                // The bottom anchor shows the newest landed set; with slots still to come under it,
+                // the one about to be lifted is what has to stay in view.
+                .onChange(of: current, initial: true) { _, current in
+                    guard let current else { return }
+                    column.scrollTo(current, anchor: .center)
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .defaultScrollAnchor(.bottom)
-            // Only this column is elastic, and it asks for exactly what it holds; past three rows it scrolls inside itself.
-            .frame(maxHeight: min(Self.columnCap, CGFloat(rows.count) * Self.rowHeight))
         }
         .layoutPriority(1)
     }
@@ -238,37 +245,30 @@ struct LoggerScreen: View {
     private static let rowHeight: CGFloat = GymTap.minimum + WindmillSpace.x2
     private static let columnCap: CGFloat = rowHeight * 3
 
-    private func done(_ row: LiveLines.Row) -> some View {
-        HStack(spacing: WindmillSpace.x3) {
-            Text(row.index)
-                .font(GymType.numeral(11.5))
-                .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.inkFaint)
-                .frame(width: 16, alignment: .leading)
-            Text(row.value)
-                .font(GymType.numeral(14.5))
-                .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.ink)
-            Text(row.note)
-                .font(GymType.numeral(11))
-                .foregroundStyle(row.isOnThisDevice ? skin.unsyncedInk : skin.inkFaint)
-            Spacer(minLength: 0)
-            Text("✓")
-                .font(GymType.numeral(13))
-                .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.setDone)
-        }
-        .padding(.horizontal, GymLayout.rowInset)
-        .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
+    // `column`'s rows that are not this movement's own are the one carried row.
+    private func slots(undoable: TrainingSet?) -> [LiveLines.Slot] {
+        let here = store.todaySets
+        let carried = LiveLines.column(store.sets, of: store.exerciseId, undoable: undoable,
+                                       catalog: store.catalog, stalled: store.stalled)
+            .filter { row in !here.contains { $0.id == row.id } }
+        return LiveLines.slots(here, plan: store.planEntry, stalled: store.stalled)
+            + carried.map(LiveLines.Slot.landed)
     }
 
     // MARK: - the value
 
+    // One line, the count in the faint ink and the current slot's target after it in the target ink:
+    // `Set 3 of 5 · target 3 @ 90`; `Set 6 of 5` alone past the plan, `Set 3` alone on an open line.
+    private var setLine: Text {
+        let count = Text(counter.count.prefix(1).uppercased() + counter.count.dropFirst())
+        guard let target = counter.target else { return count }
+        return count + Text(" · \(target)").foregroundStyle(skin.targetInk)
+    }
+
     private var value: some View {
         VStack(spacing: WindmillSpace.x2) {
-            Text(counter.count)
-                .font(GymType.numeral(10.5))
-                .textCase(.uppercase)
-                .kerning(0.7)
+            setLine
+                .font(GymType.numeral(11.5))
                 .foregroundStyle(skin.inkFaint)
 
             HStack(alignment: .lastTextBaseline, spacing: WindmillSpace.x2) {
@@ -459,7 +459,7 @@ struct LoggerScreen: View {
                                self.sheet = nil
                                say(nil)
                                Task {
-                                   guard let why = await store.save(deviation.liftedKg,
+                                   guard let why = await store.save(deviation.offered,
                                                                     toRoutine: deviation.routineId,
                                                                     at: deviation.position,
                                                                     for: deviation.exerciseId) else { return }
@@ -528,6 +528,81 @@ struct LoggerScreen: View {
 
     private func stamp(_ date: Date) -> Int64 {
         Int64(date.timeIntervalSince1970 * 1000)
+    }
+}
+
+// One pill of the slot strip, drawn three ways: a landed set as lifted with its ✓, the set about to
+// be lifted reading its target in the target ink under the accent outline, and a set still to come
+// reading its target in the faint ink. A planned pill is not a door — there is nothing to fix yet —
+// and VoiceOver reads every pill as one sentence rather than as its parts.
+struct SlotRow: View {
+    let slot: LiveLines.Slot
+
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        HStack(spacing: WindmillSpace.x3) {
+            switch slot {
+            case .landed(let row):
+                Text(row.index)
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.inkFaint)
+                    .frame(width: 16, alignment: .leading)
+                Text(row.value)
+                    .font(GymType.numeral(14.5))
+                    .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.ink)
+                Text(row.note)
+                    .font(GymType.numeral(11))
+                    .foregroundStyle(row.isOnThisDevice ? skin.unsyncedInk : skin.inkFaint)
+                Spacer(minLength: 0)
+                Text("✓")
+                    .font(GymType.numeral(13))
+                    .foregroundStyle(row.countsTowardNothing ? skin.warmupInk : skin.setDone)
+            case .current(let ordinal, let target, _):
+                Text(String(ordinal))
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.targetInk)
+                    .frame(width: 16, alignment: .leading)
+                Text(target)
+                    .font(GymType.numeral(14.5, .semibold))
+                    .foregroundStyle(skin.targetInk)
+                Spacer(minLength: 0)
+            case .coming(let ordinal, let target, _):
+                Text(String(ordinal))
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.inkFaint)
+                    .frame(width: 16, alignment: .leading)
+                Text(target)
+                    .font(GymType.numeral(14.5))
+                    .foregroundStyle(skin.inkFaint)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, GymLayout.rowInset)
+        .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
+            .strokeBorder(isCurrent ? skin.accent : skin.line, lineWidth: 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    private var isCurrent: Bool {
+        guard case .current = slot else { return false }
+        return true
+    }
+
+    // A landed pill is `set 2, 80 × 5`, a warmup `warmup, 40 × 5`, with the note after when it says
+    // something more; a planned pill is the domain's `set 4, target 100 × 1`.
+    var spoken: String {
+        switch slot {
+        case .landed(let row):
+            let head = row.index == "w" ? "warmup" : "set \(row.index)"
+            let note = row.note.isEmpty || row.note == head ? [] : [row.note]
+            return ([head, row.value] + note).joined(separator: ", ")
+        case .current(_, _, let spoken), .coming(_, _, let spoken):
+            return spoken
+        }
     }
 }
 

@@ -36,7 +36,9 @@ PriorMark mark(const std::string& exercise, double weightKg, int reps,
   return PriorMark{ExerciseId{exercise}, weightKg, reps, atMs};
 }
 
-PlanEntry plannedSquat() { return PlanEntry{ExerciseId{"back-squat"}, 5, 5, 105.0, 180}; }
+PlanEntry plannedSquat() {
+  return PlanEntry{ExerciseId{"back-squat"}, std::vector<SetTarget>(5, SetTarget{5, 105.0}), 180};
+}
 
 Session legs(std::uint64_t startedAtMs = kStart, std::string id = "ses_00000001",
              std::string routineName = "Legs") {

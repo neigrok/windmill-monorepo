@@ -15,6 +15,7 @@ Read `01-context.md` first.
 | `15-the-routine.md` | Building, changing and starting a routine — the heaviest screen, and five of the ten cuts. |
 | `16-the-workout.md` | The live logger, the finish, the session read back — and why the keypad stays at the rack. |
 | `18-progress.md` | Progress — the movement strip on the log, the one chart primitive for e1RM, and the consistency sentence. |
+| `19-connected-log.md` | The connected log — the grant as three rows, one caption, one action, one disclosure; and the CSV export removed everywhere. |
 
 ## Scope
 

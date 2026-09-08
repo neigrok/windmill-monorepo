@@ -18,14 +18,15 @@ final class ProposalReadingTests: XCTestCase {
          "baseRevision":1,"baseName":"Push A","name":"Push A",
          "changes":[
            {"position":1,"kind":"retargeted","exerciseId":"bench-press",
-            "before":{"sets":5,"reps":5,"weightKg":82.5,"restSeconds":180},
-            "after":{"sets":5,"reps":3,"weightKg":87.5,"restSeconds":180}},
+            "before":{"sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}],"restSeconds":180},
+            "after":{"sets":[{"reps":5,"weightKg":82.5},{"reps":1,"weightKg":102.5}],"restSeconds":180}},
            {"position":2,"kind":"kept","exerciseId":"overhead-press",
-            "before":{"sets":3,"reps":8,"weightKg":45},"after":{"sets":3,"reps":8,"weightKg":45}},
+            "before":{"sets":[{"reps":8,"weightKg":45}]},"after":{"sets":[{"reps":8,"weightKg":45}]}},
            {"position":3,"kind":"added","exerciseId":"incline-db-press",
-            "after":{"sets":3,"reps":10,"weightKg":24}},
+            "after":{"sets":[{"reps":10,"weightKg":24},{"reps":10}]}},
            {"position":4,"kind":"removed","exerciseId":"cable-fly",
-            "before":{"sets":3,"reps":12,"weightKg":22.5},"loggedSets":41}]}
+            "before":{"sets":[{"weightKg":22.5}]},"loggedSets":41},
+           {"position":5,"kind":"added","exerciseId":"face-pull"}]}
         """
         let proposal = try JSONDecoder().decode(Proposal.self, from: Data(wire.utf8))
 
@@ -42,12 +43,17 @@ final class ProposalReadingTests: XCTestCase {
         XCTAssertEqual(proposal.baseRevision, 1)
         XCTAssertEqual(proposal.baseName, "Push A")
         XCTAssertEqual(proposal.name, "Push A")
-        XCTAssertEqual(proposal.changes.map(\.kind), [.retargeted, .kept, .added, .removed])
+        XCTAssertEqual(proposal.changes.map(\.kind), [.retargeted, .kept, .added, .removed, .added])
         XCTAssertEqual(proposal.changes[0].before,
-                       ProposalChange.Targets(sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180))
+                       ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 2), restSeconds: 180))
+        XCTAssertEqual(proposal.changes[0].after,
+                       ProposalChange.Targets(sets: [SetTarget(reps: 5, weightKg: 82.5), SetTarget(reps: 1, weightKg: 102.5)], restSeconds: 180))
+        XCTAssertEqual(proposal.changes[2].after, ProposalChange.Targets(sets: [SetTarget(reps: 10, weightKg: 24), SetTarget(reps: 10)]))
         XCTAssertNil(proposal.changes[2].before)
+        XCTAssertEqual(proposal.changes[3].before, ProposalChange.Targets(sets: [SetTarget(weightKg: 22.5)]))
         XCTAssertNil(proposal.changes[3].after)
         XCTAssertEqual(proposal.changes[3].loggedSets, 41)
+        XCTAssertNil(proposal.changes[4].after, "an added open line carries no side at all")
     }
 
     func testAKindThisBuildDoesNotKnowRefusesTheWholeRead() {
@@ -94,45 +100,68 @@ final class ProposalDiffTests: XCTestCase {
                  baseRevision: 1, baseName: baseName, name: name ?? baseName, changes: changes)
     }
 
-    func testARetargetedRowSpellsOnlyTheFieldsThatMoved() {
-        let moves = change(.retargeted, "bench-press",
-                           before: ProposalChange.Targets(sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180),
-                           after: ProposalChange.Targets(sets: 5, reps: 3, weightKg: 87.5, restSeconds: 180)).moves
+    private let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                        SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                        SetTarget(reps: 5, weightKg: 80)]
 
-        XCTAssertEqual(moves.map(\.field), ["sets", "weight"])
-        XCTAssertEqual(moves[0].before, "5 × 5")
-        XCTAssertEqual(moves[0].after, "5 × 3")
-        XCTAssertEqual(moves[1].before, "82.5")
-        XCTAssertEqual(moves[1].after, "87.5")
+    // The review fixture: the shape held and one set moved, so the row prints that set alone.
+    func testAShapeThatHeldWithOneSetMovedPrintsThatSet() {
+        var moved = ramp
+        moved[3] = SetTarget(reps: 1, weightKg: 102.5)
+        let moves = change(.retargeted, "back-squat",
+                           before: ProposalChange.Targets(sets: ramp, restSeconds: 180),
+                           after: ProposalChange.Targets(sets: moved, restSeconds: 180)).moves
+        XCTAssertEqual(moves, [ProposalChange.Move(field: "set 4", before: "100 × 1", after: "102.5 × 1", unfolded: nil)])
+    }
+
+    // A scheme that changed shape prints the readout formula and carries the ladder to unfold.
+    func testASchemeThatChangedShapePrintsTheSchemeAndCarriesItsLadder() {
+        let moves = change(.retargeted, "back-squat",
+                           before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)),
+                           after: ProposalChange.Targets(sets: ramp)).moves
+        XCTAssertEqual(moves, [ProposalChange.Move(
+            field: "sets", before: "3 × 8 · 60", after: "5 × 1\u{2013}5 · 60\u{2013}100",
+            unfolded: ProposalChange.Unfolded(before: ["60 × 8", "60 × 8", "60 × 8"],
+                                              after: ["60 × 5", "80 × 5", "90 × 3", "100 × 1", "80 × 5"]))])
+    }
+
+    // Every set moving at once is a scheme change, not five set rows.
+    func testAStraightSchemeMovingAsAWholeIsOneSetsMove() {
+        let moves = change(.retargeted, "bench-press",
+                           before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5), restSeconds: 180),
+                           after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 3, weightKg: 87.5), count: 5), restSeconds: 180)).moves
+        XCTAssertEqual(moves.map(\.field), ["sets"])
+        XCTAssertEqual(moves[0].before, "5 × 5 · 82.5")
+        XCTAssertEqual(moves[0].after, "5 × 3 · 87.5")
+        XCTAssertEqual(moves[0].unfolded, ProposalChange.Unfolded(before: Array(repeating: "82.5 × 5", count: 5),
+                                                                  after: Array(repeating: "87.5 × 3", count: 5)))
     }
 
     func testAnOpenSideOfADiffReadsAsOpenAndIsStillBothSides() {
         let moves = change(.retargeted, "barbell-row",
                            before: ProposalChange.Targets(),
-                           after: ProposalChange.Targets(sets: 4, reps: 8, weightKg: 70)).moves
-
-        XCTAssertEqual(moves.map(\.field), ["sets", "weight"])
+                           after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8, weightKg: 70), count: 4))).moves
+        XCTAssertEqual(moves.map(\.field), ["sets"])
         XCTAssertEqual(moves[0].before, "open")
-        XCTAssertEqual(moves[0].after, "4 × 8")
-        XCTAssertEqual(moves[1].before, "—")
-        XCTAssertEqual(moves[1].after, "70")
+        XCTAssertEqual(moves[0].after, "4 × 8 · 70")
+        XCTAssertEqual(moves[0].unfolded, ProposalChange.Unfolded(before: [], after: Array(repeating: "70 × 8", count: 4)))
     }
 
-    func testATargetTheProposalDeclinesToNameIsADashAndNeverAZero() {
+    func testATargetTheProposalDeclinesToNameIsAPlaceholderAndNeverAZero() {
         let moves = change(.retargeted, "chin-up",
-                           before: ProposalChange.Targets(sets: 3, reps: 8, weightKg: 20, restSeconds: 180),
-                           after: ProposalChange.Targets(sets: 3, reps: nil, weightKg: nil, restSeconds: nil)).moves
-
-        XCTAssertEqual(moves.map(\.field), ["sets", "weight", "rest"])
+                           before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8, weightKg: 20), count: 3), restSeconds: 180),
+                           after: ProposalChange.Targets(sets: Array(repeating: SetTarget(), count: 3), restSeconds: nil)).moves
+        XCTAssertEqual(moves.map(\.field), ["sets", "rest"])
+        XCTAssertEqual(moves[0].before, "3 × 8 · 20")
         XCTAssertEqual(moves[0].after, "3 × max")
+        XCTAssertEqual(moves[0].unfolded?.after, Array(repeating: "last × max", count: 3))
+        XCTAssertEqual(moves[1].before, "3:00")
         XCTAssertEqual(moves[1].after, "—")
-        XCTAssertEqual(moves[2].before, "3:00")
-        XCTAssertEqual(moves[2].after, "—")
     }
 
     func testAnAddedRowNamesWhatItComesAfter() {
         let added = change(.added, "incline-db-press", position: 3,
-                           after: ProposalChange.Targets(sets: 3, reps: 10, weightKg: 24))
+                           after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 10, weightKg: 24), count: 3)))
 
         XCTAssertEqual(added.addedLine(after: "Bench Press"), "added · 3 × 10 · 24 · after Bench Press")
         XCTAssertEqual(added.addedLine(after: nil), "added · 3 × 10 · 24 · first in the routine")
@@ -151,13 +180,13 @@ final class ProposalDiffTests: XCTestCase {
     func testTheRowsAreTheWholeDocumentWithTheKeptLinesInTheirPlace() {
         let drawn = proposal([
             change(.retargeted, "bench-press", position: 1,
-                   before: ProposalChange.Targets(sets: 5, reps: 5),
-                   after: ProposalChange.Targets(sets: 5, reps: 3)),
+                   before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5), count: 5)),
+                   after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 3), count: 5))),
             change(.kept, "overhead-press", position: 2,
-                   before: ProposalChange.Targets(sets: 3, reps: 8),
-                   after: ProposalChange.Targets(sets: 3, reps: 8)),
+                   before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8), count: 3)),
+                   after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8), count: 3))),
             change(.added, "incline-db-press", position: 3,
-                   after: ProposalChange.Targets(sets: 3, reps: 10)),
+                   after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 10), count: 3))),
         ], name: "Push A — heavy")
 
         guard case .renamed(let from, let to) = drawn.rows.first else {
@@ -179,8 +208,8 @@ final class ProposalDiffTests: XCTestCase {
     func testTheButtonPromisesTheServersCountAndNotTheRowsItDrew() {
         let short = proposal([
             change(.retargeted, "bench-press", position: 1,
-                   before: ProposalChange.Targets(sets: 5, reps: 5),
-                   after: ProposalChange.Targets(sets: 5, reps: 3)),
+                   before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5), count: 5)),
+                   after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 3), count: 5))),
         ], changeCount: 5)
 
         XCTAssertEqual(short.rows.count, 1)
@@ -308,8 +337,7 @@ final class ProposalStoreTests: XCTestCase {
 
     private func pushA(_ weightKg: Double = 82.5) -> Routine {
         Routine(id: "rt_1", name: "Push A", position: 0,
-                entries: [RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5,
-                                       targetReps: 5, targetWeightKg: weightKg)])
+                entries: [RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: weightKg), count: 5))])
     }
 
     private func heavier(_ id: String = "prop_1", state: ProposalState = .pending,
@@ -322,8 +350,8 @@ final class ProposalStoreTests: XCTestCase {
                                     source: ProposalSource(door: door, agent: agent)),
                  baseRevision: baseRevision, baseName: "Push A", name: "Push A",
                  changes: [ProposalChange(position: 1, kind: .retargeted, exerciseId: "bench-press",
-                                          before: ProposalChange.Targets(sets: 5, reps: 5, weightKg: 82.5),
-                                          after: ProposalChange.Targets(sets: 5, reps: 3, weightKg: 87.5))])
+                                          before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
+                                          after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 3, weightKg: 87.5), count: 5)))])
     }
 
     private func seeded() -> FakeTraining {
@@ -372,8 +400,7 @@ final class ProposalStoreTests: XCTestCase {
 
         guard case .settled(let settled, _) = outcome else { return XCTFail("apply landed: \(outcome)") }
         XCTAssertEqual(settled.state, .applied)
-        XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 87.5)
-        XCTAssertEqual(store.routines.first?.entries.first?.targetReps, 3)
+        XCTAssertEqual(store.routines.first?.entries.first?.sets, Array(repeating: SetTarget(reps: 3, weightKg: 87.5), count: 5))
         XCTAssertEqual(store.pending(of: "rt_1"), [])
         XCTAssertEqual(decided(store).map(\.state), [.applied])
     }
@@ -389,8 +416,8 @@ final class ProposalStoreTests: XCTestCase {
 
         guard case .settled(let settled, _) = outcome else { return XCTFail("set aside: \(outcome)") }
         XCTAssertEqual(settled.state, .superseded)
-        XCTAssertEqual(server.written["rt_1"]?.entries.first?.targetWeightKg, 90)
-        XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 90)
+        XCTAssertEqual(server.written["rt_1"]?.entries.first?.sets.first?.weightKg, 90)
+        XCTAssertEqual(store.routines.first?.entries.first?.sets.first?.weightKg, 90)
         XCTAssertEqual(store.pending(of: "rt_1"), [])
         XCTAssertEqual(decided(store).map(\.state), [.superseded])
     }
@@ -401,7 +428,8 @@ final class ProposalStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
         XCTAssertEqual(store.pending(of: "rt_1").map(\.id), ["prop_1"])
 
-        let failed = await store.save(95, toRoutine: "rt_1", at: 1, for: "bench-press")
+        let failed = await store.save(Array(repeating: SetTarget(reps: 5, weightKg: 95), count: 5),
+                                      toRoutine: "rt_1", at: 1, for: "bench-press")
 
         XCTAssertNil(failed)
         XCTAssertEqual(store.pending(of: "rt_1"), [])

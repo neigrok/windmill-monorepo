@@ -639,6 +639,41 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
   }
 }
 
+// Against real jsonb again: a set the reader cannot make out opens ITS line — the whole scheme or
+// none, never a ladder with the sets after it moved up a slot — and a `sets` that is not an array is
+// the one defect that drops a line. Every other movement reads as written.
+TEST(pg_gym_a_stored_plan_set_that_cannot_be_read_opens_its_line_and_never_shifts_the_ladder) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    w.exec_params(
+        "UPDATE gym_sessions SET plan = $2::jsonb WHERE id = $1", "ses_pg000001",
+        R"({"routine":"Lower A","entries":[)"
+        R"({"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60},"garbage",{"reps":1,"weightKg":100}],"restSeconds":180},)"
+        R"({"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":60},{"reps":5,"weightKg":900}]},)"
+        R"({"exerciseId":"chin-up","sets":[{"reps":"eight"},{"reps":8}]},)"
+        R"({"exerciseId":"face-pull","sets":3},)"
+        R"({"exerciseId":"barbell-row","sets":[{"reps":8,"weightKg":60},{"reps":8,"weightKg":60}]}]})");
+    w.commit();
+  }
+
+  std::optional<Session> stored = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+
+  REQUIRE(stored.has_value());
+  CHECK_EQ(stored->plan, std::optional<PlanSnapshot>(PlanSnapshot{
+                             "Lower A",
+                             {PlanEntry{ExerciseId{"back-squat"}, {}, 180},
+                              PlanEntry{ExerciseId{"bench-press"}, {}, std::nullopt},
+                              PlanEntry{ExerciseId{"chin-up"}, {}, std::nullopt},
+                              PlanEntry{ExerciseId{"barbell-row"}, fake::straight(2, 8, 60.0),
+                                        std::nullopt}}}));
+}
+
 // The picker's meta against the real DISTINCT ON: the LAST set of lastTime's block, dated by that block's session.
 TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -717,8 +752,8 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
   const std::uint64_t t1 = 1'700'000'000'123;
   const PlanSnapshot frozen{
       "Push A",
-      {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
-       PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}};
+      {PlanEntry{ExerciseId{"bench-press"}, fake::straight(5, 5, 82.5), 180},
+       PlanEntry{ExerciseId{"back-squat"}, fake::straight(3, 8, std::nullopt), std::nullopt}}};
 
   // routine_id is a real foreign key, and it is the snapshot beside it that the log reads its plan out of.
   inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));

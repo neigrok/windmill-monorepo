@@ -59,6 +59,15 @@ Json::Value enumStr(const char* description, const std::vector<const char*>& val
   return property;
 }
 
+Json::Value boundedNum(const char* description, double smallest, double largest) {
+  Json::Value property(Json::objectValue);
+  property["type"] = "number";
+  property["description"] = description;
+  property["minimum"] = smallest;
+  property["maximum"] = largest;
+  return property;
+}
+
 Json::Value boundedInt(const char* description, int smallest, int largest) {
   Json::Value property(Json::objectValue);
   property["type"] = "integer";
@@ -90,19 +99,39 @@ Json::Value routineHandle() {
   return str("The routine's id — list_routines answers with it.");
 }
 
-// Every bound here must match the domain's own (products/gym/domain/Routine.cpp): a wider band here
-// invites a value the entity then refuses the whole document over.
+// Every bound here must match the domain's own (products/gym/domain/Training.cpp, Routine.cpp): a
+// wider band here invites a value the entity then refuses the whole document over.
+Json::Value setArray() {
+  Json::Value fields(Json::objectValue);
+  fields["reps"] = boundedInt("Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
+                              1, 100);
+  fields["weightKg"] = boundedNum("Load for THIS set in kg, inside ±500. OMIT to mean what they "
+                                  "lifted for the set of the same number last time.",
+                                  -kMaxLoadKg, kMaxLoadKg);
+  Json::Value set(Json::objectValue);
+  set["type"] = "object";
+  set["properties"] = fields;
+  set["additionalProperties"] = false;
+
+  Json::Value property(Json::objectValue);
+  property["type"] = "array";
+  property["items"] = set;
+  property["minItems"] = 1;
+  property["maxItems"] = static_cast<Json::UInt64>(kMaxSetTargets);
+  property["description"] =
+      "The line's target as a SCHEME: one item per set, in the order lifted, 1 to 20. A straight "
+      "`5 × 5 · 80` is five identical items; a ramp `60×5 · 80×5 · 90×3 · 100×1 · 80×5` is "
+      "[{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},"
+      "{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}]. OMIT the whole key to leave "
+      "the line OPEN — the movement is in the day and the numbers are decided at the rack. An empty "
+      "array is refused: a zero target is no target.";
+  return property;
+}
+
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
-  fields["targetSets"] =
-      boundedInt("How many sets this line calls for (1–20). OMIT to leave the line OPEN — the "
-                 "movement is in the day and what to do with it is decided at the rack. An open "
-                 "line names no reps and no weight either.",
-                 1, 20);
-  fields["targetReps"] =
-      boundedInt("Reps per set (1–100). OMIT to mean `max` — as many as you can.", 1, 100);
-  fields["targetWeightKg"] = num("Target load in kg. Omit to mean whatever you did last time.");
+  fields["sets"] = setArray();
   fields["restSeconds"] =
       boundedInt("Rest between sets, 15–900. Omit to fall back to the global rest target they set "
                  "in the app, and to no timer at all when they have set none.",
@@ -190,7 +219,10 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["sessionId"] = sessionHandle();
     p["review"] = boolean("Add the finish readout to the reply (default false).");
     tools.push_back(tool("get_session", Access::read,
-        "One workout of yours with every set in it, in the order they were logged. With "
+        "One workout of yours with every set in it, in the order they were logged. A workout "
+        "started from a routine carries `plan`, the routine frozen at the start: each line's `sets` "
+        "scheme, one item per set in the order lifted (a ramp reads [{\"reps\":5,\"weightKg\":60},"
+        "…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With "
         "`review: true` the reply also carries the finish readout — duration, working sets, top "
         "e1RM, at most one record, and the comparison against the last time you trained that day of "
         "the program.",
@@ -200,8 +232,10 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["exerciseId"] = exerciseHandle();
     tools.push_back(tool("last_time", Access::read,
-        "What you did the last time you trained one movement: that workout, the day of the program "
-        "it was on, and its sets of that movement — the numbers a logger prefills. A movement you "
+        "What you did the last time you trained one movement: that workout (with its frozen `plan`, "
+        "whose lines carry their `sets` scheme — a ramp reads [{\"reps\":5,\"weightKg\":60},…,"
+        "{\"reps\":1,\"weightKg\":100}]), the day of the program it was on, and its sets of that "
+        "movement — the numbers a logger prefills, set N from last time's set N. A movement you "
         "have never trained answers with the movement and nothing else, which is a fact rather than "
         "an error.",
         p, {"exerciseId"}));
@@ -210,9 +244,13 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["routineId"] = str("Narrow to one routine. Omitted, every routine you own.");
     tools.push_back(tool("list_routines", Access::read,
-        "Your program: each routine with its entries, most recently trained first. An entry with no "
-        "`targetReps` means `max` — as many as you can — and is omitted rather than zero, which is a "
-        "rep target this product can express and a zero could not. `revision` is the routine's "
+        "Your program: each routine with its entries, most recently trained first. An entry's "
+        "target is its `sets` scheme — one item per set in the order lifted, each naming its own "
+        "`reps` (omitted means `max`) and `weightKg` (omitted means last time's set of that "
+        "number), so a ramp reads [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},"
+        "{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}] "
+        "and a straight `5 × 5 · 80` is five identical items. An entry with no `sets` is OPEN: the "
+        "numbers are decided at the rack, and the absence is never an empty array. `revision` is the routine's "
         "version; read it and never send it. `pendingProposal` is present ONLY while a change is "
         "waiting for the lifter to tap Apply — the newest one, from any connection or from the app's "
         "own Coach; its `source` says whose. Read it before you propose anything: a new proposal of "
@@ -326,7 +364,11 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "waits for the lifter's tap. YOU mint `id` and it IS the idempotency key: send the SAME id "
         "with the SAME document to replay a lost reply and the stored routine comes back untouched, "
         "and send it with a DIFFERENT document and you are refused, because that is a change to a "
-        "day that already stands and this tool would land it without asking anyone.",
+        "day that already stands and this tool would land it without asking anyone. Each line's "
+        "target is its `sets` scheme: five identical items for `5 × 5 · 80`, or a ramp "
+        "[{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},"
+        "{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}]; leave `sets` out to leave "
+        "the line open.",
         p, {"id", "name", "position", "entries"}));
   }
   {
@@ -342,8 +384,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["entries"] = entryArray();
     tools.push_back(tool("propose_routine_change", Access::write,
         "Propose a change to a day of the program that already exists. THIS CHANGES NOTHING. It "
-        "puts a typed, field-level diff in front of the lifter — `sets 5 × 5 → 5 × 3`, "
-        "`weight 82.5 → 87.5`, a line added, a line removed — and their routine keeps reading "
+        "puts a typed, field-level diff in front of the lifter — `sets 5 × 5 · 80 → 5 × 1–5 · "
+        "60–100`, `set 4 · 100 × 1 → 102.5 × 1`, `rest 180 → 120`, a line added, a line removed — "
+        "and their routine keeps reading "
         "exactly as it does now until they open it and tap Apply. Nothing on this connection can "
         "tap it for them: there is no apply tool at any grant level. When you answer your human, "
         "say the routine has not changed and that a proposal is waiting.\n"
@@ -356,7 +399,12 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "and never that id with a DIFFERENT document, which is refused rather than answered with the "
         "proposal already standing under it.\n"
         "It cannot reach a logged set, a finished workout's frozen plan, or where the day sits in "
-        "the week — only what this routine asks for next time.",
+        "the week — only what this routine asks for next time. Each line's target is its `sets` "
+        "scheme, one item per set in the order lifted: a straight `5 × 5 · 80` is five identical "
+        "items, a ramp is [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},"
+        "{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}], "
+        "and a line with no `sets` is open. To move one set of a ramp, send the ramp with that one "
+        "item changed.",
         p, {"id", "routineId", "entries"}));
   }
   {

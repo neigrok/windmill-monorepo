@@ -1127,7 +1127,9 @@ button.gym-set:focus-visible .gym-set-fix,
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.gym-mirror-sets {
+/* The plan line in the readout formula, then the slots as rows: what landed in full ink, what is
+   still to come dim. Read-only, like everything on the mirror. */
+.gym-mirror-plan {
   margin: 5px 0 0;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1136,6 +1138,23 @@ button.gym-set:focus-visible .gym-set-fix,
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.gym-mirror-slots {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.gym-mirror-slot {
+  color: var(--gym-ink-faint);
+}
+.gym-mirror-slot.is-lifted {
+  color: var(--gym-ink);
 }
 /* Nothing running: the words, never a greyed control. */
 .gym-mirror-idle {
@@ -1377,9 +1396,128 @@ button.gym-set:focus-visible .gym-set-fix,
   border-left: 1px solid var(--gym-line);
 }
 
-/* The target sheet — three typed fields and nothing else. Emptying one is how you clear it, and the
-   placeholder says what empty means: sets `open`, reps `max`, weight `last time`. The ladder and the
-   keypad are rack controls and stay at the rack (the fix sheet). */
+/* The target sheet — one scheme at two zooms. The head (Every set) speaks about every set at once and
+   the ladder (Set by set) one row per set; emptying Sets is the open line and hides the ladder without
+   discarding it. Placeholders say what empty means: sets `open`, reps `max`, weight `last time`, and
+   `varies` on a head field whose rows disagree. The plate ladder and the keypad are rack controls. */
+.gym-sheet-section {
+  margin: 0 0 14px;
+}
+.gym-sheet-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-sheet-section-title {
+  margin: 0;
+  font: inherit;
+}
+/* The two head fields go inert together while the line is open — never refused. */
+.gym-target-head {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.gym-target-head:disabled {
+  opacity: 0.5;
+}
+/* The ladder's one menu, opened by its word. */
+.gym-fill-open {
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-fill-open:hover {
+  color: var(--color-brand);
+}
+.wm-menu-item:disabled {
+  color: var(--gym-ink-faint);
+  cursor: default;
+}
+.gym-ladder {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gym-ladder-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.gym-ladder-ordinal {
+  flex: none;
+  width: 24px;
+  line-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  text-align: center;
+}
+.gym-ladder-field {
+  flex: 1;
+  min-width: 0;
+}
+.gym-ladder-drop {
+  flex: none;
+  width: 30px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  cursor: pointer;
+}
+.gym-ladder-drop:hover {
+  color: var(--alarm-ink);
+}
+/* The last row, the way `Add movement` is the editor's last row. */
+.gym-ladder-row.is-add {
+  flex-direction: column;
+  gap: 4px;
+}
+.gym-ladder-add {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px dashed var(--gym-line-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.gym-ladder-add:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.gym-ladder-refusal {
+  padding-left: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
 /* Where you are in the day, beside the movement being asked about. */
 .gym-target-place {
   margin-left: 9px;
@@ -3506,6 +3644,28 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-diff-is {
   color: var(--target-ink);
   font-weight: 700;
+}
+/* A scheme that changed shape, folded open under its row: one line per set, either side of the arrow. */
+.gym-diff-ladder {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.gym-diff-ladder-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.gym-diff-ladder-ordinal {
+  width: 18px;
+  color: var(--gym-ink-faint);
 }
 
 .gym-proposal-settled {

@@ -83,8 +83,7 @@ struct RoutineScreen: View {
                                  font: WindmillFont.body(15, .bold), ink: skin.ink,
                                  open: onMovement)
                     Spacer(minLength: WindmillSpace.x2)
-                    Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
-                                        weightKg: entry.targetWeightKg))
+                    Text(Readout.target(entry.sets))
                         .font(GymType.numeral(13))
                         .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
                 }

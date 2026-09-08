@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { clockOf, fmt, FROM_THE_ROUTINE, nameOfMovement, recordHref, restInForce, routineNameOf } from './log.js';
+import {
+  clockOf, fmt, FROM_THE_ROUTINE, nameOfMovement, planReadingOf, recordHref, restInForce, routineNameOf, slotRows,
+} from './log.js';
 import { LogNotOpen } from './Log.jsx';
 import { restLabel } from './settings/preferences.js';
 
@@ -47,6 +49,10 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
     ? []
     : sets.filter((set) => set.exerciseId === newest.exerciseId)
       .sort((left, right) => (left.setNumber ?? 0) - (right.setNumber ?? 0));
+  // The plan's own slots for the movement in hand: the landed sets fill them in order and the rest
+  // stand under them as targets, dim. The mirror starts nothing and changes nothing (R11).
+  const reading = newest === null ? null : planReadingOf(session, newest.exerciseId);
+  const rows = newest === null ? [] : slotRows(walked, reading.entry);
 
   return (
     <section className="gym-mirror">
@@ -65,11 +71,14 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
               + `  ·  last set ${clockOf(now - newest.completedAt)} ago`
               + (rest === null ? '' : `  ·  target ${restLabel(rest.seconds)}${rest.fromRoutine ? FROM_THE_ROUTINE : ''}`)}
           </p>
-          <p className="gym-mirror-sets">
-            {walked
-              .map((set) => `${fmt(set.weightKg)} × ${set.reps}${set.kind !== 'working' ? ` (${set.kind})` : ''}`)
-              .join('   ·   ')}
-          </p>
+          {reading.kind === 'planned' && <p className="gym-mirror-plan">{reading.line}</p>}
+          <ul className="gym-mirror-slots">
+            {rows.map((row) => (
+              <li className={`gym-mirror-slot is-${row.kind}`} key={row.key} aria-label={row.spoken}>
+                {row.label}
+              </li>
+            ))}
+          </ul>
         </>
       )}
     </section>

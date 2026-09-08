@@ -250,7 +250,7 @@ export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }
                   </li>
                 ) : (
                   <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
-                    <DiffRow row={row} catalog={log.catalog} />
+                    <DiffRow row={row} catalog={log.catalog} unfold />
                   </li>
                 )
               ))}
@@ -265,7 +265,9 @@ export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }
   );
 }
 
-export function DiffRow({ row, catalog }) {
+// Hook-free on purpose: the card and a test call it as a plain function. The one piece with state —
+// a scheme's ladder folding open — is its own child, drawn only where `unfold` is asked for.
+export function DiffRow({ row, catalog, unfold = false }) {
   if (row.kind === 'renamed') {
     return (
       <>
@@ -336,6 +338,36 @@ export function DiffRow({ row, catalog }) {
           </span>
         ))}
       </span>
+      {unfold && row.moves.filter((move) => move.ladder).map((move) => (
+        <SchemeUnfold key={move.field} ladder={move.ladder} />
+      ))}
+    </>
+  );
+}
+
+// A scheme that changed shape reads as its readout on the row; a lifter deciding on a ramp has to
+// see the ramp, so the ladder folds open under it, one row per set, either side of the arrow. The
+// card never draws this: the card is a skim and the dialog is the document.
+export const UNFOLD_LADDER = 'set by set';
+
+function SchemeUnfold({ ladder }) {
+  const [unfolded, setUnfolded] = useState(false);
+  const count = Math.max(ladder.from.length, ladder.to.length);
+  return (
+    <>
+      <button type="button" className="gym-diff-unfold" aria-expanded={unfolded} onClick={() => setUnfolded((held) => !held)}>
+        {UNFOLD_LADDER}
+      </button>
+      {unfolded && (
+        <ul className="gym-diff-ladder">
+          {Array.from({ length: count }, (_, index) => (
+            <li className="gym-diff-ladder-row" key={index}>
+              <span className="gym-diff-ladder-ordinal">{index + 1}</span>
+              <Move from={ladder.from[index] ?? '—'} to={ladder.to[index] ?? '—'} />
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

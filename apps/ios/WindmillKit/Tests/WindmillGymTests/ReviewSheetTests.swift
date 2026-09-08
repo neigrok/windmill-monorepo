@@ -3,7 +3,7 @@ import XCTest
 
 final class ReviewSheetTests: XCTestCase {
     private func change(_ kind: ProposalChange.Kind, _ exerciseId: String, position: Int) -> ProposalChange {
-        let targets = ProposalChange.Targets(sets: 3, reps: 8, weightKg: 40)
+        let targets = ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 8, weightKg: 40), count: 3))
         return ProposalChange(position: position, kind: kind, exerciseId: exerciseId,
                               before: kind == .added ? nil : targets, after: kind == .removed ? nil : targets)
     }
@@ -51,6 +51,44 @@ final class ReviewSheetTests: XCTestCase {
         XCTAssertEqual(single.map(\.exerciseId), ["cable-fly"])
         XCTAssertEqual(removed.exerciseId, "push-up")
         XCTAssertEqual(blocks.map(\.id), [0, 1, 4, 5, 6], "stable ids, so expanding one run redraws that run only")
+    }
+
+    // R10 · the review fixture: a scheme whose shape held and whose one set moved prints that set,
+    // with nothing to unfold — a week's progression on a top set is one line.
+    func testOneMovedSetPrintsThatSetAndCarriesNoLadder() {
+        let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                    SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                    SetTarget(reps: 5, weightKg: 80)]
+        var heavier = ramp
+        heavier[3] = SetTarget(reps: 1, weightKg: 102.5)
+        let lowerA = proposal([
+            ProposalChange(position: 1, kind: .retargeted, exerciseId: "back-squat",
+                           before: ProposalChange.Targets(sets: ramp),
+                           after: ProposalChange.Targets(sets: heavier)),
+        ], baseName: "Lower A")
+
+        XCTAssertEqual(lowerA.changes[0].moves,
+                       [ProposalChange.Move(field: "set 4", before: "100 × 1", after: "102.5 × 1", unfolded: nil)])
+        XCTAssertEqual(lowerA.head.changeCount, 1)
+    }
+
+    // A scheme that changed shape prints the scheme in the readout formula and carries the ladder to
+    // unfold, one `Readout.set` per row on each side.
+    func testAShapeChangePrintsTheReadoutAndCarriesTheLadder() {
+        let straight = Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)
+        let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                    SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                    SetTarget(reps: 5, weightKg: 80)]
+        let change = ProposalChange(position: 1, kind: .retargeted, exerciseId: "back-squat",
+                                    before: ProposalChange.Targets(sets: straight),
+                                    after: ProposalChange.Targets(sets: ramp))
+
+        XCTAssertEqual(change.moves, [
+            ProposalChange.Move(field: "sets", before: "3 × 8 · 60", after: "5 × 1–5 · 60–100",
+                                unfolded: ProposalChange.Unfolded(
+                                    before: ["60 × 8", "60 × 8", "60 × 8"],
+                                    after: ["60 × 5", "80 × 5", "90 × 3", "100 × 1", "80 × 5"])),
+        ])
     }
 
     func testTheUnchangedCountIsWordedAsLinesAndCountsOne() {

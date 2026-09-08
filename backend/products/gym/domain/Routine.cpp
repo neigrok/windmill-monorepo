@@ -5,25 +5,15 @@
 
 namespace wm::gym {
 
-RoutineEntry::RoutineEntry(int position, ExerciseId exercise, std::optional<int> targetSets,
-                           std::optional<int> targetReps, std::optional<double> targetWeightKg,
+RoutineEntry::RoutineEntry(int position, ExerciseId exercise, std::vector<SetTarget> sets,
                            std::optional<int> restSeconds)
-    : position(position), exercise(std::move(exercise)), targetSets(targetSets),
-      targetReps(targetReps), targetWeightKg(targetWeightKg), restSeconds(restSeconds) {
+    : position(position), exercise(std::move(exercise)), sets(std::move(sets)),
+      restSeconds(restSeconds) {
   if (position < 1) throw InvalidTraining("an entry sits at a position from 1");
   if (this->exercise.empty()) throw InvalidTraining("an entry names an exercise");
-  // A line that names no sets names no reps and no load either. Rest is not a target and rides on an
-  // open line unchallenged.
-  if (!targetSets && (targetReps || targetWeightKg))
-    throw InvalidTraining("an open entry names no sets, so it names no reps and no weight either");
-  // The same bounds the columns carry, refused here so a routine that cannot be stored is never
-  // built. A named rep target keeps its band; naming none is `max`, and naming no sets is `open`.
-  if (targetSets && (*targetSets < 1 || *targetSets > 20))
-    throw InvalidTraining("target sets out of range");
-  if (targetReps && (*targetReps < 1 || *targetReps > 100))
-    throw InvalidTraining("target reps out of range");
-  if (targetWeightKg && (*targetWeightKg < -500 || *targetWeightKg > 500))
-    throw InvalidTraining("target weight out of range");
+  // Each set refused its own bounds at construction; the scheme's length is refused here, so a line
+  // that cannot be stored is never built. None at all is `open`, never a fault.
+  if (this->sets.size() > kMaxSetTargets) throw InvalidTraining("sets, 1 to 20");
   if (restSeconds && (*restSeconds < kMinRestSeconds || *restSeconds > kMaxRestSeconds))
     throw InvalidTraining("rest out of range");
 }
@@ -61,8 +51,7 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
 PlanSnapshot snapshotOf(const Routine& routine) {
   std::vector<PlanEntry> entries;
   for (const RoutineEntry& entry : routine.entries)
-    entries.push_back(PlanEntry{entry.exercise, entry.targetSets, entry.targetReps,
-                                entry.targetWeightKg, entry.restSeconds});
+    entries.push_back(PlanEntry{entry.exercise, entry.sets, entry.restSeconds});
   return PlanSnapshot{routine.name, std::move(entries)};
 }
 

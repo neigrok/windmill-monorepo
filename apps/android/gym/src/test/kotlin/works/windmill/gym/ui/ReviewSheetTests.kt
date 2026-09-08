@@ -8,11 +8,14 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
@@ -51,6 +54,7 @@ import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
@@ -75,7 +79,7 @@ class ReviewSheetTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun store(scope: CoroutineScope, server: FakeTraining): Pair<TrainingStore, Routine> {
+    private fun store(scope: CoroutineScope, server: FakeTraining, routine: String = "Push Day"): Pair<TrainingStore, Routine> {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
@@ -90,18 +94,18 @@ class ReviewSheetTests {
                 api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
                 user = User(id = "u1", email = "sam@example.com", name = "Sam"),
             ))
-            (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value
+            (store.saveRoutine(RoutineDraft(name = routine).adding("bench-press")) as GymResult.Ok).value
         }
         return store to kept
     }
 
     private fun retarget(exerciseId: String, position: Int) = ProposalChange(
         position = position, kind = ChangeKind.Retargeted, exerciseId = exerciseId,
-        before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))
+        before = ProposalTargets(List(3) { SetTarget(5) }), after = ProposalTargets(List(5) { SetTarget(3) }))
 
     private fun kept(exerciseId: String, position: Int) = ProposalChange(
         position = position, kind = ChangeKind.Kept, exerciseId = exerciseId,
-        before = ProposalTargets(sets = 3, reps = 8), after = ProposalTargets(sets = 3, reps = 8))
+        before = ProposalTargets(List(3) { SetTarget(8) }), after = ProposalTargets(List(3) { SetTarget(8) }))
 
     private fun proposal(
         routine: Routine,
@@ -112,8 +116,25 @@ class ReviewSheetTests {
         id = "prop_1", routineId = routine.id, state = ProposalState.Pending,
         summary = summary, changeCount = changes.count { it.kind != ChangeKind.Kept }, createdAtMs = 1_000,
         source = source, baseRevision = routine.revision,
-        baseName = "Push Day", name = "Push Day", changes = changes,
+        baseName = routine.name, name = routine.name, changes = changes,
     )
+
+    private val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
+
+    // The review fixture: the ramp's shape held and set 4 moved.
+    private fun setFourMoved() = ProposalChange(
+        position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
+        before = ProposalTargets(ramp, restSeconds = 180),
+        after = ProposalTargets(ramp.mapIndexed { at, set -> if (at == 3) SetTarget(1, 102.5) else set }, restSeconds = 180))
+
+    private fun reshaped() = ProposalChange(
+        position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
+        before = ProposalTargets(List(5) { SetTarget(5, 80.0) }, restSeconds = 180),
+        after = ProposalTargets(ramp, restSeconds = 180))
+
+    // A row as the bridge reads it: every text on the merged node, in order.
+    private fun rowSaying(text: String): List<String> =
+        compose.onNode(hasText(text)).fetchSemanticsNode().config[SemanticsProperties.Text].map { it.text }
 
     // Every property the bridge turns into speech: a node's own text, its description, and the state
     // it announces with it.
@@ -414,6 +435,73 @@ class ReviewSheetTests {
         compose.runOnIdle {
             assertEquals(ProposalState.Pending, server.ledger.getValue("prop_1").state)
         }
+        scope.cancel()
+    }
+
+    // A scheme whose shape held and whose one set moved prints that set, as one row, and it is no
+    // door: a week's progression on a top set is one line.
+    @Test
+    fun oneMovedSetPrintsAsOneRowThatDoesNotUnfold() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, lowerA) = store(scope, server, routine = "Lower A")
+        server.propose(proposal(lowerA, listOf(setFourMoved()), summary = ""))
+        sheet(store, lowerA, mutableListOf())
+
+        compose.onNodeWithText("1 change to Lower A.").assertIsDisplayed()
+        compose.onNodeWithText("Back Squat").assertIsDisplayed()
+        assertEquals(listOf("set 4", "100 × 1", "→", "102.5 × 1"), rowSaying("set 4"))
+        compose.onNode(hasText("set 4")).assertHasNoClickAction()
+        compose.onAllNodes(hasText("sets")).assertCountEquals(0)
+        compose.onAllNodes(hasText(Readout.ladder(setFourMoved().after!!.sets))).assertCountEquals(0)
+        scope.cancel()
+    }
+
+    // A scheme that changed shape prints both schemes in the readout formula and unfolds on tap to
+    // the two ladders, set by set, what stands against what is proposed — folded until the tap,
+    // because the card above is the skim and this is the document.
+    @Test
+    fun aReshapedSchemePrintsTheReadoutAndUnfoldsToBothLaddersOnTap() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, lowerA) = store(scope, server, routine = "Lower A")
+        server.propose(proposal(lowerA, listOf(reshaped()), summary = ""))
+        sheet(store, lowerA, mutableListOf())
+
+        assertEquals(listOf("sets", "5 × 5 · 80", "→", "5 × 1–5 · 60–100"), rowSaying("sets"))
+        compose.onNode(hasText("sets")).assert(hasStateDescription("collapsed"))
+        compose.onAllNodes(hasText("set 1")).assertCountEquals(0)
+
+        compose.onNode(hasText("sets") and hasClickAction()).performClick()
+        compose.onNode(hasText("sets")).assert(hasStateDescription("expanded"))
+        assertEquals(listOf("set 1", "80 × 5", "→", "60 × 5"), rowSaying("set 1"))
+        assertEquals(listOf("set 3", "80 × 5", "→", "90 × 3"), rowSaying("set 3"))
+        assertEquals(listOf("set 4", "80 × 5", "→", "100 × 1"), rowSaying("set 4"))
+        assertEquals(listOf("set 5", "80 × 5", "→", "80 × 5"), rowSaying("set 5"))
+        compose.onAllNodes(hasText("set 6")).assertCountEquals(0)
+
+        compose.onNode(hasText("sets") and hasClickAction()).performClick()
+        compose.onAllNodes(hasText("set 1")).assertCountEquals(0)
+        scope.cancel()
+    }
+
+    // A ladder that grew: the side with no such set reads `—`.
+    @Test
+    fun anUnfoldedLadderReadsADashWhereASideHasNoSet() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val (store, lowerA) = store(scope, server, routine = "Lower A")
+        val grown = ProposalChange(
+            position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
+            before = ProposalTargets(List(3) { SetTarget(5, 80.0) }, restSeconds = 180),
+            after = ProposalTargets(ramp, restSeconds = 180))
+        server.propose(proposal(lowerA, listOf(grown), summary = ""))
+        sheet(store, lowerA, mutableListOf())
+
+        compose.onNode(hasText("sets") and hasClickAction()).performClick()
+        assertEquals(listOf("set 3", "80 × 5", "→", "90 × 3"), rowSaying("set 3"))
+        assertEquals(listOf("set 4", "—", "→", "100 × 1"), rowSaying("set 4"))
+        assertEquals(listOf("set 5", "—", "→", "80 × 5"), rowSaying("set 5"))
         scope.cancel()
     }
 

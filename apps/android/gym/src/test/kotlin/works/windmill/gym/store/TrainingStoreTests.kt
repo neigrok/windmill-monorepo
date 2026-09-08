@@ -51,6 +51,7 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
@@ -342,8 +343,8 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
         server.open(Session(id = "ses_live", startedAtMs = 500,
             plan = PlanSnapshot(routine = "Push A",
-                entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5,
-                    reps = 5, weightKg = 82.5)))))
+                entries = listOf(PlanEntry(exerciseId = "bench-press",
+                    sets = List(5) { SetTarget(5, 82.5) })))))
         server.sets["ses_live"] = mutableListOf(TrainingSet(id = "set_old",
             exerciseId = "bench-press", setNumber = 1, weightKg = 82.5, reps = 5,
             completedAtMs = 600))
@@ -371,8 +372,8 @@ class TrainingStoreTests {
         val server = FakeTraining()
         server.open(Session(id = "ses_1", startedAtMs = 1_000,
             plan = PlanSnapshot(routine = "Push A",
-                entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5,
-                    reps = 5, weightKg = 82.5)))))
+                entries = listOf(PlanEntry(exerciseId = "bench-press",
+                    sets = List(5) { SetTarget(5, 82.5) })))))
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
         store.choose("bench-press")
@@ -431,11 +432,15 @@ class TrainingStoreTests {
         store.choose("bench-press")
         assertEquals("the prefill dials the local plan", Prefill(100.0, 5), store.prefill)
 
-        assertNull(store.save(105.0, toRoutine = kept.id, atPosition = 1, forExercise = "bench-press"))
-        assertEquals(105.0,
-            store.routines.first { it.id == kept.id }.entries.first().targetWeightKg)
+        assertEquals("the kept routine carries every working set as it was lifted",
+            listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), kept.entries.first().sets)
+        assertNull(store.save(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
+            toRoutine = kept.id, atPosition = 1, forExercise = "bench-press"))
+        assertEquals(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
+            store.routines.first { it.id == kept.id }.entries.first().sets)
         assertEquals("and the shelf holds the retargeted document for the claim",
-            105.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
+            listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
+            shelfOnDisk(null).routine(kept.id)?.entries?.first()?.sets)
     }
 
     @Test
@@ -926,7 +931,7 @@ class TrainingStoreTests {
     fun testAWarmupIsWrittenAsAWarmupAndCarriesNothingForward() = runTest {
         val server = FakeTraining()
         val plan = PlanSnapshot(routine = "Legs", entries = listOf(
-            PlanEntry(exerciseId = "back-squat", sets = 5, reps = 5, weightKg = 100.0)))
+            PlanEntry(exerciseId = "back-squat", sets = List(5) { SetTarget(5, 100.0) })))
         val store = liveStore(server, movement = "back-squat", plan = plan)
         assertEquals(Prefill(weightKg = 100.0, reps = 5), store.prefill)
 
@@ -997,8 +1002,8 @@ class TrainingStoreTests {
             setUp()
             val server = FakeTraining()
             server.written["rt_push"] = Routine(id = "rt_push", name = "Push Day", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 3, targetReps = 5,
-                    targetWeightKg = 100.0)))
+                RoutineEntry(position = 1, exerciseId = "bench-press",
+                    sets = List(3) { SetTarget(5, 100.0) })))
             val store = makeStore(sync = server)
             store.connect(account(signedIn = true))
             quiet(server)
@@ -1006,7 +1011,7 @@ class TrainingStoreTests {
             val opened = (store.start(routineId = "rt_push") as GymResult.Ok).value
             assertEquals("the plan froze off the routine this store holds",
                 PlanSnapshot(routine = "Push Day", entries = listOf(
-                    PlanEntry(exerciseId = "bench-press", sets = 3, reps = 5, weightKg = 100.0))),
+                    PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 100.0) }))),
                 opened.plan)
             assertEquals("ses_minted", store.session?.id)
             assertTrue("held on the device, not the log's yet", queueOnDisk().sessionIsUnclaimed)
@@ -1035,8 +1040,8 @@ class TrainingStoreTests {
     fun testAStartWhoseReplyWasLostComposesUnderTheSameIdAndTheClaimReplaysIt() = runTest {
         val server = FakeTraining()
         server.written["rt_push"] = Routine(id = "rt_push", name = "Push Day", entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 3, targetReps = 5,
-                targetWeightKg = 100.0)))
+            RoutineEntry(position = 1, exerciseId = "bench-press",
+                sets = List(3) { SetTarget(5, 100.0) })))
         val losing = LosingStartReplies(server)
         val minted = mutableListOf("ses_a", "ses_b")
         val store = makeStore(sync = losing, mintSession = { minted.removeAt(0) })
@@ -1124,25 +1129,26 @@ class TrainingStoreTests {
     fun testAWriteBackThatDidNotLandSaysWhyAndMovesNothing() = runTest {
         val server = FakeTraining()
         server.written["rt_push_a"] = Routine(id = "rt_push_a", name = "Push A", position = 0,
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-                targetReps = 5, targetWeightKg = 82.5)))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+                sets = List(5) { SetTarget(5, 82.5) })))
         val store = liveStore(server)
 
         server.online = false
+        val heavier = List(5) { SetTarget(5, 87.5) }
         assertEquals(WriteFailure.NoAnswer,
-            store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
+            store.save(heavier, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
         assertEquals("and nothing moved",
-            82.5, server.written.getValue("rt_push_a").entries.first().targetWeightKg)
+            List(5) { SetTarget(5, 82.5) }, server.written.getValue("rt_push_a").entries.first().sets)
 
         server.online = true
         assertEquals("a routine gone from the log is not a write",
             WriteFailure.Refused("that routine is no longer on the log"),
-            store.save(87.5, toRoutine = "rt_gone", atPosition = 1, forExercise = "bench-press"))
+            store.save(heavier, toRoutine = "rt_gone", atPosition = 1, forExercise = "bench-press"))
 
-        assertNull(store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
-        assertEquals(87.5, server.written.getValue("rt_push_a").entries.first().targetWeightKg)
+        assertNull(store.save(heavier, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
+        assertEquals(heavier, server.written.getValue("rt_push_a").entries.first().sets)
         assertEquals("the copy in hand moved with the log's",
-            87.5, store.routines.first { it.id == "rt_push_a" }.entries.first().targetWeightKg)
+            heavier, store.routines.first { it.id == "rt_push_a" }.entries.first().sets)
     }
 
     @Test
@@ -1150,18 +1156,19 @@ class TrainingStoreTests {
         val server = FakeTraining()
         server.written["rt_push_a"] = Routine(id = "rt_push_a", name = "Push A", position = 0,
             revision = 1, entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "overhead-press", targetSets = 3,
-                    targetReps = 8, targetWeightKg = 45.0),
-                RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 5,
-                    targetReps = 5, targetWeightKg = 82.5)))
+                RoutineEntry(position = 1, exerciseId = "overhead-press",
+                    sets = List(3) { SetTarget(8, 45.0) }),
+                RoutineEntry(position = 2, exerciseId = "bench-press",
+                    sets = List(5) { SetTarget(5, 82.5) })))
         val store = liveStore(server)
 
         assertEquals(WriteFailure.Refused("Push A has changed since this session started"),
-            store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
+            store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = "rt_push_a", atPosition = 1,
+                forExercise = "bench-press"))
         assertFalse("nothing to write is no PUT", server.calls.contains("replaceRoutine"))
         assertEquals("and the revision did not move", 1, server.written.getValue("rt_push_a").revision)
-        assertEquals(listOf(45.0, 82.5),
-            server.written.getValue("rt_push_a").entries.map { it.targetWeightKg })
+        assertEquals(listOf(List(3) { SetTarget(8, 45.0) }, List(5) { SetTarget(5, 82.5) }),
+            server.written.getValue("rt_push_a").entries.map { it.sets })
 
         val signedOut = makeStore(sync = null)
         signedOut.connect(account(signedIn = false))
@@ -1169,9 +1176,10 @@ class TrainingStoreTests {
             TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0, reps = 5,
                 completedAtMs = 1_100)), asRoutineNamed = "Push Day") as GymResult.Ok).value
         assertEquals(WriteFailure.Refused("Push Day has changed since this session started"),
-            signedOut.save(105.0, toRoutine = kept.id, atPosition = 2, forExercise = "bench-press"))
+            signedOut.save(listOf(SetTarget(5, 105.0)), toRoutine = kept.id, atPosition = 2,
+                forExercise = "bench-press"))
         assertEquals("the shelf's document stood still",
-            100.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
+            listOf(SetTarget(5, 100.0)), shelfOnDisk(null).routine(kept.id)?.entries?.first()?.sets)
     }
 
     @Test
@@ -1502,10 +1510,10 @@ class TrainingStoreTests {
     fun testFixingASetOnTheAccountGoesOverTheWireAndMovesNoPlanAndNoRoutine() = runTest {
         val server = FakeTraining()
         val plan = PlanSnapshot(routine = "Push A",
-            entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5)))
+            entries = listOf(PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })))
         server.written["rt_1"] = Routine(id = "rt_1", name = "Push A",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-                targetReps = 5, targetWeightKg = 82.5)))
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+                sets = List(5) { SetTarget(5, 82.5) })))
         val store = liveStore(server, plan = plan)
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
@@ -1523,7 +1531,7 @@ class TrainingStoreTests {
         assertEquals("the frozen plan is what makes last Tuesday still readable — it may not move",
             plan, server.stored.getValue("ses_1").plan)
         assertEquals("and next week's target is nobody's business here",
-            listOf(82.5), server.written.getValue("rt_1").entries.map { it.targetWeightKg })
+            listOf(List(5) { SetTarget(5, 82.5) }), server.written.getValue("rt_1").entries.map { it.sets })
         assertEquals("the head re-read, and it followed the correction all the way to the KIND — a " +
             "drop set counts toward no tonnage, so the row that read 412.5 now reads nothing",
             listOf(0.0), store.logged.map { it.tonnageKg })
@@ -2121,8 +2129,8 @@ class TrainingStoreTests {
 
     private fun aRoutine(id: String = "rt_1", revision: Int = 1) = Routine(
         id = id, name = "Push A", position = 0, revision = revision,
-        entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-            targetReps = 5, targetWeightKg = 82.5)))
+        entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+            sets = List(5) { SetTarget(5, 82.5) })))
 
     private fun aProposal(
         id: String = "prop_1",
@@ -2136,8 +2144,8 @@ class TrainingStoreTests {
         source = ProposalSource(agent = "Claude"), baseRevision = baseRevision,
         baseName = "Push A", name = name,
         changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
-            exerciseId = "bench-press", before = ProposalTargets(5, 5, 82.5),
-            after = ProposalTargets(5, 3, 87.5))))
+            exerciseId = "bench-press", before = ProposalTargets(List(5) { SetTarget(5, 82.5) }),
+            after = ProposalTargets(List(5) { SetTarget(3, 87.5) }))))
 
     @Test
     fun testTheCardArrivesOnTheRoutineTheBootReadAlreadyMakes() = runTest {
@@ -2194,8 +2202,8 @@ class TrainingStoreTests {
         assertEquals("Push A — heavy", store.routine("rt_1")?.name)
         assertEquals(2, store.routine("rt_1")?.revision)
         assertEquals("and the diff itself landed, not only the name",
-            listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-                targetReps = 3, targetWeightKg = 87.5)),
+            listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+                sets = List(5) { SetTarget(3, 87.5) })),
             store.routine("rt_1")?.entries)
         assertTrue("the card goes because the decision was taken", store.pendingProposals.isEmpty())
     }
@@ -2219,8 +2227,8 @@ class TrainingStoreTests {
             store.routine("rt_1")?.name)
         assertEquals(2, store.routine("rt_1")?.revision)
         assertEquals(
-            listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
-                targetReps = 3, targetWeightKg = 87.5)),
+            listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
+                sets = List(5) { SetTarget(3, 87.5) })),
             store.routine("rt_1")?.entries)
     }
 
@@ -2232,7 +2240,8 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        assertNull(store.save(87.5, toRoutine = "rt_1", atPosition = 1, forExercise = "bench-press"))
+        assertNull(store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = "rt_1", atPosition = 1,
+            forExercise = "bench-press"))
         assertEquals("the log moved the revision under the diff", 2,
             server.written.getValue("rt_1").revision)
         assertEquals("and this room is holding the log's own answer, not its send", 2,
@@ -2245,10 +2254,8 @@ class TrainingStoreTests {
             refused)
         assertEquals("the routine was re-read, not argued with", 2, store.routine("rt_1")?.revision)
         assertTrue(store.pendingProposals.isEmpty())
-        assertEquals("the lifter's own 87.5 stands", 87.5,
-            store.routine("rt_1")?.entries?.first()?.targetWeightKg)
-        assertEquals("and the triples the diff wanted never landed", 5,
-            store.routine("rt_1")?.entries?.first()?.targetReps)
+        assertEquals("the lifter's own 87.5 stands, and the triples the diff wanted never landed",
+            List(5) { SetTarget(5, 87.5) }, store.routine("rt_1")?.entries?.first()?.sets)
         assertEquals("set aside by the PUT rather than applied", ProposalState.Superseded,
             server.ledger.getValue("prop_1").state)
     }
@@ -2613,18 +2620,19 @@ class TrainingStoreTests {
         val draft = RoutineDraft(name = "  Heavy Thursday  ", position = 3)
             .adding("back-squat")
             .adding("barbell-row")
-            .targeting("back-squat", sets = 5, reps = 3, weightKg = 110.0)
+            .targeting("back-squat", List(5) { SetTarget(3, 110.0) })
 
         val saved = (store.saveRoutine(draft) as GymResult.Ok).value
 
         assertEquals("the name is trimmed and never blank", "Heavy Thursday", saved.name)
-        assertEquals(listOf(5, null), saved.entries.sortedBy { it.position }.map { it.targetSets })
-        assertNull("an open row carries no reps either",
-            saved.entries.single { it.exerciseId == "barbell-row" }.targetReps)
+        val lines = listOf(
+            RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(3, 110.0) }),
+            RoutineEntry(position = 2, exerciseId = "barbell-row"))
+        assertEquals(lines, saved.entries.sortedBy { it.position })
+        assertTrue("an open row stays open", saved.entries.single { it.exerciseId == "barbell-row" }.isOpen)
         assertTrue("it is on the list the moment it lands", store.routines.any { it.id == saved.id })
         assertTrue("and it has never been trained", saved.untested)
-        assertEquals(listOf(null, 5), server.written.getValue(saved.id).entries
-            .sortedBy { it.position }.map { it.targetSets }.reversed())
+        assertEquals(lines, server.written.getValue(saved.id).entries.sortedBy { it.position })
     }
 
     @Test
@@ -2654,7 +2662,7 @@ class TrainingStoreTests {
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = false))
         assertEquals(listOf(saved.id), relaunched.routines.map { it.id })
-        assertNull(relaunched.routines.single().entries.single().targetSets)
+        assertTrue(relaunched.routines.single().entries.single().isOpen)
     }
 
     @Test
@@ -2717,7 +2725,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = false))
         val kept = (store.saveRoutine(RoutineDraft(name = "Push Day")
             .adding("bench-press")
-            .targeting("bench-press", sets = 5, reps = 5, weightKg = 100.0)) as GymResult.Ok).value
+            .targeting("bench-press", List(5) { SetTarget(5, 100.0) })) as GymResult.Ok).value
         store.start(routineId = kept.id)
         store.choose("bench-press")
         store.logSet(weightKg = 100.0, reps = 5)
@@ -2989,7 +2997,7 @@ class TrainingStoreTests {
     fun testASignedInOfflineConnectDrawsTheAccountsDeviceCopyAndKeepsItsPreferences() = runTest {
         val server = FakeTraining()
         server.written["rt_push"] = Routine(id = "rt_push", name = "Push Day", entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 3)))
+            RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(3) { SetTarget() })))
         server.served.add(LastSet("bench-press", 82.5, 5, atMs = 900))
         server.catalog = listOf(Exercise("bench-press", "Flat press"))
         val online = makeStore(sync = server)

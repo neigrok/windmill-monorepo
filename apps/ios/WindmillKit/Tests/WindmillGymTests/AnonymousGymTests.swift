@@ -77,8 +77,7 @@ final class AnonymousGymTests: XCTestCase {
     private func seedRoutine() {
         let kept = shelf()
         kept.keep(Routine(id: "rt_local", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ]))
         kept.flush()
     }
@@ -236,22 +235,24 @@ final class AnonymousGymTests: XCTestCase {
             return XCTFail("a local routine can open a local session")
         }
         XCTAssertEqual(opened.plan, PlanSnapshot(routine: "Push A", entries: [
-            PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ]))
 
         await store.choose("bench-press")
         XCTAssertEqual(store.prefill, Prefill(weightKg: 82.5, reps: 5))
 
-        let retargeted = await store.save(87.5, toRoutine: "rt_local", at: 1, for: "bench-press")
+        let heavier = Array(repeating: SetTarget(reps: 5, weightKg: 87.5), count: 5)
+        let retargeted = await store.save(heavier, toRoutine: "rt_local", at: 1, for: "bench-press")
         XCTAssertNil(retargeted)
-        XCTAssertEqual(store.session?.plan?.entry(for: "bench-press")?.weightKg, 82.5,
+        XCTAssertEqual(store.session?.plan?.entry(for: "bench-press")?.sets.first?.weightKg, 82.5,
                        "the snapshot is frozen — a retarget moves next week, never this session")
-        XCTAssertEqual(shelf().routine("rt_local")?.entries.first?.targetWeightKg, 87.5,
+        XCTAssertEqual(shelf().routine("rt_local")?.entries.first?.sets, heavier,
                        "and the local routine did move")
 
-        let stale = await store.save(90, toRoutine: "rt_local", at: 2, for: "bench-press")
+        let stale = await store.save(Array(repeating: SetTarget(reps: 5, weightKg: 90), count: 5),
+                                     toRoutine: "rt_local", at: 2, for: "bench-press")
         XCTAssertEqual(stale, .refused("Push A has changed since this session started"))
-        XCTAssertEqual(shelf().routine("rt_local")?.entries.map(\.targetWeightKg), [87.5])
+        XCTAssertEqual(shelf().routine("rt_local")?.entries.map(\.sets), [heavier])
 
         guard case .failure(.refused(let why)) = await store.start(routineId: "rt_missing") else {
             return XCTFail("a routine this device does not hold cannot open a session")
@@ -831,7 +832,7 @@ final class AnonymousGymTests: XCTestCase {
             return XCTFail("the plan is on this device — the start cannot need the server")
         }
         XCTAssertEqual(opened.plan, PlanSnapshot(routine: "Push A", entries: [
-            PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+            PlanEntry(exerciseId: "bench-press", sets: Array(repeating: SetTarget(reps: 5, weightKg: 82.5), count: 5)),
         ]), "the snapshot froze off the only copy that exists")
         XCTAssertFalse(server.started.contains { $0.routineId == "rt_local" },
                        "no server start named a routine the log has never heard of")

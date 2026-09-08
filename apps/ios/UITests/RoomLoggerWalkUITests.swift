@@ -21,7 +21,7 @@ final class RoomLoggerWalkUITests: XCTestCase {
 
     func testAHorizontalStrokeWalksBetweenMovementsAndTheChevronsAreGone() {
         startOn("Back Squat")
-        addNextMovement("Bench Press")
+        addNextMovement("Bench Press", from: "Back Squat")
 
         XCTAssertFalse(app.buttons["Next movement"].exists, "the chevron is still drawn")
         XCTAssertFalse(app.buttons["Previous movement"].exists, "the chevron is still drawn")
@@ -44,7 +44,7 @@ final class RoomLoggerWalkUITests: XCTestCase {
     // The walk stops at the ends of the order rather than wrapping.
     func testTheWalkStopsAtTheEndsRatherThanWrapping() {
         startOn("Back Squat")
-        addNextMovement("Bench Press")
+        addNextMovement("Bench Press", from: "Back Squat")
         app.swipeRight()
         XCTAssertTrue(title("Back Squat").waitForExistence(timeout: 10))
 
@@ -72,8 +72,10 @@ final class RoomLoggerWalkUITests: XCTestCase {
             .firstMatch.waitForExistence(timeout: 15), "the logger drew no Log set")
     }
 
-    private func addNextMovement(_ movement: String) {
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "no target")).firstMatch.tap()
+    // The head is the movement's name and nothing else on a free session: no target line, and no
+    // position readout until there is a second movement to count.
+    private func addNextMovement(_ movement: String, from current: String) {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", current)).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["This session"].waitForExistence(timeout: 10),
                       "the title opened no jump sheet")
         app.buttons["+ Add next movement"].tap()

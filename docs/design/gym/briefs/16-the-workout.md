@@ -178,9 +178,9 @@ against `LoggerScreen.kt`, top to bottom:
   room; the walk's dots and the `+` sit under that scroller, pinned above a hairline. The rack —
   `Weight`, the ladder, `Reps`, `Log set` — is pinned to the bottom, never scrolls and never shrinks.
 - **The set line is the domain's, capitalised at the draw site.** `Set 2 of 4` (`Set 2` with no
-  count) from `LiveLines.counter`, whose bytes stay `set 2 of 4`; when the plan line carries a rep
-  or load target the tail ` · target 5 @ 82.5` follows in the target ink, and a plan with no target
-  draws no tail — the absence says it. The kind chip shares the line and wraps under it at the
+  count) from `LiveLines.counter`, whose bytes stay `set 2 of 4`; the tail ` · target 3 @ 90` is the
+  **current slot's** — the planned set the coming working set fills (`17-set-targets.md`) — in the
+  target ink, and a slot naming nothing draws no tail — the absence says it. The kind chip shares the line and wraps under it at the
   largest text.
 - **History is a chip, or nothing.** With a last time, an `AssistChip` reads the one matching set —
   last time's Nth working set for the coming Nth, `LiveLines.lastTimeSet` — as `20 kg × 15`; its
@@ -197,12 +197,15 @@ against `LoggerScreen.kt`, top to bottom:
 - **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
   keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs. This is the only
   prose on the screen, and it exists only while something is wrong.
-- **The logged sets are a strip of pills**, one fixed row scrolling sideways: index and `20 × 5`,
-  a warmup in its own ink, a stalled set carrying a cloud-off glyph whose name is *on this device*.
-  Every pill is a door — *fix this set* — to the same `FixSheet` the session screen raises, and a set
-  still owed to the log is fixed or deleted in the queue it waits in (`TrainingStore.fixSet`,
-  `deleteSet`), so the corrected body is what lands. A pill without the cloud is synced: an absence
-  needs no glyph.
+- **The slot strip** (`LiveLines.slots`): one pill per planned set, in order. A landed set reads
+  what was lifted — index and `20 × 5`, a warmup in its own ink where it was logged, a stalled set
+  carrying a cloud-off glyph whose name is *on this device*; the set about to be lifted reads its
+  target in the target ink with the accent outline; the sets still to come read theirs in the faint
+  ink, each spoken as *set {n}, target {load} × {reps}*; a set logged past the plan is a plain landed
+  pill. Every landed pill is a door — *fix this set* — to the same `FixSheet` the session screen
+  raises, and a set still owed to the log is fixed or deleted in the queue it waits in
+  (`TrainingStore.fixSet`, `deleteSet`), so the corrected body is what lands. A planned pill is not
+  a door. A pill without the cloud is synced: an absence needs no glyph.
 - **The walk's dots say their position** — *Movement 1 of 3*, `LiveLines.place` capitalised — and
   are drawn only for a walk of two or more; the `+` beside them is *Add movement*, the free
   session's one way to a next movement, and opens the picker directly.

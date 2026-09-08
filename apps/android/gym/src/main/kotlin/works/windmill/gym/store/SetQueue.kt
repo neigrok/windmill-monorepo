@@ -1,10 +1,10 @@
 package works.windmill.gym.store
 
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.Blocker
@@ -85,13 +85,25 @@ class SetQueue(
     // An unnamed queue is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val text = runCatching { file.readText() }.getOrNull() ?: return Held()
-        val before = runCatching { diskJson.decodeFromString(Queued.serializer(), text) }.getOrNull()
-        if (before != null && !before.isEmpty) {
+        val document = StoredDocument.tree(file) ?: return Held()
+        val before = queued(document)
+        if (!before.isEmpty) {
             migrated = true
             return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
-        return runCatching { diskJson.decodeFromString(Held.serializer(), text) }.getOrElse { Held() }
+        val queues = document["queues"] as? JsonObject ?: return Held()
+        return Held(queues.mapValues { queued(it.value) })
+    }
+
+    // Item by item: a live session or an owed set this build cannot read is the one thing lost.
+    private fun queued(node: JsonElement): Queued {
+        val fields = node as? JsonObject ?: return Queued()
+        return Queued(
+            session = StoredDocument.one(fields["session"], Session.serializer()),
+            entries = StoredDocument.keyed(fields["entries"], Entry.serializer()),
+            order = StoredDocument.each(fields["order"], String.serializer()),
+            unclaimed = StoredDocument.one(fields["unclaimed"], Boolean.serializer()),
+        )
     }
 
     private val mine: Queued get() = held.queues[seat] ?: Queued()
@@ -487,26 +499,4 @@ object Seat {
     const val quarantine = "unattributed"
 
     fun of(owner: String?): String = if (owner == null) anonymous else "u.$owner"
-}
-
-// Unknown keys are tolerated and an absent optional is omitted rather than written as null.
-internal val diskJson = Json {
-    ignoreUnknownKeys = true
-    explicitNulls = false
-}
-
-// Temp file renamed over the old copy, so a crash mid-write leaves the last good file on disk.
-// Failures are swallowed: the memory copy is the truth.
-internal fun writeAtomically(file: File, text: String) {
-    runCatching {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(text)
-        try {
-            Files.move(tmp.toPath(), file.toPath(),
-                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: Exception) {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
-    }
 }

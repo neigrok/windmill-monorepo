@@ -14,8 +14,8 @@ import {
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, restInForce, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
-  sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
-  setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
+  sameSet, schemeAgrees, sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
+  setNoteOf, setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
   threadHref, threadIdOf, THREADS_HREF,
   topSetLabel, topSetOf, UNTESTED, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
@@ -268,23 +268,67 @@ test('NEW_ROUTINE_ID — a routine being written for the first time stands at th
   assert.notEqual(NEW_ROUTINE_ID.slice(0, 3), 'rt_');
 });
 
-test('entryLabel — what a routine asks a movement for, and the two targets it may decline to set', () => {
-  assert.equal(entryLabel({ exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }), '5 × 5 · 82.5');
-  assert.equal(entryLabel({ exerciseId: 'chin-up', targetSets: 3, targetReps: 8 }), '3 × 8');
-  assert.equal(entryLabel({ exerciseId: 'chin-up', targetSets: 3, targetReps: 8, targetWeightKg: 0 }), '3 × 8');
-  assert.equal(entryLabel({ exerciseId: 'pull-up', targetSets: 4, targetReps: 6, targetWeightKg: -20 }), '4 × 6 · −20');
-  assert.equal(entryLabel({ exerciseId: 'chin-up', targetSets: 3 }), '3 × max');
-  assert.equal(entryLabel({ exerciseId: 'chin-up', targetSets: 3, targetReps: null }), '3 × max');
-  assert.equal(entryLabel({ exerciseId: 'dip', targetSets: 3, targetWeightKg: 20 }), '3 × max · 20');
+const RAMP = [
+  { reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 90 },
+  { reps: 1, weightKg: 100 }, { reps: 5, weightKg: 80 },
+];
+
+test('entryLabel — one formula for a scheme, `{n} × {reps} · {load}`, a column that disagrees printing its range', () => {
+  assert.equal(entryLabel({ exerciseId: 'back-squat', sets: RAMP }), '5 × 1–5 · 60–100');
+  assert.equal(entryLabel({ exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }] }), '3 × 8 · 60');
+  assert.equal(entryLabel({ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }, { weightKg: 100 }] }), '3 × 5–max · 100');
+  assert.equal(entryLabel({ exerciseId: 'bench-press', sets: Array.from({ length: 5 }, () => ({ reps: 5, weightKg: 82.5 })) }), '5 × 5 · 82.5');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 12, weightKg: 80 }, { reps: 10, weightKg: 80 }, { reps: 8, weightKg: 80 }] }), '3 × 8–12 · 80');
+  // The dash is an en dash, on every surface.
+  assert.equal(entryLabel({ sets: RAMP }).includes('\u2013'), true);
+  // A load column no set names prints nothing; a rep column no set names prints `max`.
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8 }, { reps: 8 }, { reps: 8 }] }), '3 × 8');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] }), '2 × 8', 'zero is the absence of a load');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{}, {}, {}] }), '3 × max');
+  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ weightKg: 20 }, { weightKg: 20 }, { weightKg: 20 }] }), '3 × max · 20');
+  assert.equal(entryLabel({ exerciseId: 'pull-up', sets: [{ reps: 6, weightKg: -20 }, { reps: 6, weightKg: -20 }] }), '2 × 6 · −20');
+  // A load column some sets name and others leave to last time tops out at `last`, as the phones print it.
+  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ reps: 10, weightKg: 0 }, { reps: 8, weightKg: 20 }] }), '2 × 8–10 · 20–last');
+  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ reps: 8 }, { reps: 8, weightKg: 20 }] }), '2 × 8 · 20–last');
+  // The load is put on the ladder's grid before it is read.
+  assert.equal(entryLabel({ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.504 }, { reps: 5, weightKg: 82.5 }] }), '2 × 5 · 82.5');
 });
 
-test('entryLabel — a line with no set target is open, whatever else is on it', () => {
+test('setReading — one set inside a strip or a ladder is `{load} × {reps}`, its nulls as `last` and `max`', () => {
+  assert.equal(setReading({ reps: 5, weightKg: 100 }), '100 × 5');
+  assert.equal(setReading({ weightKg: 100 }), '100 × max');
+  assert.equal(setReading({ reps: 5 }), 'last × 5');
+  assert.equal(setReading({}), 'last × max');
+  assert.equal(setReading({ reps: 5, weightKg: 0 }), 'last × 5', 'zero is the absence of a load');
+  assert.equal(setReading({ reps: 6, weightKg: -20 }), '−20 × 6');
+});
+
+test('entryLabel — a scheme of one set is still a scheme, and takes the formula', () => {
+  assert.equal(entryLabel({ exerciseId: 'deadlift', sets: [{ reps: 5, weightKg: 100 }] }), '1 × 5 · 100');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{}] }), '1 × max');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8 }] }), '1 × 8');
+  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ weightKg: 20 }] }), '1 × max · 20');
+  assert.equal(entryLabel({ exerciseId: 'pull-up', sets: [{ reps: 6, weightKg: -20 }] }), '1 × 6 · −20');
+});
+
+test('entryLabel — a line with no sets is open, whatever else is on it', () => {
   assert.equal(entryLabel({ exerciseId: 'barbell-row' }), 'open');
-  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetSets: null }), 'open');
+  assert.equal(entryLabel({ exerciseId: 'barbell-row', sets: null }), 'open');
   assert.equal(entryLabel({ exerciseId: 'barbell-row', restSeconds: 120 }), 'open');
-  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetReps: 5, targetWeightKg: 70 }), 'open');
   assert.equal(OPEN_TARGET, 'open');
-  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetSets: 0, targetReps: 5 }), '0 × 5');
+});
+
+test('sameSet and schemeAgrees — element-wise after the ladder’s rounding, and zero is not absence here', () => {
+  assert.equal(sameSet({ reps: 5, weightKg: 80 }, { reps: 5, weightKg: 80.004 }), true);
+  assert.equal(sameSet({ reps: 5, weightKg: 80 }, { reps: 5, weightKg: 82.5 }), false);
+  assert.equal(sameSet({ reps: 5 }, { reps: 5, weightKg: null }), true);
+  assert.equal(sameSet({ reps: 5 }, { reps: 5, weightKg: 0 }), false);
+  assert.equal(sameSet({ weightKg: 80 }, { reps: null, weightKg: 80 }), true);
+  assert.equal(sameSet({ reps: 5, weightKg: 80 }, { weightKg: 80 }), false);
+  assert.equal(schemeAgrees(RAMP), false);
+  assert.equal(schemeAgrees([{ reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }]), true);
+  assert.equal(schemeAgrees([{ reps: 5, weightKg: 100 }]), true);
+  assert.equal(schemeAgrees([{}, {}]), true);
 });
 
 test('the name cap is one number, under the store’s own, and the counter counts the field', () => {
@@ -451,7 +495,9 @@ test('fmt spells the account’s unit, and fmtKg spells the one the store holds'
 
   assert.equal(setLoadLabel({ weightKg: 102.5, reps: 5 }), '226 × 5');
   assert.equal(topSetLabel({ weightKg: 100, reps: 3 }), '220.5 × 3');
-  assert.equal(entryLabel({ targetSets: 5, targetReps: 5, targetWeightKg: 102.5 }), '5 × 5 · 226');
+  assert.equal(entryLabel({ sets: [{ reps: 5, weightKg: 102.5 }, { reps: 5, weightKg: 102.5 }] }), '2 × 5 · 226');
+  assert.equal(entryLabel({ sets: [{ reps: 5, weightKg: 60 }, { reps: 1, weightKg: 100 }] }), '2 × 1–5 · 132.3–220.5');
+  assert.equal(setReading({ reps: 1, weightKg: 100 }), '220.5 × 1');
 });
 
 test('a kilogram field over a pounds reading says what the other numeral is', (t) => {
@@ -747,17 +793,21 @@ test('planReadingOf — the target, the movement nobody planned, and the plan th
     plan: {
       routine: 'Push A',
       entries: [
-        { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 },
-        { exerciseId: 'overhead-press', sets: 5, reps: 5 },
+        { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }], restSeconds: 180 },
+        { exerciseId: 'overhead-press', sets: [{ reps: 5 }, { reps: 5 }] },
+        { exerciseId: 'back-squat', sets: RAMP },
+        { exerciseId: 'face-pull' },
       ],
     },
   };
   assert.deepEqual(planReadingOf(session, 'bench-press'), {
     kind: 'planned',
-    line: 'plan 5 × 5 · 82.5',
-    entry: { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 },
+    line: 'plan 2 × 5 · 82.5',
+    entry: { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }], restSeconds: 180 },
   });
-  assert.equal(planReadingOf(session, 'overhead-press').line, 'plan 5 × 5');
+  assert.equal(planReadingOf(session, 'overhead-press').line, 'plan 2 × 5');
+  assert.equal(planReadingOf(session, 'back-squat').line, 'plan 5 × 1–5 · 60–100');
+  assert.deepEqual(planReadingOf(session, 'face-pull'), { kind: 'planned', line: 'plan open', entry: { exerciseId: 'face-pull' } });
   assert.deepEqual(planReadingOf(session, 'chin-up'), { kind: 'added', line: NOT_IN_PLAN, entry: null });
   assert.equal(NOT_IN_PLAN, 'not in the plan');
 
@@ -766,8 +816,8 @@ test('planReadingOf — the target, the movement nobody planned, and the plan th
     plan: {
       routine: 'Squat day',
       entries: [
-        { exerciseId: 'back-squat', sets: 3, reps: 3, weightKg: 140 },
-        { exerciseId: 'back-squat', sets: 3, reps: 8, weightKg: 100 },
+        { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 140 }] },
+        { exerciseId: 'back-squat', sets: [{ reps: 8, weightKg: 100 }] },
       ],
     },
   };
@@ -778,60 +828,105 @@ test('planReadingOf — the target, the movement nobody planned, and the plan th
   const unreadable = { kind: 'unplanned', line: null, entry: null };
   assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: {} } }, 'bench-press'), unreadable);
   assert.deepEqual(planReadingOf({ plan: { routine: 'Push A' } }, 'bench-press'), unreadable);
-  assert.deepEqual(planReadingOf({ plan: [{ exerciseId: 'bench-press', sets: 5 }] }, 'bench-press'), unreadable);
+  assert.deepEqual(planReadingOf({ plan: [{ exerciseId: 'bench-press', sets: [{}] }] }, 'bench-press'), unreadable);
   assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'bench-press'), {
     kind: 'added', line: NOT_IN_PLAN, entry: null,
   });
 });
 
 test('setNoteOf — one word per set, and never a grade', () => {
-  const planned = planReadingOf({
-    plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 }] },
-  }, 'bench-press');
+  const straight = (reps, weightKg) => ({ plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{ reps, weightKg }, { reps, weightKg }] }] } });
+  const planned = planReadingOf(straight(5, 82.5), 'bench-press');
   const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
 
-  assert.equal(setNoteOf(set('working', 82.5, 5), planned, false), 'on plan');
-  assert.equal(setNoteOf(set('working', 82.5, 3), planned, false), 'two short');
-  assert.equal(setNoteOf(set('working', 82.5, 4), planned, false), 'one short');
-  assert.equal(setNoteOf(set('working', 85, 5), planned, false), '+2.5 over plan');
-  assert.equal(setNoteOf(set('working', 100, 5), planned, false), '+17.5 over plan');
-  assert.equal(setNoteOf(set('working', 85, 3), planned, false), '+2.5 over plan');
-  assert.equal(setNoteOf(set('working', 70, 5), planned, false), null);
-  assert.equal(setNoteOf(set('working', 70, 3), planned, false), 'two short');
-  assert.equal(setNoteOf(set('working', 82.5, 0), { ...planned, entry: { ...planned.entry, reps: 12 } }, false), '12 short');
+  assert.equal(setNoteOf(set('working', 82.5, 5), planned, 1), 'on plan');
+  assert.equal(setNoteOf(set('working', 82.5, 3), planned, 1), 'two short');
+  assert.equal(setNoteOf(set('working', 82.5, 4), planned, 1), 'one short');
+  assert.equal(setNoteOf(set('working', 85, 5), planned, 1), '+2.5 over plan');
+  assert.equal(setNoteOf(set('working', 100, 5), planned, 1), '+17.5 over plan');
+  assert.equal(setNoteOf(set('working', 85, 3), planned, 1), '+2.5 over plan');
+  assert.equal(setNoteOf(set('working', 70, 5), planned, 1), null);
+  assert.equal(setNoteOf(set('working', 70, 3), planned, 1), 'two short');
+  assert.equal(setNoteOf(set('working', 82.5, 0), planReadingOf(straight(12, 82.5), 'bench-press'), 1), '12 short');
+  // A set past the plan is measured against nothing.
+  assert.equal(setNoteOf(set('working', 85, 5), planned, 2), null);
 
-  assert.equal(setNoteOf(set('warmup', 40, 8), planned, true), 'warmup');
-  assert.equal(setNoteOf(set('drop', 60, 8), planned, false), 'drop');
-  assert.equal(setNoteOf(set('failure', 82.5, 1), planned, false), 'failure');
+  assert.equal(setNoteOf(set('warmup', 40, 8), planned, 0), 'warmup');
+  assert.equal(setNoteOf(set('drop', 60, 8), planned, -1), 'drop');
+  assert.equal(setNoteOf(set('failure', 82.5, 1), planned, 1), 'failure');
 
   const added = planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'chin-up');
-  assert.equal(setNoteOf(set('working', 0, 9), added, true), 'added today');
-  assert.equal(setNoteOf(set('working', 0, 7), added, false), null);
+  assert.equal(setNoteOf(set('working', 0, 9), added, 0), 'added today');
+  assert.equal(setNoteOf(set('working', 0, 7), added, 1), null);
 
-  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'ambiguous', line: null, entry: null }, true), null);
-  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'unplanned', line: null, entry: null }, true), null);
+  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'ambiguous', line: null, entry: null }, 0), null);
+  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'unplanned', line: null, entry: null }, 0), null);
 
-  const toMax = planReadingOf({
-    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3 }] },
-  }, 'chin-up');
+  const toMax = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{}, {}, {}] }] } }, 'chin-up');
   assert.equal(toMax.line, 'plan 3 × max');
-  assert.equal(setNoteOf(set('working', 0, 9), toMax, true), null);
-  assert.equal(setNoteOf(set('working', 5, 9), toMax, true), null);
+  assert.equal(setNoteOf(set('working', 0, 9), toMax, 0), null);
+  assert.equal(setNoteOf(set('working', 5, 9), toMax, 0), null);
 
-  const bodyweight = planReadingOf({
-    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3, reps: 9, weightKg: 0 }] },
-  }, 'chin-up');
-  assert.equal(bodyweight.line, 'plan 3 × 9');
-  assert.equal(setNoteOf(set('working', 0, 9), bodyweight, true), null);
-  assert.equal(setNoteOf(set('working', 5, 9), bodyweight, true), null);
-  assert.equal(setNoteOf(set('working', 0, 7), bodyweight, false), 'two short');
+  const bodyweight = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{ reps: 9, weightKg: 0 }, { reps: 9, weightKg: 0 }] }] } }, 'chin-up');
+  assert.equal(bodyweight.line, 'plan 2 × 9');
+  assert.equal(setNoteOf(set('working', 0, 9), bodyweight, 0), null);
+  assert.equal(setNoteOf(set('working', 5, 9), bodyweight, 0), null);
+  assert.equal(setNoteOf(set('working', 0, 7), bodyweight, 1), 'two short');
 
-  const assisted = planReadingOf({
-    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3, reps: 6, weightKg: -20 }] },
-  }, 'chin-up');
-  assert.equal(assisted.line, 'plan 3 × 6 · −20');
-  assert.equal(setNoteOf(set('working', -20, 6), assisted, true), 'on plan');
-  assert.equal(setNoteOf(set('working', -10, 6), assisted, true), '+10 over plan');
+  const assisted = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{ reps: 6, weightKg: -20 }] }] } }, 'chin-up');
+  assert.equal(assisted.line, 'plan 1 × 6 · −20');
+  assert.equal(setNoteOf(set('working', -20, 6), assisted, 0), 'on plan');
+  assert.equal(setNoteOf(set('working', -10, 6), assisted, 0), '+10 over plan');
+});
+
+test('setNoteOf — on a scheme whose sets disagree, the Nth working set is measured against the Nth slot', () => {
+  const ramp = planReadingOf({ plan: { routine: 'Lower A', entries: [{ exerciseId: 'back-squat', sets: RAMP }] } }, 'back-squat');
+  const set = (weightKg, reps) => ({ kind: 'working', weightKg, reps });
+  assert.equal(setNoteOf(set(60, 5), ramp, 0), 'on plan');
+  assert.equal(setNoteOf(set(80, 5), ramp, 1), 'on plan');
+  assert.equal(setNoteOf(set(90, 3), ramp, 2), 'on plan');
+  assert.equal(setNoteOf(set(102.5, 1), ramp, 3), '+2.5 over plan');
+  assert.equal(setNoteOf(set(80, 4), ramp, 4), 'one short');
+  assert.equal(setNoteOf(set(80, 5), ramp, 5), null, 'a sixth set has no slot');
+  // The same 80 × 5 is on plan in slot 2 and over plan in slot 1: the slot decides, not the load.
+  assert.equal(setNoteOf(set(80, 5), ramp, 0), '+20 over plan');
+  assert.equal(setNoteOf({ kind: 'warmup', weightKg: 40, reps: 8 }, ramp, -1), 'warmup');
+});
+
+test('slotRows — the slot strip as rows: what was lifted, then the slots still to come', () => {
+  const entry = { exerciseId: 'back-squat', sets: RAMP, restSeconds: 180 };
+  const logged = (id, weightKg, reps, kind = 'working') => ({ id, exerciseId: 'back-squat', weightKg, reps, kind });
+  // The rack fixture: sets 1 and 2 landed as planned, set 3 current.
+  assert.deepEqual(slotRows([logged('set_1', 60, 5), logged('set_2', 80, 5)], entry), [
+    { key: 'set_1', kind: 'lifted', label: '60 × 5' },
+    { key: 'set_2', kind: 'lifted', label: '80 × 5' },
+    { key: 'slot-3', kind: 'target', label: '90 × 3', spoken: 'set 3, target 90 × 3' },
+    { key: 'slot-4', kind: 'target', label: '100 × 1', spoken: 'set 4, target 100 × 1' },
+    { key: 'slot-5', kind: 'target', label: '80 × 5', spoken: 'set 5, target 80 × 5' },
+  ]);
+  // Warmups stand before slot 1 wearing their kind, and a set logged past the plan appends as lifted.
+  assert.deepEqual(slotRows([
+    logged('set_0', 40, 8, 'warmup'), logged('set_1', 60, 5), logged('set_2', 80, 5), logged('set_3', 90, 3),
+    logged('set_4', 102.5, 1), logged('set_5', 80, 5), logged('set_6', 80, 5), logged('set_7', 60, 10, 'drop'),
+  ], entry), [
+    { key: 'set_0', kind: 'warmup', label: '40 × 8 (warmup)' },
+    { key: 'set_7', kind: 'warmup', label: '60 × 10 (drop)' },
+    { key: 'set_1', kind: 'lifted', label: '60 × 5' },
+    { key: 'set_2', kind: 'lifted', label: '80 × 5' },
+    { key: 'set_3', kind: 'lifted', label: '90 × 3' },
+    { key: 'set_4', kind: 'lifted', label: '102.5 × 1' },
+    { key: 'set_5', kind: 'lifted', label: '80 × 5' },
+    { key: 'set_6', kind: 'lifted', label: '80 × 5' },
+  ]);
+  // Nothing landed yet: the whole scheme to come, its nulls spoken as their words.
+  assert.deepEqual(slotRows([], { exerciseId: 'chin-up', sets: [{ weightKg: 20 }, { reps: 5 }] }), [
+    { key: 'slot-1', kind: 'target', label: '20 × max', spoken: 'set 1, target 20 × max' },
+    { key: 'slot-2', kind: 'target', label: 'last × 5', spoken: 'set 2, target last × 5' },
+  ]);
+  // No plan, or an open line: only what was lifted.
+  assert.deepEqual(slotRows([logged('set_1', -20, 6)], null), [{ key: 'set_1', kind: 'lifted', label: '−20 × 6' }]);
+  assert.deepEqual(slotRows([logged('set_1', 60, 5)], { exerciseId: 'back-squat' }), [{ key: 'set_1', kind: 'lifted', label: '60 × 5' }]);
+  assert.deepEqual(slotRows([], null), []);
 });
 
 test('setLoadLabel — what a set was, in the one spelling a weight has here', () => {
@@ -844,10 +939,10 @@ test('setLoadLabel — what a set was, in the one spelling a weight has here', (
 test('restInForce — the routine entry’s own rest wins over the dial and says so; the dial is silent about where it came from', () => {
   const session = {
     plan: { routine: 'Push A', entries: [
-      { exerciseId: 'bench-press', targetSets: 5, restSeconds: 180 },
-      { exerciseId: 'dip', targetSets: 3 },
-      { exerciseId: 'row', targetSets: 3, restSeconds: 90 },
-      { exerciseId: 'row', targetSets: 3, restSeconds: 60 },
+      { exerciseId: 'bench-press', sets: [{ reps: 5 }], restSeconds: 180 },
+      { exerciseId: 'dip', sets: [{}, {}, {}] },
+      { exerciseId: 'row', sets: [{ reps: 8 }], restSeconds: 90 },
+      { exerciseId: 'row', sets: [{ reps: 8 }], restSeconds: 60 },
     ] },
   };
   assert.deepEqual(restInForce(session, 'bench-press', 120), { seconds: 180, fromRoutine: true });

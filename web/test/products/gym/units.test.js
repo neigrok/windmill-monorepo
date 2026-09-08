@@ -99,7 +99,7 @@ test('every field a lifter types into spells the kilogram, not the reading', () 
   // The target sheet's field is text the lifter types over: it is spelled by String and by nothing
   // else, so no transform can reach it on the way in or out.
   assert.equal(/\bfmt\(|inDisplayUnit|fromDisplayUnit/.test(read('routines.js')), false);
-  assert.equal(read('routines.js').includes("weight: entry.targetWeightKg == null ? '' : String(entry.targetWeightKg),"), true);
+  assert.equal(read('routines.js').includes("weight: set.weightKg == null ? '' : String(set.weightKg),"), true);
   assert.equal(/\bfmt\(/.test(read('Routines.jsx')), false);
 });
 

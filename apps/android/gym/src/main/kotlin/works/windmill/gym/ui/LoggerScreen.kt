@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -113,7 +114,8 @@ import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LoggerWalk
-import works.windmill.gym.domain.PlanEntry
+import works.windmill.gym.domain.Scheme
+import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
@@ -126,7 +128,7 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // The live training screen. Two regions: the READING region (name, set line, history, the
-// logged strip, the walk's dots) is the one elastic part and scrolls only when the largest text
+// slot strip, the walk's dots) is the one elastic part and scrolls only when the largest text
 // leaves it no room; the RACK (Weight, the ladder, Reps, Log set) is pinned to the bottom and never
 // moves, because it is what a hand with a bar in it presses forty times.
 //
@@ -294,7 +296,8 @@ fun LoggerScreen(
         val counter = LiveLines.counter(workingToday, store.planEntry)
         val at = store.order.indexOf(movement)
         val name = Readout.movement(movement, store.catalog)
-        val rows = LiveLines.rows(today, store.stalled)
+        val slots = LiveLines.slots(today, store.planEntry, store.stalled)
+        val landed = slots.count { it is LiveLines.Slot.Landed }
         val history = store.lastTime
         val historyCard = LiveLines.prefillCard(
             history, routine = store.session?.plan?.routine,
@@ -323,7 +326,7 @@ fun LoggerScreen(
                 ) {
                     MovementHead(
                         name = name,
-                        setLine = setLine(counter, store.planEntry),
+                        setLine = setLine(counter, Scheme.slot(store.planEntry?.sets.orEmpty(), workingToday)),
                         kind = kind,
                         onKind = { kind = it },
                         previous = if (at < 0) null else store.order.getOrNull(at - 1),
@@ -360,14 +363,14 @@ fun LoggerScreen(
                     }
                     StrandedBand(store.strandedCount, store.strandedBy)
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
-                    if (rows.isNotEmpty()) {
-                        LoggedStrip(rows, strip, onFix = { sheet = LoggerSheet.Fix(it) })
+                    if (slots.isNotEmpty()) {
+                        SlotStrip(slots, landed, strip, onFix = { sheet = LoggerSheet.Fix(it) })
                     }
                 }
                 // The strip is the scroller's last row: where the largest text overflows the region, a
                 // landed set brings its own pill into view rather than leaving it under the dots. The
                 // frame is waited for so the reach is the one this set's layout produced.
-                LaunchedEffect(rows.size) {
+                LaunchedEffect(landed) {
                     withFrameNanos {}
                     reading.animateScrollTo(reading.maxValue)
                 }
@@ -455,7 +458,7 @@ fun LoggerScreen(
                         close()
                         say(null)
                         scope.launch {
-                            val why = store.save(open.offer.liftedKg, toRoutine = open.offer.routineId,
+                            val why = store.save(open.offer.proposed, toRoutine = open.offer.routineId,
                                                  atPosition = open.offer.position,
                                                  forExercise = open.offer.exerciseId)
                             if (why != null) say(why.line("${open.offer.routine} wasn’t changed"))
@@ -497,15 +500,15 @@ fun LoggerScreen(
     }
 }
 
-// `Set 2 of 4` — the domain's `set 2 of 4`, capitalised here — and, when the plan line carries a rep
-// or load target, ` · target 5 @ 82.5` in the target ink. A plan with no target draws no tail: the
-// absence says it.
-private fun setLine(count: String, planEntry: PlanEntry?) = buildAnnotatedString {
+// `Set 3 of 5` — the domain's `set 3 of 5`, capitalised here — and, when the CURRENT slot names a
+// rep or load target, ` · target 3 @ 90` in the target ink. No slot, or one naming neither, draws
+// no tail: the absence says it.
+private fun setLine(count: String, slot: SetTarget?) = buildAnnotatedString {
     append(count.replaceFirstChar { it.uppercase() })
-    val load = planEntry?.weightKg?.takeIf { it != 0.0 }
-    if (planEntry == null || (planEntry.reps == null && load == null)) return@buildAnnotatedString
+    val load = slot?.weightKg?.takeIf { it != 0.0 }
+    if (slot == null || (slot.reps == null && load == null)) return@buildAnnotatedString
     withStyle(SpanStyle(color = GymSkin.targetInk)) {
-        append(" · target ${Readout.repTarget(planEntry.reps)}")
+        append(" · target ${Readout.repTarget(slot.reps)}")
         load?.let { append(" @ ${Readout.weight(it)}") }
     }
 }
@@ -717,31 +720,56 @@ private fun StrandedBand(count: Int, by: Blocker?) {
     }
 }
 
-// One fixed 32dp of pills that scrolls sideways, the thing you look at right after the set landed.
-// A pill is the drawn, named door to the fix (Law 1); a pill without the cloud is synced,
-// and the cloud says the exception — an absence needs no glyph.
+// One fixed 32dp of pills that scrolls sideways — the slot strip, the thing you look at right after
+// the set landed: every set that landed, then the plan's slots still to come, the current one first.
+// A landed pill is the drawn, named door to the fix (Law 1); a pill without the cloud is synced,
+// and the cloud says the exception — an absence needs no glyph. A planned pill is no door: there is
+// nothing to fix yet. A landed set brings the CURRENT slot into view — by the least scroll that
+// shows it whole, never to the leading edge, so the sets already lifted stay on the strip beside it.
 @Composable
-private fun LoggedStrip(rows: List<LiveLines.Row>, state: LazyListState, onFix: (String) -> Unit) {
-    LaunchedEffect(rows.size) { state.animateScrollToItem(rows.size - 1) }
+private fun SlotStrip(slots: List<LiveLines.Slot>, landed: Int, state: LazyListState, onFix: (String) -> Unit) {
+    LaunchedEffect(landed) {
+        val current = slots.indexOfFirst { it is LiveLines.Slot.Planned && it.current }
+        val wanted = if (current < 0) slots.lastIndex else current
+        val info = state.layoutInfo
+        val shown = info.visibleItemsInfo.firstOrNull { it.index == wanted }
+        if (shown == null) {
+            state.animateScrollToItem(wanted)
+            return@LaunchedEffect
+        }
+        val past = shown.offset + shown.size - info.viewportEndOffset
+        val before = info.viewportStartOffset - shown.offset
+        if (past > 0) state.animateScrollBy(past.toFloat())
+        else if (before > 0) state.animateScrollBy(-before.toFloat())
+    }
     LazyRow(
         state = state,
         modifier = Modifier.fillMaxWidth().height(32.dp),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
     ) {
-        items(rows, key = { it.id }) { row ->
-            SetPill(
-                row, onFix,
-                Modifier.animateItem(
-                    fadeInSpec = tween(WindmillMotion.baseMs, easing = WindmillMotion.easeSoft),
-                    placementSpec = tween(WindmillMotion.baseMs, easing = WindmillMotion.easeSoft),
-                    fadeOutSpec = tween(WindmillMotion.fastMs),
-                ),
+        items(
+            slots,
+            key = { slot ->
+                when (slot) {
+                    is LiveLines.Slot.Landed -> slot.row.id
+                    is LiveLines.Slot.Planned -> "slot-${slot.index}"
+                }
+            },
+        ) { slot ->
+            val settling = Modifier.animateItem(
+                fadeInSpec = tween(WindmillMotion.baseMs, easing = WindmillMotion.easeSoft),
+                placementSpec = tween(WindmillMotion.baseMs, easing = WindmillMotion.easeSoft),
+                fadeOutSpec = tween(WindmillMotion.fastMs),
             )
+            when (slot) {
+                is LiveLines.Slot.Landed -> SetPill(slot.row, onFix, settling)
+                is LiveLines.Slot.Planned -> PlannedPill(slot, settling)
+            }
         }
     }
 }
 
-// Every pill is a door: a set still on this device is fixed in the queue it waits in, so the
+// Every landed pill is a door: a set still on this device is fixed in the queue it waits in, so the
 // corrected body is what lands.
 @Composable
 private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -767,6 +795,28 @@ private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modif
             Icon(cloudOffGlyph, contentDescription = LiveLines.onThisDevice, tint = GymSkin.unsyncedInk,
                  modifier = Modifier.size(14.dp))
         }
+    }
+}
+
+// A slot still to come reads its target: the set about to be lifted in the target ink behind the
+// accent outline, the ones after it in the faint ink. Spoken as `set 4, target 100 × 1`.
+@Composable
+private fun PlannedPill(slot: LiveLines.Slot.Planned, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(WindmillRadius.full)
+    Row(
+        modifier
+            .height(32.dp)
+            .clip(shape)
+            .background(GymSkin.surface)
+            .border(1.dp, if (slot.current) GymSkin.accent else GymSkin.line, shape)
+            .semantics(mergeDescendants = true) { contentDescription = slot.spoken }
+            .padding(horizontal = GymLayout.rowInset),
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(slot.index.toString(), style = MaterialTheme.typography.labelMedium, color = GymSkin.inkFaint)
+        Text(slot.value, style = MaterialTheme.typography.labelMedium,
+             color = if (slot.current) GymSkin.targetInk else GymSkin.inkFaint)
     }
 }
 

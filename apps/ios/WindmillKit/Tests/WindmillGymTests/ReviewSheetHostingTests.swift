@@ -34,8 +34,8 @@ final class ReviewSheetHostingTests: XCTestCase {
     private func proposal(rows: Int) -> Proposal {
         let changes = (1...rows).map { position in
             ProposalChange(position: position, kind: .retargeted, exerciseId: "movement-\(position)",
-                           before: ProposalChange.Targets(sets: 5, reps: 5, weightKg: 80),
-                           after: ProposalChange.Targets(sets: 5, reps: 3, weightKg: 90))
+                           before: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 5)),
+                           after: ProposalChange.Targets(sets: Array(repeating: SetTarget(reps: 3, weightKg: 90), count: 5)))
         }
         return Proposal(head: ProposalHead(id: "prop_1", routineId: "rt_1", summary: "Heavier triples.",
                                            changeCount: rows, createdAtMs: 1, source: ProposalSource(door: "ask")),
@@ -134,9 +134,13 @@ final class ReviewSheetHostingTests: XCTestCase {
     }
 
     private func host(rows: Int, height: CGFloat, slow: Bool = false) async -> UIWindow {
+        await host(proposal(rows: rows), height: height, slow: slow)
+    }
+
+    private func host(_ proposal: Proposal, height: CGFloat, slow: Bool = false) async -> UIWindow {
         let server = FakeTraining()
         server.written["rt_1"] = Routine(id: "rt_1", name: "Push A", position: 0, entries: [])
-        server.ledger = [proposal(rows: rows)]
+        server.ledger = [proposal]
         let store = makeStore(sync: slow ? SlowProposalTraining(server) : server)
         await store.connect(to: Account(api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
                                         user: User(id: "u1", email: "u1@example.com", name: "u1")))
@@ -242,6 +246,58 @@ final class ReviewSheetHostingTests: XCTestCase {
         XCTAssertEqual(fitted(routine: sixty, agent: "Claude", width: 393).height,
                        fitted(routine: "Push A", agent: "Claude", width: 393).height,
                        "a name typed to its cap truncates rather than growing the card by a line")
+    }
+
+    // R10 · a retargeted row whose scheme changed shape draws the compact readout folded, and the
+    // ladder — one row per set — only once the line is tapped. The tap cannot be driven here: a
+    // hosted SwiftUI tree hands UIKit no accessibility elements while the accessibility runtime is
+    // off, and a SwiftUI button is no UIKit view to touch. So the sheet is hosted to prove the card
+    // renders, and the two states are read off the rows' own models — the line's `spoken`, the
+    // ladder's `rows` — with the fold pinned off the source.
+    func testAShapeChangeDrawsTheReadoutFoldedAndTheLadderOnTap() async throws {
+        let straight = Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 3)
+        let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
+                    SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
+                    SetTarget(reps: 5, weightKg: 80)]
+        let change = ProposalChange(position: 1, kind: .retargeted, exerciseId: "back-squat",
+                                    before: ProposalChange.Targets(sets: straight),
+                                    after: ProposalChange.Targets(sets: ramp))
+        let lowerA = Proposal(
+            head: ProposalHead(id: "prop_1", routineId: "rt_1", summary: "Ramp the squat.",
+                               changeCount: 1, createdAtMs: 1, source: ProposalSource(door: "ask")),
+            baseRevision: 1, baseName: "Lower A", name: "Lower A", changes: [change])
+        let window = await host(lowerA, height: 800)
+        let scroll = try XCTUnwrap(scrollView(in: window))
+        XCTAssertGreaterThan(scroll.contentSize.height, 0, "the card never drew")
+        XCTAssertEqual(navigationBar(in: window)?.topItem?.title, "Proposal · Lower A")
+        window.isHidden = true
+
+        let moved = try XCTUnwrap(change.moves.first)
+        let ladder = try XCTUnwrap(moved.unfolded)
+        XCTAssertEqual(MoveLine(field: moved.field, before: moved.before, after: moved.after).spoken,
+                       "sets · 3 × 8 · 60 → 5 × 1–5 · 60–100")
+        XCTAssertEqual(LadderLines(before: ladder.before, after: ladder.after).rows.map(\.spoken), [
+            "set 1 · 60 × 8 → 60 × 5",
+            "set 2 · 60 × 8 → 80 × 5",
+            "set 3 · 60 × 8 → 90 × 3",
+            "set 4 · — → 100 × 1",
+            "set 5 · — → 80 × 5",
+        ])
+
+        let screen = try gymSource("ReviewSheet.swift")
+        XCTAssertTrue(screen.contains("@State private var unfolded: Set<String> = []"), "folded by default")
+        let move = try XCTUnwrap(screen.range(of: "private func move(_ moved: ProposalChange.Move, at position: Int)"))
+        let body = screen[move.upperBound...]
+        let key = try XCTUnwrap(body.range(of: "let key = \"\\(position)-\\(moved.field)\""))
+        let toggle = try XCTUnwrap(body.range(of: "if open { unfolded.remove(key) } else { unfolded.insert(key) }",
+                                              range: key.upperBound..<body.endIndex))
+        let drawn = try XCTUnwrap(body.range(of: "if open {\n                LadderLines(before: ladder.before, after: ladder.after)",
+                                             range: toggle.upperBound..<body.endIndex))
+        XCTAssertNotNil(body.range(of: ".accessibilityHint(open ? Self.foldsTheLadder : Self.showsTheLadder)",
+                                   range: toggle.upperBound..<drawn.lowerBound),
+                        "the line says which way the next tap goes")
+        XCTAssertEqual(ReviewSheet.showsTheLadder, "Shows the sets one by one")
+        XCTAssertEqual(ReviewSheet.foldsTheLadder, "Folds the sets away")
     }
 
     // The review's title and its Close are the navigation bar's; Apply stays in the band under the diff.

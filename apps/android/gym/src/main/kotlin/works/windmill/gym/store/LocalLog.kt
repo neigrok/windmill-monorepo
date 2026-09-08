@@ -2,6 +2,8 @@ package works.windmill.gym.store
 
 import java.io.File
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.Session
@@ -52,13 +54,25 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     // An unnamed shelf is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val text = runCatching { file.readText() }.getOrNull() ?: return Held()
-        val before = runCatching { diskJson.decodeFromString(Shelf.serializer(), text) }.getOrNull()
-        if (before != null && !before.isEmpty) {
+        val document = StoredDocument.tree(file) ?: return Held()
+        val before = shelf(document)
+        if (!before.isEmpty) {
             migrated = true
             return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
-        return runCatching { diskJson.decodeFromString(Held.serializer(), text) }.getOrElse { Held() }
+        val shelves = document["shelves"] as? JsonObject ?: return Held()
+        return Held(shelves.mapValues { shelf(it.value) })
+    }
+
+    // Row by row: a movement, a routine or a finished session this build cannot read is the one
+    // thing lost.
+    private fun shelf(node: JsonElement): Shelf {
+        val fields = node as? JsonObject ?: return Shelf()
+        return Shelf(
+            exercises = StoredDocument.each(fields["exercises"], Exercise.serializer()),
+            routines = StoredDocument.each(fields["routines"], Routine.serializer()),
+            finished = StoredDocument.each(fields["finished"], FinishedSession.serializer()),
+        )
     }
 
     private val mine: Shelf get() = held.shelves[seat] ?: Shelf()

@@ -373,10 +373,10 @@ test('a change that came from a conversation offers it, and one with none offers
   assert.equal(proposals.includes('href={threadHref(conversationOf(proposal.source))}'), true);
 });
 
-test('the “added today” note is offered to the first working set of a movement', () => {
+test('a set is measured against the slot its place among the working sets names', () => {
   const source = read('Log.jsx');
-  assert.equal(source.includes("const opener = group.find((set) => set.kind === 'working');"), true);
-  assert.equal(source.includes('setNoteOf(set, reading, set === opener)'), true);
+  assert.equal(source.includes("const working = group.filter((set) => set.kind === 'working');"), true);
+  assert.equal(source.includes('setNoteOf(set, reading, working.indexOf(set))'), true);
   assert.equal(source.includes('index === 0'), false);
 });
 
@@ -1101,14 +1101,14 @@ test('the ladder and the keypad are rack controls: off the target sheet, kept on
   assert.equal(/\d\.\d/.test(speech('Routines.jsx').replace(/strokeWidth=\{[\d.]+\}/g, '')), false);
 });
 
-test('the target sheet is three typed fields, each saying what empty means, and one refusal at a time', () => {
+test('the target sheet is a head and a ladder of typed fields, each saying what empty means, and one refusal at a time', () => {
   const source = read('Routines.jsx');
   assert.equal(source.includes('placeholder={OPEN_PLACEHOLDER}'), true);
   assert.equal(source.includes('placeholder={MAX_PLACEHOLDER}'), true);
   assert.equal(source.includes('placeholder={LAST_TIME_PLACEHOLDER}'), true);
   assert.equal(source.includes("inputMode=\"decimal\""), true);
-  assert.equal((source.match(/<Input/g) ?? []).length, 4, 'the name field and the sheet’s three');
-  assert.equal(source.includes("const refusalFor = (field) => (refusal?.field === field ? refusal.message : undefined);"), true);
+  assert.equal((source.match(/<Input/g) ?? []).length, 6, 'the name field, the head’s three and a ladder row’s two');
+  assert.equal(source.includes("const rowRefusal = (index, field) => (refusal?.row === index && refusal.field === field ? refusal.message : undefined);"), true);
   // Both separators are read and the field shows what was typed, so no note explains the decimal.
   assert.equal(source.includes('DECIMAL_NOTE'), false);
   assert.equal(source.includes('gym-target-decimal'), false);
@@ -1117,26 +1117,25 @@ test('the target sheet is three typed fields, each saying what empty means, and 
     assert.equal(source.includes(gone), false, gone);
   }
   assert.equal(source.includes('onOpen'), false, 'there is no second verb to leave a line open');
-  // The refused clear keeps the field's value and its SELECTION, or backspace-then-retype — the way a
-  // one-digit number is changed on a phone — would append to the digit that never left.
-  assert.equal(source.includes('input.value = next.sets;'), true);
-  assert.equal(source.includes('input.setSelectionRange(0, next.sets.length);'), true);
+  // Clearing Sets is never refused now: the other two fields go inert and the ladder is hidden, not
+  // thrown away, so nothing has to keep a value the lifter tried to delete.
+  assert.equal(/clearRefused|setSelectionRange/.test(source), false);
+  assert.equal(source.includes('<fieldset className="gym-target-head" disabled={open}>'), true);
+  assert.equal(source.includes('{!open && ('), true, 'the ladder is not drawn while the line is open');
   // The sheet's Save-side twin: the head's commit is a reach-band-sized control like the field beside it.
   assert.equal(/<Button\n\s+size="md"\n\s+disabled=\{Boolean\(missing\) \|\| saving\}/.test(source), true);
 });
 
-test('the two ways into an open line are opposite acts, so they take opposite sentences', () => {
+test('the two shape refusals are struck on this surface: an open line disables, it never refuses', () => {
   const rules = read('routines.js');
-  assert.equal(rules.includes("export const CLEAR_REPS_AND_WEIGHT = 'Clear reps and weight first — an open line names neither.';"), true);
-  assert.equal(rules.includes("export const NAME_SETS_FIRST = 'Name the sets first — an open line names neither.';"), true);
-  // The pinned sentence belongs to the clear and to nothing else; the mirror state names the way out
-  // the lifter actually wants, which is to name the sets they just typed reps for.
-  assert.equal(rules.includes("  if (fields.clearRefused) return { field: 'sets', message: CLEAR_REPS_AND_WEIGHT };"), true);
-  assert.equal(rules.includes("  if (open && named) return { field: 'sets', message: NAME_SETS_FIRST };"), true);
+  for (const file of gymFiles()) {
+    const said = fs.readFileSync(file, 'utf8');
+    assert.equal(/CLEAR_REPS_AND_WEIGHT|NAME_SETS_FIRST|clearRefused|an open line names neither/.test(said), false, file);
+  }
   // And the sheet opens on what the row holds: no target is invented for the lifter to delete.
   assert.equal(rules.includes('targetDraftOf'), false);
-  assert.equal(/NEW_ENTRY_SETS|NEW_ENTRY_REPS/.test(rules), false);
-  assert.equal(rules.includes("    sets: entry.targetSets == null ? '' : String(entry.targetSets),"), true);
+  assert.equal(/NEW_ENTRY_SETS|NEW_ENTRY_REPS|targetSets|targetReps|targetWeightKg/.test(rules), false, 'the triple is gone from the rules');
+  assert.equal(rules.includes("weight: set.weightKg == null ? '' : String(set.weightKg),"), true);
 });
 
 test('the target sheet says there is nothing to prefill from, and prefills nothing', () => {

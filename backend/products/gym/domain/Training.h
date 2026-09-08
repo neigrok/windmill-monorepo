@@ -102,14 +102,31 @@ struct Exercise {
 // load band in packages/api-contract/gym-ladder.json.
 double defaultStepKg(Equipment equipment);
 
-// A COPY of the routine as it stood when the session started; nothing later edits it. routine_id
-// stays on the session row, informational, and nulls on delete. The entries' absences copy through
-// unchanged: an absent `reps` is `max`, an absent `sets` is the OPEN line.
-struct PlanEntry {
-  ExerciseId exercise;
-  std::optional<int> sets;
+// One set of a routine line's scheme. Both fields mean something by their ABSENCE and never by a
+// zero: no reps is `max`, no load is last time's set of the same number. The load is rounded to the
+// two decimals the column holds at construction, so two schemes compare as the store compares them.
+struct SetTarget {
   std::optional<int> reps;
   std::optional<double> weightKg;
+
+  SetTarget(std::optional<int> reps, std::optional<double> weightKg);   // throws InvalidTraining
+
+  bool operator==(const SetTarget&) const = default;
+};
+
+// A line's scheme holds at most this many sets; a scheme with none is the OPEN line, decided at the
+// rack. Together with kMaxRoutineEntries this bounds what one routine write lays down.
+constexpr std::size_t kMaxSetTargets = 20;
+
+// The heaviest load a set or a target may name, either side of zero: the columns' own check.
+constexpr double kMaxLoadKg = 500;
+
+// A COPY of the routine as it stood when the session started; nothing later edits it. routine_id
+// stays on the session row, informational, and nulls on delete. The entries' absences copy through
+// unchanged: an empty `sets` is the OPEN line, and each set's own absences keep their meaning.
+struct PlanEntry {
+  ExerciseId exercise;
+  std::vector<SetTarget> sets;
   std::optional<int> restSeconds;
 
   bool operator==(const PlanEntry&) const = default;

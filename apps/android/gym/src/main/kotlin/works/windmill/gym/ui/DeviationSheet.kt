@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.DeviationOffer
+import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -45,6 +46,22 @@ fun DeviationSheet(
             color = GymSkin.inkDim,
             lineHeight = 25.sp,
         )
+
+        // On a ladder the honest offer is the sets as lifted, drawn set by set in the proposal row's
+        // own shape: what the plan said, the arrow, what was lifted. A side the other has no set for
+        // reads `—`.
+        if (deviation.ladder) {
+            Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+                val count = maxOf(deviation.scheme.size, deviation.proposed.size)
+                repeat(count) { at ->
+                    MoveLine(
+                        label = "set ${at + 1}",
+                        before = deviation.scheme.getOrNull(at)?.let(Readout::setTarget) ?: "—",
+                        after = deviation.proposed.getOrNull(at)?.let(Readout::setTarget) ?: "—",
+                    )
+                }
+            }
+        }
 
         Box(
             Modifier

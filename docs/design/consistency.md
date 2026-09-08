@@ -838,21 +838,16 @@ belong to another wave and were not touched. That `R2` line now carries a second
 says `from Coach` (`proposals.js:47`, `Proposal.swift:51`, `Proposal.kt:57`), and no board may say
 Ask.
 
-**2l · the clear-refusal is one moment, and the illegal shape has two ways in** → ruled and built
-2026-08-26 on all three surfaces, nothing owed. Nothing cascades anywhere: clearing sets while reps
-or weight hold a value is **refused in place** — the keystroke never lands, the field keeps its
-value, and the kept value is **selected**, so the next digit replaces the number the lifter was
-trying to be rid of instead of appending to it (`routines.js` `withField`, `Routines.jsx`'s
-`setSelectionRange`; `RoutineBuilderScreens.swift`'s `selectTheKeptValue`; `RoutineBuilder.kt`'s
-`TextRange(0, sets.text.length)`). The words are the pinned *Clear reps and weight first — an open
-line names neither.*
-**The mirror state takes the opposite sentence, because its way out is the opposite act.** A number
-typed onto a line whose sets are already **empty** does land — refusing it would drop what the
-lifter just asked for — and the commit is refused instead, with *Name the sets first — an open line
-names neither.* (`routines.js:200`, `TargetEntry.swift:79`, `domain/Program.kt:93`). Both are one
-refusal per sheet, drawn under the field they belong to, fail-fast: the refused keystroke, then the
-line's shape, then the three fields topmost first. `Routine.cpp` still only refuses the shape at the
-boundary; the interface now says which half is wrong before it gets there.
+**2l · the clear-refusal is one moment, and the illegal shape has two ways in** → superseded
+2026-09-08 by `17-set-targets.md`, built on all three surfaces, nothing owed. A line's target is a
+scheme of up to twenty sets and the sheet is a head over a ladder: while Sets is empty the other
+two head fields are disabled and the ladder is hidden rather than thrown away, so neither way into
+the illegal shape exists and neither sentence is drawn. *Clear reps and weight first — an open line
+names neither.* and *Name the sets first — an open line names neither.* are struck from
+`15-the-routine.md` and `TargetEntry.clearOthersFirst` / `nameSetsFirst` are deleted from every
+surface. The one refusal per sheet stands, under the field or the ladder row that carries the fault:
+the count first, then the rows top to bottom, reps before load. `Routine.cpp` still refuses the
+shape at the boundary, and nothing on a phone can reach it.
 
 **2m · the undo window is 9000 ms on every surface** → ruled 2026-08-25, built, nothing owed.
 `SetQueue.swift:48` and `SetQueue.kt:53` declare `undoWindowMs = 9_000`; `fix.js:66` declares
@@ -2146,15 +2141,11 @@ not the swipe*, and the iOS editor-head copy of the draft), and in *Still unbuil
 offering *Start · Duplicate · Delete*). Law 1's routine-row case on Android now reads the other way:
 the swipe is the only drawn door, so the custom action is declared by hand, as the set row's is.
 
-**5t · `17-set-targets.md` proposes striking two of `15-the-routine.md`'s pinned sentences** → a
-ruling owed by the owner, nothing built. The set-targets brief makes a line's target a scheme of
-up to twenty sets and retires the two illegal-shape refusals — *Clear reps and weight first — an
-open line names neither.* and *Name the sets first — an open line names neither.* — because under
-it clearing Sets hides the ladder rather than destroying it and the other two head fields are
-disabled while Sets is empty. Until the owner rules, `15-the-routine.md`'s two sentences and
-`TargetEntry.clearOthersFirst` / `nameSetsFirst` on all three surfaces stand as canon and code; the
-moment the ruling lands, `15-the-routine.md`'s *The illegal shape has two ways in* paragraph and
-its two rows in the strings table come out in the same change.
+**5t · `17-set-targets.md` strikes two of `15-the-routine.md`'s pinned sentences** → ruled
+2026-09-08 (the brief's *Ruled* section, one wire shape and no triple) and built, nothing owed.
+`15-the-routine.md`'s *The illegal shape has two ways in* paragraph is gone, the two sentences with
+it, and `TargetEntry.clearOthersFirst` / `nameSetsFirst` are deleted on every surface (`2l`). The
+`±` is drawn only on a bodyweight movement's load fields and the rack keypad, per the same ruling.
 
 **5u · the Record screen's e1RM bars stand on three baselines on three surfaces** → resolved by
 replacement; the fix flows to `gym/briefs/18-progress.md`. The web draws bars from zero normalised

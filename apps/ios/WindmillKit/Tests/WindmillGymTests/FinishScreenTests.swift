@@ -73,7 +73,7 @@ final class FinishTests: XCTestCase {
             Against.Movement(exerciseId: "back-squat",
                              now: Against.Effort(weightKg: 105, reps: 5, sets: 5),
                              before: Against.Effort(weightKg: 102.5, reps: 5, sets: 5),
-                             planned: Against.Target(sets: 5, reps: 5, weightKg: 102.5)),
+                             planned: Array(repeating: SetTarget(reps: 5, weightKg: 102.5), count: 5)),
             Against.Movement(exerciseId: "leg-press",
                              now: Against.Effort(weightKg: 140, reps: 12, sets: 3),
                              before: Against.Effort(weightKg: 135, reps: 12, sets: 3)),
@@ -82,17 +82,17 @@ final class FinishTests: XCTestCase {
         XCTAssertEqual(comparison?.title, "Against last Legs")
         XCTAssertEqual(comparison?.rows.map(\.movement), ["Back Squat", "Leg Press"])
         XCTAssertEqual(comparison?.rows.map(\.detail),
-                       ["5×5 @ 102.5 → 5×5 @ 105", "3×12 @ 135 → 3×12 @ 140"])
+                       ["5 × 5 · 102.5 → 5 × 5 · 105", "3 × 12 · 135 → 3 × 12 · 140"])
     }
 
     func testAMovementThatFellShortOfThePlanSaysItPlainly() {
         let against = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
                              now: Against.Effort(weightKg: 140, reps: 10, sets: 3),
-                             planned: Against.Target(sets: 3, reps: 12, weightKg: 140)),
+                             planned: Array(repeating: SetTarget(reps: 12, weightKg: 140), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail),
-                       ["planned 3×12 · did 3×10"])
+                       ["planned 3 × 12 · 140 — did 3 × 10 · 140"])
     }
 
     func testABodyweightMovementPrintsNoLoad() {
@@ -101,27 +101,27 @@ final class FinishTests: XCTestCase {
                              now: Against.Effort(weightKg: 0, reps: 8, sets: 3),
                              before: Against.Effort(weightKg: 0, reps: 7, sets: 3)),
         ])
-        XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail), ["3×7 → 3×8"])
+        XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail), ["3 × 7 → 3 × 8"])
     }
 
     func testAMovementWithNoRepTargetReadsAsMaxAndNeverAsAShortfall() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
                              now: Against.Effort(weightKg: 0, reps: 6, sets: 3),
-                             planned: Against.Target(sets: 3)),
+                             planned: Array(repeating: SetTarget(), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail),
-                       ["3 × max → 3×6"])
+                       ["3 × max → 3 × 6"])
     }
 
     func testAPlanThatNamesNoRepTargetCannotBeFallenShortOf() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
                              now: Against.Effort(weightKg: 0, reps: 4, sets: 2),
-                             planned: Against.Target(sets: 3)),
+                             planned: Array(repeating: SetTarget(), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail),
-                       ["3 × max → 2×4"])
+                       ["3 × max → 2 × 4"])
     }
 
     func testASessionThatRampedThroughItsWholePlanIsNeverToldItFellShort() {
@@ -129,42 +129,94 @@ final class FinishTests: XCTestCase {
             Against.Movement(exerciseId: "back-squat",
                              now: Against.Effort(weightKg: 110, reps: 5, sets: 3),
                              before: Against.Effort(weightKg: 105, reps: 5, sets: 3),
-                             planned: Against.Target(sets: 5, reps: 5, weightKg: 100)),
+                             planned: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 5)),
         ])
         XCTAssertEqual(Finish.comparison(ramped, catalog: catalog)?.rows.map(\.detail),
-                       ["5×5 @ 100 → 3×5 @ 110"])
+                       ["5 × 5 · 100 → 3 × 5 · 110"])
     }
 
     func testGoingHeavierForFewerRepsIsADifferentSessionAndNotASmallerOne() {
         let heavier = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
                              now: Against.Effort(weightKg: 160, reps: 8, sets: 5),
-                             planned: Against.Target(sets: 3, reps: 12, weightKg: 140)),
+                             planned: Array(repeating: SetTarget(reps: 12, weightKg: 140), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(heavier, catalog: catalog)?.rows.map(\.detail),
-                       ["3×12 @ 140 → 5×8 @ 160"])
+                       ["3 × 12 · 140 → 5 × 8 · 160"])
     }
 
     func testWhatIsCalledShortIsTheRepsAtALoadThatDidNotGoUp() {
         let heldLoad = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
                              now: Against.Effort(weightKg: 140, reps: 10, sets: 3),
-                             planned: Against.Target(sets: 3, reps: 12, weightKg: 140)),
+                             planned: Array(repeating: SetTarget(reps: 12, weightKg: 140), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(heldLoad, catalog: catalog)?.rows.map(\.detail),
-                       ["planned 3×12 · did 3×10"])
+                       ["planned 3 × 12 · 140 — did 3 × 10 · 140"])
 
         let noLoadNamed = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
                              now: Against.Effort(weightKg: 0, reps: 6, sets: 3),
-                             planned: Against.Target(sets: 3, reps: 8)),
+                             planned: Array(repeating: SetTarget(reps: 8), count: 3)),
         ])
         XCTAssertEqual(Finish.comparison(noLoadNamed, catalog: catalog)?.rows.map(\.detail),
-                       ["planned 3×8 · did 3×6"])
+                       ["planned 3 × 8 — did 3 × 6"])
+    }
+
+    // Lower A's ramp reads as its range on the left, and the top set stands against the plan's top set:
+    // a 100 × 1 landed is the plan met, a 90 × 3 that never reached the top is a different session and
+    // not a short one, and a 100 × 2 against a planned 100 × 3 is short.
+    func testARampReadsAsItsRangeAndTheTopSetStandsAgainstThePlansTopSet() {
+        let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 3, weightKg: 90),
+                    SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 80)]
+        func detail(_ now: Against.Effort, against planned: [SetTarget]) -> [String]? {
+            let against = Against(sessionId: "ses_0", routine: "Lower A", startedAtMs: 1, movements: [
+                Against.Movement(exerciseId: "back-squat", now: now, planned: planned),
+            ])
+            return Finish.comparison(against, catalog: catalog)?.rows.map(\.detail)
+        }
+        XCTAssertEqual(detail(Against.Effort(weightKg: 100, reps: 1, sets: 1), against: ramp),
+                       ["5 × 1\u{2013}5 · 60\u{2013}100 → 1 × 1 · 100"])
+        XCTAssertEqual(detail(Against.Effort(weightKg: 90, reps: 3, sets: 1), against: ramp),
+                       ["5 × 1\u{2013}5 · 60\u{2013}100 → 1 × 3 · 90"])
+        XCTAssertEqual(detail(Against.Effort(weightKg: 100, reps: 2, sets: 1),
+                              against: [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80), SetTarget(reps: 3, weightKg: 100)]),
+                       ["planned 3 × 3\u{2013}5 · 60\u{2013}100 — did 1 × 2 · 100"])
+    }
+
+    // A top set to max: the plan's top set is the FIRST at the heaviest load, so its 5 is the target a
+    // 100 × 3 fell short of, and the max set never turns the shortfall off.
+    func testATopSetToMaxIsMeasuredAgainstTheFirstSetAtTheHeaviestLoad() {
+        let against = Against(sessionId: "ses_0", routine: "Lower A", startedAtMs: 1, movements: [
+            Against.Movement(exerciseId: "back-squat",
+                             now: Against.Effort(weightKg: 100, reps: 3, sets: 1),
+                             planned: [SetTarget(reps: 5, weightKg: 100), SetTarget(reps: 5, weightKg: 100), SetTarget(weightKg: 100)]),
+        ])
+        XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail),
+                       ["planned 3 × 5\u{2013}max · 100 — did 1 × 3 · 100"])
     }
 
     func testAnAdHocSessionHasNothingToCompareAgainst() {
         XCTAssertNil(Finish.comparison(nil, catalog: catalog))
+    }
+
+    // The keep-as-routine preview is one readout per movement, in the formula: the working sets are
+    // transcribed set by set, so a ramp reads as its range and never as a flattened count.
+    func testTheKeepAsRoutinePreviewReadsEachMovementsSchemeInTheFormula() throws {
+        let squat = [(60.0, 5), (80.0, 5), (90.0, 3), (100.0, 1), (80.0, 5)]
+        let ramped = squat.enumerated().map { index, set in
+            TrainingSet(id: "sq\(index)", exerciseId: "back-squat", weightKg: set.0, reps: set.1,
+                        completedAtMs: Int64(1_000 + index))
+        }
+        let pressed = (0..<3).map { index in
+            TrainingSet(id: "lp\(index)", exerciseId: "leg-press", weightKg: 60, reps: 8,
+                        completedAtMs: Int64(2_000 + index))
+        }
+        let write = try XCTUnwrap(RoutineWrite(named: "Tuesday", from: ramped + pressed, position: 0))
+
+        XCTAssertEqual(write.entries.map { Readout.target($0.sets) }, ["5 × 1–5 · 60–100", "3 × 8 · 60"])
+        XCTAssertTrue(try Self.source.contains("Text(Readout.target(entry.sets))"),
+                      "the preview draws the scheme's readout and nothing per set: the ladder is the routine screen's")
     }
 
     // Emptying the name makes `Save routine` grey, and the sheet says why in the routine editor's

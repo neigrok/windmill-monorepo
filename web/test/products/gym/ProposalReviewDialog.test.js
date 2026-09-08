@@ -13,6 +13,15 @@ const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
 
+// A straight scheme on the wire: `count` sets that agree, absent reps for max, absent load for last time.
+const straight = (count, reps = null, weightKg = null) => Array.from({ length: count }, () => ({
+  ...(reps == null ? {} : { reps }),
+  ...(weightKg == null ? {} : { weightKg }),
+}));
+// Lower A / Back Squat: the ramp, and the review fixture that moves its fourth set.
+const RAMP = [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 90 }, { reps: 1, weightKg: 100 }, { reps: 5, weightKg: 80 }];
+const RAMP_MOVED = RAMP.map((set, index) => (index === 3 ? { reps: 1, weightKg: 102.5 } : set));
+
 function proposal(over = {}) {
   return {
     id: 'prop_1',
@@ -27,10 +36,10 @@ function proposal(over = {}) {
     baseName: 'Push A',
     name: 'Push A',
     changes: [
-      { position: 1, kind: 'retargeted', exerciseId: 'bench-press', before: { sets: 5, reps: 5, weightKg: 80 }, after: { sets: 5, reps: 3, weightKg: 90 } },
-      { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: 3 }, after: { sets: 3 } },
-      { position: 3, kind: 'kept', exerciseId: 'barbell-row', before: { sets: 4, reps: 8, weightKg: 70 }, after: { sets: 4, reps: 8, weightKg: 70 } },
-      { position: 4, kind: 'added', exerciseId: 'dip', after: { sets: 3, reps: 10 } },
+      { position: 1, kind: 'retargeted', exerciseId: 'bench-press', before: { sets: straight(5, 5, 80) }, after: { sets: straight(5, 3, 90) } },
+      { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: straight(3) }, after: { sets: straight(3) } },
+      { position: 3, kind: 'kept', exerciseId: 'barbell-row', before: { sets: straight(4, 8, 70) }, after: { sets: straight(4, 8, 70) } },
+      { position: 4, kind: 'added', exerciseId: 'dip', after: { sets: straight(3, 10) } },
     ],
     ...over,
   };
@@ -431,8 +440,8 @@ const retargets = (count, from = 1) => Array.from({ length: count }, (_, at) => 
   position: from + at,
   kind: 'retargeted',
   exerciseId: `mv-${from + at}`,
-  before: { sets: 3, reps: 8, weightKg: 60 },
-  after: { sets: 3, reps: 8, weightKg: 62.5 },
+  before: { sets: straight(3, 8, 60) },
+  after: { sets: straight(3, 8, 62.5) },
 }));
 const lines = (tree) => findByClass(tree, 'gym-diff-row').filter((row) => !row.props.className.includes('is-more'));
 const doorsIn = (tree) => elementsOf(tree).filter((each) => typeof each.type === 'function' && each.type.name === 'ReviewDoor');
@@ -449,8 +458,8 @@ test('the Coach card draws three rows of what moved and counts the rest, and nev
     changeCount: 2,
     changes: [
       ...retargets(1),
-      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } })),
-      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: 3, reps: 10 } },
+      ...Array.from({ length: 20 }, (_, at) => ({ position: at + 2, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: straight(3) }, after: { sets: straight(3) } })),
+      { position: 22, kind: 'added', exerciseId: 'dip', after: { sets: straight(3, 10) } },
     ],
   }));
   assert.deepEqual(lines(wide.tree).map((row) => row.props.className), ['gym-diff-row is-retargeted', 'gym-diff-row is-added']);
@@ -460,7 +469,7 @@ test('the Coach card draws three rows of what moved and counts the rest, and nev
 test('the rename and the reorder are claims about the document, so only the dialog draws them — the card counts them and draws neither', async (t) => {
   // Nothing marked, and a count above it: `diffRows` reads the gap as the order moving. On the card
   // `Order · the lines run in the order below` would be the only row, with no lines below it.
-  const kept = Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: 3 }, after: { sets: 3 } }));
+  const kept = Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: straight(3) }, after: { sets: straight(3) } }));
   const shuffled = await coachCard(t, proposal({ changeCount: 3, changes: kept }));
   assert.deepEqual(findByClass(shuffled.tree, 'gym-diff-row'), []);
   assert.deepEqual(findByClass(shuffled.tree, 'gym-proposal-counted').map(textOf), ['3 changes']);
@@ -470,7 +479,7 @@ test('the rename and the reorder are claims about the document, so only the dial
   const renamed = await coachCard(t, proposal({
     name: 'Push A · heavy',
     changeCount: 2,
-    changes: [...retargets(1), { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: 3 }, after: { sets: 3 } }],
+    changes: [...retargets(1), { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: straight(3) }, after: { sets: straight(3) } }],
   }));
   assert.deepEqual(lines(renamed.tree).map((row) => row.props.className), ['gym-diff-row is-retargeted']);
   assert.deepEqual(findByClass(renamed.tree, 'gym-proposal-counted').map(textOf), ['2 changes']);
@@ -506,7 +515,7 @@ test('a removal reads as a removal on the Coach card, never as a count of the li
     intent: 'remove',
     summary: '',
     changeCount: 4,
-    changes: Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'removed', exerciseId: `mv-${at}`, before: { sets: 3, reps: 8, weightKg: 60 } })),
+    changes: Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'removed', exerciseId: `mv-${at}`, before: { sets: straight(3, 8, 60) } })),
   }));
   assert.deepEqual(findByClass(removal.tree, 'gym-proposal-counted').map(textOf), ['a removal']);
   // The routine is named twice above it already — in the kicker and in the summary — so the counted
@@ -537,4 +546,75 @@ test('two review dialogs open together mint their own gate slots', async (t) => 
   assert.equal(slots[0].describedBy, slots[0].gate);
   assert.equal(slots[1].describedBy, slots[1].gate);
   assert.notEqual(slots[0].gate, slots[1].gate);
+});
+
+// The review fixture: Coach proposes set 4 · 100 × 1 → 102.5 × 1 on Lower A, one change (R10).
+const lowerA = (over = {}) => proposal({
+  changeCount: 1,
+  baseName: 'Lower A',
+  name: 'Lower A',
+  summary: 'A little more on the top single.',
+  changes: [
+    { position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: RAMP, restSeconds: 180 }, after: { sets: RAMP_MOVED, restSeconds: 180 } },
+    { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: straight(3) }, after: { sets: straight(3) } },
+  ],
+  ...over,
+});
+const squats = { ...quiet, catalog: [...quiet.catalog, { id: 'back-squat', name: 'Back Squat' }] };
+const diffRowsIn = (tree) => elementsOf(tree).filter((each) => typeof each.type === 'function' && each.type.name === 'DiffRow');
+const unfoldIn = (tree) => elementsOf(tree).filter((each) => typeof each.type === 'function' && each.type.name === 'SchemeUnfold');
+// `Move` is a child the harness does not render: the arrow's two sides are read off its props.
+const movesIn = (tree) => elementsOf(tree)
+  .filter((each) => typeof each.type === 'function' && each.type.name === 'Move')
+  .map((each) => [each.props.from, each.props.to]);
+
+test('one set moved on a scheme whose shape held reads as that set, and a scheme that changed shape unfolds to its ladder in the dialog', async (t) => {
+  browserWith();
+  proposalOnTheWire(lowerA());
+  const { ProposalReview } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => ProposalReview({ id: 'prop_1', log: squats, onClose: () => {}, onSettled: () => {} }));
+  await settle();
+  const retargeted = findByClass(dialogOf(screen.tree).props.children, 'gym-diff-row')[0];
+  assert.equal(retargeted.props.className, 'gym-diff-row is-retargeted');
+  const row = diffRowsIn(retargeted)[0];
+  assert.equal(row.props.unfold, true, 'the dialog is the document');
+  const drawnRow = row.type(row.props);
+  assert.deepEqual(findByClass(drawnRow, 'gym-diff-field').map(textOf), ['set 4']);
+  assert.deepEqual(movesIn(drawnRow), [['100 × 1', '102.5 × 1']]);
+  assert.deepEqual(unfoldIn(drawnRow), [], 'one set moved: nothing to unfold');
+
+  // The straight line becomes the ramp: a `sets` move in the readout formula, and its ladder.
+  proposalOnTheWire(lowerA({
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: straight(5, 5, 80) }, after: { sets: RAMP } }],
+  }));
+  const reshaped = renderHook(t, () => ProposalReview({ id: 'prop_1', log: squats, onClose: () => {}, onSettled: () => {} }));
+  await settle();
+  const reshapedRow = diffRowsIn(dialogOf(reshaped.tree).props.children)[0];
+  const drawnReshaped = reshapedRow.type(reshapedRow.props);
+  assert.deepEqual(findByClass(drawnReshaped, 'gym-diff-field').map(textOf), ['sets']);
+  assert.deepEqual(movesIn(drawnReshaped), [['5 × 5 · 80', '5 × 1–5 · 60–100']]);
+  const unfold = unfoldIn(drawnReshaped)[0];
+  const ladder = renderHook(t, () => unfold.type(unfold.props));
+  assert.deepEqual(findByClass(ladder.tree, 'gym-diff-unfold').map(textOf), ['set by set']);
+  assert.deepEqual(findByClass(ladder.tree, 'gym-diff-ladder'), [], 'folded until tapped');
+  findByClass(ladder.tree, 'gym-diff-unfold')[0].props.onClick();
+  assert.deepEqual(findByClass(ladder.tree, 'gym-diff-ladder-ordinal').map(textOf), ['1', '2', '3', '4', '5']);
+  assert.deepEqual(movesIn(findByClass(ladder.tree, 'gym-diff-ladder')[0]), [
+    ['80 × 5', '60 × 5'], ['80 × 5', '80 × 5'], ['80 × 5', '90 × 3'], ['80 × 5', '100 × 1'], ['80 × 5', '80 × 5'],
+  ]);
+  findByClass(ladder.tree, 'gym-diff-unfold')[0].props.onClick();
+  assert.deepEqual(findByClass(ladder.tree, 'gym-diff-ladder'), []);
+});
+
+test('the Coach card prints the compact readout only — no unfold, never the ladder', async (t) => {
+  const card = await coachCard(t, lowerA({
+    changes: [{ position: 1, kind: 'retargeted', exerciseId: 'back-squat', before: { sets: straight(5, 5, 80) }, after: { sets: RAMP } }],
+  }));
+  const rows = diffRowsIn(card.tree);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].props.unfold, undefined);
+  const drawn = rows[0].type(rows[0].props);
+  assert.deepEqual(movesIn(drawn), [['5 × 5 · 80', '5 × 1–5 · 60–100']]);
+  assert.deepEqual(unfoldIn(drawn), []);
+  assert.deepEqual(findByClass(drawn, 'gym-diff-unfold'), []);
 });

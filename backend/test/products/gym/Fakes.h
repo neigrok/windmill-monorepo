@@ -66,8 +66,20 @@ inline std::uint64_t weekStartMs(std::uint64_t instantMs) {
   if (start < 1) return 1;
   return static_cast<std::uint64_t>(start);
 }
+// A straight scheme: `sets` identical items, the shape every `n × reps · load` line takes.
+inline std::vector<SetTarget> straight(int sets, std::optional<int> reps,
+                                       std::optional<double> weightKg) {
+  return std::vector<SetTarget>(static_cast<std::size_t>(sets), SetTarget{reps, weightKg});
+}
+
+// The Lower A / Back Squat ramp every surface's tests share: 60×5 · 80×5 · 90×3 · 100×1 · 80×5.
+inline std::vector<SetTarget> ramp() {
+  return {SetTarget{5, 60.0}, SetTarget{5, 80.0}, SetTarget{3, 90.0}, SetTarget{1, 100.0},
+          SetTarget{5, 80.0}};
+}
+
 inline RoutineEntry benchEntry(int position = 1) {
-  return RoutineEntry{position, ExerciseId{"bench-press"}, 5, 5, 82.5, 180};
+  return RoutineEntry{position, ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180};
 }
 inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
                      std::string id = "rt_00000001") {

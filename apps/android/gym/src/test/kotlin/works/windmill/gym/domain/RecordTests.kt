@@ -276,9 +276,9 @@ class RecordTests {
     fun testTheShelfComposesTheSameRecordMinusTheEstimator() {
         val routines = listOf(
             Routine(id = "rt_1", name = "Push A", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5))),
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget() }))),
             Routine(id = "rt_2", name = "Pull A", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "chin-up", targetSets = 3))),
+                RoutineEntry(position = 1, exerciseId = "chin-up", sets = List(3) { SetTarget() }))),
         )
         val history = listOf(
             session("ses_1", julyThirteenth, listOf(set("s1", 60.0, 10, julyThirteenth, SetKind.Warmup),
@@ -388,11 +388,11 @@ class RecordTests {
     fun testTheShelfNamesTheRoutinesAMovementIsIn() {
         val routines = listOf(
             Routine(id = "rt_1", name = "Push A", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5))),
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget() }))),
             Routine(id = "rt_2", name = "Legs", entries = listOf(
                 RoutineEntry(position = 1, exerciseId = "back-squat"))),
             Routine(id = "rt_3", name = "Pull", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "chin-up", targetSets = 3))),
+                RoutineEntry(position = 1, exerciseId = "chin-up", sets = List(3) { SetTarget() }))),
         )
 
         val record = MovementRecord.of(squat, listOf(

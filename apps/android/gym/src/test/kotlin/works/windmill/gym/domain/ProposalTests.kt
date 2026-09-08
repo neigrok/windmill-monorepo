@@ -17,8 +17,12 @@ class ProposalTests {
     private val yesterdayMs = nowMs - 86_400_000
     private val threeDaysAgoMs = nowMs - 3 * 86_400_000
 
+    // A straight scheme of `sets` sets, each `reps` × `weightKg`.
     private fun targets(sets: Int, reps: Int? = null, weightKg: Double? = null, restSeconds: Int? = null) =
-        ProposalTargets(sets = sets, reps = reps, weightKg = weightKg, restSeconds = restSeconds)
+        ProposalTargets(sets = List(sets) { SetTarget(reps, weightKg) }, restSeconds = restSeconds)
+
+    private val lowerARamp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
+                                    SetTarget(1, 100.0), SetTarget(5, 80.0))
 
     private fun proposal(
         changes: List<ProposalChange> = emptyList(),
@@ -40,7 +44,7 @@ class ProposalTests {
     fun testARoutineCarriesItsRevisionAndTheCardWaitingOnIt() {
         val wire = """
             {"id":"rt_1","name":"Push A","position":0,"revision":4,
-             "entries":[{"position":1,"exerciseId":"bench-press","targetSets":5,"targetReps":5,"targetWeightKg":82.5}],
+             "entries":[{"position":1,"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":82.5}]}],
              "pendingProposal":{"id":"prop_1","routineId":"rt_1","intent":"revise","state":"pending",
                "summary":"Heavier triples.","changeCount":4,"createdAt":1700000000000,
                "source":{"door":"mcp","agent":"Claude"}}}
@@ -172,23 +176,39 @@ class ProposalTests {
     }
 
     @Test
-    fun testAFieldMoveNamesOnlyWhatChanged() {
+    fun testASchemeThatChangedShapePrintsBothSchemesAndNothingElseThatHeld() {
         val moved = Proposal.moves(
-            before = targets(5, 5, 82.5, restSeconds = 180),
-            after = targets(5, 3, 87.5, restSeconds = 180))
+            before = targets(5, 5, 80.0, restSeconds = 180),
+            after = ProposalTargets(sets = lowerARamp, restSeconds = 180))
 
-        assertEquals(2, moved.size)
-        assertEquals(FieldMove("sets", "5 × 5", "5 × 3"), moved[0])
-        assertEquals(FieldMove("weight", "82.5", "87.5"), moved[1])
+        assertEquals(listOf(FieldMove("sets", "5 × 5 · 80", "5 × 1–5 · 60–100")), moved)
         assertEquals("nothing moved", emptyList<FieldMove>(),
             Proposal.moves(targets(5, 5, 82.5), targets(5, 5, 82.5)))
     }
 
     @Test
+    fun testASchemeWhoseShapeHeldAndWhoseOneSetMovedPrintsThatSet() {
+        val heavierTop = ProposalTargets(sets = lowerARamp.mapIndexed { index, set ->
+            if (index == 3) SetTarget(1, 102.5) else set
+        })
+
+        assertEquals(listOf(FieldMove("set 4", "100 × 1", "102.5 × 1")),
+            Proposal.moves(ProposalTargets(sets = lowerARamp), heavierTop))
+        assertEquals("two sets moved is a shape change again",
+            listOf(FieldMove("sets", "5 × 5 · 82.5", "5 × 5 · 82.5–87.5")),
+            Proposal.moves(targets(5, 5, 82.5), ProposalTargets(sets = List(5) { SetTarget(5, if (it < 3) 82.5 else 87.5) })))
+        assertEquals("a sixth set is a shape change",
+            listOf(FieldMove("sets", "5 × 5 · 82.5", "6 × 5 · 82.5")),
+            Proposal.moves(targets(5, 5, 82.5), targets(6, 5, 82.5)))
+    }
+
+    @Test
     fun testALoadThatOnlyMovedInFloatingPointDidNotMove() {
         assertTrue(Proposal.moves(targets(5, 5, 82.5), targets(5, 5, 82.500000001)).isEmpty())
-        assertEquals(listOf(FieldMove("weight", "82.5", "82.51")),
+        assertEquals(listOf(FieldMove("sets", "5 × 5 · 82.5", "5 × 5 · 82.51")),
             Proposal.moves(targets(5, 5, 82.5), targets(5, 5, 82.51)))
+        assertEquals(listOf(FieldMove("set 1", "82.5 × 5", "82.51 × 5")),
+            Proposal.moves(targets(1, 5, 82.5), targets(1, 5, 82.51)))
     }
 
     @Test
@@ -197,12 +217,17 @@ class ProposalTests {
             listOf(FieldMove("sets", "3 × max", "3 × 8")),
             Proposal.moves(targets(3, null), targets(3, 8)))
         assertEquals(
-            listOf(FieldMove("weight", "last time", "60")),
+            listOf(FieldMove("sets", "3 × 8", "3 × 8 · 60")),
             Proposal.moves(targets(3, 8), targets(3, 8, 60.0)))
+        assertEquals(
+            listOf(FieldMove("sets", "open", "3 × 8 · 60")),
+            Proposal.moves(ProposalTargets(), targets(3, 8, 60.0)))
         assertEquals(
             listOf(FieldMove("rest", "the dial", "180s")),
             Proposal.moves(targets(3, 8, 60.0), targets(3, 8, 60.0, restSeconds = 180)))
         assertEquals("3 × 10 · 24", Proposal.asks(targets(3, 10, 24.0)))
+        assertEquals("open", Proposal.asks(ProposalTargets()))
+        assertEquals("sets", Proposal.setsLabel)
     }
 
     @Test
@@ -303,7 +328,12 @@ class ProposalTests {
 
         val moved = ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
             before = targets(5, 5, 82.5), after = targets(5, 3, 90.0))
-        assertEquals("5 × 5 → 5 × 3 · 82.5 → 90", moved.compactLine)
+        assertEquals("sets · 5 × 5 · 82.5 → 5 × 3 · 90", moved.compactLine)
+
+        val topSet = ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
+            before = ProposalTargets(sets = lowerARamp),
+            after = ProposalTargets(sets = lowerARamp.mapIndexed { index, set -> if (index == 3) SetTarget(1, 102.5) else set }))
+        assertEquals("set 4 · 100 × 1 → 102.5 × 1", topSet.compactLine)
 
         assertEquals("a row with one side missing prints what the line would end up asking for",
             "5 × 3 · 90", moved.copy(before = null).compactLine)
@@ -359,21 +389,24 @@ class ProposalTests {
              "baseRevision":1,"baseName":"Push A","name":"Push A",
              "changes":[
                {"position":1,"kind":"retargeted","exerciseId":"bench-press",
-                "before":{"sets":5,"reps":5,"weightKg":82.5,"restSeconds":180},
-                "after":{"sets":5,"reps":3,"weightKg":87.5,"restSeconds":180}},
+                "before":{"sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}],"restSeconds":180},
+                "after":{"sets":[{"reps":5,"weightKg":82.5},{"reps":3,"weightKg":87.5}],"restSeconds":180}},
                {"position":2,"kind":"kept","exerciseId":"overhead-press",
-                "before":{"sets":3,"reps":8,"weightKg":45},"after":{"sets":3,"reps":8,"weightKg":45}},
+                "before":{"sets":[{"reps":8,"weightKg":45}]},"after":{"sets":[{"reps":8,"weightKg":45}]}},
                {"position":3,"kind":"added","exerciseId":"incline-db-press",
-                "after":{"sets":3,"reps":10,"weightKg":24}},
+                "after":{"sets":[{"reps":10,"weightKg":24},{"reps":10,"weightKg":24}]}},
                {"position":4,"kind":"removed","exerciseId":"cable-fly",
-                "before":{"sets":3,"reps":12,"weightKg":22.5},"loggedSets":41}]}
+                "before":{"sets":[{"reps":12,"weightKg":22.5}]},"loggedSets":41}]}
         """.trimIndent()
 
         val whole = WindmillJson.decodeFromString<Proposal>(wire)
 
         assertEquals(listOf("bench-press", "incline-db-press", "cable-fly"), whole.drawn.map { it.exerciseId })
-        assertEquals(listOf(FieldMove("sets", "5 × 5", "5 × 3"), FieldMove("weight", "82.5", "87.5")),
+        assertEquals(ProposalTargets(sets = listOf(SetTarget(5, 82.5), SetTarget(3, 87.5)), restSeconds = 180),
+            whole.changes[0].after)
+        assertEquals(listOf(FieldMove("set 2", "82.5 × 5", "87.5 × 3")),
             Proposal.moves(whole.changes[0].before!!, whole.changes[0].after!!))
+        assertEquals("added · 2 × 10 · 24 · after Overhead Press", whole.changes[2].addedLine("Overhead Press"))
         assertNull("an added line has no before", whole.changes[2].before)
         assertEquals("overhead-press", whole.landsAfter(whole.changes[2]))
         assertNull("a removed line has no after", whole.changes[3].after)

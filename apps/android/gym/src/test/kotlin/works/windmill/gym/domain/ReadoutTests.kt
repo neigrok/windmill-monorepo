@@ -31,6 +31,43 @@ class ReadoutTests {
     }
 
     @Test
+    fun testOneSetReadsAsItsLoadAndItsRepsWithTheNullsAsTheirPlaceholders() {
+        assertEquals("100 × 5", Readout.setTarget(SetTarget(5, 100.0)))
+        assertEquals("100 × max", Readout.setTarget(SetTarget(null, 100.0)))
+        assertEquals("last × 5", Readout.setTarget(SetTarget(5, null)))
+        assertEquals("last × max", Readout.setTarget(SetTarget()))
+        assertEquals("−20 × 8", Readout.setTarget(SetTarget(8, -20.0)))
+    }
+
+    @Test
+    fun testASchemeReadsAsItsCountThenEachColumnAsOneValueOrItsRange() {
+        val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
+        assertEquals("5 × 1–5 · 60–100", Readout.target(ramp))
+        assertEquals("3 × 8 · 60", Readout.target(List(3) { SetTarget(8, 60.0) }))
+        assertEquals("3 × 5–max · 100", Readout.target(listOf(SetTarget(5, 100.0), SetTarget(5, 100.0), SetTarget(null, 100.0))))
+        assertEquals("5 × 8–12 · 80", Readout.target(listOf(SetTarget(12, 80.0), SetTarget(10, 80.0), SetTarget(10, 80.0),
+                                                              SetTarget(8, 80.0), SetTarget(8, 80.0))))
+        assertEquals("open", Readout.target(emptyList()))
+        assertEquals("a one-set scheme prints the scheme formula", "1 × 5 · 100", Readout.target(listOf(SetTarget(5, 100.0))))
+        assertEquals("1 × max · 100", Readout.target(listOf(SetTarget(null, 100.0))))
+        assertEquals("1 × 5", Readout.target(listOf(SetTarget(5))))
+        assertEquals("no set names a load, so no load column", "3 × 5", Readout.target(List(3) { SetTarget(5) }))
+        assertEquals("a placeholder stands as the high end of a mixed column", "3 × 5 · 60–last",
+                     Readout.target(listOf(SetTarget(5, 60.0), SetTarget(5), SetTarget(5, 80.0))))
+        assertEquals("3 × 5–max · 60–last",
+                     Readout.target(listOf(SetTarget(5, 60.0), SetTarget(null), SetTarget(8, 80.0))))
+        assertEquals("3 × max", Readout.target(List(3) { SetTarget() }))
+        assertEquals("the range dash is an en dash", '\u2013', Readout.target(ramp)[5])
+    }
+
+    @Test
+    fun testTheLadderUnfoldsOneSetAfterAnother() {
+        assertEquals("60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5",
+                     Readout.ladder(listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))))
+        assertEquals("", Readout.ladder(emptyList()))
+    }
+
+    @Test
     fun testADurationNamesHoursOnlyWhenThereAreSome() {
         assertEquals("47m", Readout.duration(47 * 60_000L))
         assertEquals("1h 02m", Readout.duration(62 * 60_000L))

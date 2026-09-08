@@ -83,16 +83,20 @@ write is its own: `Save routine`, whose refusal is drawn under it because the sh
 line. `Discard session` is the session detail page's and the log row's, never the receipt's. The
 rack's keypad and ladder stay where they are, and the fix sheet raises that same keypad off its
 weight numeral and its rep count, because a correction at the rack is one-handed too; the routine
-target sheet is three typed fields (`TargetEntry`), whose bands are the routine's — sets 1–20,
-reps 1–100 — and not the live logger's, which are `KeypadEntry`'s. Both keypads refuse in the same
-four sentences; only the reps band differs.
+target sheet is `TargetEntry.Draft` — a head of three typed fields (Sets · Reps · Weight) over a
+ladder of one row per set, up to twenty, each naming its own reps and load — whose bands are the
+routine's (sets 1–20, reps 1–100) and not the live logger's, which are `KeypadEntry`'s. Both refuse
+in the same four sentences; only the reps band differs. `±` is drawn on a bodyweight movement's load
+fields alone. At the rack the logged column is the slot strip (`LiveLines.slots`): landed sets as
+lifted, the current slot outlined in the accent, the rest faint, and the set line's tail is that
+slot's own.
 
 An open line — a movement with no set target — says what that means in one sentence,
 `You decide the numbers at the rack.`, drawn in the target sheet while the line is open and **once**
 beneath any list of a routine's movements holding an open row — and while a target sheet stands over
 that list, the SHEET owns the sentence and the list's copy steps aside, so one state is described
 once. The word `open` in a row's target column is what says which rows they are. In the sheet the
-sentence sits ABOVE the three fields,
+sentence sits ABOVE the head's fields,
 beside `Never logged — these are your numbers.`: everything drawn under a field is that field's own
 note. A list OF ROUTINES carries neither, because it is a list of routines: a card names the routine,
 whether it is `untested`, how many movements it holds, when it was last trained, and what is waiting

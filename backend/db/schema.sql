@@ -891,21 +891,30 @@ alter table gym_routines add column if not exists created_door text
   check (created_door in ('mcp','ask'));
 
 -- Positions are dense and 1-based; entries have no id, their key is their position, and a replace
--- lays the whole run down again. The same movement twice is two rows.
+-- lays the whole run down again. The same movement twice is two rows. A line's target is the
+-- scheme in gym_routine_entry_sets below; a line with no set rows is OPEN, decided at the rack.
 create table if not exists gym_routine_entries (
-  routine_id       text not null references gym_routines(id) on delete cascade,
-  position         int  not null check (position >= 1),
-  exercise_id      text not null references gym_exercises(id),
-  target_sets      int  check (target_sets between 1 and 20),                   -- null = open
-  target_reps      int  check (target_reps between 1 and 100),                  -- null = max
-  target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
-  rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
+  routine_id   text not null references gym_routines(id) on delete cascade,
+  position     int  not null check (position >= 1),
+  exercise_id  text not null references gym_exercises(id),
+  rest_seconds int check (rest_seconds between 15 and 900),   -- null = client default
   primary key (routine_id, position)
 );
-alter table gym_routine_entries alter column target_reps drop not null;
-alter table gym_routine_entries alter column target_reps drop default;
-alter table gym_routine_entries alter column target_sets drop not null;
-alter table gym_routine_entries alter column target_sets drop default;
+-- One row per set of a line, in lifting order: the scheme. Both value columns mean something by
+-- being null and never by a zero — no reps is `max`, no weight is last time's set of the same
+-- number. Written in the same transaction as the line, and bounded by it: at most 50 lines of at
+-- most 20 sets per routine. The key cascades from the line, so a replace that lays the run down
+-- again takes the old scheme with it.
+create table if not exists gym_routine_entry_sets (
+  routine_id text not null,
+  position   int  not null,
+  set_index  int  not null check (set_index between 1 and 20),
+  reps       int  check (reps between 1 and 100),
+  weight_kg  numeric(6,2) check (weight_kg between -500 and 500),
+  primary key (routine_id, position, set_index),
+  foreign key (routine_id, position) references gym_routine_entries (routine_id, position)
+    on delete cascade
+);
 
 -- An agent mints a row here and nothing moves until the lifter applies it. No tool at any grant
 -- level writes `applied`; only the owner-scoped routes do. base_revision and base_name are frozen
@@ -937,23 +946,20 @@ create index if not exists gym_proposals_routine on gym_proposals (routine_id, c
 create index if not exists gym_proposals_user on gym_proposals (user_id, state, created_at desc);
 
 -- Rows 1..k are the run the routine takes on, in order; rows k+1..n are the lines the proposal
--- takes away. Every before_*/after_* pair mirrors gym_routine_entries' own columns. The whole
--- `before` side is null on an added line and the whole `after` side on a removed one. No CHECKs on
--- the target columns: a bound tightened on gym_routine_entries must never make an already-minted
--- proposal unreadable.
+-- takes away. Each side is a line's scheme as jsonb — the wire's own `sets` array, null on an open
+-- line — beside its rest. The whole `before` side is null on an added line and the whole `after`
+-- side on a removed one; `kind` says which, never the nulls. The scheme is an immutable snapshot
+-- like a session's plan, so it carries no CHECKs: a bound tightened on gym_routine_entry_sets must
+-- never make an already-minted proposal unreadable.
 create table if not exists gym_proposal_changes (
   proposal_id         text not null references gym_proposals(id) on delete cascade,
   position            int  not null check (position >= 1),
   user_id             uuid not null references users(id) on delete cascade,
   kind                text not null check (kind in ('kept','added','removed','retargeted')),
   exercise_id         text not null references gym_exercises(id),
-  before_sets         int,
-  before_reps         int,
-  before_weight_kg    numeric(6,2),
+  before_sets         jsonb,
   before_rest_seconds int,
-  after_sets          int,
-  after_reps          int,
-  after_weight_kg     numeric(6,2),
+  after_sets          jsonb,
   after_rest_seconds  int,
   primary key (proposal_id, position)
 );
@@ -978,6 +984,64 @@ create table if not exists gym_sessions (
   closed_by   text check (closed_by in ('finish', 'stale'))
 );
 alter table gym_sessions add column if not exists closed_by text check (closed_by in ('finish', 'stale'));
+
+-- The one-shot carry into the scheme, each step guarded on the columns it reads still standing so
+-- a database already on the scheme is left alone: a line's count becomes that many identical rows
+-- of gym_routine_entry_sets, each side of a proposal change becomes its jsonb scheme (every row,
+-- settled proposals included), each frozen plan entry its `sets` array — and the columns read go
+-- only once their rows are across.
+do $$ begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'gym_routine_entries' and column_name = 'target_sets') then
+    insert into gym_routine_entry_sets (routine_id, position, set_index, reps, weight_kg)
+      select routine_id, position, generate_series(1, target_sets), target_reps, target_weight_kg
+      from gym_routine_entries
+      where target_sets is not null;
+    alter table gym_routine_entries
+      drop column target_sets, drop column target_reps, drop column target_weight_kg;
+  end if;
+
+  if exists (select 1 from information_schema.columns
+             where table_name = 'gym_proposal_changes' and column_name = 'before_sets'
+               and data_type = 'integer') then
+    alter table gym_proposal_changes add column before_scheme jsonb, add column after_scheme jsonb;
+    update gym_proposal_changes set
+      before_scheme = case when before_sets is null then null else to_jsonb(array_fill(
+                        jsonb_strip_nulls(jsonb_build_object(
+                          'reps', before_reps, 'weightKg', before_weight_kg::float8)),
+                        array[before_sets])) end,
+      after_scheme  = case when after_sets is null then null else to_jsonb(array_fill(
+                        jsonb_strip_nulls(jsonb_build_object(
+                          'reps', after_reps, 'weightKg', after_weight_kg::float8)),
+                        array[after_sets])) end;
+    alter table gym_proposal_changes
+      drop column before_sets, drop column before_reps, drop column before_weight_kg,
+      drop column after_sets, drop column after_reps, drop column after_weight_kg;
+    alter table gym_proposal_changes rename column before_scheme to before_sets;
+    alter table gym_proposal_changes rename column after_scheme to after_sets;
+  end if;
+
+  -- A plan entry whose `sets` is a count becomes that many identical sets; one whose count is
+  -- absent, null or below one keeps no `sets` key at all — the open line — and its stray reps and
+  -- load go with it. A plan with no entry of the old shape is not rewritten.
+  update gym_sessions set plan = jsonb_set(plan, '{entries}', (
+      select coalesce(jsonb_agg(
+        case
+          when jsonb_typeof(entry) <> 'object' then entry
+          when jsonb_typeof(entry->'sets') = 'number' and (entry->>'sets')::numeric >= 1 then
+            (entry - 'reps' - 'weightKg') || jsonb_build_object('sets', to_jsonb(array_fill(
+              jsonb_strip_nulls(jsonb_build_object(
+                'reps', entry->'reps', 'weightKg', entry->'weightKg')),
+              array[(entry->>'sets')::numeric::int])))
+          when jsonb_typeof(entry->'sets') = 'array' then entry
+          else entry - 'sets' - 'reps' - 'weightKg'
+        end order by ordinal), '[]'::jsonb)
+      from jsonb_array_elements(plan->'entries') with ordinality as entries(entry, ordinal)))
+    where jsonb_typeof(plan->'entries') = 'array'
+      and exists (select 1 from jsonb_array_elements(plan->'entries') entry
+                  where jsonb_typeof(entry->'sets') = 'number'
+                     or entry ? 'reps' or entry ? 'weightKg');
+end $$;
 create index if not exists gym_sessions_log on gym_sessions (user_id, started_at desc);
 create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
   where finished_at is null;

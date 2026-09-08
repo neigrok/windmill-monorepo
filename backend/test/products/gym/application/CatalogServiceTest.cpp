@@ -62,7 +62,7 @@ TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
   Harness h;
   h.catalog.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
                                                 Pattern::squat, Equipment::barbell, std::nullopt});
-  RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"ex_11111111"}, 3, 8, 60.0, 120}}));
+  RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"ex_11111111"}, straight(3, 8, 60.0), 120}}));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   AppendOutcome landed = h.training.append(
       uid(), sid("ses_00000001"),

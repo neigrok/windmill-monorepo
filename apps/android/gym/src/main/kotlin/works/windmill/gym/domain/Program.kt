@@ -22,7 +22,7 @@ object Program {
     // The server's own bounds. These are the PLAN's bands, which `TargetEntry` enforces; a set that
     // was performed is bounded separately by `KeypadEntry.maxLoggedReps`.
     const val maxEntries = 50
-    const val maxSets = 20
+    const val maxSets = Scheme.maxSets
     const val maxReps = 100
 
     // Code points, not UTF-16 units: the cap is a promise about characters.
@@ -68,8 +68,10 @@ object Program {
     }
 }
 
-// The target sheet's three typed fields — sets, reps, weight — and the six refusals the removed
-// keypad left homeless. Emptying a field IS how it is cleared, and the placeholder says what empty
+// The target sheet's two zooms — the head, which speaks about every set at once, and the ladder,
+// one row per set — and the six refusals, each drawn under the row that carries it. The sheet holds
+// TEXT until the commit, so a half-typed row survives every keystroke; this is where the text is
+// read into a scheme. Emptying a field IS how it is cleared, and the placeholder says what empty
 // means: no sets is an open line, no reps is `max`, no load is `last time`.
 //
 // The bands here are the PLAN's (`Program.maxSets`, `Program.maxReps`): 1 to 20 sets and 1 to 100
@@ -86,82 +88,169 @@ object TargetEntry {
     const val outsideReps = "Whole reps, 1 to 100."
     const val outsideSets = "Sets, 1 to 20."
     const val zeroTarget = "A zero target is no target — clear the field instead."
-    const val clearTheRest = "Clear reps and weight first — an open line names neither."
-    // The same shape reached from the other side — a number typed onto a line whose sets are empty —
-    // and the remedy is the opposite one, so it cannot be said in the sentence above: telling the
-    // lifter to clear what they just typed would be telling them to abandon what they asked for.
-    const val nameSetsFirst = "Name the sets first — an open line names neither."
 
     const val setsPlaceholder = "open"
     const val repsPlaceholder = "max"
     const val weightPlaceholder = "last time"
+    // The head's placeholder while the rows disagree; typing over it writes every row again.
+    const val varies = "varies"
 
     // What the open line MEANS, said once, on the target sheet, where the lifter is deciding it.
     // `Readout.openTarget` is the compact token a row prints; this is the sentence, and it is the
     // same one on every surface.
     const val openLine = "You decide the numbers at the rack."
 
+    const val everySet = "Every set"
+    const val setBySet = "Set by set"
+    const val addSet = "Add set"
+    const val fill = "Fill"
+    const val rampUp = "Ramp up"
+    const val matchSetOne = "Match set 1"
+    const val delete = "Delete"
+    // The deviation sheet's button on a scheme whose sets disagree.
+    const val saveTodaysSets = "Save today’s sets"
+
     enum class Field { Sets, Reps, Weight }
 
-    sealed interface Reading {
-        // One refusal at a time, drawn under the field it belongs to.
-        data class Refused(val field: Field, val said: String) : Reading
+    // One ladder row as typed: text per field, never numbers.
+    data class TypedSet(val reps: String = "", val weight: String = "") {
+        constructor(set: SetTarget) :
+            this(set.reps?.toString() ?: "", set.weightKg?.let(Readout::weight) ?: "")
+    }
 
-        // All three empty: the line names no sets, so it names no reps and no weight either.
+    sealed interface Reading {
+        // One refusal at a time. `row` is null under the head's Sets field, else the 0-based ladder
+        // row carrying the fault.
+        data class Refused(val row: Int?, val field: Field, val said: String) : Reading
+
+        // The head's Sets is empty: the line is open, whatever the hidden rows still hold.
         data object Open : Reading
 
-        data class Targeted(val sets: Int, val reps: Int?, val weightKg: Double?) : Reading
+        data class Scheme(val sets: List<SetTarget>) : Reading
     }
 
-    // The open line's SHAPE is read before the fields are — a line with no sets may name no reps and
-    // no load, whatever those two say — and then the fields fail-fast in the order they are drawn, so
-    // the lifter is never told about the third while the first is still nonsense.
-    fun reading(sets: String, reps: String, weight: String): Reading {
-        if (sets.isBlank() && (reps.isNotBlank() || weight.isNotBlank())) {
-            return Reading.Refused(Field.Sets, nameSetsFirst)
+    // The count is read first, then the rows top to bottom, reps before load in each, so the lifter
+    // is never told about a lower row while a higher one is still nonsense. A blank Sets is the open
+    // line — the rows are hidden, not lost — and only a commit of it drops them. The rows past the
+    // count are hidden the same way: the reading is the count's prefix, `resized` up to it.
+    fun reading(sets: String, rows: List<TypedSet>): Reading {
+        if (sets.isBlank()) return Reading.Open
+        val counted = whole(sets, setsBand, outsideSets)
+        counted.said?.let { return Reading.Refused(null, Field.Sets, it) }
+        val ladder = resized(rows, counted.whole!!)
+        val scheme = ladder.mapIndexed { index, row ->
+            val repeated = whole(row.reps, repsBand, outsideReps)
+            repeated.said?.let { return Reading.Refused(index, Field.Reps, it) }
+            val loaded = load(row.weight)
+            loaded.said?.let { return Reading.Refused(index, Field.Weight, it) }
+            SetTarget(reps = repeated.whole, weightKg = loaded.kg)
         }
-        val counted = whole(sets, Field.Sets, setsBand, outsideSets)
-        counted.refused?.let { return it }
-        val repeated = whole(reps, Field.Reps, repsBand, outsideReps)
-        repeated.refused?.let { return it }
-        val loaded = load(weight)
-        loaded.refused?.let { return it }
-        val named = counted.whole ?: return Reading.Open
-        return Reading.Targeted(named, repeated.whole, loaded.kg)
+        return Reading.Scheme(scheme)
     }
 
-    // Refuses the CLEAR rather than cascading it: a lifter who empties sets to retype it would
-    // otherwise lose two numbers they did not mean to lose.
-    fun clearingSets(reps: String, weight: String): String? {
-        if (reps.isBlank() && weight.isBlank()) return null
-        return clearTheRest
+    // The head's derived text: the value every row shares, or "" where they differ.
+    fun sharedReps(rows: List<TypedSet>): String = shared(rows.map { it.reps })
+
+    fun sharedWeight(rows: List<TypedSet>): String = shared(rows.map { it.weight })
+
+    // Whether the head's empty field means `varies` rather than its own placeholder.
+    fun repsVary(rows: List<TypedSet>): Boolean = rows.map { it.reps.trim() }.distinct().size > 1
+
+    fun weightVaries(rows: List<TypedSet>): Boolean = rows.map { it.weight.trim() }.distinct().size > 1
+
+    // The head's copy-down: that text into every row.
+    fun withReps(rows: List<TypedSet>, reps: String): List<TypedSet> = rows.map { it.copy(reps = reps) }
+
+    fun withWeight(rows: List<TypedSet>, weight: String): List<TypedSet> = rows.map { it.copy(weight = weight) }
+
+    // Growing copies the last row rather than adding a blank; shrinking drops from the end.
+    fun resized(rows: List<TypedSet>, count: Int): List<TypedSet> {
+        val wanted = count.coerceIn(1, Program.maxSets)
+        if (rows.size >= wanted) return rows.take(wanted)
+        val top = rows.lastOrNull() ?: TypedSet()
+        return rows + List(wanted - rows.size) { top }
     }
 
-    private data class Read(
-        val whole: Int? = null,
-        val kg: Double? = null,
-        val refused: Reading.Refused? = null,
-    )
+    // What typing the count does to the sheet's rows: grows them, never shrinks them. A count typed
+    // under the rows hides the tail; typing it back reveals the same rows.
+    fun grown(rows: List<TypedSet>, count: Int): List<TypedSet> =
+        if (rows.size >= count) rows else resized(rows, count)
+
+    // The rows the sheet draws: the count's prefix while the count reads as one, else every row.
+    fun shown(rows: List<TypedSet>, sets: String): List<TypedSet> {
+        val count = whole(sets, setsBand, outsideSets).whole ?: return rows
+        return rows.take(count)
+    }
+
+    // Whose fault a refusal is. The count's is always the head's; a reps or load refusal is the
+    // head's when every shown row carries the text the head shows — typed there, it was written
+    // into every row and read at the first — and that row's otherwise.
+    fun inTheHead(refused: Reading.Refused, shown: List<TypedSet>): Boolean = when (refused.field) {
+        Field.Sets -> true
+        Field.Reps -> sharedReps(shown).isNotEmpty()
+        Field.Weight -> sharedWeight(shown).isNotEmpty()
+    }
+
+    fun matchFirst(rows: List<TypedSet>): List<TypedSet> {
+        val first = rows.firstOrNull() ?: return rows
+        return rows.map { first }
+    }
+
+    // Both ends have to read as sets before there is anything to ramp between.
+    fun canRamp(rows: List<TypedSet>): Boolean {
+        if (rows.size < 3) return false
+        if (set(rows.first()) == null || set(rows.last()) == null) return false
+        return Scheme.canRamp(rows.map { set(it) ?: SetTarget() })
+    }
+
+    fun rampUp(rows: List<TypedSet>): List<TypedSet> {
+        if (!canRamp(rows)) return rows
+        return Scheme.rampUp(rows.map { set(it) ?: SetTarget() }).map(::TypedSet)
+    }
+
+    fun rows(sets: List<SetTarget>): List<TypedSet> = sets.map(::TypedSet)
+
+    // The commit button's tail, in the words the row itself will print: `open` · `5 × 5 · 80` on a
+    // straight scheme · `5 sets` where the sets disagree · none while something is refused, when the
+    // button reads `Set` alone and is disabled.
+    fun commit(reading: Reading): String? = when (reading) {
+        Reading.Open -> Readout.openTarget
+        is Reading.Refused -> null
+        is Reading.Scheme ->
+            if (Scheme.straight(reading.sets)) Readout.target(reading.sets)
+            else "${reading.sets.size} sets"
+    }
+
+    fun commitLabel(reading: Reading): String = listOfNotNull("Set", commit(reading)).joinToString(" · ")
+
+    private fun shared(typed: List<String>): String = typed.map { it.trim() }.distinct().singleOrNull() ?: ""
+
+    // A row read on its own: null where either field refuses.
+    private fun set(row: TypedSet): SetTarget? {
+        val repeated = whole(row.reps, repsBand, outsideReps)
+        if (repeated.said != null) return null
+        val loaded = load(row.weight)
+        if (loaded.said != null) return null
+        return SetTarget(repeated.whole, loaded.kg)
+    }
+
+    private data class Read(val whole: Int? = null, val kg: Double? = null, val said: String? = null)
 
     // The same six steps as `load`, in the same order, so a field that counts refuses for the same
     // reasons a field that weighs does: a comma is a decimal point, a second point is its own fault,
     // what will not parse is not a number, a typed zero is no target, and a number that is real but
     // not whole is refused BY ITS BAND — the band's sentence is the one that says `Whole`.
-    private fun whole(typed: String, field: Field, band: IntRange, outside: String): Read {
+    private fun whole(typed: String, band: IntRange, outside: String): Read {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
         val normalised = raw.replace(",", ".")
-        if (normalised.count { it == '.' } > 1) {
-            return Read(refused = Reading.Refused(field, onePoint))
-        }
+        if (normalised.count { it == '.' } > 1) return Read(said = onePoint)
         val value = normalised.toDoubleOrNull()
-        if (value == null || !value.isFinite()) {
-            return Read(refused = Reading.Refused(field, notANumber))
-        }
-        if (value == 0.0) return Read(refused = Reading.Refused(field, zeroTarget))
-        if (value != kotlin.math.floor(value)) return Read(refused = Reading.Refused(field, outside))
+        if (value == null || !value.isFinite()) return Read(said = notANumber)
+        if (value == 0.0) return Read(said = zeroTarget)
+        if (value != kotlin.math.floor(value)) return Read(said = outside)
         val counted = value.toInt()
-        if (counted !in band) return Read(refused = Reading.Refused(field, outside))
+        if (counted !in band) return Read(said = outside)
         return Read(whole = counted)
     }
 
@@ -169,17 +258,11 @@ object TargetEntry {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
         val normalised = raw.replace(",", ".")
-        if (normalised.count { it == '.' } > 1) {
-            return Read(refused = Reading.Refused(Field.Weight, onePoint))
-        }
+        if (normalised.count { it == '.' } > 1) return Read(said = onePoint)
         val value = normalised.toDoubleOrNull()
-        if (value == null || !value.isFinite()) {
-            return Read(refused = Reading.Refused(Field.Weight, notANumber))
-        }
-        if (kotlin.math.abs(value) > maxWeightKg) {
-            return Read(refused = Reading.Refused(Field.Weight, overWeight))
-        }
-        if (value == 0.0) return Read(refused = Reading.Refused(Field.Weight, zeroTarget))
+        if (value == null || !value.isFinite()) return Read(said = notANumber)
+        if (kotlin.math.abs(value) > maxWeightKg) return Read(said = overWeight)
+        if (value == 0.0) return Read(said = zeroTarget)
         return Read(kg = Ladder.round(value))
     }
 }
@@ -217,16 +300,14 @@ data class RoutineDraft(
         return copy(entries = renumbered(ordered))
     }
 
-    // Sets are what make a line a target at all; cleared reps mean `max` and a cleared load means
-    // `last time`, which is the domain's own reading of a null.
-    fun targeting(exerciseId: String, sets: Int, reps: Int?, weightKg: Double?): RoutineDraft =
-        mapping(exerciseId) {
-            it.copy(targetSets = sets, targetReps = reps, targetWeightKg = weightKg?.let(Ladder::round))
-        }
+    // The line's scheme, loads on the ladder's grid; a set's null reps mean `max` and a null load
+    // means `last time`, which is the domain's own reading of them.
+    fun targeting(exerciseId: String, sets: List<SetTarget>): RoutineDraft =
+        mapping(exerciseId) { it.copy(sets = Scheme.rounded(sets)) }
 
-    // Clears the whole row: the log refuses a half-open line — reps or a weight with no sets.
+    // Opens the line: no sets at all, which is the absence the wire carries.
     fun opening(exerciseId: String): RoutineDraft =
-        mapping(exerciseId) { it.copy(targetSets = null, targetReps = null, targetWeightKg = null) }
+        mapping(exerciseId) { it.copy(sets = emptyList()) }
 
     fun entry(exerciseId: String): RoutineEntry? = entries.firstOrNull { it.exerciseId == exerciseId }
 
@@ -237,8 +318,7 @@ data class RoutineDraft(
     // Every routine write is a WHOLE document, and a line's position is its place in the day.
     val write: List<RoutineEntryWrite>
         get() = entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.targetSets, it.targetReps, it.targetWeightKg,
-                              it.restSeconds)
+            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
         }
 
     private fun mapping(exerciseId: String, move: (RoutineEntry) -> RoutineEntry): RoutineDraft =
@@ -248,9 +328,6 @@ data class RoutineDraft(
         entries.mapIndexed { index, entry -> entry.copy(position = index + 1) }
 
     companion object {
-        const val startingSets = 3
-        const val startingReps = 5
-
         fun of(routine: Routine): RoutineDraft = RoutineDraft(
             id = routine.id,
             name = routine.name,

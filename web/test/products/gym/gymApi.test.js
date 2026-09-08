@@ -952,7 +952,7 @@ test('routines — the list, the read, and an absent routine answered the way an
     name: 'Push A',
     position: 0,
     lastTrainedAt: 1_754_300_000_000,
-    entries: [{ position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5, restSeconds: 180 }],
+    entries: [{ position: 1, exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }], restSeconds: 180 }],
   };
   serve(ok({ routines: [routine] }));
   assert.deepEqual(await gymApi.routines(), [routine]);
@@ -971,11 +971,11 @@ test('routines — create sends the document, replace sends it whole, delete ans
     id: 'rt_pull_a',
     name: 'Pull A',
     position: 1,
-    entries: [{ exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70 }],
+    entries: [{ exerciseId: 'barbell-row', sets: [{ reps: 8, weightKg: 70 }, { reps: 8, weightKg: 70 }] }],
   };
   const stored = {
     ...write,
-    entries: [{ position: 1, exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70 }],
+    entries: [{ position: 1, exerciseId: 'barbell-row', sets: [{ reps: 8, weightKg: 70 }, { reps: 8, weightKg: 70 }] }],
   };
   serve(ok(stored));
   assert.deepEqual(await gymApi.createRoutine(write), stored);
@@ -1020,7 +1020,7 @@ test('routines — a pending proposal and the revision it is frozen against ride
       createdAt: 1_754_000_000_000,
       source: { door: 'mcp' },
     },
-    entries: [{ position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
+    entries: [{ position: 1, exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }] }],
   };
   serve(ok({ routines: [routine] }));
   assert.deepEqual(await gymApi.routines(), [routine]);
@@ -1299,7 +1299,7 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
 test('unknown-exercise — a routine entry can reach the same refusal a set can', async () => {
   serve(refusal(400, 'no such exercise', 'unknown-exercise'));
   await assert.rejects(
-    () => gymApi.replaceRoutine('rt_push_a', { id: 'rt_push_a', name: 'Push A', position: 0, entries: [{ exerciseId: 'zercher-squat', targetSets: 3 }] }),
+    () => gymApi.replaceRoutine('rt_push_a', { id: 'rt_push_a', name: 'Push A', position: 0, entries: [{ exerciseId: 'zercher-squat', sets: [{}, {}, {}] }] }),
     (error) => {
       assert.deepEqual(flagsOf(error), {
         name: 'GymError',

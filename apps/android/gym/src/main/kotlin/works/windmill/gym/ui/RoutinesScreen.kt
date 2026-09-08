@@ -406,9 +406,9 @@ private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: 
         }
         Spacer(Modifier.weight(1f))
         Text(
-            Readout.target(entry.targetSets, entry.targetReps, entry.targetWeightKg),
+            Readout.target(entry.sets),
             style = GymType.numeral(12),
-            color = if (entry.targetSets == null) GymSkin.inkFaint else GymSkin.targetInk,
+            color = if (entry.isOpen) GymSkin.inkFaint else GymSkin.targetInk,
         )
     }
 }

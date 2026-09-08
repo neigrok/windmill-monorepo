@@ -112,37 +112,31 @@ object Finish {
         )
     }
 
-    // Which reference the arrow points from: the PLAN when the session had one for that movement, and
-    // last time when it did not. `now.sets` counts only the sets at the TOP LOAD, so reps are the only
-    // axis this wire can be read short on.
+    // The plan reads in the readout formula and the effort — the top set and how many of them — in the
+    // same shape. The top set stands against the plan's own top set, and `now.sets` counts only the
+    // sets at the TOP LOAD, so short is read on reps alone, at a load that did not go up. An open line
+    // is nothing to measure against, so the row falls through to last time. review.js `detailOf`'s
+    // rule, and iOS's.
     private fun detail(movement: AgainstMovement): String {
         val planned = movement.planned
-        val sets = planned?.sets
-        if (planned == null || sets == null) {
-            val before = movement.before ?: return top(movement.now)
-            return "${top(before)} → ${top(movement.now)}"
+        val top = planned?.top
+        if (planned != null && top != null) {
+            val short = top.reps != null && movement.now.reps < top.reps &&
+                (top.weightKg == null || movement.now.weightKg <= top.weightKg)
+            if (short) return "planned ${Readout.target(planned.sets)} — did ${effort(movement.now)}"
+            return "${Readout.target(planned.sets)} → ${effort(movement.now)}"
         }
-        val target = planned.reps
-        if (target != null && movement.now.reps < target &&
-            (planned.weightKg == null || movement.now.weightKg <= planned.weightKg)
-        ) {
-            return "planned ${count(sets, target)} · did ${count(movement.now.sets, movement.now.reps)}"
-        }
-        return "${top(sets, planned.reps, planned.weightKg)} → ${top(movement.now)}"
+        val before = movement.before ?: return effort(movement.now)
+        return "${effort(before)} → ${effort(movement.now)}"
     }
 
-    private fun count(sets: Int, reps: Int?): String {
-        if (reps == null) return "$sets × ${Readout.repTarget(null)}"
-        return "$sets×$reps"
+    // `{sets} × {reps} · {load}`, the scheme's own formula. Zero is the absence of a load, not a load,
+    // so a bodyweight effort leaves the column out; a band-assisted −20 still reads its own.
+    private fun effort(effort: Effort): String {
+        val count = "${effort.sets} × ${effort.reps}"
+        if (effort.weightKg == 0.0) return count
+        return "$count · ${Readout.weight(effort.weightKg)}"
     }
-
-    // Zero is not a load, it is the absence of one; a band-assisted −20 still reads its load.
-    private fun top(sets: Int, reps: Int?, weightKg: Double?): String {
-        if (weightKg == null || weightKg == 0.0) return count(sets, reps)
-        return "${count(sets, reps)} @ ${Readout.weight(weightKg)}"
-    }
-
-    private fun top(effort: Effort): String = top(effort.sets, effort.reps, effort.weightKg)
 }
 
 // The receipt's one primary and the line under it. The question is the whole of what is sent: no
@@ -403,7 +397,7 @@ private fun KeepAsRoutine(
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    Readout.target(entry.targetSets, entry.targetReps, entry.targetWeightKg),
+                    Readout.target(entry.sets),
                     style = GymType.numeral(13),
                     color = GymSkin.targetInk,
                 )

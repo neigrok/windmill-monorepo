@@ -36,6 +36,14 @@ object Ladder {
         return (hundredths / 100.0) * sign(weight)
     }
 
+    // The nearest load on the plate grid: the small step of the band the load stands in (`<`, as a
+    // lift reads it), half away from zero — `21.25` in the 20–50 band lands on `22.5`, `19.9` under
+    // 20 on `20`.
+    fun onGrid(weight: Double): Double {
+        val step = steps(abs(weight), lightening = false).small
+        return round(floor(abs(weight) / step + 0.5) * step * sign(weight))
+    }
+
     fun bump(weight: Double, direction: Int, big: Boolean): Double {
         val step = steps(abs(weight), lightening = direction * weight < 0)
         return round(weight + direction * (if (big) step.large else step.small))

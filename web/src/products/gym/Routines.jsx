@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Button, Icon, Input, Menu, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
   alsoReadsLabel, cappedName, entryLabel, isNameOverCap, isUntested, MOVEMENTS_HREF, movementOf,
   nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref, routineMetaLabel, ROUTINES_HREF,
-  showsNameCount, threadHref, UNTESTED,
+  schemeAgrees, showsNameCount, threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
@@ -14,11 +14,13 @@ import { PendingProposals, ProposalDot, ProposalReview } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, builtLabel, draftFrom, entryDroppedLine,
-  entryPlaceLabel, historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER,
-  NAME_IT_TO_SAVE_IT, OPEN_LINE, OPEN_PLACEHOLDER, reorderEntries, routineDeletedLine, routineWrite,
-  saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt,
-  withEntryRemoved, withEntrySet, withField, withSignFlipped,
+  ADD_SET, blankRoutine, builtLabel, commitLabel, draftFrom, entryDroppedLine,
+  entryPlaceLabel, EVERY_SET, FILL, headOf, historyRows, isOpenFields, ladderOf, LAST_TIME_PLACEHOLDER,
+  MATCH_SET_ONE, MAX_PLACEHOLDER, NAME_IT_TO_SAVE_IT, OPEN_LINE, OPEN_PLACEHOLDER, RAMP_UP,
+  rampDisabled, reorderEntries, routineDeletedLine, routineWrite, saysNeverLogged, SET_BY_SET,
+  targetEntryOf, targetFieldsOf, targetRefusal, withEntryAdded, withEntryAt, withEntryRemoved,
+  withEntrySet, withHead, withMatchedToFirst, withRampUp, withRow, withRowAdded, withRowRemoved,
+  withSets, withSignFlipped,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -258,6 +260,7 @@ export function RoutineEditor({ id, log }) {
           movement={nameOfMovement(log.catalog, draft.entries[target].exerciseId)}
           place={entryPlaceLabel(target, draft.entries.length, draft.name)}
           entry={draft.entries[target]}
+          equipment={movementOf(log.catalog, draft.entries[target].exerciseId)?.equipment ?? null}
           neverLogged={saysNeverLogged(view.data, draft.entries[target])}
           onSet={(entry) => {
             editEntries((held) => withEntrySet(held, target, entry));
@@ -314,32 +317,40 @@ function RoutineHistory({ routine }) {
   );
 }
 
-// Three fields and no escape hatch, because clearing a field IS the escape: sets cleared is the open
-// line, reps cleared is `max`, weight cleared is `last time`, and each placeholder says so. The plate
-// ladder and the keypad are rack controls (16-the-workout.md) and are not here.
-function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
+// The sheet holds one scheme at two zooms and nothing is a mode: the head speaks about every set at
+// once, the ladder one row per set, and both are always drawn while the line names a count. Clearing
+// Sets IS the open line — the ladder is hidden, not thrown away, and the other two fields go inert.
+// The plate ladder and the keypad are rack controls (16-the-workout.md) and are not here.
+function TargetSheet({ movement, place, entry, equipment, neverLogged, onSet, onClose }) {
   const [fields, setFields] = useState(() => targetFieldsOf(entry));
+  const ids = useId();
   const refusal = targetRefusal(fields);
+  const open = isOpenFields(fields);
+  const head = headOf(fields);
+  const ladder = ladderOf(fields);
   // Nothing is derived from a refused field: while one stands, the button says only what it is.
   const held = refusal ? null : targetEntryOf(entry, fields);
-  const alsoReads = alsoReadsLabel(held?.targetWeightKg ?? null);
-  // A refused clear keeps the field's value, so it keeps it SELECTED too: the gesture that reaches
-  // this refusal is backspace-then-retype, and a kept value with the caret behind it would turn the
-  // next digit into a second one (5 backspaced and 4 typed reading 54). Written to the node before
-  // React's own restore, so the selection survives the re-render that puts the value back.
-  const type = (field) => (event) => {
-    const input = event.target;
-    const next = withField(fields, field, input.value);
-    setFields(next);
-    if (!next.clearRefused) return;
-    input.value = next.sets;
-    input.setSelectionRange(0, next.sets.length);
+  // The pounds reading is honest only for a scheme with one load to read.
+  const alsoReads = held?.sets && schemeAgrees(held.sets) ? alsoReadsLabel(held.sets[0].weightKg ?? null) : null;
+  // `±` is drawn only where a negative load means something: band assistance on a bodyweight movement.
+  const signed = equipment === 'bodyweight';
+  const rowRefusal = (index, field) => (refusal?.row === index && refusal.field === field ? refusal.message : undefined);
+  const rowId = (index, field) => `${ids}-row-${index}-${field}`;
+  // Enter walks the same column down the ladder, so a ramp is typed top to bottom without a mouse.
+  const nextDown = (index, field) => (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    globalThis.document?.getElementById?.(rowId(index + 1, field))?.focus();
   };
-  const refusalFor = (field) => (refusal?.field === field ? refusal.message : undefined);
+  const sign = (flip) => (
+    <button type="button" className="gym-target-sign" aria-label="Flip the sign — band-assisted" onClick={flip}>
+      ±
+    </button>
+  );
 
   return (
     <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
-      <div className="gym-sheet" role="dialog" aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
+      <div className="gym-sheet gym-target" role="dialog" aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-target-movement">{movement}</span>
           <span className="gym-target-place">{place}</span>
@@ -354,55 +365,166 @@ function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
             is refusing in the same breath says two things at once. */}
         {!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}
 
-        <div className="gym-target-fields">
-          <Input
-            label="Sets"
-            value={fields.sets}
-            placeholder={OPEN_PLACEHOLDER}
-            inputMode="numeric"
-            error={refusalFor('sets')}
-            onChange={type('sets')}
-          />
-          <Input
-            label="Reps"
-            value={fields.reps}
-            placeholder={MAX_PLACEHOLDER}
-            inputMode="numeric"
-            error={refusalFor('reps')}
-            onChange={type('reps')}
-          />
-          <Input
-            label="Weight"
-            value={fields.weight}
-            placeholder={LAST_TIME_PLACEHOLDER}
-            inputMode="decimal"
-            error={refusalFor('weight')}
-            onChange={type('weight')}
-            trailing={(
-              <>
-                <span className="gym-target-unit">kg</span>
-                {/* A decimal keyboard offers no sign, and band-assisted work is a negative load. */}
-                <button
-                  type="button"
-                  className="gym-target-sign"
-                  aria-label="Flip the sign — band-assisted"
-                  onClick={() => setFields(withSignFlipped)}
-                >
-                  ±
+        <section className="gym-sheet-section">
+          <div className="gym-sheet-section-head">
+            <h3 className="gym-sheet-section-title">{EVERY_SET}</h3>
+          </div>
+          <div className="gym-target-fields">
+            <Input
+              label="Sets"
+              value={fields.sets}
+              placeholder={OPEN_PLACEHOLDER}
+              inputMode="numeric"
+              error={refusal?.field === 'sets' ? refusal.message : undefined}
+              onChange={(event) => setFields(withSets(fields, event.target.value))}
+            />
+            {/* An open line names neither: the two are inert, not refused. */}
+            <fieldset className="gym-target-head" disabled={open}>
+              <Input
+                label="Reps"
+                value={head.reps.value}
+                placeholder={head.reps.placeholder}
+                inputMode="numeric"
+                onChange={(event) => setFields(withHead(fields, 'reps', event.target.value))}
+              />
+              <Input
+                label="Weight"
+                value={head.weight.value}
+                placeholder={head.weight.placeholder}
+                inputMode="decimal"
+                onChange={(event) => setFields(withHead(fields, 'weight', event.target.value))}
+                trailing={(
+                  <>
+                    <span className="gym-target-unit">kg</span>
+                    {signed && sign(() => setFields(withSignFlipped(fields)))}
+                  </>
+                )}
+              />
+            </fieldset>
+          </div>
+        </section>
+
+        {!open && (
+          <section className="gym-sheet-section">
+            <div className="gym-sheet-section-head">
+              <h3 className="gym-sheet-section-title">{SET_BY_SET}</h3>
+              <FillMenu
+                items={[
+                  { label: RAMP_UP, disabled: rampDisabled(fields), run: () => setFields(withRampUp(fields)) },
+                  { label: MATCH_SET_ONE, disabled: false, run: () => setFields(withMatchedToFirst(fields)) },
+                ]}
+              />
+            </div>
+            <ul className="gym-ladder">
+              {ladder.map((row, index) => (
+                <li className="gym-ladder-row" key={index}>
+                  <span className="gym-ladder-ordinal" aria-hidden="true">{index + 1}</span>
+                  {/* The field catches no key of its own; Enter bubbles to the wrapper. */}
+                  <span className="gym-ladder-field" onKeyDown={nextDown(index, 'reps')}>
+                    <Input
+                      id={rowId(index, 'reps')}
+                      ariaLabel={`Set ${index + 1} reps`}
+                      value={row.reps}
+                      placeholder={MAX_PLACEHOLDER}
+                      inputMode="numeric"
+                      error={rowRefusal(index, 'reps')}
+                      onChange={(event) => setFields(withRow(fields, index, 'reps', event.target.value))}
+                    />
+                  </span>
+                  <span className="gym-ladder-field is-load" onKeyDown={nextDown(index, 'weight')}>
+                    <Input
+                      id={rowId(index, 'weight')}
+                      ariaLabel={`Set ${index + 1} load`}
+                      value={row.weight}
+                      placeholder={LAST_TIME_PLACEHOLDER}
+                      inputMode="decimal"
+                      error={rowRefusal(index, 'weight')}
+                      onChange={(event) => setFields(withRow(fields, index, 'weight', event.target.value))}
+                      trailing={(
+                        <>
+                          <span className="gym-target-unit">kg</span>
+                          {signed && sign(() => setFields(withSignFlipped(fields, index)))}
+                        </>
+                      )}
+                    />
+                  </span>
+                  <button
+                    type="button"
+                    className="gym-ladder-drop"
+                    aria-label={`Delete set ${index + 1}`}
+                    onClick={() => setFields(withRowRemoved(fields, index))}
+                  >
+                    <Icon name="x" size={15} />
+                  </button>
+                </li>
+              ))}
+              <li className="gym-ladder-row is-add">
+                <button type="button" className="gym-ladder-add" onClick={() => setFields(withRowAdded(fields))}>
+                  {ADD_SET}
                 </button>
-              </>
-            )}
-          />
-        </div>
+                {refusal?.field === 'add' && <span className="gym-ladder-refusal">{refusal.message}</span>}
+              </li>
+            </ul>
+          </section>
+        )}
 
         {/* The field is kilograms; null when the account also reads kilograms. */}
         {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
 
         <Button full disabled={held == null} onClick={() => onSet(held)}>
-          {held == null ? 'Set' : `Set · ${entryLabel(held)}`}
+          {held == null ? 'Set' : commitLabel(held)}
         </Button>
       </div>
     </div>
+  );
+}
+
+// The ladder's one menu, opened by a word rather than the design system's ⋯: `Fill` names what the
+// two items do. It closes on the act, on Escape, and on a pointer landing outside it, as `Menu` does.
+function FillMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (event) => { if (!box.current?.contains(event.target)) setOpen(false); };
+    const key = (event) => { if (event.key === 'Escape') setOpen(false); };
+    window.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', away);
+      window.removeEventListener('keydown', key);
+    };
+  }, [open]);
+
+  return (
+    <span className="wm-menu gym-fill" ref={box}>
+      <button
+        type="button"
+        className="gym-fill-open"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((held) => !held)}
+      >
+        {FILL}
+      </button>
+      {open && (
+        <span className="wm-menu-list" role="menu">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className="wm-menu-item"
+              disabled={item.disabled}
+              onClick={() => { setOpen(false); item.run(); }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 
