@@ -157,12 +157,12 @@ Json::Value linkArray(const char* description) {
 // the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
 // under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
 // create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy"};
+const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree",  "annotate_node", "rename_node",   "set_node_color", "move_node",
+    "delete_tree",  "rename_node",   "set_node_color", "move_node",
     "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
     "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
-    "recolor_kind", "set_progress",  "import_subgraph", "prune"};
+    "recolor_kind", "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
@@ -192,6 +192,101 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 std::vector<ToolDeclaration> roadmapToolCatalog() {
   std::vector<ToolDeclaration> tools;
 
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = treeHandle();
+    p["nodeIds"] = strArray("Exact node ids in response order; duplicates are rejected.", kMaxIdLength);
+    p["nodeIds"]["minItems"] = 1;
+    p["nodeIds"]["maxItems"] = static_cast<Json::UInt64>(kMaxReadNodeIds);
+    p["nodeIds"]["uniqueItems"] = true;
+    p["fields"] = fieldArray("Node projection; defaults to id, label, color, prerequisites.", nodeVocabulary().names());
+    ToolDeclaration declaration = tool("get_nodes", Access::read,
+        "Read 1..200 exact nodes in requested order, with explicit missingNodeIds and the tree seq. "
+        "Uses get_tree fields and privacy rules. The complete response must fit 262144 serialized bytes; "
+        "if refused, request fewer ids or lighter fields. No silent truncation.", p, {"treeId", "nodeIds"});
+    Json::Value output(Json::objectValue);
+    output["type"] = "object";
+    output["additionalProperties"] = false;
+    output["properties"]["treeId"] = treeHandle();
+    output["properties"]["seq"]["type"] = "integer";
+    output["properties"]["nodes"]["type"] = "array";
+    output["properties"]["nodes"]["items"]["type"] = "object";
+    output["properties"]["missingNodeIds"] = strArray("Requested ids absent from this tree.", kMaxIdLength);
+    output["required"] = Json::Value(Json::arrayValue);
+    for (const char* field : {"treeId", "seq", "nodes", "missingNodeIds"}) output["required"].append(field);
+    declaration.descriptor["outputSchema"] = output;
+    tools.push_back(std::move(declaration));
+  }
+  for (const char* name : {"patch_nodes", "change_edges"}) {
+    const bool patches = std::string_view(name) == "patch_nodes";
+    Json::Value p(Json::objectValue);
+    p["treeId"] = treeHandle();
+    p["expectedSeq"]["type"] = "integer";
+    p["expectedSeq"]["minimum"] = 0;
+    p["expectedSeq"]["description"] = "Optional tree revision precondition from get_tree or get_nodes; stale revisions reject the entire batch.";
+    p["dryRun"] = boolean("Validate and report the planned changes without applying them.");
+    Json::Value edgeProperties(Json::objectValue);
+    edgeProperties["from"] = cappedStr("Prerequisite node id.", kMaxIdLength);
+    edgeProperties["to"] = cappedStr("Dependent node id.", kMaxIdLength);
+    if (patches) {
+      Json::Value row(Json::objectValue);
+      row["nodeId"] = cappedStr("Existing node id; each id occurs once in this batch.", kMaxIdLength);
+      row["label"] = cappedStr("Replacement label; omitted fields stay unchanged.", kMaxNodeLabelLength);
+      row["icon"] = cappedStr("Replacement icon; empty string clears it.", kMaxIconLength);
+      row["description"] = cappedStr("Replacement description; empty string clears it.", kMaxNodeDescriptionLength);
+      row["color"] = enumStr("Replacement node hue.", kHues);
+      row["position"] = position("Replacement position; both coordinates are required.");
+      row["position"]["required"] = Json::Value(Json::arrayValue);
+      row["position"]["required"].append("x");
+      row["position"]["required"].append("y");
+      row["links"] = linkArray("Replacement links; an empty list clears them.");
+      p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field to change.", row, {"nodeId"});
+      p["updates"]["minItems"] = 1;
+      p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
+    } else {
+      for (const char* field : {"add", "remove"}) {
+        p[field] = objArray("Edge pairs; add and remove together must contain 1..500 unique, non-overlapping edges.", edgeProperties, {"from", "to"});
+        p[field]["maxItems"] = static_cast<Json::UInt64>(kMaxChangeEdges);
+        p[field]["uniqueItems"] = true;
+      }
+    }
+    ToolDeclaration declaration = tool(name, Access::write,
+        patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
+                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes. "
+                  "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
+                : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
+                  "Added endpoints must exist; removing an absent edge is a no-op. Duplicates and add/remove overlap reject the entire batch. "
+                  "Cycles remain allowed and are reported through diagnostics. Exact retries do not mint a new seq; expectedSeq and dryRun are supported.",
+        p, patches ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
+    Json::Value output(Json::objectValue);
+    output["type"] = "object";
+    output["additionalProperties"] = false;
+    Json::Value& properties = output["properties"];
+    properties["treeId"] = treeHandle();
+    properties["seq"]["type"] = "integer";
+    properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
+    properties["dryRun"] = boolean("True when the listed changes are a preview.");
+    properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
+    properties["introducedDiagnostics"] = strArray("New structural errors after an applied batch.", 0);
+    properties["introducedDiagnostics"]["items"].removeMember("maxLength");
+    output["required"] = Json::Value(Json::arrayValue);
+    for (const char* field : {"treeId", "seq", "applied", "dryRun"}) output["required"].append(field);
+    if (patches) {
+      for (const char* field : {"changedNodeIds", "unchangedNodeIds"}) {
+        properties[field] = strArray("Node ids in input order, partitioned by whether the patch changes them.", kMaxIdLength);
+        output["required"].append(field);
+      }
+    } else {
+      for (const char* field : {"addedEdges", "removedEdges"}) {
+        properties[field] = objArray("Edges that change, in input order.", edgeProperties, {"from", "to"});
+        output["required"].append(field);
+      }
+      properties["unchangedEdges"]["type"] = "integer";
+      output["required"].append("unchangedEdges");
+    }
+    declaration.descriptor["outputSchema"] = output;
+    tools.push_back(std::move(declaration));
+  }
   {
     Json::Value p(Json::objectValue);
     p["title"] = cappedStr("Optional name for the new roadmap.", kMaxTitleChars);
@@ -566,6 +661,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "a subtree out of dependency order no longer misreports prerequisitesMet. Pass this OR a "
         "single nodeId+status, never both.",
         updateFields, {"nodeId", "status"});
+    p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     tools.push_back(tool("set_progress", Access::write,
         "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
         "node ids are rejected (no orphan rows). Advisory only — marking complete with unmet "
@@ -630,6 +726,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                              "names a node that exists once the import lands; a row naming none is "
                              "reported back in progressSkipped, not silently dropped.",
                              progressFields, {"nodeId", "status"});
+    p["progress"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     p["prerequisiteMode"] = enumStr(
         "How a node already in the tree — or deleted and re-sent, which revives it with its old "
         "edges — meets the `prerequisites` you send for it. `merge` (the default) UNIONS them with "

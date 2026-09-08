@@ -121,6 +121,9 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);
 
+inline constexpr std::size_t kMaxReadNodeIds = 200;
+inline constexpr std::size_t kNodeBatchByteBudget = 256 * 1024;
+
 inline constexpr int kDefaultLimit = 200;
 inline constexpr int kMaxLimit = 1000;
 

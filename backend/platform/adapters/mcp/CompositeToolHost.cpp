@@ -7,40 +7,103 @@
 
 namespace wm {
 
-CompositeToolHost::CompositeToolHost(const std::vector<ToolModule>& modules) {
-  for (const ToolModule& module : modules) {
-    if (!module.instructions.empty()) {
-      if (!instructions_.empty()) instructions_ += "\n\n";
-      instructions_ += module.instructions;
+namespace {
+
+std::string toolReferences(const std::string& source, const std::map<std::string, std::string>& names) {
+  std::string out;
+  for (std::size_t begin = 0; begin < source.size();) {
+    const unsigned char first = static_cast<unsigned char>(source[begin]);
+    if (!std::isalnum(first) && first != '_') {
+      out += source[begin++];
+      continue;
     }
+    std::size_t end = begin + 1;
+    while (end < source.size() && (std::isalnum(static_cast<unsigned char>(source[end])) || source[end] == '_')) ++end;
+    const std::string word = source.substr(begin, end - begin);
+    const auto replacement = names.find(word);
+    const bool explicitTool = word.find('_') != std::string::npos ||
+        (begin > 0 && source[begin - 1] == '`') || (end < source.size() && source[end] == '(');
+    out += replacement == names.end() || !explicitTool ? word : replacement->second;
+    begin = end;
+  }
+  return out;
+}
+
+void describeCanonicalTools(Json::Value& schema, const std::map<std::string, std::string>& names) {
+  if (!schema.isObject()) return;
+  if (schema.isMember("description") && schema["description"].isString()) schema["description"] = toolReferences(schema["description"].asString(), names);
+  for (const char* key : {"inputSchema", "outputSchema", "items", "additionalProperties", "propertyNames",
+                          "contains", "not", "if", "then", "else"})
+    if (schema.isMember(key)) describeCanonicalTools(schema[key], names);
+  for (const char* key : {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}) {
+    if (!schema.isMember(key) || !schema[key].isObject()) continue;
+    for (const std::string& child : schema[key].getMemberNames()) describeCanonicalTools(schema[key][child], names);
+  }
+  for (const char* key : {"allOf", "anyOf", "oneOf", "prefixItems"}) {
+    if (!schema.isMember(key) || !schema[key].isArray()) continue;
+    for (Json::Value& child : schema[key]) describeCanonicalTools(child, names);
+  }
+}
+
+}
+
+CompositeToolHost::CompositeToolHost(const std::vector<ToolModule>& modules) {
+  std::map<std::string, std::vector<std::size_t>> localNames;
+  for (const ToolModule& module : modules) {
     for (ToolDeclaration& declaration : module.host.declareTools()) {
-      const std::string name = declaration.name();
-      const auto [entry, fresh] = byName_.emplace(name, tools_.size());
-      if (!fresh)
-        throw std::invalid_argument("two products declare the MCP tool \"" + name + "\": " +
-                                    tools_[entry->second].declaration.product + " and " +
-                                    declaration.product +
-                                    " — one name must answer for exactly one product");
+      const std::string local = declaration.name();
+      const std::string canonical = declaration.product + "_" + local;
+      if (!byName_.emplace(canonical, tools_.size()).second)
+        throw std::invalid_argument("two products declare the canonical MCP tool \"" + canonical + "\"");
+      localNames[local].push_back(tools_.size());
       if (std::find(products_.begin(), products_.end(), declaration.product) == products_.end())
         products_.push_back(declaration.product);
-      tools_.push_back(Registered{std::move(declaration), &module.host});
+      tools_.push_back(Registered{std::move(declaration), &module.host, canonical});
     }
-    for (ToolRetirement& retirement : module.host.retiredTools())
-      retired_.emplace(retirement.name, std::move(retirement));
+  }
+  for (const auto& [name, matches] : localNames) {
+    if (byName_.count(name))
+      throw std::invalid_argument("the MCP compatibility alias \"" + name + "\" collides with a canonical tool name");
+    if (matches.size() != 1) continue;
+    byName_.emplace(name, matches.front());
   }
 
-  // Checked after every module is in, because the live tool a retirement collides with — or the
-  // replacement it points at — may belong to a module registered later.
-  for (const auto& [name, retirement] : retired_) {
-    if (byName_.count(name))
-      throw std::invalid_argument("the MCP tool \"" + name + "\" is declared by " +
-                                  tools_[byName_.at(name)].declaration.product +
-                                  " and retired at the same time — a retired name must never shadow "
-                                  "a live one");
-    if (!retirement.replacement.empty() && !byName_.count(retirement.replacement))
-      throw std::invalid_argument("the retired MCP tool \"" + name + "\" names \"" +
-                                  retirement.replacement +
-                                  "\" as its replacement, and no product declares that tool");
+  for (const ToolModule& module : modules) {
+    const auto references = referencesFor(module.host);
+    if (!module.instructions.empty()) {
+      if (!instructions_.empty()) instructions_ += "\n\n";
+      instructions_ += toolReferences(module.instructions, references);
+    }
+    for (ToolRetirement retirement : module.host.retiredTools()) {
+      const std::string local = retirement.name;
+      std::string product;
+      for (const Registered& tool : tools_) {
+        if (tool.host != &module.host) continue;
+        if (product.empty()) product = tool.declaration.product;
+        if (product != tool.declaration.product)
+          throw std::invalid_argument("a module with retired MCP tools must own exactly one product");
+      }
+      if (product.empty()) throw std::invalid_argument("a module with retired MCP tools must declare its product");
+      if (!retirement.replacement.empty()) {
+        const auto replacement = byName_.find(product + "_" + retirement.replacement);
+        if (replacement == byName_.end() || tools_[replacement->second].host != &module.host ||
+            tools_[replacement->second].publicName != product + "_" + retirement.replacement)
+          throw std::invalid_argument("the retired MCP tool \"" + local + "\" names \"" + retirement.replacement +
+                                     "\" as its replacement, and its product does not declare that tool");
+      }
+      for (const std::string& name : {local, product + "_" + local}) {
+        if (byName_.count(name) || localNames.count(name))
+          throw std::invalid_argument("the MCP tool \"" + name + "\" is both declared and retired");
+        ToolRetirement alias = retirement;
+        alias.name = name;
+        if (name != local) {
+          if (!alias.replacement.empty()) alias.replacement = product + "_" + alias.replacement;
+          alias.sentence = toolReferences(alias.sentence, references);
+        }
+        if (!retired_.emplace(name, std::move(alias)).second)
+          throw std::invalid_argument("two modules retire the MCP tool \"" + name + "\"");
+      }
+    }
   }
 }
 
@@ -51,10 +114,25 @@ std::vector<ToolRetirement> CompositeToolHost::retiredTools() const {
   return all;
 }
 
+std::map<std::string, std::string> CompositeToolHost::referencesFor(const ToolHost& host) const {
+  std::map<std::string, std::string> references;
+  for (const Registered& tool : tools_)
+    if (byName_.count(tool.declaration.name())) references.emplace(tool.declaration.name(), tool.publicName);
+  for (const Registered& tool : tools_)
+    if (tool.host == &host) references[tool.declaration.name()] = tool.publicName;
+  return references;
+}
+
 std::vector<ToolDeclaration> CompositeToolHost::declareTools() const {
   std::vector<ToolDeclaration> all;
   all.reserve(tools_.size());
-  for (const Registered& tool : tools_) all.push_back(tool.declaration);
+  for (const Registered& tool : tools_) {
+    ToolDeclaration publicTool = tool.declaration;
+    publicTool.descriptor["title"] = tool.declaration.title();
+    publicTool.descriptor["name"] = tool.publicName;
+    describeCanonicalTools(publicTool.descriptor, referencesFor(*tool.host));
+    all.push_back(std::move(publicTool));
+  }
   return all;
 }
 
@@ -75,7 +153,7 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
   if (std::optional<std::string> unknown = undeclaredArgument(declared, arguments))
     return ToolResult::failure(name + ": " + *unknown);
 
-  return tool.host->callTool(name, arguments, caller);
+  return tool.host->callTool(declared.name(), arguments, caller);
 }
 
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build) {
@@ -86,6 +164,10 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
   }
 
   std::string instructions =
+      "Use the user's stated goals, preferences, constraints and earlier answers. Read relevant app "
+      "state before recommending or making changes. Ask only for missing information that materially "
+      "affects the result; do not ask people to repeat known context or invent their answers. Keep "
+      "explanations clear, concise, friendly and grounded in what the app records.\n\n"
       "Windmill is one account behind several self-growth products. This connection reaches: " +
       (connected.empty() ? std::string("nothing — no product is wired into this server") : connected) +
       ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "

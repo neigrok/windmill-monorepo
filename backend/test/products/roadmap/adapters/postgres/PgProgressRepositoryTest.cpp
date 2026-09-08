@@ -60,3 +60,25 @@ TEST(pg_progress_keeps_the_out_of_order_word_under_the_status_stamp) {
   CHECK_FALSE(loaded.marks.at(node).outOfOrder);
   reset();
 }
+
+TEST(pg_progress_batch_rolls_back_a_late_storage_failure_and_preserves_outcome_order) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgProgressRepository repo{pgTestPool()};
+  bool failed = false;
+  try {
+    repo.setStatuses(kTree, kUser, {
+        {NodeId{"a"}, ProgressStatus::complete, false, Hlc{20, 0, "good"}},
+        {NodeId{"z"}, ProgressStatus::active, false, Hlc{20, 0, std::string(1, '\xff')}}}, kNow);
+  } catch (const std::exception&) { failed = true; }
+  CHECK(failed);
+  CHECK(repo.load(kTree, kUser).marks.empty());
+  CHECK(repo.setStatus(kTree, kUser, NodeId{"a"}, ProgressStatus::complete, false, at(50), kNow));
+  const auto applied = repo.setStatuses(kTree, kUser, {
+      {NodeId{"z"}, ProgressStatus::active, false, at(60)},
+      {NodeId{"a"}, ProgressStatus::none, false, at(40)}}, kNow);
+  CHECK_EQ(applied, (std::vector<bool>{true, false}));
+  CHECK_EQ(repo.load(kTree, kUser).completed, (std::set<NodeId>{NodeId{"a"}}));
+  CHECK_EQ(repo.load(kTree, kUser).inProgress, (std::set<NodeId>{NodeId{"z"}}));
+  reset();
+}

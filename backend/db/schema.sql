@@ -982,6 +982,16 @@ create index if not exists gym_sessions_log on gym_sessions (user_id, started_at
 create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
   where finished_at is null;
 
+create table if not exists gym_write_receipts (
+  kind         text not null check (kind in ('set', 'session')),
+  id           text not null,
+  user_id      uuid not null references users(id) on delete cascade,
+  session_id   text not null,
+  request_hash text not null,
+  primary key (kind, id)
+);
+create index if not exists gym_write_receipts_owner on gym_write_receipts(user_id);
+
 -- One row per set that currently stands; a correction rewrites the row and keeps what it replaced
 -- in gym_set_revisions. The client-minted id ('set_<hex>') makes the flush queue replayable, and a
 -- delete spends the id for good: an insert asks gym_set_revisions whether the id names a deleted set

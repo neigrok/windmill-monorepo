@@ -35,7 +35,7 @@ struct FakeProduct : ToolHost {
 
     Json::Value descriptor(Json::objectValue);
     descriptor["name"] = name;
-    descriptor["description"] = std::string("the ") + name + " tool";
+    descriptor["description"] = std::string("the `") + name + "` tool";
     descriptor["inputSchema"] = schema;
     catalog.push_back(ToolDeclaration{descriptor, product, access});
   }
@@ -92,8 +92,8 @@ TEST(composite_lists_every_connected_product_to_an_account_wide_grant) {
   CompositeToolHost surface(std::vector<ToolModule>{{r, "roadmap paragraph"}, {g, "gym paragraph"}});
 
   CHECK_EQ(namesIn(surface.listTools(granted(""))),
-           (std::vector<std::string>{"get_tree", "create_node", "delete_node", "list_sessions",
-                                     "log_set", "delete_session"}));
+           (std::vector<std::string>{"roadmap_get_tree", "roadmap_create_node", "roadmap_delete_node", "gym_list_sessions",
+                                     "gym_log_set", "gym_delete_session"}));
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
 }
 
@@ -103,7 +103,7 @@ TEST(composite_shows_a_grant_only_the_products_it_names) {
   CompositeToolHost surface(std::vector<ToolModule>{{r, ""}, {g, ""}});
 
   CHECK_EQ(namesIn(surface.listTools(granted("gym:read gym:write"))),
-           (std::vector<std::string>{"list_sessions", "log_set"}));
+           (std::vector<std::string>{"gym_list_sessions", "gym_log_set"}));
 }
 
 TEST(composite_hides_a_delete_tool_from_a_grant_that_did_not_name_delete) {
@@ -111,9 +111,9 @@ TEST(composite_hides_a_delete_tool_from_a_grant_that_did_not_name_delete) {
   CompositeToolHost surface(std::vector<ToolModule>{{g, ""}});
 
   const std::vector<std::string> readWrite = namesIn(surface.listTools(granted("gym:read gym:write")));
-  CHECK_EQ(readWrite, (std::vector<std::string>{"list_sessions", "log_set"}));
+  CHECK_EQ(readWrite, (std::vector<std::string>{"gym_list_sessions", "gym_log_set"}));
   CHECK_EQ(namesIn(surface.listTools(granted("gym:read gym:write gym:delete"))),
-           (std::vector<std::string>{"list_sessions", "log_set", "delete_session"}));
+           (std::vector<std::string>{"gym_list_sessions", "gym_log_set", "gym_delete_session"}));
 }
 
 TEST(composite_refuses_an_out_of_scope_tool_before_the_product_sees_it) {
@@ -133,7 +133,7 @@ TEST(composite_runs_a_tool_the_grant_covers_and_passes_the_caller_through) {
   FakeProduct g = gym();
   CompositeToolHost surface(std::vector<ToolModule>{{g, ""}});
 
-  const ToolResult ran = surface.callTool("log_set", args({{"sessionId", "s1"}, {"reps", "5"}}),
+  const ToolResult ran = surface.callTool("gym_log_set", args({{"sessionId", "s1"}, {"reps", "5"}}),
                                           granted("gym:write"));
   CHECK_FALSE(ran.isError);
   REQUIRE_EQ(g.calls.size(), std::size_t{1});
@@ -147,8 +147,8 @@ TEST(composite_routes_each_name_to_the_product_that_declared_it) {
   FakeProduct g = gym();
   CompositeToolHost surface(std::vector<ToolModule>{{r, ""}, {g, ""}});
 
-  surface.callTool("get_tree", args({{"treeId", "t"}}), granted(""));
-  surface.callTool("list_sessions", Json::Value(Json::objectValue), granted(""));
+  surface.callTool("roadmap_get_tree", args({{"treeId", "t"}}), granted(""));
+  surface.callTool("gym_list_sessions", Json::Value(Json::objectValue), granted(""));
   REQUIRE_EQ(r.calls.size(), std::size_t{1});
   REQUIRE_EQ(g.calls.size(), std::size_t{1});
   CHECK_EQ(r.calls[0].name, std::string("get_tree"));
@@ -196,10 +196,11 @@ TEST(composite_lists_every_tool_in_its_wire_shape_with_annotations_derived_from_
   const Json::Value tools = surface.listTools(granted(""));
   REQUIRE_EQ(tools.size(), 5u);
   for (const Json::Value& tool : tools) {
-    const ToolDeclaration& declared = *std::find_if(
-        r.catalog.begin(), r.catalog.end(),
-        [&](const ToolDeclaration& d) { return d.name() == tool["name"].asString(); });
-    CHECK_EQ(tool["description"], declared.descriptor["description"]);
+    const auto entry = std::find_if(r.catalog.begin(), r.catalog.end(),
+        [&](const ToolDeclaration& d) { return d.product + "_" + d.name() == tool["name"].asString(); });
+    REQUIRE(entry != r.catalog.end());
+    const ToolDeclaration& declared = *entry;
+    CHECK_EQ(tool["description"].asString(), "the `" + tool["name"].asString() + "` tool");
     CHECK_EQ(tool["inputSchema"], declared.descriptor["inputSchema"]);
     CHECK_EQ(tool["title"], tool["annotations"]["title"]);
     CHECK_EQ(tool.getMemberNames(),
@@ -234,14 +235,15 @@ TEST(composite_answers_a_retired_name_with_the_products_sentence_and_never_calls
   CHECK_EQ(message(retired), std::string("save_routine: retired on 2026-08-12. Use log_set instead."));
   CHECK_EQ(g.calls.size(), std::size_t{0});
   CHECK_EQ(namesIn(surface.listTools(granted(""))),
-           (std::vector<std::string>{"list_sessions", "log_set", "delete_session"}));
+           (std::vector<std::string>{"gym_list_sessions", "gym_log_set", "gym_delete_session"}));
   CHECK_EQ(message(surface.callTool("frobnicate", Json::Value(Json::objectValue), granted(""))),
            std::string("frobnicate: no such tool on this server — call tools/list for the whole surface."));
   const std::vector<ToolRetirement> all = surface.retiredTools();
-  REQUIRE_EQ(all.size(), std::size_t{1});
-  CHECK_EQ(all[0].name, std::string("save_routine"));
-  CHECK_EQ(all[0].replacement, std::string("log_set"));
-  CHECK_EQ(all[0].sentence, std::string("retired on 2026-08-12. Use log_set instead."));
+  REQUIRE_EQ(all.size(), std::size_t{2});
+  CHECK_EQ(all[0].name, std::string("gym_save_routine"));
+  CHECK_EQ(all[0].replacement, std::string("gym_log_set"));
+  CHECK_EQ(all[0].sentence, std::string("retired on 2026-08-12. Use gym_log_set instead."));
+  CHECK_EQ(all[1].name, std::string("save_routine"));
 }
 
 TEST(composite_refuses_to_construct_when_a_retired_name_is_a_live_tool_of_any_module) {
@@ -258,8 +260,7 @@ TEST(composite_refuses_to_construct_when_a_retired_name_is_a_live_tool_of_any_mo
     detail = error.what();
   }
   CHECK(threw);
-  CHECK_EQ(detail, std::string("the MCP tool \"get_tree\" is declared by roadmap and retired at the same "
-                               "time — a retired name must never shadow a live one"));
+  CHECK_EQ(detail, std::string("the MCP tool \"get_tree\" is both declared and retired"));
 }
 
 TEST(composite_refuses_to_construct_when_a_replacement_is_not_a_live_tool) {
@@ -276,7 +277,7 @@ TEST(composite_refuses_to_construct_when_a_replacement_is_not_a_live_tool) {
   }
   CHECK(threw);
   CHECK_EQ(detail, std::string("the retired MCP tool \"save_routine\" names \"propose_routine_change\" "
-                               "as its replacement, and no product declares that tool"));
+                               "as its replacement, and its product does not declare that tool"));
 }
 
 TEST(composite_accepts_a_retirement_with_no_replacement) {
@@ -291,22 +292,16 @@ TEST(composite_accepts_a_retirement_with_no_replacement) {
   CHECK_EQ(g.calls.size(), std::size_t{0});
 }
 
-TEST(composite_refuses_to_construct_when_two_products_declare_one_name) {
+TEST(composite_shared_local_names_require_the_product_prefix) {
   FakeProduct r = roadmap();
   FakeProduct g = gym();
   g.declare("get_tree", Access::read, {"treeId"});
-
-  bool threw = false;
-  std::string detail;
-  try {
-    CompositeToolHost surface(std::vector<ToolModule>{{r, ""}, {g, ""}});
-  } catch (const std::invalid_argument& error) {
-    threw = true;
-    detail = error.what();
-  }
-  CHECK(threw);
-  CHECK_EQ(detail, std::string("two products declare the MCP tool \"get_tree\": roadmap and gym — one "
-                               "name must answer for exactly one product"));
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}, {g, ""}});
+  CHECK(surface.callTool("get_tree", args({{"treeId", "t"}}), granted("")).isError);
+  CHECK_FALSE(surface.callTool("roadmap_get_tree", args({{"treeId", "t"}}), granted("")).isError);
+  CHECK_FALSE(surface.callTool("gym_get_tree", args({{"treeId", "t"}}), granted("")).isError);
+  CHECK_EQ(r.calls.size(), 1u);
+  CHECK_EQ(g.calls.size(), 1u);
 }
 
 TEST(composite_refuses_an_argument_no_schema_declares_and_names_it) {
@@ -460,4 +455,80 @@ TEST(composite_walks_only_what_a_schema_closes_and_passes_the_rest_through) {
   CHECK_EQ(r.calls[0].args["nodes"][0]["position"]["y"].asInt(), 2);
   CHECK_EQ(r.calls[0].args["nodes"][1].asString(), std::string("not-an-object"));
   CHECK_EQ(r.calls[0].args["meta"]["anything"].asString(), std::string("goes"));
+}
+
+TEST(composite_aliases_and_canonical_names_share_permissions_and_do_not_rewrite_arguments) {
+  FakeProduct r = roadmap();
+  CompositeToolHost surface(std::vector<ToolModule>{{r, "Call get_tree before create_node."}});
+  CHECK_EQ(surface.instructions(), std::string("Call roadmap_get_tree before roadmap_create_node."));
+  const Json::Value input = args({{"treeId", "t"}, {"label", "get_tree and create_node"}});
+  for (const char* name : {"create_node", "roadmap_create_node"}) {
+    CHECK(surface.callTool(name, input, granted("roadmap:read")).isError);
+    CHECK_FALSE(surface.callTool(name, input, granted("roadmap:write")).isError);
+  }
+  REQUIRE_EQ(r.calls.size(), 2u);
+  CHECK_EQ(r.calls[0].name, std::string("create_node"));
+  CHECK_EQ(r.calls[0].args, input);
+  CHECK_EQ(r.calls[1].args, input);
+  CHECK(surface.callTool("gym_create_node", input, granted("")).isError);
+}
+
+TEST(composite_rejects_canonical_alias_collisions_and_duplicate_retirements) {
+  FakeProduct r = roadmap();
+  FakeProduct g = gym();
+  g.declare("roadmap_get_tree", Access::read, {});
+  bool collision = false;
+  try { CompositeToolHost surface({{r, ""}, {g, ""}}); }
+  catch (const std::invalid_argument&) { collision = true; }
+  CHECK(collision);
+  r.retired = {{"old", "get_tree", "Use get_tree."}, {"old", "get_tree", "Use get_tree."}};
+  bool duplicate = false;
+  try { CompositeToolHost surface({{r, ""}}); }
+  catch (const std::invalid_argument&) { duplicate = true; }
+  CHECK(duplicate);
+}
+
+TEST(composite_carries_output_schemas_and_structured_results) {
+  FakeProduct r = roadmap();
+  r.catalog[0].descriptor["outputSchema"]["type"] = "object";
+  CompositeToolHost surface({{r, ""}});
+  CHECK_EQ(surface.listTools(granted(""))[0]["outputSchema"], r.catalog[0].descriptor["outputSchema"]);
+}
+
+TEST(composite_qualifies_each_products_help_without_rewriting_schema_literals) {
+  FakeProduct r("roadmap");
+  FakeProduct g("gym");
+  r.declare("get_items", Access::read, {"choice"});
+  g.declare("get_items", Access::read, {});
+  Json::Value literal(Json::objectValue);
+  literal["description"] = "get_items";
+  r.catalog[0].descriptor["inputSchema"]["properties"]["choice"]["enum"].append(literal);
+  CompositeToolHost surface({{r, "Call get_items."}, {g, "Call get_items."}});
+  CHECK_EQ(surface.instructions(), std::string("Call roadmap_get_items.\n\nCall gym_get_items."));
+  const Json::Value catalog = surface.listTools(granted(""));
+  CHECK_EQ(catalog[0]["description"].asString(), std::string("the `roadmap_get_items` tool"));
+  CHECK_EQ(catalog[1]["description"].asString(), std::string("the `gym_get_items` tool"));
+  CHECK_EQ(catalog[0]["inputSchema"]["properties"]["choice"]["enum"][0], literal);
+}
+
+TEST(composite_retirement_replacement_must_be_an_exact_local_tool) {
+  FakeProduct r("roadmap");
+  r.declare("roadmap_new_tool", Access::read, {});
+  r.retired = {{"old", "new_tool", "Use new_tool."}};
+  bool refused = false;
+  try { CompositeToolHost surface({{r, ""}}); }
+  catch (const std::invalid_argument&) { refused = true; }
+  CHECK(refused);
+}
+
+TEST(composite_preserves_natural_verbs_and_qualifies_explicit_tool_references) {
+  FakeProduct r("roadmap");
+  FakeProduct g("gym");
+  r.declare("connect", Access::write, {});
+  g.declare("get_session", Access::read, {});
+  CompositeToolHost surface({{r, "Use `connect` or connect(from,to). Keep descriptions tidy."},
+      {g, "Make changes systematically: connect each adjustment to the goal. Call get_session."}});
+  CHECK_EQ(surface.instructions(), std::string(
+      "Use `roadmap_connect` or roadmap_connect(from,to). Keep descriptions tidy.\n\n"
+      "Make changes systematically: connect each adjustment to the goal. Call gym_get_session."));
 }

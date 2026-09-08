@@ -320,6 +320,52 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
   });
 }
 
+ToolResult readNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+                     const Json::Value& args, const std::optional<UserId>& caller) {
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (!canRead(caller, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (!args["nodeIds"].isArray() || args["nodeIds"].empty() || args["nodeIds"].size() > kMaxReadNodeIds)
+      return ToolResult::failure("nodeIds must contain 1 to " + std::to_string(kMaxReadNodeIds) + " unique node ids");
+    std::set<std::string> seen;
+    for (Json::ArrayIndex i = 0; i < args["nodeIds"].size(); ++i) {
+      const Json::Value& id = args["nodeIds"][i];
+      if (std::optional<std::string> bad = requireString(id, "nodeIds[" + std::to_string(i) + "]", Empty::rejected, kMaxIdLength))
+        return ToolResult::failure(*bad);
+      if (!seen.insert(id.asString()).second)
+        return ToolResult::failure("nodeIds repeats \"" + id.asString() + "\"");
+    }
+    std::string error;
+    const std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
+    if (!fields) return ToolResult::failure(error);
+    const TreeData data = room.snapshot();
+    const NodeReadContext context = readContextFor(progress, tree, caller, data, *fields, false);
+    std::map<NodeId, const NodeSpec*> byId;
+    for (const NodeSpec& node : data.nodes) byId.emplace(node.id, &node);
+
+    Json::Value out(Json::objectValue);
+    out["treeId"] = tree.str();
+    out["seq"] = static_cast<Json::Int64>(room.head());
+    out["nodes"] = Json::Value(Json::arrayValue);
+    out["missingNodeIds"] = Json::Value(Json::arrayValue);
+    for (const Json::Value& id : args["nodeIds"]) {
+      const auto node = byId.find(NodeId{id.asString()});
+      if (node == byId.end()) out["missingNodeIds"].append(id);
+      else out["nodes"].append(projectNode(*node->second, *fields, context));
+    }
+    ToolResult result = ToolResult::json(out);
+    result.structured = out;
+    Json::Value wire(Json::objectValue);
+    wire["content"] = result.content;
+    wire["structuredContent"] = result.structured;
+    wire["isError"] = false;
+    if (dump(wire).size() > kNodeBatchByteBudget)
+      return ToolResult::failure("response exceeds the " + std::to_string(kNodeBatchByteBudget) +
+          "-byte limit; retry with fewer nodeIds or fewer fields (summary instead of description). No nodes were omitted silently.");
+    return result;
+  });
+}
+
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
@@ -450,6 +496,123 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
+ToolResult applyBatchEdit(RoomRegistry& registry, const TreeId& tree, const std::string& name,
+                          const Json::Value& args, Clock& clock, const UserId& actor) {
+  if (std::optional<std::string> bad = optionalBool(args["dryRun"], "dryRun")) return ToolResult::failure(*bad);
+  if (args.isMember("expectedSeq") && (!args["expectedSeq"].isInt64() || args["expectedSeq"].asInt64() < 0))
+    return ToolResult::failure("expectedSeq must be a non-negative integer from get_tree or get_nodes");
+
+  std::vector<NodePatch> patches;
+  EdgeChanges edges;
+  if (name == "patch_nodes") {
+    if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxPatchNodes))
+      return ToolResult::failure(*bad);
+    for (Json::ArrayIndex i = 0; i < args["updates"].size(); ++i) {
+      const Json::Value& row = args["updates"][i];
+      const std::string path = "updates[" + std::to_string(i) + "]";
+      if (std::optional<std::string> bad = requireString(row["nodeId"], path + ".nodeId", Empty::rejected, kMaxIdLength))
+        return ToolResult::failure(*bad);
+      for (const char* field : {"label", "icon", "description"}) {
+        if (!row.isMember(field)) continue;
+        if (std::optional<std::string> bad = requireString(row[field], path + "." + field, Empty::allowed))
+          return ToolResult::failure(*bad);
+      }
+      if (row.isMember("color"))
+        if (std::optional<std::string> bad = requireOneOf(row["color"], path + ".color", kHues))
+          return ToolResult::failure(*bad);
+      if (row.isMember("position")) {
+        if (!row["position"].isObject()) return ToolResult::failure(path + ".position must be an object with x and y");
+        for (const char* axis : {"x", "y"})
+          if (std::optional<std::string> bad = requireNumber(row["position"][axis], path + ".position." + axis))
+            return ToolResult::failure(*bad);
+      }
+      if (row.isMember("links")) {
+        if (!row["links"].isArray()) return ToolResult::failure(path + ".links must be an array");
+        if (std::optional<std::string> bad = optionalLinks(row["links"], path + ".links")) return ToolResult::failure(*bad);
+      }
+      NodePatch patch;
+      patch.nodeId = NodeId{row["nodeId"].asString()};
+      if (row.isMember("label")) patch.label = row["label"].asString();
+      if (row.isMember("icon")) patch.icon = row["icon"].asString();
+      if (row.isMember("description")) patch.description = row["description"].asString();
+      if (row.isMember("color")) patch.color = parseColor(row["color"].asString());
+      if (row.isMember("position")) patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
+      if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
+      patches.push_back(std::move(patch));
+    }
+  } else {
+    for (const char* field : {"add", "remove"}) {
+      if (!args.isMember(field)) continue;
+      if (std::optional<std::string> bad = requireObjects(args[field], field, kMaxChangeEdges))
+        return ToolResult::failure(*bad);
+      for (Json::ArrayIndex i = 0; i < args[field].size(); ++i) {
+        const Json::Value& row = args[field][i];
+        const std::string path = std::string(field) + "[" + std::to_string(i) + "]";
+        for (const char* endpoint : {"from", "to"})
+          if (std::optional<std::string> bad = requireString(row[endpoint], path + "." + endpoint, Empty::rejected, kMaxIdLength))
+            return ToolResult::failure(*bad);
+        Edge edge{NodeId{row["from"].asString()}, NodeId{row["to"].asString()}};
+        if (std::string_view(field) == "add") edges.add.push_back(edge);
+        else edges.remove.push_back(edge);
+      }
+    }
+  }
+
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (!canRead(actor, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
+    if (args.isMember("expectedSeq") && args["expectedSeq"].asInt64() != room.head())
+      return ToolResult::failure("expectedSeq conflict: requested " + args["expectedSeq"].asString() +
+          ", current seq is " + std::to_string(room.head()) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.");
+
+    Batch batch;
+    Json::Value out(Json::objectValue);
+    out["treeId"] = tree.str();
+    if (name == "patch_nodes") {
+      const auto result = room.planNodePatches(patches);
+      if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
+      batch = plan.batch;
+      out["changedNodeIds"] = Json::Value(Json::arrayValue);
+      out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
+      const std::set<NodeId> changed(plan.changedNodeIds.begin(), plan.changedNodeIds.end());
+      for (const NodePatch& patch : patches)
+        out[changed.count(patch.nodeId) ? "changedNodeIds" : "unchangedNodeIds"].append(patch.nodeId.str());
+    } else {
+      const auto result = room.planEdgeChanges(edges);
+      if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      const EdgeChangePlan& plan = std::get<EdgeChangePlan>(result);
+      batch = plan.batch;
+      out["addedEdges"] = Json::Value(Json::arrayValue);
+      out["removedEdges"] = Json::Value(Json::arrayValue);
+      for (const auto& [field, values] : {std::pair{"addedEdges", &plan.added}, {"removedEdges", &plan.removed}}) {
+        for (const Edge& edge : *values) {
+          Json::Value row(Json::objectValue);
+          row["from"] = edge.from.str();
+          row["to"] = edge.to.str();
+          out[field].append(row);
+        }
+      }
+      out["unchangedEdges"] = static_cast<Json::UInt64>(edges.add.size() + edges.remove.size() - plan.added.size() - plan.removed.size());
+    }
+    const bool dryRun = args["dryRun"].asBool();
+    out["dryRun"] = dryRun;
+    out["applied"] = !dryRun;
+    out["seq"] = static_cast<Json::Int64>(room.head());
+    if (!dryRun) {
+      const TreeDiagnostics before = room.diagnose();
+      out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
+      registry.persist(tree);
+      answerDiagnostics(before, room.diagnose(), out);
+    }
+    ToolResult result = ToolResult::json(out);
+    result.structured = out;
+    return result;
+  });
+}
+
 // One mark as the caller asked for it. `outOfOrder` is their word that completing the node before
 // its prerequisites is meant; it lands on the row beside the status.
 struct RequestedMark {
@@ -466,24 +629,22 @@ std::optional<std::string> applyProgressBatch(
   results = Json::Value(Json::arrayValue);
   skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree
   std::vector<ProgressWrite> marks;
-  {
-    std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-    TreeRoom* room = registry.open(tree);
-    // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
-    if (!room || !canRead(user, room->owner(), room->visibility()))
-      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
-    for (const RequestedMark& mark : requested) {
-      if (!room->hasNode(mark.node)) { skipped.append(mark.node.str()); continue; }
-      marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
-                       mark.outOfOrder});
-    }
-    // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
-    if (rejectUnknown && !skipped.empty()) {
-      std::string names;
-      for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
-      return "no node in this tree is named " + names +
-             ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
-    }
+  std::lock_guard<std::mutex> lock(registry.strandFor(tree));
+  TreeRoom* room = registry.open(tree);
+  // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
+  if (!room || !canRead(user, room->owner(), room->visibility()))
+    return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
+  for (const RequestedMark& mark : requested) {
+    if (!room->hasNode(mark.node)) { skipped.append(mark.node.str()); continue; }
+    marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
+                     mark.outOfOrder});
+  }
+  // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
+  if (rejectUnknown && !skipped.empty()) {
+    std::string names;
+    for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
+    return "no node in this tree is named " + names +
+           ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
   const std::uint64_t receivedAtMs = clock.nowMs();
@@ -534,7 +695,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
 
   std::vector<RequestedMark> requested;
   if (bulk) {
-    if (std::optional<std::string> bad = requireObjects(args["updates"], "updates"))
+    if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxProgressUpdates))
       return ToolResult::failure(*bad);
     for (Json::ArrayIndex i = 0; i < args["updates"].size(); ++i) {
       const std::string row = "updates[" + std::to_string(i) + "]";
@@ -637,7 +798,7 @@ std::optional<std::string> checkImport(const Json::Value& args) {
              std::to_string(seen->second) + "] — an id names one kind per batch";
   }
 
-  if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress")) return bad;
+  if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress", kMaxProgressUpdates)) return bad;
   for (Json::ArrayIndex i = 0; i < args["progress"].size(); ++i) {
     const std::string row = "progress[" + std::to_string(i) + "]";
     std::string node;
@@ -818,16 +979,20 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.importTree(graft, clock.nowMs(), actor);
     registry.persist(tree);
-    // The caller's own marks on a tombstoned node: cleared to none after the graft, the way prune
-    // clears an orphan's. The graft has committed, so a throw from this best-effort overlay write
-    // must not reach callTool's catch and answer "Nothing was changed".
+    out["graphApplied"] = true;
+    out["progressApplied"] = true;
     try {
-      Progress overlay = progress.progressOf(tree, actor);
+      const Progress overlay = progress.progressOf(tree, actor);
+      std::vector<ProgressWrite> clears;
       for (const NodeId& node : footprint.tombstonedNodes) {
         if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
-        progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
+        clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
       }
-    } catch (const std::exception&) { /* the graft stands; the marks on what it deleted simply didn't clear */ }
+      if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
+    } catch (const std::exception&) {
+      out["progressApplied"] = false;
+      out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
+    }
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
@@ -843,13 +1008,25 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     requested.push_back({NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()), false});
   }
   if (!requested.empty()) {
-    // The graft has committed: a throw from the best-effort overlay must not reach callTool's catch.
     try {
       Json::Value results, skipped;
-      applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
-      grafted.payload["progress"] = results;
-      if (!skipped.empty()) grafted.payload["progressSkipped"] = skipped;
-    } catch (const std::exception&) { /* the graft stands; the carried progress simply didn't land */ }
+      const std::optional<std::string> error =
+          applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
+      if (error) {
+        grafted.payload["progressApplied"] = false;
+        grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
+      } else {
+        grafted.payload["progress"] = results;
+        if (!skipped.empty()) {
+          grafted.payload["progressSkipped"] = skipped;
+          grafted.payload["progressApplied"] = false;
+          grafted.payload["progressError"] = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
+        }
+      }
+    } catch (const std::exception&) {
+      grafted.payload["progressApplied"] = false;
+      grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
+    }
     return ToolResult::json(grafted.payload);
   }
   return grafted;
@@ -1109,8 +1286,8 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
     // Detail goes to the log, never the model's context; stderr, because on stdio transport stdout
     // is the protocol channel.
     std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
-    return ToolResult::failure(name + ": that call failed inside the server. Nothing was changed; "
-                               "the detail is in the server log.");
+    return ToolResult::failure(name + ": that call failed inside the server. The outcome may be uncertain; "
+                               "read the affected records before retrying. The detail is in the server log.");
   }
 }
 
@@ -1142,10 +1319,13 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
   if (name == "get_tree")        return readTree(registry_, progress_, tree, arguments, reader);
+  if (name == "get_nodes")       return readNodes(registry_, progress_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);
   if (name == "get_health")      return readHealth(registry_, tree, reader);
   if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
   if (name == "find_nodes")      return findNodes(registry_, progress_, tree, arguments, reader);
+  if (name == "patch_nodes" || name == "change_edges")
+    return applyBatchEdit(registry_, tree, name, arguments, clock_, caller);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")

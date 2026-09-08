@@ -1280,8 +1280,7 @@ TEST(gym_session_detail_if_none_match_reads_the_rfc_9110_forms) {
   CHECK_EQ(bodyOf(full)["sets"].size(), 1u);
 }
 
-// startedAt leads the tag: a workout discarded and recreated under the SAME id is a new representation.
-TEST(gym_session_detail_recreated_under_the_same_id_never_echoes_the_dead_workouts_tag) {
+TEST(gym_deleted_session_ids_cannot_recreate_records_or_reuse_the_dead_etag) {
   Harness h;
   h.signIn("s-live");
   send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
@@ -1294,19 +1293,14 @@ TEST(gym_session_detail_recreated_under_the_same_id_never_echoes_the_dead_workou
   send(h.training, &TrainingApi::discardSession, deleteRequest("/v1/gym/sessions/ses_11111111", "s-live"),
        "ses_11111111");
 
-  send(h.training, &TrainingApi::startSession,
+  const auto recreate = send(h.training, &TrainingApi::startSession,
        postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'030'000), "s-live"));
-  send(h.training, &TrainingApi::appendSet,
-       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
-  send(h.training, &TrainingApi::finishSession,
-       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'180'000), "s-live"),
-       "ses_11111111");
-  drogon::HttpResponsePtr recreated = readSession(h.training, "ses_11111111", "s-live", dead);
-
-  CHECK_EQ(recreated->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(tagOf(recreated).rfind(R"(W/"1700000030000-1700000180000-)", 0), std::size_t{0});
-  // Past `W/"` and the thirteen digits of startedAt the two tags are equal.
-  CHECK_EQ(tagOf(recreated).substr(17), dead.substr(17));
+  CHECK_EQ(recreate->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(std::string(recreate->getBody()),
+           std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
+  const auto absent = readSession(h.training, "ses_11111111", "s-live", dead);
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK(tagOf(absent).empty());
 }
 
 TEST(gym_session_detail_refusals_carry_no_etag) {

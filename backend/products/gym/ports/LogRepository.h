@@ -102,6 +102,28 @@ struct SetInsertOutcome {
   SetInsertError error;
 };
 
+enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict };
+
+struct RecordedSet {
+  SetId id;
+  std::optional<Set> current;
+  bool replayed = false;
+};
+
+struct BatchLogOutcome {
+  std::optional<Session> session;
+  std::vector<RecordedSet> sets;
+  BatchLogError error = BatchLogError::none;
+  std::optional<std::size_t> errorIndex;
+  bool replayed = false;
+  bool sessionDeleted = false;
+};
+
+struct SessionRows {
+  Session session;
+  std::vector<Set> sets;
+};
+
 // Text end to end, instants ISO-8601 UTC, numerics at their column's own scale (72.5 kg is "72.50"),
 // an absent rpe an empty cell rather than a zero.
 struct ExportedSet {
@@ -183,6 +205,9 @@ struct LogRepository {
   // admits — a set continuing a STALE-closed workout lands and moves that workout's finish forward
   // to it in the same transaction. An id held as deleted is refused before either.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
+  virtual BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) = 0;
+  virtual BatchLogOutcome importSession(const Session& session, const SetBatch& batch) = 0;
+  virtual std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) = 0;
 
   // What these replace is appended to gym_set_revisions; gym_sets keeps one row per set that stands.
   // `updateSet` takes the WHOLE corrected row, never a patch to merge, and answers with the stored

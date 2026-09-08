@@ -7,6 +7,7 @@
 #include "products/gym/domain/Training.h"
 
 #include <cstddef>
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -145,8 +146,7 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
   ToolDeclaration declaration{std::move(descriptor), "gym", access};
-  // Every gym write answers a resend with what the first call did — by the id the caller mints,
-  // or by the one link and one end a workout has — and no gym write edits in bulk.
+  // Retry identity follows each tool's caller id, proposal, session end or active share link.
   declaration.idempotent = true;
   return declaration;
 }
@@ -319,7 +319,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
                       "never carried onto a new one.");
     p["entries"] = entryArray();
     tools.push_back(tool("create_routine", Access::write,
-        "Add a NEW day to the program. This one LANDS IMMEDIATELY, and that is the rule rather than "
+        "Review the user's goals and collect necessary missing constraints before creating training. Add a NEW day to the program. This one LANDS IMMEDIATELY, and that is the rule rather than "
         "an exception: a day that did not exist takes nothing away, the lifter sees it the next time "
         "they open Routines, and they can edit or delete it themselves. Changing a day that already "
         "stands is NOT this tool's — send that to propose_routine_change, which writes nothing and "
@@ -423,14 +423,131 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         p, {"sessionId"}));
   }
 
+  for (const char* name : {"log_sets", "import_session", "get_sessions", "get_last_times"}) {
+    const bool write = std::string_view(name) == "log_sets" || std::string_view(name) == "import_session";
+    const bool imported = std::string_view(name) == "import_session";
+    const bool sessions = std::string_view(name) == "get_sessions";
+    Json::Value p(Json::objectValue);
+    std::vector<const char*> required;
+    if (write) {
+      const auto single = std::find_if(tools.begin(), tools.end(), [](const ToolDeclaration& declaration) {
+        return declaration.name() == "log_set";
+      });
+      Json::Value row = single->descriptor["inputSchema"];
+      row["properties"].removeMember("sessionId");
+      row["properties"]["weightKg"]["description"] = "Load in kg, at most two decimal places.";
+      row["properties"]["rpe"]["description"] = "Exertion from 1 to 10, at most one decimal place.";
+      row["properties"]["exerciseId"]["minLength"] = 1;
+      row["properties"]["exerciseId"]["maxLength"] = 128;
+      row["properties"]["id"]["minLength"] = 8;
+      row["properties"]["id"]["maxLength"] = 64;
+      row["properties"]["id"]["pattern"] = "^[A-Za-z0-9_-]{8,64}$";
+      row["properties"]["weightKg"]["minimum"] = -500;
+      row["properties"]["weightKg"]["maximum"] = 500;
+      row["properties"]["weightKg"]["multipleOf"] = 0.01;
+      row["properties"]["rpe"]["minimum"] = 1;
+      row["properties"]["rpe"]["maximum"] = 10;
+      row["properties"]["rpe"]["multipleOf"] = 0.1;
+      row["required"] = Json::Value(Json::arrayValue);
+      for (const char* field : {"id", "exerciseId", "weightKg", "reps", "completedAt"}) row["required"].append(field);
+      p["sets"]["type"] = "array";
+      p["sets"]["items"] = row;
+      p["sets"]["minItems"] = imported ? 0 : 1;
+      p["sets"]["maxItems"] = static_cast<Json::UInt64>(kMaxSetBatch);
+      p["sets"]["description"] = "Ordered performed sets with distinct ids. Validate all rows before one transaction; never use a new id to retry.";
+      if (imported) {
+        p["id"] = str("Caller-minted id of the completed historical workout.");
+        p["startedAt"] = instant("When this workout actually started.");
+        p["finishedAt"] = instant("When it ended, at or after startedAt and no later than now.");
+        p["routineId"] = routineHandle();
+        required = {"id", "startedAt", "finishedAt", "sets"};
+      } else {
+        p["sessionId"] = sessionHandle();
+        required = {"sessionId", "sets"};
+      }
+      const char* sessionField = imported ? "id" : "sessionId";
+      p[sessionField]["minLength"] = 8;
+      p[sessionField]["maxLength"] = 64;
+      p[sessionField]["pattern"] = "^[A-Za-z0-9_-]{8,64}$";
+    } else {
+      const char* field = sessions ? "sessionIds" : "exerciseIds";
+      p[field]["type"] = "array";
+      p[field]["items"] = cappedStr("Exact id.", 128);
+      p[field]["minItems"] = 1;
+      p[field]["maxItems"] = static_cast<Json::UInt64>(kMaxBatchReadIds);
+      p[field]["uniqueItems"] = true;
+      p[field]["description"] = "1..50 exact ids; results preserve this order and identify missing ids explicitly.";
+      if (sessions) p["review"] = boolean("Include each workout's review; defaults to false.");
+      required = {field};
+    }
+    const char* description =
+        imported ? "Import one already-completed workout and up to 200 performed sets in one transaction. "
+                   "All set times must fall inside its interval, with no future facts. Leaves the live workout alone. "
+                   "An exact id/body retry returns current status without duplicating or restoring corrected/deleted data; a changed request conflicts."
+        : write ? "Log 1..200 ordered performed sets into one workout atomically. Every item is validated; one bad row commits nothing. "
+                  "Exact id/body retries return current status, including deleted rows, without changing them. Reusing an id with different data conflicts. "
+                  "Times must be at or after workout start and no later than now. Use import_session for an already-completed workout."
+        : sessions ? "Read 1..50 exact workouts with their sets, in requested order, plus missingSessionIds. Optionally include review. "
+                     "The complete tools/call result is limited to 262144 serialized bytes; request fewer ids or omit review if refused."
+        : "Read the last completed workout for 1..50 exact exercise ids in requested order. trained:false means no completed non-warmup set history; "
+          "missingExerciseIds names exercises outside the available catalog. The complete result is limited to 262144 serialized bytes; retry with fewer ids if refused.";
+    ToolDeclaration declaration = tool(name, write ? Access::write : Access::read, description, p, required);
+    Json::Value output(Json::objectValue);
+    output["type"] = "object";
+    output["additionalProperties"] = false;
+    output["required"] = Json::Value(Json::arrayValue);
+    Json::Value& properties = output["properties"];
+    if (write) {
+      properties["sessionId"] = sessionHandle();
+      properties["applied"] = boolean("True for an accepted batch or an exact replay.");
+      properties["replayed"] = boolean("True when all requested facts were accepted earlier.");
+      properties["sessionDeleted"] = boolean("True if an imported workout was later deleted; it is never restored by a retry.");
+      if (imported) properties["imported"] = boolean("Whether the imported workout currently exists.");
+      properties["sets"]["type"] = "array";
+      properties["sets"]["items"]["type"] = "object";
+      properties["sets"]["items"]["additionalProperties"] = false;
+      properties["sets"]["items"]["properties"]["id"] = str("Requested set id.");
+      properties["sets"]["items"]["properties"]["status"] = enumStr("Current result for this id.", {"created", "replayed", "deleted"});
+      properties["sets"]["items"]["properties"]["setNumber"]["type"] = "integer";
+      properties["sets"]["items"]["required"] = Json::Value(Json::arrayValue);
+      properties["sets"]["items"]["required"].append("id");
+      properties["sets"]["items"]["required"].append("status");
+      for (const char* field : {"sessionId", "applied", "replayed", "sessionDeleted", "sets"}) output["required"].append(field);
+      if (imported) output["required"].append("imported");
+    } else {
+      const char* rows = sessions ? "sessions" : "exercises";
+      const char* missing = sessions ? "missingSessionIds" : "missingExerciseIds";
+      properties[rows]["type"] = "array";
+      properties[rows]["items"]["type"] = "object";
+      properties[missing]["type"] = "array";
+      properties[missing]["items"]["type"] = "string";
+      properties["read"]["type"] = "object";
+      output["required"].append(rows);
+      output["required"].append(missing);
+    }
+    declaration.descriptor["outputSchema"] = output;
+    tools.push_back(std::move(declaration));
+  }
+
+  std::stable_sort(tools.begin(), tools.end(), [](const ToolDeclaration& left, const ToolDeclaration& right) {
+    return left.access < right.access;
+  });
   return tools;
 }
 
 std::string gymInstructions() {
-  return "gym is a training log: workouts of sets, a program of routines, and a catalog of "
-         "movements. Every write is idempotent by an id YOU mint — send the same id again, carrying the "
-         "SAME body, to replay a lost reply; never a fresh id, or you mint a duplicate, and never a "
-         "spent id for something you changed your mind about, which is refused. Loads are kg "
+  return "Coach in a friendly, informal voice. Before recommending a training change, revisit the "
+         "user's goals and current constraints. Use their earlier answers and training history, and "
+         "ask only for missing information that could materially change the plan. Do not propose or "
+         "make training changes until the human has supplied that necessary information; explain what "
+         "each missing fact affects without inventing an answer. Make changes systematically: connect "
+         "each adjustment to the goal and check exercises, schedule, volume, progression and stated "
+         "constraints together. Respect the user's reported limits. "
+         "Keep changes to existing routines in the proposal flow and leave Apply to the user. "
+         "This intake guides training decisions; record supplied workout facts without requiring coach intake.\n\n"
+         "gym is a training log: workouts of sets, a program of routines, and a catalog of "
+         "movements. For tools with caller-minted ids, retry lost replies using the SAME id and body; "
+         "new ids may create duplicates. Follow each tool's specific replay contract. Loads are kg "
          "(negative is legal: "
          "band-assisted work), instants are epoch milliseconds, and only WORKING sets count toward "
          "anything. One workout is open per account at a time. Everything here is one lifter's own "
@@ -441,8 +558,9 @@ std::string gymInstructions() {
          "seen, and never add two of them together, because the same workout read twice is one "
          "workout.\n\n"
          "Writes split in two and the split is the whole contract. Recording something that ALREADY "
-         "HAPPENED lands immediately: a set, a workout starting or ending, a movement, a new day of "
-         "the program. Changing a day of the program that ALREADY STANDS lands nothing — it mints a "
+         "HAPPENED lands immediately: a set or a workout starting or ending. Creating a routine also "
+         "lands immediately, but is a training decision that requires the necessary goals and constraints. "
+         "Changing a day of the program that ALREADY STANDS lands nothing — it mints a "
          "proposal, a typed field-level diff that sits in the lifter's app until they read it and "
          "tap Apply. No tool here applies one, at any grant level, because Apply is theirs and not "
          "yours. So when you propose, tell your human the routine has not changed yet and that "

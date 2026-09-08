@@ -17,7 +17,7 @@ platform/adapters/mcp/
                            injected ToolHost, a ServerInfo and a resource vector.
   CompositeToolHost        every connected product's tools behind the one ToolHost McpServer
                            binds, AND the grant gate: filters tools/list, refuses an
-                           out-of-scope call, a duplicate tool name at construction, and a key no
+                           out-of-scope call, a colliding public name or alias at construction, and a key no
                            schema declares at any depth it closes with `additionalProperties:false`
                            (named by JSON path: `nodes[3].deleted`) — that last check is
                            `undeclaredArgument` on the ToolHost port itself, so a tend's
@@ -43,13 +43,18 @@ platform/infra/
   mcp_http_main.cpp        `windmill_mcp_http` — standalone HTTP transport (local/standalone).
 ```
 
-All three composition roots build the same composite and ask `windmillServerInfo()` for the
-handshake, so the surface an agent connects to cannot differ by transport.
+The HTTP roots register roadmap and gym; the local stdio root registers roadmap. Each uses
+`CompositeToolHost` and `windmillServerInfo()`. Public names are `roadmap_<local>` and `gym_<local>`;
+only canonical names appear in `tools/list`. Unambiguous unprefixed names remain compatibility
+aliases and use the same permission and argument gate. Product-only hosts retain local names for
+in-process agents. Canonical descriptions and initialize instructions use the owning product's
+tool names; schema literals and call payloads are never rewritten.
 
-The edit tools reuse the `commandFromJson` codec: their argument names are the command payload
+Legacy edit tools reuse the `commandFromJson` codec: their argument names are the command payload
 keys, save for the node handle, which the tool layer normalizes (`nodeId` → the codec's `id`)
 before the decode. `commandFromJson` answers a bare yes/no, so arguments are validated in the tool
-layer.
+layer. `patch_nodes` and `change_edges` parse typed inputs and call pure domain planners; each
+planner returns a complete command batch before the room applies anything.
 
 ## The error contract
 
@@ -76,11 +81,15 @@ refused first, by name (`label is not valid UTF-8`), so the count only ever runs
 A node's label, icon and description are capped by the domain — `validate()` for a command,
 `admit()` for a graft — in one sentence that names every field over its cap and by how much, so a
 caller who overran several fixes them in one round trip; `annotate_node {appendDescription}` is
-judged on the body the node would then hold. Two byte budgets sit above the character caps: a
+judged on the body the node would then hold. Byte budgets sit above the character caps: a
 `get_tree` / `find_nodes` page carrying `description` ends at 4 MB of serialized nodes and says
 `pageBytes` beside `nextCursor` when that is what ended it (`ReadShape::projectPage`), and one
 `import_subgraph` call carries at most 6 MB of description text (`kMaxImportDescriptionBytes`,
 under the 8 MB HTTP body limit so the refusal is a named sentence, not a bare 413).
+`get_nodes` bounds the complete tools/call result, including text and structured copies, to 262144
+bytes and refuses oversized selections with a smaller-batch/projection retry. It never truncates
+requested ids silently. Unexpected exceptions report an uncertain outcome and ask for a read-back
+before retrying; they do not claim that an already-broadcast room mutation was rolled back.
 An edit of one node — `annotate_node`, `rename_node`, `set_node_color`, `move_node` — names a
 present node or is refused with `no node in this tree is named "x"`, the sentence `delete_node`
 and `set_progress` use.
@@ -89,7 +98,8 @@ and `set_progress` use.
 
 - `treeId` — the roadmap, on every tree-scoped tool.
 - `nodeId` — a node that **exists**, on every tool that edits or marks one. The `id` spelling is
-  also accepted, declared `deprecated` in the schema, and never published as canonical.
+  also accepted by legacy single-node tools and declared `deprecated` in their schemas. New batch
+  updates accept only `nodeId`.
 - `id` — the id **proposed** for a NEW thing: `create_node`, `add_kind`, `import_subgraph`'s
   `nodes[].id` and `kinds[].id`. `create_node` refuses `nodeId` outright, `add_kind` refuses
   `kindId`.
@@ -99,7 +109,7 @@ and `set_progress` use.
 ## Resources
 
 `resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — edge direction,
-the handle law, what is never refused, the read projections, and the caps. A test checks every
+handles, graph validation, canonical tool names, batch workflows, read projections, and caps. A test checks every
 claim it makes against the shipped catalog.
 
 ## Transports
@@ -178,14 +188,19 @@ treated as internal and is not limited.
 
 ## Tools
 
+The table uses product-local names; external MCP prefixes each with `roadmap_`.
+
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
 | read | `get_tree` | title + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed / in-progress node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
+| edit | `patch_nodes` | 1–200 existing nodes, replacement fields with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
+| edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits |
@@ -198,32 +213,36 @@ treated as internal and is not limited.
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
-Every tree-scoped tool takes `treeId`. Edits return
-`{applied, seq, diagnosticsClean, introducedDiagnostics}`; the structure an edit leaves is never
-rejected — what refuses is a malformed argument, the legend and capacity rules, and a `delete_node`
-id that names no present node. The two keys
+Every tree-scoped tool takes `treeId`. Applied structural edits return
+`{applied, seq, diagnosticsClean, introducedDiagnostics}`. Cycles and detached nodes are accepted;
+arguments, permissions, revision preconditions, limits and required node existence are validated.
+Dry runs and unchanged patch/edge retries do not produce a new structural op. The diagnostics keys
 answer different questions: `diagnosticsClean` is the whole tree's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
 tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
 
 ### The descriptor
 
-Every `tools/list` entry is `{name, title, description, inputSchema, annotations, _meta}`. The
+Every `tools/list` entry contains `{name, title, description, inputSchema, annotations, _meta}`.
+The seven batch tools also declare `outputSchema` and return matching `structuredContent` plus
+compatibility text generated from the same result object. The
 catalog writes `name`, `description` and `inputSchema` and states two facts beside them — whether a
 write edits in bulk and whether a resend leaves it unchanged; `ToolDeclaration::wire()`
 (`platform/ports/ToolHost.h`) derives everything else from those facts and the grant level, so no
 product can declare a tool without its annotations:
 
 - `title` — the product word, a middle dot, the name in words: `Roadmap · Get tree`,
-  `Gym · Log set`. Names never change; the golden corpus and connected clients pin them.
+  `Gym · Log set`. The composite preserves that title while publishing the canonical prefixed name.
 - `annotations.readOnlyHint` — true exactly for `read`-level tools.
 - `annotations.destructiveHint` — true for a `delete`-level tool and for the writes that
-  overwrite or remove in bulk (`import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
+  overwrite or remove in bulk (`patch_nodes`, `change_edges`, `import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
   catalog), unless the declaration says `proposal`: `propose_routine_removal` sits at
   `gym:delete` and mints a card the lifter applies, so it is declared non-destructive.
 - `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
   (`kIdempotentWrites` beside the catalog); false for `create_tree` and `create_node`, which mint
-  an id. Every gym write is idempotent by the id the caller mints.
+  an id, and for `annotate_node`, whose append form can duplicate text. Gym declarations describe
+  each operation’s retry behavior; new set/session batches retain original identity across corrections
+  and deletion.
 - `annotations.openWorldHint` — false everywhere: nothing here reaches beyond the caller's account.
 - `_meta.product`, `_meta.access` — the grant the composite checks the call against.
 
@@ -274,8 +293,18 @@ handshake `instructions` say so.
 
 ## Bulk
 
+- **`patch_nodes`** preserves every omitted field and replaces every supplied field. All target ids
+  must exist and be unique; every item must name at least one editable field. **`change_edges`**
+  validates the full final graph capacity, additions' endpoints, duplicate pairs and add/remove
+  overlap. Cycles remain valid. Both use one HLC stamp, structural op and live-room broadcast when
+  anything changes. `dryRun` applies nothing; `expectedSeq` refuses a stale edit; an unchanged retry
+  does not increment seq. Neither tool supplies append semantics.
 - **`import_subgraph`** takes the JSON `get_tree` returns (`{title?, nodes[], kinds[]}`, plus an
-  optional `progress[]`) and applies it in **one** op via the subgraph CRDT graft path. It is
+  optional `progress[]`) and applies the graph in **one** op via the subgraph CRDT graft path.
+  Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
+  strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
+  `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone
+  by a later overlay failure. It is
   **upsert by id**: an incoming id already present is overwritten and reported in
   `nodeCollisions`/`kindCollisions`; a new id is added. A node's scalar fields are LWW-replaced. A
   colliding kind is replaced only in the registers the batch sends: `label`, `description` and
@@ -307,9 +336,10 @@ handshake `instructions` say so.
   only admission standing there. The rule itself lives in `domain/Graft` (`footprintOf`,
   `graftState`), reached through `TreeRoom::importTree`; the handler only passes the mode and the
   ids and reads the footprint back for the receipt.
-- **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
+- **`set_progress`** accepts 1–1000 `updates[]` committed in one SQL transaction and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
-  correctly. Unknown node ids are rejected, so no orphan overlay rows are created. A completion
+  correctly. The room strand covers node validation, commit and broadcast; delete/prune cannot
+  interleave an orphan mark. Unknown node ids are rejected before any overlay mutation. A completion
   meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, with
   `status: complete` only): the word is stored on the row beside the status, under the same stamp,
   so the next mark on that node from any surface replaces it; the receipt answers
@@ -371,6 +401,7 @@ Read by every root that serves MCP unless a row says otherwise.
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://localhost/windmill` | Postgres connection |
 | `PORT` | `8090` (`windmill_mcp_http`) | listen port |
+| `WINDMILL_HOST` | `0.0.0.0` (`windmill_server`) | shared backend bind address; use `127.0.0.1` for a local-only stack |
 | `WINDMILL_MCP_HOST` | `0.0.0.0` (`windmill_mcp_http`) | bind address |
 | `WINDMILL_MCP_THREADS` | `8` (`windmill_mcp_http`) | Drogon worker threads |
 | `WINDMILL_MCP_PATH` | `/mcp` | endpoint path (HTTP roots) |

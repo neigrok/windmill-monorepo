@@ -1,6 +1,8 @@
 #include "products/gym/domain/Training.h"
 
 #include <utility>
+#include <cmath>
+#include <set>
 
 namespace wm::gym {
 
@@ -191,9 +193,9 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (this->session.empty()) throw InvalidTraining("a set belongs to a session");
   if (this->exercise.empty()) throw InvalidTraining("a set names an exercise");
   if (setNumber < 0) throw InvalidTraining("set number cannot be negative");
-  if (weightKg < -500 || weightKg > 500) throw InvalidTraining("weight out of range");
+  if (!std::isfinite(weightKg) || weightKg < -500 || weightKg > 500) throw InvalidTraining("weight out of range");
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
-  if (rpe && (*rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
+  if (rpe && (!std::isfinite(*rpe) || *rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
   if (this->note.size() > kMaxSetNoteBytes) throw InvalidTraining("note too long");
   // Refuse what storage cannot hold rather than shortening a lifter's words in silence.
   if (!storableText(this->note)) throw InvalidTraining("a note must be storable text");
@@ -202,6 +204,40 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
 }
 
 // Constructed rather than assigned, so the fields a correction may NOT move are visibly copied.
+SetBatch::SetBatch(SessionId sessionId, std::vector<Set> sets, std::uint64_t nowMs, bool allowEmpty)
+    : sessionId(std::move(sessionId)), sets(std::move(sets)) {
+  if (!wellFormedId(this->sessionId.str())) throw InvalidTraining("bad session id");
+  if ((!allowEmpty && this->sets.empty()) || this->sets.size() > kMaxSetBatch)
+    throw InvalidTraining("sets must contain " + std::string(allowEmpty ? "0" : "1") + " to 200 rows");
+  std::set<SetId> seen;
+  for (std::size_t i = 0; i < this->sets.size(); ++i) {
+    Set& set = this->sets[i];
+    const std::string path = "sets[" + std::to_string(i) + "] (" + set.id.str() + "): ";
+    if (set.exercise.str().size() > 128 || !storableText(set.exercise.str()))
+      throw InvalidTraining(path + "exerciseId must be storable text of at most 128 bytes");
+    if (set.session != this->sessionId) throw InvalidTraining(path + "session does not match the batch");
+    if (!seen.insert(set.id).second) throw InvalidTraining(path + "duplicate set id");
+    if (set.completedAtMs > nowMs) throw InvalidTraining(path + "completedAt cannot be in the future");
+    if (std::abs(set.weightKg * 100 - std::round(set.weightKg * 100)) > 0.0000001)
+      throw InvalidTraining(path + "weightKg supports at most two decimal places");
+    if (set.rpe && std::abs(*set.rpe * 10 - std::round(*set.rpe * 10)) > 0.0000001)
+      throw InvalidTraining(path + "rpe supports at most one decimal place");
+    set.weightKg = std::round(set.weightKg * 100) / 100;
+    if (set.weightKg == 0) set.weightKg = 0;
+    if (set.rpe) set.rpe = std::round(*set.rpe * 10) / 10;
+  }
+}
+
+void SetBatch::checkInterval(const Session& session, bool completedSession) const {
+  for (std::size_t i = 0; i < sets.size(); ++i) {
+    const Set& set = sets[i];
+    if (set.completedAtMs < session.startedAtMs ||
+        (completedSession && session.finishedAtMs && set.completedAtMs > *session.finishedAtMs))
+      throw InvalidTraining("sets[" + std::to_string(i) + "] (" + set.id.str() +
+                            "): completedAt must be within the workout interval");
+  }
+}
+
 Set corrected(const Set& stored, const SetFix& fix) {
   return Set{stored.id,
              stored.session,

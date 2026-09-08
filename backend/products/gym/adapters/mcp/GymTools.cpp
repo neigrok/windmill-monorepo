@@ -8,6 +8,7 @@
 #include <iostream>
 #include <new>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -47,6 +48,123 @@ std::optional<std::string> idArgument(const Json::Value& args, const char* field
   if (value.isNull())
     return "missing required argument \"" + std::string(field) + "\". " + discover;
   return "\"" + std::string(field) + "\" must be a non-empty id string. " + discover;
+}
+
+std::vector<std::string> batchIds(const Json::Value& args, const char* field) {
+  if (!args[field].isArray() || args[field].empty() || args[field].size() > kMaxBatchReadIds)
+    throw InvalidTraining(std::string(field) + " must contain 1 to 50 unique ids");
+  std::set<std::string> seen;
+  std::vector<std::string> ids;
+  for (Json::ArrayIndex i = 0; i < args[field].size(); ++i) {
+    const Json::Value& value = args[field][i];
+    const std::string path = std::string(field) + "[" + std::to_string(i) + "]";
+    if (!value.isString() || value.asString().empty() || value.asString().size() > 128 || !storableText(value.asString()))
+      throw InvalidTraining(path + " must be a non-empty storable id of at most 128 bytes");
+    if (!seen.insert(value.asString()).second) throw InvalidTraining(path + " repeats id " + value.asString());
+    ids.push_back(value.asString());
+  }
+  return ids;
+}
+
+ToolResult batchLog(TrainingService& training, const UserId& caller, const Json::Value& args, bool imported) {
+  if (!args["sets"].isArray() || (!imported && args["sets"].empty()) || args["sets"].size() > kMaxSetBatch)
+    return ToolResult::failure(std::string("sets must contain ") + (imported ? "0" : "1") + " to 200 rows");
+  std::vector<SetWrite> sets;
+  for (Json::ArrayIndex i = 0; i < args["sets"].size(); ++i) {
+    try { sets.push_back(parseSetWrite(args["sets"][i])); }
+    catch (const InvalidTraining& error) { throw InvalidTraining("sets[" + std::to_string(i) + "]: " + error.what()); }
+  }
+  std::string sessionId;
+  BatchLogOutcome outcome;
+  if (imported) {
+    const SessionStart start = parseSessionStart(args);
+    sessionId = start.id.str();
+    outcome = training.importSession(caller, start, parseFinish(args), sets);
+  } else {
+    if (const auto bad = idArgument(args, "sessionId", "Call list_sessions or start_session.", sessionId))
+      return ToolResult::failure(*bad);
+    outcome = training.appendSets(caller, SessionId{sessionId}, sets);
+  }
+  if (outcome.error != BatchLogError::none) {
+    std::string reason;
+    switch (outcome.error) {
+      case BatchLogError::notFound: reason = kNoSession; break;
+      case BatchLogError::unknownExercise: reason = kNoExercise; break;
+      case BatchLogError::unknownRoutine: reason = kNoRoutine; break;
+      case BatchLogError::finished: reason = "the workout is finished and cannot accept new sets"; break;
+      case BatchLogError::deleted: reason = "the set was deleted; do not recreate it with another id"; break;
+      case BatchLogError::payloadConflict: reason = "the id was accepted with different data; reuse the original request for retries"; break;
+      case BatchLogError::idTaken: reason = "the id is already spent and cannot be used for this request"; break;
+      case BatchLogError::none: break;
+    }
+    if (outcome.errorIndex)
+      reason = "sets[" + std::to_string(*outcome.errorIndex) + "] (" + sets[*outcome.errorIndex].id.str() + "): " + reason;
+    if (!reason.ends_with('.')) reason += '.';
+    return ToolResult::failure(reason + " No changes from this batch were committed.");
+  }
+  Json::Value out(Json::objectValue);
+  out["sessionId"] = sessionId;
+  out["applied"] = true;
+  out["replayed"] = outcome.replayed;
+  out["sessionDeleted"] = outcome.sessionDeleted;
+  if (imported) out["imported"] = !outcome.sessionDeleted;
+  out["sets"] = Json::Value(Json::arrayValue);
+  for (const RecordedSet& set : outcome.sets) {
+    Json::Value row(Json::objectValue);
+    row["id"] = set.id.str();
+    row["status"] = !set.current ? "deleted" : set.replayed ? "replayed" : "created";
+    if (set.current) row["setNumber"] = set.current->setNumber;
+    out["sets"].append(row);
+  }
+  return ToolResult::json(out);
+}
+
+ToolResult getSessions(TrainingService& training, const UserId& caller, const Json::Value& args, ReadReceipt& served) {
+  const auto names = batchIds(args, "sessionIds");
+  if (!args["review"].isNull() && !args["review"].isBool()) throw InvalidTraining("review must be true or false");
+  std::vector<SessionId> ids;
+  for (const std::string& name : names) ids.emplace_back(name);
+  const std::vector<SessionRows> sessions = training.sessions(caller, ids);
+  std::set<std::string> present;
+  Json::Value out(Json::objectValue);
+  out["sessions"] = Json::Value(Json::arrayValue);
+  out["missingSessionIds"] = Json::Value(Json::arrayValue);
+  for (const SessionRows& detail : sessions) {
+    present.insert(detail.session.id.str());
+    served.sawSession(detail.session.id, detail.session.startedAtMs);
+    for (const Set& set : detail.sets) served.sawSet(set.id, set.completedAtMs);
+    Json::Value row(Json::objectValue);
+    row["session"] = toJson(detail.session);
+    row["sets"] = toJson(detail.sets);
+    if (args["review"].asBool())
+      if (const auto review = training.review(caller, detail.session.id)) row["review"] = toJson(*review);
+    out["sessions"].append(row);
+  }
+  for (const std::string& id : names)
+    if (!present.count(id)) out["missingSessionIds"].append(id);
+  return ToolResult::json(out);
+}
+
+ToolResult getLastTimes(TrainingService& training, const UserId& caller, const Json::Value& args, ReadReceipt& served) {
+  const auto ids = batchIds(args, "exerciseIds");
+  Json::Value out(Json::objectValue);
+  out["exercises"] = Json::Value(Json::arrayValue);
+  out["missingExerciseIds"] = Json::Value(Json::arrayValue);
+  for (const std::string& id : ids) {
+    const LastTimeOutcome last = training.lastTime(caller, ExerciseId{id});
+    if (last.error == LastTimeError::unknownExercise) { out["missingExerciseIds"].append(id); continue; }
+    Json::Value row(Json::objectValue);
+    row["exerciseId"] = id;
+    row["trained"] = last.lastTime.has_value();
+    if (last.lastTime) {
+      row["session"] = toJson(last.lastTime->session);
+      row["sets"] = toJson(last.lastTime->sets);
+      served.sawSession(last.lastTime->session.id, last.lastTime->session.startedAtMs);
+      for (const Set& set : last.lastTime->sets) served.sawSet(set.id, set.completedAtMs);
+    }
+    out["exercises"].append(row);
+  }
+  return ToolResult::json(out);
 }
 
 // --- The reads -------------------------------------------------------------------------------
@@ -230,9 +348,9 @@ ToolResult listBodyweight(BodyweightService& bodyweight, const UserId& caller,
 ToolResult startSession(TrainingService& training, const UserId& caller, const Json::Value& args) {
   StartOutcome outcome = training.start(caller, parseSessionStart(args));
   if (outcome.error == StartError::idTaken)
-    return ToolResult::failure("that workout id is already spent. Mint a different one and start "
-                               "again — your OWN id would have replayed, answering with the workout "
-                               "already stored under it.");
+    return ToolResult::failure("that workout id is already spent. Inspect list_sessions to reconcile the log; "
+                               "preserve deleted workouts. Retry only with the original id and body. "
+                               "Use a fresh id only when the user asks to record a new workout.");
   if (outcome.error == StartError::unknownRoutine)
     return ToolResult::failure("no routine of yours has that id, so this workout was not started "
                                "rather than started with no plan. Call list_routines, or leave "
@@ -265,8 +383,9 @@ ToolResult logSet(TrainingService& training, const UserId& caller, const Json::V
     return ToolResult::failure("that workout is finished, so no new set can be added to it. Open a "
                                "new one with start_session.");
   if (outcome.error == AppendError::idTaken)
-    return ToolResult::failure("that set id is already spent on a set in another workout. Mint a "
-                               "different one and send it again.");
+    return ToolResult::failure("that set id is already spent. Inspect get_session or list_sessions to reconcile "
+                               "the log; preserve deleted sets. Retry only with the original id and body. "
+                               "Use a fresh id only for a new performed set the user asks to record.");
   if (outcome.error == AppendError::deleted)
     // The lifter deleted that set by hand, so a fresh id would put it back.
     return ToolResult::failure("that set was deleted from the log. It is not coming back, and a "
@@ -507,16 +626,28 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
     ToolResult outcome = dispatch(name, arguments, caller.user, source, served);
     // A refusal served nothing, so it counts nothing; the throw paths below skip the merge too.
     if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
+    const bool batchRead = name == "get_sessions" || name == "get_last_times";
+    const bool structured = batchRead || name == "log_sets" || name == "import_session";
+    if (served.tally().anything() && outcome.payload.isObject()) {
+      Json::Value answer = outcome.payload;
+      answer["read"] = toJson(served.tally());
+      outcome = ToolResult::json(answer);
+    }
+    if (structured) outcome.structured = outcome.payload;
+    if (batchRead) {
+      Json::Value wire(Json::objectValue);
+      wire["content"] = outcome.content;
+      wire["structuredContent"] = outcome.structured;
+      wire["isError"] = false;
+      if (dump(wire).size() > kBatchReadByteBudget)
+        return ToolResult::failure(name + ": response exceeds the 262144-byte limit; request fewer ids or omit review. No records were omitted silently.");
+    }
     run.merge(served);
-    // A reply that served no log rows carries no tally.
-    if (!served.tally().anything() || !outcome.payload.isObject()) return outcome;
-    Json::Value answer = outcome.payload;
-    answer["read"] = toJson(served.tally());
-    return ToolResult::json(answer);
+    return outcome;
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die rather than answer
   } catch (const InvalidTraining& malformed) {
-    // Nothing landed: these are thrown while an entity is being built, before any write.
+    // Validation failures unwind any open repository transaction without committing it.
     return ToolResult::failure(name + ": " + malformed.what());
   } catch (const std::exception& error) {
     // stderr, not stdout: on the stdio transport stdout is the protocol channel.
@@ -537,6 +668,8 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
 
   if (name == "list_exercises")  return listExercises(catalog_, caller);
   if (name == "list_sessions")   return listSessions(training_, caller, arguments, served);
+  if (name == "get_sessions")    return getSessions(training_, caller, arguments, served);
+  if (name == "get_last_times")  return getLastTimes(training_, caller, arguments, served);
   if (name == "get_session")     return getSession(training_, caller, arguments, served);
   if (name == "last_time")       return lastTime(training_, caller, arguments, served);
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
@@ -545,6 +678,8 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "list_bodyweight") return listBodyweight(bodyweight_, caller, arguments);
 
   if (name == "start_session")   return startSession(training_, caller, arguments);
+  if (name == "log_sets" || name == "import_session")
+    return batchLog(training_, caller, arguments, name == "import_session");
   if (name == "log_set")         return logSet(training_, caller, arguments);
   if (name == "finish_session")  return finishSession(training_, caller, arguments);
   if (name == "create_routine")  return createRoutine(program_, caller, arguments, source.door);

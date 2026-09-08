@@ -81,6 +81,53 @@ AppendOutcome TrainingService::append(const UserId& user, const SessionId& sessi
   return {*written.set, AppendError::none};
 }
 
+BatchLogOutcome TrainingService::appendSets(const UserId& user, const SessionId& session,
+                                            const std::vector<SetWrite>& incoming) {
+  std::vector<Set> sets;
+  for (std::size_t i = 0; i < incoming.size(); ++i) {
+    const SetWrite& row = incoming[i];
+    try {
+      sets.emplace_back(row.id, session, row.exercise, 0, row.weightKg, row.reps,
+                        row.kind, row.rpe, row.note, row.completedAtMs);
+    } catch (const InvalidTraining& error) {
+      throw InvalidTraining("sets[" + std::to_string(i) + "] (" + row.id.str() + "): " + error.what());
+    }
+  }
+  return log_.appendSets(user, SetBatch{session, std::move(sets), clock_.nowMs()});
+}
+
+BatchLogOutcome TrainingService::importSession(const UserId& user, const SessionStart& start,
+                                               std::uint64_t finishedAtMs,
+                                               const std::vector<SetWrite>& incoming) {
+  const std::uint64_t nowMs = clock_.nowMs();
+  Session session{start.id, user, start.startedAtMs, finishedAtMs, start.routine, std::nullopt, ClosedBy::finish};
+  if (!canFinishAt(session, finishedAtMs) || finishedAtMs > nowMs)
+    throw InvalidTraining("finishedAt must be at or after startedAt and no later than now");
+  std::vector<Set> sets;
+  for (std::size_t i = 0; i < incoming.size(); ++i) {
+    const SetWrite& row = incoming[i];
+    try {
+      sets.emplace_back(row.id, start.id, row.exercise, 0, row.weightKg, row.reps,
+                        row.kind, row.rpe, row.note, row.completedAtMs);
+    } catch (const InvalidTraining& error) {
+      throw InvalidTraining("sets[" + std::to_string(i) + "] (" + row.id.str() + "): " + error.what());
+    }
+  }
+  const SetBatch batch{start.id, std::move(sets), nowMs, true};
+  batch.checkInterval(session, true);
+  if (start.routine) {
+    const std::optional<Routine> routine = program_.routine(user, *start.routine);
+    if (routine) session.plan = snapshotOf(*routine);
+  }
+  return log_.importSession(session, batch);
+}
+
+std::vector<SessionRows> TrainingService::sessions(const UserId& user, const std::vector<SessionId>& ids) {
+  if (ids.empty() || ids.size() > 50) throw InvalidTraining("sessionIds must contain 1 to 50 ids");
+  settleOpen(log_, user, clock_.nowMs());
+  return log_.sessions(user, ids);
+}
+
 // The rule is where a value the store cannot hold is refused.
 // The session in the path must hold the set: absent, another account's, and this account's set in a
 // different workout are one reply. Nothing is settled and nothing is refused for a finished session.

@@ -72,6 +72,13 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
+  std::variant<NodePatchPlan, std::string> planNodePatches(const std::vector<NodePatch>& updates) const {
+    return wm::planNodePatches(graph_, legend_, updates);
+  }
+  std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
+    return wm::planEdgeChanges(graph_, changes);
+  }
+
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);
 

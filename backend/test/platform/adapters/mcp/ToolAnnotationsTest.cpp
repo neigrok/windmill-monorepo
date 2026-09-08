@@ -23,6 +23,9 @@ struct Row {
 };
 
 const std::vector<Row> kRoadmap = {
+    {"get_nodes", "Roadmap · Get nodes", true, false, true},
+    {"patch_nodes", "Roadmap · Patch nodes", false, true, true},
+    {"change_edges", "Roadmap · Change edges", false, true, true},
     {"create_tree", "Roadmap · Create tree", false, false, false},
     {"list_trees", "Roadmap · List trees", true, false, true},
     {"delete_tree", "Roadmap · Delete tree", false, true, true},
@@ -32,7 +35,7 @@ const std::vector<Row> kRoadmap = {
     {"get_progress", "Roadmap · Get progress", true, false, true},
     {"find_nodes", "Roadmap · Find nodes", true, false, true},
     {"create_node", "Roadmap · Create node", false, false, false},
-    {"annotate_node", "Roadmap · Annotate node", false, false, true},
+    {"annotate_node", "Roadmap · Annotate node", false, false, false},
     {"rename_node", "Roadmap · Rename node", false, false, true},
     {"set_node_color", "Roadmap · Set node color", false, false, true},
     {"move_node", "Roadmap · Move node", false, false, true},
@@ -61,6 +64,8 @@ const std::vector<Row> kGym = {
     {"get_stats", "Gym · Get stats", true, false, true},
     {"list_notes", "Gym · List notes", true, false, true},
     {"list_bodyweight", "Gym · List bodyweight", true, false, true},
+    {"get_sessions", "Gym · Get sessions", true, false, true},
+    {"get_last_times", "Gym · Get last times", true, false, true},
     {"start_session", "Gym · Start session", false, false, true},
     {"log_set", "Gym · Log set", false, false, true},
     {"finish_session", "Gym · Finish session", false, false, true},
@@ -68,6 +73,8 @@ const std::vector<Row> kGym = {
     {"propose_routine_change", "Gym · Propose routine change", false, false, true},
     {"create_exercise", "Gym · Create exercise", false, false, true},
     {"share_session", "Gym · Share session", false, false, true},
+    {"log_sets", "Gym · Log sets", false, false, true},
+    {"import_session", "Gym · Import session", false, false, true},
     {"discard_session", "Gym · Discard session", false, true, true},
     {"propose_routine_removal", "Gym · Propose routine removal", false, false, true},  // a proposal removes nothing
     {"revoke_share", "Gym · Revoke share", false, true, true},
@@ -135,6 +142,6 @@ TEST(only_the_allowlisted_roadmap_writes_are_bulk_edits) {
   std::vector<std::string> bulk;
   for (const ToolDeclaration& tool : roadmapToolCatalog())
     if (tool.bulkEdit) bulk.push_back(tool.name());
-  CHECK_EQ(bulk, (std::vector<std::string>{"tidy", "import_subgraph", "prune"}));
+  CHECK_EQ(bulk, (std::vector<std::string>{"patch_nodes", "change_edges", "tidy", "import_subgraph", "prune"}));
   for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.bulkEdit);
 }

@@ -1165,8 +1165,8 @@ TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bri
   CHECK(repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000)).error == SetInsertError::deleted);
 }
 
-// Another account's deleted id is not a fact this caller may learn, and their own id stays spent in any workout.
-TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
+// A deleted id stays spent globally without exposing another account's deletion.
+TEST(pg_gym_a_deleted_id_is_spent_globally_with_owner_scoped_refusals) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgLogRepository repo{wm::pgTestPool()};
@@ -1185,13 +1185,13 @@ TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
                            ExerciseId{"bench-press"}, 0, 80.0, 8, SetKind::working, std::nullopt, "",
                            t1 + 11'000})
             .error == SetInsertError::deleted);
-  // Another account, the same id: a fact about a log this caller cannot see, so it decides nothing.
+  // Another account receives the generic collision refusal, never the deletion detail.
   SetInsertOutcome landed =
       repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000003"},
                          ExerciseId{"bench-press"}, 0, 60.0, 5, SetKind::working, std::nullopt, "",
                          t1 + 11'000});
-  REQUIRE(landed.set.has_value());
-  CHECK_EQ(landed.set->weightKg, 60.0);
+  CHECK_FALSE(landed.set.has_value());
+  CHECK(landed.error == SetInsertError::idTaken);
 }
 
 // A queue re-sending a set's POST while the lifter deletes it: all three writes take the SESSION's row first,
@@ -1746,4 +1746,165 @@ TEST(pg_gym_movement_history_of_a_movement_this_account_cannot_see_is_empty) {
   CHECK(never.routines.empty());
   CHECK(never.sessions.empty());
   CHECK(never.recent.empty());
+}
+
+TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  repo.insertSession(sessionAt("ses_batch001", kNow));
+  const Set first = benchSet("set_batch001", 80, kNow + 1000, "ses_batch001");
+  Set last = benchSet("set_batch002", 82.5, kNow + 2000, "ses_batch001");
+  last.exercise = ExerciseId{"missing"};
+  const auto rejected = repo.appendSets(wm::UserId{kUser}, SetBatch{SessionId{"ses_batch001"}, {first, last}, kNow + 3000});
+  CHECK(rejected.error == BatchLogError::unknownExercise);
+  CHECK_EQ(rejected.errorIndex, std::optional<std::size_t>{1});
+  CHECK(repo.setsOf(SessionId{"ses_batch001"}).empty());
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    CHECK_EQ(txn.exec_params("SELECT count(*) FROM gym_write_receipts WHERE user_id=$1::uuid AND kind='set'", kUser)[0][0].as<int>(), 0);
+  }
+  last.exercise = ExerciseId{"bench-press"};
+  const SetBatch batch{SessionId{"ses_batch001"}, {first, last}, kNow + 3000};
+  const auto created = repo.appendSets(wm::UserId{kUser}, batch);
+  CHECK(created.error == BatchLogError::none);
+  REQUIRE_EQ(created.sets.size(), 2u);
+  CHECK_EQ(created.sets[0].current->setNumber, 1);
+  CHECK_EQ(created.sets[1].current->setNumber, 2);
+  Set corrected = *created.sets[0].current;
+  corrected.reps = 3;
+  CHECK(repo.updateSet(wm::UserId{kUser}, corrected).has_value());
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_batch001"}, last.id);
+  const auto replay = repo.appendSets(wm::UserId{kUser}, batch);
+  CHECK(replay.replayed);
+  CHECK_EQ(replay.sets[0].current->reps, 3);
+  CHECK_FALSE(replay.sets[1].current.has_value());
+  Set changed = first;
+  changed.reps = 3;
+  CHECK(repo.appendSets(wm::UserId{kUser}, SetBatch{SessionId{"ses_batch001"}, {changed, last}, kNow + 3000}).error == BatchLogError::payloadConflict);
+}
+
+TEST(pg_gym_completed_import_is_atomic_retry_safe_and_cannot_be_recreated_through_single_writes) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const Session live = sessionAt("ses_live0001", kNow);
+  repo.insertSession(live);
+  const Session imported{SessionId{"ses_import01"}, wm::UserId{kUser}, kNow - 10000, kNow - 1000, std::nullopt, std::nullopt, ClosedBy::finish};
+  const Set first = benchSet("set_import01", 80, kNow - 5000, "ses_import01");
+  Set bad = benchSet("set_import02", 80, kNow - 4000, "ses_import01");
+  bad.exercise = ExerciseId{"absent"};
+  CHECK(repo.importSession(imported, SetBatch{imported.id, {first, bad}, kNow}).error == BatchLogError::unknownExercise);
+  CHECK_FALSE(repo.session(wm::UserId{kUser}, imported.id).has_value());
+  const SetBatch batch{imported.id, {first}, kNow};
+  CHECK(repo.importSession(imported, batch).error == BatchLogError::none);
+  CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>{live});
+  CHECK(repo.importSession(imported, batch).replayed);
+  CHECK(repo.deleteSession(wm::UserId{kUser}, imported.id));
+  CHECK(repo.importSession(imported, batch).sessionDeleted);
+  repo.close(live.id, kNow + 1000, ClosedBy::finish);
+  repo.insertSession(sessionAt(imported.id.str(), kNow));
+  CHECK_FALSE(repo.session(wm::UserId{kUser}, imported.id).has_value());
+  repo.insertSession(sessionAt("ses_new00001", kNow));
+  Set resurrection = first;
+  resurrection.session = SessionId{"ses_new00001"};
+  resurrection.completedAtMs = kNow;
+  CHECK(repo.insertSet(resurrection).error == SetInsertError::deleted);
+  CHECK(repo.setsOf(resurrection.session).empty());
+  CHECK(repo.importSession(imported, batch).sessionDeleted);
+}
+
+TEST(pg_gym_batch_and_single_writes_serialize_set_numbers_under_the_same_session_lock) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  repo.insertSession(sessionAt("ses_batch001", kNow));
+  std::atomic<bool> go = false;
+  BatchLogOutcome batch;
+  SetInsertOutcome single;
+  std::thread one([&] {
+    while (!go.load()) std::this_thread::yield();
+    batch = repo.appendSets(wm::UserId{kUser}, SetBatch{SessionId{"ses_batch001"},
+        {benchSet("set_batch001", 80, kNow + 1000, "ses_batch001"), benchSet("set_batch002", 80, kNow + 2000, "ses_batch001")}, kNow + 3000});
+  });
+  std::thread two([&] {
+    while (!go.load()) std::this_thread::yield();
+    single = repo.insertSet(benchSet("set_single01", 80, kNow + 1500, "ses_batch001"));
+  });
+  go = true;
+  one.join(); two.join();
+  CHECK(batch.error == BatchLogError::none);
+  CHECK(single.error == SetInsertError::none);
+  std::vector<int> numbers;
+  for (const Set& set : repo.setsOf(SessionId{"ses_batch001"})) numbers.push_back(set.setNumber);
+  std::sort(numbers.begin(), numbers.end());
+  CHECK_EQ(numbers, (std::vector<int>{1, 2, 3}));
+  CHECK_EQ(batch.sets[1].current->setNumber, batch.sets[0].current->setNumber + 1);
+}
+
+TEST(pg_gym_batch_hashes_the_same_precision_the_store_holds) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  repo.insertSession(sessionAt("ses_batch001", kNow));
+  const Set approximate = benchSet("set_batch001", 82.5000000001, kNow + 1000, "ses_batch001");
+  const auto first = repo.appendSets(wm::UserId{kUser}, SetBatch{SessionId{"ses_batch001"}, {approximate}, kNow + 2000});
+  CHECK(first.error == BatchLogError::none);
+  const Set exact = benchSet("set_batch001", 82.5, kNow + 1000, "ses_batch001");
+  CHECK(repo.appendSets(wm::UserId{kUser}, SetBatch{SessionId{"ses_batch001"}, {exact}, kNow + 2000}).replayed);
+  Set single = approximate;
+  single.id = SetId{"set_single01"};
+  single.rpe = 7.1000000001;
+  REQUIRE(repo.insertSet(single).set.has_value());
+  single.weightKg = 82.5;
+  single.rpe = 7.1;
+  CHECK(repo.appendSets(wm::UserId{kUser}, SetBatch{single.session, {single}, kNow + 2000}).replayed);
+  Set halfCent = single;
+  halfCent.id = SetId{"set_half0001"};
+  halfCent.weightKg = 1.005;
+  halfCent.rpe = 7.05;
+  const auto stored = repo.insertSet(halfCent);
+  REQUIRE(stored.set.has_value());
+  CHECK_EQ(stored.set->weightKg, 1.01);
+  CHECK_EQ(stored.set->rpe, std::optional<double>{7.1});
+  CHECK(repo.appendSets(wm::UserId{kUser}, SetBatch{single.session, {*stored.set}, kNow + 2000}).replayed);
+}
+
+TEST(pg_gym_single_and_import_compete_for_one_durable_set_id_across_sessions) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const Session live = sessionAt("ses_live0001", kNow);
+  repo.insertSession(live);
+  const Session historical{SessionId{"ses_import01"}, wm::UserId{kUser}, kNow - 10000,
+      kNow - 1000, std::nullopt, std::nullopt, ClosedBy::finish};
+  const SetBatch batch{historical.id, {benchSet("set_shared01", 80, kNow - 5000, historical.id.str())}, kNow};
+  const Set singleSet = benchSet("set_shared01", 80, kNow + 1000, live.id.str());
+  std::atomic<bool> go = false;
+  BatchLogOutcome imported;
+  SetInsertOutcome single;
+  std::thread one([&] {
+    while (!go.load()) std::this_thread::yield();
+    imported = repo.importSession(historical, batch);
+  });
+  std::thread two([&] {
+    while (!go.load()) std::this_thread::yield();
+    single = repo.insertSet(singleSet);
+  });
+  go = true;
+  one.join(); two.join();
+  const bool importWon = imported.error == BatchLogError::none;
+  CHECK_EQ(single.error == SetInsertError::none, !importWon);
+  const SessionId winner = importWon ? historical.id : live.id;
+  REQUIRE(repo.deleteSession(wm::UserId{kUser}, winner));
+  if (importWon) {
+    CHECK(repo.importSession(historical, batch).sessionDeleted);
+    CHECK(repo.insertSet(singleSet).error == SetInsertError::deleted);
+  } else {
+    CHECK(repo.importSession(historical, batch).error == BatchLogError::payloadConflict);
+    repo.insertSession(live);
+    CHECK_FALSE(repo.session(wm::UserId{kUser}, live.id).has_value());
+  }
+  CHECK_FALSE(repo.setOf(wm::UserId{kUser}, singleSet.id).has_value());
 }

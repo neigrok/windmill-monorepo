@@ -152,10 +152,10 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
            (std::vector<std::string>{
                "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "list_notes gym:read", "list_bodyweight gym:read", "start_session gym:write",
+               "list_notes gym:read", "list_bodyweight gym:read", "get_sessions gym:read", "get_last_times gym:read", "start_session gym:write",
                "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
-               "create_exercise gym:write", "share_session gym:write",
+               "create_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
                "discard_session gym:delete", "propose_routine_removal gym:delete",
                "revoke_share gym:delete"}));
 }
@@ -361,7 +361,7 @@ TEST(gym_publishes_no_tool_that_writes_a_bodyweight_at_any_level) {
   }
   CHECK_EQ(offered, (std::vector<std::string>{"list_exercises", "list_sessions", "get_session",
                                               "last_time", "list_routines", "get_stats",
-                                              "list_notes", "list_bodyweight",
+                                              "list_notes", "list_bodyweight", "get_sessions", "get_last_times",
                                               "propose_routine_change",
                                               "propose_routine_removal"}));
 
@@ -430,7 +430,7 @@ TEST(gym_publishes_no_tool_that_edits_or_deletes_a_logged_set) {
     CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
 }
 
-// A set the lifter deleted leaves its id free, and re-sending it under `gym:write` is refused: mint no fresh id.
+// A set the lifter deleted leaves its id spent; re-sending it under `gym:write` is refused.
 TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
   Harness h;
   h.start("ses_00000001", 1'700'000'000'000);
@@ -452,11 +452,11 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
 
   const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
                                        "last_time",      "list_routines", "get_stats",
-                                       "list_notes",     "list_bodyweight"};
+                                       "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
   const std::vector<std::string> writes{"start_session",  "log_set",
                                         "finish_session", "create_routine",
                                         "propose_routine_change", "create_exercise",
-                                        "share_session"};
+                                        "share_session", "log_sets", "import_session"};
   const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
                                          "revoke_share"};
 
@@ -491,9 +491,9 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
 
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
   CHECK_EQ(namesIn(surface.listTools(ToolCaller{uid(), parseToolScope("gym:read")})),
-           (std::vector<std::string>{"list_exercises", "list_sessions", "get_session", "last_time",
-                                     "list_routines", "get_stats", "list_notes",
-                                     "list_bodyweight"}));
+           (std::vector<std::string>{"gym_list_exercises", "gym_list_sessions", "gym_get_session", "gym_last_time",
+                                     "gym_list_routines", "gym_get_stats", "gym_list_notes",
+                                     "gym_list_bodyweight", "gym_get_sessions", "gym_get_last_times"}));
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
 }
@@ -581,8 +581,9 @@ TEST(gym_a_set_id_spent_in_another_workout_is_refused_by_name) {
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("log_set: that set id is already spent on a set in another workout. Mint a "
-                       "different one and send it again."));
+           std::string("log_set: that set id is already spent. Inspect get_session or list_sessions to reconcile "
+                       "the log; preserve deleted sets. Retry only with the original id and body. "
+                       "Use a fresh id only for a new performed set the user asks to record."));
 }
 
 TEST(gym_a_set_into_a_finished_workout_says_to_open_a_new_one) {
@@ -1530,4 +1531,102 @@ TEST(gym_a_proposal_minted_over_mcp_carries_the_mcp_door) {
 
   CHECK_FALSE(minted.isError);
   CHECK_EQ(body(minted)["proposal"]["source"]["door"].asString(), std::string("mcp"));
+}
+
+TEST(gym_log_sets_is_atomic_ordered_and_keeps_original_retry_identity) {
+  Harness h;
+  h.start("ses_batch001", h.clock.now - 10000);
+  Json::Value args = parse(R"({"sessionId":"ses_batch001","sets":[{"id":"set_batch001","exerciseId":"bench-press","weightKg":80,"reps":5,"completedAt":1},{"id":"set_batch002","exerciseId":"bench-press","weightKg":82.5,"reps":4,"completedAt":1}]})");
+  for (Json::Value& set : args["sets"]) set["completedAt"] = Json::UInt64(h.clock.now - 1000);
+  Json::Value invalid = args;
+  invalid["sets"][1]["exerciseId"] = "absent";
+  const ToolResult rejected = h.call("log_sets", invalid);
+  CHECK(rejected.isError);
+  CHECK(h.repo.db.sets.empty());
+  CHECK(h.repo.db.setReceipts.empty());
+  CHECK_EQ(message(rejected), std::string("log_sets: sets[1] (set_batch002): no movement has that id. Call list_exercises for the catalog, or create_exercise to add one. No changes from this batch were committed."));
+  const ToolResult result = h.call("log_sets", args);
+  CHECK_FALSE(result.isError);
+  CHECK_EQ(body(result), parse(R"({"sessionId":"ses_batch001","applied":true,"replayed":false,"sessionDeleted":false,"sets":[{"id":"set_batch001","setNumber":1,"status":"created"},{"id":"set_batch002","setNumber":2,"status":"created"}]})"));
+  CHECK_EQ(result.structured, result.payload);
+  SetFix fix;
+  fix.reps = 3;
+  CHECK(h.training.fixSet(uid(), SessionId{"ses_batch001"}, SetId{"set_batch001"}, fix).has_value());
+  h.training.deleteSet(uid(), SessionId{"ses_batch001"}, SetId{"set_batch002"});
+  const ToolResult replay = h.call("log_sets", args);
+  CHECK_EQ(body(replay), parse(R"({"sessionId":"ses_batch001","applied":true,"replayed":true,"sessionDeleted":false,"sets":[{"id":"set_batch001","setNumber":1,"status":"replayed"},{"id":"set_batch002","status":"deleted"}]})"));
+  REQUIRE_EQ(h.repo.db.sets.size(), 1u);
+  CHECK_EQ(h.repo.db.sets[0].reps, 3);
+  args["sets"][0]["reps"] = 3;
+  CHECK(h.call("log_sets", args).isError);
+  CHECK_EQ(h.repo.db.sets[0].reps, 3);
+}
+
+TEST(gym_log_sets_rejects_invalid_final_rows_duplicates_and_foreign_sessions) {
+  Harness h;
+  h.start("ses_batch001", h.clock.now - 10000);
+  Json::Value args = parse(R"({"sessionId":"ses_batch001","sets":[{"id":"set_batch001","exerciseId":"bench-press","weightKg":80,"reps":5,"completedAt":1},{"id":"set_batch002","exerciseId":"bench-press","weightKg":82.5,"reps":4,"completedAt":1}]})");
+  for (Json::Value& set : args["sets"]) set["completedAt"] = Json::UInt64(h.clock.now - 1000);
+  for (const char* field : {"reps", "weightKg", "completedAt"}) {
+    Json::Value bad = args;
+    bad["sets"][1][field] = field == std::string("weightKg") ? Json::Value(80.001) : Json::Value(0);
+    CHECK(h.call("log_sets", bad).isError);
+    CHECK(h.repo.db.sets.empty());
+  }
+  Json::Value duplicate = args;
+  duplicate["sets"][1]["id"] = "set_batch001";
+  CHECK(h.call("log_sets", duplicate).isError);
+  CHECK(h.call("log_sets", args, "u2").isError);
+  CHECK(h.repo.db.sets.empty());
+}
+
+TEST(gym_import_session_is_independent_of_the_live_workout_and_never_restores_a_deleted_import) {
+  Harness h;
+  h.start("ses_live0001", h.clock.now);
+  const Session live = h.repo.db.sessions[0];
+  Json::Value args = parse(R"({"id":"ses_import01","startedAt":1000,"finishedAt":3000,"sets":[{"id":"set_import01","exerciseId":"bench-press","weightKg":80,"reps":5,"completedAt":2000}]})");
+  const ToolResult imported = h.call("import_session", args);
+  CHECK_FALSE(imported.isError);
+  CHECK_EQ(body(imported), parse(R"({"sessionId":"ses_import01","applied":true,"imported":true,"replayed":false,"sessionDeleted":false,"sets":[{"id":"set_import01","setNumber":1,"status":"created"}]})"));
+  CHECK_EQ(h.repo.log.open(uid()), std::optional<Session>{live});
+  CHECK_FALSE(h.call("import_session", args).isError);
+  CHECK_EQ(h.repo.db.sessions.size(), 2u);
+  CHECK(h.training.discard(uid(), SessionId{"ses_import01"}) == DiscardOutcome::done);
+  CHECK_EQ(body(h.call("import_session", args)), parse(R"({"sessionId":"ses_import01","applied":true,"imported":false,"replayed":true,"sessionDeleted":true,"sets":[{"id":"set_import01","status":"deleted"}]})"));
+  CHECK_EQ(h.repo.db.sessions.size(), 1u);
+  args["sets"][0]["reps"] = 6;
+  CHECK(h.call("import_session", args).isError);
+  CHECK_EQ(h.repo.log.open(uid()), std::optional<Session>{live});
+}
+
+TEST(gym_selected_reads_preserve_order_missing_ids_scopes_and_structured_read_tallies) {
+  Harness h;
+  h.repo.db.sessions.emplace_back(SessionId{"ses_batch001"}, uid(), 1000, 3000);
+  h.repo.db.sessions.emplace_back(SessionId{"ses_batch002"}, uid(), 4000, 6000);
+  const ToolResult result = h.call("get_sessions", parse(R"({"sessionIds":["ses_batch002","missing","ses_batch001"]})"));
+  CHECK_FALSE(result.isError);
+  CHECK_EQ(result.structured, result.payload);
+  CHECK_EQ(body(result)["sessions"][0]["session"]["id"].asString(), std::string("ses_batch002"));
+  CHECK_EQ(body(result)["sessions"][1]["session"]["id"].asString(), std::string("ses_batch001"));
+  CHECK_EQ(body(result)["missingSessionIds"], parse(R"(["missing"])"));
+  CHECK_EQ(body(result)["read"]["sessions"].asInt(), 2);
+  CHECK_EQ(body(h.call("get_sessions", parse(R"({"sessionIds":["ses_batch001"]})"), "u2")), parse(R"({"sessions":[],"missingSessionIds":["ses_batch001"]})"));
+  CHECK(h.call("get_sessions", parse(R"({"sessionIds":["ses_batch001","ses_batch001"]})")).isError);
+  CHECK_EQ(body(h.call("get_last_times", parse(R"({"exerciseIds":["bench-press","missing","back-squat"]})"))), parse(R"({"exercises":[{"exerciseId":"bench-press","trained":false},{"exerciseId":"back-squat","trained":false}],"missingExerciseIds":["missing"]})"));
+}
+
+TEST(gym_imported_ids_stay_spent_through_single_tool_paths_after_deletion) {
+  Harness h;
+  const Json::Value args = parse(R"({"id":"ses_import01","startedAt":1000,"finishedAt":3000,"sets":[{"id":"set_import01","exerciseId":"bench-press","weightKg":80,"reps":5,"completedAt":2000}]})");
+  CHECK_FALSE(h.call("import_session", args).isError);
+  CHECK(h.training.discard(uid(), SessionId{"ses_import01"}) == DiscardOutcome::done);
+  CHECK_EQ(message(h.start("ses_import01", h.clock.now)),
+      std::string("start_session: that workout id is already spent. Inspect list_sessions to reconcile the log; "
+                  "preserve deleted workouts. Retry only with the original id and body. "
+                  "Use a fresh id only when the user asks to record a new workout."));
+  CHECK(h.repo.db.sessions.empty());
+  CHECK_FALSE(h.start("ses_fresh001", h.clock.now).isError);
+  CHECK(h.logSet("ses_fresh001", "set_import01", "bench-press", 80, 5, h.clock.now).isError);
+  CHECK(h.repo.db.sets.empty());
+  CHECK(body(h.call("import_session", args))["sessionDeleted"].asBool());
 }

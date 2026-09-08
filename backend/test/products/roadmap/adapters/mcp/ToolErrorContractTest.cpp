@@ -55,15 +55,15 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
     if (tool.access == Access::del) deletes.push_back(tool.name());
   }
 
-  CHECK_EQ(reads, (std::vector<std::string>{"list_trees", "get_tree", "get_diagnostics", "get_health",
+  CHECK_EQ(reads, (std::vector<std::string>{"get_nodes", "list_trees", "get_tree", "get_diagnostics", "get_health",
                                             "get_progress", "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "create_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
+                       "patch_nodes", "change_edges", "create_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
                        "move_node", "connect", "disconnect", "reconnect", "tidy", "add_kind",
                        "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "set_progress",
                        "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{27});
+  CHECK_EQ(catalog.size(), std::size_t{30});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -71,14 +71,14 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 24u);
+  CHECK_EQ(visible.size(), 27u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "disconnect", "prune"})
     CHECK(toolNamed(visible, ordinary) != nullptr);
 
   const ToolCaller reader{h.caller, parseToolScope("roadmap:read")};
-  CHECK_EQ(h.tools.listTools(reader).size(), 6u);
+  CHECK_EQ(h.tools.listTools(reader).size(), 7u);
   const ToolCaller elsewhere{h.caller, parseToolScope("gym:read gym:write gym:delete")};
   CHECK_EQ(h.tools.listTools(elsewhere).size(), 0u);
 }
@@ -830,7 +830,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));
 
   const std::string& text = catalog[0].text;
-  CHECK(text.find("`connect(from, to)` means `from` must be complete before `to` is unlocked.") !=
+  CHECK(text.find("`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked.") !=
         std::string::npos);
   CHECK(text.find("prerequisite first") != std::string::npos);
   CHECK(text.find(kNodeHandle.published) != std::string::npos);
@@ -839,8 +839,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
 
   const Json::Value tools = h.tools.listTools(h.actor);
   for (const char* named : {"list_trees", "get_tree", "find_nodes", "get_progress", "get_diagnostics",
-                            "create_node", "connect", "import_subgraph", "set_progress"}) {
-    CHECK(text.find(named) != std::string::npos);
+                            "create_node", "connect", "import_subgraph", "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
+    CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
   }
 

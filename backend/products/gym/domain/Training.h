@@ -168,6 +168,16 @@ struct Set {
   bool operator==(const Set&) const = default;
 };
 
+constexpr std::size_t kMaxSetBatch = 200;
+
+struct SetBatch {
+  SessionId sessionId;
+  std::vector<Set> sets;
+
+  SetBatch(SessionId sessionId, std::vector<Set> sets, std::uint64_t nowMs, bool allowEmpty = false);
+  void checkInterval(const Session& session, bool completedSession) const;
+};
+
 // An omitted field means "leave what is stored". The movement, the instant, the set number and the
 // session are not correctable.
 // `rpeNamed` says the write mentioned rpe and `rpe` says what it mentioned, so named-and-empty

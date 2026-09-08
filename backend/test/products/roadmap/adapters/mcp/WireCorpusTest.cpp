@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 7;  // v7: annotate_node icon + appendDescription and its refusal naming all four fields; get_progress answers outOfOrder by default
+constexpr int kWireCorpusVersion = 8;
 
 struct Step {
   const char* tool;
