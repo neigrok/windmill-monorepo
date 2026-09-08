@@ -49,6 +49,8 @@ model-task benchmark or token saving has been measured.
 - New selected results use the same payload for compatibility text and structured content. Byte
   checks cover both representations, and gym read tallies are attached before the check.
 - Tests extend existing mirrored files; no new production class/file or CMake target is needed.
+- The shared gym test fake includes `<cmath>` directly for `std::round`, so Linux/GCC compilation
+  does not depend on transitive standard-library headers.
 
 The simplification pass consolidated hash normalization, kept tool reference rewriting restricted
 to schema-bearing fields, removed broad idempotency/rollback claims, and aligned product guidance

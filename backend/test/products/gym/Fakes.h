@@ -10,6 +10,7 @@
 #include "products/gym/ports/ProgramRepository.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
