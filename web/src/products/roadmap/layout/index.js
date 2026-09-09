@@ -1,11 +1,12 @@
-// The one door to a layout engine. Each engine lives in its own module behind a dynamic import, so an engine that fails
-// to load or lay out can never take the others down with it; `?layout=<name>` before or after the hash picks one.
+// The one door to a layout engine: `?layout=<name>` before or after the hash picks one, the default is here and the rest
+// behind a dynamic import, and an engine that fails to load or throws is answered by radial rather than a blank canvas.
+
+import RadialLayoutEngine from './RadialLayoutEngine.js';
 
 export const LAYOUTS = ['radial', 'rings', 'bubble', 'mindmap'];
 export const DEFAULT_LAYOUT = 'radial';
 
 const ENGINE_MODULES = {
-  radial: () => import('./RadialLayoutEngine.js'),
   rings: () => import('./RingsLayoutEngine.js'),
   bubble: () => import('./BubbleLayoutEngine.js'),
   mindmap: () => import('./MindmapLayoutEngine.js'),
@@ -18,8 +19,28 @@ export function layoutNameFrom({ search = '', hash = '' }) {
   return LAYOUTS.includes(named) ? named : DEFAULT_LAYOUT;
 }
 
+// The engine every surface that draws a tree outside the canvas — a quest thumbnail, a paste ghost — lays out with.
+export function defaultLayoutEngine() {
+  return new RadialLayoutEngine();
+}
+
 export async function loadLayoutEngine(name) {
   if (!LAYOUTS.includes(name)) throw new Error(`Unknown layout "${name}"`);
-  const module = await ENGINE_MODULES[name]();
-  return new module.default();
+  if (name === DEFAULT_LAYOUT) return defaultLayoutEngine();
+  try {
+    const module = await ENGINE_MODULES[name]();
+    return new module.default();
+  } catch (error) {
+    console.error(`[layout] the ${name} engine failed to load — drawing the tree radially instead`, error);
+    return defaultLayoutEngine();
+  }
+}
+
+export function layoutTree(engine, tree) {
+  try {
+    return engine.layout(tree);
+  } catch (error) {
+    console.error(`[layout] ${engine.constructor.name} could not lay out ${tree.allNodes.length} steps — drawing the tree radially instead`, error);
+    return defaultLayoutEngine().layout(tree);
+  }
 }

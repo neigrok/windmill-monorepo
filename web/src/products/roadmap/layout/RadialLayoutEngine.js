@@ -22,37 +22,38 @@ export class RadialLayoutEngine extends LayoutEngine {
     const depthOffset = trunk.centerId() !== null ? 0 : 1;
     const wedges = [];
 
-    const claim = (id, angleStart, angleEnd) => {
-      wedges.push({
-        id,
-        depth: trunk.trunkDepthOf(id) + depthOffset,
-        angle: (angleStart + angleEnd) / 2,
-      });
-
-      const children = trunk.trunkChildrenOf(id);
-      if (children.length === 0) return;
-
-      const totalLeaves = children.reduce((sum, childId) => sum + trunk.leafCountOf(childId), 0);
-      let cursor = angleStart;
-      for (const childId of children) {
-        const span = (angleEnd - angleStart) * shareOf(trunk.leafCountOf(childId), totalLeaves, children.length);
-        claim(childId, cursor, cursor + span);
-        cursor += span;
-      }
-    };
-
+    // An explicit stack, deepest claim last, so a chain thousands of steps long cannot overflow the call stack.
+    const claims = [];
     const centerId = trunk.centerId();
     if (centerId !== null) {
-      claim(centerId, 0, FULL_CIRCLE);
+      claims.push({ id: centerId, angleStart: 0, angleEnd: FULL_CIRCLE });
     } else {
       const roots = [...tree.roots()].sort(cmpOrder);
       const totalLeaves = roots.reduce((sum, root) => sum + trunk.leafCountOf(root.id), 0);
       let cursor = 0;
       for (const root of roots) {
         const span = FULL_CIRCLE * shareOf(trunk.leafCountOf(root.id), totalLeaves, roots.length);
-        claim(root.id, cursor, cursor + span);
+        claims.push({ id: root.id, angleStart: cursor, angleEnd: cursor + span });
         cursor += span;
       }
+      claims.reverse();
+    }
+
+    while (claims.length > 0) {
+      const { id, angleStart, angleEnd } = claims.pop();
+      wedges.push({ id, depth: trunk.trunkDepthOf(id) + depthOffset, angle: (angleStart + angleEnd) / 2 });
+
+      const children = trunk.trunkChildrenOf(id);
+      if (children.length === 0) continue;
+      const totalLeaves = children.reduce((sum, childId) => sum + trunk.leafCountOf(childId), 0);
+      const claimed = [];
+      let cursor = angleStart;
+      for (const childId of children) {
+        const span = (angleEnd - angleStart) * shareOf(trunk.leafCountOf(childId), totalLeaves, children.length);
+        claimed.push({ id: childId, angleStart: cursor, angleEnd: cursor + span });
+        cursor += span;
+      }
+      for (let i = claimed.length - 1; i >= 0; i--) claims.push(claimed[i]);
     }
 
     const radii = ringRadii(wedges);

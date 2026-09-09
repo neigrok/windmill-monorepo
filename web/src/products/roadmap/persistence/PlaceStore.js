@@ -1,6 +1,5 @@
-// The last place the editor stood — tree, camera, selection. A camera is only meaningful under the layout that placed
-// the nodes, so a place carries the engine's name and the camera format; a mismatch on load hands back the tree and
-// selection with no camera. Storage errors are never fatal.
+// The last place the editor stood — tree, camera, selection. A camera means nothing under another layout, so a place
+// carries the engine's name and the camera format; a mismatch hands back no camera. Storage errors are never fatal.
 
 const KEY = 'windmill:last-place';
 // Bumped by hand whenever the camera's meaning changes — the working-zoom frame, or an engine's geometry.

@@ -28,14 +28,16 @@ const positions = layoutPositions(tree);              // Map<id, Vec2> — synch
 const model     = tree.toRenderModel(positions, states);
 scene.setModel(model);                                // GPU build + fit
 // the first view: a saved place (PlaceStore, stamped with the engine) is restored; the OWNER with none opens
-// instantly at the working zoom on the frontier (ui/viewport.js frontierTarget) with the arrival suppressed;
+// instantly at the working zoom over the frontier's family (ui/viewport.js frontierTarget), arrival suppressed, and
+// is framed again as each piece of chrome publishes its measured inset, until the reader moves the camera;
 // a visitor keeps the whole-tree fit and the arrival ceremony
 // then: new SyncSession(...) — the lattice becomes truth and every later edit flows through it
 ```
 
 Repository loads → domain computes → scene renders. **Layout is synchronous** — no worker, no
 promise: `layoutPositions` re-runs the chosen engine inline whenever the engine name or the
-id/prerequisites/order/color/createdAt/label signature changes and serves a cached copy otherwise. No
+id/prerequisites/order/color/createdAt signature changes — plus the label for an engine that declares
+`readsCaptions`, since only those reserve a caption's box — and serves a cached copy otherwise. No
 business logic lives in the scene.
 
 After the first paint this is not the update path. A `SyncSession` owns the tree's CRDT lattice; a
@@ -49,15 +51,15 @@ The six marked **↓** have a section of their own below.
 | | |
 |---|---|
 | `model/` | Pure domain: the tree entity, unlock rules, the legend, spatial index. **↓** |
-| `layout/` | The layout engines behind one door (`index.js`) — radial today, three named stubs; synchronous, deterministic. **↓** |
+| `layout/` | Four layout engines behind one door (`index.js`) — radial, rings, bubble, mindmap; synchronous, deterministic. **↓** |
 | `scene/` | The WebGL2 renderer, its DOM overlays and pointer tools. **↓** |
 | `sync/` | The client half of the graph CRDT, both lanes: shared structure, private progress, gestures, socket, IndexedDB. **↓** |
 | `share/` | Public-link sharing and the in-product gallery portraits. **↓** |
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
 | `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (workspaces, legend, last place — stamped with the layout engine and a camera format, so a camera saved under another engine or an older format comes back null — return/milestone baselines, view prefs). |
-| `ui/` | Desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, Next-up ranking, honesty chrome; `viewport.js` is the pure half — the chrome insets per breakpoint and view state, and `frontierTarget`, the step a first view opens on. |
+| `ui/` | Desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, Next-up ranking, honesty chrome; `viewport.js` is the pure half — the docked panels' widths, the chrome insets and corner blocks per breakpoint and view state, and `frontierTarget`, the step a first view opens on. |
 | `ui/tree/` | The step's components — kind legend, checklist, workspace body — the two hooks over their pure models (`useLegend` · `useWorkspace`), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the DOM reference implementation of the tree metaphor. |
-| `ui/mobile/` | Phone/tablet surfaces: bottom sheets, editor sheet, aim + bulk bars, action lane, read-only chrome (with the always-visible Focus · All steps group under the wordmark), fork door. |
+| `ui/mobile/` | Phone/tablet surfaces: bottom sheets, editor sheet, aim + bulk bars, action lane, the plaque chrome every non-desktop breakpoint wears (`MobileChrome`, carrying the always-visible Focus · All steps group under the wordmark), fork door. |
 | `list/` | The phone's second view of the same model: the tree as an outline, with its own pure outline/editing/explore rules. |
 | `activity/` | The activity log domain, the presentation grammar every feed surface speaks, and `useActivity`. |
 | `ceremony/` | `CeremonyDirector` — sequences camera → travel → bloom → pulse → toast, one ceremony at a time. |
@@ -88,9 +90,9 @@ Root files: `routes.js`, `SkillTreeApp.jsx` (resolves *which* tree before the he
 `model/ports.js` — the data shapes (`NodeSpec`, `Kind`, `TreeData`, `Progress`, `RenderNode`,
 `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) plus the base ports `TreeRepository`
 (`loadTree` / `loadProgress` / `loadActivity`) and `LayoutEngine` (`layout` is synchronous; the static
-`reorder` hint — `'ring'` · `'parent-arc'` · `'none'` — says how siblings may be dragged into a new order
-on that engine's geometry). The C++ server answers these same shapes: when a field moves, it moves in
-both.
+`reorder` hint — `'ring'` · `'none'` — says how siblings may be dragged into a new order on that engine's
+geometry, and `readsCaptions` says whether a rename changes the picture). The C++ server answers these same
+shapes: when a field moves, it moves in both.
 
 `theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. The module
 constants are the light set; `sceneTheme(isDark)` returns the light or night set (`BACKGROUND`,
@@ -110,12 +112,15 @@ A third, structural axis is `nodeForm(label, parentCount, childCount)` — `link
 unnamed) · `unlinked` (a stray with no branches left) — revealed as a dashed ring. Also `CONNECTOR`,
 `BACKGROUND`, `BARK` / `BARK_CREAM` (neutral tool + grouped selection) and `NODE_SIZE`.
 
-`theme.js` also holds the one shared geometry the renderer, the captions and the layout agree on: the
-body is `BODY_FRACTION` (0.84) of `NODE_SIZE`, a crowned root `ROOT_BODY_SCALE` (1.55) wider;
-`WORKING_ZOOM` is the zoom at which an ordinary body is 52 CSS px (`PHONE_WORKING_ZOOM` 0.85 → 40 px);
-a drawn body never falls under `MIN_BODY_PX` 6 (`MIN_ROOT_BODY_PX` 9) at any zoom — a shader uniform
-floors it; `CAPTION` is the fixed caption frame (14 px on a 20 px line, at most two lines inside 168 px,
-8 px under the rim, 6.65 px per character for the layout's estimate).
+`theme.js` also holds the one shared geometry the renderer, the captions and the layout agree on — the
+node shader interpolates these same constants into its GLSL, so no drawn disc can drift from the box a
+layout reserved for it: the body is `BODY_FRACTION` (0.84) of `NODE_SIZE` (`BODY_WU`, which is also the
+rim every edge, port and affordance stops at), a crowned root `ROOT_BODY_SCALE` (1.55) wider and a
+selected one `SELECTED_SCALE` (1.14); `WORKING_ZOOM` is the zoom at which an ordinary body is 52 CSS px
+(`PHONE_WORKING_ZOOM`, 40 px); a drawn body never falls under `MIN_BODY_PX` 6 (`MIN_ROOT_BODY_PX` 9) at
+any zoom — a shader uniform floors it, and the caption rule is keyed on the same floored body; `CAPTION`
+is the fixed caption frame (14 px on a 20 px line, at most two lines inside 168 px, 8 px under the rim,
+6.65 px per character for the layout's estimate).
 
 Positions are in **world units** where a node is `NODE_SIZE` (56) across. Everything in `model/` is
 pure JS — no WebGL, no React.
@@ -160,28 +165,33 @@ pure JS — no WebGL, no React.
 ## `layout/`
 
 `index.js` is the one door: `LAYOUTS` (`radial` · `rings` · `bubble` · `mindmap`), `layoutNameFrom(location)`
-(`?layout=<name>` before or after the hash, else `radial`) and `loadLayoutEngine(name)`, a dynamic import per
-engine so one engine's failure never takes the others down. Every engine is a `LayoutEngine` (`model/ports.js`)
-with a static `reorder` hint — `'ring'` arms the scene's angular reorder gesture, anything else disarms it.
+(`?layout=<name>` before or after the hash, else `radial`), `loadLayoutEngine(name)` — the default engine
+statically, the others behind a dynamic import each, so one engine's failure never takes the others down —
+`defaultLayoutEngine()`, the synchronous radial engine every picture drawn outside the canvas uses
+(`quests/QuestThumb.jsx`, `paste/GhostSkeleton.jsx`), and `layoutTree(engine, tree)`, which contains a
+throwing engine: radial answers in its place and the console names the engine that failed, so no bug in one
+engine can blank the canvas. Every engine is a `LayoutEngine` (`model/ports.js`) with two statics — the
+`reorder` hint (`'ring'` arms the scene's angular reorder gesture, anything else disarms it) and
+`readsCaptions`, which tells the view whether a rename has to re-run it. All four are pure, synchronous,
+deterministic (siblings sort by their fractional-index key, so a load and a live emission project identical
+pixels), and iterative rather than recursive, so a chain thousands of steps deep is no deeper here.
 
-`RadialLayoutEngine.js` — the built engine (`reorder = 'ring'`). Each node sits on the ring for its trunk
-depth, centred in an angular wedge split among trunk children by subtree leaf count; a ring is pushed
-outward until its closest pair of neighbours has room. **Synchronous** and deterministic (siblings sort by
-their fractional-index key), so a load and a live emission project identical pixels.
-`RingsLayoutEngine.js` (`reorder = 'none'`; an exported `HubRingsLayoutEngine` variant says `'ring'`) —
-concentric depth rings with Reingold–Tilford contour packing in angle space over each node's
-`footprintOf` reach; a ring's radius is the larger of the previous ring plus a pitch and the ring's
-summed footprint arc over 2π. Multi-root as islands: the largest tree's crown at the origin, every other
-tree laid out about its own crown and packed by enclosing circle, never inside another rim.
-`BubbleLayoutEngine.js` (`reorder = 'parent-arc'`) — a bubble tree: each node's children sit on rays
-around it inside its enclosing circle, every child facing its parent; a post-order tuck slides rigid
-subtrees along their ray until footprints or resting trunk edges touch; islands settle by front-chain
-circle packing with the largest root pinned at the origin.
+`RadialLayoutEngine.js` (`reorder = 'ring'`) — each node sits on the ring for its trunk depth, centred in
+an angular wedge split among trunk children by subtree leaf count; a ring is pushed outward until its
+closest pair of neighbours has room. It reads no caption.
+`RingsLayoutEngine.js` (`reorder = 'none'`) — concentric depth rings with Reingold–Tilford contour packing
+in angle space over each node's `footprintOf` reach; a ring's radius is the larger of the previous ring plus
+a pitch and the ring's summed footprint arc over 2π. Multi-root as islands: the largest tree's crown at the
+origin, every other tree laid out about its own crown and packed by enclosing circle — never inside another
+rim, and seated to keep the forest's box nearest square rather than strung along one axis.
+`BubbleLayoutEngine.js` (`reorder = 'none'`) — a bubble tree: each node's children sit on rays around it
+inside its enclosing circle, every child facing its parent; a post-order tuck slides rigid subtrees along
+their ray until footprints or resting trunk edges touch; islands settle by front-chain circle packing with
+the largest root pinned at the origin.
 `MindmapLayoutEngine.js` (`reorder = 'none'`) — each branch (a trunk child of the hub, or a root) is a
 Buchheim/Walker tidy tree in its own frame with horizontal captions, seated on one of twelve compass
 directions by subtree size; radii shrink from a shared ring by halving slides until oriented per-level
-boxes touch. All three are pure, synchronous and deterministic; `?layout=<name>` picks one.
-`quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` still construct `RadialLayoutEngine` directly.
+boxes touch.
 
 An engine that reserves a caption's seat reads `model/footprint.js`: `footprintOf(label, { root })` is the
 disc-plus-caption box in world units, estimated from the label's length alone (6.65 px per character, at
@@ -202,29 +212,47 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   attributes (offset, colour, tier, form, glow seed, selection, icon cell, plus the ceremony and
   feedback animation stamps). The body is procedural (disc + gradient + ring); the glow pulses from
   `uTime`; the icon atlas is tinted per tier and fades out across the band where the DOM icons take
-  over. `moveInstance(id, x, y)` is a ranged `bufferSubData` write — the live-drag path.
-- `ConnectorBatch.js` — **one draw** for all edges, bézier ribbons in one buffer. A branch inherits
-  its source: once that node is complete it lights in the source's kind hue with a GPU colour/growth
-  sweep driven by `uTime`. `setStates` rewrites only the grow attributes; `moveNode` re-tessellates
-  just that node's incident edges.
+  over. `moveInstances(moves)` writes every mover into the offsets array and uploads the one range they
+  span — one `bufferSubData` a frame, however many nodes a settle is gliding.
+- `ConnectorBatch.js` — **one draw** for all edges, bézier ribbons in one buffer, bowed by
+  `edgeCurve.js` — the one curve the ribbon and the caption placer both read. A branch inherits its
+  source: once that node is complete it lights in the source's kind hue with a GPU colour/growth sweep
+  driven by `uTime`. `setStates` rewrites only the grow attributes; `moveNodes(moves)` re-tessellates
+  every edge touching a mover once, however many of its ends moved, and uploads the one vertex range
+  they span.
 - `IconAtlas.js` — rasterizes lucide glyphs (through the app's `Icon` registry) into an alpha-mask
-  canvas atlas (192px cells) for the far/mid LOD, re-uploading once async glyph decode completes.
+  canvas atlas (192px cells) for the far/mid LOD, re-uploading once async glyph decode completes. It
+  remembers every name it was asked for, glyph or none, so `syncIconAtlas` can tell a name with no glyph
+  from one it has never seen and rebuilds only for the second.
 - `captionLayout.js` — captions, decided, pure: `wrapCaption` (at most two 20 px lines inside the
   160 px text column, word-broken, the second line ellipsised, a blank label has no caption),
-  `captionTier(zoom)` keyed on the projected ordinary body (≥ 18 px working: everyone may be named;
-  4–18 px overview: crowned roots and branch heads of eight or more; below 4 px only the selected and
-  the hovered), and `CaptionPlacer` — priority selected > hovered > the selected's trunk family >
-  anchors > active/available > the rest, seats tried last-seat-first then below → above → right → left
-  against a 64 px collision grid of every disc rim, placed captions and the inset-reduced viewport; the
-  selected and hovered captions are forced (placed below even boxed in). Hysteresis: 200 ms of unbroken
-  placement before a caption shows, 200 ms of unbroken loss before it goes, held in place meanwhile;
-  records survive `setModel`, so a live edit never blinks. Pool 96, candidate cap 288.
+  `captionRankLimit(zoom)` — the last priority named at this zoom, keyed on the body as DRAWN (never
+  under the 6 px floor, so the rule follows the dot on screen): from 18 px everyone, from 12 px the
+  frontier, and below that the landmarks alone — and `CaptionPlacer` — priority selected > hovered >
+  the selected's trunk family > anchors (crowned roots and branch heads of eight or more, biggest
+  subtree first) > active/available > the rest. Seats are tried last-seat-first, then below → above →
+  right → left, against one 64 px collision grid holding three kinds of obstacle — the names already
+  placed and the corners chrome holds, the disc rims, and the ribbons drawn across the canvas — inside
+  the inset-reduced viewport. A caption takes a seat clear of all three; finding none it takes one that
+  only crosses a ribbon, since a name on a branch beats a step with no name. The selected and hovered
+  captions are never dropped at all, and a crowned root below the working view is a landmark: it may
+  cover dots and threads to be named where it stands, but never another name. Hysteresis: 200 ms of unbroken placement before a caption shows, 200 ms
+  of unbroken loss before it goes, held in place meanwhile; records survive `setModel`, so a live edit
+  never blinks. Pool 96, candidate cap 288.
+- `edgeCurve.js` — the bow: `bendOf(from, to)` (hashed from the two ids, never from coordinates),
+  `controlPoint` and `pointOnCurve`. Read by the ribbon tessellator and by the placer, so a caption
+  keeps clear of the branch that is actually drawn.
+- `picking.js` — the pick rule, pure over the grid and the camera: the disc itself always takes the hit;
+  beyond it a screen-px floor reaches out (24 px for a pointer, 44 px for touch), never past halfway to
+  the nearest other node, and a point among steps too crowded to tell apart reports `crowded`.
 - `NodeOverlay.js` — DOM above the canvas. The abstract `NodeOverlay` owns the container, a fixed pool
   of absolutely-positioned elements moved by CSS `transform` so a frame costs no layout, and `dispose`.
   `LabelOverlay` mirrors `captionLayout.js`: it measures each label once with a 2D-canvas `measureText`
   under the live caption font (re-measured when `document.fonts` finishes loading), keeps one element
   per captioned node id (`data-node-id`), toggles `st-label--shown` for the 150 ms fade and re-runs
-  itself on a settle timer at the next fade deadline; an unchanged camera costs no allocation. The
+  itself on a settle timer at the next fade deadline; an unchanged camera costs no allocation, and
+  `markMoved()` — what the scene calls when the discs move under a still camera — re-places on the next
+  frame without arming a timer, so a whole settle frame costs one flag. The
   halo behind the glyphs (`--st-label-halo`) is pinned to the scene's clear colour by `setTheme`.
   `IconOverlay` (live `<Icon>` SVG cross-fading in as the baked atlas fades out) keeps its own
   nearest-64 placement, LOD-gated by zoom.
@@ -261,15 +289,20 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   - **return recap** — `armReturnRecap(sinceIds, summary)` before the model installs makes the next
     state push replay only the steps finished since the last visit, cascading parent→child by depth.
   - **settle** — `applyModel` diffs positions and glides every displaced node to its new seat,
-    staggered nearest-the-change first. `finishSettle` lands them instantly when a pointer arrives.
-  - **auto-frame** — an off-screen birth never yanks the camera: the chevron points, and only a
-    plainly idle viewer gets one capped breath outward once the settle has landed.
+    staggered nearest-the-change first, through `moveNodes` — one batch a frame, so the captions and
+    both GPU buffers follow the discs in step. `finishSettle` lands them instantly when a pointer arrives.
+  - **auto-frame** — a completion off the canvas moves the camera: the ceremony glides to the step that
+    rose, and a glide with no zoom of its own floors at the working zoom. A birth never yanks it — the
+    chevron points at it, and only a plainly idle viewer with nothing selected gets one capped breath
+    outward, once the settle has landed.
 
   Public API (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyModel`,
-  `applyStates`, `moveNode`, `fitToView` (All steps — the whole tree inside the visible area, capped at
-  the working zoom), `focusWorking(id | null, {instant})` (Focus — the working zoom centred on a step,
-  else on the selection), `focusNode`, `frameNodes`, `panTo`, `zoomBy`, `setWorkingZoom`,
-  `setViewportInsets` (chrome-covered px per side, handed to the camera and the captions),
+  `applyStates`, `moveNode` / `moveNodes`, `fitToView` (All steps — the whole tree inside the visible
+  area, capped at the working zoom), `focusWorking(id | null, {instant})` (Focus — the working zoom over
+  a step's trunk family, or the step alone when that box does not fit the frame), `focusNode`,
+  `frameNodes`, `panTo`, `zoomBy`, `setWorkingZoom`,
+  `setViewportInsets` (chrome-covered px per side plus the corner blocks, handed to the camera and the
+  captions),
   `setReorderHint` (only `'ring'` arms the angular reorder), `suppressArrival` (one-shot, before
   `setModel`), `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`,
   `resize`, `start`, `stop`, `dispose`; selection (`select` / `selectEdge` — node and edge selection are
@@ -277,14 +310,17 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   pointerType)`, `zoomIntoCrowd`, `pickEdge`, `projectEdge`); previews (`previewKind` / `restoreKind`,
   `previewDeleteCost` / `clearDeleteCost`, `setFaded`, `highlightKind`, `spotlightNode`, `pulseNode`).
 
-  Hit testing: the disc itself always takes the hit; beyond it a screen-px floor reaches out (24 px for a
-  pointer, 44 px for touch), never past halfway to the nearest other node. A tap that lands among nodes
-  too crowded to tell apart is not a miss — `zoomIntoCrowd` glides the working view in around it, and
-  the tools try it before edge picking and before clearing the selection.
+  Hit testing is `picking.js`. A tap that lands among nodes too crowded to tell apart is not a miss —
+  `zoomIntoCrowd` glides the working view in around it, and the tools try it before edge picking and
+  before clearing the selection.
 
-Perf rules: constant draw calls regardless of node count; no per-node JS in the
-animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation; instanced
-attribute updates flag their buffer rather than reallocating.
+Perf rules: constant draw calls regardless of node count. The only per-node JS in the animation loop is
+the overlay pass on a frame that moved, and every scan it makes is bounded by what is on screen or by
+the grid's occupancy — never by the tree's extent: `SpatialGrid` walks its nodes rather than the cells a
+query covers whenever the query is the wider of the two, and the placer stages only the ribbon runs that
+cross the caption area. `captionLayout.test.js` pins the cost at the working zoom, mid-zoom and the
+whole-tree fit. A settle uploads one range per GPU buffer per frame; instanced attribute updates flag
+their buffer rather than reallocating.
 
 ## `sync/`  (the lattice is truth)
 

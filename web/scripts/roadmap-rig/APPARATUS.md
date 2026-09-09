@@ -125,6 +125,9 @@ helper of any browser with a tab open to that port, so never `| xargs kill` with
 
 - Rendering is headless Chrome on SwiftShader, not the GPU; geometry and DOM measurements are unaffected,
   pixels may differ slightly.
+- SwiftShader also runs `requestAnimationFrame` at 20–30 Hz and stalls on the first frame after a model
+  install, so no fps, frame-interval or settle TIMING from a capture means anything. Take timings from a
+  run without `--use-angle=swiftshader --enable-unsafe-swiftshader`, where the same page holds 16.7 ms.
 - With 476 > `ARRIVAL_REST_MAX` 400 the director plays the reduced (instant) arrival, so the wait never sees
   it busy; `--reduced-motion` is there for smaller trees.
 - Captions overlapping a node body are tested against discs computed from the scene, not pixels.

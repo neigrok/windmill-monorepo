@@ -29,12 +29,14 @@ export class SpatialGrid {
     const bucket = this.cells.get(oldKey);
     const at = bucket.indexOf(id);
     if (at >= 0) bucket.splice(at, 1);
+    if (bucket.length === 0) this.cells.delete(oldKey); // an emptied bucket would decay the occupancy bound below
     if (!this.cells.has(newKey)) this.cells.set(newKey, []);
     this.cells.get(newKey).push(id);
     this.cellByNode.set(id, newKey);
   }
 
-  // Scans every cell the radius can reach, so a radius wider than a cell (a screen-px hit floor at overview zoom) still finds its node.
+  // Reaches every cell the radius covers, so a radius wider than a cell (a screen-px hit floor at overview zoom) still
+  // finds its node — but a query wider than the grid is occupied walks the nodes instead: the cost is min(nodes, cells).
   nearest(x, y, maxRadius) {
     const originX = Math.floor(x / this.cellSize);
     const originY = Math.floor(y / this.cellSize);
@@ -42,18 +44,11 @@ export class SpatialGrid {
     let bestId = null;
     let bestDistSq = maxRadius * maxRadius;
 
-    for (let dx = -reach; dx <= reach; dx++) {
-      for (let dy = -reach; dy <= reach; dy++) {
-        const ids = this.cells.get(this.cellKey(originX + dx, originY + dy));
-        if (!ids) continue;
-        for (const id of ids) {
-          const node = this.nodesById.get(id);
-          const distSq = (node.x - x) ** 2 + (node.y - y) ** 2;
-          if (distSq > bestDistSq) continue;
-          bestDistSq = distSq;
-          bestId = id;
-        }
-      }
+    for (const node of this.scan(originX - reach, originY - reach, originX + reach, originY + reach)) {
+      const distSq = (node.x - x) ** 2 + (node.y - y) ** 2;
+      if (distSq > bestDistSq) continue;
+      bestDistSq = distSq;
+      bestId = node.id;
     }
 
     return bestId;
@@ -61,23 +56,29 @@ export class SpatialGrid {
 
   within(minX, minY, maxX, maxY) {
     const ids = [];
-    const cellXMin = Math.floor(minX / this.cellSize);
-    const cellXMax = Math.floor(maxX / this.cellSize);
-    const cellYMin = Math.floor(minY / this.cellSize);
-    const cellYMax = Math.floor(maxY / this.cellSize);
+    for (const node of this.scan(
+      Math.floor(minX / this.cellSize), Math.floor(minY / this.cellSize),
+      Math.floor(maxX / this.cellSize), Math.floor(maxY / this.cellSize),
+    )) {
+      if (node.x < minX || node.x > maxX || node.y < minY || node.y > maxY) continue;
+      ids.push(node.id);
+    }
+    return ids;
+  }
 
+  // Every node in the given cell rectangle, cell by cell — or, when the rectangle asks for more cells than the grid
+  // holds, every node in the grid: at an overview zoom one query can span millions of cells over a few hundred nodes.
+  *scan(cellXMin, cellYMin, cellXMax, cellYMax) {
+    if ((cellXMax - cellXMin + 1) * (cellYMax - cellYMin + 1) > this.cells.size) {
+      yield* this.nodesById.values();
+      return;
+    }
     for (let cellX = cellXMin; cellX <= cellXMax; cellX++) {
       for (let cellY = cellYMin; cellY <= cellYMax; cellY++) {
         const bucket = this.cells.get(this.cellKey(cellX, cellY));
         if (!bucket) continue;
-        for (const id of bucket) {
-          const node = this.nodesById.get(id);
-          if (node.x < minX || node.x > maxX || node.y < minY || node.y > maxY) continue;
-          ids.push(id);
-        }
+        for (const id of bucket) yield this.nodesById.get(id);
       }
     }
-
-    return ids;
   }
 }

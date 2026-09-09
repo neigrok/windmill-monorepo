@@ -61,6 +61,7 @@ const selectFocus = !!args['select-focus'] || focusVerb;
 const captionMode = args['caption-mode'] ?? 'scaled';
 if (!['scaled', 'fixed'].includes(captionMode)) { console.error('--caption-mode must be scaled or fixed'); process.exit(2); }
 fs.mkdirSync(outDir, { recursive: true });
+fs.rmSync(path.join(outDir, 'error.txt'), { force: true }); // a stale failure must never sit beside a complete capture
 const profileDir = fs.mkdtempSync(path.join(outDir, '.chrome-profile-'));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -311,7 +312,8 @@ async function waitStable(cdp, stableMs = 600, timeoutMs = 10000) {
   let last = null;
   let stableSince = null;
   while (Date.now() - t0 < timeoutMs) {
-    const s = await evalJson(cdp, `() => { const sc = window.__rig.scene(); return { gliding: !!sc.camera.glide, busy: sc.director ? sc.director.busy() : false, settling: !!(sc.settle && sc.settle.moves && sc.settle.moves.length), camera: [sc.camera.x, sc.camera.y, sc.camera.zoom] }; }`);
+    const s = await evalJson(cdp, `() => { const sc = window.__rig.scene(); return sc === null ? null : { gliding: !!sc.camera.glide, busy: sc.director ? sc.director.busy() : false, settling: !!(sc.settle && sc.settle.moves && sc.settle.moves.length), camera: [sc.camera.x, sc.camera.y, sc.camera.zoom] }; }`);
+    if (!s || !s.camera) return { ok: false, waitedMs: Date.now() - t0, error: 'the scene went away mid-wait', camera: last };
     const idle = !s.gliding && !s.busy && !s.settling;
     const same = last && s.camera.every((v, k) => Math.abs(v - last[k]) < 1e-6);
     if (idle && same) { if (stableSince === null) stableSince = Date.now(); } else stableSince = null;

@@ -4,13 +4,11 @@ import { performance } from 'node:perf_hooks';
 
 import MindmapLayoutEngine from '../../../../src/products/roadmap/layout/MindmapLayoutEngine.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { footprintOf, footprintRect } from '../../../../src/products/roadmap/model/footprint.js';
-import { NODE_SIZE, BODY_WU, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
 import { loadDogfoodTree, dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap, ROADMAP_SHAPES } from '../fixtures/largeRoadmap.js';
-
-const WINDOW = { width: 1440, height: 848 };
-const px = (wu) => wu * WORKING_ZOOM;
+import {
+  countAround, familyInView, fitBodyPx, footprintOverlaps, nearestNeighboursPx, px, quantile, serialise, trunkLinksPx,
+} from '../fixtures/readability.js';
 
 function treeOf(nodes) {
   return new SkillTree({ id: 't_test', title: 'Test', nodes });
@@ -20,53 +18,18 @@ function node(id, prerequisites, label = 'A step with a caption that runs to two
   return { id, label, prerequisites, color: 'gold', icon: 'circle' };
 }
 
-function serialised(positions) {
-  return JSON.stringify([...positions.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
-}
-
-function quantile(values, p) {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
-}
-
-function inWindow(a, b) {
-  return Math.abs(px(a.x - b.x)) <= WINDOW.width / 2 && Math.abs(px(a.y - b.y)) <= WINDOW.height / 2;
-}
-
-// The readability numbers the roadmap foundation is judged on, at the desktop working zoom on a 1440x848 canvas.
+// The readability numbers the roadmap foundation is judged on, as one row per picture.
 function readability(tree, positions) {
-  const trunk = tree.trunk;
-  const ids = tree.nodes.map((n) => n.id);
-  const at = (id) => positions.get(id);
-  const distance = (a, b) => px(Math.hypot(at(a).x - at(b).x, at(a).y - at(b).y));
-  const trunkLinks = ids.filter((id) => trunk.primaryParentOf(id) !== null).map((id) => distance(trunk.primaryParentOf(id), id));
-  const nearest = ids.map((a) => Math.min(...ids.filter((b) => b !== a).map((b) => distance(a, b))));
-  const families = ids
-    .map((id) => ({ id, kin: [trunk.primaryParentOf(id), ...trunk.trunkChildrenOf(id)].filter((other) => other !== null) }))
-    .filter(({ kin }) => kin.length > 0)
-    .map(({ id, kin }) => kin.filter((other) => inWindow(at(id), at(other))).length / kin.length);
-  const rects = tree.nodes
-    .map((n) => footprintRect(at(n.id).x, at(n.id).y, footprintOf(n.label, { root: n.prerequisites.length === 0 })))
-    .sort((a, b) => a.minX - b.minX);
-  let overlaps = 0;
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length && rects[j].minX < rects[i].maxX; j++) {
-      if (rects[j].minY < rects[i].maxY && rects[j].maxY > rects[i].minY) overlaps++;
-    }
-  }
-  const xs = ids.map((id) => at(id).x);
-  const ys = ids.map((id) => at(id).y);
-  const bounds = { width: Math.max(...xs) - Math.min(...xs) + NODE_SIZE * 2, height: Math.max(...ys) - Math.min(...ys) + NODE_SIZE * 2 };
-  const fitZoom = Math.min(Math.min(WINDOW.width / bounds.width, WINDOW.height / bounds.height) * 0.9, WORKING_ZOOM);
+  const trunkLinks = trunkLinksPx(tree, positions);
   return {
     trunkMedianPx: quantile(trunkLinks, 0.5),
     trunkP90Px: quantile(trunkLinks, 0.9),
     trunkShareWithin700: trunkLinks.filter((d) => d <= 700).length / trunkLinks.length,
-    nearestP10Px: quantile(nearest, 0.1),
-    familyInView: families.reduce((sum, share) => sum + share, 0) / families.length,
-    footprintOverlaps: overlaps,
-    fitBodyPx: BODY_WU * fitZoom,
-    inWindowAround: (id) => ids.filter((other) => inWindow(at(id), at(other))).length,
+    nearestP10Px: quantile(nearestNeighboursPx(positions), 0.1),
+    familyInView: familyInView(tree, positions),
+    footprintOverlaps: footprintOverlaps(tree, positions),
+    fitBodyPx: fitBodyPx(positions),
+    inWindowAround: (id) => countAround(positions, id),
   };
 }
 
@@ -87,12 +50,12 @@ test('the dogfood tree reads at the working zoom: short trunk links, whole famil
   assert.ok(m.trunkShareWithin700 >= 0.9, `${(m.trunkShareWithin700 * 100).toFixed(1)}% of trunk links within 700 px`);
   assert.ok(m.familyInView >= 0.9, `family in view ${(m.familyInView * 100).toFixed(1)}%`);
   assert.ok(m.nearestP10Px >= 100, `nearest neighbour p10 ${m.nearestP10Px.toFixed(0)} px`);
-  assert.equal(m.footprintOverlaps, 0);
+  assert.deepEqual(m.footprintOverlaps, []);
   assert.ok(m.fitBodyPx >= 4, `fit body ${m.fitBodyPx.toFixed(1)} px`);
   assert.ok(m.inWindowAround('gym-coach-wave') >= 20, `${m.inWindowAround('gym-coach-wave')} steps around the frontier root`);
   assert.ok(m.inWindowAround('skilltree-scene') >= 8, `${m.inWindowAround('skilltree-scene')} steps around skilltree-scene`);
   assert.ok(quantile(times, 0.5) <= 40, `layout took ${quantile(times, 0.5).toFixed(1)} ms`);
-  assert.equal(serialised(new MindmapLayoutEngine().layout(tree)), serialised(positions));
+  assert.equal(serialise(new MindmapLayoutEngine().layout(tree)), serialise(positions));
 });
 
 test('the dogfood forest: the two big roots face east and west, the next two south and north, strays sit in the hub', () => {
@@ -189,8 +152,8 @@ test('a root with two hundred leaves, nine uneven roots and three strays all lay
     const positions = engine.layout(tree);
     assert.equal(positions.size, nodes.length, name);
     for (const [id, { x, y }] of positions) assert.ok(Number.isFinite(x) && Number.isFinite(y), `${name}: ${id} is finite`);
-    assert.equal(readability(tree, positions).footprintOverlaps, 0, `${name}: no footprint overlaps`);
-    assert.equal(serialised(new MindmapLayoutEngine().layout(tree)), serialised(positions), `${name}: deterministic`);
+    assert.deepEqual(readability(tree, positions).footprintOverlaps, [], `${name}: no footprint overlaps`);
+    assert.equal(serialise(new MindmapLayoutEngine().layout(tree)), serialise(positions), `${name}: deterministic`);
   }
   const fan = engine.layout(treeOf(cases.fan));
   assert.deepEqual(fan.get('root'), { x: 0, y: 0 });
@@ -206,10 +169,19 @@ test('five thousand steps of every shape lay out finite and byte-identically', (
     const positions = engine.layout(tree);
     assert.equal(positions.size, 5000, shape);
     for (const [id, { x, y }] of positions) assert.ok(Number.isFinite(x) && Number.isFinite(y), `${shape}: ${id} is finite`);
-    assert.equal(serialised(new MindmapLayoutEngine().layout(tree)), serialised(positions), `${shape}: deterministic`);
+    assert.equal(serialise(new MindmapLayoutEngine().layout(tree)), serialise(positions), `${shape}: deterministic`);
   }
 });
 
-test('the reorder hint is none: siblings sit on a line, not an arc', () => {
+test('an empty tree is a picture with nothing in it, and a five-thousand-step chain still lays out', () => {
+  assert.deepEqual([...new MindmapLayoutEngine().layout(treeOf([]))], []);
+  const chain = treeOf(Array.from({ length: 5000 }, (_, i) => node(`c${i}`, i === 0 ? [] : [`c${i - 1}`])));
+  const positions = new MindmapLayoutEngine().layout(chain);
+  assert.equal(positions.size, 5000);
+  assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
+});
+
+test('the engine reads captions and arms no reorder gesture: siblings sit on a line, not an arc', () => {
   assert.equal(MindmapLayoutEngine.reorder, 'none');
+  assert.equal(MindmapLayoutEngine.readsCaptions, true);
 });

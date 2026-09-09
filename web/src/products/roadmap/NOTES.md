@@ -17,19 +17,27 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 - Glyph colour math is duplicated: the GLSL branch in `NodeBatch` and `glyphCssColor()` in
   `NodeOverlay.js`. Keep them in step or the baked and live glyphs disagree at the LOD seam.
 - `OUTER_R` / `QUAD_PADDING` must stay wide enough to contain the glow halo or it clips at the quad edge.
-- `SpatialGrid.nearest` scans as many cells as the radius reaches, so the screen-px hit floors
-  (24 px pointer / 44 px touch, divided by zoom) stay correct at any zoom; the cost is one tap or one
-  throttled hover, never a frame.
+- `SpatialGrid` reaches every cell a query covers, so the screen-px hit floors (24 px pointer / 44 px
+  touch, divided by zoom) stay correct at any zoom — but a query asking for more cells than the grid
+  holds walks the nodes instead. Without that bound a single caption pass at the whole-tree fit sweeps
+  the whole query box: ~126,000 cells for the dogfood tree's 476 nodes, tens of millions on a
+  5,000-step radial tree, whose bounds are 459k wu.
 - The icon pool is assigned by distance-rank recomputed each frame (`within` + sort → slice 64). An
   icon crossing a rank boundary makes two pooled elements swap nodes mid-pan. Captions are not pooled
   that way: an element stays with its node id while the caption is on screen.
 - A caption's visibility is the `st-label--shown` class (opacity + visibility), never `display`; a
   probe that counts `display !== 'none'` counts every pooled element that ever carried text. Count
   captions by computed visibility.
-- Chrome insets reach the camera and the captions as numbers from view state
-  (`ui/viewport.js viewportInsets`), never by observing the DOM; a new overlay that covers the canvas
-  adds its px there.
-- The canvas clears opaque to the cream background, so the CSS radial-gradient behind it is hidden.
+- Chrome that holds a corner (the minimap, the legend dock) takes no inset — the camera still centres
+  behind it — but it is a block in `viewportInsets`, anchored to its corner rather than resolved to
+  pixels, so a resize cannot leave a caption sitting under it.
+- Chrome insets reach the camera and the captions through one call (`ui/viewport.js viewportInsets`),
+  never by the scene observing the DOM; a new overlay that covers the canvas adds its px there. Chrome
+  whose size is its own content's (the legend dock, the action lane) measures itself and hands the
+  number in as an argument — and it arrives a beat after the first paint, which is why the first view
+  re-frames on each one for 1.2 s.
+- The canvas clears opaque to the scene theme's canvas colour, so the CSS radial-gradient behind it is
+  hidden.
 - Reduced motion rides one `uMotion` uniform: the pulse freezes and growth snaps.
 
 ## Ceremony and timing
@@ -65,23 +73,26 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 
 ## Open
 
-- Re-validate 5k-node perf (draw-call count is inherently 2; measure FPS).
+- No frame timing lives in the repo, and the rig cannot produce one: its captures run on SwiftShader,
+  where the page holds 20–30 Hz with a 0.1 ms tick and stalls the first frame after a model install.
+  Any fps claim needs a GPU run (drop the two swiftshader flags).
 - Icon slot assignment could be stable per nodeId the way caption elements already are (reslot only
   on enter/leave), removing the per-frame sort and any residual shimmer.
-- Below a 4 px projected body no anchor is named, so at the dogfood tree's whole-tree fit (body 2 px,
-  drawn at the 6 px floor) only the selected and hovered dots carry a name. Keying the tier on the
-  floored body instead would name crowned roots and branch heads at All steps — a contract call.
 - On a phone the anonymous owner's "Saved on this device" chip (`SkillTreeView.jsx`, top
   `--space-6 + 52px`, right `--space-6`) and `MobileChrome`'s Focus · All steps group (top
   `SAFE_TOP + 48px`, right 12px) share the top-right band and can overlap; the rig signs in, so no
   capture shows it.
-- `quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` construct `RadialLayoutEngine` directly; when
-  the default engine changes they must go through `layout/index.js` or thumbnails and ghosts drift
-  from the canvas.
 - A remote structural delete of a selected node or edge prunes the scene's copy but not the React
   set, so the multi-select bar can over-count until the next selection change.
 - Undo/redo does not reconcile the append-only activity log: a create-then-undo leaves a row whose
   node is gone. It renders muted.
 - The "reconnect me" tag on an unlinked node is not built; the dashed ring carries the signal.
+- Every picture drawn outside the canvas — quest thumbnails, the paste ghost — is laid out by
+  `defaultLayoutEngine()`, so under `?layout=<other>` a preview and the canvas disagree. Handing those
+  surfaces the live engine means a dynamic import inside a render path; the default is the deliberate
+  answer until one of them is worth that.
+- Layout is synchronous on the main thread and rings and bubble are super-linear: 1.5 s and 1.3 s on a
+  5,000-step mixed tree, 13.9 s for bubble on a 5,000-step chain of chains, and every structural edit
+  pays it again. The engine tests pin the shapes, not a budget, and there is no worker.
 - Ticker burst-coalescing ("completed 3 steps") and narrow-viewport collapse of the activity dock are
   not built.

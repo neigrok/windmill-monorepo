@@ -1,6 +1,5 @@
-// Concrete colour values the WebGL scene needs; it cannot read CSS custom properties. The module
-// constants are the LIGHT set; `sceneTheme(isDark)` hands the scene the set for the room it sits in.
-// Per hue: base = fill, ring = border, soft = glyph, glow = halo.
+// Concrete colour values the WebGL scene needs; it cannot read CSS custom properties. The module constants are the LIGHT
+// set (`sceneTheme(isDark)` hands over the room's); per hue: base = fill, ring = border, soft = glyph, glow = halo.
 
 export const NODE_COLORS = {
   terracotta: { base: '#BC6C42', ring: '#9D5330', soft: '#EAC6B0', glow: 'rgba(188,108,66,0.50)' },
@@ -107,12 +106,14 @@ export const BODY_WU = NODE_SIZE * BODY_FRACTION;
 // The zoom at which an ordinary body is 52 CSS px across — the desktop working view every focus floors at and every fit caps at.
 export const WORKING_ZOOM = 52 / BODY_WU;
 // The phone's working view: the same body at 40 px.
-export const PHONE_WORKING_ZOOM = 0.85;
+export const PHONE_WORKING_ZOOM = 40 / BODY_WU;
 // A body never draws narrower than this many screen px at any zoom; the crowned root keeps a taller floor.
 export const MIN_BODY_PX = 6;
 export const MIN_ROOT_BODY_PX = 9;
 
 // Captions are fixed-size DOM text under the disc, never scaled by zoom: 14 px Nunito 700 on a 20 px line, at most two
-// lines inside 168 px (160 px of text plus 4 px each side), starting 8 px below the rim. The layout reserves the same box
-// through model/footprint.js, so a caption and its seat agree on every device.
+// lines inside 168 px, 8 px below the rim. model/footprint.js reserves the same box, so a caption and its seat agree.
 export const CAPTION = { fontPx: 14, linePx: 20, maxWidthPx: 168, padPx: 4, gapPx: 8, maxLines: 2, charPx: 6.65 };
+
+// The shader grows the selected disc by this; the captions read the same number so a seat clears the grown rim.
+export const SELECTED_SCALE = 1.14;

@@ -1,24 +1,5 @@
-// Pooled DOM overlays above the GPU canvas: each keeps a fixed set of absolutely-positioned
-// elements in one container over the canvas, moved by CSS transform so a frame costs no layout.
-//
-// LabelOverlay — the captions. Every decision is scene/captionLayout.js (pure); this half measures
-// text with a 2D canvas, re-measures once the fonts load, and mirrors the placer's answer into
-// elements. The scene drives it with:
-//   constructor(canvas, theme)         theme.BACKGROUND.canvas becomes the halo behind the glyphs
-//   setModel(renderModel, spatialGrid) re-index and re-measure; existing captions keep their state
-//   setStates(statesMap)               active/available rank ahead of the rest
-//   setContext({ selectedId, hoveredId }) selected > hovered > the selected's trunk family — never dropped
-//   setInsets({ top, right, bottom, left }) CSS px of chrome a caption may not sit under
-//   setTheme(theme)                    re-pins the halo colour
-//   update(camera, now?)               the one DOM-writing path; early-returns while nothing changed and no fade is due
-//   dispose()
-// A caption appears after SHOW_AFTER_MS of unbroken placement and leaves HIDE_AFTER_MS after
-// losing it; both edges fade through the `st-label--shown` class, and a settle timer runs update
-// at the next deadline (and after any setter) so the fade lands without a camera frame. Each
-// element stays with its node id while the caption is on screen and carries it as data-node-id.
-//
-// IconOverlay — live `<Icon>` SVGs cross-fading in over the baked atlas glyph from ICON_DOM_START,
-// on the ICON_POOL nodes nearest the viewport centre.
+// Pooled DOM overlays above the GPU canvas: the captions scene/captionLayout.js decides, and the live `<Icon>` SVGs
+// that cross-fade in over the baked atlas glyph. Elements move by CSS transform, so a frame costs no layout.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
@@ -79,6 +60,7 @@ export class LabelOverlay extends NodeOverlay {
     this.elementById = new Map();
     this.metricByElement = new Map();
     this.idle = [...this.pool]; // free elements, longest-free first, so a fade-out finishes before reuse
+    this.keep = new Set(); // reused every draw: the ids this pass placed
     this.camera = null;
     this.placedAt = { x: NaN, y: NaN, zoom: NaN, width: NaN, height: NaN };
     this.dirty = true;
@@ -143,6 +125,12 @@ export class LabelOverlay extends NodeOverlay {
     if (this.camera) this.arm(0);
   }
 
+  // The discs moved under a still camera (a settle, a drag). The frame loop is already coming, so no timer is armed:
+  // any number of moves in one frame costs this one flag.
+  markMoved() {
+    this.dirty = true;
+  }
+
   arm(delayMs) {
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => this.update(this.camera), delayMs);
@@ -172,9 +160,10 @@ export class LabelOverlay extends NodeOverlay {
   }
 
   draw(captions) {
-    const keep = new Set(captions.map((caption) => caption.id));
+    this.keep.clear();
+    for (const caption of captions) this.keep.add(caption.id);
     for (const [id, element] of this.elementById) {
-      if (keep.has(id)) continue;
+      if (this.keep.has(id)) continue;
       element.classList.remove('st-label--shown');
       delete element.dataset.nodeId;
       this.elementById.delete(id);

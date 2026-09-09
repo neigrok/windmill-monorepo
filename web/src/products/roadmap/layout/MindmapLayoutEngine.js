@@ -1,6 +1,5 @@
-// A radial mind map: every branch is a tidy tree (Buchheim/Walker) laid along its own axis, the branches take the twelve
-// compass directions by size, and each sits as near the hub as the branches larger than it allow. Captions stay
-// horizontal whatever the axis: a node's axis-aligned footprint is projected onto its branch's frame before the tidy pass.
+// A radial mind map: each branch a Buchheim/Walker tidy tree along its own axis, the branches taking the twelve compass
+// directions by size. Captions stay horizontal, so a footprint is projected onto the branch's frame before the pass.
 
 import { LayoutEngine } from '../model/ports.js';
 import { cmpOrder } from '../model/TrunkTree.js';
@@ -22,6 +21,7 @@ const DIRECTIONS = [0, 6, 3, 9, 2, 10, 4, 8, 1, 11, 5, 7].map((slot) => (slot * 
 
 export default class MindmapLayoutEngine extends LayoutEngine {
   static reorder = 'none';
+  static readsCaptions = true;
 
   layout(tree) {
     const trunk = tree.trunk;
@@ -44,9 +44,8 @@ export default class MindmapLayoutEngine extends LayoutEngine {
   }
 }
 
-// What sits in the hub and what heads a branch round it. A lone root is the hub and its trunk children head the
-// branches; among several roots, those without children sit in the hub and the rest head a branch each. Heads are
-// ordered largest subtree first; ties keep the roots' own order.
+// What sits in the hub and what heads a branch: a lone root is the hub and its trunk children the heads; among several
+// roots the childless ones sit in the hub. Heads run largest subtree first, ties in the roots' own order.
 function hubAndHeads(tree) {
   const trunk = tree.trunk;
   const roots = [...tree.roots()].sort(cmpOrder).map((root) => root.id);
@@ -61,7 +60,13 @@ function hubAndHeads(tree) {
 }
 
 function subtreeSize(id, trunk) {
-  return 1 + trunk.trunkChildrenOf(id).reduce((sum, childId) => sum + subtreeSize(childId, trunk), 0);
+  let size = 0;
+  const stack = [id];
+  while (stack.length > 0) {
+    size += 1;
+    for (const childId of trunk.trunkChildrenOf(stack.pop())) stack.push(childId);
+  }
+  return size;
 }
 
 // The hub's occupants in a column down the origin, one footprint under the other, the span of their discs centred on
@@ -91,9 +96,8 @@ function branchAngles(count) {
   return angles;
 }
 
-// The frame of a branch whose axis points along `angle` (y down, so a positive angle turns clockwise from east):
-// `axis` runs outward through the levels, `side` across the siblings — mirrored to point down, or right on a
-// vertical axis, so siblings read top to bottom on both halves and left to right above and below the hub.
+// The frame of a branch along `angle` (y down, so a positive angle turns clockwise from east): `axis` runs outward
+// through the levels, `side` across the siblings — mirrored so siblings always read top to bottom, then left to right.
 function frameOf(angle) {
   const axis = { x: Math.cos(angle), y: Math.sin(angle) };
   const side = { x: -axis.y, y: axis.x };
@@ -124,10 +128,8 @@ function worldPoint(frame, radius, seat) {
   return { x: along * frame.axis.x + seat.v * frame.side.x, y: along * frame.axis.y + seat.v * frame.side.y };
 }
 
-// One branch as a tidy tree in its frame: `u` is the level's distance out from the head, `v` the seat along the side
-// axis, the head at (0, 0). Buchheim, Jünger and Leipert's linear-time Walker: a first walk sets each node's
-// preliminary seat and the shift its subtree owes, a second walk sums the shifts down the tree. `levels` is the
-// branch's silhouette — the extent of each depth's footprints in the frame — which is what the packing reserves.
+// One branch as a tidy tree in its frame — `u` out from the head, `v` along the side axis — by Buchheim, Jünger and
+// Leipert's linear-time Walker. `levels` is the silhouette the branch packing reserves.
 class TidyBranch {
   constructor(headId, trunk, footprints, frame) {
     this.trunk = trunk;
@@ -135,7 +137,7 @@ class TidyBranch {
     this.frame = frame;
     this.records = [];
     this.seats = new Map();
-    const head = this.record(headId, null, 0, 0);
+    const head = this.growRecords(headId);
     this.firstWalk(head);
     this.secondWalk(head, -head.prelim, this.levelOffsets());
     this.levels = [];
@@ -150,6 +152,18 @@ class TidyBranch {
     }
   }
 
+  // The branch's records, head first — grown on an explicit stack so a chain thousands of steps deep is no deeper here.
+  growRecords(headId) {
+    const head = this.record(headId, null, 0, 0);
+    const stack = [head];
+    while (stack.length > 0) {
+      const rec = stack.pop();
+      this.trunk.trunkChildrenOf(rec.id).forEach((childId, i) => rec.children.push(this.record(childId, rec, rec.depth + 1, i)));
+      for (let i = rec.children.length - 1; i >= 0; i--) stack.push(rec.children[i]);
+    }
+    return head;
+  }
+
   record(id, parent, depth, index) {
     const rec = {
       id, parent, depth, index, children: [], prelim: 0, mod: 0, shift: 0, change: 0, thread: null, ancestor: null,
@@ -157,7 +171,6 @@ class TidyBranch {
     };
     rec.ancestor = rec;
     this.records.push(rec);
-    this.trunk.trunkChildrenOf(id).forEach((childId, i) => rec.children.push(this.record(childId, rec, depth + 1, i)));
     return rec;
   }
 
@@ -166,25 +179,35 @@ class TidyBranch {
     return Math.max(left.vMax - right.vMin + SIBLING_GAP, SIBLING_PITCH_MIN);
   }
 
-  firstWalk(rec) {
-    const leftSibling = rec.index > 0 ? rec.parent.children[rec.index - 1] : null;
-    if (rec.children.length === 0) {
-      rec.prelim = leftSibling ? leftSibling.prelim + this.separation(leftSibling, rec) : 0;
-      return;
+  // Post-order over the branch, on a stack of frames: a node is seated once every child of it has been, and each child
+  // is apportioned against its earlier siblings the moment it finishes, carrying the parent's default ancestor along.
+  firstWalk(head) {
+    const frameFor = (rec) => ({ rec, next: 0, defaultAncestor: rec.children[0] ?? null });
+    const stack = [frameFor(head)];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const rec = frame.rec;
+      if (frame.next < rec.children.length) {
+        stack.push(frameFor(rec.children[frame.next++]));
+        continue;
+      }
+      const leftSibling = rec.index > 0 ? rec.parent.children[rec.index - 1] : null;
+      if (rec.children.length === 0) {
+        rec.prelim = leftSibling ? leftSibling.prelim + this.separation(leftSibling, rec) : 0;
+      } else {
+        this.executeShifts(rec);
+        const midpoint = (rec.children[0].prelim + rec.children[rec.children.length - 1].prelim) / 2;
+        if (leftSibling) {
+          rec.prelim = leftSibling.prelim + this.separation(leftSibling, rec);
+          rec.mod = rec.prelim - midpoint;
+        } else {
+          rec.prelim = midpoint;
+        }
+      }
+      stack.pop();
+      const parent = stack[stack.length - 1];
+      if (parent) parent.defaultAncestor = this.apportion(rec, parent.defaultAncestor);
     }
-    let defaultAncestor = rec.children[0];
-    for (const child of rec.children) {
-      this.firstWalk(child);
-      defaultAncestor = this.apportion(child, defaultAncestor);
-    }
-    this.executeShifts(rec);
-    const midpoint = (rec.children[0].prelim + rec.children[rec.children.length - 1].prelim) / 2;
-    if (!leftSibling) {
-      rec.prelim = midpoint;
-      return;
-    }
-    rec.prelim = leftSibling.prelim + this.separation(leftSibling, rec);
-    rec.mod = rec.prelim - midpoint;
   }
 
   // Walks the right contour of the left siblings' subtrees against the left contour of this one, level by level,
@@ -266,9 +289,13 @@ class TidyBranch {
     return offsets;
   }
 
-  secondWalk(rec, modSum, levelOffsets) {
-    this.seats.set(rec.id, { u: levelOffsets[rec.depth], v: rec.prelim + modSum });
-    for (const child of rec.children) this.secondWalk(child, modSum + rec.mod, levelOffsets);
+  secondWalk(head, modSum, levelOffsets) {
+    const stack = [{ rec: head, modSum }];
+    while (stack.length > 0) {
+      const { rec, modSum: sum } = stack.pop();
+      this.seats.set(rec.id, { u: levelOffsets[rec.depth], v: rec.prelim + sum });
+      for (let i = rec.children.length - 1; i >= 0; i--) stack.push({ rec: rec.children[i], modSum: sum + rec.mod });
+    }
   }
 }
 
@@ -313,11 +340,8 @@ function projectionSpan(points, axis) {
   return span;
 }
 
-// How far out along its axis each branch's head sits, every branch reserving one box per level of its silhouette.
-// All start on one shared ring, the least radius at which every branch clears the hub and each other; then, largest
-// first, each slides back in along its own axis for as long as it still clears the hub and every other branch where it
-// stands — in halving steps from SLIDE_STEP down to RADIUS_STEP, so a branch never crosses another and every radius
-// stays a multiple of RADIUS_STEP — and the pass repeats until no branch moves.
+// How far out each branch's head sits: all start on the least shared ring that clears the hub and each other, then,
+// largest first, each slides back in along its axis in halving steps while it still clears, until no branch moves.
 function branchRadii(branches, hubBoxes) {
   const silhouetteAt = (branch, radius) => {
     const head = { x: radius * branch.frame.axis.x, y: radius * branch.frame.axis.y };

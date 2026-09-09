@@ -1,8 +1,8 @@
 // Edit chrome on the selected node — a plus chip on the outward rim, ports on free rim — repositioned from the render loop. Each port starts the shared ConnectGesture.
-import { NODE_SIZE } from '../theme.js';
+import { BODY_WU } from '../theme.js';
 import { ConnectGesture } from './ConnectGesture.js';
 
-const NODE_RADIUS = NODE_SIZE * 0.42; // world radius; matches the shader edge
+const NODE_RADIUS = BODY_WU / 2; // the drawn disc's radius
 const PLUS_GAP = 16;
 const PORT_GAP = 5;
 const PORT_COUNT = 2;

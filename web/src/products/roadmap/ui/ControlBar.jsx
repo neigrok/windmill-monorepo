@@ -58,10 +58,11 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFo
             <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
           </Tooltip>
           <Tooltip label={focusHint ? `Read the step you are on (${focusHint})` : 'Read the step you are on'} side="bottom">
-            <button type="button" className="st-view-action" onClick={onFocus}>Focus</button>
+            {/* The tooltip is hover-only, so the key itself is on the button: a keyboard reader hears it too. */}
+            <button type="button" className="st-view-action" onClick={onFocus} aria-keyshortcuts={focusHint || undefined}>Focus</button>
           </Tooltip>
           <Tooltip label={showAllHint ? `Show the whole roadmap (${showAllHint})` : 'Show the whole roadmap'} side="bottom">
-            <button type="button" className="st-view-action" onClick={onShowAll}>All steps</button>
+            <button type="button" className="st-view-action" onClick={onShowAll} aria-keyshortcuts={showAllHint || undefined}>All steps</button>
           </Tooltip>
         </div>
       </div>

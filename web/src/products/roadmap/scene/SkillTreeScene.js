@@ -15,15 +15,12 @@ import { ReorderSlot } from './ReorderSlot.js';
 import { circularInsertionIndex, reorderPlan } from './input/reorderGeometry.js';
 import { edgeKey } from './edgeKey.js';
 import { createTextureFromCanvas } from './glcore.js';
+import { hitTest as pickAt } from './picking.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
-const PICK_RADIUS = NODE_SIZE * 0.65;
-// Screen-px hit floors in every mode, so a tiny body is still a target; capped at half the gap to the nearest neighbour.
-const POINTER_HIT_PX = 24;
-const TOUCH_HIT_PX = 44;
 const PAN_SETTLE_MS = 200;
 const EDGE_PICK_RADIUS = 12; // screen px
 const MAX_FRAME_DELTA = 0.1;
@@ -36,6 +33,7 @@ const AUTO_FRAME_IDLE_S = 2;
 const AUTO_FRAME_EXPIRY_S = 10;
 const AUTO_FRAME_MAX_ZOOM_OUT = 0.82;
 const AUTO_FRAME_PAD = NODE_SIZE * 2; // world units
+const FAMILY_FRAME_PAD = NODE_SIZE * 2; // the air a focused step's family keeps inside the frame
 
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -313,26 +311,28 @@ export class SkillTreeScene {
     moves.sort((a, b) => Math.hypot(a.toX - anchor.x, a.toY - anchor.y) - Math.hypot(b.toX - anchor.x, b.toY - anchor.y));
     moves.forEach((move, index) => { move.delayMs = (SETTLE_STAGGER_MS * index) / Math.max(1, moves.length - 1); });
 
-    for (const move of moves) this.moveNode(move.id, move.fromX, move.fromY);
+    this.moveNodes(moves.map((move) => ({ id: move.id, x: move.fromX, y: move.fromY })));
     this.settle = { startAt: this.elapsedSeconds, moves };
   }
 
   advanceSettle() {
     const elapsedMs = (this.elapsedSeconds - this.settle.startAt) * 1000;
+    const moving = [];
     let settling = false;
     for (const move of this.settle.moves) {
       const t = (elapsedMs - move.delayMs) / SETTLE_MS;
       if (t < 0) { settling = true; continue; }
       const eased = t >= 1 ? 1 : easeInOutCubic(t);
-      this.moveNode(move.id, move.fromX + (move.toX - move.fromX) * eased, move.fromY + (move.toY - move.fromY) * eased);
+      moving.push({ id: move.id, x: move.fromX + (move.toX - move.fromX) * eased, y: move.fromY + (move.toY - move.fromY) * eased });
       if (t < 1) settling = true;
     }
+    this.moveNodes(moving);
     if (!settling) this.settle = null;
   }
 
   finishSettle() {
     if (!this.settle) return;
-    for (const move of this.settle.moves) this.moveNode(move.id, move.toX, move.toY);
+    this.moveNodes(this.settle.moves.map((move) => ({ id: move.id, x: move.toX, y: move.toY })));
     this.settle = null;
   }
 
@@ -581,13 +581,22 @@ export class SkillTreeScene {
   armReturnRecap(sinceIds, summary) { this.returnRecap = { sinceIds: new Set(sinceIds), summary }; }
 
   moveNode(id, x, y) {
-    const node = this.nodesById.get(id);
-    if (!node) return;
-    node.x = x;
-    node.y = y;
-    this.nodeBatch.moveInstance(id, x, y);
-    this.connectorBatch.moveNode(id, x, y);
-    this.spatialGrid.move(id, x, y);
+    this.moveNodes([{ id, x, y }]);
+  }
+
+  // A batch of movers — a settle frame, or one dragged node: the model, the grid and both GPU batches, then the
+  // captions, which re-place from the live positions on the same frame rather than hanging where the discs were.
+  moveNodes(moves) {
+    for (const move of moves) {
+      const node = this.nodesById.get(move.id);
+      if (!node) continue;
+      node.x = move.x;
+      node.y = move.y;
+      this.spatialGrid.move(move.id, move.x, move.y);
+    }
+    this.nodeBatch.moveInstances(moves);
+    this.connectorBatch.moveNodes(moves);
+    this.labelOverlay.markMoved();
     this.overlaysDirty = true;
   }
 
@@ -608,7 +617,8 @@ export class SkillTreeScene {
     this.camera.fitToView(this.renderModel.bounds);
   }
 
-  // Focus: the working zoom centred on `id`, else on the current selection. Returns whether there was a step to go to.
+  // Focus: the working zoom over `id`'s family, else over the current selection's. Returns whether there was a step
+  // to go to.
   focusWorking(id = null, { instant = false } = {}) {
     const node = this.nodesById.get(id ?? this.selectedId);
     if (!node) return false;
@@ -616,13 +626,35 @@ export class SkillTreeScene {
     this.director.yieldToInput();
     this.finishSettle();
     const zoom = this.camera.workingZoom;
+    const target = this.familyCentre(node, zoom);
     if (instant) {
-      const centre = this.camera.centreFor(node.x, node.y, zoom);
+      const centre = this.camera.centreFor(target.x, target.y, zoom);
       this.camera.restore(centre.x, centre.y, zoom);
       return true;
     }
-    this.camera.glideTo(node.x, node.y, zoom, { force: true });
+    this.camera.glideTo(target.x, target.y, zoom, { force: true });
     return true;
+  }
+
+  // What a focus frames: the box holding the step, its trunk parent and its trunk children when that box fits the
+  // visible area at `zoom` — a step at the edge of its family never opens on half a screen of empty canvas — else the step.
+  familyCentre(node, zoom) {
+    let minX = node.x;
+    let maxX = node.x;
+    let minY = node.y;
+    let maxY = node.y;
+    for (const edge of this.renderModel.edges) {
+      if (edge.kind !== 'trunk') continue;
+      const relative = edge.to === node.id ? this.nodesById.get(edge.from) : edge.from === node.id ? this.nodesById.get(edge.to) : null;
+      if (!relative) continue;
+      minX = Math.min(minX, relative.x);
+      maxX = Math.max(maxX, relative.x);
+      minY = Math.min(minY, relative.y);
+      maxY = Math.max(maxY, relative.y);
+    }
+    const span = this.camera.visibleSpanAt(zoom);
+    if (maxX - minX + FAMILY_FRAME_PAD * 2 > span.width || maxY - minY + FAMILY_FRAME_PAD * 2 > span.height) return node;
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
   }
 
   setWorkingZoom(zoom) { this.camera.setWorkingZoom(zoom); }
@@ -824,8 +856,10 @@ export class SkillTreeScene {
 
   // ---- icon atlas -------------------------------------------------------
 
+  // Kept whenever it already knows every icon the model names — a name with no glyph included, or the atlas would be
+  // rebuilt on every edit for a tree that carries one.
   syncIconAtlas(nodes) {
-    if (this.iconAtlas && nodes.every((node) => this.iconAtlas.cellFor(node.icon) >= 0)) return;
+    if (this.iconAtlas && nodes.every((node) => this.iconAtlas.knows(node.icon))) return;
     this.buildIconAtlas(nodes);
   }
 
@@ -1051,31 +1085,8 @@ export class SkillTreeScene {
     return true;
   }
 
-  // The disc itself always takes the hit; beyond it the screen-px floor reaches out, but never past halfway to the
-  // nearest other node, so a crowded overview never answers a tap with an ambiguous pick — it reports `crowded` instead.
   hitTest(x, y, pointerType) {
-    if (!this.spatialGrid) return { id: null, crowded: false };
-    const world = this.camera.screenToWorld(x, y);
-    const floorWu = (pointerType === 'touch' ? TOUCH_HIT_PX : POINTER_HIT_PX) / this.camera.zoom;
-    const id = this.spatialGrid.nearest(world.x, world.y, Math.max(PICK_RADIUS, floorWu));
-    if (id === null) return { id: null, crowded: false };
-    const node = this.nodesById.get(id);
-    const distance = Math.hypot(node.x - world.x, node.y - world.y);
-    if (distance <= PICK_RADIUS) return { id, crowded: false };
-    const reach = Math.min(floorWu, this.nearestNeighbourDistance(node, floorWu) / 2);
-    if (distance <= reach) return { id, crowded: false };
-    return { id: null, crowded: true };
-  }
-
-  // Distance to the closest other node within `radius`, else `Infinity`.
-  nearestNeighbourDistance(node, radius) {
-    let closest = Infinity;
-    for (const otherId of this.spatialGrid.within(node.x - radius, node.y - radius, node.x + radius, node.y + radius)) {
-      if (otherId === node.id) continue;
-      const other = this.nodesById.get(otherId);
-      closest = Math.min(closest, Math.hypot(other.x - node.x, other.y - node.y));
-    }
-    return closest;
+    return pickAt(this.spatialGrid, this.nodesById, this.camera, x, y, pointerType);
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS, or null; only meaningful off-node.

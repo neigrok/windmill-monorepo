@@ -556,13 +556,18 @@ gaps section records the mismatch without resolving it. Either the contract beco
 §5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
 a rendering rule.
 
-**Roadmap caption readability** → align renderer and working-camera behavior with a readable label contract.
-`roadmap/guidelines/tree-layout-contract.md` asks for upright, unscaled captions and nominal 14px
-type. `NodeOverlay.js` instead uses `56 × 0.23 × zoom` and displays captions from zoom 0.5,
-where they are 6.44px; its pool has no label collision handling. The current Fit cap permits at
-most 8.13px captions. `roadmap/readability-research.md` records the code and live-tree evidence,
-proposes readable labels, local branch compaction and focus, and identifies the overview label
-policy that still needs a design decision. These are research recommendations; the app is unchanged.
+**Roadmap caption readability** → fix toward the code; the canon owes one caption rule instead of three.
+`roadmap/guidelines/tree-layout-contract.md` states the caption three different ways: §2 "below the
+node, gap `8u`; `--text-sm` (14px) weight 700, centered", §2.1 "font scales with u but clamps 12–16px",
+§8 "keep labels upright and unscaled; hide them below 0.8× zoom with a 150ms fade" (echoed by
+`responsive.md` §5). The build settles all three: a caption is 14px on a 20px line, at most two lines
+inside 168px, 8px below the rim, never scaled by zoom, faded over 150ms (`theme.js CAPTION`,
+`skilltree.css .st-label`). It also replaces the threshold: who is named is a rank — selected, hovered,
+the selected step's family, landmarks, the frontier, the rest — and the drawn body says how far down it
+reaches (`scene/captionLayout.js captionRankLimit`: everyone from 18px, the frontier from 12px,
+landmarks below that), so a crowned root keeps its name at the whole-tree fit where §8 would hide every
+name. Canon owes: §2 and §2.1 reconciled into one caption, and §8's 0.8× line replaced by the rank.
+`roadmap/readability-research.md` §3 is the built contract and §2 the measurements behind it.
 
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
@@ -2282,8 +2287,9 @@ marker nobody can see is worth drawing.
 
 The lab build on `claude/roadmap-readability-lab` fixes the caption frame (14/20 px, two lines, 168 px),
 a working zoom (52 px bodies on desktop, 40 px on a phone) that every focus floors at and every fit caps
-at, and two camera verbs — Focus and All steps — on the desktop bar and the phone chrome. Three canon
-lines no longer describe what the code does.
+at, two camera verbs — Focus and All steps — on the desktop bar and the phone chrome, and three more
+layout engines behind `?layout=`. Five canon lines no longer describe what the code does; the caption
+entry above them carries a sixth. `roadmap/readability-research.md` is the measured record.
 
 **F46 · `roadmap/guidelines/responsive.md` §2 still seats a Recenter chip** → fix toward the canon.
 "36px pill, bottom-right. Exists only after the tree's bounds leave the 80% safe frame for 400ms … The
@@ -2304,3 +2310,21 @@ cap and adds the missing half: a tap among nodes too crowded to tell apart glide
 around the tapped point instead of missing (mobile §9's "a tap zooms instead of selecting below the cap",
 now on every surface and pointer). If canon wants the tap to select the nearest dot instead, the scene's
 `zoomIntoCrowd` is the one place to change.
+
+**F49 · the phone's working view draws 40px bodies; `responsive.md` §4 says the visual node is 20–34px**
+→ a design owner's call, and the build's number is the candidate. §4's floors line reads "node hit disc
+≥44px regardless of visual size (visual 20–34px)", repeated in §11's FLOORS row. `theme.js`
+`PHONE_WORKING_ZOOM` puts an ordinary body at **40px** on a phone (52px on desktop), and that is the zoom
+every Focus and every glide floors at, so it is the size a phone reader actually reads at rather than one
+end of a range. The hit floors are untouched — 44px on touch, still capped at half the nearest-neighbour
+distance. Either §4 takes 40px, or the phone working view drops to 34px and every caption seat gets
+tighter; the phone captures behind both are in `roadmap/readability-research.md` §4.
+
+**F50 · whichever layout engine is chosen is also the silhouette the boards and every portrait draw**
+→ falls out of the owner's engine call (`roadmap/readability-research.md` §5), not a drift to fix now.
+`share/TreePortrait.js`, the gallery card and the minimap all draw the canvas' own positions, and the
+`Windmill · Marketing` boards plus the landing scenes (`marketing/treeScenes.js`) draw the radial burst —
+that is what 0k is about. radial keeps that burst and rings keeps a cousin of it; bubble draws a
+constellation with no centre and mindmap a totem of columns. Nothing disagrees while radial is the
+default. The day a non-radial engine ships, 0k's boards and every gallery portrait are stale in the same
+move, and the redraw belongs to the same wave.

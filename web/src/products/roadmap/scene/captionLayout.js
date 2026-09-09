@@ -1,29 +1,38 @@
-// Captions, decided: which nodes get a fixed 14 px name, where each name sits, and when it appears.
-// Pure — no DOM. LabelOverlay measures the text, hands the metrics in, and moves elements to the
-// rectangles this file returns. Screen px throughout; a caption never scales with zoom.
-import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, CAPTION } from '../theme.js';
+// Captions, decided: which nodes get a fixed 14 px name, where it sits and when it appears. Pure — no DOM, screen px
+// throughout; LabelOverlay measures the text and moves elements to the rectangles this file returns.
+import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, MIN_BODY_PX, SELECTED_SCALE, CAPTION } from '../theme.js';
+import { BEND_REACH, bendOf, controlPoint, pointOnCurve } from './edgeCurve.js';
 
 export const CAPTION_POOL = 96; // the most captions on screen at once — also the DOM pool
-export const WORKING_BODY_PX = 18; // projected ordinary body from which every node may be named
-export const CAPTION_MIN_BODY_PX = 4; // below this only the selected and the hovered node are named
+export const WORKING_BODY_PX = 18; // drawn body from which every node may be named
+export const FRONTIER_BODY_PX = 12; // drawn body from which the frontier is named beside the landmarks
 export const SHOW_AFTER_MS = 200; // continuous eligibility before a caption appears
 export const HIDE_AFTER_MS = 200; // continuous ineligibility before a shown caption goes
 export const BRANCH_HEAD_MIN_SUBTREE = 8;
 
 const TEXT_WIDTH = CAPTION.maxWidthPx - CAPTION.padPx * 2; // the text column inside the 168 px box
 const RIM_FRACTION = BODY_FRACTION / 2;
-const SELECTED_SCALE = 1.14; // the shader grows the selected disc by this
 const CANDIDATE_LIMIT = CAPTION_POOL * 3;
 const COLLISION_GAP = 2;
 const CELL_PX = 64;
 const REACH_PX = 200; // a node this far past the canvas edge can still own a caption on it
+const RIBBON_STEP_PX = 16; // a ribbon becomes obstacles one of these long
+const RIBBON_STEPS_MAX = 96;
+const RIBBON_HALF_PX = 3; // half the drawn ribbon, plus its halo
+const RIBBON_BOW_PX = 200; // the most a bow can carry a ribbon off its chord before the chord clip stops trusting it
 
-const RANK_SELECTED = 0;
-const RANK_HOVERED = 1;
-const RANK_FAMILY = 2; // the selected node's trunk parent and trunk children
-const RANK_ANCHOR = 3; // crowned roots and branch heads
-const RANK_FRONTIER = 4; // active and available
-const RANK_REST = 5;
+export const RANK_SELECTED = 0;
+export const RANK_HOVERED = 1;
+export const RANK_FAMILY = 2; // the selected node's trunk parent and trunk children
+export const RANK_ANCHOR = 3; // crowned roots and branch heads
+export const RANK_FRONTIER = 4; // active and available
+export const RANK_REST = 5;
+
+// What a seat may not touch. A caption keeps clear of all three; one that cannot goes on a branch rather than unsaid;
+// a landmark below the working view may cross the dots and threads, but never another name.
+const OBSTACLE_NAME = 0; // a placed caption, or chrome holding a corner
+const OBSTACLE_DISC = 1;
+const OBSTACLE_RIBBON = 2;
 
 export const ANCHOR_BELOW = 0;
 export const ANCHOR_ABOVE = 1;
@@ -73,12 +82,13 @@ function widestPrefix(text, measure, tail) {
 
 // ---- tiers -------------------------------------------------------------
 
-// Keyed on the projected ordinary body, so the same rule holds on every tree. Monotone in zoom.
-export function captionTier(zoom) {
-  const bodyPx = NODE_SIZE * BODY_FRACTION * zoom;
-  if (bodyPx < CAPTION_MIN_BODY_PX) return 'none';
-  if (bodyPx < WORKING_BODY_PX) return 'overview';
-  return 'working';
+// The last rank named at this zoom, keyed on the body as DRAWN — never below the floor the shader keeps — so the rule
+// follows the dot on screen: the landmarks always, the frontier from 12 px, everyone from 18 px. Monotone in zoom.
+export function captionRankLimit(zoom) {
+  const bodyPx = Math.max(NODE_SIZE * BODY_FRACTION * zoom, MIN_BODY_PX);
+  if (bodyPx < FRONTIER_BODY_PX) return RANK_ANCHOR;
+  if (bodyPx < WORKING_BODY_PX) return RANK_FRONTIER;
+  return RANK_REST;
 }
 
 // ---- geometry ----------------------------------------------------------
@@ -95,41 +105,46 @@ function inside(rect, area) {
   return rect.left >= area.left && rect.right <= area.right && rect.top >= area.top && rect.bottom <= area.bottom;
 }
 
+// A corner-anchored chrome box (`ui/viewport.js` blocks) against the live viewport.
+function blockRect(block, view) {
+  const left = block.left ?? view.viewportWidth - block.right - block.width;
+  const top = block.top ?? view.viewportHeight - block.bottom - block.height;
+  return { left, top, right: left + block.width, bottom: top + block.height };
+}
+
 // Rectangles bucketed by 64 px cell, so a collision test touches only the cells a rectangle covers.
 class CollisionGrid {
   constructor() {
     this.cells = new Map();
   }
 
-  insert(rect) {
-    this.visit(rect, (key) => {
-      const bucket = this.cells.get(key);
-      if (bucket) bucket.push(rect);
-      else this.cells.set(key, [rect]);
-      return false;
-    });
-  }
-
-  collides(rect) {
-    return this.visit(rect, (key) => {
-      const bucket = this.cells.get(key);
-      if (!bucket) return false;
-      for (const other of bucket) {
-        if (rect.left < other.right + COLLISION_GAP && rect.right > other.left - COLLISION_GAP
-          && rect.top < other.bottom + COLLISION_GAP && rect.bottom > other.top - COLLISION_GAP) return true;
-      }
-      return false;
-    });
-  }
-
-  visit(rect, callback) {
-    const firstX = Math.floor((rect.left - COLLISION_GAP) / CELL_PX);
+  insert(rect, kind) {
+    rect.kind = kind;
     const lastX = Math.floor((rect.right + COLLISION_GAP) / CELL_PX);
-    const firstY = Math.floor((rect.top - COLLISION_GAP) / CELL_PX);
     const lastY = Math.floor((rect.bottom + COLLISION_GAP) / CELL_PX);
-    for (let cellX = firstX; cellX <= lastX; cellX += 1) {
-      for (let cellY = firstY; cellY <= lastY; cellY += 1) {
-        if (callback((cellX + 32768) * 65536 + (cellY + 32768))) return true;
+    for (let cellX = Math.floor((rect.left - COLLISION_GAP) / CELL_PX); cellX <= lastX; cellX += 1) {
+      for (let cellY = Math.floor((rect.top - COLLISION_GAP) / CELL_PX); cellY <= lastY; cellY += 1) {
+        const key = (cellX + 32768) * 65536 + (cellY + 32768);
+        const bucket = this.cells.get(key);
+        if (bucket) bucket.push(rect);
+        else this.cells.set(key, [rect]);
+      }
+    }
+  }
+
+  // Whether `rect` touches anything of kind `upTo` or lower; the kinds above it are the ones this pass may cross.
+  collides(rect, upTo) {
+    const lastX = Math.floor((rect.right + COLLISION_GAP) / CELL_PX);
+    const lastY = Math.floor((rect.bottom + COLLISION_GAP) / CELL_PX);
+    for (let cellX = Math.floor((rect.left - COLLISION_GAP) / CELL_PX); cellX <= lastX; cellX += 1) {
+      for (let cellY = Math.floor((rect.top - COLLISION_GAP) / CELL_PX); cellY <= lastY; cellY += 1) {
+        const bucket = this.cells.get((cellX + 32768) * 65536 + (cellY + 32768));
+        if (!bucket) continue;
+        for (const other of bucket) {
+          if (other.kind > upTo) continue;
+          if (rect.left < other.right + COLLISION_GAP && rect.right > other.left - COLLISION_GAP
+            && rect.top < other.bottom + COLLISION_GAP && rect.bottom > other.top - COLLISION_GAP) return true;
+        }
       }
     }
     return false;
@@ -138,10 +153,10 @@ class CollisionGrid {
 
 // ---- the placer --------------------------------------------------------
 
-// Priority first, then a caption already on screen before one that is not, then nearness to the
-// viewport centre, then id — so two passes over the same picture agree.
+// Priority first — among the anchors the biggest subtree first, so a crown outranks a lone step — then a caption already
+// on screen, then nearness to the viewport centre, then id: two passes over the same picture agree.
 function byPriority(a, b) {
-  return a.rank - b.rank || a.newcomer - b.newcomer || a.distance - b.distance || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  return a.rank - b.rank || b.weight - a.weight || a.newcomer - b.newcomer || a.distance - b.distance || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 // The trunk edges form a forest; every node's size counts itself and its trunk descendants.
@@ -162,23 +177,24 @@ function trunkSubtreeSizes(nodes, parentById, childrenById) {
   return sizes;
 }
 
-// Holds the model index, the metrics, the selection context and each caption's hysteresis record;
-// `place(view, now)` is the one decision, deterministic for the same inputs and clock.
-// A record is `{ phase, since, anchor, pass }`: pending (placed, waiting SHOW_AFTER_MS), shown,
-// or leaving (lost its seat, drawn there until HIDE_AFTER_MS pass). No record is hidden.
+// The model index, the metrics, the selection context and each caption's record — `{ phase, since, anchor, pass }`:
+// pending, shown, or leaving. `place(view, now)` is the one decision, deterministic for the same inputs and clock.
 export class CaptionPlacer {
   constructor() {
     this.nodesById = new Map();
+    this.edges = [];
     this.spatialGrid = null;
     this.trunkParentById = new Map();
     this.trunkChildrenById = new Map();
     this.anchorIds = new Set();
+    this.subtreeSizeById = new Map();
     this.metricById = new Map();
     this.stateById = new Map();
     this.selectedId = null;
     this.hoveredId = null;
     this.familyIds = new Set();
     this.insets = { top: 0, right: 0, bottom: 0, left: 0 };
+    this.blocks = [];
     this.records = new Map();
     this.pass = 0;
   }
@@ -186,6 +202,7 @@ export class CaptionPlacer {
   // Records survive a re-installed model, so a live edit never blinks every caption.
   setModel(renderModel, spatialGrid) {
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
+    this.edges = renderModel.edges;
     this.spatialGrid = spatialGrid;
     this.stateById = new Map(renderModel.nodes.map((node) => [node.id, node.state]));
     this.trunkParentById = new Map();
@@ -195,9 +212,9 @@ export class CaptionPlacer {
       this.trunkParentById.set(edge.to, edge.from);
       this.trunkChildrenById.get(edge.from).push(edge.to);
     }
-    const subtree = trunkSubtreeSizes(renderModel.nodes, this.trunkParentById, this.trunkChildrenById);
+    this.subtreeSizeById = trunkSubtreeSizes(renderModel.nodes, this.trunkParentById, this.trunkChildrenById);
     this.anchorIds = new Set(renderModel.nodes
-      .filter((node) => node.emphasis > 0 || (node.branch === node.id && subtree.get(node.id) >= BRANCH_HEAD_MIN_SUBTREE))
+      .filter((node) => node.emphasis > 0 || (node.branch === node.id && this.subtreeSizeById.get(node.id) >= BRANCH_HEAD_MIN_SUBTREE))
       .map((node) => node.id));
     for (const id of this.records.keys()) if (!this.nodesById.has(id)) this.records.delete(id);
     this.setContext({ selectedId: this.selectedId, hoveredId: this.hoveredId });
@@ -221,8 +238,10 @@ export class CaptionPlacer {
     for (const child of this.trunkChildrenById.get(this.selectedId)) this.familyIds.add(child);
   }
 
-  setInsets({ top = 0, right = 0, bottom = 0, left = 0 }) {
+  // `blocks` are the corners chrome holds (the minimap, the legend); the sides it covers are the insets.
+  setInsets({ top = 0, right = 0, bottom = 0, left = 0, blocks = [] }) {
     this.insets = { top, right, bottom, left };
+    this.blocks = blocks;
   }
 
   rankOf(id) {
@@ -235,15 +254,12 @@ export class CaptionPlacer {
     return RANK_REST;
   }
 
-  // `view` is the camera: x, y, zoom, viewportWidth, viewportHeight. Returns the captions to draw,
-  // in priority order, each `{ id, anchor, left, top, width, height, lines, shown }`, and the clock instant
-  // at which the next pending or leaving caption changes — null when none is waiting.
+  // `view` is the camera: x, y, zoom, viewportWidth, viewportHeight. Returns the captions to draw in priority order,
+  // each `{ id, anchor, left, top, width, height, lines, shown }`, and when the next one changes — null when none will.
   place(view, now) {
     this.pass += 1;
     const captions = [];
-    const tier = captionTier(view.zoom);
-    const forcedId = this.selectedId ?? this.hoveredId;
-    if (this.spatialGrid && (tier !== 'none' || forcedId !== null || this.records.size > 0)) this.placeTier(view, now, tier, captions);
+    if (this.spatialGrid) this.placeRanks(view, now, captionRankLimit(view.zoom), captions);
 
     let nextDeadline = null;
     for (const [id, record] of this.records) {
@@ -255,31 +271,30 @@ export class CaptionPlacer {
     return { captions, nextDeadline };
   }
 
-  placeTier(view, now, tier, captions) {
-    const grid = new CollisionGrid();
-    const candidates = this.stage(view, tier, grid);
+  placeRanks(view, now, limit, captions) {
+    const grid = new CollisionGrid(); // the chrome, the disc rims, the ribbons and the captions placed so far
     const area = {
       left: this.insets.left,
       top: this.insets.top,
       right: view.viewportWidth - this.insets.right,
       bottom: view.viewportHeight - this.insets.bottom,
     };
+    for (const block of this.blocks) grid.insert(blockRect(block, view), OBSTACLE_NAME);
+    const candidates = this.stage(view, limit, grid, area);
 
     for (const candidate of candidates) {
       if (captions.length >= CAPTION_POOL) break;
       const record = this.records.get(candidate.id);
       const boxWidth = candidate.metric.width + CAPTION.padPx * 2;
       const boxHeight = candidate.metric.height;
-      const forced = candidate.rank <= RANK_HOVERED;
       const lastAnchor = record ? record.anchor : -1;
 
-      let anchor = candidate.eligible ? freeAnchor(candidate, boxWidth, boxHeight, grid, area, lastAnchor) : -1;
-      if (anchor < 0 && forced && candidate.eligible) anchor = lastAnchor >= 0 ? lastAnchor : ANCHOR_BELOW;
+      const anchor = candidate.eligible ? seatFor(candidate, boxWidth, boxHeight, grid, area, lastAnchor) : -1;
       if (anchor >= 0) {
-        const phase = placedPhase(record, now, forced);
+        const phase = placedPhase(record, now, candidate.forced);
         this.records.set(candidate.id, { phase, since: record && record.phase === phase ? record.since : now, anchor, pass: this.pass });
         const rect = anchorRect(candidate, boxWidth, boxHeight, anchor);
-        grid.insert(rect);
+        grid.insert(rect, OBSTACLE_NAME);
         captions.push({ id: candidate.id, anchor, left: rect.left, top: rect.top, width: boxWidth, height: boxHeight, lines: candidate.metric.lines, shown: phase !== 'pending' });
         continue;
       }
@@ -290,16 +305,14 @@ export class CaptionPlacer {
       if (now - record.since >= HIDE_AFTER_MS) continue;
       record.pass = this.pass;
       const rect = anchorRect(candidate, boxWidth, boxHeight, record.anchor);
-      grid.insert(rect);
+      grid.insert(rect, OBSTACLE_NAME);
       captions.push({ id: candidate.id, anchor: record.anchor, left: rect.left, top: rect.top, width: boxWidth, height: boxHeight, lines: candidate.metric.lines, shown: true });
     }
   }
 
-  // Every node near the viewport becomes a disc obstacle. A candidate is a node the tier lets be
-  // named, or one whose caption is still on screen and must be held; sorted by priority and capped
-  // so a dense overview never walks the whole tree. The selected and the hovered node are named at
-  // every zoom — below CAPTION_MIN_BODY_PX theirs is the only name on screen.
-  stage(view, tier, grid) {
+  // Every node near the viewport is a disc obstacle and every ribbon a run of them. A candidate is a node this zoom's
+  // rank limit names, or one still on screen; the selected, the hovered and a crown below the working view are forced.
+  stage(view, limit, grid, area) {
     const reach = REACH_PX / view.zoom;
     const halfWidth = view.viewportWidth / 2 / view.zoom;
     const halfHeight = view.viewportHeight / 2 / view.zoom;
@@ -309,42 +322,116 @@ export class CaptionPlacer {
       const node = this.nodesById.get(id);
       const sx = (node.x - view.x) * view.zoom + view.viewportWidth / 2;
       const sy = (node.y - view.y) * view.zoom + view.viewportHeight / 2;
-      const rim = NODE_SIZE * RIM_FRACTION * view.zoom * (node.emphasis > 0 ? ROOT_BODY_SCALE : 1) * (id === this.selectedId ? SELECTED_SCALE : 1);
-      grid.insert({ left: sx - rim, top: sy - rim, right: sx + rim, bottom: sy + rim });
+      const crown = node.emphasis > 0;
+      const rim = NODE_SIZE * RIM_FRACTION * view.zoom * (crown ? ROOT_BODY_SCALE : 1) * (id === this.selectedId ? SELECTED_SCALE : 1);
+      grid.insert({ left: sx - rim, top: sy - rim, right: sx + rim, bottom: sy + rim }, OBSTACLE_DISC);
       const metric = this.metricById.get(id);
       if (!metric) continue;
       const rank = this.rankOf(id);
       const record = this.records.get(id);
       const onScreen = record !== undefined && record.phase !== 'pending';
-      const eligible = rank <= RANK_HOVERED || tier === 'working' || (tier === 'overview' && this.anchorIds.has(id));
-      if (!eligible && !onScreen) continue;
+      if (rank > limit && !onScreen) continue;
       candidates.push({
-        id, sx, sy, rim, metric, rank, eligible,
+        id, sx, sy, rim, metric, rank,
+        eligible: rank <= limit,
+        landmark: crown && limit < RANK_REST,
+        forced: rank <= RANK_HOVERED || (crown && limit < RANK_REST),
+        weight: rank === RANK_ANCHOR ? this.subtreeSizeById.get(id) ?? 0 : 0,
         newcomer: onScreen ? 0 : 1,
         distance: (node.x - view.x) ** 2 + (node.y - view.y) ** 2,
       });
     }
+    if (limit > RANK_ANCHOR) this.stageRibbons(view, grid, area);
     candidates.sort(byPriority);
     if (candidates.length > CANDIDATE_LIMIT) candidates.length = CANDIDATE_LIMIT;
     return candidates;
   }
+
+  // A ribbon crossing a caption reads as a broken branch, so each edge's bow is sampled into rectangles a step long.
+  // Below the frontier tier the names are landmarks placed wherever they stand, so the ribbons are not consulted.
+  stageRibbons(view, grid, area) {
+    for (const edge of this.edges) {
+      const from = this.nodesById.get(edge.from);
+      const to = this.nodesById.get(edge.to);
+      if (!from || !to) continue;
+      const fx = (from.x - view.x) * view.zoom + view.viewportWidth / 2;
+      const fy = (from.y - view.y) * view.zoom + view.viewportHeight / 2;
+      const tx = (to.x - view.x) * view.zoom + view.viewportWidth / 2;
+      const ty = (to.y - view.y) * view.zoom + view.viewportHeight / 2;
+      // Only the run of the ribbon that crosses the caption area is an obstacle, so a branch reaching in from far off
+      // the canvas costs a rectangle or two, not one per 32 px of its whole length.
+      const length = Math.hypot(tx - fx, ty - fy);
+      const crossing = chordRange(fx, fy, tx, ty, area, Math.min(BEND_REACH * length, RIBBON_BOW_PX) + RIBBON_HALF_PX);
+      if (crossing === null) continue;
+      const [lo, hi] = crossing;
+      const { cx, cy } = controlPoint(fx, fy, tx, ty, bendOf(edge.from, edge.to));
+      const steps = Math.min(RIBBON_STEPS_MAX, Math.max(1, Math.ceil(((hi - lo) * length) / RIBBON_STEP_PX)));
+      let previous = pointOnCurve(fx, fy, cx, cy, tx, ty, lo);
+      for (let step = 1; step <= steps; step += 1) {
+        const point = pointOnCurve(fx, fy, cx, cy, tx, ty, lo + ((hi - lo) * step) / steps);
+        grid.insert({
+          left: Math.min(previous.x, point.x) - RIBBON_HALF_PX,
+          top: Math.min(previous.y, point.y) - RIBBON_HALF_PX,
+          right: Math.max(previous.x, point.x) + RIBBON_HALF_PX,
+          bottom: Math.max(previous.y, point.y) + RIBBON_HALF_PX,
+        }, OBSTACLE_RIBBON);
+        previous = point;
+      }
+    }
+  }
+}
+
+// The stretch of a straight run from (fx, fy) to (tx, ty) that lies inside `area` grown by `margin`, as a [0, 1]
+// parameter range — null when none of it does.
+function chordRange(fx, fy, tx, ty, area, margin) {
+  let lo = 0;
+  let hi = 1;
+  for (const [delta, near, far] of [
+    [tx - fx, area.left - margin - fx, area.right + margin - fx],
+    [ty - fy, area.top - margin - fy, area.bottom + margin - fy],
+  ]) {
+    if (Math.abs(delta) < 1e-9) {
+      if (near > 0 || far < 0) return null;
+      continue;
+    }
+    lo = Math.max(lo, Math.min(near / delta, far / delta));
+    hi = Math.min(hi, Math.max(near / delta, far / delta));
+  }
+  return lo <= hi ? [lo, hi] : null;
+}
+
+// The seat a caption takes: one clear of everything; else one that only crosses a branch, since a name on a ribbon
+// beats a step with no name; else, when it is forced, one that covers the dots and threads too. The selected and the
+// hovered are never dropped — boxed in by other names they sit under one — while a landmark that would have to goes
+// unnamed instead.
+function seatFor(candidate, boxWidth, boxHeight, grid, area, lastAnchor) {
+  const clear = freeAnchor(candidate, boxWidth, boxHeight, grid, OBSTACLE_RIBBON, area, lastAnchor);
+  if (clear >= 0) return clear;
+  const acrossARibbon = freeAnchor(candidate, boxWidth, boxHeight, grid, OBSTACLE_DISC, area, lastAnchor);
+  if (acrossARibbon >= 0) return acrossARibbon;
+  if (!candidate.forced) return -1;
+  const overTheDots = freeAnchor(candidate, boxWidth, boxHeight, grid, OBSTACLE_NAME, area, lastAnchor);
+  if (overTheDots >= 0) return overTheDots;
+  if (candidate.landmark) return -1;
+  return lastAnchor >= 0 ? lastAnchor : ANCHOR_BELOW;
 }
 
 // The last seat first, so a caption stays put across small camera moves; then below → above → right → left.
-function freeAnchor(candidate, boxWidth, boxHeight, grid, area, lastAnchor) {
-  if (lastAnchor >= 0 && seatIsFree(anchorRect(candidate, boxWidth, boxHeight, lastAnchor), grid, area)) return lastAnchor;
+function freeAnchor(candidate, boxWidth, boxHeight, grid, upTo, area, lastAnchor) {
+  if (lastAnchor >= 0 && seatIsFree(anchorRect(candidate, boxWidth, boxHeight, lastAnchor), grid, upTo, area)) return lastAnchor;
   for (let anchor = 0; anchor < ANCHOR_COUNT; anchor += 1) {
     if (anchor === lastAnchor) continue;
-    if (seatIsFree(anchorRect(candidate, boxWidth, boxHeight, anchor), grid, area)) return anchor;
+    if (seatIsFree(anchorRect(candidate, boxWidth, boxHeight, anchor), grid, upTo, area)) return anchor;
   }
   return -1;
 }
 
-function seatIsFree(rect, grid, area) {
-  return inside(rect, area) && !grid.collides(rect);
+function seatIsFree(rect, grid, upTo, area) {
+  return inside(rect, area) && !grid.collides(rect, upTo);
 }
 
-// A forced caption (selected, hovered) shows at once; any other waits SHOW_AFTER_MS of unbroken placement.
+// A forced caption (selected, hovered, a crown at an overview zoom) shows at once; any other waits SHOW_AFTER_MS of
+// unbroken placement.
 function placedPhase(record, now, forced) {
   if (forced) return 'shown';
   if (!record) return 'pending';

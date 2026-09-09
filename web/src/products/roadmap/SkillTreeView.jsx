@@ -39,8 +39,8 @@ import { SkillTree } from './model/SkillTree.js';
 import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { layoutNameFrom, loadLayoutEngine } from './layout/index.js';
-import { frontierTarget, viewportInsets } from './ui/viewport.js';
+import { layoutNameFrom, loadLayoutEngine, layoutTree } from './layout/index.js';
+import { frontierTarget, viewportInsets, DOCK_WIDTH, TABLET_PANEL_WIDTH } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -83,6 +83,8 @@ const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const CTA_ECHO_DELAY = 1500;
+// The chrome measures itself within a frame of the first paint; past this the first view is the reader's to move.
+const FIRST_FRAME_REFRAME_MS = 1200;
 
 function consumeSessionFlag(key) {
   try {
@@ -115,6 +117,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const treeRef = useRef(null);
   const layoutRef = useRef(null); // { name, engine } once the load pipeline has chosen the engine
   const layoutCacheRef = useRef({ signature: '', raw: new Map() });
+  const firstFrameRef = useRef(null); // { id, at } — the step the first view opened on, until the chrome has measured itself
+  const insetsRef = useRef(null); // the live chrome insets, for the first view: the load lands long after the chrome has
+  const legendDockRef = useRef(null);
   const completedRef = useRef(new Set());
   const inProgressRef = useRef(new Set());
   const seedRef = useRef(null);
@@ -328,6 +333,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [laneInset, setLaneInset] = useState(0); // px
+  const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
@@ -345,15 +351,18 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [ctaEcho, setCtaEcho] = useState(false);
 
   // Everything a layout reads: the engine, the DAG and order (the trunk), color and createdAt (trunk election and
-  // sibling ties) and the label (a footprint-honest engine reserves the caption's box).
+  // sibling ties) — and the label only for an engine that reserves each caption's box, so a rename never re-runs the
+  // others.
   const layoutPositions = useCallback((nextTree) => {
     const { name, engine } = layoutRef.current;
+    const readsCaptions = engine.constructor.readsCaptions;
     const rows = nextTree.allNodes.map((node) => JSON.stringify([
-      node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null, node.label,
+      node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null,
+      readsCaptions ? node.label : '',
     ]));
     const signature = `${name}|${rows.sort().join('|')}`;
     if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, raw: engine.layout(nextTree) };
+      layoutCacheRef.current = { signature, raw: layoutTree(engine, nextTree) };
     }
     return new Map(layoutCacheRef.current.raw);
   }, []);
@@ -482,7 +491,15 @@ export function SkillTreeView({ treeId, demo = false }) {
       cycles = renderable.cycles;
     }
 
-    const positions = layoutPositions(nextTree);
+    // A tree no engine can lay out keeps the picture it has: the edit lives in the lattice and the next one retries.
+    let positions;
+    try {
+      positions = layoutPositions(nextTree);
+    } catch (error) {
+      console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
+      showToast('That edit could not be drawn — the picture is one step behind');
+      return;
+    }
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
@@ -1005,8 +1022,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       scene.setModel(model);
       if (savedCamera) scene.restoreViewpoint(savedCamera);
       if (opensOnFrontier) {
-        scene.setViewportInsets(viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
-        scene.focusWorking(frontierTarget(nextTree, states, { selectedId: restoredSelection, completedAt: overlay.completedAt }), { instant: true });
+        const target = frontierTarget(nextTree, states, { selectedId: restoredSelection, completedAt: overlay.completedAt });
+        scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
+        scene.focusWorking(target, { instant: true });
+        firstFrameRef.current = { id: target, at: Date.now(), camera: scene.getViewpoint() };
       }
 
       editorRef.current = new TreeEditor(treeData);
@@ -1084,6 +1103,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const legendWithCounts = useMemo(() => (tree ? withCounts(legend, tree.nodes) : []), [legend, tree, states]);
   const inUse = useMemo(() => (tree ? inUseCount(legend, tree.nodes) : 0), [legend, tree, states]);
+  const legendVisible = inUse >= 2 || legendForceOpen;
   const recolorKinds = legend.length > 0 ? legend : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
 
   useEffect(() => {
@@ -1556,10 +1576,43 @@ export function SkillTreeView({ treeId, demo = false }) {
   const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
 
   const insets = useMemo(
-    () => viewportInsets({ breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216, laneInset }),
-    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset],
+    () => viewportInsets({ breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216, laneInset, legendBox }),
+    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset, legendBox],
   );
-  useEffect(() => { scene?.setViewportInsets(insets); }, [scene, insets]);
+  // The lane and the legend publish their measured boxes after the first paint, so the first view — framed a moment
+  // earlier against insets that were still guesses — is framed once more as soon as the real ones arrive.
+  useEffect(() => {
+    insetsRef.current = insets;
+    if (!scene) return;
+    scene.setViewportInsets(insets);
+    // Each piece of chrome measures itself a beat after the first paint, so the first view is framed again on every
+    // inset it publishes — until the window closes, or the reader moves the camera and the view becomes theirs.
+    const first = firstFrameRef.current;
+    if (!first) return;
+    const now = scene.getViewpoint();
+    if (Date.now() - first.at >= FIRST_FRAME_REFRAME_MS || now.x !== first.camera.x || now.y !== first.camera.y || now.zoom !== first.camera.zoom) {
+      firstFrameRef.current = null;
+      return;
+    }
+    scene.focusWorking(first.id, { instant: true });
+    firstFrameRef.current = { ...first, camera: scene.getViewpoint() };
+  }, [scene, insets]);
+
+  // The legend dock's height is its rows', so it publishes its measured box the way the action lane publishes its
+  // inset: the corner it holds is a block no caption may sit under.
+  useEffect(() => {
+    const dock = legendDockRef.current;
+    if (!dock) {
+      setLegendBox(null);
+      return undefined;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setLegendBox((box) => (box && box.width === width && box.height === height ? box : { width, height }));
+    });
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [legendVisible]);
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
@@ -1716,8 +1769,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         onPanTo={handlePanTo}
       />
 
-      {(inUse >= 2 || legendForceOpen) && (
-        <div className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
+      {legendVisible && (
+        <div ref={legendDockRef} className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
           <KindLegend
             kinds={legendWithCounts}
             defaultOpen={legendOpen}
@@ -1736,7 +1789,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {!readOnly && (
-        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: DOCK_WIDTH }}>
           <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
             {composerOpen ? composer : selectedNode ? (
               <StepPanel
@@ -1868,7 +1921,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {mobileEditable && breakpoint === 'tablet' && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
           <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
             {mobileSurface === 'bulk' ? (
               <BulkBar
@@ -1926,7 +1979,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {readOnlyDock && (
-        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: breakpoint === 'tablet' ? TABLET_PANEL_WIDTH : DOCK_WIDTH }}>
           <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
             {readOnlyDetail}
           </div>

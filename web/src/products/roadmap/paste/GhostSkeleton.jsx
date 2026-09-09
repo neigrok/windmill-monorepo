@@ -3,7 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
-import { RadialLayoutEngine } from '../layout/RadialLayoutEngine.js';
+import { defaultLayoutEngine } from '../layout/index.js';
 import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const GHOST_CAP = 200;   // past this the preview stops growing — the readout still counts
@@ -82,7 +82,7 @@ function layoutGhost(nodes) {
   } catch {
     return null;
   }
-  const positions = new RadialLayoutEngine().layout(tree);
+  const positions = defaultLayoutEngine().layout(tree);
 
   const placed = capped.map((node, index) => ({
     id: node.id,

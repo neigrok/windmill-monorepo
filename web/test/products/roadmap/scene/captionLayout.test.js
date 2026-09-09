@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   ANCHOR_ABOVE, ANCHOR_BELOW, ANCHOR_LEFT, ANCHOR_RIGHT, CAPTION_POOL, CaptionPlacer, HIDE_AFTER_MS, SHOW_AFTER_MS,
-  captionTier, wrapCaption,
+  RANK_ANCHOR, RANK_FRONTIER, RANK_REST, captionRankLimit, wrapCaption,
 } from '../../../../src/products/roadmap/scene/captionLayout.js';
 import { SpatialGrid } from '../../../../src/products/roadmap/model/SpatialGrid.js';
-import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
+import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, WORKING_ZOOM, SELECTED_SCALE } from '../../../../src/products/roadmap/theme.js';
 
 // Eight px per code point: twenty characters fill the 160 px column exactly.
 const measure = (text) => Array.from(text).length * 8;
@@ -43,7 +43,7 @@ const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bot
 function discRect(node, v, { selected = false } = {}) {
   const sx = (node.x - v.x) * v.zoom + v.viewportWidth / 2;
   const sy = (node.y - v.y) * v.zoom + v.viewportHeight / 2;
-  const rim = RIM * v.zoom * (node.emphasis > 0 ? ROOT_BODY_SCALE : 1) * (selected ? 1.14 : 1);
+  const rim = RIM * v.zoom * (node.emphasis > 0 ? ROOT_BODY_SCALE : 1) * (selected ? SELECTED_SCALE : 1);
   return { left: sx - rim, top: sy - rim, right: sx + rim, bottom: sy + rim };
 }
 
@@ -66,21 +66,23 @@ test('wrapCaption — a blank label has no caption; a word wider than the column
   assert.deepEqual(wrapCaption(`${'x'.repeat(25)} tail`, measure), { lines: ['x'.repeat(20), 'xxxxx tail'], width: 160, height: 40 });
 });
 
-test('captionTier — keyed on the projected ordinary body: 18 px opens the working tier, 4 px closes everything', () => {
+test('captionRankLimit — keyed on the body as drawn: 18 px names everyone, 12 px the frontier, the floor the landmarks', () => {
   const zoomFor = (bodyPx) => bodyPx / (NODE_SIZE * BODY_FRACTION);
-  assert.equal(captionTier(zoomFor(18)), 'working');
-  assert.equal(captionTier(zoomFor(17.99)), 'overview');
-  assert.equal(captionTier(zoomFor(4)), 'overview');
-  assert.equal(captionTier(zoomFor(3.99)), 'none');
-  assert.equal(captionTier(WORKING_ZOOM), 'working');
-  assert.equal(captionTier(0.85), 'working');
-  // Monotone: once a tier opens it never closes on the way in.
-  const order = ['none', 'overview', 'working'];
+  assert.equal(captionRankLimit(zoomFor(18)), RANK_REST);
+  assert.equal(captionRankLimit(zoomFor(17.99)), RANK_FRONTIER);
+  assert.equal(captionRankLimit(zoomFor(12)), RANK_FRONTIER);
+  assert.equal(captionRankLimit(zoomFor(11.99)), RANK_ANCHOR);
+  assert.equal(captionRankLimit(WORKING_ZOOM), RANK_REST);
+  assert.equal(captionRankLimit(0.85), RANK_REST);
+  // The shader never draws a body under 6 px, so no zoom, however far out, closes the landmarks.
+  assert.equal(captionRankLimit(zoomFor(0.001)), RANK_ANCHOR);
+  assert.equal(captionRankLimit(0), RANK_ANCHOR);
+  // Monotone: once a rank opens it never closes on the way in.
   let last = -1;
-  for (let zoom = 0.01; zoom <= 3; zoom += 0.01) {
-    const tier = order.indexOf(captionTier(zoom));
-    assert.ok(tier >= last, `tier fell at zoom ${zoom}`);
-    last = tier;
+  for (let zoom = 0.001; zoom <= 3; zoom += 0.001) {
+    const limit = captionRankLimit(zoom);
+    assert.ok(limit >= last, `limit fell at zoom ${zoom}`);
+    last = limit;
   }
 });
 
@@ -255,6 +257,38 @@ test('stickiness — a caption keeps its seat across a pan and a re-installed mo
   assert.deepEqual({ anchor: reinstalled.anchor, shown: reinstalled.shown }, { anchor: ANCHOR_ABOVE, shown: true });
 });
 
+test('ribbons — a caption takes a seat no branch crosses; boxed in by branches it is named on one anyway', () => {
+  // The bow of w→e (sway 0.05) carries it through the seat below Alpha; the seat above is clear.
+  const nodes = [
+    { id: 'a', label: 'Alpha', x: 0, y: 0 },
+    { id: 'w', label: '', x: -300, y: 40 },
+    { id: 'e', label: '', x: 300, y: 40 },
+    { id: 'm', label: '', x: -300, y: -40 },
+    { id: 'n', label: '', x: 300, y: -40 },
+  ];
+  const below = [{ from: 'w', to: 'e', kind: 'cross-branch' }];
+  assert.deepEqual(placerOver(nodes).place(view(), 0).captions.map((caption) => caption.anchor), [ANCHOR_BELOW]);
+  const crossed = placerOver(nodes, below).place(view(), 0).captions;
+  assert.deepEqual(crossed.map(({ id, anchor }) => ({ id, anchor })), [{ id: 'a', anchor: ANCHOR_ABOVE }]);
+
+  // Branches below and above, discs to the sides: a name on a ribbon still beats a step with no name at all.
+  const sides = [...nodes, { id: 'r', label: '', x: 60, y: 0 }, { id: 'l', label: '', x: -60, y: 0 }];
+  const boxedIn = placerOver(sides, [...below, { from: 'm', to: 'n', kind: 'cross-branch' }]).place(view(), 0).captions;
+  assert.deepEqual(boxedIn.map(({ id, anchor }) => ({ id, anchor })), [{ id: 'a', anchor: ANCHOR_BELOW }]);
+});
+
+test('blocks — the corner chrome holds is no seat, and it follows the edge it is anchored to', () => {
+  const nodes = [{ id: 'a', label: 'Alpha', x: -600, y: 380 }];
+  const minimap = { left: 24, bottom: 24, width: 186, height: 146 };
+  assert.deepEqual(ids(placerOver(nodes).place(view(), 0).captions), ['a']);
+
+  const blocked = placerOver(nodes);
+  blocked.setInsets({ blocks: [minimap] });
+  assert.deepEqual(blocked.place(view(), 0).captions, []);
+  // A wider canvas leaves the same corner behind: the step is clear of it again.
+  assert.deepEqual(ids(blocked.place(view({ width: 1840 }), 0).captions), ['a']);
+});
+
 test('tiers — the overview names crowned roots, branch heads of eight or more, the selected and the hovered', () => {
   const nodes = [
     { id: 'root', label: 'Root', x: 0, y: 0, emphasis: 1, branch: 'root' },
@@ -274,6 +308,11 @@ test('tiers — the overview names crowned roots, branch heads of eight or more,
   const placer = placerOver(nodes, edges);
   const overview = view({ zoom: 0.2, width: 4000, height: 4000 });
   assert.deepEqual(ids(placer.place(overview, 0).captions), ['root', 'head']);
+  // The crown carries the biggest subtree, so it is named first — and at the whole-tree fit, where every disc is a dot
+  // drawn at the floor, it is named at all: a crown seats above its own ring rather than losing to it.
+  const fit = view({ zoom: 0.01, width: 4000, height: 4000 });
+  const crowned = placer.place(fit, 0).captions;
+  assert.deepEqual(crowned.map(({ id, anchor, shown }) => ({ id, anchor, shown })), [{ id: 'root', anchor: ANCHOR_ABOVE, shown: true }]);
   placer.setContext({ selectedId: 'picked', hoveredId: 'twigleaf' });
   assert.deepEqual(ids(placer.place(overview, 0).captions), ['picked', 'twigleaf', 'root', 'head']);
   // Zooming in past 18 px keeps every one of those and adds the rest: the tier is monotone.
@@ -316,8 +355,10 @@ test('cost — one placement pass over 476 nodes stays well inside a frame at th
     return runs.sort((a, b) => a - b)[Math.floor(runs.length / 2)];
   };
   const working = time(view({ zoom: WORKING_ZOOM }));
-  const fit = time(view({ zoom: 0.09 }));
   const mid = time(view({ zoom: 0.4 }));
+  // The real whole-tree fit of this spread, with a step selected: the pass every panned frame pays at All steps.
+  placer.setContext({ selectedId: 'n100', hoveredId: null });
+  const fit = time(view({ zoom: 0.038 }));
   console.log(`caption placement, 476 nodes, median ms — working ${working.toFixed(3)} · zoom 0.4 ${mid.toFixed(3)} · fit ${fit.toFixed(3)}`);
   assert.ok(working < 8 && mid < 8 && fit < 8, `placement too slow: ${working} / ${mid} / ${fit} ms`);
 });

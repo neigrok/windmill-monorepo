@@ -1,6 +1,6 @@
 import React from 'react';
 import { SkillTree } from '../model/SkillTree.js';
-import { RadialLayoutEngine } from '../layout/RadialLayoutEngine.js';
+import { defaultLayoutEngine } from '../layout/index.js';
 import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const LOCKED_INK = 0.28;
@@ -43,7 +43,7 @@ function layoutQuest(quest) {
   } catch {
     return null;
   }
-  const positions = new RadialLayoutEngine().layout(tree);
+  const positions = defaultLayoutEngine().layout(tree);
 
   const placed = quest.nodes.map((node, index) => ({
     id: node.id,

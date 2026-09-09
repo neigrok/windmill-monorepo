@@ -1,7 +1,7 @@
 // Chrome for the selected branch: a midpoint × to delete it and a handle at each end to re-aim it.
-import { NODE_SIZE } from '../theme.js';
+import { BODY_WU } from '../theme.js';
 
-const NODE_RADIUS = NODE_SIZE * 0.42;
+const NODE_RADIUS = BODY_WU / 2;
 const CROSS_OFFSET = 13; // screen px the × sits off the branch midpoint
 const HANDLE_GAP = 4; // screen px a handle sits beyond the node rim, along the branch
 

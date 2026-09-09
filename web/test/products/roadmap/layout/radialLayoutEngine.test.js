@@ -33,6 +33,14 @@ function closestPairOnAnyRing(positions) {
   return closest;
 }
 
+test('an empty tree is a picture with nothing in it, and a five-thousand-step chain still lays out', () => {
+  assert.deepEqual([...new RadialLayoutEngine().layout(treeOf([]))], []);
+  const chain = treeOf(Array.from({ length: 5000 }, (_, i) => ({ id: `c${i}`, label: `Step ${i}`, prerequisites: i === 0 ? [] : [`c${i - 1}`] })));
+  const positions = new RadialLayoutEngine().layout(chain);
+  assert.equal(positions.size, 5000);
+  assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
+});
+
 test('a crowded ring keeps its nodes a node-width apart', () => {
   for (const count of [8, 12, 20, 40, 120]) {
     const positions = new RadialLayoutEngine().layout(star(count));

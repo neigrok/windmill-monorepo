@@ -1,10 +1,5 @@
-// Concentric depth rings, contour-packed. Inside one tree every node sits on the ring for its trunk depth; siblings keep
-// cmpOrder along the ring and are packed by Reingold–Tilford contours in angle space, each parent centred over its first
-// and last child. A ring's radius is the largest of the pitch past the ring inside it (footprints on neighbouring rings
-// can never touch), the circumference its own footprints need, and whatever inflation the packing asked for. A forest is
-// islands — the largest tree's crown at the world origin, every other tree laid out around its own crown and packed by
-// enclosing circle in size order, never inside another tree's rim — or, in hub mode, one shared centre with the roots on
-// a hub ring whose radius is solved by bisection.
+// Concentric depth rings: every node on the ring for its trunk depth, siblings in cmpOrder packed by Reingold–Tilford
+// contours in angle space. A forest is islands — the largest crown at the world origin, the rest packed around it.
 import { LayoutEngine } from '../model/ports.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
@@ -14,18 +9,15 @@ const FULL_CIRCLE = 2 * Math.PI;
 const CLOSES = FULL_CIRCLE * (1 + 1e-9); // a ring whose packing needs no more than this closes
 const GAP_WU = 12 / WORKING_ZOOM; // clear space between two neighbouring footprints on one ring
 const ISLAND_MARGIN_WU = 196 / WORKING_ZOOM; // clear space between two islands' rims
-const HUB_MIN_WU = 120 / WORKING_ZOOM;
 
 // Inflation: a probe widens one ring by PROBE to measure the angle it gives back; a joint pass spends that on every ring
 // at the same marginal link-length price; a tightening pass bisects each inflated ring back toward the ring rule.
 const PROBE = 0.02;
 const MAX_PASSES = 12;
 const TIGHTEN_STEPS = 10;
-const HUB_BISECTION_STEPS = 30;
 
-// Captions are upright, so how much of a ring a footprint takes depends on where on the circle it lands. Each round packs
-// with the reach the previous round's angles imply, until no node moves by ANGLE_TOLERANCE. A ring whose footprints
-// still touch afterwards is widened by REPAIR_STEP, at most MAX_REPAIRS times.
+// Captions are upright, so a footprint's share of a ring depends on where it lands: each round packs with the angles the
+// last implies, and a ring whose footprints still touch is widened by REPAIR_STEP, at most MAX_REPAIRS times.
 const MAX_ROUNDS = 6;
 const ANGLE_TOLERANCE = (0.5 * Math.PI) / 180;
 const REPAIR_STEP = 0.04;
@@ -35,27 +27,11 @@ const ISLAND_ANGLE_SAMPLES = 72;
 
 export class RingsLayoutEngine extends LayoutEngine {
   static reorder = 'none';
-
-  constructor({ multiRoot = 'islands' } = {}) {
-    super();
-    if (!['islands', 'hub'].includes(multiRoot)) throw new Error(`Unknown multi-root mode "${multiRoot}"`);
-    this.multiRoot = multiRoot;
-  }
+  static readsCaptions = true;
 
   layout(tree) {
-    const footprints = footprintsOf(tree);
-    const placed = this.multiRoot === 'hub' ? hubLayout(tree, footprints) : islandsLayout(tree, footprints);
+    const placed = islandsLayout(tree, footprintsOf(tree));
     return new Map(tree.nodes.map((node) => [node.id, placed.get(node.id)]));
-  }
-}
-
-// The shared-centre variant: every root on one hub ring about the world origin, so siblings sit on rings about the
-// origin and the angular reorder gesture applies.
-export class HubRingsLayoutEngine extends RingsLayoutEngine {
-  static reorder = 'ring';
-
-  constructor() {
-    super({ multiRoot: 'hub' });
   }
 }
 
@@ -89,22 +65,21 @@ function clearanceBetween(insideIds, ids, footprints) {
 
 // ---- one ring system --------------------------------------------------------------------------------------------
 
-// The concentric rings about one centre: a tree about its crown, or the whole forest about the hub. Level 0 is the crown
-// (empty about a hub), level 1 the top subtrees, and every node's level is its trunk depth — one deeper about a hub
-// with no crown, where the roots themselves sit on ring 1.
+// The concentric rings about one centre: a tree about its crown. Level 0 is the crown, level 1 the top subtrees, and
+// every node's level is its trunk depth.
 class RingSystem {
-  constructor({ trunk, footprints, crownId, topIds, depthOffset = 0 }) {
+  constructor({ trunk, footprints, crownId, topIds }) {
     this.trunk = trunk;
     this.footprints = footprints;
     this.crownId = crownId;
     this.topIds = topIds;
     this.levelOf = new Map();
-    this.levels = [crownId === null ? [] : [crownId]];
+    this.levels = [[crownId]];
     const preOrder = [];
     const stack = [...topIds].reverse();
     while (stack.length > 0) {
       const id = stack.pop();
-      const level = trunk.trunkDepthOf(id) + depthOffset;
+      const level = trunk.trunkDepthOf(id);
       preOrder.push(id);
       this.levelOf.set(id, level);
       (this.levels[level] ??= []).push(id);
@@ -112,13 +87,13 @@ class RingSystem {
     }
     this.postOrder = preOrder.reverse();
     this.pitches = this.levels.map((ids, level) => (level === 0 ? 0 : clearanceBetween(this.levels[level - 1], ids, footprints)));
-    // trunk links ending on each ring — what a wider ring stretches; roots about a hub hang from nothing
-    this.links = this.levels.map((ids, level) => (level === 1 && crownId === null ? 0 : ids.length));
+    // trunk links ending on each ring — what a wider ring stretches
+    this.links = this.levels.map((ids) => ids.length);
     this.setAngles(null);
   }
 
   get size() {
-    return this.postOrder.length + (this.crownId === null ? 0 : 1);
+    return this.postOrder.length + 1;
   }
 
   // The previous round's angle per node (null before the first round), and the circumference each ring needs under them.
@@ -136,9 +111,8 @@ class RingSystem {
     return Math.min(width / Math.abs(Math.sin(angle)), (bottom - top) / Math.abs(Math.cos(angle)));
   }
 
-  // The centre distance two neighbours on one ring need, `laterId` following `earlierId` around the ring: side by side
-  // their half widths, one above the other the vertical span in that order, whichever the ring's direction there makes
-  // smaller; the half widths alone until an angle is known.
+  // The centre distance two neighbours on one ring need, `laterId` following `earlierId`: their half widths side by side
+  // or their vertical span one above the other, whichever the ring's direction there makes smaller.
   neighbourDistance(earlierId, laterId) {
     const earlier = this.footprints.get(earlierId);
     const later = this.footprints.get(laterId);
@@ -194,9 +168,8 @@ class RingSystem {
     return { childOffsets, offsets, extents, needed };
   }
 
-  // Places sibling contours left to right on `level`: each is pushed against the merged contour at every level both
-  // share, then absorbed into it. Returns the offsets (first at 0) and the merged contour, which reuses the deepest
-  // sibling's entries.
+  // Places sibling contours left to right on `level`, each pushed against the merged contour at every shared level.
+  // Returns the offsets (first at 0) and the merged contour, which reuses the deepest sibling's entries.
   packSiblings(contours, level, radii) {
     let merged = contours[0];
     const offsets = [0];
@@ -257,7 +230,7 @@ class RingSystem {
 
   positions(angles, radii) {
     const positions = new Map();
-    if (this.crownId !== null) positions.set(this.crownId, { x: 0, y: 0 });
+    positions.set(this.crownId, { x: 0, y: 0 });
     for (const [id, angle] of angles) {
       const radius = radii[this.levelOf.get(id)];
       positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
@@ -396,37 +369,7 @@ function equalPriceFactors(probes, deficit) {
   return factorsAt(high);
 }
 
-// Hub: the first ring's radius is the one dial, bisected to the smallest value at which the packing closes; the rings
-// outside it follow the ring rule.
-function hubRadii(rings) {
-  if (rings.levels.length < 2) return [0];
-  const radiiAt = (hub) => {
-    const floors = new Array(rings.levels.length).fill(0);
-    floors[1] = hub;
-    return rings.ringRadii(floors);
-  };
-  const closesAt = (hub) => rings.pack(radiiAt(hub)).needed <= CLOSES;
-  let low = Math.max(HUB_MIN_WU, rings.pitches[1]);
-  if (closesAt(low)) return radiiAt(low);
-  let high = low * 2;
-  for (let doubling = 0; doubling < 40 && !closesAt(high); doubling++) high *= 2;
-  for (let step = 0; step < HUB_BISECTION_STEPS; step++) {
-    const mid = (low + high) / 2;
-    if (closesAt(mid)) high = mid; else low = mid;
-  }
-  return radiiAt(high);
-}
-
 // ---- the forest ---------------------------------------------------------------------------------------------------
-
-function hubLayout(tree, footprints) {
-  const trunk = tree.trunk;
-  const crownId = trunk.centerId();
-  const rings = crownId === null
-    ? new RingSystem({ trunk, footprints, crownId: null, topIds: [...tree.roots()].sort(cmpOrder).map((root) => root.id), depthOffset: 1 })
-    : new RingSystem({ trunk, footprints, crownId, topIds: trunk.trunkChildrenOf(crownId) });
-  return layoutRings(rings, hubRadii);
-}
 
 function islandsLayout(tree, footprints) {
   const trunk = tree.trunk;
@@ -444,28 +387,40 @@ function islandsLayout(tree, footprints) {
   return placed;
 }
 
-// Circle packing in the given order: the first circle at the origin, each next one as close to the origin as it fits
-// clear of every placed circle, preferring the sides over the top and bottom so the forest lies along the wide axis
-// of a landscape canvas.
+// Circle packing in the given order: the first at the origin, each next as close to it as it fits clear of the rest,
+// taking the seat that leaves the forest's box nearest square rather than strung along one axis.
 function islandCentres(radii) {
-  const angles = Array.from({ length: ISLAND_ANGLE_SAMPLES }, (_, i) => (i * FULL_CIRCLE) / ISLAND_ANGLE_SAMPLES)
-    .sort((a, b) => Math.abs(Math.sin(a)) - Math.abs(Math.sin(b)) || a - b);
+  const angles = Array.from({ length: ISLAND_ANGLE_SAMPLES }, (_, i) => (i * FULL_CIRCLE) / ISLAND_ANGLE_SAMPLES);
   const centres = [];
+  const box = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  const take = (centre, radius) => {
+    centres.push(centre);
+    box.minX = Math.min(box.minX, centre.x - radius);
+    box.maxX = Math.max(box.maxX, centre.x + radius);
+    box.minY = Math.min(box.minY, centre.y - radius);
+    box.maxY = Math.max(box.maxY, centre.y + radius);
+  };
   radii.forEach((radius, i) => {
     if (i === 0) {
-      centres.push({ x: 0, y: 0 });
+      take({ x: 0, y: 0 }, radius);
       return;
     }
     const step = radius / 2;
     for (let distance = radii[0] + radius; ; distance += step) {
-      const fit = angles
+      const seats = angles
         .map((angle) => ({ x: distance * Math.cos(angle), y: distance * Math.sin(angle) }))
-        .find((centre) => centres.every((placed, j) => Math.hypot(centre.x - placed.x, centre.y - placed.y) >= radii[j] + radius));
-      if (fit) {
-        centres.push(fit);
-        return;
-      }
+        .filter((centre) => centres.every((placed, j) => Math.hypot(centre.x - placed.x, centre.y - placed.y) >= radii[j] + radius));
+      if (seats.length === 0) continue;
+      take(seats.reduce((best, seat) => (longerSide(box, seat, radius) < longerSide(box, best, radius) ? seat : best)), radius);
+      return;
     }
   });
   return centres;
+}
+
+// The longer side of the forest's box once a circle of `radius` sits at `seat`.
+function longerSide(box, seat, radius) {
+  const width = Math.max(box.maxX, seat.x + radius) - Math.min(box.minX, seat.x - radius);
+  const height = Math.max(box.maxY, seat.y + radius) - Math.min(box.minY, seat.y - radius);
+  return Math.max(width, height);
 }

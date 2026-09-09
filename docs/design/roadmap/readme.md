@@ -14,6 +14,8 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 
 - `guidelines/` — the feature canon (decoder below).
 - `briefs.md` — the open asks to the designers.
+- `readability-research.md` — how the canvas is made readable: the caption frame, the working zoom,
+  the four layout engines measured side by side, and the calls left to the owner.
 
 ## Spec codes — decoder
 
@@ -49,8 +51,10 @@ DAG editing.
 
 The canvas lays out radially from a centered root: each node sits on the ring for its trunk
 depth, at the center of an angular wedge, wedges split among children by subtree leaf count.
-A live gallery SVG portrait must use the tree's own canvas positions. Social link previews can
-be stored or generic and are not guaranteed to match the live page (`guidelines/og-tree-cards.md`).
+Three denser engines — rings, bubble, mindmap — sit behind `?layout=` while the owner picks one
+(`readability-research.md`). A live gallery SVG portrait must use the tree's own canvas positions.
+Social link previews can be stored or generic and are not guaranteed to match the live page
+(`guidelines/og-tree-cards.md`).
 
 Connectors are stroked bezier curves, even-width with a gentle stable bend; a branch that starts
 in a **done** node lights up in that node's colour (no glow), otherwise it stays a thin muted

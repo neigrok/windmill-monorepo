@@ -141,6 +141,14 @@ export class Camera2D {
     return clamp(zoom, this.minZoom(), maxZoom);
   }
 
+  // The world-space size of the area the chrome leaves visible, at `zoom`.
+  visibleSpanAt(zoom) {
+    return {
+      width: Math.max(1, this.viewportWidth - this.insets.left - this.insets.right) / zoom,
+      height: Math.max(1, this.viewportHeight - this.insets.top - this.insets.bottom) / zoom,
+    };
+  }
+
   // Where the camera must sit for a world point to land at the centre of the visible area at `zoom`.
   centreFor(x, y, zoom) {
     return {

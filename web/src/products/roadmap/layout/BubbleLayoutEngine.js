@@ -1,10 +1,5 @@
-// Bubble tree over the trunk arborescence: every subtree is wrapped in a circle, a node's children sit on rays
-// about it with their in-edges pointing straight back at it and its own in-edge side left free, and each root
-// grows its own island. The circles only draft the picture; a post-order tuck then slides every subtree rigidly
-// along its ray toward its parent until a caption footprint would touch another or a trunk edge would cut through
-// one. Root islands are seated by packing their enclosing circles in size order and each slides in toward the
-// largest root by the same contact rule, so an edit inside one island reaches another only along that seam.
-// Positions are world units; every size comes from model/footprint.js, so all devices agree.
+// Bubble tree over the trunk arborescence: children on rays around each node inside its enclosing circle, in-edge
+// side left free, then a post-order tuck sliding each subtree along its ray until footprints or trunk edges touch.
 import { LayoutEngine } from '../model/ports.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
@@ -27,7 +22,8 @@ const EPSILON = 1e-9;
 const GRAZE = 1e-3;
 
 export class BubbleLayoutEngine extends LayoutEngine {
-  static reorder = 'parent-arc';
+  static reorder = 'none';
+  static readsCaptions = true;
 
   layout(tree) {
     const forest = new Forest(tree);
@@ -73,9 +69,8 @@ class Forest {
   }
 }
 
-// Bottom-up: for every node, the ring its children sit on, each child's ray in the node's frame (+x away from its
-// own parent), and the circle enclosing the whole subtree — centre in that frame, radius rounded up a step. A node's
-// own circle reaches half the margin past its footprint, so two tangent circles hold their footprints a margin apart.
+// Bottom-up: each node's child ring, each child's ray in its frame (+x away from its own parent), and the circle
+// enclosing the subtree — its own circle reaching half the margin past its footprint, so tangent circles keep clear.
 function enclosingBubbles(forest) {
   const bubbles = new Array(forest.size);
   for (let node = forest.size - 1; node >= 0; node--) {
@@ -162,9 +157,8 @@ function growIslands(forest, bubbles) {
   return { x, y };
 }
 
-// Post-order over one island: each subtree, its own children already tucked, slides rigidly toward its parent as
-// far as the resting footprints and trunk edges around it allow. Returns the island's post-order and the circle
-// around its footprints, in the island's frame.
+// Post-order over one island: each subtree, its children already tucked, slides toward its parent as far as the
+// resting footprints and trunk edges allow. Returns the post-order and the circle around it, in the island's frame.
 function tuckIsland(forest, positions, root) {
   const order = forest.postOrderOf(root);
   const rank = new Int32Array(forest.size);
@@ -199,10 +193,10 @@ function tuckIsland(forest, positions, root) {
   return { order, x: circle.x, y: circle.y, r: stepUp(circle.r + TUCK_MARGIN, ISLAND_STEP) };
 }
 
-// Islands in size order: the largest root sits at the world origin; every other island keeps the direction the
-// circle packing seats it in and slides along it from beyond everything settled until its footprints or trunk
-// edges meet theirs — the packing depends on the radii alone, the slide only on what lies along that ray.
+// Islands in size order: the largest root at the world origin; every other keeps the direction the circle packing
+// seats it in and slides along it until its footprints or trunk edges meet what is already resting.
 function settleIslands(forest, positions, islands) {
+  if (islands.length === 0) return; // an empty tree: the birth placeholder, not a picture
   const circles = islands.map(({ x, y, r }) => ({ x, y, r }));
   packCircles(circles);
   const islandOf = new Int32Array(forest.size);
@@ -233,9 +227,8 @@ function settleIslands(forest, positions, islands) {
   });
 }
 
-// The footprints and trunk edges already at rest, and how far a set of nodes may slide before touching them: a
-// sliding footprint may come no nearer than the margin to a resting footprint or a resting trunk edge, and a trunk
-// edge riding along between two sliding nodes may come no nearer than the margin to a resting footprint.
+// The footprints and trunk edges already at rest, and how far a set of nodes may slide before coming within the
+// margin of one — a trunk edge riding along between two sliding nodes included.
 class RestingSet {
   constructor(forest, positions) {
     this.forest = forest;
@@ -266,9 +259,8 @@ class RestingSet {
     if (this.forest.parentOf[node] !== -1) this.edges.remove(node, boxOf(this.edgeOf(node)));
   }
 
-  // The fraction of the move (vx, vy) that nodes[first..last] can take together, marching one cell's width at a
-  // time so a long draft slide costs the distance actually travelled, not the distance offered. Every sweep asks
-  // the grids a margin wider than it moves, so a contact at the margin is never missed across a cell boundary.
+  // The fraction of the move (vx, vy) that nodes[first..last] can take together, marching a cell at a time and asking
+  // the grids a margin wider than each sweep, so a contact at the margin is never missed across a cell boundary.
   room(nodes, first, last, vx, vy, sliding) {
     const length = Math.hypot(vx, vy);
     const ux = vx / length;
@@ -299,9 +291,8 @@ class RestingSet {
   }
 }
 
-// Circles laid out in the given order: the first at the origin, every next one tangent to two on the front chain
-// of those already placed, at the chain's seat nearest the origin (Wang, Wang, Dai & Wang 2006, the way d3 packs
-// siblings). Depends on the radii alone.
+// Circles in the given order: the first at the origin, each next tangent to two on the front chain, at the seat
+// nearest the origin (Wang, Wang, Dai & Wang 2006, the way d3 packs siblings). Depends on the radii alone.
 function packCircles(circles) {
   if (circles.length === 0) return;
   circles[0].x = 0;
@@ -545,9 +536,8 @@ function entryTime(a, vx, vy, b) {
   return { t: Math.max(enter, 0), alreadyInside: enter < -EPSILON };
 }
 
-// The fraction of the move (ux, uy) at which the segment first enters the rect's interior — an endpoint entering, or
-// a rect corner crossing the segment (a corner it only just grazed stops it at once); null when it never does.
-// Assumes no crossing before the move.
+// The fraction of the move (ux, uy) at which the segment first enters the rect's interior — an endpoint entering or a
+// corner crossing it (a graze stops it at once); null when it never does. Assumes no crossing before the move.
 function segmentEntryTime({ px, py, qx, qy }, ux, uy, rect) {
   let first = Infinity;
   const p = entryTime({ minX: px, maxX: px, minY: py, maxY: py }, ux, uy, rect);

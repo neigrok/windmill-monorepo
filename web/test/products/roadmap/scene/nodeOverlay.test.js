@@ -116,6 +116,31 @@ test('LabelOverlay — a caption is measured, wrapped and seated; it fades in af
   assert.equal(element.style.transform, `translate(${720 - 80 + 3}px, ${424 + RIM + 8 + 5}px)`);
 });
 
+test('LabelOverlay — a settle moves the discs under a still camera, and every caption follows on the next frame', (t) => {
+  const { canvas, mount } = stage(t);
+  const overlay = mount(new LabelOverlay(canvas, sceneTheme(false)));
+  const { renderModel, spatialGrid } = model([{ id: 'a', label: 'Alpha', x: 0, y: 0 }]);
+  overlay.setModel(renderModel, spatialGrid);
+  const still = camera();
+  overlay.update(still, 1000);
+  overlay.update(still, 1000 + SHOW_AFTER_MS);
+  const element = captionOf(overlay, 'a');
+  assert.equal(element.style.transform, `translate(${720 - 24}px, ${424 + RIM + 8}px)`);
+
+  // What a settle frame does: the scene eases the node to its new seat and marks the overlay. The camera never moves,
+  // so without the mark the caption would hang where the disc used to be.
+  const node = renderModel.nodes[0];
+  node.x = 260;
+  node.y = 104;
+  spatialGrid.move('a', node.x, node.y);
+  overlay.markMoved();
+  assert.equal(overlay.settleTimer, 0, 'a move arms no timer: the frame loop is already coming');
+  overlay.update(still, 1000 + SHOW_AFTER_MS + 16);
+  assert.equal(captionOf(overlay, 'a'), element);
+  assert.equal(element.style.transform, `translate(${720 + 260 - 24}px, ${424 + 104 + RIM + 8}px)`);
+  assert.equal(shown(element), true);
+});
+
 test('LabelOverlay — an unchanged camera costs nothing; a fade deadline, a state, a context or an inset change re-places', (t) => {
   const { canvas, mount } = stage(t);
   const overlay = mount(new LabelOverlay(canvas, sceneTheme(false)));

@@ -5,50 +5,22 @@ import { performance } from 'node:perf_hooks';
 import { BubbleLayoutEngine } from '../../../../src/products/roadmap/layout/BubbleLayoutEngine.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { footprintOf, footprintRect } from '../../../../src/products/roadmap/model/footprint.js';
-import { BODY_WU, WORKING_ZOOM, NODE_SIZE } from '../../../../src/products/roadmap/theme.js';
+import { BODY_WU, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
 import { loadDogfoodTree, dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap } from '../fixtures/largeRoadmap.js';
+import {
+  countAround, familyInView, fitBodyPx, footprintOverlaps, nearestNeighboursPx, px, quantile, serialise, trunkLinksPx,
+} from '../fixtures/readability.js';
 
 const BODY_PX = BODY_WU * WORKING_ZOOM;
-const WINDOW = { width: 1440, height: 848 };
 
 function treeOf(nodes) {
   return new SkillTree({ id: 't_test', title: 'Test', nodes });
 }
 
-function px(wu) {
-  return wu * WORKING_ZOOM;
-}
-
-function quantile(values, p) {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
-}
-
 function rectOf(tree, positions, id) {
   const { x, y } = positions.get(id);
   return footprintRect(x, y, footprintOf(tree.nodesById.get(id).label, { root: tree.trunk.primaryParentOf(id) === null }));
-}
-
-function trunkLinksPx(tree, positions) {
-  return tree.nodes
-    .filter((node) => tree.trunk.primaryParentOf(node.id) !== null)
-    .map((node) => {
-      const parent = positions.get(tree.trunk.primaryParentOf(node.id));
-      const child = positions.get(node.id);
-      return px(Math.hypot(parent.x - child.x, parent.y - child.y));
-    });
-}
-
-function footprintOverlaps(tree, positions) {
-  const rects = tree.nodes.map((node) => rectOf(tree, positions, node.id)).sort((a, b) => a.minX - b.minX);
-  let overlaps = 0;
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length && rects[j].minX < rects[i].maxX; j++) {
-      if (rects[j].minY < rects[i].maxY && rects[j].maxY > rects[i].minY) overlaps += 1;
-    }
-  }
-  return overlaps;
 }
 
 function segmentHitsRect(a, b, rect) {
@@ -85,45 +57,6 @@ function trunkEdgesThroughForeignCaptions(tree, positions) {
   return crossings;
 }
 
-function inWindow(a, b) {
-  return Math.abs(a.x - b.x) * WORKING_ZOOM <= WINDOW.width / 2 && Math.abs(a.y - b.y) * WORKING_ZOOM <= WINDOW.height / 2;
-}
-
-function nodesInWindowAround(tree, positions, id) {
-  const centre = positions.get(id);
-  return tree.nodes.filter((node) => inWindow(positions.get(node.id), centre)).length;
-}
-
-function familyInView(tree, positions) {
-  const shares = tree.nodes.map((node) => {
-    const parentId = tree.trunk.primaryParentOf(node.id);
-    const kin = [...(parentId === null ? [] : [parentId]), ...tree.trunk.trunkChildrenOf(node.id)];
-    if (kin.length === 0) return null;
-    return kin.filter((id) => inWindow(positions.get(id), positions.get(node.id))).length / kin.length;
-  }).filter((share) => share !== null);
-  return shares.reduce((sum, share) => sum + share, 0) / shares.length;
-}
-
-function nearestNeighbourP10Px(positions) {
-  const points = [...positions.values()];
-  const nearest = points.map((point, i) => {
-    let best = Infinity;
-    points.forEach((other, j) => {
-      if (i !== j) best = Math.min(best, Math.hypot(other.x - point.x, other.y - point.y));
-    });
-    return px(best);
-  });
-  return quantile(nearest, 0.1);
-}
-
-function fitBodyPx(positions) {
-  const xs = [...positions.values()].map((p) => p.x);
-  const ys = [...positions.values()].map((p) => p.y);
-  const width = Math.max(...xs) - Math.min(...xs) + NODE_SIZE * 2;
-  const height = Math.max(...ys) - Math.min(...ys) + NODE_SIZE * 2;
-  return BODY_WU * Math.min(Math.min(WINDOW.width / width, WINDOW.height / height) * 0.9, WORKING_ZOOM);
-}
-
 function movedOverABody(before, after) {
   const moves = [...before].map(([id, p]) => px(Math.hypot(p.x - after.get(id).x, p.y - after.get(id).y)));
   return { count: moves.filter((d) => d > BODY_PX).length, maxPx: Math.max(...moves) };
@@ -141,12 +74,17 @@ function bearing(tree, positions, from, to) {
   return angle;
 }
 
-function serialise(positions) {
-  return JSON.stringify([...positions.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
-}
+test('the engine reads captions and arms no reorder gesture: the scene has none for a bubble', () => {
+  assert.equal(BubbleLayoutEngine.reorder, 'none');
+  assert.equal(BubbleLayoutEngine.readsCaptions, true);
+});
 
-test('siblings may be reordered on an arc about their parent', () => {
-  assert.equal(BubbleLayoutEngine.reorder, 'parent-arc');
+test('an empty tree is a picture with nothing in it, and a two-thousand-step chain still lays out', () => {
+  assert.deepEqual([...new BubbleLayoutEngine().layout(treeOf([]))], []);
+  const chain = treeOf(Array.from({ length: 2000 }, (_, i) => ({ id: `c${i}`, label: `Step ${i}`, prerequisites: i === 0 ? [] : [`c${i - 1}`] })));
+  const positions = new BubbleLayoutEngine().layout(chain);
+  assert.equal(positions.size, 2000);
+  assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
 });
 
 test('the dogfood tree meets the readability bar at the working zoom', () => {
@@ -162,13 +100,14 @@ test('the dogfood tree meets the readability bar at the working zoom', () => {
   assert.ok(quantile(links, 0.9) <= 650, `trunk p90 ${quantile(links, 0.9)} px`);
   assert.ok(links.filter((d) => d <= 700).length / links.length >= 0.9, 'at least 90% of trunk links within 700 px');
   assert.ok(familyInView(tree, positions) >= 0.85, `family in view ${familyInView(tree, positions)}`);
-  assert.ok(nearestNeighbourP10Px(positions) >= 88, `nearest neighbour p10 ${nearestNeighbourP10Px(positions)} px`);
-  assert.equal(footprintOverlaps(tree, positions), 0);
+  const nearestP10 = quantile(nearestNeighboursPx(positions), 0.1);
+  assert.ok(nearestP10 >= 88, `nearest neighbour p10 ${nearestP10} px`);
+  assert.deepEqual(footprintOverlaps(tree, positions), []);
   assert.equal(trunkEdgesThroughForeignCaptions(tree, positions), 0);
-  assert.ok(nodesInWindowAround(tree, positions, 'skilltree-scene') >= 15, 'the working window on skilltree-scene');
+  assert.ok(countAround(positions, 'skilltree-scene') >= 15, 'the working window on skilltree-scene');
   const frontier = tree.topoOrder().find((id) => states.get(id) === 'active');
   assert.equal(frontier, 'gym-coach-wave');
-  assert.ok(nodesInWindowAround(tree, positions, frontier) >= 18, 'the working window on the frontier root');
+  assert.ok(countAround(positions, frontier) >= 18, 'the working window on the frontier root');
   assert.ok(fitBodyPx(positions) >= 5, `fit body ${fitBodyPx(positions)} px`);
   assert.ok(layoutMs <= 250, `layout took ${layoutMs} ms`);
   assert.equal(serialise(positions), serialise(new BubbleLayoutEngine().layout(tree)));
@@ -224,7 +163,7 @@ test('a chain grows straight out of its root, each footprint exactly a margin fr
       assert.ok(Math.abs(gap - 8 / WORKING_ZOOM) < 1e-6, `link ${i} of ${length}: gap ${gap} wu`);
       assert.ok(Math.abs(positions.get(`c${i}`).y) < 1e-9, 'the chain stays on the root line');
     }
-    assert.equal(footprintOverlaps(tree, positions), 0);
+    assert.deepEqual(footprintOverlaps(tree, positions), []);
   }
 });
 
@@ -238,7 +177,7 @@ test('a two-hundred-leaf fan, nine uneven roots and five thousand steps all lay 
     const positions = engine.layout(tree);
     assert.equal(positions.size, tree.nodes.length, name);
     for (const { x, y } of positions.values()) assert.ok(Number.isFinite(x) && Number.isFinite(y), `${name}: a non-finite position`);
-    assert.equal(footprintOverlaps(tree, positions), 0, `${name}: overlapping footprints`);
+    assert.deepEqual(footprintOverlaps(tree, positions), [], `${name}: overlapping footprints`);
     assert.equal(serialise(positions), serialise(engine.layout(tree)), `${name}: not deterministic`);
   }
   const unevenPositions = new BubbleLayoutEngine().layout(uneven);

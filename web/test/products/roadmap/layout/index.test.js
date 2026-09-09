@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LAYOUTS, DEFAULT_LAYOUT, layoutNameFrom, loadLayoutEngine } from '../../../../src/products/roadmap/layout/index.js';
+import { LAYOUTS, DEFAULT_LAYOUT, defaultLayoutEngine, layoutNameFrom, layoutTree, loadLayoutEngine } from '../../../../src/products/roadmap/layout/index.js';
 import { LayoutEngine } from '../../../../src/products/roadmap/model/ports.js';
 import { RadialLayoutEngine } from '../../../../src/products/roadmap/layout/RadialLayoutEngine.js';
 import { loadDogfoodTree } from '../fixtures/dogfoodTree.js';
@@ -23,7 +23,7 @@ test('every named engine loads as a LayoutEngine with a reorder hint and lays th
     assert.ok(engine instanceof LayoutEngine, `${name} extends LayoutEngine`);
     hints[name] = engine.constructor.reorder;
   }
-  assert.deepEqual(hints, { radial: 'ring', rings: 'none', bubble: 'parent-arc', mindmap: 'none' });
+  assert.deepEqual(hints, { radial: 'ring', rings: 'none', bubble: 'none', mindmap: 'none' });
 
   assert.ok((await loadLayoutEngine('radial')) instanceof RadialLayoutEngine);
   const { tree } = loadDogfoodTree();
@@ -37,4 +37,20 @@ test('every named engine loads as a LayoutEngine with a reorder hint and lays th
 
 test('a name outside LAYOUTS is refused at the door', async () => {
   await assert.rejects(loadLayoutEngine('orgchart'), { message: 'Unknown layout "orgchart"' });
+});
+
+test('an engine that throws never blanks the canvas: the default lays the tree out instead, loudly', () => {
+  const { tree } = loadDogfoodTree();
+  class BrokenEngine {
+    layout() { throw new Error('no picture'); }
+  }
+  const said = [];
+  const spoke = console.error;
+  console.error = (...args) => said.push(args[0]);
+  try {
+    assert.deepEqual([...layoutTree(new BrokenEngine(), tree).entries()], [...defaultLayoutEngine().layout(tree).entries()]);
+  } finally {
+    console.error = spoke;
+  }
+  assert.deepEqual(said, [`[layout] BrokenEngine could not lay out ${tree.allNodes.length} steps — drawing the tree radially instead`]);
 });

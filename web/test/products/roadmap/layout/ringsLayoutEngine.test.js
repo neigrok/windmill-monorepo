@@ -2,16 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 
-import { RingsLayoutEngine, HubRingsLayoutEngine } from '../../../../src/products/roadmap/layout/RingsLayoutEngine.js';
+import { RingsLayoutEngine } from '../../../../src/products/roadmap/layout/RingsLayoutEngine.js';
 import { LayoutEngine } from '../../../../src/products/roadmap/model/ports.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { footprintOf, footprintRect } from '../../../../src/products/roadmap/model/footprint.js';
-import { BODY_WU, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
 import { loadDogfoodTree } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap } from '../fixtures/largeRoadmap.js';
+import {
+  countAround, fitBodyPx, footprintOverlaps, nearestNeighboursPx, px, quantile, serialise, trunkLinksPx,
+} from '../fixtures/readability.js';
 
 const FULL_CIRCLE = 2 * Math.PI;
-const DESKTOP = { width: 1440, height: 848 };
 
 function treeOf(nodes) {
   return new SkillTree({ id: 't_test', title: 'Test', nodes });
@@ -32,48 +33,8 @@ function shapeOf(count, shape) {
   return new SkillTree({ id: data.id, title: data.title, nodes: data.nodes.map(({ status, ...node }) => node) });
 }
 
-const px = (wu) => wu * WORKING_ZOOM;
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const quantile = (values, p) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(p * (values.length - 1)))];
-const serialised = (positions) => JSON.stringify([...positions.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
 const wrap = (angle) => ((angle % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE;
-
-function trunkLinksPx(tree, positions) {
-  return tree.nodes
-    .filter((node) => tree.trunk.primaryParentOf(node.id) !== null)
-    .map((node) => px(distance(positions.get(tree.trunk.primaryParentOf(node.id)), positions.get(node.id))));
-}
-
-function footprintOverlaps(tree, positions) {
-  const rects = tree.nodes
-    .map((node) => ({ id: node.id, ...footprintRect(positions.get(node.id).x, positions.get(node.id).y, footprintOf(node.label, { root: node.prerequisites.length === 0 })) }))
-    .sort((a, b) => a.minX - b.minX);
-  const pairs = [];
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length && rects[j].minX < rects[i].maxX; j++) {
-      if (rects[j].minY < rects[i].maxY && rects[j].maxY > rects[i].minY) pairs.push(`${rects[i].id} × ${rects[j].id}`);
-    }
-  }
-  return pairs;
-}
-
-function nearestNeighboursPx(positions) {
-  const points = [...positions.values()];
-  return points.map((point, i) => px(Math.min(...points.filter((_, j) => j !== i).map((other) => distance(point, other)))));
-}
-
-function countAround(positions, anchorId) {
-  const anchor = positions.get(anchorId);
-  return [...positions.values()].filter((point) => Math.abs(point.x - anchor.x) * WORKING_ZOOM <= DESKTOP.width / 2 && Math.abs(point.y - anchor.y) * WORKING_ZOOM <= DESKTOP.height / 2).length;
-}
-
-function fitBodyPx(positions) {
-  const xs = [...positions.values()].map((point) => point.x);
-  const ys = [...positions.values()].map((point) => point.y);
-  const pad = 2 * 56;
-  const zoom = Math.min(DESKTOP.width / (Math.max(...xs) - Math.min(...xs) + pad), DESKTOP.height / (Math.max(...ys) - Math.min(...ys) + pad)) * 0.9;
-  return BODY_WU * Math.min(zoom, WORKING_ZOOM);
-}
 
 // The island each root's trunk subtree makes: its crown, its nodes, and the rim its footprints reach from the crown.
 function islandsOf(tree, positions) {
@@ -111,14 +72,17 @@ function assertRingsGrowOutwardInOrder(tree, positions, centreOf) {
   }
 }
 
-test('the rings engine is a LayoutEngine; islands disarm the ring reorder, the hub variant arms it', () => {
+test('the rings engine is a LayoutEngine that reads captions and disarms the ring reorder', () => {
   assert.ok(new RingsLayoutEngine() instanceof LayoutEngine);
   assert.equal(RingsLayoutEngine.reorder, 'none');
-  assert.equal(new RingsLayoutEngine().multiRoot, 'islands');
-  assert.ok(new HubRingsLayoutEngine() instanceof RingsLayoutEngine);
-  assert.equal(HubRingsLayoutEngine.reorder, 'ring');
-  assert.equal(new HubRingsLayoutEngine().multiRoot, 'hub');
-  assert.throws(() => new RingsLayoutEngine({ multiRoot: 'orbit' }), { message: 'Unknown multi-root mode "orbit"' });
+  assert.equal(RingsLayoutEngine.readsCaptions, true);
+});
+
+test('an empty tree is a picture with nothing in it, and a five-thousand-step chain still lays out', () => {
+  assert.deepEqual([...new RingsLayoutEngine().layout(treeOf([]))], []);
+  const positions = new RingsLayoutEngine().layout(chain(5000));
+  assert.equal(positions.size, 5000);
+  assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
 });
 
 test('the dogfood forest reads at the working zoom: short trunk links, clear footprints, a full working window', () => {
@@ -133,7 +97,7 @@ test('the dogfood forest reads at the working zoom: short trunk links, clear foo
   }
   assert.equal(positions.size, tree.nodes.length);
   assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
-  assert.equal(serialised(engine.layout(tree)), serialised(positions));
+  assert.equal(serialise(engine.layout(tree)), serialise(positions));
 
   const trunkPx = trunkLinksPx(tree, positions);
   const rootToChildPx = tree.nodes
@@ -174,22 +138,9 @@ test('the dogfood forest is islands: the largest crown at the origin, no island 
   assertRingsGrowOutwardInOrder(tree, positions, (id) => crownOf.get(id));
 });
 
-test('the hub variant puts every dogfood root on one ring about the origin and grows outward from the hub in order', () => {
-  const { tree } = loadDogfoodTree();
-  const positions = new HubRingsLayoutEngine().layout(tree);
-  assert.equal(positions.size, tree.nodes.length);
-  assert.equal(serialised(new HubRingsLayoutEngine().layout(tree)), serialised(positions));
-  const hubRadii = tree.roots().map((root) => Math.round(Math.hypot(positions.get(root.id).x, positions.get(root.id).y)));
-  assert.equal(new Set(hubRadii).size, 1);
-  assert.ok(hubRadii[0] > 0);
-  assert.deepEqual(footprintOverlaps(tree, positions), []);
-  assertRingsGrowOutwardInOrder(tree, positions, () => ({ x: 0, y: 0 }));
-});
-
-test('a lone node sits at the origin in both modes', () => {
+test('a lone node sits at the origin', () => {
   const only = treeOf([{ id: 'only', label: 'Only', prerequisites: [] }]);
   assert.deepEqual([...new RingsLayoutEngine().layout(only)], [['only', { x: 0, y: 0 }]]);
-  assert.deepEqual([...new HubRingsLayoutEngine().layout(only)], [['only', { x: 0, y: 0 }]]);
 });
 
 test('a two-chain hangs the child one clear pitch outside its root', () => {
@@ -211,7 +162,6 @@ test('a fifty-chain climbs one ring per step, never a long link', () => {
   for (let i = 1; i < radii.length; i++) assert.ok(radii[i] > radii[i - 1], `step ${i} did not move outward`);
   assert.ok(Math.max(...trunkLinksPx(tree, positions)) <= 300);
   assert.deepEqual(footprintOverlaps(tree, positions), []);
-  assert.equal(serialised(new HubRingsLayoutEngine().layout(tree)), serialised(positions));
 });
 
 test('a two-hundred-leaf fan keeps every leaf on one ring, in order, with clear footprints', () => {
@@ -224,14 +174,11 @@ test('a two-hundred-leaf fan keeps every leaf on one ring, in order, with clear 
   assertRingsGrowOutwardInOrder(tree, positions, () => ({ x: 0, y: 0 }));
 });
 
-test('four lone roots are four islands clear of each other, or four seats on one hub ring', () => {
+test('four lone roots are four islands clear of each other', () => {
   const tree = treeOf(['a', 'b', 'c', 'd'].map((id) => ({ id, label: `Root ${id}`, prerequisites: [] })));
   const islands = new RingsLayoutEngine().layout(tree);
   assert.deepEqual(islands.get('a'), { x: 0, y: 0 });
   assert.deepEqual(footprintOverlaps(tree, islands), []);
-  const hub = new HubRingsLayoutEngine().layout(tree);
-  assert.equal(new Set([...hub.values()].map(({ x, y }) => Math.round(Math.hypot(x, y)))).size, 1);
-  assert.deepEqual(footprintOverlaps(tree, hub), []);
 });
 
 test('blank labels still get a seat', () => {
@@ -253,6 +200,6 @@ test('five thousand steps lay out finite and byte-identical twice, in every shap
     assert.equal(positions.size, 5000);
     assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)), `${shape}: a position is not finite`);
     assert.deepEqual(footprintOverlaps(tree, positions), [], `${shape}: footprints overlap`);
-    if (shape === 'multiroot') assert.equal(serialised(engine.layout(tree)), serialised(positions), `${shape}: two runs differ`);
+    if (shape === 'multiroot') assert.equal(serialise(engine.layout(tree)), serialise(positions), `${shape}: two runs differ`);
   }
 });

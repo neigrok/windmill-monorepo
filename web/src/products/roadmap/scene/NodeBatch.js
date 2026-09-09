@@ -1,6 +1,6 @@
 // One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 ember, 3 activated.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE, BODY_FRACTION, MIN_BODY_PX, MIN_ROOT_BODY_PX } from '../theme.js';
+import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, SELECTED_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_PX } from '../theme.js';
 import { isGrouped } from '../selection/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
@@ -89,7 +89,7 @@ void main() {
   float fbScale = (1.0 + 0.06 * hoverE) * (1.0 - 0.03 * pressE);
   if (uMotion < 0.5) fbScale = 1.0;
   // uGrouped (a set of >=2) suppresses the single-select scale bump
-  float scale = (1.0 + aSelected * 0.14 * (1.0 - uGrouped) + aEmphasis * 0.55) * settle * fbScale;
+  float scale = (1.0 + aSelected * ${SELECTED_SCALE - 1} * (1.0 - uGrouped) + aEmphasis * ${ROOT_BODY_SCALE - 1}) * settle * fbScale;
   // the screen-px floor grows the whole quad, so the halo and crown scale with the body they belong to
   float bodyPx = uNodeSize * EDGE * scale * uZoom;
   float floorPx = mix(uMinBodyPx.x, uMinBodyPx.y, aEmphasis);
@@ -471,15 +471,24 @@ export class NodeBatch {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
   }
 
-  moveInstance(id, x, y) {
+  // Every mover written into the offsets array first, then the one range they span uploaded once: a settle of
+  // thousands of nodes costs one call a frame, not one per node.
+  moveInstances(moves) {
     if (!this.offsets) return;
-    const i = this.idToIndex.get(id);
-    if (i === undefined) return;
-    this.offsets[i * 2] = x;
-    this.offsets[i * 2 + 1] = y;
+    let first = Infinity;
+    let last = -1;
+    for (const move of moves) {
+      const i = this.idToIndex.get(move.id);
+      if (i === undefined) continue;
+      this.offsets[i * 2] = move.x;
+      this.offsets[i * 2 + 1] = move.y;
+      first = Math.min(first, i);
+      last = Math.max(last, i);
+    }
+    if (last < 0) return;
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.offsetBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, i * 2 * 4, this.offsets, i * 2, 2);
+    gl.bufferSubData(gl.ARRAY_BUFFER, first * 2 * 4, this.offsets, first * 2, (last - first + 1) * 2);
   }
 
   setColor(id, name) {

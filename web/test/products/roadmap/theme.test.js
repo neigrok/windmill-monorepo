@@ -46,7 +46,7 @@ test('the same object comes back for the same room, so a scene can skip a no-op 
 test('the working frame: a 52 px body on the desktop, 40 px on the phone, floors of 6 and 9 px, fixed 14/20 captions', () => {
   assert.equal(BODY_WU, NODE_SIZE * 0.84);
   assert.ok(Math.abs(BODY_WU * WORKING_ZOOM - 52) < 1e-9);
-  assert.ok(Math.abs(BODY_WU * PHONE_WORKING_ZOOM - 39.984) < 1e-9);
+  assert.ok(Math.abs(BODY_WU * PHONE_WORKING_ZOOM - 40) < 1e-9);
   assert.deepEqual([MIN_BODY_PX, MIN_ROOT_BODY_PX], [6, 9]);
   assert.deepEqual(CAPTION, { fontPx: 14, linePx: 20, maxWidthPx: 168, padPx: 4, gapPx: 8, maxLines: 2, charPx: 6.65 });
 });
