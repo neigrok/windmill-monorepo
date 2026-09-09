@@ -26,6 +26,10 @@ export class TreeRepository {
 }
 
 export class LayoutEngine {
+  // How siblings can be dragged into a new order on this engine's geometry: 'ring' (angular, around the origin),
+  // 'parent-arc' (angular, around the parent) or 'none'. The scene arms the reorder gesture only for 'ring'.
+  static reorder = 'none';
+
   // Returns Map<id, Vec2>, synchronously.
   layout(tree) {
     throw new Error('LayoutEngine.layout not implemented');

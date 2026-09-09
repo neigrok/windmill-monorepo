@@ -39,7 +39,8 @@ import { SkillTree } from './model/SkillTree.js';
 import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
+import { layoutNameFrom, loadLayoutEngine } from './layout/index.js';
+import { frontierTarget, viewportInsets } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -66,12 +67,11 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
-const layoutEngine = new RadialLayoutEngine();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
@@ -113,6 +113,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const readOnlyRef = useRef(readOnly);
   const editorRef = useRef(null);
   const treeRef = useRef(null);
+  const layoutRef = useRef(null); // { name, engine } once the load pipeline has chosen the engine
   const layoutCacheRef = useRef({ signature: '', raw: new Map() });
   const completedRef = useRef(new Set());
   const inProgressRef = useRef(new Set());
@@ -332,7 +333,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [treeMine, setTreeMine] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [panning, setPanning] = useState(false);
-  const [recenterAvailable, setRecenterAvailable] = useState(false);
   const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // { from, to } | null
   const [multiMode, setMultiMode] = useState(false);
@@ -344,13 +344,16 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [demoCompletions, setDemoCompletions] = useState(0);
   const [ctaEcho, setCtaEcho] = useState(false);
 
+  // Everything a layout reads: the engine, the DAG and order (the trunk), color and createdAt (trunk election and
+  // sibling ties) and the label (a footprint-honest engine reserves the caption's box).
   const layoutPositions = useCallback((nextTree) => {
-    const signature = nextTree.allNodes
-      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
-      .sort()
-      .join('|');
+    const { name, engine } = layoutRef.current;
+    const rows = nextTree.allNodes.map((node) => JSON.stringify([
+      node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null, node.label,
+    ]));
+    const signature = `${name}|${rows.sort().join('|')}`;
     if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
+      layoutCacheRef.current = { signature, raw: engine.layout(nextTree) };
     }
     return new Map(layoutCacheRef.current.raw);
   }, []);
@@ -442,10 +445,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [canTend, breakpoint, tendOpen]);
 
-  const handlePanStateChange = useCallback((isPanning) => {
-    setPanning(isPanning);
-    if (isPanning) setRecenterAvailable(true);
-  }, []);
+  const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
   const {
     emit, seedActivity, ticker, newEventIds, pinned, unreadCount, activityPing,
@@ -777,6 +777,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,
+      reorderHint: layoutRef.current?.engine.constructor.reorder ?? 'none',
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         setSheetHeld(false);
@@ -808,6 +809,24 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
 
   useEffect(() => {
+    scene?.setWorkingZoom(breakpoint === 'phone' ? PHONE_WORKING_ZOOM : WORKING_ZOOM);
+  }, [scene, breakpoint]);
+
+  // Focus: the working zoom on the selected step, else on the frontier. All steps: the whole tree.
+  const handleFocus = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene || !tree) return;
+    scene.focusWorking(selectedIdRef.current ?? frontierTarget(tree, states, { completedAt }));
+  }, [tree, states, completedAt]);
+
+  const handleShowAll = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.fitToView();
+    setBounds(scene.getBounds());
+  }, []);
+
+  useEffect(() => {
     const onKey = (event) => {
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
@@ -834,10 +853,21 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (feedSummonedRef.current) closeActivity();
         return;
       }
-      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-      if (event.key === 'a' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing) {
+      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
+      const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
+      if (event.key === 'a' && plainKey) {
         event.preventDefault();
         toggleActivity();
+        return;
+      }
+      if (event.key.toLowerCase() === 'f' && plainKey) {
+        event.preventDefault();
+        handleFocus();
+        return;
+      }
+      if (event.key === '0' && plainKey) {
+        event.preventDefault();
+        handleShowAll();
         return;
       }
       if (event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -863,7 +893,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll]);
 
   useEffect(() => {
     const onPaste = (event) => {
@@ -900,7 +930,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (!seedRef.current) return;
-        placeStore.save({ treeId, camera: scene.getViewpoint(), selectedId: selectedIdRef.current });
+        placeStore.save({ treeId, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: selectedIdRef.current });
       }, 400);
     });
     return () => { clearTimeout(timer); unsubscribe(); };
@@ -908,7 +938,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => {
     if (viewReadOnly || loading || !seedRef.current) return;
-    placeStore.save({ treeId, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
+    placeStore.save({ treeId, layout: layoutRef.current.name, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
   }, [selectedId, loading, treeId, viewReadOnly]);
 
   useEffect(() => {
@@ -928,6 +958,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     repoRef.current = null;
 
     async function loadTree() {
+      const layoutName = layoutNameFrom(window.location);
+      layoutRef.current = { name: layoutName, engine: await loadLayoutEngine(layoutName) };
+      sceneRef.current?.setReorderHint(layoutRef.current.engine.constructor.reorder);
       const repo = new HttpTreeRepository({ treeId });
       // Confirm who holds this device before anything is read from it or written to it.
       await resolveDeviceOwner();
@@ -956,17 +989,25 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (sinceIds.length) {
         scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
       }
-      scene.setModel(model);
-      if (demo) scene.suppressArrivalToast();
-      const place = viewReadOnly ? null : placeStore.load();
+      // The first view: a saved place is restored (clamped to the zoom range); the owner with none opens on the
+      // frontier at the working zoom, no glide; a visitor keeps the whole-tree fit and the arrival ceremony.
+      const place = viewReadOnly ? null : placeStore.load(layoutName);
       const returning = place?.treeId === seed.id ? place : null;
       const savedCamera = returning?.camera
         && [returning.camera.x, returning.camera.y, returning.camera.zoom].every(Number.isFinite)
         ? returning.camera : null;
-      if (savedCamera) scene.restoreViewpoint(savedCamera);
-      else scene.fitToView();
       const restoredSelection = returning?.selectedId && treeData.nodes.some((n) => n.id === returning.selectedId)
         ? returning.selectedId : null;
+      const owner = seed.mine === true && !shared && !demo;
+      const opensOnFrontier = !savedCamera && owner;
+      if (opensOnFrontier) scene.suppressArrival();
+      if (demo) scene.suppressArrivalToast();
+      scene.setModel(model);
+      if (savedCamera) scene.restoreViewpoint(savedCamera);
+      if (opensOnFrontier) {
+        scene.setViewportInsets(viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
+        scene.focusWorking(frontierTarget(nextTree, states, { selectedId: restoredSelection, completedAt: overlay.completedAt }), { instant: true });
+      }
 
       editorRef.current = new TreeEditor(treeData);
       seedRef.current = seed;
@@ -987,7 +1028,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       pushArcs();
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
-      if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
+      if (!viewReadOnly) placeStore.save({ treeId: seed.id, layout: layoutName, camera: scene.getViewpoint(), selectedId: restoredSelection });
       if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
@@ -1255,9 +1296,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (!scene) return undefined;
     if (!mobileEditable || breakpoint === 'desktop') { scene.setEditTap(null); return undefined; }
-    scene.setEditTap((x, y) => {
+    scene.setEditTap((x, y, nodeId) => {
       setSheetHeld(false);
-      const nodeId = scene.pick(x, y);
       if (multiMode) {
         if (nodeId === null) { setSelectedIds(new Set()); reconcileProjections(new Set(), new Set()); return; }
         const next = new Set(selectedIdsRef.current);
@@ -1454,18 +1494,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     sceneRef.current?.zoomBy(1 / 1.2);
   }
 
-  function handleFitToView() {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    scene.fitToView();
-    setBounds(scene.getBounds());
-  }
-
-  function handleRecenter() {
-    handleFitToView();
-    setRecenterAvailable(false);
-  }
-
   function handlePanTo(x, y) {
     sceneRef.current?.panTo(x, y);
   }
@@ -1526,6 +1554,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
+
+  const insets = useMemo(
+    () => viewportInsets({ breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216, laneInset }),
+    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset],
+  );
+  useEffect(() => { scene?.setViewportInsets(insets); }, [scene, insets]);
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
@@ -1600,8 +1634,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
           onSignInToKeep={status === 'ghost' && treeMine && !demo ? openSignInDoor : undefined}
-          onRecenter={handleRecenter}
-          showRecenter={recenterAvailable}
+          onFocus={handleFocus}
+          onShowAll={handleShowAll}
           tablet={breakpoint === 'tablet'}
           panelOpen={!!selectedNode}
         />
@@ -1621,7 +1655,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           }
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
-          onFitToView={handleFitToView}
+          onFocus={handleFocus}
+          onShowAll={handleShowAll}
           canReset={hasLocalEdits}
           onResetEdits={handleResetEdits}
           onShare={() => setShareOpen(true)}

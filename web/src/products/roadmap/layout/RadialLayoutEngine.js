@@ -14,6 +14,8 @@ const EVENNESS = 0.15;
 const RING_GROWTH = 0.05;
 
 export class RadialLayoutEngine extends LayoutEngine {
+  static reorder = 'ring';
+
   layout(tree) {
     const trunk = tree.trunk;
     // a synthetic center (multi-root) pushes the real roots out to the first ring
@@ -96,3 +98,5 @@ function tightestGap(angles) {
   for (let i = 1; i < sorted.length; i++) tightest = Math.min(tightest, sorted[i] - sorted[i - 1]);
   return tightest;
 }
+
+export default RadialLayoutEngine;

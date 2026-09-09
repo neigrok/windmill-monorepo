@@ -2,9 +2,11 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   const activityHint = keyHint('Activity feed');
   const shortcutsHint = keyHint('Keyboard shortcuts');
+  const focusHint = keyHint('Focus on a step');
+  const showAllHint = keyHint('All steps');
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -55,8 +57,11 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
           <Tooltip label="Zoom in" side="bottom">
             <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
           </Tooltip>
-          <Tooltip label="Fit to view" side="bottom">
-            <IconButton icon={<Icon name="maximize" />} label="Fit to view" size="sm" onClick={onFitToView} />
+          <Tooltip label={focusHint ? `Read the step you are on (${focusHint})` : 'Read the step you are on'} side="bottom">
+            <button type="button" className="st-view-action" onClick={onFocus}>Focus</button>
+          </Tooltip>
+          <Tooltip label={showAllHint ? `Show the whole roadmap (${showAllHint})` : 'Show the whole roadmap'} side="bottom">
+            <button type="button" className="st-view-action" onClick={onShowAll}>All steps</button>
           </Tooltip>
         </div>
       </div>

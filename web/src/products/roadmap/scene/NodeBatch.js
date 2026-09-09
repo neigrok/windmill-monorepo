@@ -1,6 +1,6 @@
 // One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 ember, 3 activated.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE } from '../theme.js';
+import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE, BODY_FRACTION, MIN_BODY_PX, MIN_ROOT_BODY_PX } from '../theme.js';
 import { isGrouped } from '../selection/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
@@ -30,6 +30,7 @@ uniform vec2 uCamera;
 uniform float uZoom;
 uniform float uNodeSize;
 uniform float uPadding;
+uniform vec2 uMinBodyPx;  // (ordinary, crowned root): a body never draws narrower than this on screen
 uniform float uTime;
 uniform float uMotion;
 uniform float uGrouped;   // 0 = single selection (loud terracotta), 1 = a set of >=2 (quiet bark)
@@ -48,6 +49,7 @@ out vec4 vFeedback;
 out vec3 vArc;
 out float vPreview;
 const float PI = 3.14159265;
+const float EDGE = ${BODY_FRACTION}; // the body's share of the quad, as the fragment stage draws it
 const float BLOSSOM = 0.62;   // scale-settle window (s)
 const float HOVER_DUR = 0.28; // hover feedback ease (ease-soft)
 const float PRESS_DUR = 0.12; // press feedback ease (snappier)
@@ -87,7 +89,12 @@ void main() {
   float fbScale = (1.0 + 0.06 * hoverE) * (1.0 - 0.03 * pressE);
   if (uMotion < 0.5) fbScale = 1.0;
   // uGrouped (a set of >=2) suppresses the single-select scale bump
-  float size = uNodeSize * (1.0 + aSelected * 0.14 * (1.0 - uGrouped) + aEmphasis * 0.55) * settle * fbScale * uPadding;
+  float scale = (1.0 + aSelected * 0.14 * (1.0 - uGrouped) + aEmphasis * 0.55) * settle * fbScale;
+  // the screen-px floor grows the whole quad, so the halo and crown scale with the body they belong to
+  float bodyPx = uNodeSize * EDGE * scale * uZoom;
+  float floorPx = mix(uMinBodyPx.x, uMinBodyPx.y, aEmphasis);
+  float grown = max(bodyPx, floorPx) / max(bodyPx, 0.000001);
+  float size = uNodeSize * scale * grown * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
@@ -127,7 +134,7 @@ uniform float uIconRows;
 uniform float uIconOpacity;
 out vec4 fragColor;
 const float TAU = 6.28318530718;
-const float EDGE = 0.84;
+const float EDGE = ${BODY_FRACTION};
 const float OUTER_R = 1.16;      // outer-ring radius (activated), in centered space
 const float OUTER_W = 0.07;
 const float BLOSSOM = 0.62;      // halo-overshoot window (s)
@@ -350,7 +357,7 @@ export class NodeBatch {
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, [
-      'uResolution', 'uCamera', 'uZoom', 'uNodeSize', 'uPadding', 'uTime', 'uMotion',
+      'uResolution', 'uCamera', 'uZoom', 'uNodeSize', 'uPadding', 'uMinBodyPx', 'uTime', 'uMotion',
       'uGrouped', 'uBark',
       'uGlow', 'uBase', 'uRing', 'uSoft', 'uCanvas',
       'uIconAtlas', 'uIconCols', 'uIconRows', 'uIconOpacity',
@@ -654,6 +661,7 @@ export class NodeBatch {
     gl.uniform1f(this.u.uZoom, camera.zoom);
     gl.uniform1f(this.u.uNodeSize, NODE_SIZE);
     gl.uniform1f(this.u.uPadding, QUAD_PADDING);
+    gl.uniform2f(this.u.uMinBodyPx, MIN_BODY_PX, MIN_ROOT_BODY_PX);
     gl.uniform1f(this.u.uTime, timeSeconds);
     gl.uniform1f(this.u.uMotion, motion);
     gl.uniform1f(this.u.uGrouped, this.grouped);

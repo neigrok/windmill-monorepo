@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BACKGROUND, BARK, BARK_CREAM, CHIP, CONNECTOR, NODE_COLORS, NODE_COLOR_NAMES, sceneTheme } from '../../../src/products/roadmap/theme.js';
+import { BACKGROUND, BARK, BARK_CREAM, CHIP, CONNECTOR, NODE_COLORS, NODE_COLOR_NAMES, NODE_SIZE, BODY_WU, WORKING_ZOOM, PHONE_WORKING_ZOOM, MIN_BODY_PX, MIN_ROOT_BODY_PX, CAPTION, sceneTheme } from '../../../src/products/roadmap/theme.js';
 
 test('light scene theme is the module constants, byte for byte', () => {
   const light = sceneTheme(false);
@@ -41,4 +41,12 @@ test('the same object comes back for the same room, so a scene can skip a no-op 
   assert.equal(sceneTheme(true), sceneTheme(true));
   assert.equal(sceneTheme(false), sceneTheme(false));
   assert.notEqual(sceneTheme(true), sceneTheme(false));
+});
+
+test('the working frame: a 52 px body on the desktop, 40 px on the phone, floors of 6 and 9 px, fixed 14/20 captions', () => {
+  assert.equal(BODY_WU, NODE_SIZE * 0.84);
+  assert.ok(Math.abs(BODY_WU * WORKING_ZOOM - 52) < 1e-9);
+  assert.ok(Math.abs(BODY_WU * PHONE_WORKING_ZOOM - 39.984) < 1e-9);
+  assert.deepEqual([MIN_BODY_PX, MIN_ROOT_BODY_PX], [6, 9]);
+  assert.deepEqual(CAPTION, { fontPx: 14, linePx: 20, maxWidthPx: 168, padPx: 4, gapPx: 8, maxLines: 2, charPx: 6.65 });
 });

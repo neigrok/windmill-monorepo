@@ -17,11 +17,18 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 - Glyph colour math is duplicated: the GLSL branch in `NodeBatch` and `glyphCssColor()` in
   `NodeOverlay.js`. Keep them in step or the baked and live glyphs disagree at the LOD seam.
 - `OUTER_R` / `QUAD_PADDING` must stay wide enough to contain the glow halo or it clips at the quad edge.
-- `SpatialGrid.nearest` scans the 3×3 cell block, so keep `cellSize ≥ pickRadius` (`NODE_SIZE*2` vs
-  `NODE_SIZE*0.65`).
-- The overlay pool is assigned by distance-rank recomputed each frame (`within` + sort → slice 64),
-  shared by labels and icons. A node crossing a rank boundary makes two pooled elements swap nodes
-  mid-pan.
+- `SpatialGrid.nearest` scans as many cells as the radius reaches, so the screen-px hit floors
+  (24 px pointer / 44 px touch, divided by zoom) stay correct at any zoom; the cost is one tap or one
+  throttled hover, never a frame.
+- The icon pool is assigned by distance-rank recomputed each frame (`within` + sort → slice 64). An
+  icon crossing a rank boundary makes two pooled elements swap nodes mid-pan. Captions are not pooled
+  that way: an element stays with its node id while the caption is on screen.
+- A caption's visibility is the `st-label--shown` class (opacity + visibility), never `display`; a
+  probe that counts `display !== 'none'` counts every pooled element that ever carried text. Count
+  captions by computed visibility.
+- Chrome insets reach the camera and the captions as numbers from view state
+  (`ui/viewport.js viewportInsets`), never by observing the DOM; a new overlay that covers the canvas
+  adds its px there.
 - The canvas clears opaque to the cream background, so the CSS radial-gradient behind it is hidden.
 - Reduced motion rides one `uMotion` uniform: the pulse freezes and growth snaps.
 
@@ -59,8 +66,18 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 ## Open
 
 - Re-validate 5k-node perf (draw-call count is inherently 2; measure FPS).
-- Overlay slot assignment could be stable per nodeId (reslot only on enter/leave), removing the
-  per-frame sort and any residual shimmer, and letting labels and icons share one query.
+- Icon slot assignment could be stable per nodeId the way caption elements already are (reslot only
+  on enter/leave), removing the per-frame sort and any residual shimmer.
+- Below a 4 px projected body no anchor is named, so at the dogfood tree's whole-tree fit (body 2 px,
+  drawn at the 6 px floor) only the selected and hovered dots carry a name. Keying the tier on the
+  floored body instead would name crowned roots and branch heads at All steps — a contract call.
+- On a phone the anonymous owner's "Saved on this device" chip (`SkillTreeView.jsx`, top
+  `--space-6 + 52px`, right `--space-6`) and `MobileChrome`'s Focus · All steps group (top
+  `SAFE_TOP + 48px`, right 12px) share the top-right band and can overlap; the rig signs in, so no
+  capture shows it.
+- `quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` construct `RadialLayoutEngine` directly; when
+  the default engine changes they must go through `layout/index.js` or thumbnails and ghosts drift
+  from the canvas.
 - A remote structural delete of a selected node or edge prunes the scene's copy but not the React
   set, so the multi-select bar can over-count until the next selection change.
 - Undo/redo does not reconcile the append-only activity log: a create-then-undo leaves a row whose

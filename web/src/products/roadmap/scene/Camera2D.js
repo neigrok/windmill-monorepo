@@ -1,14 +1,17 @@
 // Pure 2D orthographic camera; world space is Y-down. worldToScreen must stay the exact inverse of screenToWorld or picking drifts.
-const MIN_ZOOM = 0.006;
+import { WORKING_ZOOM } from '../theme.js';
+
 const MAX_ZOOM = 6;
-// The touch pinch range; the out-limit must stay below a whole tree's fit zoom (~0.1 on a phone).
-const PINCH_MIN_ZOOM = 0.05;
 const PINCH_MAX_ZOOM = 2.5;
+// The zoom floor sits this far below the whole tree's fit: a wheel or pinch can back off from All steps, never lose the tree.
+const FLOOR_BELOW_FIT = 0.5;
+const MIN_ZOOM_WITHOUT_MODEL = 0.006;
+const FIT_PADDING = 0.9;
 const PAN_SLACK = 80; // px
 const WHEEL_ZOOM_SPEED = 0.0016;
 const INERTIA_FRICTION = 3.2;
 const INERTIA_STOP_SPEED = 2;
-const FOCUS_MIN_ZOOM = 0.6;
+const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 
 // Distance-based glide tiers, seconds.
 const GLIDE_SHORT = 0.48;
@@ -86,7 +89,7 @@ function insideSafeFrame(viewport, x, y) {
 }
 
 export class Camera2D {
-  constructor() {
+  constructor({ workingZoom = WORKING_ZOOM } = {}) {
     this.x = 0;
     this.y = 0;
     this.zoom = 1;
@@ -96,6 +99,9 @@ export class Camera2D {
     this.velocityY = 0;
     this.glide = null;
     this.panBounds = null; // null = free pan
+    this.workingZoom = workingZoom; // every focus floors here and every fit caps here
+    this.fitBounds = null; // the model's extent; its fit zoom sets the zoom floor
+    this.insets = NO_INSETS; // chrome-covered px per side; focus and fit centre inside what is left
     this.dirty = true;
   }
 
@@ -103,6 +109,56 @@ export class Camera2D {
     this.viewportWidth = Math.max(widthPx, 1);
     this.viewportHeight = Math.max(heightPx, 1);
     this.dirty = true;
+  }
+
+  setWorkingZoom(zoom) {
+    this.workingZoom = zoom;
+  }
+
+  setInsets(insets) {
+    this.insets = { ...NO_INSETS, ...insets };
+  }
+
+  setFitBounds(bounds) {
+    this.fitBounds = bounds;
+  }
+
+  // The zoom that shows all of `bounds` inside the visible area, uncapped.
+  fitZoomFor(bounds, padding = FIT_PADDING) {
+    const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1);
+    const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1);
+    const visibleWidth = Math.max(1, this.viewportWidth - this.insets.left - this.insets.right);
+    const visibleHeight = Math.max(1, this.viewportHeight - this.insets.top - this.insets.bottom);
+    return Math.min(visibleWidth / boundsWidth, visibleHeight / boundsHeight) * padding;
+  }
+
+  minZoom() {
+    if (!this.fitBounds) return MIN_ZOOM_WITHOUT_MODEL;
+    return this.fitZoomFor(this.fitBounds) * FLOOR_BELOW_FIT;
+  }
+
+  clampZoom(zoom, maxZoom = MAX_ZOOM) {
+    return clamp(zoom, this.minZoom(), maxZoom);
+  }
+
+  // Where the camera must sit for a world point to land at the centre of the visible area at `zoom`.
+  centreFor(x, y, zoom) {
+    return {
+      x: x + (this.insets.right - this.insets.left) / (2 * zoom),
+      y: y + (this.insets.bottom - this.insets.top) / (2 * zoom),
+    };
+  }
+
+  // The world rectangle the chrome leaves visible at the current camera.
+  visibleViewport() {
+    const halfW = this.viewportWidth / 2;
+    const halfH = this.viewportHeight / 2;
+    return {
+      minX: this.x + (this.insets.left - halfW) / this.zoom,
+      maxX: this.x + (halfW - this.insets.right) / this.zoom,
+      minY: this.y + (this.insets.top - halfH) / this.zoom,
+      maxY: this.y + (halfH - this.insets.bottom) / this.zoom,
+    };
   }
 
   screenToWorld(pxX, pxY) {
@@ -147,26 +203,28 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  glideTo(x, y, zoom = null) {
-    const targetZoom = zoom == null ? Math.max(this.zoom, FOCUS_MIN_ZOOM) : clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+  // Ease the visible area onto a world point; `force` moves even when the point already sits well inside it.
+  glideTo(x, y, zoom = null, { force = false } = {}) {
+    const targetZoom = zoom == null ? Math.max(this.zoom, this.workingZoom) : this.clampZoom(zoom);
     const zoomChanged = Math.abs(targetZoom - this.zoom) > this.zoom * ZOOM_MATCH_EPSILON;
-    const viewport = this.getViewport();
-    if (!zoomChanged && insideSafeFrame(viewport, x, y)) return;
+    const viewport = this.visibleViewport();
+    if (!force && !zoomChanged && insideSafeFrame(viewport, x, y)) return;
 
     this.velocityX = 0;
     this.velocityY = 0;
-    const distance = Math.hypot(x - this.x, y - this.y);
+    const target = this.centreFor(x, y, targetZoom);
+    const distance = Math.hypot(target.x - this.x, target.y - this.y);
     const viewportSpan = Math.min(viewport.maxX - viewport.minX, viewport.maxY - viewport.minY);
     const duration = glideDuration(distance, viewportSpan);
     // from* is the current position, so an in-flight glide bends toward the new target.
-    this.glide = { fromX: this.x, fromY: this.y, fromZoom: this.zoom, toX: x, toY: y, toZoom: targetZoom, t: 0, duration };
+    this.glide = { fromX: this.x, fromY: this.y, fromZoom: this.zoom, toX: target.x, toY: target.y, toZoom: targetZoom, t: 0, duration };
     this.dirty = true;
   }
 
   zoomAroundPoint(pxX, pxY, factor) {
     this.glide = null;
     const before = this.screenToWorld(pxX, pxY);
-    this.zoom = clamp(this.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    this.zoom = this.clampZoom(this.zoom * factor);
     const after = this.screenToWorld(pxX, pxY);
     this.x += before.x - after.x;
     this.y += before.y - after.y;
@@ -180,7 +238,7 @@ export class Camera2D {
     const world = this.screenToWorld(pxX, pxY);
     this.glide = {
       fromZoom: this.zoom,
-      toZoom: clamp(targetZoom, MIN_ZOOM, MAX_ZOOM),
+      toZoom: this.clampZoom(targetZoom),
       anchor: { px: pxX, py: pxY, wx: world.x, wy: world.y },
       t: 0,
       duration,
@@ -192,11 +250,11 @@ export class Camera2D {
     this.zoomAroundPoint(pxX, pxY, Math.exp(-wheelDeltaY * WHEEL_ZOOM_SPEED));
   }
 
-  // Anchored at a screen point and clamped to the touch pinch range; finger-driven, so it never eases.
+  // Anchored at a screen point and capped at the pinch ceiling; finger-driven, so it never eases.
   zoomAtScale(pxX, pxY, factor) {
     this.glide = null;
     const before = this.screenToWorld(pxX, pxY);
-    this.zoom = clamp(this.zoom * factor, PINCH_MIN_ZOOM, PINCH_MAX_ZOOM);
+    this.zoom = this.clampZoom(this.zoom * factor, PINCH_MAX_ZOOM);
     const after = this.screenToWorld(pxX, pxY);
     this.x += before.x - after.x;
     this.y += before.y - after.y;
@@ -213,14 +271,11 @@ export class Camera2D {
     this.zoomAroundPoint(this.viewportWidth / 2, this.viewportHeight / 2, factor);
   }
 
+  // Land instantly on a world point at no less than the working zoom, centred in the visible area.
   focus(x, y) {
-    this.glide = null;
-    this.velocityX = 0;
-    this.velocityY = 0;
-    this.x = x;
-    this.y = y;
-    if (this.zoom < FOCUS_MIN_ZOOM) this.zoom = FOCUS_MIN_ZOOM;
-    this.dirty = true;
+    const zoom = Math.max(this.zoom, this.workingZoom);
+    const centre = this.centreFor(x, y, zoom);
+    this.restore(centre.x, centre.y, zoom);
   }
 
   restore(x, y, zoom) {
@@ -229,20 +284,19 @@ export class Camera2D {
     this.velocityY = 0;
     this.x = x;
     this.y = y;
-    this.zoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    this.zoom = this.clampZoom(zoom);
     this.dirty = true;
   }
 
-  fitToView(bounds, widthPx, heightPx, padding = 0.9, maxZoom = MAX_ZOOM) {
-    const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1);
-    const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1);
+  // Show all of `bounds` inside the visible area; the cap keeps a tiny tree from fitting-to-fill past the working zoom.
+  fitToView(bounds, padding = FIT_PADDING, maxZoom = this.workingZoom) {
     this.glide = null;
     this.velocityX = 0;
     this.velocityY = 0;
-    // maxZoom keeps a tiny tree (bounds ~ a point) from fitting-to-fill and ballooning its nodes.
-    this.zoom = clamp(Math.min(widthPx / boundsWidth, heightPx / boundsHeight) * padding, MIN_ZOOM, maxZoom);
-    this.x = (bounds.minX + bounds.maxX) / 2;
-    this.y = (bounds.minY + bounds.maxY) / 2;
+    this.zoom = this.clampZoom(this.fitZoomFor(bounds, padding), maxZoom);
+    const centre = this.centreFor((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, this.zoom);
+    this.x = centre.x;
+    this.y = centre.y;
     this.dirty = true;
   }
 

@@ -98,3 +98,21 @@ export function isNightFor(element) {
 }
 
 export const NODE_SIZE = 56; // world units; matches SkillNode default diameter
+
+// The body disc fills this share of NODE_SIZE (the shader's EDGE); a crowned root's body is ROOT_BODY_SCALE times wider.
+export const BODY_FRACTION = 0.84;
+export const ROOT_BODY_SCALE = 1.55;
+export const BODY_WU = NODE_SIZE * BODY_FRACTION;
+
+// The zoom at which an ordinary body is 52 CSS px across — the desktop working view every focus floors at and every fit caps at.
+export const WORKING_ZOOM = 52 / BODY_WU;
+// The phone's working view: the same body at 40 px.
+export const PHONE_WORKING_ZOOM = 0.85;
+// A body never draws narrower than this many screen px at any zoom; the crowned root keeps a taller floor.
+export const MIN_BODY_PX = 6;
+export const MIN_ROOT_BODY_PX = 9;
+
+// Captions are fixed-size DOM text under the disc, never scaled by zoom: 14 px Nunito 700 on a 20 px line, at most two
+// lines inside 168 px (160 px of text plus 4 px each side), starting 8 px below the rim. The layout reserves the same box
+// through model/footprint.js, so a caption and its seat agree on every device.
+export const CAPTION = { fontPx: 14, linePx: 20, maxWidthPx: 168, padPx: 4, gapPx: 8, maxLines: 2, charPx: 6.65 };

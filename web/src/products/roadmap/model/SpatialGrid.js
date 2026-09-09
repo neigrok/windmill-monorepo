@@ -34,14 +34,16 @@ export class SpatialGrid {
     this.cellByNode.set(id, newKey);
   }
 
+  // Scans every cell the radius can reach, so a radius wider than a cell (a screen-px hit floor at overview zoom) still finds its node.
   nearest(x, y, maxRadius) {
     const originX = Math.floor(x / this.cellSize);
     const originY = Math.floor(y / this.cellSize);
+    const reach = Math.ceil(maxRadius / this.cellSize);
     let bestId = null;
     let bestDistSq = maxRadius * maxRadius;
 
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      for (let dy = -reach; dy <= reach; dy++) {
         const ids = this.cells.get(this.cellKey(originX + dx, originY + dy));
         if (!ids) continue;
         for (const id of ids) {

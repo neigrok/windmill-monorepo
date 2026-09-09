@@ -178,6 +178,29 @@
   box-shadow: var(--shadow-sm);
   backdrop-filter: saturate(1.3) blur(8px);
 }
+/* Focus · All steps: the two camera verbs, as text so the words carry the meaning on every surface. */
+.st-view-action {
+  padding: 0 10px;
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-primary);
+  font: 700 13px var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-view-action:hover {
+  background: var(--surface-hover);
+}
+.st-view-action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+.st-mobile-chrome .st-view-action {
+  min-height: 40px;
+  padding: 0 14px;
+}
 
 /* ---- Minimap: bottom-left corner ---- */
 .st-minimap {
@@ -368,16 +391,39 @@
   background: var(--color-danger-bg);
 }
 
-/* ---- Node labels: pooled DOM over the GPU canvas, LOD-gated ---- */
+/* ---- Node captions: pooled DOM over the GPU canvas, placed by scene/captionLayout.js ---- */
 .st-labels {
   z-index: 10;
+  /* LabelOverlay.setTheme pins this to the colour the canvas actually clears to */
+  --st-label-halo: var(--surface-canvas);
 }
 .st-label {
-  /* font-size is set per-frame in LabelOverlay.place() — it scales with zoom */
+  /* fixed 14/20 px, never scaled by zoom; width and position come from the placer */
+  box-sizing: border-box;
+  padding: 0 4px;
   font-family: var(--font-body);
   font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  white-space: pre;
+  overflow: hidden;
   color: var(--text-primary);
-  text-shadow: 0 1px 2px var(--surface-canvas), 0 0 5px var(--surface-canvas), 0 0 5px var(--surface-canvas);
+  /* a 2 px halo in the canvas colour, so a ribbon under the caption never cuts the glyphs */
+  text-shadow:
+    -2px 0 0 var(--st-label-halo), 2px 0 0 var(--st-label-halo),
+    0 -2px 0 var(--st-label-halo), 0 2px 0 var(--st-label-halo),
+    -1.5px -1.5px 0 var(--st-label-halo), 1.5px -1.5px 0 var(--st-label-halo),
+    -1.5px 1.5px 0 var(--st-label-halo), 1.5px 1.5px 0 var(--st-label-halo);
+  opacity: 0;
+  visibility: hidden;
+  /* transform is deliberately not transitioned: the placer re-seats a caption per camera change */
+  transition: opacity 150ms var(--ease-standard), visibility 0s linear 150ms;
+}
+.st-label--shown {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 150ms var(--ease-standard), visibility 0s;
 }
 
 /* ---- Node icons: live SVG glyphs that replace the baked atlas when zoomed in ---- */

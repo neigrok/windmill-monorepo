@@ -1,24 +1,32 @@
-// The last place the editor stood — tree, camera, selection. Storage errors are never fatal.
+// The last place the editor stood — tree, camera, selection. A camera is only meaningful under the layout that placed
+// the nodes, so a place carries the engine's name and the camera format; a mismatch on load hands back the tree and
+// selection with no camera. Storage errors are never fatal.
 
 const KEY = 'windmill:last-place';
+// Bumped by hand whenever the camera's meaning changes — the working-zoom frame, or an engine's geometry.
+const CAMERA_FORMAT = 'working-zoom-1';
 
 export class PlaceStore {
   constructor(storage = window.localStorage) {
     this.storage = storage;
   }
 
-  load() {
+  load(layout) {
     try {
       const text = this.storage.getItem(KEY);
-      return text ? JSON.parse(text) : null;
+      if (!text) return null;
+      const place = JSON.parse(text);
+      if (!place || typeof place !== 'object') return null;
+      if (place.layout !== layout || place.cameraFormat !== CAMERA_FORMAT) return { ...place, camera: null };
+      return place;
     } catch {
       return null;
     }
   }
 
-  save({ treeId, camera = null, selectedId = null }) {
+  save({ treeId, layout, camera = null, selectedId = null }) {
     try {
-      this.storage.setItem(KEY, JSON.stringify({ treeId, camera, selectedId, at: Date.now() }));
+      this.storage.setItem(KEY, JSON.stringify({ treeId, layout, cameraFormat: CAMERA_FORMAT, camera, selectedId, at: Date.now() }));
     } catch {
     }
   }

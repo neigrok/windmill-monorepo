@@ -1,5 +1,5 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
-import { NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
+import { NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -9,7 +9,6 @@ import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
 import { ArrivalChevron } from './ArrivalChevron.js';
-import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
 import { ReorderSlot } from './ReorderSlot.js';
@@ -22,14 +21,14 @@ import { track } from '../../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
-const TOUCH_HIT_RADIUS = 22; // screen px: read-only pick floor
+// Screen-px hit floors in every mode, so a tiny body is still a target; capped at half the gap to the nearest neighbour.
+const POINTER_HIT_PX = 24;
+const TOUCH_HIT_PX = 44;
 const PAN_SETTLE_MS = 200;
 const EDGE_PICK_RADIUS = 12; // screen px
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
-const ICON_ZOOM_FULL = 1.1;
-// Caps the fit zoom so a near-empty tree cannot balloon: the emphasised root reads at ~46px.
-const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
+const ICON_ZOOM_FULL = WORKING_ZOOM; // the baked glyph is whole exactly at the working view
 const SETTLE_MS = 520;
 const SETTLE_MIN_DELTA = 2; // world units
 const SETTLE_STAGGER_MS = 120;
@@ -60,17 +59,17 @@ export class SkillTreeScene {
     this.theme = sceneTheme(isNightFor(canvas));
     this.clearColor = hexRgb(this.theme.BACKGROUND.canvas);
 
-    this.camera = new Camera2D();
+    this.camera = new Camera2D({ workingZoom: options.workingZoom });
     this.nodeBatch = new NodeBatch(gl, this.theme);
     this.connectorBatch = new ConnectorBatch(gl, this.theme);
-    this.labelOverlay = new LabelOverlay(canvas);
+    this.labelOverlay = new LabelOverlay(canvas, this.theme);
     this.iconOverlay = new IconOverlay(canvas, this.theme);
-    this.hoverLabel = new HoverLabel(canvas, this.theme);
     this.affordanceLayer = null;
     this.edgeChrome = null;
     this.marqueeOverlay = null;
     this.reorderSlot = null;
     this.reorder = null; // { id, radius, siblings, homeX, homeY }
+    this.reorderHint = 'none'; // the active layout engine's static hint; only 'ring' arms the angular gesture
     if (!this.readOnly) {
       this.marqueeOverlay = new MarqueeOverlay(canvas);
       this.reorderSlot = new ReorderSlot(canvas);
@@ -132,6 +131,8 @@ export class SkillTreeScene {
     this.arrivalNoun = 'Roadmap';
     this.arrivalSummaryOverride = null;
     this.arrivalToastSuppressed = false;
+    this.arrivalSuppressed = false; // one-shot intent, latched into arrivalSkipped by the next setModel
+    this.arrivalSkipped = false;
     this.returnRecap = null; // { sinceIds, summary } | null
     this.pendingSummary = null;
     this.pendingAction = null; // { label, run } | null
@@ -154,10 +155,11 @@ export class SkillTreeScene {
 
     this.toolContext = {
       camera: this.camera,
-      pick: (x, y) => this.pick(x, y),
+      pick: (x, y, pointerType) => this.pick(x, y, pointerType),
+      zoomIntoCrowd: (x, y, pointerType) => this.zoomIntoCrowd(x, y, pointerType),
       pickEdge: (x, y) => this.pickEdge(x, y),
-      // A handler present consumes the tap by returning true; absent, false lets it through.
-      editTap: (x, y) => this.editTap ? (this.editTap(x, y), true) : false,
+      // A handler present takes the picked step (or null) and consumes the tap by returning true; absent, false lets it through.
+      editTap: (x, y, id) => this.editTap ? (this.editTap(x, y, id), true) : false,
       // Returning true makes the InputController swallow the lift, so no tap follows the hold.
       onLongPress: (id) => (id != null && this.longPress ? (this.longPress(id), true) : false),
       select: (id) => this.select(id),
@@ -181,10 +183,7 @@ export class SkillTreeScene {
       this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.updateMarquee(x0, y0, x1, y1);
       this.toolContext.cancelMarquee = () => { this.marqueeOverlay?.hide(); this.nodeBatch.setMarqueePreview(new Set()); };
       this.toolContext.commitMarquee = (x0, y0, x1, y1, additive) => this.commitMarquee(x0, y0, x1, y1, additive);
-      this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
-      this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
-      this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
-      this.toolContext.cancelReorder = () => this.cancelReorder();
+      this.setReorderHint(options.reorderHint ?? 'none');
     }
     const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
     this.input = new InputController(canvas, this.toolContext, tool);
@@ -200,6 +199,8 @@ export class SkillTreeScene {
     this.director.cancel();
     this.settle = null;
     this.pendingFrame = null;
+    this.arrivalSkipped = this.arrivalSuppressed;
+    this.arrivalSuppressed = false;
     this.arrivalChevron.clear();
     this.nodeStates = new Map();
     this.lastArcs = new Map();
@@ -208,6 +209,7 @@ export class SkillTreeScene {
     this.hoveredId = null;
     this.selectedEdge = null;
     this.selectedEdges = new Set();
+    this.syncCaptionContext();
     this.fitToView();
     // Pre-dim before the first paint: a return-recap darkens only the steps it replays, any other first paint the whole tree.
     if (this.returnRecap) {
@@ -245,8 +247,8 @@ export class SkillTreeScene {
       else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
     } else this.nodeBatch.setSelectedSet(this.selectedIds);
     this.affordanceLayer?.setSelected(this.selectedId);
-    this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     const arrivals = renderModel.nodes.filter((node) => !previous.has(node.id));
     this.beginSettle(previous, arrivals);
@@ -275,10 +277,7 @@ export class SkillTreeScene {
     delete this.toolContext.updateMarquee;
     delete this.toolContext.cancelMarquee;
     delete this.toolContext.commitMarquee;
-    delete this.toolContext.beginReorder;
-    delete this.toolContext.updateReorder;
-    delete this.toolContext.commitReorder;
-    delete this.toolContext.cancelReorder;
+    this.disarmReorder();
     this.cancelReorder();
     this.marqueeOverlay?.dispose();
     this.marqueeOverlay = null;
@@ -376,6 +375,7 @@ export class SkillTreeScene {
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
     this.spatialGrid = new SpatialGrid(renderModel.nodes, SPATIAL_CELL_SIZE);
     this.hoveredEdge = null;
+    this.camera.setFitBounds(renderModel.bounds);
 
     this.syncIconAtlas(renderModel.nodes);
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
@@ -383,7 +383,6 @@ export class SkillTreeScene {
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
-    this.hoverLabel.setModel(renderModel);
     this.affordanceLayer?.setModel(renderModel);
     this.edgeChrome?.setModel(renderModel);
     if (this.readOnly) this.camera.setPanBounds(renderModel.bounds);
@@ -392,6 +391,7 @@ export class SkillTreeScene {
   // The first push paints the resting look silently; later pushes diff against it.
   applyStates(statesMap) {
     this.iconOverlay.setStates(statesMap);
+    this.labelOverlay.setStates(statesMap);
 
     // A stopped scene must never arm the director: the settle poll would spin on a frozen clock and burst stale beats on resume.
     if (!this.running) {
@@ -480,7 +480,7 @@ export class SkillTreeScene {
   // ---- arrival cascade --------------------------------------------------
 
   arrivalLikely() {
-    return !!this.renderModel && this.renderModel.nodes.length >= 2;
+    return !this.arrivalSkipped && !!this.renderModel && this.renderModel.nodes.length >= 2;
   }
 
   shouldAnimateArrival(statesMap) {
@@ -574,6 +574,8 @@ export class SkillTreeScene {
 
   setArrivalSummary(text) { this.arrivalSummaryOverride = text; }
   suppressArrivalToast() { this.arrivalToastSuppressed = true; }
+  // The owner's first view opens on the frontier at the working zoom; the crown-outward arrival would play off screen.
+  suppressArrival() { this.arrivalSuppressed = true; }
 
   // Armed before the model installs: the first applyStates push replays these ids.
   armReturnRecap(sinceIds, summary) { this.returnRecap = { sinceIds: new Set(sinceIds), summary }; }
@@ -600,9 +602,35 @@ export class SkillTreeScene {
   setFaded(ids) { this.nodeBatch.setFaded(ids); }
   clearFaded() { this.nodeBatch.clearFaded(); }
 
+  // All steps: the whole tree inside the visible area, capped at the working zoom.
   fitToView() {
     if (!this.renderModel) return;
-    this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight, 0.9, FIT_MAX_ZOOM);
+    this.camera.fitToView(this.renderModel.bounds);
+  }
+
+  // Focus: the working zoom centred on `id`, else on the current selection. Returns whether there was a step to go to.
+  focusWorking(id = null, { instant = false } = {}) {
+    const node = this.nodesById.get(id ?? this.selectedId);
+    if (!node) return false;
+    this.pendingFrame = null;
+    this.director.yieldToInput();
+    this.finishSettle();
+    const zoom = this.camera.workingZoom;
+    if (instant) {
+      const centre = this.camera.centreFor(node.x, node.y, zoom);
+      this.camera.restore(centre.x, centre.y, zoom);
+      return true;
+    }
+    this.camera.glideTo(node.x, node.y, zoom, { force: true });
+    return true;
+  }
+
+  setWorkingZoom(zoom) { this.camera.setWorkingZoom(zoom); }
+
+  // Chrome-covered px per side; the camera centres inside the rest and the captions keep clear of it.
+  setViewportInsets(insets) {
+    this.camera.setInsets(insets);
+    this.labelOverlay.setInsets(insets);
   }
 
   getViewpoint() { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom }; }
@@ -614,6 +642,7 @@ export class SkillTreeScene {
     this.selectedId = id;
     this.selectedIds = new Set([id]);
     this.nodeBatch.setSelected(id);
+    this.syncCaptionContext();
     this.camera.focus(node.x, node.y);
   }
 
@@ -738,7 +767,6 @@ export class SkillTreeScene {
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
-    this.hoverLabel.dispose();
     this.arrivalChevron.dispose();
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
@@ -755,8 +783,8 @@ export class SkillTreeScene {
     this.clearColor = hexRgb(theme.BACKGROUND.canvas);
     this.nodeBatch.setTheme(theme);
     this.connectorBatch.setTheme(theme);
+    this.labelOverlay.setTheme(theme);
     this.iconOverlay.setTheme(theme);
-    this.hoverLabel.setTheme(theme);
     this.arrivalChevron.setTheme(theme);
   }
 
@@ -775,7 +803,6 @@ export class SkillTreeScene {
     if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
-      this.hoverLabel.update(this.camera);
       this.arrivalChevron.update(this.camera);
       this.affordanceLayer?.update(this.camera);
       this.edgeChrome?.update(this.camera);
@@ -868,6 +895,23 @@ export class SkillTreeScene {
   }
 
   // ---- Angular reorder ----------------------------------------------------
+  // The gesture assumes siblings share a ring around the origin, so only an engine that says 'ring' arms it.
+  setReorderHint(hint) {
+    this.reorderHint = hint;
+    if (this.readOnly || hint !== 'ring') { this.disarmReorder(); return; }
+    this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
+    this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
+    this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
+    this.toolContext.cancelReorder = () => this.cancelReorder();
+  }
+
+  disarmReorder() {
+    delete this.toolContext.beginReorder;
+    delete this.toolContext.updateReorder;
+    delete this.toolContext.commitReorder;
+    delete this.toolContext.cancelReorder;
+  }
+
   // The view supplies the siblings and their order keys via reorderContext; the scene reports the chosen fractional key through onSetNodeOrder on release.
   beginReorder(id, sx, sy) {
     const node = this.nodesById.get(id);
@@ -935,8 +979,13 @@ export class SkillTreeScene {
     if (id === this.selectedId) return;
     this.selectedId = id;
     this.affordanceLayer?.setSelected(id);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     this.refreshHighlight();
+  }
+
+  syncCaptionContext() {
+    this.labelOverlay.setContext({ selectedId: this.selectedId, hoveredId: this.hoveredId });
   }
 
   selectEdge(edge) {
@@ -956,8 +1005,8 @@ export class SkillTreeScene {
   hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
-    this.hoverLabel.setHovered(id);
     this.nodeBatch.setHover(id, this.elapsedSeconds);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     if (this.options.onNodeHover) this.options.onNodeHover(id);
   }
@@ -989,11 +1038,44 @@ export class SkillTreeScene {
     this.connectorBatch.setInSetEdges(this.selectedIds);
   }
 
-  pick(x, y) {
-    if (!this.spatialGrid) return null;
+  pick(x, y, pointerType = 'mouse') {
+    return this.hitTest(x, y, pointerType).id;
+  }
+
+  // A tap among nodes too crowded to tell apart glides the working view in around the tapped point instead of
+  // missing; true when it did. At the working view the disc itself is the target, so there is nothing to zoom into.
+  zoomIntoCrowd(x, y, pointerType = 'mouse') {
+    if (!this.hitTest(x, y, pointerType).crowded) return false;
+    if (this.camera.zoom >= this.camera.workingZoom) return false;
+    this.camera.glideZoomAround(x, y, this.camera.workingZoom);
+    return true;
+  }
+
+  // The disc itself always takes the hit; beyond it the screen-px floor reaches out, but never past halfway to the
+  // nearest other node, so a crowded overview never answers a tap with an ambiguous pick — it reports `crowded` instead.
+  hitTest(x, y, pointerType) {
+    if (!this.spatialGrid) return { id: null, crowded: false };
     const world = this.camera.screenToWorld(x, y);
-    const radius = this.readOnly ? Math.max(PICK_RADIUS, TOUCH_HIT_RADIUS / this.camera.zoom) : PICK_RADIUS;
-    return this.spatialGrid.nearest(world.x, world.y, radius);
+    const floorWu = (pointerType === 'touch' ? TOUCH_HIT_PX : POINTER_HIT_PX) / this.camera.zoom;
+    const id = this.spatialGrid.nearest(world.x, world.y, Math.max(PICK_RADIUS, floorWu));
+    if (id === null) return { id: null, crowded: false };
+    const node = this.nodesById.get(id);
+    const distance = Math.hypot(node.x - world.x, node.y - world.y);
+    if (distance <= PICK_RADIUS) return { id, crowded: false };
+    const reach = Math.min(floorWu, this.nearestNeighbourDistance(node, floorWu) / 2);
+    if (distance <= reach) return { id, crowded: false };
+    return { id: null, crowded: true };
+  }
+
+  // Distance to the closest other node within `radius`, else `Infinity`.
+  nearestNeighbourDistance(node, radius) {
+    let closest = Infinity;
+    for (const otherId of this.spatialGrid.within(node.x - radius, node.y - radius, node.x + radius, node.y + radius)) {
+      if (otherId === node.id) continue;
+      const other = this.nodesById.get(otherId);
+      closest = Math.min(closest, Math.hypot(other.x - node.x, other.y - node.y));
+    }
+    return closest;
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS, or null; only meaningful off-node.

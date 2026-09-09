@@ -2277,3 +2277,30 @@ open gym light round.
 All eight narrow index boards clip a 506px list into roughly 410, so the end marker is drawn and
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
+
+## Roadmap readability lab · 9 September 2026
+
+The lab build on `claude/roadmap-readability-lab` fixes the caption frame (14/20 px, two lines, 168 px),
+a working zoom (52 px bodies on desktop, 40 px on a phone) that every focus floors at and every fit caps
+at, and two camera verbs — Focus and All steps — on the desktop bar and the phone chrome. Three canon
+lines no longer describe what the code does.
+
+**F46 · `roadmap/guidelines/responsive.md` §2 still seats a Recenter chip** → fix toward the canon.
+"36px pill, bottom-right. Exists only after the tree's bounds leave the 80% safe frame for 400ms … The
+only programmatic zoom-out" describes a control the lab build deletes. The phone now carries an
+always-visible Focus · All steps group top-right under the wordmark (`ui/mobile/MobileChrome.jsx`,
+`SAFE_TOP + 48px`, right 12px); the bottom-right seat sat under the action lane and the sheet, and the
+first rig run proved an All steps tap there never arrived. §2's z-order line and §9's "recenter" ease row
+name the same chip.
+
+**F47 · `roadmap/guidelines/keyboard-shortcuts.md` lists `F` as "Fit tree to screen" and `0` as
+"Reset zoom"** → fix toward the canon. `shortcuts/shortcutMap.js` now reads `F` → Focus on a step (the
+working zoom on the selection, else the frontier) and `0` → All steps (the whole tree inside the visible
+area). The dialog and the control-bar hints are built from that map, so the table is the only stale copy.
+
+**F48 · `roadmap/guidelines/responsive.md` §4 caps the hit disc at ½ the nearest-neighbour distance and
+says nothing about what a tap inside the cap does** → a design owner's call. The lab build keeps the
+cap and adds the missing half: a tap among nodes too crowded to tell apart glides the working view in
+around the tapped point instead of missing (mobile §9's "a tap zooms instead of selecting below the cap",
+now on every surface and pointer). If canon wants the tap to select the nearest dot instead, the scene's
+`zoomIntoCrowd` is the one place to change.
