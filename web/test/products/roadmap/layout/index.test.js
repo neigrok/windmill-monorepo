@@ -16,28 +16,25 @@ test('the layout name comes from the query before or after the hash; anything el
   assert.equal(layoutNameFrom({}), 'radial');
 });
 
-test('every named engine loads as a LayoutEngine with a reorder hint; the radial one lays the dogfood tree out', async () => {
+test('every named engine loads as a LayoutEngine with a reorder hint and lays the dogfood tree out the same way twice', async () => {
   const hints = {};
   for (const name of LAYOUTS) {
     const engine = await loadLayoutEngine(name);
     assert.ok(engine instanceof LayoutEngine, `${name} extends LayoutEngine`);
     hints[name] = engine.constructor.reorder;
   }
-  assert.deepEqual(hints, { radial: 'ring', rings: 'none', bubble: 'none', mindmap: 'none' });
+  assert.deepEqual(hints, { radial: 'ring', rings: 'none', bubble: 'parent-arc', mindmap: 'none' });
 
-  const radial = await loadLayoutEngine('radial');
-  assert.ok(radial instanceof RadialLayoutEngine);
+  assert.ok((await loadLayoutEngine('radial')) instanceof RadialLayoutEngine);
   const { tree } = loadDogfoodTree();
-  const positions = radial.layout(tree);
-  assert.equal(positions.size, tree.nodes.length);
-  assert.deepEqual([...positions.entries()], [...radial.layout(tree).entries()]);
+  for (const name of LAYOUTS) {
+    const engine = await loadLayoutEngine(name);
+    const positions = engine.layout(tree);
+    assert.equal(positions.size, tree.nodes.length, `${name} places every node`);
+    assert.deepEqual([...positions.entries()], [...engine.layout(tree).entries()], `${name} is deterministic`);
+  }
 });
 
-test('an engine that is not built yet says so from layout(), not from loading', async () => {
-  const { tree } = loadDogfoodTree();
-  for (const name of ['rings', 'bubble', 'mindmap']) {
-    const engine = await loadLayoutEngine(name);
-    assert.throws(() => engine.layout(tree), { message: `${name} layout is not built yet` });
-  }
+test('a name outside LAYOUTS is refused at the door', async () => {
   await assert.rejects(loadLayoutEngine('orgchart'), { message: 'Unknown layout "orgchart"' });
 });

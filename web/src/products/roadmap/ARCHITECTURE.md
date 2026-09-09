@@ -167,8 +167,20 @@ with a static `reorder` hint — `'ring'` arms the scene's angular reorder gestu
 `RadialLayoutEngine.js` — the built engine (`reorder = 'ring'`). Each node sits on the ring for its trunk
 depth, centred in an angular wedge split among trunk children by subtree leaf count; a ring is pushed
 outward until its closest pair of neighbours has room. **Synchronous** and deterministic (siblings sort by
-their fractional-index key), so a load and a live emission project identical pixels. `RingsLayoutEngine`,
-`BubbleLayoutEngine` and `MindmapLayoutEngine` throw `<name> layout is not built yet` from `layout()`.
+their fractional-index key), so a load and a live emission project identical pixels.
+`RingsLayoutEngine.js` (`reorder = 'none'`; an exported `HubRingsLayoutEngine` variant says `'ring'`) —
+concentric depth rings with Reingold–Tilford contour packing in angle space over each node's
+`footprintOf` reach; a ring's radius is the larger of the previous ring plus a pitch and the ring's
+summed footprint arc over 2π. Multi-root as islands: the largest tree's crown at the origin, every other
+tree laid out about its own crown and packed by enclosing circle, never inside another rim.
+`BubbleLayoutEngine.js` (`reorder = 'parent-arc'`) — a bubble tree: each node's children sit on rays
+around it inside its enclosing circle, every child facing its parent; a post-order tuck slides rigid
+subtrees along their ray until footprints or resting trunk edges touch; islands settle by front-chain
+circle packing with the largest root pinned at the origin.
+`MindmapLayoutEngine.js` (`reorder = 'none'`) — each branch (a trunk child of the hub, or a root) is a
+Buchheim/Walker tidy tree in its own frame with horizontal captions, seated on one of twelve compass
+directions by subtree size; radii shrink from a shared ring by halving slides until oriented per-level
+boxes touch. All three are pure, synchronous and deterministic; `?layout=<name>` picks one.
 `quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` still construct `RadialLayoutEngine` directly.
 
 An engine that reserves a caption's seat reads `model/footprint.js`: `footprintOf(label, { root })` is the

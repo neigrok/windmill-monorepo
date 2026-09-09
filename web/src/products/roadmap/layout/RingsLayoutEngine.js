@@ -20,14 +20,14 @@ const HUB_MIN_WU = 120 / WORKING_ZOOM;
 // at the same marginal link-length price; a tightening pass bisects each inflated ring back toward the ring rule.
 const PROBE = 0.02;
 const MAX_PASSES = 12;
-const TIGHTEN_STEPS = 20;
+const TIGHTEN_STEPS = 10;
 const HUB_BISECTION_STEPS = 30;
 
 // Captions are upright, so how much of a ring a footprint takes depends on where on the circle it lands. Each round packs
 // with the reach the previous round's angles imply, until no node moves by ANGLE_TOLERANCE. A ring whose footprints
 // still touch afterwards is widened by REPAIR_STEP, at most MAX_REPAIRS times.
 const MAX_ROUNDS = 6;
-const ANGLE_TOLERANCE = (0.1 * Math.PI) / 180;
+const ANGLE_TOLERANCE = (0.5 * Math.PI) / 180;
 const REPAIR_STEP = 0.04;
 const MAX_REPAIRS = 6;
 
@@ -90,9 +90,10 @@ function clearanceBetween(insideIds, ids, footprints) {
 // ---- one ring system --------------------------------------------------------------------------------------------
 
 // The concentric rings about one centre: a tree about its crown, or the whole forest about the hub. Level 0 is the crown
-// (empty about a hub), level 1 the top subtrees, and every node keeps its trunk depth as its level.
+// (empty about a hub), level 1 the top subtrees, and every node's level is its trunk depth — one deeper about a hub
+// with no crown, where the roots themselves sit on ring 1.
 class RingSystem {
-  constructor({ trunk, footprints, crownId, topIds, levelOf }) {
+  constructor({ trunk, footprints, crownId, topIds, depthOffset = 0 }) {
     this.trunk = trunk;
     this.footprints = footprints;
     this.crownId = crownId;
@@ -103,7 +104,7 @@ class RingSystem {
     const stack = [...topIds].reverse();
     while (stack.length > 0) {
       const id = stack.pop();
-      const level = levelOf(id);
+      const level = trunk.trunkDepthOf(id) + depthOffset;
       preOrder.push(id);
       this.levelOf.set(id, level);
       (this.levels[level] ??= []).push(id);
@@ -135,22 +136,24 @@ class RingSystem {
     return Math.min(width / Math.abs(Math.sin(angle)), (bottom - top) / Math.abs(Math.cos(angle)));
   }
 
-  // The angle two neighbours on one ring need between their centres, `laterId` following `earlierId` around the ring:
-  // side by side their half widths, one above the other the vertical span in that order, whichever the ring's direction
-  // there makes smaller, plus the gap — as a chord of the ring.
-  separation(earlierId, laterId, radius) {
+  // The centre distance two neighbours on one ring need, `laterId` following `earlierId` around the ring: side by side
+  // their half widths, one above the other the vertical span in that order, whichever the ring's direction there makes
+  // smaller; the half widths alone until an angle is known.
+  neighbourDistance(earlierId, laterId) {
     const earlier = this.footprints.get(earlierId);
     const later = this.footprints.get(laterId);
     const halfWidths = (earlier.width + later.width) / 2;
-    const distance = () => {
-      if (this.angles === null) return halfWidths;
-      const from = this.angles.get(earlierId);
-      const mid = from + wrap(this.angles.get(laterId) - from) / 2;
-      // increasing angle runs clockwise on the y-down canvas: on the right half of the circle the later node is below
-      const span = Math.cos(mid) > 0 ? earlier.bottom - later.top : later.bottom - earlier.top;
-      return Math.min(halfWidths / Math.abs(Math.sin(mid)), span / Math.abs(Math.cos(mid)));
-    };
-    return 2 * Math.asin(Math.min(1, (distance() + GAP_WU) / (2 * radius)));
+    if (this.angles === null) return halfWidths;
+    const from = this.angles.get(earlierId);
+    const mid = from + wrap(this.angles.get(laterId) - from) / 2;
+    // increasing angle runs clockwise on the y-down canvas: on the right half of the circle the later node is below
+    const span = Math.cos(mid) > 0 ? earlier.bottom - later.top : later.bottom - earlier.top;
+    return Math.min(halfWidths / Math.abs(Math.sin(mid)), span / Math.abs(Math.cos(mid)));
+  }
+
+  // That distance plus the gap, as the angle its chord of the ring subtends.
+  separation(earlierId, laterId, radius) {
+    return 2 * Math.asin(Math.min(1, (this.neighbourDistance(earlierId, laterId) + GAP_WU) / (2 * radius)));
   }
 
   // r[d] = max(r[d-1] + pitch, the circumference bound, the floor asked for).
@@ -420,15 +423,15 @@ function hubLayout(tree, footprints) {
   const trunk = tree.trunk;
   const crownId = trunk.centerId();
   const rings = crownId === null
-    ? new RingSystem({ trunk, footprints, crownId: null, topIds: [...tree.roots()].sort(cmpOrder).map((root) => root.id), levelOf: (id) => trunk.trunkDepthOf(id) + 1 })
-    : new RingSystem({ trunk, footprints, crownId, topIds: trunk.trunkChildrenOf(crownId), levelOf: (id) => trunk.trunkDepthOf(id) });
+    ? new RingSystem({ trunk, footprints, crownId: null, topIds: [...tree.roots()].sort(cmpOrder).map((root) => root.id), depthOffset: 1 })
+    : new RingSystem({ trunk, footprints, crownId, topIds: trunk.trunkChildrenOf(crownId) });
   return layoutRings(rings, hubRadii);
 }
 
 function islandsLayout(tree, footprints) {
   const trunk = tree.trunk;
   const islands = tree.roots().map((root) => {
-    const rings = new RingSystem({ trunk, footprints, crownId: root.id, topIds: trunk.trunkChildrenOf(root.id), levelOf: (id) => trunk.trunkDepthOf(id) });
+    const rings = new RingSystem({ trunk, footprints, crownId: root.id, topIds: trunk.trunkChildrenOf(root.id) });
     const positions = layoutRings(rings, inflatedRadii);
     const rim = Math.max(...[...positions].map(([id, { x, y }]) => Math.hypot(x, y) + footprints.get(id).reach));
     return { root, size: rings.size, positions, radius: rim + ISLAND_MARGIN_WU / 2 };
