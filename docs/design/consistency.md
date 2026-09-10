@@ -547,28 +547,6 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
-§5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
-threshold. `RadialLayoutEngine.js` is the only engine in `web/src/products/roadmap/layout/`, it uses
-no fixed ring gap (`RING = NODE_SIZE * 2.8`, each ring pushed out until its tightest pair clears
-`MIN_ARC = NODE_SIZE * 1.7`), and no dagre appears anywhere in `web/src`. The contract's own Known
-gaps section records the mismatch without resolving it. Either the contract becomes radial-only and
-§5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
-a rendering rule.
-
-**Roadmap caption readability** → fix toward the code; the canon owes one caption rule instead of three.
-`roadmap/guidelines/tree-layout-contract.md` states the caption three different ways: §2 "below the
-node, gap `8u`; `--text-sm` (14px) weight 700, centered", §2.1 "font scales with u but clamps 12–16px",
-§8 "keep labels upright and unscaled; hide them below 0.8× zoom with a 150ms fade" (echoed by
-`responsive.md` §5). The build settles all three: a caption is 14px on a 20px line, at most two lines
-inside 168px, 8px below the rim, never scaled by zoom, faded over 150ms (`theme.js CAPTION`,
-`skilltree.css .st-label`). It also replaces the threshold: who is named is a rank — selected, hovered,
-the selected step's family, landmarks, the frontier, the rest — and the drawn body says how far down it
-reaches (`scene/captionLayout.js captionRankLimit`: everyone from 18px, the frontier from 12px,
-landmarks below that), so a crowned root keeps its name at the whole-tree fit where §8 would hide every
-name. Canon owes: §2 and §2.1 reconciled into one caption, and §8's 0.8× line replaced by the rank.
-`roadmap/readability-research.md` §3 is the built contract and §2 the measurements behind it.
-
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
 (`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
@@ -2283,48 +2261,30 @@ All eight narrow index boards clip a 506px list into roughly 410, so the end mar
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
 
-## Roadmap readability lab · 9 September 2026
+## Roadmap bubble graduation · 10 September 2026
 
-The lab build on `claude/roadmap-readability-lab` fixes the caption frame (14/20 px, two lines, 168 px),
-a working zoom (52 px bodies on desktop, 40 px on a phone) that every focus floors at and every fit caps
-at, two camera verbs — Focus and All steps — on the desktop bar and the phone chrome, and three more
-layout engines behind `?layout=`. Five canon lines no longer describe what the code does; the caption
-entry above them carries a sixth. `roadmap/readability-research.md` is the measured record.
+The canvas defaults to bubble with a 168px caption reserve, up to two 14px/20px lines and
+ellipsized overflow. Bubble and radial are bundled; rings and mindmap remain URL alternatives.
+The layout result names its effective engine, including fallback, for camera storage and reorder
+behavior. Bubble siblings reorder within their trunk parent's open fan; root islands stay packed.
 
-**F46 · `roadmap/guidelines/responsive.md` §2 still seats a Recenter chip** → fix toward the canon.
-"36px pill, bottom-right. Exists only after the tree's bounds leave the 80% safe frame for 400ms … The
-only programmatic zoom-out" describes a control the lab build deletes. The phone now carries an
-always-visible Focus · All steps group top-right under the wordmark (`ui/mobile/MobileChrome.jsx`,
-`SAFE_TOP + 48px`, right 12px); the bottom-right seat sat under the action lane and the sheet, and the
-first rig run proved an All steps tap there never arrived. §2's z-order line and §9's "recenter" ease row
-name the same chip.
+The written contract is in `roadmap/guidelines/tree-layout-contract.md`, `responsive.md`,
+`angular-reorder.md`, and `keyboard-shortcuts.md`: 52px desktop / 40px phone working bodies,
+Focus (`F`) and All steps (`0`), 44px phone camera targets, a zoom floor of half the smaller of
+fit and working zoom, and crowded-tap zoom below the working view. Captions use ranked placement
+with 200ms eligibility holds and a 150ms fade. `roadmap/bubble-graduation.md` holds the phase's
+verification status and remaining engineering concerns; `roadmap/readability-research.md` holds
+the measurement apparatus and layout comparison.
 
-**F47 · `roadmap/guidelines/keyboard-shortcuts.md` lists `F` as "Fit tree to screen" and `0` as
-"Reset zoom"** → fix toward the canon. `shortcuts/shortcutMap.js` now reads `F` → Focus on a step (the
-working zoom on the selection, else the frontier) and `0` → All steps (the whole tree inside the visible
-area). The dialog and the control-bar hints are built from that map, so the table is the only stale copy.
+**F50 · marketing drawings and the app use different tree silhouettes** → designer follow-up.
+The app uses bubble. Live gallery portraits and the minimap draw the canvas positions; quest
+thumbnails and the paste ghost use the selected page layout with the same fallback policy.
+The `Windmill · Marketing` boards (0k) and `marketing/treeScenes.js` use hand-authored radial
+compositions. The sail scene contains 17 coordinates on rings and a scripted unlock ceremony.
+A visitor who forks that tree therefore sees a different silhouette in the app.
 
-**F48 · `roadmap/guidelines/responsive.md` §4 caps the hit disc at ½ the nearest-neighbour distance and
-says nothing about what a tap inside the cap does** → a design owner's call. The lab build keeps the
-cap and adds the missing half: a tap among nodes too crowded to tell apart glides the working view in
-around the tapped point instead of missing (mobile §9's "a tap zooms instead of selecting below the cap",
-now on every surface and pointer). If canon wants the tap to select the nearest dot instead, the scene's
-`zoomIntoCrowd` is the one place to change.
-
-**F49 · the phone's working view draws 40px bodies; `responsive.md` §4 says the visual node is 20–34px**
-→ a design owner's call, and the build's number is the candidate. §4's floors line reads "node hit disc
-≥44px regardless of visual size (visual 20–34px)", repeated in §11's FLOORS row. `theme.js`
-`PHONE_WORKING_ZOOM` puts an ordinary body at **40px** on a phone (52px on desktop), and that is the zoom
-every Focus and every glide floors at, so it is the size a phone reader actually reads at rather than one
-end of a range. The hit floors are untouched — 44px on touch, still capped at half the nearest-neighbour
-distance. Either §4 takes 40px, or the phone working view drops to 34px and every caption seat gets
-tighter; the phone captures behind both are in `roadmap/readability-research.md` §4.
-
-**F50 · whichever layout engine is chosen is also the silhouette the boards and every portrait draw**
-→ falls out of the owner's engine call (`roadmap/readability-research.md` §5), not a drift to fix now.
-`share/TreePortrait.js`, the gallery card and the minimap all draw the canvas' own positions, and the
-`Windmill · Marketing` boards plus the landing scenes (`marketing/treeScenes.js`) draw the radial burst —
-that is what 0k is about. radial keeps that burst and rings keeps a cousin of it; bubble draws a
-constellation with no centre and mindmap a totem of columns. Nothing disagrees while radial is the
-default. The day a non-radial engine ships, 0k's boards and every gallery portrait are stale in the same
-move, and the redraw belongs to the same wave.
+Update the Figma marketing boards to bubble while keeping the authored names, staged progress
+states, and unlock sequence legible; then update the landing scene coordinates to match those
+boards. This is a composed design pass: engine-generated coordinates alone do not specify the
+marketing framing or the ceremony. The Figma drawings and landing scenes remain the outstanding
+canon mismatch for bubble graduation.

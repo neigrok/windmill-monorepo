@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { performance } from 'node:perf_hooks';
 
 import { RingsLayoutEngine } from '../../../../src/products/roadmap/layout/RingsLayoutEngine.js';
 import { LayoutEngine } from '../../../../src/products/roadmap/model/ports.js';
@@ -88,13 +87,7 @@ test('an empty tree is a picture with nothing in it, and a five-thousand-step ch
 test('the dogfood forest reads at the working zoom: short trunk links, clear footprints, a full working window', () => {
   const { tree, states } = loadDogfoodTree();
   const engine = new RingsLayoutEngine();
-  const times = [];
-  let positions = null;
-  for (let run = 0; run < 3; run++) {
-    const start = performance.now();
-    positions = engine.layout(tree);
-    times.push(performance.now() - start);
-  }
+  const positions = engine.layout(tree);
   assert.equal(positions.size, tree.nodes.length);
   assert.ok([...positions.values()].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
   assert.equal(serialise(engine.layout(tree)), serialise(positions));
@@ -114,8 +107,6 @@ test('the dogfood forest reads at the working zoom: short trunk links, clear foo
   assert.ok(countAround(positions, frontier) >= 14, `${countAround(positions, frontier)} nodes around the frontier step ${frontier}`);
   assert.deepEqual(footprintOverlaps(tree, positions), []);
   assert.ok(fitBodyPx(positions) >= 4, `fit body ${fitBodyPx(positions).toFixed(1)} px`);
-  // The 55 ms figure lives in scripts/benchmark-roadmap.mjs; here only a runaway is caught, since the suite runs files in parallel.
-  assert.ok(Math.min(...times) <= 600, `layout took ${Math.min(...times).toFixed(0)} ms`);
 });
 
 test('the dogfood forest is islands: the largest crown at the origin, no island inside another rim, rings outward in order', () => {

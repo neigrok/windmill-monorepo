@@ -20,6 +20,7 @@ const FULL_CIRCLE = 2 * Math.PI;
 const DIRECTIONS = [0, 6, 3, 9, 2, 10, 4, 8, 1, 11, 5, 7].map((slot) => (slot * FULL_CIRCLE) / 12);
 
 export default class MindmapLayoutEngine extends LayoutEngine {
+  static layoutName = 'mindmap';
   static reorder = 'none';
   static readsCaptions = true;
 

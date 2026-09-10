@@ -1,46 +1,52 @@
-// The one door to a layout engine: `?layout=<name>` before or after the hash picks one, the default is here and the rest
-// behind a dynamic import, and an engine that fails to load or throws is answered by radial rather than a blank canvas.
-
+// Bubble is the normal layout; explicit URL alternatives use the same entry point as every preview.
+import BubbleLayoutEngine from './BubbleLayoutEngine.js';
 import RadialLayoutEngine from './RadialLayoutEngine.js';
 
 export const LAYOUTS = ['radial', 'rings', 'bubble', 'mindmap'];
-export const DEFAULT_LAYOUT = 'radial';
+export const DEFAULT_LAYOUT = 'bubble';
+export const FALLBACK_LAYOUT = 'radial';
 
 const ENGINE_MODULES = {
   rings: () => import('./RingsLayoutEngine.js'),
-  bubble: () => import('./BubbleLayoutEngine.js'),
   mindmap: () => import('./MindmapLayoutEngine.js'),
 };
 
-// `/?layout=bubble#/app/<id>` and `/#/app/<id>?layout=bubble` both name the engine; anything else is the default.
+// `/?layout=radial#/app/<id>` and `/#/app/<id>?layout=radial` both name the engine; anything else is the default.
 export function layoutNameFrom({ search = '', hash = '' }) {
   const afterHash = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
   const named = new URLSearchParams(afterHash).get('layout') ?? new URLSearchParams(search).get('layout');
   return LAYOUTS.includes(named) ? named : DEFAULT_LAYOUT;
 }
 
-// The engine every surface that draws a tree outside the canvas — a quest thumbnail, a paste ghost — lays out with.
-export function defaultLayoutEngine() {
+// The fallback is synchronous so a layout failure can be handled in the same render pass.
+export function fallbackLayoutEngine() {
   return new RadialLayoutEngine();
 }
 
 export async function loadLayoutEngine(name) {
   if (!LAYOUTS.includes(name)) throw new Error(`Unknown layout "${name}"`);
-  if (name === DEFAULT_LAYOUT) return defaultLayoutEngine();
+  if (name === DEFAULT_LAYOUT) return new BubbleLayoutEngine();
+  if (name === FALLBACK_LAYOUT) return fallbackLayoutEngine();
   try {
     const module = await ENGINE_MODULES[name]();
     return new module.default();
   } catch (error) {
     console.error(`[layout] the ${name} engine failed to load — drawing the tree radially instead`, error);
-    return defaultLayoutEngine();
+    return fallbackLayoutEngine();
   }
+}
+
+// Each consumer gets its own stateless engine; imported alternative modules are cached by the browser.
+export function pageLayoutEngine() {
+  return loadLayoutEngine(layoutNameFrom(window.location));
 }
 
 export function layoutTree(engine, tree) {
   try {
-    return engine.layout(tree);
+    return { positions: engine.layout(tree), name: engine.constructor.layoutName, engine };
   } catch (error) {
     console.error(`[layout] ${engine.constructor.name} could not lay out ${tree.allNodes.length} steps — drawing the tree radially instead`, error);
-    return defaultLayoutEngine().layout(tree);
+    const fallback = fallbackLayoutEngine();
+    return { positions: fallback.layout(tree), name: FALLBACK_LAYOUT, engine: fallback };
   }
 }

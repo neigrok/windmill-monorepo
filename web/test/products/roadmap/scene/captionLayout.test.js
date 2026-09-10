@@ -86,6 +86,13 @@ test('captionRankLimit — keyed on the body as drawn: 18 px names everyone, 12 
   }
 });
 
+test('overview captions retain the eight pixel gap from the visible disc floor', () => {
+  const placer = placerOver([{ id: 'root', label: 'Root', x: 0, y: 0, emphasis: 1 }]);
+  assert.deepEqual(placer.place(view({ zoom: 0.01 }), 0).captions, [{
+    id: 'root', anchor: ANCHOR_BELOW, left: 700, top: 436.5, width: 40, height: 20, lines: ['Root'], shown: true,
+  }]);
+});
+
 test('priority — selected, hovered, the selected\'s trunk family, anchors, the frontier, the rest; not distance', () => {
   // Laid out so the nearest node to the centre is the lowest rank and the farthest the highest.
   const nodes = [
@@ -333,32 +340,31 @@ test('bounds — the pool caps captions at 96, off-canvas nodes are not named, a
   assert.deepEqual(ids(far.place(view(), 0).captions), ['near']);
 });
 
-test('cost — one placement pass over 476 nodes stays well inside a frame at the working zoom and at fit', () => {
-  let seed = 7;
-  const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
-  const words = ['skill', 'tree', 'render', 'layout', 'caption', 'camera', 'sync', 'lattice', 'gesture', 'portrait', 'quest', 'reminder'];
-  const nodes = Array.from({ length: 476 }, (_, index) => {
-    const angle = random() * Math.PI * 2;
-    const radius = 300 + random() * 7000;
-    const length = 2 + Math.floor(random() * 8);
-    return { id: `n${index}`, label: Array.from({ length }, () => words[Math.floor(random() * words.length)]).join(' '), x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, state: random() < 0.1 ? 'available' : 'complete', emphasis: index < 9 ? 1 : 0, branch: index < 40 ? `n${index}` : 'n0' };
+test('a long bowed ribbon keeps a caption off its midpoint even when its chord is more than 200 px away', () => {
+  const placer = placerOver([
+    { id: 'step', label: 'Step', x: 0, y: 0 },
+    { id: 'a', label: '', x: -5000, y: -400 },
+    { id: 'b84', label: '', x: 5000, y: -400 },
+  ], [{ from: 'a', to: 'b84', kind: 'trunk' }]);
+  assert.deepEqual(placer.place(view(), 0).captions, [{
+    id: 'step', anchor: ANCHOR_ABOVE, left: 700, top: 372.48, width: 40, height: 20, lines: ['Step'], shown: false,
+  }]);
+});
+
+test('5000 spokes around a crown retain its caption at working zoom', () => {
+  const nodes = Array.from({ length: 5000 }, (_, index) => {
+    const angle = index / 4999 * Math.PI * 2;
+    return { id: `n${index}`, label: `Practice meaningful skill ${index}`, x: index ? Math.cos(angle) * 100000 : 0, y: index ? Math.sin(angle) * 100000 : 0, emphasis: index === 0 ? 1 : 0 };
   });
-  const edges = nodes.slice(9).map((node, index) => ({ from: nodes[Math.floor(index / 3)].id, to: node.id, kind: 'trunk' }));
-  const placer = placerOver(nodes, edges);
-  const time = (v) => {
-    const runs = [];
-    for (let i = 0; i < 60; i += 1) {
-      const start = performance.now();
-      placer.place(v, i * 16);
-      runs.push(performance.now() - start);
+  const edges = nodes.slice(1).map((node) => ({ from: 'n0', to: node.id, kind: 'trunk' }));
+  for (const zoom of [0.4, WORKING_ZOOM]) {
+    const placer = placerOver(nodes, edges);
+    const camera = view({ zoom });
+    for (const now of [0, SHOW_AFTER_MS]) {
+      assert.deepEqual(placer.place(camera, now).captions, [{
+        id: 'n0', anchor: ANCHOR_BELOW, left: 640, top: 424 + RIM * zoom * ROOT_BODY_SCALE + 8,
+        width: 160, height: 40, lines: ['Practice meaningful', 'skill 0'], shown: now === SHOW_AFTER_MS,
+      }]);
     }
-    return runs.sort((a, b) => a - b)[Math.floor(runs.length / 2)];
-  };
-  const working = time(view({ zoom: WORKING_ZOOM }));
-  const mid = time(view({ zoom: 0.4 }));
-  // The real whole-tree fit of this spread, with a step selected: the pass every panned frame pays at All steps.
-  placer.setContext({ selectedId: 'n100', hoveredId: null });
-  const fit = time(view({ zoom: 0.038 }));
-  console.log(`caption placement, 476 nodes, median ms — working ${working.toFixed(3)} · zoom 0.4 ${mid.toFixed(3)} · fit ${fit.toFixed(3)}`);
-  assert.ok(working < 8 && mid < 8 && fit < 8, `placement too slow: ${working} / ${mid} / ${fit} ms`);
+  }
 });

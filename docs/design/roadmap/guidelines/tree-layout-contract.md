@@ -6,10 +6,11 @@ the DOM reference. This doc translates their look into resolution-independent ru
 values to hard-code, since a GPU canvas has no CSS custom properties. Everything here mirrors
 `web/src/styles/tokens/` — if a token changes, update this doc.
 
-> **Metaphor:** the tree grows radially from a single root at the center of the canvas. Children fan
-> out in all directions from their parent. Steps are circular nodes; dependencies are gently-curved
-> branches. A node's colour comes from its `kind`; its tier is treatment only — dim → ringed → ember
-> → glowing. The tier never re-hues a node.
+> **Metaphor:** the tree grows outward as bubbles. Each step's children sit on rays around it, inside
+> the circle that holds its whole subtree, and each child faces its parent; the largest root sits at
+> the world origin and the other roots pack around it. Steps are circular nodes; dependencies are
+> gently-curved branches. A node's colour comes from its `kind`; its tier is treatment only — dim →
+> ringed → ember → glowing. The tier never re-hues a node.
 
 > **Motion:** §7 is a summary. `motion-language.md` is canon for every animated moment and supersedes
 > this doc wherever they disagree.
@@ -18,7 +19,7 @@ values to hard-code, since a GPU canvas has no CSS custom properties. Everything
 
 ## 1. Coordinate model
 
-- Work in an unbounded world space (float units = px at zoom 1.0). The root node sits at world origin
+- Work in an unbounded world space (float units = px at zoom 1.0). The largest root sits at world origin
   `(0, 0)`; pan/zoom is a camera transform on the stage, never baked into node coords.
 - One container per node (disc + label) at the node's world coordinate. One batched layer for all
   branches, beneath the node layer.
@@ -32,27 +33,28 @@ default. All values scale linearly with `size`; "u" = size/56.
 
 | Part | Value |
 |---|---|
-| Fruit diameter | `size` (56) |
+| Fruit diameter | `0.84 × size` (47.04 world units); crowned roots are 1.55× wider |
 | Fruit shape | a perfect circle — no stem, no gloss, no lopsided blob |
 | Ring (border) | `2 * u` px stroke, color = state ring (§3) |
 | Icon box | `0.4 * size` (≈22px), centered; ink per tier (§3) |
-| Label | below the node, gap `8u`; `--text-sm` (14px) weight 700, centered |
-| Hit area | circle radius `size/2 + 4` (locked = non-interactive) |
+| Label | fixed 14px/20px, weight 700; up to two lines inside 168px, overflow ellipsized; preferred seat 8px below the drawn rim |
+| Hit area | the drawn disc remains selectable; extension reaches a 24px pointer / 44px touch radius, capped at half the nearest-neighbor distance |
 
 **Fill is flat.** A single flat, saturated kind colour — no gradient, no gloss highlight. The tier
 treatment (§3) supplies depth through fill weight, ring and glow, never a light-spot gradient.
 
-### 2.1 Node sizing — taper + milestone bump
+### 2.1 Unbuilt sizing proposal — taper + milestone bump
 
-Size encodes structure, never metrics.
+The renderer uses one `NODE_SIZE` today. The unbuilt proposal below would encode structure,
+never metrics, in the base size; it is not the current sizing rule.
 
-- **Depth taper (automatic default):** `SIZE(d) = 96 × 0.8^d`, clamped to **[40, 96]** world px — the
+- **Proposed depth taper:** `SIZE(d) = 96 × 0.8^d`, clamped to **[40, 96]** world px — the
   goal is the biggest fruit; each ring outward gets finer. Depth is granularity.
-- **Milestone bump (user override):** a step marked *milestone* renders one depth-step larger —
+- **Proposed milestone bump:** a step marked *milestone* would render one depth-step larger —
   `SIZE(max(0, d − 1))`. Undo-able, panel-driven, deterministic. New steps need no decision.
 - Everything scales in `u = size/56` (§2): ring 2u, icon 0.4·size, glow radius ≈ 0.9·size.
-- **Clamps that keep small nodes usable:** hit area never below 44px regardless of visual size; label
-  font scales with u but clamps 12–16px and never disappears before the zoom threshold (§8).
+- **Caption and hit geometry stay screen-sized:** captions follow §2 regardless of node size or
+  zoom; hit floors and the crowded-tap behavior follow §8.
 
 ## 3. Kind colours & tier treatment
 
@@ -118,47 +120,74 @@ live blur filter.
 
 ## 5. Layout
 
-Layout is deterministic: identical input graph ⇒ identical layout; sort children by `id` before
-allocating. Manual per-node nudges override it (`applyNudges`). **A live gallery SVG portrait must
-render the tree's own canvas positions** — mode follows the tree, never the surface. Social link
-previews use stored assets or a generic fallback and need not match the live page
-(`og-tree-cards.md`); sharing performs no image capture or upload.
+Layout is deterministic: identical input graph ⇒ identical layout. Siblings are ordered by their
+fractional-index order key, never by `id`, so a load and a live edit place the same pixels. Layout runs
+on the main thread, synchronously, before the first paint and again on every structural, order, colour
+or (for an engine that reserves caption boxes) name change.
 
-### 5.1 Radial
+**Every picture of a tree is drawn by the same engine as the canvas.** The gallery SVG portrait renders
+the tree's own canvas positions, and so do the quest thumbnails and the paste ghost — the picture
+follows the tree, never the surface. Social link previews use stored assets or a generic fallback and
+need not match the live page (`og-tree-cards.md`); sharing performs no image capture or upload.
 
-The root sits mid-canvas and children fan out in all directions:
+### 5.1 The four engines
 
-1. Root at origin, owning the full angular range `[0, 2π)`.
-2. **Depth ring radius:** a node at depth `d` sits at radius `R(d) = d * RING_GAP` from the root,
-   `RING_GAP = 190` (≈ `2.6 × (nodeSize+label)`). Tighten to 170 for dense trees, loosen to 220 for
-   sparse.
-3. **Angular allocation, weighted by subtree size:** a parent owning span `[a0, a1]` splits it among
-   its `n` children proportional to each child's leaf count (descendant count + 1), so bushy branches
-   get more room. Each child sits at the center angle of its slice, at radius `R(childDepth)`.
-4. **Root special case:** the root's direct children divide the full circle, so with 3 children they
-   sit ~120° apart.
-5. **Min separation:** after placement, if two siblings are closer than `nodeSize + 24`, widen their
-   slices or bump `RING_GAP` for that subtree. A couple of relaxation passes is enough; avoid full
-   physics.
+All four are pure, synchronous, deterministic and iterative, so a chain thousands of steps deep is no
+deeper. `?layout=<name>` before or after the hash picks one; nothing in the UI offers the switch.
 
-### 5.2 Dagre — at scale
+| Engine | Role | The picture |
+|---|---|---|
+| **`bubble`** | **the default — what every reader sees** | children on rays around each parent, inside the circle holding its whole subtree |
+| `radial` | the fallback, bundled beside bubble | the burst: one ring per trunk depth, children fanned into angular wedges |
+| `rings` | `?layout=rings` | concentric depth rings, contour-packed in angle space |
+| `mindmap` | `?layout=mindmap` | twelve compass branches, each a tidy tree with horizontal captions |
 
-Top-down dagre: `rankdir: TB`, `nodesep = NODE_SIZE × 1.6`, `ranksep = NODE_SIZE × 2.4`, rank =
-dependency depth. The cascade's depth ring (motion §3) maps to the dagre rank, so ceremonies read the
-same either way. Run it off the main thread; never block input on a relayout. The mode threshold is a
-hysteresis band around ~48 nodes, not a hard flip — a tree crossing it relayouts on its next load,
-never mid-session.
+Bubble and radial are statically imported; rings and mindmap load on demand. Radial answers when
+an alternative import fails or a layout throws. The result carries the engine that produced its
+positions, so reorder behavior and saved cameras follow the effective layout.
+
+### 5.2 Bubble — the shipped layout
+
+1. Over the trunk arborescence, bottom-up: each node gets the shortest ring on which every child's
+   circle clears its own and, seen from the node, the children's arcs do not overlap.
+2. Children sit on rays around that ring, each facing its parent, with an arc of `π/3` left free on
+   the parent side so the in-edge reaches the node between no children. A root has no in-edge, so its
+   children spread around it, never further apart than `π/9`.
+3. A post-order tuck slides each rigid subtree inward along its own ray until footprints, or resting
+   trunk edges, touch — with a margin of 8 CSS px at the working zoom.
+4. Subtree circles are rounded up to a 24 wu step and island circles to 96 wu, so a small change in
+   one caption rarely reseats an ancestor.
+5. Roots are islands: the largest is pinned at the origin and the rest settle by front-chain circle
+   packing.
+
+The tuck is limited to `max(1,000,000, 2048 × nodeCount)` work units. If the budget runs out,
+the unfinished move is discarded and the remaining subtrees keep their enclosing-circle seats.
+Large trees may therefore be looser. The budget depends on input structure, never elapsed time,
+so devices retain the same layout; it is not a wall-clock latency guarantee.
+
+A node reserves its caption's box, not just its disc: `footprintOf(label)` is the disc-plus-caption
+rectangle in world units, estimated from the label's length alone (6.65 px per character), never
+DOM-measured, so every device lays a tree out byte-identically.
+
+Bubble declares `reorder = 'parent-arc'`: siblings reorder around their trunk parent within an open
+fan. Roots have no parent arc and remain in their packed islands. Radial declares `'ring'` around
+the world origin; rings and mindmap declare `'none'`. `angular-reorder.md` owns the gesture.
+
+On the 476-step dogfood tree this puts a trunk parent and its child 3.4 node bodies apart, 93.5% of
+families on one screen, and 24–25 steps in the working window, with no two reserved boxes overlapping.
+`docs/design/roadmap/readability-research.md` is the measured record and names what it costs.
 
 ```
 NODE_SIZE      = 56       // the one size the renderer draws today
-SIZE(d)        = 96 × 0.8^d, clamp [40, 96]   // §2.1; milestone bumps to SIZE(d−1)
-MODE           = radial ≤ ~48 nodes · dagre above (hysteresis, relayout on load)
-RING_GAP       = 190      // radial: distance between depth rings
-DAGRE          = rankdir TB · nodesep 1.6×NODE_SIZE · ranksep 2.4×NODE_SIZE
-MIN_SIBLING    = SIZE(d) + 24
+SIZE(d)        = 96 × 0.8^d, clamp [40, 96]   // §2.1 — specified, not built
+ENGINE         = bubble (default) · radial (fallback) · rings · mindmap, via ?layout=<name>
+IN_EDGE_GAP    = π/3      // bubble: arc kept free on a node's parent side
+ROOT_SPREAD    = π/9      // bubble: widest a root's children spread
+RADIUS_STEP    = 24       // bubble: subtree circles round up to this (islands, ×4)
+CAPTION        = 14px on a 20px line · ≤2 lines inside 168px · 8px under the rim · 6.65px/char reserved
 BEND_FRACTION  = 0.18     // control-point offset as fraction of branch length
 LABEL_GAP      = 8
-HIT_MIN        = 44       // px — hit disc floor at any visual size
+HIT_REACH      = 24 pointer · 44 touch   // CSS px radius; extension capped at ½ neighbor distance
 ```
 
 ## 6. Determinism / seeding
@@ -193,13 +222,30 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
 
 ## 8. Camera / interaction
 
-- **Pan:** drag empty canvas → translate stage. **Zoom:** wheel / pinch → scale about the cursor;
-  clamp 0.5×–2.5× (`responsive.md` canon).
-- **Fit:** on load, compute the node bounding box and set zoom so it fits with ~64px padding; center
-  on the root.
-- **Select:** click a fruit → emit `select(id)`; the app opens the detail panel. Locked fruit are not
-  selectable but still show a tooltip ("Finish X to unlock").
-- Keep labels upright and unscaled; hide them below 0.8× zoom with a 150ms fade (`responsive.md` §5).
+- **Pan and zoom:** drag empty canvas to pan; wheel zooms about the cursor, pinch about the fingers.
+  The minimum is half `min(fitZoom, workingZoom)`, including for a tiny tree; pinch caps at 2.5×,
+  other zoom controls at 6×. Read-only pan has 80px of soft slack past the tree's bounds.
+- **Working view:** ordinary bodies are 52 CSS px on desktop and 40px on a phone. Focus and default
+  glides never go below that zoom; a whole-tree fit never goes above it. Bodies have a 6px visual
+  floor, 9px for crowned roots.
+- **First view:** restore a saved camera only for its effective layout and camera format. An owner
+  without one opens over the frontier's trunk family at the working zoom, without arrival motion.
+  A visitor gets a whole-tree fit and the arrival ceremony. Measured chrome can reframe the opening
+  for 1.2s; camera input ends that adjustment.
+- **Focus (`F`):** frame the selected step, else the frontier, with its trunk parent and children
+  when the family fits at the working zoom; otherwise frame the step alone.
+- **All steps (`0`):** fit the whole tree inside the visible canvas, capped at the working zoom.
+  Both verbs are visible in desktop controls and under the phone wordmark; list view has no camera.
+- **Select:** click or tap a fruit to open its detail, including the reason a locked step is locked.
+  The drawn disc remains selectable. Beyond it, hit extension reaches a 24px pointer / 44px touch
+  radius, capped at half the nearest-neighbor distance. Below the working zoom an ambiguous crowded
+  tap zooms around the point without selecting.
+- **Captions:** fixed 14px/20px text, up to two lines inside 168px with overflow ellipsized. Priority
+  is selected → hovered → selected trunk family → landmarks → active/available → remaining steps.
+  Ordinary drawn body diameter sets the eligible rank: landmarks below 12px, frontier from 12px,
+  everyone from 18px; selection and hover keep their names. Seats avoid other names, discs and chrome,
+  preferring below → above → right → left; a ribbon crossing is allowed if no clear seat exists.
+  Eligibility holds for 200ms before appearance or removal, with a 150ms fade.
 
 ## 9. Performance
 
@@ -212,12 +258,9 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
 
 ## Known gaps
 
-- `RadialLayoutEngine` is the only engine in the repo. §5.2's dagre mode and the `MODE` threshold are
-  unbuilt.
-- That engine does not use a fixed `RING_GAP`: rings start at `NODE_SIZE × 2.8` and each is pushed
-  out until its tightest neighbour pair clears an arc of `NODE_SIZE × 1.7`. §5.1's numbers and the
-  engine need reconciling.
 - §2.1's depth taper and milestone bump are unbuilt; every node renders at `NODE_SIZE`.
+- The `Windmill · Marketing` boards and the landing scenes draw the radial burst, not the bubble tree
+  the app now draws. Filed as **F50** in `../../consistency.md`.
 
 ---
 

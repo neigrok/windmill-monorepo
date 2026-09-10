@@ -1,6 +1,6 @@
 // Captions, decided: which nodes get a fixed 14 px name, where it sits and when it appears. Pure — no DOM, screen px
 // throughout; LabelOverlay measures the text and moves elements to the rectangles this file returns.
-import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, MIN_BODY_PX, SELECTED_SCALE, CAPTION } from '../theme.js';
+import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_PX, SELECTED_SCALE, CAPTION } from '../theme.js';
 import { BEND_REACH, bendOf, controlPoint, pointOnCurve } from './edgeCurve.js';
 
 export const CAPTION_POOL = 96; // the most captions on screen at once — also the DOM pool
@@ -16,10 +16,9 @@ const CANDIDATE_LIMIT = CAPTION_POOL * 3;
 const COLLISION_GAP = 2;
 const CELL_PX = 64;
 const REACH_PX = 200; // a node this far past the canvas edge can still own a caption on it
-const RIBBON_STEP_PX = 16; // a ribbon becomes obstacles one of these long
+const RIBBON_STEP_PX = 16; // the longest sampled crossing near a caption
 const RIBBON_STEPS_MAX = 96;
 const RIBBON_HALF_PX = 3; // half the drawn ribbon, plus its halo
-const RIBBON_BOW_PX = 200; // the most a bow can carry a ribbon off its chord before the chord clip stops trusting it
 
 export const RANK_SELECTED = 0;
 export const RANK_HOVERED = 1;
@@ -116,6 +115,7 @@ function blockRect(block, view) {
 class CollisionGrid {
   constructor() {
     this.cells = new Map();
+    this.ribbons = [];
   }
 
   insert(rect, kind) {
@@ -145,6 +145,20 @@ class CollisionGrid {
           if (rect.left < other.right + COLLISION_GAP && rect.right > other.left - COLLISION_GAP
             && rect.top < other.bottom + COLLISION_GAP && rect.bottom > other.top - COLLISION_GAP) return true;
         }
+      }
+    }
+    if (upTo < OBSTACLE_RIBBON) return false;
+    for (const ribbon of this.ribbons) {
+      const { fx, fy, tx, ty, cx, cy, length } = ribbon;
+      const crossing = chordRange(fx, fy, tx, ty, rect, BEND_REACH * length + RIBBON_HALF_PX + COLLISION_GAP);
+      if (crossing === null) continue;
+      const [lo, hi] = crossing;
+      const steps = Math.min(RIBBON_STEPS_MAX, Math.max(1, Math.ceil(((hi - lo) * length) / RIBBON_STEP_PX)));
+      let previous = pointOnCurve(fx, fy, cx, cy, tx, ty, lo);
+      for (let step = 1; step <= steps; step += 1) {
+        const point = pointOnCurve(fx, fy, cx, cy, tx, ty, lo + ((hi - lo) * step) / steps);
+        if (chordRange(previous.x, previous.y, point.x, point.y, rect, RIBBON_HALF_PX + COLLISION_GAP) !== null) return true;
+        previous = point;
       }
     }
     return false;
@@ -272,7 +286,7 @@ export class CaptionPlacer {
   }
 
   placeRanks(view, now, limit, captions) {
-    const grid = new CollisionGrid(); // the chrome, the disc rims, the ribbons and the captions placed so far
+    const grid = new CollisionGrid(); // the chrome, disc rims, nearby ribbons and captions placed so far
     const area = {
       left: this.insets.left,
       top: this.insets.top,
@@ -310,7 +324,7 @@ export class CaptionPlacer {
     }
   }
 
-  // Every node near the viewport is a disc obstacle and every ribbon a run of them. A candidate is a node this zoom's
+  // Every node near the viewport is a disc obstacle. A candidate is a node this zoom's
   // rank limit names, or one still on screen; the selected, the hovered and a crown below the working view are forced.
   stage(view, limit, grid, area) {
     const reach = REACH_PX / view.zoom;
@@ -323,7 +337,8 @@ export class CaptionPlacer {
       const sx = (node.x - view.x) * view.zoom + view.viewportWidth / 2;
       const sy = (node.y - view.y) * view.zoom + view.viewportHeight / 2;
       const crown = node.emphasis > 0;
-      const rim = NODE_SIZE * RIM_FRACTION * view.zoom * (crown ? ROOT_BODY_SCALE : 1) * (id === this.selectedId ? SELECTED_SCALE : 1);
+      const scale = 1 + (crown ? ROOT_BODY_SCALE - 1 : 0) + (id === this.selectedId ? SELECTED_SCALE - 1 : 0);
+      const rim = Math.max(NODE_SIZE * RIM_FRACTION * view.zoom * scale, (crown ? MIN_ROOT_BODY_PX : MIN_BODY_PX) / 2);
       grid.insert({ left: sx - rim, top: sy - rim, right: sx + rim, bottom: sy + rim }, OBSTACLE_DISC);
       const metric = this.metricById.get(id);
       if (!metric) continue;
@@ -347,8 +362,8 @@ export class CaptionPlacer {
     return candidates;
   }
 
-  // A ribbon crossing a caption reads as a broken branch, so each edge's bow is sampled into rectangles a step long.
-  // Below the frontier tier the names are landmarks placed wherever they stand, so the ribbons are not consulted.
+  // Keep nearby curves once; a seat tests its own short crossing and stops at the first ribbon it touches.
+  // Thousands of spokes around a crown cost no full-viewport ribbon tessellation.
   stageRibbons(view, grid, area) {
     for (const edge of this.edges) {
       const from = this.nodesById.get(edge.from);
@@ -358,25 +373,12 @@ export class CaptionPlacer {
       const fy = (from.y - view.y) * view.zoom + view.viewportHeight / 2;
       const tx = (to.x - view.x) * view.zoom + view.viewportWidth / 2;
       const ty = (to.y - view.y) * view.zoom + view.viewportHeight / 2;
-      // Only the run of the ribbon that crosses the caption area is an obstacle, so a branch reaching in from far off
-      // the canvas costs a rectangle or two, not one per 32 px of its whole length.
+      // Curves outside the caption area never reach a seat's collision query.
       const length = Math.hypot(tx - fx, ty - fy);
-      const crossing = chordRange(fx, fy, tx, ty, area, Math.min(BEND_REACH * length, RIBBON_BOW_PX) + RIBBON_HALF_PX);
+      const crossing = chordRange(fx, fy, tx, ty, area, BEND_REACH * length + RIBBON_HALF_PX);
       if (crossing === null) continue;
-      const [lo, hi] = crossing;
       const { cx, cy } = controlPoint(fx, fy, tx, ty, bendOf(edge.from, edge.to));
-      const steps = Math.min(RIBBON_STEPS_MAX, Math.max(1, Math.ceil(((hi - lo) * length) / RIBBON_STEP_PX)));
-      let previous = pointOnCurve(fx, fy, cx, cy, tx, ty, lo);
-      for (let step = 1; step <= steps; step += 1) {
-        const point = pointOnCurve(fx, fy, cx, cy, tx, ty, lo + ((hi - lo) * step) / steps);
-        grid.insert({
-          left: Math.min(previous.x, point.x) - RIBBON_HALF_PX,
-          top: Math.min(previous.y, point.y) - RIBBON_HALF_PX,
-          right: Math.max(previous.x, point.x) + RIBBON_HALF_PX,
-          bottom: Math.max(previous.y, point.y) + RIBBON_HALF_PX,
-        }, OBSTACLE_RIBBON);
-        previous = point;
-      }
+      grid.ribbons.push({ fx, fy, tx, ty, cx, cy, length });
     }
   }
 }

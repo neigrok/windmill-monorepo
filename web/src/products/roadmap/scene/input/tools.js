@@ -21,10 +21,10 @@ export class NavigateTool extends Tool {
     this.lastHoverAt = 0;
   }
 
-  onPointerDown(pos, event) {
+  onPointerDown(pos, event, pickedId = this.ctx.pick(pos.x, pos.y, event?.pointerType)) {
     const marquee = !!event?.shiftKey && !!this.ctx.beginMarquee;
-    const reorderId = !marquee && this.ctx.beginReorder ? this.ctx.pick(pos.x, pos.y, event?.pointerType) : null;
-    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee, reorderId, reordering: false };
+    const reorderId = !marquee && this.ctx.beginReorder ? pickedId : null;
+    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee, pickedId, reorderId, reordering: false };
     if (marquee) this.ctx.beginMarquee(pos.x, pos.y);
   }
 
@@ -71,7 +71,7 @@ export class NavigateTool extends Tool {
     if (drag.marquee) {
       if (drag.moved) { this.ctx.commitMarquee(drag.startX, drag.startY, pos.x, pos.y, !!event?.shiftKey); return; }
       this.ctx.cancelMarquee();
-      const hit = this.ctx.pick(pos.x, pos.y, event?.pointerType);
+      const hit = drag.pickedId;
       if (hit) { this.ctx.toggleSelect(hit); return; }
       const edge = this.ctx.pickEdge(pos.x, pos.y);
       if (edge && this.ctx.toggleEdge) this.ctx.toggleEdge(edge);
@@ -84,7 +84,7 @@ export class NavigateTool extends Tool {
     }
     const { moved, vx, vy } = drag;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
-    const id = this.ctx.pick(pos.x, pos.y, event?.pointerType);
+    const id = drag.pickedId;
     if (id) { this.ctx.select(id); return; }
     if (this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true; // too crowded to pick one apart: the tap zooms in instead of missing
     const edge = this.ctx.pickEdge(pos.x, pos.y);
@@ -121,10 +121,9 @@ export class ReadOnlyTool extends NavigateTool {
 
   onPointerUp(pos, event) {
     if (!this.drag) return;
-    const moved = this.drag.moved;
+    const { moved, pickedId: id } = this.drag;
     this.drag = null;
     if (moved) return;
-    const id = this.ctx.pick(pos.x, pos.y, event?.pointerType);
     if (id === null && this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true;
     if (this.ctx.editTap?.(pos.x, pos.y, id)) return; // an owner editing on a phone routes the picked step by mode
     this.ctx.select(id);

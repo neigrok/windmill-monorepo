@@ -115,8 +115,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const readOnlyRef = useRef(readOnly);
   const editorRef = useRef(null);
   const treeRef = useRef(null);
-  const layoutRef = useRef(null); // { name, engine } once the load pipeline has chosen the engine
-  const layoutCacheRef = useRef({ signature: '', raw: new Map() });
+  const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
+  const layoutCacheRef = useRef({ signature: '', result: null });
   const firstFrameRef = useRef(null); // { id, at } — the step the first view opened on, until the chrome has measured itself
   const insetsRef = useRef(null); // the live chrome insets, for the first view: the load lands long after the chrome has
   const legendDockRef = useRef(null);
@@ -354,17 +354,20 @@ export function SkillTreeView({ treeId, demo = false }) {
   // sibling ties) — and the label only for an engine that reserves each caption's box, so a rename never re-runs the
   // others.
   const layoutPositions = useCallback((nextTree) => {
-    const { name, engine } = layoutRef.current;
+    const { requestedName, engine } = layoutRef.current;
     const readsCaptions = engine.constructor.readsCaptions;
     const rows = nextTree.allNodes.map((node) => JSON.stringify([
       node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null,
       readsCaptions ? node.label : '',
     ]));
-    const signature = `${name}|${rows.sort().join('|')}`;
+    const signature = `${requestedName}|${rows.sort().join('|')}`;
     if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, raw: layoutTree(engine, nextTree) };
+      layoutCacheRef.current = { signature, result: layoutTree(engine, nextTree) };
     }
-    return new Map(layoutCacheRef.current.raw);
+    const result = layoutCacheRef.current.result;
+    layoutRef.current.name = result.name;
+    sceneRef.current?.setReorderHint(result.engine.constructor.reorder);
+    return new Map(result.positions);
   }, []);
 
   const states = useMemo(() => {
@@ -794,7 +797,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,
-      reorderHint: layoutRef.current?.engine.constructor.reorder ?? 'none',
+      reorderHint: layoutCacheRef.current.result?.engine.constructor.reorder ?? 'none',
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         setSheetHeld(false);
@@ -973,11 +976,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     setTreeVisibility(null);
     setTreeMine(false);
     repoRef.current = null;
+    firstFrameRef.current = null;
 
     async function loadTree() {
       const layoutName = layoutNameFrom(window.location);
-      layoutRef.current = { name: layoutName, engine: await loadLayoutEngine(layoutName) };
-      sceneRef.current?.setReorderHint(layoutRef.current.engine.constructor.reorder);
+      const engine = await loadLayoutEngine(layoutName);
+      if (cancelled) return;
+      layoutRef.current = { requestedName: layoutName, name: engine.constructor.layoutName, engine };
       const repo = new HttpTreeRepository({ treeId });
       // Confirm who holds this device before anything is read from it or written to it.
       await resolveDeviceOwner();
@@ -994,6 +999,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), startedAt: {}, completedAt: {}, server: false }
         : await repo.loadProgress(treeData);
       const serverActivity = await repo.loadActivity({ limit: 200 });
+      if (cancelled) return;
       const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
       const positions = layoutPositions(nextTree);
@@ -1008,7 +1014,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       // The first view: a saved place is restored (clamped to the zoom range); the owner with none opens on the
       // frontier at the working zoom, no glide; a visitor keeps the whole-tree fit and the arrival ceremony.
-      const place = viewReadOnly ? null : placeStore.load(layoutName);
+      const place = viewReadOnly ? null : placeStore.load(layoutRef.current.name);
       const returning = place?.treeId === seed.id ? place : null;
       const savedCamera = returning?.camera
         && [returning.camera.x, returning.camera.y, returning.camera.zoom].every(Number.isFinite)
@@ -1047,7 +1053,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       pushArcs();
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
-      if (!viewReadOnly) placeStore.save({ treeId: seed.id, layout: layoutName, camera: scene.getViewpoint(), selectedId: restoredSelection });
+      if (!viewReadOnly) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: restoredSelection });
       if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
@@ -1686,7 +1692,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           ctaEcho={ctaEcho}
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
-          onSignInToKeep={status === 'ghost' && treeMine && !demo ? openSignInDoor : undefined}
+          onSignInToKeep={status !== 'signed-in' && treeMine && !demo ? openSignInDoor : undefined}
           onFocus={handleFocus}
           onShowAll={handleShowAll}
           tablet={breakpoint === 'tablet'}
@@ -1755,7 +1761,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {!readOnly && status !== 'signed-in' && treeMine && !demo && (
+      {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>

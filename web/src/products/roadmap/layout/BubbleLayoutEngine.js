@@ -17,19 +17,24 @@ const ISLAND_STEP = RADIUS_STEP * 4;
 // The least two footprints, or a footprint and a trunk edge, keep between them after the tuck.
 const TUCK_MARGIN = 8 / WORKING_ZOOM;
 const GRID_CELL = 256;
+const MAX_RECT_CELLS = 64;
+// A deterministic cap keeps deep trees responsive; untouched enclosing seats remain collision-free.
+const TUCK_WORK_PER_NODE = 2048;
 const EPSILON = 1e-9;
 // A rect corner that crossed a moving edge within this fraction of the move before it began only grazed it.
 const GRAZE = 1e-3;
 
 export class BubbleLayoutEngine extends LayoutEngine {
-  static reorder = 'none';
+  static layoutName = 'bubble';
+  static reorder = 'parent-arc';
   static readsCaptions = true;
 
   layout(tree) {
     const forest = new Forest(tree);
     const bubbles = enclosingBubbles(forest);
     const positions = growIslands(forest, bubbles);
-    const islands = forest.roots.map((root) => tuckIsland(forest, positions, root));
+    const work = { left: Math.max(1_000_000, forest.size * TUCK_WORK_PER_NODE) };
+    const islands = forest.roots.map((root) => tuckIsland(forest, positions, root, work));
     settleIslands(forest, positions, islands);
     return new Map(forest.ids.map((id, node) => [id, { x: positions.x[node], y: positions.y[node] }]));
   }
@@ -159,7 +164,7 @@ function growIslands(forest, bubbles) {
 
 // Post-order over one island: each subtree, its children already tucked, slides toward its parent as far as the
 // resting footprints and trunk edges allow. Returns the post-order and the circle around it, in the island's frame.
-function tuckIsland(forest, positions, root) {
+function tuckIsland(forest, positions, root, work) {
   const order = forest.postOrderOf(root);
   const rank = new Int32Array(forest.size);
   order.forEach((node, i) => { rank[node] = i; });
@@ -167,6 +172,7 @@ function tuckIsland(forest, positions, root) {
   for (const node of order) resting.rest(node);
 
   for (const head of order) {
+    if (work.left < 0) break;
     if (head === root) continue;
     const parent = forest.parentOf[head];
     const vx = positions.x[parent] - positions.x[head];
@@ -175,7 +181,7 @@ function tuckIsland(forest, positions, root) {
     const last = rank[head];
     const first = last - forest.subtreeSize[head] + 1;
     const sliding = (node) => rank[node] >= first && rank[node] <= last;
-    const t = resting.room(order, first, last, vx, vy, sliding);
+    const t = resting.room(order, first, last, vx, vy, sliding, work);
     if (t <= 0) continue;
     for (let i = first; i <= last; i++) resting.lift(order[i]);
     for (let i = first; i <= last; i++) {
@@ -255,13 +261,13 @@ class RestingSet {
   }
 
   lift(node) {
-    this.footprints.remove(node, this.footprintOf(node));
-    if (this.forest.parentOf[node] !== -1) this.edges.remove(node, boxOf(this.edgeOf(node)));
+    this.footprints.remove(node);
+    if (this.forest.parentOf[node] !== -1) this.edges.remove(node);
   }
 
   // The fraction of the move (vx, vy) that nodes[first..last] can take together, marching a cell at a time and asking
   // the grids a margin wider than each sweep, so a contact at the margin is never missed across a cell boundary.
-  room(nodes, first, last, vx, vy, sliding) {
+  room(nodes, first, last, vx, vy, sliding, work = null) {
     const length = Math.hypot(vx, vy);
     const ux = vx / length;
     const uy = vy / length;
@@ -269,22 +275,24 @@ class RestingSet {
       const step = Math.min(GRID_CELL, length - travelled);
       let fraction = 1;
       for (let i = first; i <= last; i++) {
+        if (work !== null && --work.left < 0) return 0;
         const node = nodes[i];
         const footprint = shift(this.footprintOf(node), travelled * ux, travelled * uy);
         const swept = expand(sweep(footprint, step * ux, step * uy), TUCK_MARGIN);
-        for (const other of this.footprints.within(swept)) {
+        for (const other of this.footprints.within(swept, work)) {
           if (!sliding(other)) fraction = Math.min(fraction, footprintStop(footprint, step * ux, step * uy, this.footprintOf(other)));
         }
-        for (const other of this.edges.within(swept)) {
+        for (const other of this.edges.within(swept, work)) {
           if (!sliding(other)) fraction = Math.min(fraction, edgeStop(this.edgeOf(other), -step * ux, -step * uy, footprint));
         }
         const parent = this.forest.parentOf[node];
         if (parent === -1 || !sliding(parent)) continue;
         const edge = shiftEdge(this.edgeOf(node), travelled * ux, travelled * uy);
-        for (const other of this.footprints.within(expand(sweep(boxOf(edge), step * ux, step * uy), TUCK_MARGIN))) {
+        for (const other of this.footprints.within(expand(sweep(boxOf(edge), step * ux, step * uy), TUCK_MARGIN), work)) {
           if (!sliding(other)) fraction = Math.min(fraction, edgeStop(edge, step * ux, step * uy, this.footprintOf(other)));
         }
       }
+      if (work !== null && work.left < 0) return 0;
       if (fraction < 1) return (travelled + fraction * step) / length;
     }
     return 1;
@@ -599,17 +607,25 @@ function expand(rect, by) {
   return { minX: rect.minX - by, maxX: rect.maxX + by, minY: rect.minY - by, maxY: rect.maxY + by };
 }
 
-// A uniform grid of GRID_CELL-wide buckets over rects keyed by node; `within` lists every node whose rect touches a
-// cell the query rect covers, each once, in an array reused between calls.
+// Small rectangles use grid cells; wide rectangles and wide queries scan occupied entries.
 class RectGrid {
   constructor(capacity) {
     this.cells = new Map();
+    this.rects = new Map();
+    this.wide = new Set();
     this.found = [];
     this.seen = new Int32Array(capacity);
     this.stamp = 0;
   }
 
   insert(node, rect) {
+    this.rects.set(node, rect);
+    const columns = Math.floor(rect.maxX / GRID_CELL) - Math.floor(rect.minX / GRID_CELL) + 1;
+    const rows = Math.floor(rect.maxY / GRID_CELL) - Math.floor(rect.minY / GRID_CELL) + 1;
+    if (columns * rows > MAX_RECT_CELLS) {
+      this.wide.add(node);
+      return;
+    }
     for (let i = Math.floor(rect.minX / GRID_CELL); i <= Math.floor(rect.maxX / GRID_CELL); i++) {
       for (let j = Math.floor(rect.minY / GRID_CELL); j <= Math.floor(rect.maxY / GRID_CELL); j++) {
         const bucket = this.cells.get(cellKey(i, j));
@@ -619,30 +635,56 @@ class RectGrid {
     }
   }
 
-  remove(node, rect) {
+  remove(node) {
+    const rect = this.rects.get(node);
+    this.rects.delete(node);
+    if (this.wide.delete(node)) return;
     for (let i = Math.floor(rect.minX / GRID_CELL); i <= Math.floor(rect.maxX / GRID_CELL); i++) {
       for (let j = Math.floor(rect.minY / GRID_CELL); j <= Math.floor(rect.maxY / GRID_CELL); j++) {
         const bucket = this.cells.get(cellKey(i, j));
         bucket[bucket.indexOf(node)] = bucket[bucket.length - 1];
         bucket.pop();
+        if (bucket.length === 0) this.cells.delete(cellKey(i, j));
       }
     }
   }
 
-  within(rect) {
+  within(rect, work = null) {
     this.stamp += 1;
     this.found.length = 0;
+    const columns = Math.floor(rect.maxX / GRID_CELL) - Math.floor(rect.minX / GRID_CELL) + 1;
+    const rows = Math.floor(rect.maxY / GRID_CELL) - Math.floor(rect.minY / GRID_CELL) + 1;
+    if (columns * rows > this.rects.size) {
+      for (const [node, bounds] of this.rects) {
+        if (work !== null && --work.left < 0) return this.found;
+        if (rectsTouch(rect, bounds)) this.found.push(node);
+      }
+      return this.found;
+    }
+    if (work !== null) {
+      work.left -= columns * rows;
+      if (work.left < 0) return this.found;
+    }
     for (let i = Math.floor(rect.minX / GRID_CELL); i <= Math.floor(rect.maxX / GRID_CELL); i++) {
       for (let j = Math.floor(rect.minY / GRID_CELL); j <= Math.floor(rect.maxY / GRID_CELL); j++) {
         for (const node of this.cells.get(cellKey(i, j)) ?? []) {
+          if (work !== null && --work.left < 0) return this.found;
           if (this.seen[node] === this.stamp) continue;
           this.seen[node] = this.stamp;
           this.found.push(node);
         }
       }
     }
+    for (const node of this.wide) {
+      if (work !== null && --work.left < 0) return this.found;
+      if (rectsTouch(rect, this.rects.get(node))) this.found.push(node);
+    }
     return this.found;
   }
+}
+
+function rectsTouch(a, b) {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
 }
 
 function cellKey(i, j) {

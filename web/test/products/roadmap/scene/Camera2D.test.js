@@ -139,6 +139,21 @@ test('fit shows the whole model inside the visible area and never past the worki
   assert.ok(Math.abs(centre.x - 208) < 1e-9 && Math.abs(centre.y - 322) < 1e-9);
 });
 
+test('a tiny installed tree can restore and focus at working zoom without jumping off the visible centre', () => {
+  const cam = fresh(1);
+  cam.setInsets({ left: 24, right: 408, top: 76, bottom: 24 });
+  cam.setFitBounds({ minX: -56, minY: -56, maxX: 56, maxY: 56 });
+  cam.fitToView(cam.fitBounds);
+  const saved = { x: cam.x, y: cam.y, zoom: cam.zoom };
+  cam.restore(saved.x, saved.y, saved.zoom);
+  assert.deepEqual({ x: cam.x, y: cam.y, zoom: cam.zoom }, saved);
+  cam.focus(0, 0);
+  assert.equal(cam.zoom, cam.workingZoom);
+  assert.deepEqual(cam.worldToScreen(0, 0), { x: 208, y: 326 });
+  cam.zoomBy(0.001);
+  assert.equal(cam.zoom, cam.workingZoom / 2);
+});
+
 test('insets shift focus and glide targets into the area the chrome leaves visible', () => {
   const cam = fresh(0.05);
   cam.setInsets({ left: 24, right: 408, top: 76, bottom: 32 });

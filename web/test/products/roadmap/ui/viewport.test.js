@@ -9,12 +9,12 @@ const MINIMAP_BLOCK = { left: 24, bottom: 24, width: 186, height: 146 };
 test('insets follow the breakpoint and the chrome that is up', () => {
   assert.deepEqual(viewportInsets({ breakpoint: 'desktop' }), { top: 76, right: 24, bottom: 24, left: 24, blocks: [MINIMAP_BLOCK] });
   assert.deepEqual(viewportInsets({ breakpoint: 'desktop', dockOpen: true }), { top: 76, right: 408, bottom: 24, left: 24, blocks: [MINIMAP_BLOCK] });
-  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', laneInset: 64 }), { top: 120, right: 12, bottom: 80, left: 12, blocks: [] });
-  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', dockOpen: true }), { top: 120, right: 368, bottom: 16, left: 12, blocks: [] });
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', laneInset: 64 }), { top: 128, right: 12, bottom: 80, left: 12, blocks: [] });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', laneInset: 64 }), { top: 156, right: 12, bottom: 80, left: 12, blocks: [] });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', dockOpen: true }), { top: 156, right: 368, bottom: 16, left: 12, blocks: [] });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', laneInset: 64 }), { top: 156, right: 12, bottom: 80, left: 12, blocks: [] });
   // The lifted action lane rides above an open sheet: the band clears whichever reaches higher, never just the sheet.
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 300, laneInset: 64 }), { top: 128, right: 12, bottom: 312, left: 12, blocks: [] });
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 60, laneInset: 200 }), { top: 128, right: 12, bottom: 216, left: 12, blocks: [] });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 300, laneInset: 64 }), { top: 156, right: 12, bottom: 312, left: 12, blocks: [] });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 60, laneInset: 200 }), { top: 156, right: 12, bottom: 216, left: 12, blocks: [] });
 });
 
 test('the corner chrome holds is a block, not an inset: the legend joins the minimap once it has a measured box', () => {

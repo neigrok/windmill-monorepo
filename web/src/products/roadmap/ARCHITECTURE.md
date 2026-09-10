@@ -18,7 +18,7 @@ Nothing here may import another product; `test/shell-boundaries.test.mjs` enforc
 `SkillTreeView.jsx`, in the effect keyed on `[reloadKey, treeId, demo]`:
 
 ```
-const engine    = await loadLayoutEngine(layoutNameFrom(location)); // layout/index.js: ?layout=<name>, default radial
+const engine    = await loadLayoutEngine(layoutNameFrom(location)); // layout/index.js: ?layout=<name>, default bubble
 const repo      = new HttpTreeRepository({ treeId });
 const seed      = await repo.loadTree();              // …or loadDeviceTree(id): the blob, if the row is ours
 const tree      = new SkillTree(seed);                // entity + DAG validation
@@ -51,7 +51,7 @@ The six marked **↓** have a section of their own below.
 | | |
 |---|---|
 | `model/` | Pure domain: the tree entity, unlock rules, the legend, spatial index. **↓** |
-| `layout/` | Four layout engines behind one door (`index.js`) — radial, rings, bubble, mindmap; synchronous, deterministic. **↓** |
+| `layout/` | Four layout engines behind one door (`index.js`) — bubble draws the tree, radial catches a failure, rings and mindmap answer `?layout=`; synchronous, deterministic. **↓** |
 | `scene/` | The WebGL2 renderer, its DOM overlays and pointer tools. **↓** |
 | `sync/` | The client half of the graph CRDT, both lanes: shared structure, private progress, gestures, socket, IndexedDB. **↓** |
 | `share/` | Public-link sharing and the in-product gallery portraits. **↓** |
@@ -89,9 +89,10 @@ Root files: `routes.js`, `SkillTreeApp.jsx` (resolves *which* tree before the he
 
 `model/ports.js` — the data shapes (`NodeSpec`, `Kind`, `TreeData`, `Progress`, `RenderNode`,
 `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) plus the base ports `TreeRepository`
-(`loadTree` / `loadProgress` / `loadActivity`) and `LayoutEngine` (`layout` is synchronous; the static
-`reorder` hint — `'ring'` · `'none'` — says how siblings may be dragged into a new order on that engine's
-geometry, and `readsCaptions` says whether a rename changes the picture). The C++ server answers these same
+(`loadTree` / `loadProgress` / `loadActivity`) and `LayoutEngine` (`layout` is synchronous;
+`layoutName` names the engine; the static `reorder` hint — `'ring'` · `'parent-arc'` · `'none'` —
+says how siblings may be dragged into a new order on
+that engine's geometry, and `readsCaptions` says whether a rename changes the picture). The C++ server answers these same
 shapes: when a field moves, it moves in both.
 
 `theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. The module
@@ -119,8 +120,8 @@ rim every edge, port and affordance stops at), a crowned root `ROOT_BODY_SCALE` 
 selected one `SELECTED_SCALE` (1.14); `WORKING_ZOOM` is the zoom at which an ordinary body is 52 CSS px
 (`PHONE_WORKING_ZOOM`, 40 px); a drawn body never falls under `MIN_BODY_PX` 6 (`MIN_ROOT_BODY_PX` 9) at
 any zoom — a shader uniform floors it, and the caption rule is keyed on the same floored body; `CAPTION`
-is the fixed caption frame (14 px on a 20 px line, at most two lines inside 168 px, 8 px under the rim,
-6.65 px per character for the layout's estimate).
+is the fixed caption frame (14 px on a 20 px line, at most two lines inside 168 px, overflow ellipsized,
+8 px under the rim, 6.65 px per character for the layout's estimate).
 
 Positions are in **world units** where a node is `NODE_SIZE` (56) across. Everything in `model/` is
 pure JS — no WebGL, no React.
@@ -164,30 +165,53 @@ pure JS — no WebGL, no React.
 
 ## `layout/`
 
-`index.js` is the one door: `LAYOUTS` (`radial` · `rings` · `bubble` · `mindmap`), `layoutNameFrom(location)`
-(`?layout=<name>` before or after the hash, else `radial`), `loadLayoutEngine(name)` — the default engine
-statically, the others behind a dynamic import each, so one engine's failure never takes the others down —
-`defaultLayoutEngine()`, the synchronous radial engine every picture drawn outside the canvas uses
-(`quests/QuestThumb.jsx`, `paste/GhostSkeleton.jsx`), and `layoutTree(engine, tree)`, which contains a
-throwing engine: radial answers in its place and the console names the engine that failed, so no bug in one
-engine can blank the canvas. Every engine is a `LayoutEngine` (`model/ports.js`) with two statics — the
-`reorder` hint (`'ring'` arms the scene's angular reorder gesture, anything else disarms it) and
-`readsCaptions`, which tells the view whether a rename has to re-run it. All four are pure, synchronous,
-deterministic (siblings sort by their fractional-index key, so a load and a live emission project identical
-pixels), and iterative rather than recursive, so a chain thousands of steps deep is no deeper here.
+`index.js` is the one door. `DEFAULT_LAYOUT` is **`bubble`** — the engine a reader gets — and
+`FALLBACK_LAYOUT` is `radial`, the engine that answers when another cannot. `LAYOUTS` (`radial` · `rings` ·
+`bubble` · `mindmap`) names them all; `layoutNameFrom(location)` reads `?layout=<name>` before or after the
+hash and answers the default for anything else. Bubble and radial are statically imported;
+`loadLayoutEngine(name)` loads rings and mindmap on demand and answers a failed alternative import
+with radial. `layoutTree(engine, tree)` contains a throwing layout the same way and logs the failure.
+It returns `{ positions, name, engine }` for the engine that produced the positions, including a
+radial fallback. The live scene's reorder hint and persisted camera identity use that effective
+engine. Radial's own failure propagates.
 
-`RadialLayoutEngine.js` (`reorder = 'ring'`) — each node sits on the ring for its trunk depth, centred in
-an angular wedge split among trunk children by subtree leaf count; a ring is pushed outward until its
-closest pair of neighbours has room. It reads no caption.
+`pageLayoutEngine()` resolves `layoutNameFrom(window.location)` for each consumer: the canvas,
+quest thumbnails (`quests/QuestThumb.jsx`) and paste ghost (`paste/GhostSkeleton.jsx`). Each gets
+a stateless engine instance and runs it through `layoutTree`, sharing the selection and fallback
+policy. The preview components hold their positions in state and paint a beat after their frames.
+
+Every engine is a `LayoutEngine` (`model/ports.js`) with a `layoutName` and two behavior statics.
+`reorder` names the sibling gesture that fits its geometry; `readsCaptions` tells the view whether a
+rename has to re-run it. All four are pure, synchronous and deterministic: siblings sort by their
+fractional-index key, so a load and a live emission project identical pixels. Iterative traversal
+keeps deep chains off the call stack. Engines hold no state between layouts.
+
+`BubbleLayoutEngine.js` — **the default** (`reorder = 'parent-arc'`, `readsCaptions = true`) — a bubble tree: each
+node's children sit on rays around it inside its enclosing circle, every child facing its parent; a
+post-order tuck slides rigid subtrees along their ray until footprints or resting trunk edges touch; islands
+settle by front-chain circle packing with the largest root pinned at the origin. It is the engine measured
+closest on the reader's own complaint — a trunk parent and child 3.4 bodies apart, 24–25 steps in the
+working window — and the only one whose whole-tree fit clears the 6 px body floor by itself. It has no
+shared center or depth ring, so the minimap reads as a constellation. Siblings reorder around their
+trunk parent within an open fan; packed root islands have no drag reorder.
+
+The tuck has a deterministic work ceiling, `max(1,000,000, 2048 × nodeCount)`, counting subtree
+passes, grid cells and candidate entries. If it runs out, the unfinished move is discarded and
+remaining subtrees keep their enclosing-circle seats. Large trees can remain looser; the ceiling
+does not cover every layout phase or guarantee interactive latency. The rectangle index stores
+boxes spanning more than 64 cells once and scans rectangles when that is cheaper than visiting cells.
+
+`RadialLayoutEngine.js` — **the fallback** (`reorder = 'ring'`) — each node sits on the ring for its trunk
+depth, centred in an angular wedge split among trunk children by subtree leaf count; a ring is pushed
+outward until its closest pair of neighbours has room. It reads no caption and provides a simple
+synchronous fallback.
+
 `RingsLayoutEngine.js` (`reorder = 'none'`) — concentric depth rings with Reingold–Tilford contour packing
 in angle space over each node's `footprintOf` reach; a ring's radius is the larger of the previous ring plus
 a pitch and the ring's summed footprint arc over 2π. Multi-root as islands: the largest tree's crown at the
 origin, every other tree laid out about its own crown and packed by enclosing circle — never inside another
 rim, and seated to keep the forest's box nearest square rather than strung along one axis.
-`BubbleLayoutEngine.js` (`reorder = 'none'`) — a bubble tree: each node's children sit on rays around it
-inside its enclosing circle, every child facing its parent; a post-order tuck slides rigid subtrees along
-their ray until footprints or resting trunk edges touch; islands settle by front-chain circle packing with
-the largest root pinned at the origin.
+
 `MindmapLayoutEngine.js` (`reorder = 'none'`) — each branch (a trunk child of the hub, or a root) is a
 Buchheim/Walker tidy tree in its own frame with horizontal captions, seated on one of twelve compass
 directions by subtree size; radii shrink from a shared ring by halving slides until oriented per-level
@@ -204,7 +228,8 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   `screenToWorld` is the exact inverse of the shader projection, so picking is pixel-accurate. It carries
   the **working zoom** (`WORKING_ZOOM` from `theme.js`, `PHONE_WORKING_ZOOM` on a phone via
   `setWorkingZoom`): every `focus` / `glideTo` floors there and `fitToView` caps there. The zoom floor is
-  dynamic — half the fit zoom of `setFitBounds` — for wheel, pinch, buttons, `restore` and glides.
+  dynamic — half the smaller of the fit zoom of `setFitBounds` and the working zoom — for wheel,
+  pinch, buttons, `restore` and glides. Tiny trees therefore keep room to zoom out from All steps.
   `setInsets({top,right,bottom,left})` names the chrome-covered px per side, and `centreFor` /
   `visibleViewport` / `fitZoomFor` centre focus, fit and glide inside what is left. Also `pan`, `zoomAt`
   (cursor-anchored), `zoomBy`, `panTo`, `glideTo(x, y, zoom, {force})`, `launchInertia`, `update(dt)`.
@@ -303,7 +328,8 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   `frameNodes`, `panTo`, `zoomBy`, `setWorkingZoom`,
   `setViewportInsets` (chrome-covered px per side plus the corner blocks, handed to the camera and the
   captions),
-  `setReorderHint` (only `'ring'` arms the angular reorder), `suppressArrival` (one-shot, before
+  `setReorderHint` (`'ring'` and `'parent-arc'` arm the angular reorder, `'none'` disarms it),
+  `suppressArrival` (one-shot, before
   `setModel`), `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`,
   `resize`, `start`, `stop`, `dispose`; selection (`select` / `selectEdge` — node and edge selection are
   mutually exclusive — `setSelection`, `setSelectedSet`, `toggleSelect`, `hover`, `pick(x, y,

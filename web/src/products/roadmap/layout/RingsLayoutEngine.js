@@ -26,6 +26,7 @@ const MAX_REPAIRS = 6;
 const ISLAND_ANGLE_SAMPLES = 72;
 
 export class RingsLayoutEngine extends LayoutEngine {
+  static layoutName = 'rings';
   static reorder = 'none';
   static readsCaptions = true;
 

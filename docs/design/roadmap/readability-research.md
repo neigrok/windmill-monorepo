@@ -1,7 +1,8 @@
 # Roadmap readability — research note
 
 Why the tree canvas was unreadable, the foundation that answers it, and the four layout engines
-measured side by side on the same tree. The calls left to the owner are in §5.
+measured side by side on the same tree. **The owner has chosen bubble as the layout every reader gets,
+and has kept the 168 px caption reserve** (§5); the calls still open are in §5 too.
 
 Every number here was produced by running code. The tree is the Windmill dogfood roadmap — 476 steps,
 618 links, 9 roots, 411 complete — pinned as `web/test/products/roadmap/fixtures/dogfood-tree.json`
@@ -51,8 +52,9 @@ set of constants in `theme.js`; the node shader interpolates the same numbers in
 disc cannot drift from the box a layout reserved for it.
 
 **Captions are CSS px, never world units.** 14 px on a 20 px line, at most two lines inside a 168 px
-box, 8 px below the rim, a 2 px halo in the canvas colour so a ribbon under a name never cuts the
-glyphs. `scene/captionLayout.js` decides them; `scene/NodeOverlay.js` measures the text once per label
+box, with overflow ellipsized on the second line, 8 px below the rim, a 2 px halo in the canvas colour
+so a ribbon under a name never cuts the glyphs. `scene/captionLayout.js` decides them;
+`scene/NodeOverlay.js` measures the text once per label
 and moves the elements.
 
 **Which steps are named is a rank, and the zoom says how far down it reaches.** selected → hovered →
@@ -71,15 +73,15 @@ never over another name. 200 ms of unbroken placement before a caption appears, 
 before it goes, 150 ms fade. Pool 96, at most 288 candidates a pass.
 
 **The working zoom.** `WORKING_ZOOM` is the zoom at which an ordinary body is **52 CSS px** (1.105);
-`PHONE_WORKING_ZOOM` puts it at **40 px** (0.850). Every focus and every glide floors there; every fit
-caps there.
+`PHONE_WORKING_ZOOM` puts it at **40 px** (0.850). Focus frames at the working zoom; default glides
+keep at least that zoom, and every whole-tree fit caps there.
 
 **Floors, so nothing vanishes.** A drawn body never goes under 6 px, 9 px for a crowned root — a shader
 uniform grows the whole quad, so halo and crown grow with it, and the caption rule reads that same
-floored body. The zoom floor is dynamic: half the fit zoom of the model's bounds, so a wheel or pinch
-can always back off from All steps and can never lose the tree. Hit floors are 24 px for a pointer and
-44 px for touch, capped at half the distance to the nearest other node; inside the cap a tap is not a
-miss — it glides the working view in around the point.
+floored body. The zoom floor is dynamic: half the smaller of the fit zoom and working zoom, so a wheel
+or pinch can back off from All steps even on a tiny tree. The drawn disc stays selectable; beyond it,
+hit extension reaches a 24 px pointer / 44 px touch radius, capped at half the nearest-neighbor distance.
+Below the working zoom an ambiguous crowded tap glides the working view in around the point.
 
 **The first view.** An owner with no saved camera opens at the working zoom over the frontier step's
 family, arrival suppressed — the frontier being the selection the device remembers, else the top
@@ -101,12 +103,15 @@ full-width insets per breakpoint and view state for the bar, dock, sheet and lan
 centres behind them — but that no caption may sit under.
 
 **The layout door.** `layout/index.js`: `?layout=radial|rings|bubble|mindmap`, before or after the hash,
-picks the engine; radial is the default and is compiled in, the other three sit behind a dynamic import
-each. `layoutTree` contains a throwing engine — radial answers in its place and the console names the
-one that failed, so no bug in an engine can blank the canvas. An engine declares two statics: `reorder`
-(`'ring'` arms the angular sibling drag, anything else disarms it) and `readsCaptions` (whether a
-rename has to re-run it). All four are pure, synchronous, deterministic and iterative, so a chain
-thousands of steps deep is no deeper.
+picks the engine; **bubble is the default**. Bubble and radial are statically imported; rings and
+mindmap load on demand. `loadLayoutEngine` answers a failed alternative import with radial, and
+`layoutTree` answers a throwing engine with it, logging the failure. Each result includes its positions
+and effective engine, so camera persistence and reorder hints follow the layout that actually drew.
+`pageLayoutEngine()` resolves the page's selected engine for the canvas, quest thumbnails and paste
+ghost; all three run it through the same fallback guard. Each engine names itself with `layoutName`
+and declares `reorder` (`'ring'` around the origin, `'parent-arc'` around a trunk parent, or `'none'`)
+and `readsCaptions` (whether a rename has to re-run it). All four are pure, synchronous, deterministic
+and iterative, so deep chains do not consume the JavaScript call stack.
 
 ## 4. The four layouts on the dogfood tree
 
@@ -130,18 +135,19 @@ Distances in CSS px at the desktop working zoom (52 px bodies), from
 | first view: on screen · named, desktop | 10 · 8 | 25 · 17 | 18 · 12 | 24 · 17 |
 | first view: on screen · named, phone | 5 · 4 | 16 · 5 | 12 · 5 | 20 · 4 |
 | named at All steps, desktop / phone | 8 / 3 | 9 / 7 | 9 / 5 | 10 / 6 |
-| layout, 476 steps | **0.40 ms** | 55.9 ms | 18.6 ms | 4.1 ms |
-| reorder hint | `ring` | `none` | `none` | `none` |
+| layout, 476 steps | **0.40 ms** | 55.9 ms | 29.0 ms | 4.1 ms |
+| reorder hint | `ring` | `none` | `parent-arc` | `none` |
 
-Timings are a median of five on an idle machine (Node 20, Apple M3 Pro); geometry is deterministic and
-machine-independent — two runs of one engine over one tree serialise byte-identically.
+Timings are offline medians of five, not frame-time measurements. Bubble's current bounded-tuck
+timings and runtime are described in §7. The other engines' recorded runs used Node 20 on Apple
+M3 Pro. Geometry is deterministic — two runs of one engine over one tree serialise byte-identically.
 
 **What each one looks like.** The fruit are the same on all four — the shader is untouched, so kind
 hues, the locked wash, the ember, the complete halo and the crown at 1.55× carry over. The silhouette
 is what changes, and the minimap, `share/TreePortrait.js` and every gallery card draw whatever the
 engine draws.
 
-- **radial** keeps the burst the marketing boards and the gallery portraits are drawn from. It closes
+- **radial** keeps the burst the marketing boards and hand-authored landing scenes draw. It closes
   the size and the text complaints and nothing else: 21 bodies between a parent and its child, 39% of
   families on one screen, 98 reserved boxes overlapping.
 - **rings** is the same picture made honest — one crown at the world origin, fruit on depth rings,
@@ -155,32 +161,41 @@ engine draws.
 - **mindmap** measures well (4.0 bodies, 92.5% of families) and reads as an org chart: **400 of 476
   steps share an x with five or more others, the longest column 64 deep**. The overview is a totem.
 
-## 5. The owner's decision sheet
+## 5. What the owner decided, and what is still open
 
-1. **Which engine.** rings or bubble; mindmap is struck by its own columns. Concentric identity at 4.2
-   bodies, whose fit reads as two blobs, or organic density at 3.4 bodies with no rings and no centre.
-   Whichever is chosen is also the gallery's silhouette and the shape the landing boards draw.
-2. **The caption reserve.** 168 px everywhere (every number above), 140 px, or a narrower phone reserve
-   with a one-line ellipsis. The phone names 4–5 of the 12–20 fruit it shows, and a 168 px box cannot
-   find a seat in a 366 px band when neighbours sit 2.6 bodies apart. Cutting authored names short is a
-   product ruling, not a layout one.
-3. **The phone working zoom.** 40 px bodies (the build) against canon's 20–34 px visual node
-   (`guidelines/responsive.md` §4). 40 px reads in every phone capture; the drift is filed as F49 in
-   `../consistency.md`.
-4. **Cross-branch edges at rest.** 129 of 618 links leave the trunk. In sparse views the hairlines from
+**Decided — bubble is the layout every reader gets.** `DEFAULT_LAYOUT` is `bubble`; `?layout=` still
+opens the other three and nothing in the UI offers the switch. It answers the distance complaint
+outright — 3.4 bodies between a trunk parent and its child against radial's 21.4, 24–25 steps in the
+working window against 4–5, 93.5% of families on one screen against 39.2% — and it is the only engine
+whose whole-tree fit clears the 6 px body floor by itself. What it costs is written down rather than
+argued away: no rings and no centre, so the overview and the minimap read as a constellation; a
+synchronous layout with a deterministic tuck-work ceiling (§7); and `readsCaptions`, so a rename
+re-runs it where radial never re-ran.
+
+**Decided — the 168 px caption reserve stays.** `theme.js CAPTION.maxWidthPx` is 168, which is the
+number every measure on this page was taken at. Captions have up to two lines inside that reserve;
+overflow ellipsizes. The reserve is a caption width, not a fixed distance between node centers.
+
+**The camera and gesture contract.** The phone working view uses 40 px bodies and 44 px camera
+button targets. Focus and All steps remain visible in canvas view; a crowded tap below the working
+zoom zooms in before selection. Bubble's sibling reorder follows the parent's open arc, with no
+root drag. These rules live in `guidelines/tree-layout-contract.md`, `responsive.md`, and
+`angular-reorder.md`.
+
+The marketing boards and hand-authored landing scenes draw a radial burst. Their bubble redraw is
+the design follow-up **F50** in `../consistency.md`.
+
+Still open:
+
+1. **Cross-branch edges at rest.** 129 of 618 links leave the trunk. In sparse views the hairlines from
    nowhere to nowhere outnumber the family's own ribbons. Options: leave them, quieten their rest
    alpha, cull an edge with both ends off the canvas at the working zoom, or draw stubs.
-5. **The visitor's first view.** Keep the whole-tree fit plus the arrival cascade, or land a visitor on
-   the frontier the way the owner lands. The fit now names the crowns and the biggest branch heads, so
-   the first frame is no longer nameless either way.
-6. **The two roots both named "Windmill".** `a679631b-d65c-4a4c-a00b-ad04be0ecc1a` (5 children) and
+2. **Visitor entry evaluation.** The shipped entry is whole-tree fit plus arrival. A frontier entry
+   remains a possible experiment; the fit names crowns and the biggest branch heads.
+3. **The fixture's two roots both named "Windmill".** `a679631b-d65c-4a4c-a00b-ad04be0ecc1a` (5 children) and
    `product` (2 children). Both are named at once in every All-steps capture, and the plaque already
-   reads "Windmill | Windmill". This is a data edit on the live tree (MCP `rename_node`), and it will
-   desync the fixture until the fixture is recaptured.
-
-Two more canon questions are open in the ledger rather than here: the phone's always-visible Focus ·
-All steps group replacing the gated Recenter chip (F46), and what a tap inside the crowded cap should
-do (F48).
+   reads "Windmill | Windmill". Any rename on the live tree requires its own data review and a
+   fixture recapture.
 
 ## 6. Reproducing the numbers
 
@@ -191,6 +206,7 @@ shapes:
 cd web
 node scripts/benchmark-roadmap.mjs --only dogfood
 node scripts/benchmark-roadmap.mjs --only shapes --sizes 500,2000,5000 --json bench.json
+node scripts/benchmark-roadmap.mjs --layouts bubble --sizes 5000 --json bubble-bench.json
 npm test                                  # the engine tests pin these same measures
 ```
 
@@ -210,23 +226,31 @@ node --experimental-websocket capture.mjs --origin http://localhost:5175 --tree 
 
 Each run writes `overview`, `working`, `selected` and `allsteps` PNGs plus `measures.json` (camera,
 body px, caption count and font, overlapping pairs, nodes on screen, the two hit-floor taps at the
-fit). To read the app by hand, `?layout=<name>` before or after the hash picks the engine:
-`http://localhost:5175/?layout=bubble#/app/t_9362d9bc883e0a1e`.
+fit). The app opens on bubble; to read another engine by hand, `?layout=<name>` before or after the hash
+picks it: `http://localhost:5175/?layout=radial#/app/t_9362d9bc883e0a1e`.
 
 ## 7. Known limits
 
 **Every engine.** Layout is synchronous on the main thread — once before the first paint, and again on
 every signature change (structure, order, colour, and for the three caption-reading engines, a rename).
-There is no budget the tests enforce and no worker.
+There is no worker or enforced wall-clock latency budget. Bubble's tuck has a deterministic work
+budget of `max(1,000,000, 2048 × nodeCount)`, counting subtree passes, queried grid cells, and
+candidate entries. Exhaustion discards an unfinished subtree move and leaves remaining seats
+at their enclosing-circle positions; it trades compactness for bounded tuck work without choosing
+different geometry on faster devices. Boxes spanning more than 64 grid cells are stored once;
+a query wider than the rectangle set scans that set instead of every cell.
 
 | 5,000 steps | radial | rings | bubble | mindmap |
 |---|---|---|---|---|
-| mixed | 3.3 ms | 1.5 s | 1.3 s | 67 ms |
-| broad | 3.1 ms | 331 ms | 1.1 s | 52 ms |
-| deep (chain of chains) | 2.7 ms | 28 ms | **13.9 s** | 4.9 ms |
-| multiroot | 1.5 ms | 432 ms | 179 ms | 11 ms |
+| mixed | 3.3 ms | 1.5 s | 207 ms | 67 ms |
+| broad | 3.1 ms | 331 ms | 202 ms | 52 ms |
+| deep (chain of chains) | 2.7 ms | 28 ms | 188 ms | 4.9 ms |
+| multiroot | 1.5 ms | 432 ms | 251 ms | 11 ms |
 
-At 2,000 mixed steps: radial 1.5 ms, rings 543 ms, bubble 221 ms, mindmap 28 ms.
+Bubble values are the final graduation offline run, median of five; they measure layout calls
+alone, not live edit or frame latency. The same run reports finite, deterministic positions and
+zero reserved-footprint overlaps for all five fixtures, including dogfood. Runtime context is
+recorded in `bubble-graduation.md`.
 
 - **radial** — the ring rule that §2 measures is still the ring rule: at 5,000 mixed steps the bounds
   are 459k × 452k wu, 92% of trunk links are over 700 px, and the whole-tree fit puts a body at 0.1 px
@@ -237,8 +261,9 @@ At 2,000 mixed steps: radial 1.5 ms, rings 543 ms, bubble 221 ms, mindmap 28 ms.
   owner should connect. It is also the least stable under an edit: a rename that pushes one name onto
   a second line moves up to 475 of the 476 seats, by as much as 3,837 wu (81 bodies), and the scene
   glides every one of them. 56 ms a layout here, 543 ms at 2,000 steps.
-- **bubble** — the tuck is O(n · depth): a 5,000-step chain of chains takes ~14 s, and the same shape
-  at 2,000 takes 1.5 s. No centre and no depth cue at the fit. A 200-leaf fan puts its children on one
+- **bubble** — large or deeply nested trees can exhaust the tuck budget and retain a looser
+  enclosing-circle layout. The ceiling does not cover every phase or guarantee an interactive
+  latency. There is no shared center or depth cue at the fit. A 200-leaf fan puts its children on one
   ring about 4,300 px out, because children sit on rays around their parent. A rename moves 5–346
   seats, none of them further than 157 wu.
 - **mindmap** — the columns above are the identity, not a defect to tune: a tidy tree with captions
@@ -256,8 +281,9 @@ a capture. A GPU run is the only source for those.
 
 - Real-device pixels. Every capture is headless Chrome on SwiftShader at dpr 1 (desktop) and 3 (phone);
   geometry and DOM measurements are unaffected, glyph rasterisation may differ.
-- Edit stability under rings and bubble on a live page — measured offline (seats moved per edit), never
-  driven through the sync path in a browser.
+- Rings edit stability on a live page. Bubble's create, long rename, progress and delete sync path,
+  sibling reorder with undo, and camera restoration have live local-stack coverage recorded in
+  `bubble-graduation.md`; sustained large-tree editing remains unmeasured.
 - The arrival cascade and reduced motion on a visitor's first view: no read-only session was captured.
 - Frame timing on this branch: no GPU run is recorded in the repo, and the checked-in rig cannot
   measure it.

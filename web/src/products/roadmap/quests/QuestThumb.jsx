@@ -1,17 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
-import { defaultLayoutEngine } from '../layout/index.js';
+import { layoutTree, pageLayoutEngine } from '../layout/index.js';
 import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const LOCKED_INK = 0.28;
 const HALO_RADIUS = NODE_SIZE * 1.15;
 
-// Each quest layout is computed once per session.
-const scenes = new Map();
-
+// A thumbnail uses the page’s layout inside the shelf’s fixed 148 px picture frame.
 export function QuestThumb({ quest }) {
-  if (!scenes.has(quest.id)) scenes.set(quest.id, layoutQuest(quest));
-  const scene = scenes.get(quest.id);
+  const [scene, setScene] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    pageLayoutEngine().then((engine) => { if (live) setScene(layoutQuest(quest, engine)); });
+    return () => { live = false; };
+  }, [quest]);
+
   if (!scene) return null;
 
   return (
@@ -35,22 +39,24 @@ export function QuestThumb({ quest }) {
 
 export default QuestThumb;
 
-// A quest the tree entity refuses hides its thumbnail rather than crashing the shelf.
-function layoutQuest(quest) {
+// A quest the tree entity refuses hides its thumbnail rather than crashing the shelf; an engine that throws is
+// caught at the door, so the picture falls back to radial rather than going missing.
+function layoutQuest(quest, engine) {
   let tree;
   try {
     tree = new SkillTree(quest);
   } catch {
     return null;
   }
-  const positions = defaultLayoutEngine().layout(tree);
+  if (tree.nodes.length === 0) return null;
+  const { positions } = layoutTree(engine, tree);
 
-  const placed = quest.nodes.map((node, index) => ({
+  const placed = quest.nodes.map((node) => ({
     id: node.id,
     x: positions.get(node.id).x,
     y: positions.get(node.id).y,
     hue: KIND_CSS[node.color] ?? KIND_CSS[DEFAULT_NODE_COLOR],
-    root: index === 0,
+    root: tree.trunk.primaryParentOf(node.id) === null,
   }));
   const edges = tree.edges.map((edge) => ({
     key: `${edge.from}→${edge.to}`,
@@ -66,5 +72,5 @@ function layoutQuest(quest) {
   const minX = Math.min(...xs) - pad;
   const minY = Math.min(...ys) - pad;
   const viewBox = `${minX} ${minY} ${Math.max(...xs) + pad - minX} ${Math.max(...ys) + pad - minY}`;
-  return { placed, edges, viewBox, root: placed[0] };
+  return { placed, edges, viewBox, root: placed.find((node) => node.root) };
 }

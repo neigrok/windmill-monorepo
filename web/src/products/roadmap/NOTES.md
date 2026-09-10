@@ -71,6 +71,30 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
   `setSelectedSet(selectedIds)`, because a mixed selection has one node with `selectedId === null`.
 - Every delete path clears its own selection set.
 
+## The layout engine under everything
+
+- The default is **bubble** (`layout/index.js`). `?layout=radial|rings|mindmap` still opens the others;
+  nothing in the UI offers the switch.
+- Bubble and radial are statically imported; rings and mindmap load on demand. `loadLayoutEngine`
+  answers a failed alternative import with radial, and `layoutTree` answers a throwing layout with it.
+  The result includes the effective engine beside its positions: use that identity for camera storage
+  and reorder hints. Radial's own failure propagates.
+- Every picture of a tree takes its engine from `pageLayoutEngine()` and runs it through `layoutTree` — the
+  canvas, `quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` — sharing the selected layout and its
+  fallback policy. Both pictures paint a beat after their
+  frame does, into a box CSS already reserved (the quest thumb's wrap is a fixed 148 px), so nothing moves
+  when the picture lands. Neither caches across mounts.
+- A quest whose plan is mostly one chain reads as a diagonal string in the 236×128 thumbnail —
+  bubble hangs a chain off one ray. It is what the canvas will draw, so it is
+  honest; if the shelf wants density back, that is a thumbnail framing question, not a layout one.
+- The angular sibling drag is armed from the engine's own `reorder` static (`model/ports.js`): `'ring'`
+  sweeps about the world origin, `'parent-arc'` about the node's trunk parent, `'none'` disarms.
+  `BubbleLayoutEngine` declares `'parent-arc'`: only children with siblings can reorder, with no slot
+  beyond the open fan. Root islands have no parent arc and no drag reorder.
+- The `marketing/` scenes are hand-placed coordinates, not engine output — they draw a radial burst and
+  they differ from what the app draws. The design follow-up is **F50** in
+  `docs/design/consistency.md`; the boards owe a redraw.
+
 ## Open
 
 - No frame timing lives in the repo, and the rig cannot produce one: its captures run on SwiftShader,
@@ -78,21 +102,14 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
   Any fps claim needs a GPU run (drop the two swiftshader flags).
 - Icon slot assignment could be stable per nodeId the way caption elements already are (reslot only
   on enter/leave), removing the per-frame sort and any residual shimmer.
-- On a phone the anonymous owner's "Saved on this device" chip (`SkillTreeView.jsx`, top
-  `--space-6 + 52px`, right `--space-6`) and `MobileChrome`'s Focus · All steps group (top
-  `SAFE_TOP + 48px`, right 12px) share the top-right band and can overlap; the rig signs in, so no
-  capture shows it.
 - A remote structural delete of a selected node or edge prunes the scene's copy but not the React
   set, so the multi-select bar can over-count until the next selection change.
 - Undo/redo does not reconcile the append-only activity log: a create-then-undo leaves a row whose
   node is gone. It renders muted.
 - The "reconnect me" tag on an unlinked node is not built; the dashed ring carries the signal.
-- Every picture drawn outside the canvas — quest thumbnails, the paste ghost — is laid out by
-  `defaultLayoutEngine()`, so under `?layout=<other>` a preview and the canvas disagree. Handing those
-  surfaces the live engine means a dynamic import inside a render path; the default is the deliberate
-  answer until one of them is worth that.
-- Layout is synchronous on the main thread and rings and bubble are super-linear: 1.5 s and 1.3 s on a
-  5,000-step mixed tree, 13.9 s for bubble on a 5,000-step chain of chains, and every structural edit
-  pays it again. The engine tests pin the shapes, not a budget, and there is no worker.
+- Layout is synchronous on the main thread. Structural edits and caption changes can run bubble
+  again; there is no worker. The tuck's deterministic work ceiling can leave large or deeply nested
+  trees looser. It bounds that pass's work, not every layout phase or wall-clock latency; repeated
+  live edits still need an interactive budget rather than an isolated layout benchmark.
 - Ticker burst-coalescing ("completed 3 steps") and narrow-viewport collapse of the activity dock are
   not built.

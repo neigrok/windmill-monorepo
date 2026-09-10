@@ -5,7 +5,7 @@ gesture; the map is `products/roadmap/shortcuts/shortcutMap.js`.
 
 ## Trigger & modal
 - **Two triggers, one panel:** `?` (`shift + /`) whenever the canvas has focus, or the
-  keyboard button in the ControlBar (after zoom + fit).
+  keyboard button in the ControlBar (after zoom + Focus + All steps).
 - **On the shared Dialog** — `--surface-overlay` scrim, `--radius-xl` card, `--shadow-lg`,
   `wm-pop-in` entrance — but **600px, two columns**, because its one job is scanning.
 - **Closes four ways:** `esc`, the ×, a backdrop click, or `?` again. Focus traps inside
@@ -36,8 +36,8 @@ gesture; the map is `products/roadmap/shortcuts/shortcutMap.js`.
 | Navigate | Pan the canvas | `Drag` · `Space`+`Drag` |
 | Navigate | Zoom in / out | `Scroll` · `⌘ =` / `⌘ −` |
 | Navigate | Zoom to a point | `Double-click` |
-| Navigate | Fit tree to screen | `F` |
-| Navigate | Reset zoom | `0` |
+| Navigate | Focus on a step | `F` |
+| Navigate | All steps | `0` |
 | Select | Select a step | `Click` |
 | Select | Add / remove from set | `⇧ Click` |
 | Select | Select all steps | `⌘ A` |

@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { hitTest } from '../../../../src/products/roadmap/scene/picking.js';
 import { SpatialGrid } from '../../../../src/products/roadmap/model/SpatialGrid.js';
 import { NODE_SIZE } from '../../../../src/products/roadmap/theme.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { BubbleLayoutEngine } from '../../../../src/products/roadmap/layout/BubbleLayoutEngine.js';
 
 const PICK_RADIUS = NODE_SIZE * 0.65;
 
@@ -46,4 +48,38 @@ test('the floor never reaches past halfway to the neighbour: a crowd answers cro
   assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.05, -101, 0), 'mouse'), { id: null, crowded: true });
   // The disc still takes its own hit however crowded the picture is.
   assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.05, 10, 0), 'mouse'), { id: 'a', crowded: false });
+});
+
+test('a drawn overview disc takes its edge even when the nearest neighbour limits the expanded hit target', () => {
+  const { grid, nodesById } = scene([['a', 0, 0], ['b', 100, 0]]);
+  const overview = camera(0.01);
+  assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.01, -290, 0), 'mouse'), { id: 'a', crowded: false });
+  assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.01, -310, 0), 'mouse'), { id: null, crowded: true });
+  nodesById.get('a').emphasis = 1;
+  assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.01, -440, 0), 'mouse'), { id: 'a', crowded: false });
+});
+
+test('a neighbour outside the expanded target still caps that target at half the gap', () => {
+  const { grid, nodesById } = scene([['a', 0, 0], ['b', 600, 0]]);
+  const overview = camera(0.05);
+  assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.05, -290, 0), 'mouse'), { id: 'a', crowded: false });
+  assert.deepEqual(hitTest(grid, nodesById, overview, ...at(0.05, -310, 0), 'mouse'), { id: null, crowded: true });
+});
+
+test('the enlarged selected crown keeps its entire body selectable', () => {
+  const { grid, nodesById } = scene([['root', 0, 0]]);
+  nodesById.get('root').emphasis = 1;
+  assert.deepEqual(hitTest(grid, nodesById, camera(2), ...at(2, 39, 0), 'mouse', 'root'), { id: 'root', crowded: false });
+  assert.deepEqual(hitTest(grid, nodesById, camera(2), ...at(2, 39, 0), 'mouse'), { id: null, crowded: false });
+});
+
+test('a compact bubble crown owns its visible body before a nearer child can claim an expanded target', () => {
+  const tree = new SkillTree({ id: 't', title: 'Tree', nodes: [
+    { id: 'root', label: 'A', prerequisites: [] },
+    { id: 'child', label: 'B', prerequisites: ['root'] },
+  ] });
+  const model = tree.toRenderModel(new BubbleLayoutEngine().layout(tree), new Map());
+  const grid = new SpatialGrid(model.nodes, NODE_SIZE * 2);
+  const nodesById = new Map(model.nodes.map((node) => [node.id, node]));
+  assert.deepEqual(hitTest(grid, nodesById, camera(1), ...at(1, 33.7, 0), 'mouse'), { id: 'root', crowded: false });
 });

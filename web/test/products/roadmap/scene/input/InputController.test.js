@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { InputController } from '../../../../../src/products/roadmap/scene/input/InputController.js';
+import { NavigateTool, ReadOnlyTool } from '../../../../../src/products/roadmap/scene/input/tools.js';
 
 function tapper(startZoom, workingZoom = 1) {
   const camera = { zoom: startZoom, workingZoom };
@@ -60,4 +61,37 @@ test('a tap the tool turned into a zoom runs no ladder step on top of it and pai
   controller.onUp(touch);
   assert.equal(camera.zoom, 0.1);
   assert.deepEqual({ x: controller.lastTap.x, y: controller.lastTap.y }, { x: 100, y: 100 });
+});
+
+test('a tap picks the bubble visible at pointerdown before a settle moves it, in editor and viewer tools', () => {
+  for (const ToolClass of [NavigateTool, ReadOnlyTool]) {
+    let settled = false;
+    const selected = [];
+    const context = {
+      camera: { stopMotion() {} },
+      pick: () => settled ? 'new-seat' : 'visible-bubble',
+      onInteract: () => { settled = true; },
+      select: (id) => selected.push(id),
+    };
+    const canvas = { setPointerCapture() {}, hasPointerCapture: () => false, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    const controller = new InputController(canvas, context, new ToolClass(context));
+    const pointer = { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100 };
+    controller.onDown(pointer);
+    controller.onUp(pointer);
+    assert.deepEqual(selected, ['visible-bubble']);
+  }
+});
+
+test('a cancelled pointer abandons its gesture without selecting or double-tap zooming', () => {
+  const selected = [];
+  const context = { camera: {}, pick: () => 'bubble', select: (id) => selected.push(id) };
+  const canvas = { setPointerCapture() {}, hasPointerCapture: () => false, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const tool = new NavigateTool(context);
+  const controller = new InputController(canvas, context, tool);
+  const pointer = { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 };
+  controller.onDown(pointer);
+  controller.onUp({ ...pointer, type: 'pointercancel' });
+  assert.deepEqual(selected, []);
+  assert.equal(tool.drag, null);
+  assert.equal(controller.lastTap, null);
 });

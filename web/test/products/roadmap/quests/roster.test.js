@@ -66,7 +66,7 @@ for (const quest of ROSTER) {
       assert.ok(!('status' in node), `node "${node.id}" seeds a status — quests arrive unlit`);
       assert.ok(!('icon' in node), `node "${node.id}" carries an icon — the plant road crowns the root itself`);
       assert.ok(!('position' in node) && !('x' in node) && !('y' in node),
-        `node "${node.id}" carries a position — the radial layout owns placement`);
+        `node "${node.id}" carries a position — the layout engine owns placement`);
     }
 
     assert.ok(typeof quest.estimate === 'string' && quest.estimate.length > 0, 'carries an estimate');

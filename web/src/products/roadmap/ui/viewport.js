@@ -13,9 +13,9 @@ export const TABLET_PANEL_WIDTH = 320;
 // bottom-left corner, so they take no full-width inset — they are blocks a caption may not sit under.
 const DESKTOP = { top: 76, margin: 24, dock: DOCK_WIDTH + 24 + 24 };
 // Tablet: the plaque and wordmark row along the top, the panel at right when open, the action lane below.
-const TABLET = { top: 120, margin: 12, panel: TABLET_PANEL_WIDTH + 24 + 24, laneGutter: 16 };
+const TABLET = { top: 156, margin: 12, panel: TABLET_PANEL_WIDTH + 24 + 24, laneGutter: 16 };
 // Phone: the plaque row along the top, the sheet or the action lane below.
-const PHONE = { top: 128, margin: 12, sheetGutter: 12, laneGutter: 16 };
+const PHONE = { top: 156, margin: 12, sheetGutter: 12, laneGutter: 16 };
 // The minimap: its 168x128 canvas, 8 px of padding and a 1 px border, in the corner margin.
 const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.

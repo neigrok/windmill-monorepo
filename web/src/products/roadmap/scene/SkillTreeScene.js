@@ -12,7 +12,7 @@ import { ArrivalChevron } from './ArrivalChevron.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
 import { ReorderSlot } from './ReorderSlot.js';
-import { circularInsertionIndex, reorderPlan } from './input/reorderGeometry.js';
+import { reorderPlan, seatOn } from './input/reorderGeometry.js';
 import { edgeKey } from './edgeKey.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { hitTest as pickAt } from './picking.js';
@@ -66,8 +66,8 @@ export class SkillTreeScene {
     this.edgeChrome = null;
     this.marqueeOverlay = null;
     this.reorderSlot = null;
-    this.reorder = null; // { id, radius, siblings, homeX, homeY }
-    this.reorderHint = 'none'; // the active layout engine's static hint; only 'ring' arms the angular gesture
+    this.reorder = null; // { id, centre, radius, homeAngle, siblings, homeX, homeY }
+    this.reorderHint = 'none'; // the active layout engine's static hint; 'ring' and 'parent-arc' arm the angular gesture
     if (!this.readOnly) {
       this.marqueeOverlay = new MarqueeOverlay(canvas);
       this.reorderSlot = new ReorderSlot(canvas);
@@ -803,6 +803,7 @@ export class SkillTreeScene {
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
     this.marqueeOverlay?.dispose();
+    this.reorderSlot?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -929,10 +930,11 @@ export class SkillTreeScene {
   }
 
   // ---- Angular reorder ----------------------------------------------------
-  // The gesture assumes siblings share a ring around the origin, so only an engine that says 'ring' arms it.
+  // The gesture rides the dragged node round an arc, so only the two engine families whose siblings sweep one arm
+  // it: 'ring' turns about the world origin, 'parent-arc' about the node's own trunk parent.
   setReorderHint(hint) {
     this.reorderHint = hint;
-    if (this.readOnly || hint !== 'ring') { this.disarmReorder(); return; }
+    if (this.readOnly || (hint !== 'ring' && hint !== 'parent-arc')) { this.disarmReorder(); return; }
     this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
     this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
     this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
@@ -946,41 +948,60 @@ export class SkillTreeScene {
     delete this.toolContext.cancelReorder;
   }
 
+  // The centre the dragged node turns about: the world origin on a ring, its trunk parent's seat on a parent arc —
+  // and a root has no such parent, so nothing there is draggable into a new order.
+  reorderCentre(id) {
+    if (this.reorderHint === 'ring') return { x: 0, y: 0 };
+    const inEdge = this.renderModel?.edges.find((edge) => edge.to === id && edge.kind === 'trunk');
+    const parent = inEdge ? this.nodesById.get(inEdge.from) : null;
+    return parent ? { x: parent.x, y: parent.y } : null;
+  }
+
   // The view supplies the siblings and their order keys via reorderContext; the scene reports the chosen fractional key through onSetNodeOrder on release.
   beginReorder(id, sx, sy) {
+    this.finishSettle();
     const node = this.nodesById.get(id);
     const context = this.options.reorderContext?.(id);
     if (!node || !context) { this.reorder = null; return; }
+    const centre = this.reorderCentre(id);
+    if (!centre) { this.reorder = null; return; }
     const siblings = context.siblings
       .filter((s) => s.id !== id)
       .map((s) => { const n = this.nodesById.get(s.id); return n ? { id: s.id, order: s.order, x: n.x, y: n.y } : null; })
       .filter(Boolean);
     if (siblings.length === 0) { this.reorder = null; return; }
-    this.finishSettle(); // land any in-flight glide first
-    this.reorder = { id, radius: Math.hypot(node.x, node.y), siblings, homeX: node.x, homeY: node.y };
+    // On a parent arc the siblings sweep an open fan, so the node's own seat marks where that fan ends.
+    const homeAngle = this.reorderHint === 'ring' ? null : Math.atan2(node.y - centre.y, node.x - centre.x);
+    this.reorder = { id, centre, radius: Math.hypot(node.x - centre.x, node.y - centre.y), homeAngle, siblings, homeX: node.x, homeY: node.y };
     this.nodeBatch.setMarqueePreview(new Set([id]));
-    this.reorderSlot?.show();
-    this.updateReorder(sx, sy);
+    this.updateReorder(sx, sy); // the first move decides whether this drop has a slot to offer
   }
 
   updateReorder(sx, sy) {
     if (!this.reorder) return;
-    const { id, radius, siblings } = this.reorder;
+    const { id, centre, radius, homeAngle, siblings, homeX, homeY } = this.reorder;
     const world = this.camera.screenToWorld(sx, sy);
-    const angle = Math.atan2(world.y, world.x);
-    this.moveNode(id, radius * Math.cos(angle), radius * Math.sin(angle)); // arc: radius pinned
-    const index = circularInsertionIndex(siblings.map((s) => Math.atan2(s.y, s.x)), angle);
-    const slot = this.slotAngle(siblings, index);
-    const screen = this.camera.worldToScreen(radius * Math.cos(slot), radius * Math.sin(slot));
+    const plan = reorderPlan(siblings, world, { centre, homeAngle });
+    if (!plan) { // off the fan: the node waits in the seat it left and no slot is offered
+      this.moveNode(id, homeX, homeY);
+      this.reorderSlot?.hide();
+      return;
+    }
+    const ride = seatOn(centre, radius, Math.atan2(world.y - centre.y, world.x - centre.x)); // arc: radius pinned
+    this.moveNode(id, ride.x, ride.y);
+    const slot = seatOn(centre, radius, plan.slotAngle);
+    const screen = this.camera.worldToScreen(slot.x, slot.y);
+    this.reorderSlot?.show();
     this.reorderSlot?.moveTo(screen.x, screen.y, 1.3 * NODE_SIZE * this.camera.zoom);
   }
 
   commitReorder(sx, sy) {
     if (!this.reorder) return;
-    const { id, siblings } = this.reorder;
-    const plan = reorderPlan(siblings, this.camera.screenToWorld(sx, sy));
+    const { id, centre, homeAngle, siblings } = this.reorder;
+    const plan = reorderPlan(siblings, this.camera.screenToWorld(sx, sy), { centre, homeAngle });
+    if (!plan) { this.cancelReorder(); return; } // a drop off the fan belongs to no gap: nothing is written
     this.clearReorder();
-    if (plan) this.options.onSetNodeOrder?.(id, plan.key);
+    this.options.onSetNodeOrder?.(id, plan.key);
   }
 
   cancelReorder() {
@@ -994,19 +1015,6 @@ export class SkillTreeScene {
     this.nodeBatch.setMarqueePreview(new Set());
     this.reorderSlot?.hide();
     this.reorder = null;
-  }
-
-  // The angle of the insertion slot at `index`: the midpoint of the gap the node drops into, the ends borrowing half the wrap gap.
-  slotAngle(siblings, index) {
-    const TAU = Math.PI * 2;
-    const norm = (a) => ((a % TAU) + TAU) % TAU;
-    const m = siblings.length;
-    const ang = siblings.map((s) => Math.atan2(s.y, s.x));
-    if (m === 1) return index === 0 ? ang[0] - 0.3 : ang[0] + 0.3;
-    const wrap = norm(ang[0] - ang[m - 1]);
-    if (index === 0) return norm(ang[0] - wrap / 2);
-    if (index === m) return norm(ang[m - 1] + wrap / 2);
-    return norm(ang[index - 1] + norm(ang[index] - ang[index - 1]) / 2);
   }
 
   setSelection(id) {
@@ -1086,7 +1094,7 @@ export class SkillTreeScene {
   }
 
   hitTest(x, y, pointerType) {
-    return pickAt(this.spatialGrid, this.nodesById, this.camera, x, y, pointerType);
+    return pickAt(this.spatialGrid, this.nodesById, this.camera, x, y, pointerType, this.selectedIds.size < 2 ? this.selectedId : null);
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS, or null; only meaningful off-node.

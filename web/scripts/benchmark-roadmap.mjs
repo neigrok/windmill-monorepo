@@ -1,7 +1,7 @@
 // Lays the dogfood tree and the synthetic roadmaps out with every layout engine and prints the readability numbers the
 // roadmap foundation is judged on — the same measures the engine tests pin, from test/products/roadmap/fixtures/readability.js.
 //
-//   node scripts/benchmark-roadmap.mjs [--only dogfood|shapes] [--sizes 500,5000] [--json <path>]
+//   node scripts/benchmark-roadmap.mjs [--only dogfood|shapes] [--sizes 500,5000] [--layouts bubble] [--json <path>]
 
 import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -23,6 +23,8 @@ const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i], process.argv[i + 1] ?? true);
 const only = args.get('--only') ?? 'all';
 const sizes = String(args.get('--sizes') ?? '500,5000').split(',').map(Number);
+const layouts = args.has('--layouts') ? String(args.get('--layouts')).split(',') : LAYOUTS;
+for (const name of layouts) if (!LAYOUTS.includes(name)) throw new Error(`Unknown layout: ${name}`);
 
 function fixtures() {
   const rows = [];
@@ -78,7 +80,7 @@ function measure(engine, { tree, states, anchorId }) {
 const fmt = (value, digits = 0) => (value == null ? 'n/a' : Number(value).toFixed(digits));
 const report = [];
 for (const fixture of fixtures()) {
-  for (const name of LAYOUTS) {
+  for (const name of layouts) {
     let engine;
     try {
       engine = await loadLayoutEngine(name);

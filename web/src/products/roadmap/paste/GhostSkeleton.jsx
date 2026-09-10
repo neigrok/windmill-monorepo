@@ -1,9 +1,10 @@
 // The composer's ghost preview: the parsed plan as dashed, kind-tinted buds on dormant edges,
-// pure SVG and structural only. The real radial layout places it.
+// pure SVG and structural only. The engine the canvas draws with places it, so the ghost is the
+// shape the plan will actually take.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
-import { defaultLayoutEngine } from '../layout/index.js';
+import { layoutTree, pageLayoutEngine } from '../layout/index.js';
 import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const GHOST_CAP = 200;   // past this the preview stops growing — the readout still counts
@@ -15,9 +16,13 @@ export function GhostSkeleton({ nodes }) {
   const [scene, setScene] = useState(null);
   const shownIds = useRef(new Set());
 
+  // The engine is awaited, so a keystroke that lands mid-load must be able to drop the layout it started.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const next = layoutGhost(nodes);
+    let live = true;
+    const timer = setTimeout(async () => {
+      const engine = await pageLayoutEngine();
+      if (!live) return;
+      const next = layoutGhost(nodes, engine);
       if (!next) {
         shownIds.current = new Set();
         setScene(null);
@@ -29,7 +34,7 @@ export function GhostSkeleton({ nodes }) {
       shownIds.current = new Set(next.placed.map((node) => node.id));
       setScene(next);
     }, RELAYOUT_MS);
-    return () => clearTimeout(timer);
+    return () => { live = false; clearTimeout(timer); };
   }, [nodes]);
 
   if (!scene) return null;
@@ -65,9 +70,9 @@ export function GhostSkeleton({ nodes }) {
 
 export default GhostSkeleton;
 
-// Parsed nodes → placed ghosts, through the same SkillTree + radial layout the real arrival uses.
-// A parse the tree entity refuses hides the ghost rather than crashing.
-function layoutGhost(nodes) {
+// Parsed nodes → placed ghosts, through the same SkillTree + layout engine the real arrival uses, and through the
+// same door, so an engine that throws draws radially here too. A parse the tree entity refuses hides the ghost.
+function layoutGhost(nodes, engine) {
   if (!nodes || nodes.length === 0) return null;
   const capped = nodes.slice(0, GHOST_CAP);
   const ids = new Set(capped.map((node) => node.id));
@@ -82,15 +87,15 @@ function layoutGhost(nodes) {
   } catch {
     return null;
   }
-  const positions = defaultLayoutEngine().layout(tree);
+  const { positions } = layoutTree(engine, tree);
 
-  const placed = capped.map((node, index) => ({
+  const placed = capped.map((node) => ({
     id: node.id,
     x: positions.get(node.id).x,
     y: positions.get(node.id).y,
     color: node.color,
     done: node.status === 'complete',
-    root: index === 0,
+    root: tree.trunk.primaryParentOf(node.id) === null,
   }));
   const edges = tree.edges.map((edge) => ({
     key: `${edge.from}→${edge.to}`,

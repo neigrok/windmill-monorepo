@@ -14,6 +14,7 @@ const EVENNESS = 0.15;
 const RING_GROWTH = 0.05;
 
 export class RadialLayoutEngine extends LayoutEngine {
+  static layoutName = 'radial';
   static reorder = 'ring';
 
   layout(tree) {

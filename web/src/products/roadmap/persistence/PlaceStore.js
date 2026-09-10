@@ -3,7 +3,7 @@
 
 const KEY = 'windmill:last-place';
 // Bumped by hand whenever the camera's meaning changes — the working-zoom frame, or an engine's geometry.
-const CAMERA_FORMAT = 'working-zoom-1';
+const CAMERA_FORMAT = 'bubble-168-1';
 
 export class PlaceStore {
   constructor(storage = window.localStorage) {

@@ -134,7 +134,7 @@ export class Camera2D {
 
   minZoom() {
     if (!this.fitBounds) return MIN_ZOOM_WITHOUT_MODEL;
-    return this.fitZoomFor(this.fitBounds) * FLOOR_BELOW_FIT;
+    return Math.min(this.fitZoomFor(this.fitBounds), this.workingZoom) * FLOOR_BELOW_FIT;
   }
 
   clampZoom(zoom, maxZoom = MAX_ZOOM) {
