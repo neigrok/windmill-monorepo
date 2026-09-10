@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Windmill">
-  <rect width="512" height="512" rx="112" fill="#F9F5EB"/>
-  <svg x="48" y="40" width="416" height="432" viewBox="40 90 356 369" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="356" height="369" viewBox="40 90 356 369" fill="none">
 <g id="Group 3">
 <path id="Vector 2" d="M154.695 334.537L148.987 412.178H285.999L280.29 334.537L217.493 271.74L154.695 334.537Z" fill="#E8D9C5"/>
 <path id="Vector 1" d="M47.9868 450.998C98.986 414.962 236.379 357.373 388.235 450.998C335.714 425.879 194.134 390.712 47.9868 450.998Z" fill="#7D8C43"/>
@@ -15,5 +13,4 @@
 <circle id="Ellipse 15" cx="217.987" cy="217.986" r="19.4101" transform="rotate(45 217.987 217.986)" fill="#211B13"/>
 </g>
 </g>
-  </svg>
 </svg>

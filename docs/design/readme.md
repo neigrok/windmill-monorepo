@@ -2,7 +2,7 @@
 
 Guidelines, briefs, and the drift ledger: what should be, and why.
 
-The drawings live in five Figma files.
+The product and library drawings live in five Figma files.
 
 | File | Key |
 |---|---|
@@ -11,6 +11,9 @@ The drawings live in five Figma files.
 | Windmill · Journal | `pC6ciOUnfLmI42oMihd7l3` |
 | Windmill · Gym (web · iOS · Android) | `vdmdiKWrmZoS1FtcvJRf6O` |
 | Windmill · Marketing | `uWLMdVmzTcobOh8hbeem81` |
+
+The approved logo is [Windmill, node 9:129](https://www.figma.com/design/v21I1eIsWkyIaN7byJ8GdV/Windmill?node-id=9-129).
+Its source and usage are recorded in `brand-logo.md`.
 
 Figma records what IS; these docs record what should be and why. A screen is drawn in Figma. A
 decision, a constraint, an open question, or the reason behind either is written here. Neither is
@@ -22,7 +25,8 @@ the other's backup.
 |---|---|
 | `consistency.md` | The drift ledger — canon-vs-code disagreements. Start here for consistency work. |
 | `brand-foundations.md` | Brand direction, voice, visual foundations, iconography, and the standing font and logo policies. |
-| `brand-identity-brief.html` | The logo brief. No logo has been drawn; every mark is the Baloo wordmark. |
+| `brand-logo.md` | Approved logo source, exported assets, usage, and native icon follow-ups. |
+| `brand-identity-brief.html` | Identity direction and asset requirements around the approved windmill logo. |
 | `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the four-layer system architecture, thumb reach, **the text budget**. |
 | `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
 | `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |

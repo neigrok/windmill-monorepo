@@ -164,8 +164,8 @@ listening indicator or connected claim without that observation.
 Two artifacts inside other people's chrome; both carry the cream, the wordmark, and the
 capability chips.
 
-- **Gallery card:** wordmark + three kind-dots (the legend as identity — no logo is
-  invented) · REMOTE · OAUTH badge · outcome-first one-liner ("Any goal, as a skill tree.
+- **Gallery card:** approved windmill mark + wordmark (`../../brand-logo.md`) · REMOTE · OAUTH
+  badge · outcome-first one-liner ("Any goal, as a skill tree.
   Your agent plants roadmaps, grafts steps, and marks progress — you watch the tree grow.")
   · server URL + Copy · the capability chips · "Works with any MCP client · setup at
   windmill.works/connect".

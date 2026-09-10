@@ -2,7 +2,7 @@
 // returns. It never touches a code, token or PKCE secret.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Icon } from '../../design-system';
+import { Avatar, BrandWordmark, Icon } from '../../design-system';
 import { useAuth } from './AuthProvider.jsx';
 import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
@@ -125,7 +125,7 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
   const { reach, groups, canDelete } = consentSummary(scope);
   return (
     <Card>
-      <div style={mark}>Windmill</div>
+      <BrandWordmark size={24} style={mark} />
       <h1 style={title}>Connect {client.client_name}</h1>
       <p style={{ ...cant, marginTop: 8 }}>Review the access this tool is requesting.</p>
 
@@ -205,7 +205,7 @@ function QuietReturn() {
 function GateCard({ onSignIn }) {
   return (
     <Card>
-      <div style={mark}>Windmill</div>
+      <BrandWordmark size={24} style={mark} />
       <h1 style={title}>Connect your tool</h1>
       <p style={{ ...cant, marginTop: 6 }}>Sign in to review the access your tool is requesting.</p>
       <div style={btnRow}>
@@ -243,7 +243,7 @@ function FailureCard({ kind, onRetry }) {
   const f = FAILURES[kind] ?? FAILURES.malformed;
   return (
     <Card>
-      <div style={mark}>Windmill</div>
+      <BrandWordmark size={24} style={mark} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {f.brick && <Icon name="wifi" size={18} color="var(--text-secondary)" />}
         <h1 style={title}>{f.title}</h1>
@@ -260,7 +260,7 @@ function FailureCard({ kind, onRetry }) {
 function Loader() {
   return (
     <Card>
-      <div style={mark}>Windmill</div>
+      <BrandWordmark size={24} style={mark} />
       <p role="status" style={cant}>Preparing your connection…</p>
     </Card>
   );
@@ -279,7 +279,7 @@ function Card({ children }) {
   return <div className="wm-oc-card">{children}</div>;
 }
 
-const mark = { fontFamily: 'var(--font-display)', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' };
+const mark = { fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' };
 
 const title = { fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 500, lineHeight: 1.35, letterSpacing: '-0.02em', margin: '16px 0 0', overflowWrap: 'anywhere' };
 

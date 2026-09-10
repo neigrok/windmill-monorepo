@@ -18,7 +18,7 @@ not restate it.
 | Piece | Spec |
 |---|---|
 | **Canvas** | `#F9F5EB` full-bleed (the product canvas, never white or gray) |
-| **Header** | wordmark "Windmill", text-set in the display stack, terracotta `#BC6C42`, centered. No logo file exists — text *is* the images-off fallback. |
+| **Header** | wordmark "Windmill", text-set in the display stack, terracotta `#BC6C42`, centered. Keep real text for images-off reading; the approved SVG logo is documented in `../../brand-logo.md`. |
 | **Card** | white `#FFFFFF`, 1px `#E5D9C0`, radius 24, max-width **520px**, centered. Outlook squares the corners — acceptable. |
 | **The one button** | table-based pill, `bgcolor #BC6C42`, white 16px extra-bold label, 15/38 padding. One per email, ever. |
 | **Raw URL** | always present under a divider, mono stack, on its own line, `word-break:break-all` — the button's honest fallback. |

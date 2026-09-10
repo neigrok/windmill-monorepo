@@ -45,7 +45,7 @@ html { scroll-behavior: smooth; }
 .landing-linksent i {
   width: 8px; height: 8px; border-radius: var(--radius-full); flex: none;
   background: var(--accent-gold-500); --nd-glow: var(--kind-gold-glow);
-  animation: wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite;
+  animation: wm-ember var(--duration-glow) var(--ease-glow) infinite;
 }
 
 /* ---- footer ---- */
@@ -54,7 +54,7 @@ html { scroll-behavior: smooth; }
   border-top: 1px solid var(--border-subtle);
   display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;
 }
-.landing-footer-brand { display: flex; align-items: baseline; gap: 10px;
+.landing-footer-brand { display: flex; align-items: center; gap: 10px;
                         font-family: var(--font-body); font-size: 14px; color: var(--text-tertiary); }
 .landing-footer-mark { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text-secondary); }
 .landing-footer-shelf { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }

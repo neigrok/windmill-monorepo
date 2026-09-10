@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dialog, Input, Button, Icon } from '../../design-system';
+import { BrandWordmark, Dialog, Input, Button, Icon } from '../../design-system';
 import { API_BASE } from '../apiBase.js';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -87,9 +87,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
 
   return (
     <Dialog open={open} onClose={onClose} width={400}>
-      <div style={wordmark}>
-        <span>Windmill</span>
-      </div>
+      <BrandWordmark size={24} style={wordmark} />
 
       {(phase === 'idle' || phase === 'sending') && (
         <form onSubmit={submit} style={column}>
@@ -165,10 +163,6 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
 export default SignInDialog;
 
 const wordmark = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 'var(--space-2)',
-  fontFamily: 'var(--font-display)',
   fontWeight: 'var(--font-weight-extrabold)',
   fontSize: 'var(--text-sm)',
   letterSpacing: 'var(--tracking-wide)',
@@ -230,7 +224,7 @@ const goldDot = {
   borderRadius: 'var(--radius-full)',
   background: 'var(--accent-gold-500)',
   ['--nd-glow']: 'var(--kind-gold-glow)',
-  animation: 'wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite',
+  animation: 'wm-ember var(--duration-glow) var(--ease-glow) infinite',
 };
 
 const reassurance = {

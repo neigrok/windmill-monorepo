@@ -2,6 +2,7 @@
 // data-theme are stamped together — palettes.css keys a room's ground on the pair.
 
 import React, { Suspense, useEffect, useLayoutEffect } from 'react';
+import { BrandMark } from '../../design-system';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -100,7 +101,7 @@ export function Shell({ location, neutral = null }) {
   return (
     <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
       <header className="wm-head">
-        <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home">W</a>
+        <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label="Rooms">
           <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
           {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (

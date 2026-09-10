@@ -111,9 +111,9 @@ signal set to `light dark`.
 
 ## Logo
 
-There is no logo image — the header wordmark is real text, which doubles as the images-off fallback.
-When a mark ships, swap the header cell for
-`<img src="https://windmill.works/email/logo.png" alt="Windmill" width="…" height="…">`.
+The approved windmill logo and its exported assets are documented in
+`docs/design/brand-logo.md`. Email headers keep the "Windmill" wordmark as real text so the brand
+remains readable when images are blocked. Preserve that text if an image is added to the header.
 
 ## Compliance
 

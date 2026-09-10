@@ -76,7 +76,8 @@ body { margin: 0; background: var(--surface-canvas); color: var(--text-primary);
 .skip:focus { left: 12px; }
 
 header { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(14px, 2.2vw, 28px); max-width: 1280px; margin: 0 auto; padding: 24px clamp(20px, 5vw, 64px); }
-.wm { font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--text-primary); text-decoration: none; }
+.wm { display: inline-flex; align-items: center; gap: .35em; font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--text-primary); text-decoration: none; }
+.wm img, .fl b img { display: block; flex: none; object-fit: contain; }
 .fam { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(12px, 1.8vw, 24px); font-weight: 700; font-size: 14.5px; }
 .fam a { color: var(--text-secondary); text-decoration: none; }
 .fam a:hover { color: var(--text-primary); }
@@ -93,8 +94,8 @@ header { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(14px, 2
 .btn--lg { gap: 10px; padding: 14px 26px; font-size: 18px; border-radius: 16px; }
 
 footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; max-width: 1280px; margin: 80px auto 0; padding: 32px clamp(20px, 5vw, 64px); border-top: 1px solid var(--border-subtle); }
-.fl { display: flex; align-items: baseline; gap: 10px; }
-.fl b { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text-secondary); }
+.fl { display: flex; align-items: center; gap: 10px; }
+.fl b { display: inline-flex; align-items: center; gap: .35em; font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text-secondary); }
 .fl span { font-size: 14px; color: var(--text-tertiary); }
 .fcol { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .fr { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 24px; font-size: 14px; }

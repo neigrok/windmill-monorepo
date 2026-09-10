@@ -1,5 +1,6 @@
 // Windmill component library — single import surface.
 export { Icon } from './Icon.jsx';
+export { BrandMark, BrandWordmark, BrandLogo } from './Brand.jsx';
 
 // core
 export { Button } from './core/Button.jsx';

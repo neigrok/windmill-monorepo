@@ -22,7 +22,7 @@ export const SITE_SCHEMA = [
     'logo': {
       '@type': 'ImageObject',
       '@id': `${SITE_ORIGIN}/#logo`,
-      'url': `${SITE_ORIGIN}/favicon.svg`,
+      'url': `${SITE_ORIGIN}/brand-logo.svg`,
       'caption': 'Windmill',
     },
     'image': { '@id': `${SITE_ORIGIN}/#logo` },

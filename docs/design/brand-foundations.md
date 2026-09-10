@@ -2,8 +2,9 @@
 
 The brand-level canon: the direction, the voice, the visual foundations, iconography, and the
 standing policies on fonts and the logo. Product-specific canon lives in the product folders
-beside this file; the drawn form of everything here is the Foundations page of the
-Windmill · Design System Figma file, and the shipped values are `web/src/styles/tokens/`.
+beside this file. Visual foundations live on the Foundations page of the Windmill · Design
+System Figma file; the approved logo has its own source in `brand-logo.md`. The shipped token
+values are `web/src/styles/tokens/`.
 
 ## Direction
 - Minimalistic, animation-rich
@@ -77,7 +78,8 @@ Windmill · Design System Figma file, and the shipped values are `web/src/styles
   lift 2px and deepen their shadow on hover — no colored left-border accent.
 - **Transparency/blur**: used only for the modal overlay (`--surface-overlay`, a translucent
   warm black) — no frosted-glass/backdrop-blur elsewhere.
-- **Imagery**: none currently — no photography exists for this brand.
+- **Imagery**: the approved windmill logo carries the brand illustration; no photography exists
+  for this brand.
 - **The skill-tree metaphor** — node geometry, kind × tier colouring, connector behaviour and
   the layout contract — is the roadmap's, and lives in `roadmap/`. The palette it
   draws from (`--kind-*`, `--connector-*`, `--color-bark`, `--color-leaf`) stays here,
@@ -91,7 +93,7 @@ Windmill · Design System Figma file, and the shipped values are `web/src/styles
   directly — `Button`/`IconButton` accept an `icon` prop so any icon source works.
 - **Unicode glyphs**: used minimally for tiny UI chrome only (the `×` close glyph on
   Tag/Toast, the `▾` caret on Select) — not as illustrative icons.
-- **No SVG illustrations exist** in this system.
+- **Brand mark**: use the approved SVG logo described below; it is separate from UI iconography.
 
 ## Fonts
 
@@ -101,8 +103,12 @@ live in `web/src/styles/tokens/fonts.css`.
 
 ## Logo
 
-No logo file exists. Every place a mark would appear uses the plain wordmark "Windmill" set in
-Baloo 2 Bold — this system never invents or draws a logo.
+The approved logo is the multicolour windmill with a cream house, olive hill, and terracotta
+"Windmill" wordmark in Baloo 2 Bold. Use the exact Figma-exported vectors; preserve their shapes,
+colours, and aspect ratio. The compact mark accompanies readable brand text in navigation; the
+stacked lockup carries standalone branding. Email keeps a real-text wordmark for images-off reading.
+
+Source, assets, sizing, and native icon follow-ups live in [brand-logo.md](brand-logo.md).
 
 ---
 
