@@ -175,6 +175,20 @@ alter table node_progress add column if not exists stamp_ms bigint not null defa
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 alter table node_progress add column if not exists out_of_order boolean not null default false;
 
+-- Roadmap completion has two values. Keep register stamps and receipt times so a migration
+-- cannot outrank later user work or make an old node appear newly touched.
+update node_progress set status = 'none', out_of_order = false
+where status in ('active', 'inProgress');
+update tree_nodes set status = 'none' where status in ('active', 'inProgress');
+update trees
+set document = jsonb_set(document, '{nodes}', (
+  select jsonb_agg(case when node->>'status' in ('active', 'inProgress')
+    then jsonb_set(node, '{status}', '"none"'::jsonb) else node end order by ordinal)
+  from jsonb_array_elements(document->'nodes') with ordinality as entries(node, ordinal)
+))
+where jsonb_typeof(document->'nodes') = 'array'
+  and jsonb_path_exists(document, '$.nodes[*] ? (@.status == "active" || @.status == "inProgress")');
+
 -- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
 
 -- Passwordless sign-in. A link is addressed by the digest of its secret; the raw token is never at

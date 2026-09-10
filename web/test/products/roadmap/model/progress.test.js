@@ -1,103 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { advanceProgress, milestoneAnnouncement } from '../../../../src/products/roadmap/model/progress.js';
+import { advanceProgress, progressChanges, milestoneAnnouncement } from '../../../../src/products/roadmap/model/progress.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
 
-function progress() {
-  return {
-    completed: new Set(['a']),
-    inProgress: new Set(['b']),
-    startedAt: { b: 100 },
-    completedAt: { a: 50 },
-  };
-}
+test('completion stamps a batch at one instant without mutating the prior overlay', () => {
+  const before = { completed: new Set(['a']), completedAt: { a: 50 } };
 
-function snapshot(p) {
-  return {
-    completed: [...p.completed].sort(),
-    inProgress: [...p.inProgress].sort(),
-    startedAt: { ...p.startedAt },
-    completedAt: { ...p.completedAt },
-  };
-}
-
-test('completing a step adds it, drops it from in-progress, and stamps completedAt', () => {
-  const before = progress();
-  const next = advanceProgress(before, ['b'], 'complete', 900);
-
-  assert.deepEqual(snapshot(next), {
-    completed: ['a', 'b'],
-    inProgress: [],
-    startedAt: { b: 100 },   // when work began survives the completion
-    completedAt: { a: 50, b: 900 },
+  assert.deepEqual(advanceProgress(before, ['b', 'c'], 'complete', 900), {
+    completed: new Set(['a', 'b', 'c']), completedAt: { a: 50, b: 900, c: 900 },
   });
-  assert.deepEqual(snapshot(before), snapshot(progress()));
+  assert.deepEqual(before, { completed: new Set(['a']), completedAt: { a: 50 } });
 });
 
-test('a bulk mark stamps every step with the one moment it was handed', () => {
-  const next = advanceProgress(progress(), ['b', 'c', 'd'], 'complete', 900);
+test('reset clears completion and its timestamp and locks dependent steps again', () => {
+  const tree = new SkillTree({ id: 't', title: 'Sail', nodes: [
+    { id: 'a', label: 'Rig', prerequisites: [] },
+    { id: 'b', label: 'Sail', prerequisites: ['a'] },
+  ] });
+  const before = { completed: new Set(['a']), completedAt: { a: 50 } };
+  const next = advanceProgress(before, ['a'], 'none', 900);
 
-  assert.deepEqual(snapshot(next), {
-    completed: ['a', 'b', 'c', 'd'],
-    inProgress: [],
-    startedAt: { b: 100 },
-    completedAt: { a: 50, b: 900, c: 900, d: 900 },
-  });
+  assert.deepEqual(next, { completed: new Set(), completedAt: {} });
+  assert.deepEqual(UnlockRules.derive(tree, next), new Map([['a', 'available'], ['b', 'locked']]));
 });
 
-test('re-completing a completed step re-stamps it and changes nothing else', () => {
-  const next = advanceProgress(progress(), ['a'], 'complete', 900);
+test('legacy in-progress data cannot override prerequisite rules', () => {
+  const tree = new SkillTree({ id: 't', title: 'Sail', nodes: [
+    { id: 'a', label: 'Rig', prerequisites: [] },
+    { id: 'b', label: 'Sail', prerequisites: ['a'] },
+  ] });
+  const legacy = { completed: new Set(), inProgress: new Set(['a', 'b']), startedAt: { a: 100, b: 200 } };
 
-  assert.deepEqual(snapshot(next), {
-    completed: ['a'],
-    inProgress: ['b'],
-    startedAt: { b: 100 },
-    completedAt: { a: 900 },
-  });
-});
-
-test('starting a step leaves completed, stamps startedAt once, and clears completedAt', () => {
-  const next = advanceProgress(progress(), ['a'], 'inprogress', 900);
-
-  assert.deepEqual(snapshot(next), {
-    completed: [],
-    inProgress: ['a', 'b'],
-    startedAt: { b: 100, a: 900 },
-    completedAt: {},
-  });
-});
-
-test('re-starting a step already in progress keeps its original startedAt', () => {
-  const next = advanceProgress(progress(), ['b'], 'inprogress', 900);
-
-  assert.deepEqual(snapshot(next), {
-    completed: ['a'],
-    inProgress: ['b'],
-    startedAt: { b: 100 },   // not 900 — the start is the first one, not the latest
-    completedAt: { a: 50 },
-  });
-});
-
-test('walking a step back to not-started drops both of its stamps', () => {
-  const next = advanceProgress(progress(), ['a', 'b'], 'notstarted', 900);
-
-  assert.deepEqual(snapshot(next), {
-    completed: [],
-    inProgress: [],
-    startedAt: {},
-    completedAt: {},
-  });
-});
-
-test('an empty move returns an equal progress and still copies it', () => {
-  const before = progress();
-  const next = advanceProgress(before, [], 'complete', 900);
-
-  assert.deepEqual(snapshot(next), snapshot(before));
-  assert.notEqual(next.completed, before.completed);
-  assert.notEqual(next.inProgress, before.inProgress);
-  assert.notEqual(next.startedAt, before.startedAt);
-  assert.notEqual(next.completedAt, before.completedAt);
+  assert.deepEqual(UnlockRules.derive(tree, legacy), new Map([['a', 'available'], ['b', 'locked']]));
+  assert.throws(() => advanceProgress(legacy, ['a'], 'active', 900), /Unknown progress status/);
 });
 
 test('no fresh milestone means no announcement', () => {
@@ -139,3 +76,17 @@ test('with no crown the biggest limb is the picture, ties keeping the first', ()
   });
 });
 
+
+test('one remote batch completes both prerequisites and announces their dependent once', () => {
+  const tree = new SkillTree({ id: 't', title: 'Sail', nodes: [
+    { id: 'a', label: 'Rig', prerequisites: [] },
+    { id: 'b', label: 'Weather', prerequisites: [] },
+    { id: 'c', label: 'Sail', prerequisites: ['a', 'b'] },
+  ] });
+  const before = { completed: new Set() };
+  const after = { completed: new Set(['a', 'b']) };
+
+  assert.deepEqual(progressChanges(tree, before, after), { completed: ['a', 'b'], unlocked: ['c'] });
+  assert.deepEqual(progressChanges(tree, after, after), { completed: [], unlocked: [] });
+  assert.deepEqual(progressChanges(tree, after, before), { completed: [], unlocked: [] });
+});

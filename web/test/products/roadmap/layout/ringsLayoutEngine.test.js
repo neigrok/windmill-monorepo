@@ -97,7 +97,7 @@ test('the dogfood forest reads at the working zoom: short trunk links, clear foo
     .filter((node) => node.prerequisites.length === 0)
     .flatMap((root) => tree.trunk.trunkChildrenOf(root.id).map((childId) => px(distance(positions.get(root.id), positions.get(childId)))));
   const nearest = nearestNeighboursPx(positions);
-  const frontier = tree.topoOrder().find((id) => states.get(id) === 'active');
+  const frontier = tree.topoOrder().find((id) => states.get(id) === 'available');
   assert.ok(quantile(trunkPx, 0.5) <= 300, `trunk median ${quantile(trunkPx, 0.5).toFixed(0)} px`);
   assert.ok(quantile(trunkPx, 0.9) <= 700, `trunk p90 ${quantile(trunkPx, 0.9).toFixed(0)} px`);
   assert.ok(trunkPx.filter((d) => d <= 700).length / trunkPx.length >= 0.95, `only ${trunkPx.filter((d) => d <= 700).length} of ${trunkPx.length} trunk links within 700 px`);

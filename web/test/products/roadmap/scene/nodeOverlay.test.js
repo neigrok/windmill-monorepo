@@ -159,7 +159,7 @@ test('LabelOverlay — an unchanged camera costs nothing; a fade deadline, a sta
   overlay.update(camera(), 2000);
   assert.equal(passes, 2);
 
-  for (const change of [() => overlay.setStates(new Map([['b', 'active']])), () => overlay.setContext({ selectedId: 'a', hoveredId: null }), () => overlay.setInsets({ right: 1000 })]) {
+  for (const change of [() => overlay.setStates(new Map([['b', 'available']])), () => overlay.setContext({ selectedId: 'a', hoveredId: null }), () => overlay.setInsets({ right: 1000 })]) {
     const before = passes;
     change();
     assert.equal(passes, before);

@@ -12,7 +12,7 @@ glow physics from `motion-language.md`. The weekly reminder email deep-links her
 ## 1. The dock — Next up leads, Activity follows
 
 - **One dock, two tenants, stacked:** NEXT UP (≤3 featured + expander) on top, ACTIVITY below with
-  its day separators. One scroll, zero reflow; pin / `a` / esc grammar carries over from the event
+  its day separators. One scroll, zero reflow; `a` / esc grammar carries over from the event
   log unchanged.
 - **The chip:** "Next · N" (N = ready count) with the unseen-activity dot; at 0 ready it falls back
   to "Activity · N".
@@ -46,7 +46,7 @@ select at 90% settle → the dock swaps to the step's workspace. Activity rows o
 
 - **All done:** crown fruit + "Every step is done." + mono "N/N · fully grown" + quiet links *Add a
   step · Plant a new tree*. Celebration belongs to the canvas crown and the milestone toast.
-- **Nothing unlocked yet:** the panel features the blockers — ember rows, "unlocks N more steps",
+- **Nothing unlocked yet:** the panel features the blockers — unfinished blocker rows, "unlocks N more steps",
   same tap. A true zero never renders; a lone bud doesn't mount the dock.
 
 ## 6. Phone
@@ -58,13 +58,13 @@ detail in place (150ms). Owner check-off: the peek's state chip is the toggle (`
 ## 7. Constants — copy into the build
 
 ```
-DOCK      event-log overlay, right edge · NEXT UP head, ACTIVITY tail · zero reflow · pin/`a`/esc inherited
+DOCK      event-log overlay, right edge · NEXT UP head, ACTIVITY tail · zero reflow · `a`/esc inherited
 CHIP      "Next · N" (ready count) · unseen-activity dot · 0 ready → "Activity · N"
 FEATURED  ≤3 · unlocks desc → longest ready → ≤2 per kind · stable in-session · "+N more ready" expands in place
 ROW       fruit at canvas treatment · body-bold name · "unlocks N more steps" · hover = locate (rest 30%)
 TAP       camera 600ms ease-soft → focus ring → select @90% → dock swaps to workspace
 OPEN      return ≥12h + ≥1 ready + tree ≥12 steps · ≤1/day · after settle (after recap) · email link always
-EMPTY     done → crown + counts + add/plant · none ready → ember blockers, same tap
+EMPTY     done → crown + counts + add/plant · none ready → unfinished blockers, same tap
 PHONE     sheet at peek 216 · tap retargets in place
 NEVER     a modal · visitor pages · bud canvas · twice a session · focus-steal · streaks/XP/badges
 ```
@@ -74,7 +74,7 @@ NEVER     a modal · visitor pages · bud canvas · twice a session · focus-ste
 | Concern | Owner |
 |---|---|
 | Beat physics (camera, glow, yield) | `motion-language.md` |
-| Dock home, overlay/pin, linkage, arrivals | `event-log.md` |
+| Dock home, overlay, linkage, arrivals | `event-log.md` |
 | Sheet grammar, touch, floors | `responsive.md` |
 | Reminder email + deep link | `marketing/guidelines/email.md` |
 | Featured logic, open rules, empty states, chip label | this doc |

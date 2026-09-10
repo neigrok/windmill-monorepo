@@ -61,7 +61,7 @@ Json::Value nodeToJson(const NodeSpec& node) {
     position["y"] = node.position->y;
     n["position"] = position;
   }
-  if (node.status) n["status"] = *node.status;
+  if (node.status) n["status"] = *normalizeSeedStatus(node.status);
   if (!node.description.empty()) n["description"] = node.description;
   if (!node.links.empty()) n["links"] = linksToJson(node.links);
   return n;
@@ -119,7 +119,7 @@ Json::Value toJson(const GalleryEntry& entry) {
   return row;
 }
 
-// The three id sets are NOT sent — a reader derives them from the statuses. `none` rides along
+// The id sets are NOT sent — a reader derives them from the statuses. `none` rides along
 // like any other value: a cleared register the client needs to converge.
 Json::Value toJson(const Progress& progress) {
   Json::Value marks(Json::arrayValue);
@@ -229,7 +229,7 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
         return std::nullopt;
       node.position = position;
     }
-    if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
+    if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
     if (n.isMember("links") && !n["links"].isNull()) {
       if (!links(n["links"])) return std::nullopt;
       node.links = linksFromJson(n["links"]);
@@ -277,7 +277,7 @@ Json::Value toJson(const GraphState& state) {
       n["position"] = position;
     }
     n["positionAt"] = hlcText(node.positionAt);
-    if (node.status) n["status"] = *node.status;
+    if (node.status) n["status"] = *normalizeSeedStatus(node.status);
     n["statusAt"] = hlcText(node.statusAt);
     n["description"] = node.description;
     n["descriptionAt"] = hlcText(node.descriptionAt);
@@ -320,7 +320,7 @@ GraphState graphStateFromJson(const Json::Value& root) {
       node.position = position;
     }
     node.positionAt = hlcFromText(n.get("positionAt", "").asString());
-    if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
+    if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
     node.statusAt = hlcFromText(n.get("statusAt", "").asString());
     node.description = n.get("description", "").asString();
     node.descriptionAt = hlcFromText(n.get("descriptionAt", "").asString());

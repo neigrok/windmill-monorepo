@@ -2,9 +2,8 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   const activityHint = keyHint('Activity feed');
-  const shortcutsHint = keyHint('Keyboard shortcuts');
   const focusHint = keyHint('Focus on a step');
   const showAllHint = keyHint('All steps');
   return (
@@ -40,16 +39,6 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFo
         <Tooltip label="Share roadmap" side="bottom">
           <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
-        {canReset && (
-          <Tooltip label="Reset to authored roadmap" side="bottom">
-            <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />
-          </Tooltip>
-        )}
-        {onShowShortcuts && (
-          <Tooltip label={`Keyboard shortcuts (${shortcutsHint})`} side="bottom">
-            <IconButton icon={<Icon name="keyboard" />} label="Keyboard shortcuts" size="sm" onClick={onShowShortcuts} />
-          </Tooltip>
-        )}
         <div className="st-zoom-group">
           <Tooltip label="Zoom out" side="bottom">
             <IconButton icon={<Icon name="zoom-out" />} label="Zoom out" size="sm" onClick={onZoomOut} />

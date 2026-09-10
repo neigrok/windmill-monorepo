@@ -54,7 +54,7 @@ import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewP
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
+import { advanceProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -121,7 +121,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const insetsRef = useRef(null); // the live chrome insets, for the first view: the load lands long after the chrome has
   const legendDockRef = useRef(null);
   const completedRef = useRef(new Set());
-  const inProgressRef = useRef(new Set());
   const seedRef = useRef(null);
   const repoRef = useRef(null);
   const collabRef = useRef(null);
@@ -241,13 +240,13 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const {
     legend, legendRef, legendOpen, legendForceOpen, highlightedKindId, highlightedKindIdRef,
-    hydrateLegend, syncLegendFromTree, clearLegendStore, clearHighlightedKind,
+    hydrateLegend, syncLegendFromTree, clearHighlightedKind,
     onRenameKind, onDescribeKind, onAddKind, onRemoveKind, onRecolorKind,
     onHighlightKind, onLegendOpenChange, openLegendFromPicker,
   } = useLegend({ seedRef, collabRef, editorRef, sceneRef });
 
   const {
-    workspaceByNode, hydrateWorkspaces, clearWorkspaceStore, cancelAllAutoCompletes, pushArcs,
+    workspaceByNode, hydrateWorkspaces, pushArcs,
     onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink,
   } = useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef });
 
@@ -256,8 +255,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [tree, setTree] = useState(null);
   const [renderModel, setRenderModel] = useState(null);
   const [completed, setCompleted] = useState(() => new Set());
-  const [inProgress, setInProgress] = useState(() => new Set());
-  const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms }
   const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms }
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -329,7 +326,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     commitSelectedId(null);
   }, [cancelNextUpSelect]);
 
-  const [hasLocalEdits, setHasLocalEdits] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [laneInset, setLaneInset] = useState(0); // px
@@ -372,8 +368,8 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const states = useMemo(() => {
     if (!tree) return new Map();
-    return UnlockRules.derive(tree, { completed, inProgress });
-  }, [tree, completed, inProgress]);
+    return UnlockRules.derive(tree, { completed });
+  }, [tree, completed]);
 
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
 
@@ -383,9 +379,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Records only that THIS DEVICE witnessed these completions; callers pass freshly computed values, since state setters are async.
   const witnessProgress = useCallback((next) => {
     if (demoRef.current) return;
-    if (!seedRef.current || readOnlyRef.current) return;
+    if (!seedRef.current?.mine || shared || demotion) return;
     returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
-  }, []);
+  }, [shared, demotion]);
 
   const showToast = useCallback((message, options = {}) => {
     toastTimersRef.current.forEach(clearTimeout);
@@ -460,22 +456,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
   const {
-    emit, seedActivity, ticker, newEventIds, pinned, unreadCount, activityPing,
+    emit, seedActivity, ticker, newEventIds, unreadCount, activityPing,
     feedVisible, feedSummonedRef, activityGroups, selectedHistory, eventCount,
-    toggleActivity, openActivity, closeActivity, togglePin,
+    toggleActivity, openActivity, closeActivity,
   } = useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpSelect, setSelectedId });
-
-  const handleResetEdits = useCallback(() => {
-    if (seedRef.current) {
-      collabRef.current?.clearDurable?.();
-      clearWorkspaceStore(seedRef.current.id);
-      clearLegendStore(seedRef.current.id);
-      returnLedger.clear(seedRef.current.id);
-      milestoneLedger.clear(seedRef.current.id);
-    }
-    cancelAllAutoCompletes();
-    setReloadKey((key) => key + 1);
-  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes]);
 
   // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
   const syncStructure = useCallback(() => {
@@ -503,7 +487,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       showToast('That edit could not be drawn — the picture is one step behind');
       return;
     }
-    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
+    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
     treeRef.current = nextTree;
@@ -993,10 +977,9 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (!seed) throw new Error(`tree ${treeId}: unknown to the server, and not this device's to open`);
       }
       const treeData = seed;
-      if (!cancelled) setHasLocalEdits(false);
       const nextTree = new SkillTree(treeData);
       const progress = demo
-        ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), startedAt: {}, completedAt: {}, server: false }
+        ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
         : await repo.loadProgress(treeData);
       const serverActivity = await repo.loadActivity({ limit: 200 });
       if (cancelled) return;
@@ -1035,18 +1018,16 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
 
       editorRef.current = new TreeEditor(treeData);
+      treeRef.current = nextTree;
       seedRef.current = seed;
       repoRef.current = repo;
       completedRef.current = new Set(overlay.completed);
-      inProgressRef.current = new Set(overlay.inProgress);
       seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
       setTree(nextTree);
       setRenderModel(model);
       setTreeVisibility(seed.visibility ?? null);
       setTreeMine(seed.mine ?? false);
       setCompleted(new Set(overlay.completed));
-      setInProgress(new Set(overlay.inProgress));
-      setStartedAt(overlay.startedAt);
       setCompletedAt(overlay.completedAt);
       hydrateWorkspaces(seed.id);
       hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
@@ -1072,10 +1053,10 @@ export function SkillTreeView({ treeId, demo = false }) {
         }
       }
 
-      // Read-only views never enter the device index, so the claim path can't adopt a visited tree.
+      // Only owned trees enter the device index, so a visited share cannot be claimed.
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: viewReadOnly ? null : deviceTrees })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1117,7 +1098,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [states]);
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
-  useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
@@ -1224,7 +1204,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(id);
   }, [setSelectedId]);
 
-  const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
+  const mobileEditable = treeMine && !shared && !demo && !demotion && breakpoint !== 'desktop';
 
   // Phone only: the initial view is decided ONCE, the moment the tree is ready; tablet and desktop keep `view` null.
   const phone = breakpoint === 'phone';
@@ -1384,18 +1364,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     collabRef.current?.markProgress(nodeId, wireStatus);
   }
 
-  function handleStart() {
-    if (!selectedId) return;
-    const node = nodesById.get(selectedId);
-    const nextInProgress = new Set(inProgress).add(selectedId);
-    const nextStartedAt = startedAt[selectedId] ? startedAt : { ...startedAt, [selectedId]: Date.now() };
-    setInProgress(nextInProgress);
-    setStartedAt(nextStartedAt);
-    witnessProgress({ completed, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt });
-    pushProgress(selectedId, 'active');
-    emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
-  }
-
   // Once ever per milestone: the ledger survives reloads and an undo/re-complete.
   function milestoneOffer(prevCompleted, nextCompleted) {
     // Gate on the genuine read-only signals, NOT the width-derived readOnly.
@@ -1411,29 +1379,25 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
   }
 
-  function completeStep(id, { fromRemote = false } = {}) {
+  function completeStep(id) {
     const node = nodesById.get(id);
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], 'complete', Date.now());
+    const next = advanceProgress({ completed, completedAt }, [id], 'complete', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
-    if (!fromRemote) pushProgress(id, 'complete');
+    pushProgress(id, 'complete');
     emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
-    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
-    let opened = 0;
-    for (const [otherId, nodeState] of after) {
-      if (nodeState === 'available' && states.get(otherId) !== 'available') {
-        const unlocked = nodesById.get(otherId);
-        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
-        opened += 1;
-      }
+    const changes = progressChanges(tree, { completed }, next);
+    for (const otherId of changes.unlocked) {
+      const unlocked = nodesById.get(otherId);
+      emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
+    const opened = changes.unlocked.length;
     const label = node?.label?.trim() || 'Step';
     const stepSummary = demo && id === COACHED_NODE_ID
       ? DEMO_COPY.unlockToast
       : (opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
-    const offer = fromRemote ? null : milestoneOffer(completed, next.completed);
+    const offer = milestoneOffer(completed, next.completed);
     const ceremony = offer ? offer.summary : stepSummary;
     const ceremonyOptions = offer ? { action: offer.action } : {};
     if (listActive) showToast(ceremony, ceremonyOptions);
@@ -1454,9 +1418,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   function bulkMarkDone() {
     const targets = markDoneTargets(selectedIdsRef.current, completed);
     if (!targets.length) return;
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, targets, 'complete', Date.now());
+    const next = advanceProgress({ completed, completedAt }, targets, 'complete', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
     for (const id of targets) {
@@ -1464,12 +1427,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     }
-    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
-    for (const [otherId, nodeState] of after) {
-      if (nodeState === 'available' && states.get(otherId) !== 'available') {
-        const unlocked = nodesById.get(otherId);
-        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
-      }
+    const changes = progressChanges(tree, { completed }, next);
+    for (const otherId of changes.unlocked) {
+      const unlocked = nodesById.get(otherId);
+      emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
     const offer = milestoneOffer(completed, next.completed);
     if (offer) sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
@@ -1479,37 +1440,39 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (selectedId) completeStep(selectedId);
   }
 
-  function handleSetState(id, target, { fromRemote = false } = {}) {
+  function resetStep(id) {
     if (!id) return;
-    if (target === 'complete') { completeStep(id, { fromRemote }); return; }
-
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], target, Date.now());
+    const next = advanceProgress({ completed, completedAt }, [id], 'none', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
-    setStartedAt(next.startedAt);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
-    if (!fromRemote) pushProgress(id, target === 'notstarted' ? 'none' : 'active');
+    pushProgress(id, 'none');
   }
 
-  // Read-only views never adopt the remote overlay, or a reader's empty overlay would overwrite the owner's progress.
+  // A viewer keeps the owner's displayed progress; every owner surface adopts its private lane.
   applyRemoteProgressRef.current = (overlay) => {
-    if (demoRef.current) return;
-    if (readOnlyRef.current) return;
-    for (const id of overlay.completed) {
-      if (!nodesById.has(id) || completedRef.current.has(id)) continue;
-      handleSetState(id, 'complete', { fromRemote: true });
+    if (demoRef.current || shared || demotion || !seedRef.current?.mine) return;
+    const currentTree = treeRef.current;
+    if (!currentTree) return;
+    const next = { completed: new Set(overlay.completed), completedAt: overlay.completedAt };
+    const changes = progressChanges(currentTree, { completed: completedRef.current }, next);
+    completedRef.current = next.completed;
+    setCompleted(next.completed);
+    setCompletedAt(next.completedAt);
+    witnessProgress(next);
+
+    for (const [verb, ids] of [['completed', changes.completed], ['unlocked', changes.unlocked]]) {
+      for (const id of ids) {
+        const node = currentTree.nodesById.get(id);
+        emit({ verb, nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
+      }
     }
-    for (const id of overlay.inProgress) {
-      if (!nodesById.has(id) || inProgressRef.current.has(id)) continue;
-      handleSetState(id, 'inprogress', { fromRemote: true });
-    }
-    for (const id of [...completedRef.current, ...inProgressRef.current]) {
-      if (!nodesById.has(id) || overlay.completed.has(id) || overlay.inProgress.has(id)) continue;
-      handleSetState(id, 'notstarted', { fromRemote: true });
-    }
-    setStartedAt(overlay.startedAt);
-    setCompletedAt(overlay.completedAt);
+    if (changes.completed.length === 0) return;
+    const label = currentTree.nodesById.get(changes.completed[0])?.label?.trim() || 'Step';
+    const summary = changes.completed.length === 1 ? `Step completed: ${label}` : `${changes.completed.length} steps completed`;
+    const ceremony = changes.unlocked.length ? `${summary} · ${changes.unlocked.length} more opened` : summary;
+    if (listActive) showToast(ceremony);
+    else sceneRef.current?.announceCeremony(ceremony);
   };
 
   function handleZoomIn() {
@@ -1550,7 +1513,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       state={selectedState}
       prerequisites={prerequisites}
       unlocks={unlocks}
-      startedAt={startedAt[selectedId]}
       completedAt={completedAt[selectedId]}
       history={selectedHistory}
       workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
@@ -1673,7 +1635,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               describe: mobileDescribe,
               addStep: mobileListAddStep,
               markDone: (id) => completeStep(id),
-              markUndone: (id) => handleSetState(id, 'notstarted'),
+              markUndone: resetStep,
               recolor: mobileRecolor,
               remove: deleteNodeAt,
               addNeed: mobileAddNeed,
@@ -1716,10 +1678,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onZoomOut={handleZoomOut}
           onFocus={handleFocus}
           onShowAll={handleShowAll}
-          canReset={hasLocalEdits}
-          onResetEdits={handleResetEdits}
           onShare={() => setShareOpen(true)}
-          onShowShortcuts={() => setShortcutsOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -1802,7 +1761,6 @@ export function SkillTreeView({ treeId, demo = false }) {
                 node={selectedNode}
                 state={selectedState}
                 prerequisites={prerequisites}
-                startedAt={startedAt[selectedId]}
                 completedAt={completedAt[selectedId]}
                 history={selectedHistory}
                 workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
@@ -1820,9 +1778,8 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onSetKind={handleSetKind}
                 kinds={legend}
                 onOpenLegend={openLegendFromPicker}
-                onStart={handleStart}
                 onMarkComplete={handleMarkComplete}
-                onSetState={handleSetState}
+                onReset={resetStep}
                 onReveal={handleRevealNode}
                 onDelete={deleteNodeAt}
                 onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
@@ -1837,8 +1794,6 @@ export function SkillTreeView({ treeId, demo = false }) {
                 now={Date.now()}
                 hoveredId={hoveredId}
                 newIds={newEventIds}
-                pinned={pinned}
-                onTogglePin={togglePin}
                 onClose={closeActivity}
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
@@ -1884,7 +1839,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                   onConnect={enterAim}
                   onSetKind={mobileRecolor}
                   onMarkDone={(id) => completeStep(id)}
-                  onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                  onUnmarkDone={resetStep}
                   onDelete={deleteNodeAt}
                   onJump={handleSheetJump}
                   isRoot={selectedId !== null && selectedId === singleRootId}
@@ -1974,7 +1929,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onConnect={enterAim}
                 onSetKind={mobileRecolor}
                 onMarkDone={(id) => completeStep(id)}
-                onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                onUnmarkDone={resetStep}
                 onDelete={deleteNodeAt}
                 onJump={handleSheetJump}
                 isRoot={selectedId !== null && selectedId === singleRootId}

@@ -123,7 +123,7 @@ test('priority — states pushed in later move a node onto the frontier; the fam
     { id: 'c', label: 'C', x: 480, y: 0 },
   ];
   const placer = placerOver(nodes, [{ from: 'a', to: 'b', kind: 'trunk' }, { from: 'b', to: 'c', kind: 'trunk' }]);
-  placer.setStates(new Map([['c', 'active']]));
+  placer.setStates(new Map([['c', 'available']]));
   assert.deepEqual(ids(placer.place(view(), 0).captions), ['c', 'a', 'b']);
   placer.setContext({ selectedId: 'b', hoveredId: null });
   assert.deepEqual(ids(placer.place(view(), 0).captions), ['b', 'a', 'c']);

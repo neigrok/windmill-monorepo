@@ -11,10 +11,6 @@ std::map<NodeId, NodeState> UnlockRules::derive(const std::vector<NodeSpec>& nod
       states[node.id] = NodeState::complete;
       continue;
     }
-    if (progress.inProgress.count(node.id)) {
-      states[node.id] = NodeState::active;
-      continue;
-    }
     bool unlocked = std::all_of(node.prerequisites.begin(), node.prerequisites.end(),
                                 [&](const NodeId& prereq) { return progress.completed.count(prereq) > 0; });
     states[node.id] = unlocked ? NodeState::available : NodeState::locked;

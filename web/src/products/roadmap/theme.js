@@ -25,11 +25,9 @@ export const KIND_CSS = Object.fromEntries(NODE_COLOR_NAMES.map((name) => [name,
 // Tier indices are what the shaders receive; higher = more progress.
 const TIER_LOCKED = 0;
 const TIER_AVAILABLE = 1;
-export const TIER_EMBER = 2;
-export const TIER_COMPLETE = 3;
+export const TIER_COMPLETE = 2;
 export function nodeTier(state) {
   if (state === 'complete') return TIER_COMPLETE;
-  if (state === 'active') return TIER_EMBER;
   if (state === 'available') return TIER_AVAILABLE;
   return TIER_LOCKED;
 }

@@ -53,7 +53,7 @@ LooseGraph::LooseGraph(const GraphState& state) {
     record.color = {node.color, node.colorAt};
     record.order = {node.order, node.orderAt};
     record.position = {node.position, node.positionAt};
-    record.status = {node.status, node.statusAt};
+    record.status = {normalizeSeedStatus(node.status), node.statusAt};
     record.description = {node.description, node.descriptionAt};
     record.links = {node.links, node.linksAt};
     nodes_[node.id] = std::move(record);
@@ -73,7 +73,7 @@ void LooseGraph::join(const GraphState& state) {
     record.color.merge(node.color, node.colorAt);
     record.order.merge(node.order, node.orderAt);
     record.position.merge(node.position, node.positionAt);
-    record.status.merge(node.status, node.statusAt);
+    record.status.merge(normalizeSeedStatus(node.status), node.statusAt);
     record.description.merge(node.description, node.descriptionAt);
     record.links.merge(node.links, node.linksAt);
   }
@@ -93,7 +93,7 @@ void LooseGraph::createNode(const NodeId& id, const std::string& label, const st
   record.icon.merge(icon, at);
   record.color.merge(color, at);
   if (position) record.position.merge(position, at);
-  if (status) record.status.merge(status, at);
+  if (status) record.status.merge(normalizeSeedStatus(status), at);
 }
 
 void LooseGraph::deleteNode(const NodeId& id, const Hlc& at) {

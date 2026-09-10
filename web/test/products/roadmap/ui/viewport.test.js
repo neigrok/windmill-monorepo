@@ -39,14 +39,14 @@ function forest() {
 
 test('the frontier is the remembered selection, else the top Next-up row, else the latest completion, else the biggest crown', () => {
   const tree = forest();
-  const states = (completed, inProgress = []) => UnlockRules.derive(tree, { completed: new Set(completed), inProgress: new Set(inProgress) });
+  const states = (completed) => UnlockRules.derive(tree, { completed: new Set(completed) });
 
   assert.equal(frontierTarget(tree, states(['big']), { selectedId: 's1' }), 's1');
   assert.equal(frontierTarget(tree, states(['big']), { selectedId: 'gone' }), 'b1', 'a stale selection falls through; b1 unlocks b3, the others nothing');
-  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1'], []), { completedAt: { b3: 5, s1: 9, big: 1 } }), 's1', 'all done: the latest completion');
-  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1'], []), {}), 'big', 'nothing witnessed: the crown with the most leaves');
+  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1']), { completedAt: { b3: 5, s1: 9, big: 1 } }), 's1', 'all done: the latest completion');
+  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1']), {}), 'big', 'nothing witnessed: the crown with the most leaves');
   const blocked = new SkillTree({ id: 'b', title: 'B', nodes: [{ id: 'r', label: 'r', prerequisites: [] }, { id: 'c', label: 'c', prerequisites: ['r'] }] });
-  assert.equal(frontierTarget(blocked, UnlockRules.derive(blocked, { completed: new Set(), inProgress: new Set(['r']) }), {}), 'r', 'only an active root: the crown');
+  assert.equal(frontierTarget(blocked, UnlockRules.derive(blocked, { completed: new Set() }), {}), 'r', 'the available root is the frontier');
   const empty = new SkillTree({ id: 'e', title: 'E', nodes: [] });
   assert.equal(frontierTarget(empty, new Map(), {}), null);
 });

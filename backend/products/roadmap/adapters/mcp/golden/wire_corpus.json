@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 8,
+  "schemaVersion" : 9,
   "steps" : 
   [
     {
@@ -292,7 +292,7 @@
                 {
                   "nodeId" : "render",
                   "prerequisitesMet" : true,
-                  "status" : "active"
+                  "status" : "none"
                 },
                 {
                   "nodeId" : "sync",
@@ -560,8 +560,8 @@
                     [
                       "root"
                     ],
-                    "state" : "active",
-                    "status" : "active"
+                    "state" : "available",
+                    "status" : "none"
                   },
                   {
                     "color" : "gold",
@@ -664,10 +664,6 @@
               [
                 "root",
                 "sync"
-              ],
-              "inProgress" : 
-              [
-                "render"
               ],
               "outOfOrder" : []
             },

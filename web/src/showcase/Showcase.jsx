@@ -30,7 +30,7 @@ const NODE_SIZE = 56;
 const TREE_NODES = [
   { id: 'root', cx: 320, cy: 240, state: 'complete', kind: 'terracotta', label: 'Plan & measure', icon: 'ruler' },
   { id: 'furniture', cx: 150, cy: 135, state: 'available', kind: 'olive', label: 'Pick furniture', icon: 'sofa' },
-  { id: 'palette', cx: 165, cy: 360, state: 'active', kind: 'plum', label: 'Choose palette', icon: 'palette' },
+  { id: 'palette', cx: 165, cy: 360, state: 'available', kind: 'plum', label: 'Choose palette', icon: 'palette' },
   { id: 'plants', cx: 495, cy: 150, state: 'available', kind: 'sky', label: 'Add plants', icon: 'sprout' },
   { id: 'shelves', cx: 515, cy: 350, state: 'locked', kind: 'gold', label: 'Style shelves', icon: 'lock' },
 ];

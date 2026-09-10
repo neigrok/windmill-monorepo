@@ -319,9 +319,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
         "the tree. Ask for description, links, position, order or icon when you need them; `kind` is "
         "the legend kind id whose hue the node wears, omitted on a node no kind claims; `status` "
-        "is your own mark on each node (active/complete/none, always answered), `seedStatus` the "
+        "is your own mark on each node (complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
-        "and your marks — locked · available · active · complete — the answer to \"what can I work "
+        "and your marks — locked · available · complete — the answer to \"what can I work "
         "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
         "whole tree's notes, and for `description` when you need one node's whole text.",
@@ -377,13 +377,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
-        "Which id lists to return. Default {completed, inProgress, outOfOrder} — `outOfOrder` is the "
+        "Which id lists to return. Default {completed, outOfOrder} — `outOfOrder` is the "
         "subset of `completed` whose set_progress carried outOfOrder:true; `cleared` (the tombstones a "
         "browser reconciles against) is available but rarely useful.",
         progressVocabulary().names());
     tools.push_back(tool("get_progress", Access::read,
-        "The caller's private progress overlay for a roadmap: the node ids that are completed, those "
-        "in progress, and outOfOrder — the subset of completed whose set_progress carried "
+        "The caller's private progress overlay for a roadmap: the node ids that are completed, "
+        "and outOfOrder — the subset of completed whose set_progress carried "
         "outOfOrder:true. Per-user, separate from the shared structure.",
         p, {"treeId"}));
   }
@@ -395,15 +395,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["query"] = str("Optional case-insensitive substring matched against each node's id, label and "
                      "description. Matches come back best first: an exact id, then an id prefix, then "
                      "a label hit, then an id substring, then a description-only hit.");
-    p["state"] = enumStr("Optional derived state to match — locked, available, active or complete, as "
+    p["state"] = enumStr("Optional derived state to match — locked, available or complete, as "
                          "the tree derives it from prerequisites and your marks.", kNodeStates);
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
         "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
         "`kind` is the legend kind id whose hue the node wears, omitted on a node no kind claims; "
-        "`status` is your own mark on each node (active/complete/none, always answered), `seedStatus` "
+        "`status` is your own mark on each node (complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
-        "and your marks — locked · available · active · complete — the answer to \"what can I work "
+        "and your marks — locked · available · complete — the answer to \"what can I work "
         "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
         "whole tree's notes, and for `description` when you need one node's whole text.",
@@ -643,7 +643,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value updateFields(Json::objectValue);
     updateFields["nodeId"] = nodeHandle();
     updateFields["id"] = legacyNodeHandle();
-    updateFields["status"] = enumStr("active, complete, or none (clear).", kStatuses);
+    updateFields["status"] = enumStr("complete or none (clear).", kStatuses);
     updateFields["outOfOrder"] = boolean(
         "With status complete only: this node is being completed before its prerequisites on purpose. "
         "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
@@ -652,7 +652,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
-    p["status"] = enumStr("active, complete, or none (clear).", kStatuses);
+    p["status"] = enumStr("complete or none (clear).", kStatuses);
     p["outOfOrder"] = boolean(
         "With status complete only: this node is being completed before its prerequisites on purpose. "
         "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
@@ -711,7 +711,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value progressFields(Json::objectValue);
     progressFields["nodeId"] = nodeHandle();
     progressFields["id"] = legacyNodeHandle();
-    progressFields["status"] = enumStr("active, complete, or none (clear).", kStatuses);
+    progressFields["status"] = enumStr("complete or none (clear).", kStatuses);
 
     p["nodes"] = objArray("The nodes to import — the shape get_tree returns when you ask it for those "
                           "fields. Pass [] to import only kinds or progress.",

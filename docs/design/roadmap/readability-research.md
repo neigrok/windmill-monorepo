@@ -59,7 +59,7 @@ and moves the elements.
 
 **Which steps are named is a rank, and the zoom says how far down it reaches.** selected → hovered →
 the selected step's trunk family → landmarks (crowned roots, and branch heads carrying eight steps or
-more, biggest subtree first) → the frontier (active and available) → the rest. The limit is keyed on
+more, biggest subtree first) → the frontier (available) → the rest. The limit is keyed on
 the body **as drawn**, never under the 6 px floor: from 18 px everyone, from 12 px the frontier, below
 that the landmarks alone.
 
@@ -142,8 +142,8 @@ Timings are offline medians of five, not frame-time measurements. Bubble's curre
 timings and runtime are described in §7. The other engines' recorded runs used Node 20 on Apple
 M3 Pro. Geometry is deterministic — two runs of one engine over one tree serialise byte-identically.
 
-**What each one looks like.** The fruit are the same on all four — the shader is untouched, so kind
-hues, the locked wash, the ember, the complete halo and the crown at 1.55× carry over. The silhouette
+**What each one looks like.** The fruit use the same shader on all four: kind hues, the locked
+wash, the complete halo and the crown at 1.55× carry over. The silhouette
 is what changes, and the minimap, `share/TreePortrait.js` and every gallery card draw whatever the
 engine draws.
 

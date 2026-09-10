@@ -28,7 +28,7 @@ constexpr std::size_t kSummaryChars = 200;
 // answers `edgesOmitted` with the count instead. Listing is linear, so only the edge count gates.
 constexpr std::size_t kMaxListedEdges = 6000;
 enum class KindField { id, hue, label, description, crossBranchExempt };
-enum class ProgressField { completed, inProgress, cleared, outOfOrder };
+enum class ProgressField { completed, cleared, outOfOrder };
 
 using NodeFields = std::set<NodeField>;
 using KindFields = std::set<KindField>;
@@ -43,7 +43,7 @@ inline const KindFields kLegendFields{KindField::id, KindField::hue, KindField::
 
 // `cleared` lets a browser's reconcile tell "cleared" from "never marked"; an agent has no use
 // for it. `outOfOrder` is the subset of `completed` the caller marked as meant out of order.
-inline const ProgressFields kProgressFields{ProgressField::completed, ProgressField::inProgress,
+inline const ProgressFields kProgressFields{ProgressField::completed,
                                             ProgressField::outOfOrder};
 
 // One shape's `fields` vocabulary: the legal names in wire order, each paired with its field.

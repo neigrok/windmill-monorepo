@@ -121,7 +121,7 @@ share/gallery pages, and all of journal's and gym's routes, each in its product'
 | GET | `/v1/trees/:id` | → `{ seq, data, state, createdAt, visibility, mine }`. `data.kinds` is the legend, `state` the full CRDT state, `createdAt` the planting time in epoch ms — the week-N card counts from it, never the calendar week |
 | PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }`. Whole-document write; seeds the default legend on a new tree |
 | POST | `/v1/trees/:id/fork` | `{ id?, title? }` → `{ seq, data }`. Copies nodes, edges and kinds verbatim, progress cleared |
-| GET | `/v1/trees/:id/progress` | → `{ completed[], inProgress[], cleared[] }` — the **owner's** progress, not the caller's |
+| GET | `/v1/trees/:id/progress` | → `{ marks: [{ node, status, at, markedAt, outOfOrder? }] }` — the **owner's** progress, not the caller's |
 | GET | `/v1/trees/:id/diagnostics` | → `{ cycles[], dangling[], selfEdges[], smells[], maskedWork[] }` |
 | GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }`, a human feed from `tree_ops` |
 

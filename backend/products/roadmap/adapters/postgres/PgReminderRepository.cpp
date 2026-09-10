@@ -129,7 +129,6 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     const NodeId node{row["node_id"].as<std::string>()};
     const std::string status = row["status"].as<std::string>();
     if (status == "complete") overlays[tree].completed.insert(node);
-    else if (status == "active") overlays[tree].inProgress.insert(node);
     const auto marked = static_cast<std::uint64_t>(row["marked_ms"].as<long long>());
     markedAt[tree] = std::max(markedAt[tree], marked);
   }

@@ -29,7 +29,7 @@ rejected for structure. Validity is a read model, not a gate.
 Derived read models:
 
 - `UnlockRules::derive(nodes|tree, progress) → map<NodeId, NodeState>` where `NodeState ∈
-  {locked, available, active, complete}`. It reads only nodes and prerequisites, so it also runs
+  {locked, available, complete}`. It reads only nodes and prerequisites, so it also runs
   over a graph `SkillTree` would refuse: a prerequisite naming no node locks its dependant, and a
   cycle locks every member.
 - `TrunkTree` — elects one trunk parent per node (same-kind parents win, then shallowest, then
@@ -47,9 +47,9 @@ serves; geometry is entirely client-side.
 ### Progress
 
 Private, per user, per tree — outside the lattice and outside the op log. A `Progress` holds a
-`ProgressMark {status, at, markedAt, outOfOrder}` per node plus the projected `completed` / `inProgress` /
+`ProgressMark {status, at, markedAt, outOfOrder}` per node plus the projected `completed` /
 `cleared` sets; `record` is the only way in, so the sets cannot drift from the registers.
-`ProgressStatus ∈ {none, active, complete}`; **`none` is a value, not a row delete**, so a clear
+`ProgressStatus ∈ {none, complete}`; **`none` is a value, not a row delete**, so a clear
 converges across devices and a stale mark cannot resurrect it. `markedAt` is the server clock at
 the moment the mark was recorded and is the only instant a reader may date a step by; the HLC
 beside it orders writes and is never served back as a time.

@@ -31,23 +31,23 @@ TEST(unlock_states_from_progress) {
   CHECK_EQ(states.at(nid("b")), NodeState::locked);
 }
 
-TEST(unlock_in_progress_beats_availability) {
+TEST(unlock_a_cleared_node_is_available_when_prerequisites_are_complete) {
   SkillTree tree = chain();
   Progress progress;
   progress.completed = {nid("r"), nid("a")};
-  progress.inProgress = {nid("b")};
+  progress.cleared = {nid("b")};
 
   auto states = UnlockRules::derive(tree, progress);
   CHECK_EQ(states.at(nid("r")), NodeState::complete);
   CHECK_EQ(states.at(nid("a")), NodeState::complete);
-  CHECK_EQ(states.at(nid("b")), NodeState::active);
+  CHECK_EQ(states.at(nid("b")), NodeState::available);
 }
 
 TEST(unlock_derives_over_a_bare_node_list_the_same_as_over_a_tree) {
   SkillTree tree = chain();
   Progress progress;
   progress.completed = {nid("r")};
-  progress.inProgress = {nid("a")};
+  progress.cleared = {nid("a")};
 
   CHECK(UnlockRules::derive(tree.nodes(), progress) == UnlockRules::derive(tree, progress));
 }

@@ -14,6 +14,7 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 
 - `guidelines/` — the feature canon (decoder below).
 - `briefs.md` — the open asks to the designers.
+- `guidelines/node-progress.md` — the binary progress contract and minimal control set.
 - `readability-research.md` — how the canvas is made readable: the caption frame, the working zoom,
   the four layout engines measured side by side, and the remaining evaluations.
 - `bubble-graduation.md` — current graduation contract, structure observations, verification and follow-ups.
@@ -64,8 +65,8 @@ line. Nodes are flat, uniform circular discs, base size 56.
 
 **Colour and state are decoupled.** A node's colour comes from its `kind` — one of six palette
 hues (terracotta, olive, gold, brick, sky, plum) — and progress is carried by treatment across
-four tiers: **locked** dimmed, **available**, **ember** (in-progress, low breathing glow, no
-halo), **complete** (bright, glowing halo — breathing on the crowned root, static elsewhere).
+three tiers: **locked** dimmed, **available**, and **complete** (bright, glowing halo —
+breathing on the crowned root, static elsewhere).
 The tier never re-hues a node.
 
 The production renderer is a hand-rolled WebGL2 canvas (`web/src/products/roadmap/scene/`);

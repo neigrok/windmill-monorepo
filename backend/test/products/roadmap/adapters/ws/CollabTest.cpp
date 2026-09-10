@@ -395,7 +395,7 @@ TEST(ws_progress_records_the_clients_own_stamps_and_acks_the_frame) {
   REQUIRE_EQ(stored.marks.size(), 2u);
   CHECK_EQ(stored.marks.at(NodeId{"root"}).at, (Hlc{900, 0, "r_phone"}));
   CHECK(stored.marks.at(NodeId{"root"}).status == ProgressStatus::complete);
-  CHECK(stored.marks.at(NodeId{"b"}).status == ProgressStatus::active);
+  CHECK(stored.marks.at(NodeId{"b"}).status == ProgressStatus::none);
   CHECK_EQ(lastFrameOfType(*conn, "progressAck")["frameId"].asString(), std::string("f7"));
 }
 
@@ -556,11 +556,12 @@ TEST(ws_progress_echoes_the_landed_half_of_a_mixed_batch) {
   conn->sent.clear();
 
   h.collab.onMessage(conn, progressFrame("t_priv", "f2",
-                                         {{"kept", "none", "500:0:r_stale"}, {"fresh", "active", "950:0:r_stale"}}));
+                                         {{"kept", "none", "500:0:r_stale"}, {"fresh", "inProgress", "950:0:r_stale"}}));
 
   Json::Value echo = lastFrameOfType(*conn, "progress");
   REQUIRE_EQ(echo["marks"].size(), 1u);
   CHECK_EQ(echo["marks"][0]["node"].asString(), std::string("fresh"));
+  CHECK_EQ(echo["marks"][0]["status"].asString(), std::string("none"));
 }
 
 TEST(ws_progress_refuses_a_batch_past_the_frame_ceiling) {

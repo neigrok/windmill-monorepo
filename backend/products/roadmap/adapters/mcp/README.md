@@ -69,7 +69,7 @@ rename_node: missing required argument "nodeId". Call get_tree with fields ["id"
 annotate_node: description would be 17181 characters, 1181 over the 16000 cap
 create_node: label would be 250 characters, 50 over the 200 cap; description would be 17181 characters, 1181 over the 16000 cap
 import_subgraph: nodes[0] must be an object, got string. Each item is a JSON object, not a JSON-encoded string.
-set_progress: status "finished" is not one of {active, complete, none}
+set_progress: status "finished" is not one of {complete, none}
 ```
 
 The checks live in `ToolArgs.{h,cpp}`. `RoadmapTools::callTool` stamps the tool name exactly once
@@ -197,7 +197,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed / in-progress node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
+| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
@@ -251,13 +251,13 @@ Apply action for routine proposals; annotations describe each tool's effects.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
-- **`status` is the caller's own mark** — `active`, `complete` or `none`, the vocabulary
+- **`status` is the caller's own mark** — `complete` or `none`, the vocabulary
   `set_progress` writes and `get_progress` returns. Ask `get_tree` or `find_nodes` for it and
   every node answers, marked or not.
 - **`seedStatus` is the document's authored baseline** — the inert seed a shared or demo tree
   carries, which every reader sees before their own marks. Readable through `fields`, writable as
   `import_subgraph`'s `nodes[].seedStatus`. An imported node carrying `status` is refused by name.
-- **`state` is what the tree derives** — `locked`, `available`, `active` or `complete`, the
+- **`state` is what the tree derives** — `locked`, `available` or `complete`, the
   unlock cascade `domain/UnlockRules` runs over a node's prerequisites and the caller's marks.
   A `fields` value on `get_tree` and `find_nodes`, never in a default, computed once per read
   over the whole tree, since a prerequisite may sit off the page. It answers on an untidy tree,

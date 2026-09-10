@@ -17,7 +17,7 @@ const DIM_EDGE = RADIUS * 0.05;      // ~1.4  — a dormant branch
 const AVAIL_STROKE = RADIUS * 0.072; // ~2    — the outline of an available node
 const LOCKED_STROKE = RADIUS * 0.046;// ~1.3  — the faint edge of a locked ghost
 
-const BLUR_STD = RADIUS * 0.55;  // the done/active halo's gaussian spread; part of the footprint
+const BLUR_STD = RADIUS * 0.55;  // the done halo's gaussian spread; part of the footprint
 
 let portraitUid = 0; // unique filter ids so many portraits on one page never collide
 
@@ -59,9 +59,9 @@ function edgePath(edge, byId, palette) {
     + ` fill="none" stroke="${stroke}" stroke-width="${num(width)}" stroke-linecap="round" opacity="${num(opacity)}"/>`;
 }
 
-// A branch is lit when its source node is complete or active, dormant otherwise.
+// A branch is lit when its source node is complete, dormant otherwise.
 function edgeInk(edge, from, palette) {
-  const engaged = from.state === 'complete' || from.state === 'active';
+  const engaged = from.state === 'complete';
   const faded = edge.kind === 'cross-branch' ? 0.8 : 1;
   if (engaged) return { stroke: palette.bark, width: LIT_EDGE, opacity: 0.92 * faded };
   return { stroke: palette.dimEdge, width: DIM_EDGE, opacity: 0.75 * faded };
@@ -76,7 +76,7 @@ function nodeMarkup(node, palette, glowId) {
   const y = num(node.y);
   const crown = node.emphasis ? crownMarkup(node.x, node.y, r, palette) : '';
 
-  if (node.state === 'complete' || node.state === 'active') {
+  if (node.state === 'complete') {
     const halo = `<circle cx="${x}" cy="${y}" r="${num(r * GLOW_R)}" fill="rgba(${kind.rgb},${num(palette.glowOp)})" filter="url(#${glowId})"/>`;
     const ring = `<circle cx="${x}" cy="${y}" r="${num(r * RING_R)}" fill="none" stroke="rgba(${kind.rgb},.55)" stroke-width="${num(r * RING_W)}"/>`;
     const disc = `<circle cx="${x}" cy="${y}" r="${num(r)}" fill="${kind.c}"/>`;

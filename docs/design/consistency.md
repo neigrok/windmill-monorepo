@@ -549,8 +549,8 @@ so it is filed rather than settled.
 
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
-(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
-`float toLit = tier == 0 ? 0.0 : 1.0`, so tiers 1–3 all paint the full base fill and ring colour:
+(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js` sets
+`float toLit = tier == 0 ? 0.0 : 1.0`, so available and complete both paint the full base fill and ring colour:
 on the GL canvas — which is production — an available node is saturated and differs from complete
 only by the halo. Either the shader gains an available face, or the contract and the DOM reference
 take the renderer's.

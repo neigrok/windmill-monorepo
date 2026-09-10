@@ -193,7 +193,7 @@ export class TreeLattice {
       mergeLww(record.order, typeof n.order === 'string' ? n.order : '', fold(parseHlc(n.orderAt)));
       const position = n.position && typeof n.position === 'object' ? { x: n.position.x, y: n.position.y } : null;
       mergeLww(record.position, position, fold(parseHlc(n.positionAt)));
-      mergeLww(record.status, n.status ?? null, fold(parseHlc(n.statusAt)));
+      mergeLww(record.status, n.status === 'active' || n.status === 'inProgress' ? 'none' : n.status ?? null, fold(parseHlc(n.statusAt)));
       mergeLww(record.description, typeof n.description === 'string' ? n.description : '', fold(parseHlc(n.descriptionAt)));
       // Mirrors the backend's linksFromJson: bare strings become url-only links, other shapes drop.
       const links = Array.isArray(n.links) ? n.links.flatMap((l) => {

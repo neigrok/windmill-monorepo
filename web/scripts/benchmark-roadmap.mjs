@@ -39,7 +39,6 @@ function fixtures() {
         const tree = new SkillTree({ id: data.id, title: data.title, nodes: data.nodes.map(({ status, ...node }) => node) });
         const progress = {
           completed: new Set(data.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
-          inProgress: new Set(data.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
         };
         rows.push({ name: `${shape}-${count}`, tree, states: UnlockRules.derive(tree, progress), anchorId: null });
       }
@@ -61,7 +60,7 @@ function measure(engine, { tree, states, anchorId }) {
   const nearest = nearestNeighboursPx(positions);
   const bounds = boundsOf(positions);
   const zoom = fitZoom(positions);
-  const firstActive = tree.topoOrder().find((id) => states.get(id) === 'active') ?? null;
+  const firstAvailable = tree.topoOrder().find((id) => states.get(id) === 'available') ?? null;
 
   return {
     nodes: tree.nodes.length,
@@ -71,7 +70,7 @@ function measure(engine, { tree, states, anchorId }) {
     footprintOverlaps: footprintOverlaps(tree, positions).length,
     boundsWu: bounds,
     fit: { zoom, bodyPx: BODY_WU * zoom, drawnBodyPx: Math.max(BODY_WU * zoom, MIN_BODY_PX) },
-    inWorkingWindow: { anchor: anchorId, aroundAnchor: anchorId && countAround(positions, anchorId), firstActive, aroundFirstActive: firstActive && countAround(positions, firstActive) },
+    inWorkingWindow: { anchor: anchorId, aroundAnchor: anchorId && countAround(positions, anchorId), firstAvailable, aroundFirstAvailable: firstAvailable && countAround(positions, firstAvailable) },
     layoutMs: quantile(times, 0.5),
     deterministic: serialise(positions) === serialise(engine.layout(tree)),
   };
@@ -97,7 +96,7 @@ for (const fixture of fixtures()) {
       console.log(`  nearest neighbour px   median ${fmt(m.nearestPx.median)}  p10 ${fmt(m.nearestPx.p10)}  (${fmt(m.nearestPx.medianBodies, 2)} bodies)`);
       console.log(`  family in view         ${fmt(m.familyInView * 100, 1)}%   footprint overlaps ${m.footprintOverlaps}`);
       console.log(`  bounds wu              ${fmt(m.boundsWu.width)} × ${fmt(m.boundsWu.height)}   fit zoom ${fmt(m.fit.zoom, 4)} → body ${fmt(m.fit.bodyPx, 1)} px (drawn ${fmt(m.fit.drawnBodyPx, 1)})`);
-      console.log(`  in working window      around ${m.inWorkingWindow.anchor ?? '—'}: ${m.inWorkingWindow.aroundAnchor ?? 'n/a'}   around first active ${m.inWorkingWindow.firstActive ?? '—'}: ${m.inWorkingWindow.aroundFirstActive ?? 'n/a'}`);
+      console.log(`  in working window      around ${m.inWorkingWindow.anchor ?? '—'}: ${m.inWorkingWindow.aroundAnchor ?? 'n/a'}   around first available ${m.inWorkingWindow.firstAvailable ?? '—'}: ${m.inWorkingWindow.aroundFirstAvailable ?? 'n/a'}`);
       console.log(`  layout ${fmt(m.layoutMs, 2)} ms (median of ${LAYOUT_RUNS})   deterministic ${m.deterministic}`);
     } catch (error) {
       console.log(`${fixture.name} · ${name}: ${error.message}`);

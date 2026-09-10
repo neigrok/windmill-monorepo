@@ -26,11 +26,10 @@ export function planNextUp(tree, states) {
   const totalCount = tree.nodes.length;
 
   if (doneCount === totalCount) {
-    return { mount: true, mode: 'allDone', pill: `${doneCount}/${totalCount}`, doneCount, totalCount, readyCount: 0, featured: [], overflow: [], blockers: [] };
+    return { mount: true, mode: 'allDone', pill: `${doneCount}/${totalCount}`, doneCount, totalCount, readyCount: 0, featured: [], overflow: [] };
   }
   if (ready.length === 0) {
-    const blockers = tree.nodes.filter((node) => states.get(node.id) === 'active').map(row).sort(byRank);
-    return { mount: true, mode: 'blocked', pill: '0 ready', doneCount, totalCount, readyCount: 0, featured: [], overflow: [], blockers };
+    return { mount: true, mode: 'blocked', pill: '0 ready', doneCount, totalCount, readyCount: 0, featured: [], overflow: [] };
   }
 
   const featured = [];
@@ -43,5 +42,5 @@ export function planNextUp(tree, states) {
     featured.push(candidate);
   }
   const overflow = ready.filter((candidate) => !featured.includes(candidate));
-  return { mount: true, mode: 'featured', pill: `${ready.length} ready`, doneCount, totalCount, readyCount: ready.length, featured, overflow, blockers: [] };
+  return { mount: true, mode: 'featured', pill: `${ready.length} ready`, doneCount, totalCount, readyCount: ready.length, featured, overflow };
 }

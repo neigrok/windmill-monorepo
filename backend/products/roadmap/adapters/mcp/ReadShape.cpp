@@ -60,12 +60,6 @@ std::string summaryOf(const std::string& description) {
   return head + "\u2026";
 }
 
-const char* markOn(const Progress& marks, const NodeId& node) {
-  if (marks.completed.count(node)) return progressStatusName(ProgressStatus::complete);
-  if (marks.inProgress.count(node)) return progressStatusName(ProgressStatus::active);
-  return progressStatusName(ProgressStatus::none);
-}
-
 }
 
 const Vocabulary<NodeField>& nodeVocabulary() {
@@ -97,7 +91,6 @@ const Vocabulary<KindField>& kindVocabulary() {
 
 const Vocabulary<ProgressField>& progressVocabulary() {
   static const Vocabulary<ProgressField> vocabulary({{"completed", ProgressField::completed},
-                                                     {"inProgress", ProgressField::inProgress},
                                                      {"cleared", ProgressField::cleared},
                                                      {"outOfOrder", ProgressField::outOfOrder}});
   return vocabulary;
@@ -126,11 +119,11 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
     n["position"] = position;
   }
   if (fields.count(NodeField::status)) {
-    n["status"] = markOn(context.marks, node.id);
+    n["status"] = context.marks.completed.count(node.id) ? "complete" : "none";
     const auto mark = context.marks.marks.find(node.id);
     if (mark != context.marks.marks.end() && mark->second.outOfOrder) n["outOfOrder"] = true;
   }
-  if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *node.status;
+  if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *normalizeSeedStatus(node.status);
   if (fields.count(NodeField::state)) n["state"] = std::string(toString(context.states.at(node.id)));
   if (fields.count(NodeField::summary) && !node.description.empty()) n["summary"] = summaryOf(node.description);
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
@@ -151,7 +144,6 @@ Json::Value projectKind(const Kind& kind, const KindFields& fields) {
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields) {
   Json::Value root(Json::objectValue);
   if (fields.count(ProgressField::completed)) root["completed"] = idArray(progress.completed);
-  if (fields.count(ProgressField::inProgress)) root["inProgress"] = idArray(progress.inProgress);
   if (fields.count(ProgressField::cleared)) root["cleared"] = idArray(progress.cleared);
   if (fields.count(ProgressField::outOfOrder)) {
     std::set<NodeId> outOfOrder;

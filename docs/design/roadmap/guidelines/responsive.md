@@ -98,7 +98,7 @@ Direct manipulation (drag, pinch) is exempt from the motion ceilings — the fin
   frontier's family, without arrival motion; a visitor opens at the whole-tree fit with arrival.
 - **Labels declutter:** fixed 14px/20px captions have at most two lines inside 168px, overflow
   ellipsized. Selected and hovered steps keep their names; other captions rank by selected family,
-  landmarks, active/available, then remaining steps. Landmarks are eligible below a 12px drawn
+  landmarks, available, then remaining steps. Landmarks are eligible below a 12px drawn
   body, the frontier from 12px, everyone from 18px. Placement holds for 200ms on either side of a
   150ms fade. `tree-layout-contract.md` §8 owns the full collision and camera contract.
 - **Chrome yields:** plaque, wordmark and CTA sit at 35% opacity while the finger is down; restore

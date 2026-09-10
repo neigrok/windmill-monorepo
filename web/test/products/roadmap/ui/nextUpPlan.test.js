@@ -34,7 +34,6 @@ test('planNextUp — the featured offer is ranked by unlocks then id, with count
     readyCount: 2,
     featured: [{ id: 'a', kind: 'terracotta', unlocks: 1 }, { id: 'b', kind: 'olive', unlocks: 0 }],
     overflow: [],
-    blockers: [],
   });
 });
 
@@ -50,14 +49,13 @@ test('planNextUp — a fully grown tree reports the allDone mode', () => {
     readyCount: 0,
     featured: [],
     overflow: [],
-    blockers: [],
   });
 });
 
-test('planNextUp — nothing ready reports the blocked mode with ranked blockers', () => {
+test('planNextUp — nothing ready reports the blocked mode without unavailable actions', () => {
   const t = tree([node('r', [], { color: 'terracotta' }), node('a', ['r'])]);
 
-  assert.deepEqual(planNextUp(t, new Map([['r', 'active'], ['a', 'locked']])), {
+  assert.deepEqual(planNextUp(t, new Map([['r', 'locked'], ['a', 'locked']])), {
     mount: true,
     mode: 'blocked',
     pill: '0 ready',
@@ -66,6 +64,5 @@ test('planNextUp — nothing ready reports the blocked mode with ranked blockers
     readyCount: 0,
     featured: [],
     overflow: [],
-    blockers: [{ id: 'r', kind: 'terracotta', unlocks: 1 }],
   });
 });

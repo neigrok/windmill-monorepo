@@ -638,10 +638,6 @@
   background: var(--surface-card);
   box-shadow: inset 0 0 0 2.5px var(--k-ring);
 }
-.st-list-fruit--active {
-  background: var(--surface-card);
-  box-shadow: inset 0 0 0 2.5px var(--k-ring), 0 0 7px var(--k-glow);
-}
 .st-list-fruit--locked {
   background: color-mix(in srgb, var(--k-base) 18%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
@@ -781,10 +777,6 @@
 .st-list-dot--ready {
   background: var(--surface-card);
   box-shadow: inset 0 0 0 2px var(--k-ring);
-}
-.st-list-dot--active {
-  background: var(--surface-card);
-  box-shadow: inset 0 0 0 2px var(--k-ring), 0 0 5px var(--k-glow);
 }
 .st-list-dot--locked {
   background: color-mix(in srgb, var(--k-base) 18%, transparent);

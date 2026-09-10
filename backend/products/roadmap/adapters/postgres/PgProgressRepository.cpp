@@ -33,7 +33,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
     // The server's own clock, not the marking device's: the HLC beside it orders writes but cannot
     // be asserted back to a reader as a time.
     mark.markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
-    mark.outOfOrder = row["out_of_order"].as<bool>();
+    mark.outOfOrder = mark.status == ProgressStatus::complete && row["out_of_order"].as<bool>();
     progress.record(NodeId{row["node_id"].as<std::string>()}, mark);
   }
   return progress;
@@ -53,7 +53,6 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
     NodeId node{row["node_id"].as<std::string>()};
     std::string status = row["status"].as<std::string>();
     if (status == "complete") digest.overlay.completed.insert(node);
-    else if (status == "active") digest.overlay.inProgress.insert(node);
     auto markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     if (markedAt > digest.lastMarkedAt) digest.lastMarkedAt = markedAt;
   }

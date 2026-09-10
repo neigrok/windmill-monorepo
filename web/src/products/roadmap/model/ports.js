@@ -13,7 +13,7 @@ export class TreeRepository {
     throw new Error('TreeRepository.loadTree not implemented');
   }
 
-  // Returns { completed, inProgress, startedAt, completedAt, server }, falling back to the
+  // Returns { completed, completedAt, server }, falling back to the
   // document's authoring seeds when the server holds no marks.
   async loadProgress(treeData) {
     throw new Error('TreeRepository.loadProgress not implemented');

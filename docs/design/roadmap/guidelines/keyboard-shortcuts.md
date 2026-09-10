@@ -4,8 +4,7 @@ A discoverable reference for the editor's real shortcuts. Every row maps to a li
 gesture; the map is `products/roadmap/shortcuts/shortcutMap.js`.
 
 ## Trigger & modal
-- **Two triggers, one panel:** `?` (`shift + /`) whenever the canvas has focus, or the
-  keyboard button in the ControlBar (after zoom + Focus + All steps).
+- **Trigger:** `?` (`shift + /`) whenever the canvas has focus.
 - **On the shared Dialog** — `--surface-overlay` scrim, `--radius-xl` card, `--shadow-lg`,
   `wm-pop-in` entrance — but **600px, two columns**, because its one job is scanning.
 - **Closes four ways:** `esc`, the ×, a backdrop click, or `?` again. Focus traps inside

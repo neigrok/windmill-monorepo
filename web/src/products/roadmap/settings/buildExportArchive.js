@@ -37,7 +37,7 @@ async function loadServerTree(treeId) {
   const treeData = await repository.loadTree().catch(() => null);
   if (!treeData) return null;
   const overlay = await repository.loadProgress(treeData);
-  return { treeData, progress: { completed: overlay.completed, inProgress: overlay.inProgress } };
+  return { treeData, progress: { completed: overlay.completed } };
 }
 
 // One local record holds both lanes: the structure and this account's marks.
@@ -53,10 +53,9 @@ async function loadDeviceTree(treeId) {
 }
 
 function progressFrom(treeData, overlay) {
-  if (overlay) return { completed: new Set(overlay.completed ?? []), inProgress: new Set(overlay.inProgress ?? []) };
+  if (overlay) return { completed: new Set(overlay.completed ?? []) };
   return {
     completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
-    inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
   };
 }
 

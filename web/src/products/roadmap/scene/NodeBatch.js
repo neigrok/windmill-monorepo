@@ -1,4 +1,4 @@
-// One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 ember, 3 activated.
+// One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 complete.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, SELECTED_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_PX } from '../theme.js';
 import { isGrouped } from '../selection/bulkSelection.js';
@@ -79,7 +79,7 @@ void main() {
     float st = (uTime - aBloom.x) / BLOSSOM;
     if (st >= 0.0 && st < 1.0) {
       int t = int(aTier + 0.5);
-      float peak = t == 3 ? 1.10 : (t == 2 ? 1.02 : 1.05); // full bloom / ember wake / frontier wake
+      float peak = t == 2 ? 1.10 : 1.05; // full bloom / frontier wake
       settle = 1.0 + (peak - 1.0) * sin(st * PI);
     }
   }
@@ -143,8 +143,6 @@ const float HALO_OVERSHOOT = 1.2; // blossom halo peak (boosted for legibility)
 const float CROWN_PERIOD = 2.4;  // crown breath period (s) -- the only infinite loop
 const float CROWN_LO = 0.471;    // crown halo trough ~= a .22
 const float CROWN_HI = 0.729;    // crown halo crest ~= a .34
-const float EMBER_MID = 0.471;   // ember resting glow ~= a .22 (crown trough), below complete's a .28
-const float EMBER_AMP = 0.5;     // ember breathes at half the crown's amplitude (spec: glow 1/2 crown)
 const float PULSE_DUR = 2.8;     // arrival-pulse window (s)
 const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly slower
 const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
@@ -169,7 +167,7 @@ void main() {
   vec2 centered = (nodeUv - 0.5) * 2.0;
   float dist = length(centered);
   int ci = int(vColor + 0.5);
-  int tier = int(vTier + 0.5); // 0 unavailable, 1 available, 2 ember, 3 activated
+  int tier = int(vTier + 0.5); // 0 unavailable, 1 available, 2 complete
 
   vec3 base = uBase[ci];
   vec3 ring = uRing[ci];
@@ -211,15 +209,15 @@ void main() {
   float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
   body *= (1.0 + 0.12 * hoverE);
 
-  // ---- glow: the root crown breathes; complete wears a STATIC halo; ember a soft breath ----
+  // ---- glow: the root crown breathes; complete wears a static halo ----
   float crownWave = uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * (TAU / CROWN_PERIOD)) : 0.5;
   float haloRadiusMul = 1.0;
   float strength = 0.0;
-  if (tier == 3) {
+  if (tier == 2) {
     strength = HALO_STEADY; // no oscillation -- a still a .28 halo
     // blossom overshoot: lift->overshoot->steady from wherever the glow already sat, +80ms after ignite
     if (vBloom.w > 0.5 && vBloom.x > -900.0 && uMotion > 0.5) {
-      float fromGlow = int(vBloom.y + 0.5) == 2 ? EMBER_MID : 0.0;
+      float fromGlow = 0.0;
       float bt = (uTime - vBloom.x - 0.08) / BLOSSOM;
       if (bt < 0.0) strength = fromGlow;
       else if (bt < 1.0) {
@@ -228,14 +226,6 @@ void main() {
         strength = mix(fromGlow, HALO_OVERSHOOT, up) - (HALO_OVERSHOOT - HALO_STEADY) * down;
         haloRadiusMul = 1.0 + 0.45 * (up - down); // radius swell at the peak (boosted)
       }
-    }
-  } else if (tier == 2) {
-    // ember: no static halo or outer ring, just a glow breathing at half the crown's amplitude
-    strength = EMBER_MID + (crownWave - 0.5) * (CROWN_HI - CROWN_LO) * EMBER_AMP;
-    // kindle glow-in: the glow rises from 0 over the bloom window
-    if (vBloom.x > -900.0 && uMotion > 0.5) {
-      float gt = clamp((uTime - vBloom.x) / max(vBloom.z, 0.001), 0.0, 1.0);
-      strength *= smoothstep(0.0, 1.0, gt);
     }
   }
   if (vEmphasis > 0.5) strength = mix(CROWN_LO, CROWN_HI, crownWave); // crown halo a .22<->.34
@@ -253,7 +243,7 @@ void main() {
 
   // ---- outer ring (activated only) ----
   float outerBand = 1.0 - smoothstep(0.0, OUTER_W, abs(dist - OUTER_R));
-  float outerA = (tier == 3 ? 1.0 : 0.0) * outerBand * 0.6;
+  float outerA = (tier == 2 ? 1.0 : 0.0) * outerBand * 0.6;
 
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
@@ -296,7 +286,7 @@ void main() {
   }
 
   // ---- progress arc: a kind-hued gauge on nodes with sub-tasks, never on complete ----
-  if (vArc.y >= 0.0 && tier != 3) {
+  if (vArc.y >= 0.0 && tier != 2) {
     float frac = vArc.y;
     if (uMotion > 0.5) {
       float et = clamp((uTime - vArc.z) / ARC_EASE, 0.0, 1.0);
@@ -518,7 +508,7 @@ export class NodeBatch {
     const i = this.idToIndex.get(id);
     if (i === undefined) return;
     const durationMs = opts.durationMs ?? 280;
-    const blossom = opts.blossom ?? (toTier === 3);
+    const blossom = opts.blossom ?? (toTier === 2);
     const fromTier = this.tiers[i];
     this.tiers[i] = toTier;
     this.bloom[i * 4] = atSeconds;

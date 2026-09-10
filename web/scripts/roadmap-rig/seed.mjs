@@ -57,8 +57,8 @@ const expected = {
   nodes: snapshot.tree.nodes.length,
   edges: snapshot.tree.nodes.reduce((s, n) => s + (n.prerequisites?.length ?? 0), 0),
   complete: snapshot.tree.nodes.filter((n) => n.status === 'complete').length,
-  active: snapshot.tree.nodes.filter((n) => n.status === 'active').length,
-  outOfOrder: snapshot.tree.nodes.filter((n) => n.outOfOrder).length,
+  none: snapshot.tree.nodes.filter((n) => n.status !== 'complete').length,
+  outOfOrder: snapshot.tree.nodes.filter((n) => n.status === 'complete' && n.outOfOrder).length,
   kinds: (snapshot.tree.kinds ?? []).length,
 };
 console.log('snapshot', expected, 'edges list length', snapshot.edges?.length);
@@ -69,9 +69,10 @@ if (created.status !== 200) process.exit(1);
 
 const init = await mcp('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'rig-seed', version: '0' } });
 if (!init.sid) { console.error('mcp initialize failed', init); process.exit(1); }
-const updates = snapshot.tree.nodes
-  .filter((n) => n.status === 'complete' || n.status === 'active')
-  .map((n) => (n.outOfOrder ? { nodeId: n.id, status: n.status, outOfOrder: true } : { nodeId: n.id, status: n.status }));
+const updates = snapshot.tree.nodes.map((node) => {
+  const status = node.status === 'complete' ? 'complete' : 'none';
+  return { nodeId: node.id, status, ...(status === 'complete' && node.outOfOrder ? { outOfOrder: true } : {}) };
+});
 const progress = await mcp('tools/call', { name: 'set_progress', arguments: { treeId, updates } }, init.sid);
 const receipt = progress.body?.result?.structuredContent ?? progress.body?.result ?? progress.body;
 const receiptText = JSON.stringify(receipt);
@@ -89,7 +90,7 @@ const actual = {
   nodes: readNodes.length,
   edges: readEdges.length,
   complete: marks.filter((m) => m.status === 'complete').length,
-  active: marks.filter((m) => m.status === 'active').length,
+  none: marks.filter((m) => m.status === 'none').length,
   outOfOrder: marks.filter((m) => m.outOfOrder).length,
   kinds: (readBack.data?.kinds ?? []).length,
 };
@@ -97,4 +98,4 @@ console.log('read back keys', Object.keys(readBack), 'progress keys', Object.key
 console.log('local copy', actual);
 const mismatches = Object.keys(expected).filter((k) => expected[k] !== actual[k]);
 if (mismatches.length) { console.error('MISMATCH on', mismatches); process.exit(2); }
-console.log(`OK — local ${treeId} matches the snapshot on nodes/edges/complete/active/outOfOrder/kinds`);
+console.log(`OK — local ${treeId} matches the snapshot on nodes/edges/complete/none/outOfOrder/kinds`);

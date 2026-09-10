@@ -33,7 +33,7 @@ storage and reorder behavior.
 
 Local verification drove a browser through CDP against the backend and live MCP edits:
 
-- Create, long rename, active progress and delete projected without a page reload.
+- Create, long rename, progress and delete projected without a page reload.
 - A real sibling drag persisted the expected order; Cmd+Z restored the original server order.
 - Saved selection and camera restored; a camera stamped with the lab format was invalidated.
 - The run reported zero JavaScript exceptions.

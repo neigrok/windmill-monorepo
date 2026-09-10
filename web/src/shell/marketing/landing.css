@@ -45,7 +45,7 @@ html { scroll-behavior: smooth; }
 .landing-linksent i {
   width: 8px; height: 8px; border-radius: var(--radius-full); flex: none;
   background: var(--accent-gold-500); --nd-glow: var(--kind-gold-glow);
-  animation: wm-ember var(--duration-glow) var(--ease-glow) infinite;
+  animation: wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite;
 }
 
 /* ---- footer ---- */

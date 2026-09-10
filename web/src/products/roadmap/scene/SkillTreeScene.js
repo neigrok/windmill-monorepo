@@ -1,5 +1,5 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
-import { NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
+import { NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -424,7 +424,6 @@ export class SkillTreeScene {
     this.director.celebrate(changeset);
   }
 
-  // A rise into ember is applied here as a quiet kindle and kept out of `risen`, so the director never celebrates a start.
   buildChangeset(statesMap) {
     const risen = [];
     const fell = [];
@@ -435,8 +434,7 @@ export class SkillTreeScene {
       const fromTier = nodeTier(from);
       const node = this.nodesById.get(id);
       if (toTier > fromTier && node) {
-        if (state === 'active') this.kindle(id);
-        else risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
+        risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
       } else if (toTier < fromTier) {
         fell.push({ id, toTier });
       }
@@ -459,11 +457,6 @@ export class SkillTreeScene {
     const focusNode = risen.find((r) => r.toTier === TIER_COMPLETE) ?? risen[0] ?? null;
     const focus = focusNode ? { x: focusNode.x, y: focusNode.y } : null;
     return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, action: null };
-  }
-
-  // Kindle the ember directly: no camera glide, light-travel, pulse or toast, and kept out of the changeset.
-  kindle(id) {
-    this.nodeBatch.igniteNode(id, this.elapsedSeconds, TIER_EMBER, { blossom: false, durationMs: 480 });
   }
 
   announceCeremony(summary, opts = {}) {

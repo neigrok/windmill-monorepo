@@ -42,7 +42,7 @@ export function largeRoadmap(count, shape = 'mixed') {
     nodes.push({
       id, label, prerequisites, color, icon: index % 5 === 0 ? 'book-open' : 'circle',
       order: orders[index],
-      status: index < count * 0.6 ? 'complete' : index < count * 0.66 ? 'active' : 'none',
+      status: index < count * 0.6 ? 'complete' : 'none',
     });
   }
   return { id: `t_probe_${shape}_${count}`, title: `${count.toLocaleString('en-US')} steps · ${shape}`, nodes };

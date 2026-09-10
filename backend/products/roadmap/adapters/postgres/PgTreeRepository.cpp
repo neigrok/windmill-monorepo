@@ -38,7 +38,7 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
-      posX, posY, toString(node.positionAt), node.status, toString(node.statusAt),
+      posX, posY, toString(node.positionAt), normalizeSeedStatus(node.status), toString(node.statusAt),
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
       entryPresent(node.createdAt, node.deletedAt),
@@ -102,7 +102,7 @@ NodeStateEntry nodeFromRow(const auto& row) {
   if (!row["pos_x"].is_null() && !row["pos_y"].is_null())
     node.position = Vec2{row["pos_x"].template as<double>(), row["pos_y"].template as<double>()};
   node.positionAt = stamp(row, "pos_hlc");
-  if (!row["status"].is_null()) node.status = text(row, "status");
+  if (!row["status"].is_null()) node.status = normalizeSeedStatus(text(row, "status"));
   node.statusAt = stamp(row, "status_hlc");
   node.description = text(row, "description");
   node.descriptionAt = stamp(row, "description_hlc");

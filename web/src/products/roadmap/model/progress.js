@@ -1,32 +1,35 @@
-// `now` is handed in so one bulk mark carries one moment.
+import { UnlockRules } from './UnlockRules.js';
 
+// `now` is handed in so one bulk mark carries one moment.
 export function advanceProgress(progress, ids, target, now) {
+  if (target !== 'complete' && target !== 'none') throw new Error(`Unknown progress status "${target}"`);
   const completed = new Set(progress.completed);
-  const inProgress = new Set(progress.inProgress);
-  const startedAt = { ...progress.startedAt };
   const completedAt = { ...progress.completedAt };
 
   for (const id of ids) {
     if (target === 'complete') {
       completed.add(id);
-      inProgress.delete(id);
       completedAt[id] = now;
       continue;
     }
-    if (target === 'notstarted') {
-      completed.delete(id);
-      inProgress.delete(id);
-      delete startedAt[id];
-      delete completedAt[id];
-      continue;
-    }
-    inProgress.add(id);
     completed.delete(id);
-    if (!startedAt[id]) startedAt[id] = now;
     delete completedAt[id];
   }
 
-  return { completed, inProgress, startedAt, completedAt };
+  return { completed, completedAt };
+}
+
+export function progressChanges(tree, before, after) {
+  const previousStates = UnlockRules.derive(tree, before);
+  const nextStates = UnlockRules.derive(tree, after);
+  const completed = [];
+  const unlocked = [];
+  for (const [id, state] of nextStates) {
+    const previous = previousStates.get(id);
+    if (state === 'complete' && previous !== 'complete') completed.push(id);
+    if (state === 'available' && previous === 'locked') unlocked.push(id);
+  }
+  return { completed, unlocked };
 }
 
 // Only one milestone is announced; the caller marks them all offered.

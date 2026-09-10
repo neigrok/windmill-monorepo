@@ -19,8 +19,6 @@ test('a later stamp wins and brings its own receipt instant', () => {
 
   assert.deepEqual(lattice.overlay(), {
     completed: new Set(['a']),
-    inProgress: new Set(),
-    startedAt: {},
     completedAt: { a: 2000 },
   });
 });
@@ -33,8 +31,6 @@ test('an older stamp arriving late changes nothing — not the status, not the d
 
   assert.deepEqual(lattice.overlay(), {
     completed: new Set(['a']),
-    inProgress: new Set(),
-    startedAt: {},
     completedAt: { a: 2000 },
   });
 });
@@ -47,8 +43,6 @@ test('a clear is a value, so a step cleared elsewhere stays cleared instead of r
 
   assert.deepEqual(lattice.overlay(), {
     completed: new Set(),
-    inProgress: new Set(),
-    startedAt: {},
     completedAt: {},
   });
 });
@@ -117,15 +111,13 @@ test('a local mark that loses to a stamp already held is not sent', () => {
   assert.deepEqual(lattice.overlay().completed, new Set(['a']));
 });
 
-test('one register answers both dates — active is when it started, complete is when it finished', () => {
+test('legacy active marks become not started while completed dates remain intact', () => {
   const lattice = new ProgressLattice();
 
   lattice.join(frame(row('running', 'active', '500:0:r_a', 1000), row('done', 'complete', '600:0:r_a', 1100)));
 
   assert.deepEqual(lattice.overlay(), {
     completed: new Set(['done']),
-    inProgress: new Set(['running']),
-    startedAt: { running: 1000 },
     completedAt: { done: 1100 },
   });
 });
@@ -194,7 +186,7 @@ test('draining the pre-lane store lands its marks in the lane and clears the key
   const storage = new Map();
   storage.set('windmill:progress:t_1', JSON.stringify({
     completed: ['done', 'undated'],
-    inProgress: ['running'],
+    inProgress: ['running', 'done'],
     completedAt: { done: 5000 },
     startedAt: { running: 6000 },
   }));
@@ -208,8 +200,6 @@ test('draining the pre-lane store lands its marks in the lane and clears the key
 
   assert.deepEqual(lattice.overlay(), {
     completed: new Set(['done', 'undated']),
-    inProgress: new Set(['running']),
-    startedAt: {},     // a drained mark has no SERVER receipt yet, so it is undated, not guessed
     completedAt: {},
   });
   assert.equal(storage.has('windmill:progress:t_1'), false);
@@ -233,4 +223,24 @@ test('a drained mark loses to a newer server mark and wins where nothing contest
   store.drainInto('t_1', lattice);
 
   assert.deepEqual(lattice.overlay().completed, new Set(['only-here']));
+});
+
+test('legacy progress aliases serialize and replay as none, including the offline outbox', () => {
+  const lattice = new ProgressLattice();
+  lattice.join({ marks: [
+    { node: 'done', status: 'complete', at: '600:0:r_a', markedAt: 1100 },
+    { node: 'old-active', status: 'active', at: '500:0:r_a', markedAt: 1000 },
+    { node: 'old-inProgress', status: 'inProgress', at: '550:0:r_a', markedAt: 1050 },
+  ] });
+  const copy = new ProgressLattice();
+  copy.join(lattice.toFrame());
+
+  assert.deepEqual(copy.overlay(), { completed: new Set(['done']), completedAt: { done: 1100 } });
+  assert.deepEqual(copy.deltaSince(new VersionVector()), { marks: [
+    { node: 'done', status: 'complete', at: '600:0:r_a' },
+    { node: 'old-active', status: 'none', at: '500:0:r_a' },
+    { node: 'old-inProgress', status: 'none', at: '550:0:r_a' },
+  ] });
+  assert.throws(() => copy.mark('old-active', 'active', parseHlc('900:0:r_a'), 900), /unknown progress status/);
+  assert.throws(() => copy.mark('old-inProgress', 'inProgress', parseHlc('950:0:r_a'), 950), /unknown progress status/);
 });

@@ -1,4 +1,4 @@
-// The Windmill dogfood tree as captured on 2026-09-09 (476 steps, 618 links, 9 roots), slimmed to what layout and
+// The Windmill dogfood layout fixture (476 steps, 618 links, 9 roots), slimmed to what layout and
 // progress read. No creation stamps survive the capture, so siblings sort by id — the same order the rig's seeded
 // copy shows in a browser.
 
@@ -19,7 +19,6 @@ export function loadDogfoodTree() {
   const tree = new SkillTree({ id: data.id, title: data.title, kinds: data.kinds, nodes });
   const progress = {
     completed: new Set(data.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
-    inProgress: new Set(data.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
   };
   return { tree, progress, states: UnlockRules.derive(tree, progress) };
 }

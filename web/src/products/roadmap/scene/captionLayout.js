@@ -24,7 +24,7 @@ export const RANK_SELECTED = 0;
 export const RANK_HOVERED = 1;
 export const RANK_FAMILY = 2; // the selected node's trunk parent and trunk children
 export const RANK_ANCHOR = 3; // crowned roots and branch heads
-export const RANK_FRONTIER = 4; // active and available
+export const RANK_FRONTIER = 4; // available
 export const RANK_REST = 5;
 
 // What a seat may not touch. A caption keeps clear of all three; one that cannot goes on a branch rather than unsaid;
@@ -264,7 +264,7 @@ export class CaptionPlacer {
     if (this.familyIds.has(id)) return RANK_FAMILY;
     if (this.anchorIds.has(id)) return RANK_ANCHOR;
     const state = this.stateById.get(id);
-    if (state === 'active' || state === 'available') return RANK_FRONTIER;
+    if (state === 'available') return RANK_FRONTIER;
     return RANK_REST;
   }
 

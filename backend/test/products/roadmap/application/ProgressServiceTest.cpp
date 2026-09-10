@@ -36,12 +36,12 @@ TEST(progress_none_clears_the_entry) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::active, false, at(1), 1);
-  CHECK_EQ(service.progressOf(tid(), uid()).inProgress.count(nid("a")), 1u);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
+  CHECK_EQ(service.progressOf(tid(), uid()).completed.count(nid("a")), 1u);
 
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
   Progress progress = service.progressOf(tid(), uid());
-  CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
+  CHECK_EQ(progress.cleared.count(nid("a")), 1u);
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
 }
 
@@ -60,7 +60,6 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
   // The tombstone is VISIBLE on load: a client's reconcile must tell "cleared" from "never marked".
   Progress loaded = repo.load(tid(), uid());
   CHECK(loaded.completed.empty());
-  CHECK(loaded.inProgress.empty());
   CHECK_EQ(loaded.cleared.size(), 1u);
   CHECK(loaded.cleared.count(nid("a")) == 1);
 }
@@ -75,7 +74,7 @@ TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
 
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
-  CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
+  CHECK_EQ(progress.cleared.count(nid("a")), 1u);
 }
 
 // The marker's word rides the status value: a completion that carried it keeps it, the next mark on
@@ -108,7 +107,7 @@ TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   std::vector<ProgressOutcome> outcomes = service.setStatuses(
       tid(), uid(),
       {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), true},
-       ProgressWrite{nid("r"), ProgressStatus::active, noPrereqs, at(2), false}},
+       ProgressWrite{nid("r"), ProgressStatus::none, noPrereqs, at(2), false}},
       2);
   REQUIRE_EQ(outcomes.size(), 2u);
   CHECK_FALSE(outcomes[0].prerequisitesMet);

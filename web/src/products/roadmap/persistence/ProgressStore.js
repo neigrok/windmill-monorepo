@@ -25,7 +25,8 @@ export class ProgressStore {
       marks.push({ node: id, status: 'complete', at: `${saved.completedAt?.[id] ?? 1}:0:legacy` });
     }
     for (const id of saved.inProgress ?? []) {
-      marks.push({ node: id, status: 'active', at: `${saved.startedAt?.[id] ?? 1}:0:legacy` });
+      if ((saved.completed ?? []).includes(id)) continue;
+      marks.push({ node: id, status: 'none', at: `${saved.startedAt?.[id] ?? 1}:0:legacy` });
     }
     try {
       lattice.join({ marks });

@@ -34,7 +34,7 @@ const CLOSE_GLYPH = (
 const FLASH_MS = 1300;
 const JUMP_OFFSET = 84;
 const BLUR_COMMIT_MS = 140;
-const STATE_WORDS = { done: 'done', ready: 'ready', active: 'in progress', locked: 'locked' };
+const STATE_WORDS = { done: 'done', ready: 'not started', locked: 'locked' };
 
 export function hueOf(color) {
   return KIND_CSS[color] ?? KIND_CSS[DEFAULT_NODE_COLOR];

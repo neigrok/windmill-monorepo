@@ -67,6 +67,10 @@ elsewhere and win where they disagree: `SPEC.md`, `AUTH.md`, `AUTHZ.md`, `db/sch
 
 ## Progress overlays
 
+- Completion is binary: `complete` or `none`; availability still derives from prerequisites.
+- Compatibility inputs `active` and `inProgress` normalize to `none` at the progress and authored
+  seed boundaries. The idempotent schema migration clears both persisted overlays and seed
+  baselines without changing HLC stamps, receipt times, or completed marks.
 - `node_progress` is a per-user LWW register. A clear is `status='none'` **with a stamp** —
   never a row delete, or an out-of-order stale mark resurrects the node.
 - The upsert lands only when `(EXCLUDED.stamp_ms, EXCLUDED.stamp_counter)` strictly beats the

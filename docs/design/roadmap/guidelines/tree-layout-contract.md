@@ -10,7 +10,7 @@ values to hard-code, since a GPU canvas has no CSS custom properties. Everything
 > the circle that holds its whole subtree, and each child faces its parent; the largest root sits at
 > the world origin and the other roots pack around it. Steps are circular nodes; dependencies are
 > gently-curved branches. A node's colour comes from its `kind`; its tier is treatment only — dim →
-> ringed → ember → glowing. The tier never re-hues a node.
+> ringed → glowing. The tier never re-hues a node.
 
 > **Motion:** §7 is a summary. `motion-language.md` is canon for every animated moment and supersedes
 > this doc wherever they disagree.
@@ -59,7 +59,7 @@ never metrics, in the base size; it is not the current sizing rule.
 ## 3. Kind colours & tier treatment
 
 A node's colour comes from its `kind` (one of six palette hues), not its progress. Its tier
-(`locked | available | active | complete`) is a treatment on that same hue. Gold is a kind, not a
+(`locked | available | complete`) is a treatment on that same hue. Gold is a kind, not a
 state.
 
 | Kind (day) | Soft (−200 step) | Base (fill + ring) | Glow |
@@ -76,9 +76,6 @@ Treatment (values mirror `SkillNode.jsx`):
   mixed `52%` with the default border, no glow, full opacity. The tint carries the dim read; no
   opacity wash, which pushes locked toward the white available node.
 - **available** — white node (`--surface-card`), solid `2px` kind ring, no glow at rest.
-- **active** — the ember: fill = base mixed `34%` into the card surface, `2px` kind ring, low
-  breathing kind glow (`wm-ember` waveform — amplitude peaks below a complete node's resting halo),
-  no halo ring.
 - **complete** — flat base fill, `2px` base ring, halo glow (`0 0 0 4px glow, 0 0 30px glow`),
   on-accent ink icon. Only complete nodes wear a halo.
 
@@ -102,9 +99,8 @@ active, bark `#6E5D49`, bark-cream `#D9C7A6`.
 ### 3.1 Glow (halo)
 
 A blurred circle sprite behind the fruit in `glowLayer`, tinted with the node's kind glow colour —
-the full halo only for `complete` nodes; `active` nodes get the ember's low-amplitude glow with no
-ring offset. Resting halo: radius ≈ `size * 0.9`, alpha ~0.28. Prefer a pre-blurred sprite over a
-live blur filter.
+the halo belongs only to `complete` nodes. Resting halo: radius ≈ `size * 0.9`, alpha ~0.28.
+Prefer a pre-blurred sprite over a live blur filter.
 
 ## 4. Branches (connectors)
 
@@ -114,7 +110,7 @@ live blur filter.
   so it's stable across frames but varied between branches. Control point = midpoint +
   perpendicularUnit × bend.
 - Stroke: round cap, width `3` when active (grown), else `2`.
-- A branch is **active the moment its `from` node is `complete`** — an ember never lights its outward
+- A branch is **active the moment its `from` node is `complete`** — an unfinished node never lights its outward
   branches. Active branches take the source node's kind colour as a solid `3px` stroke with no glow;
   dormant branches are a thin `2px` muted line (`--connector-inactive`) at ~0.7 opacity.
 
@@ -207,7 +203,6 @@ renderer must know:
 | Moment | Spec |
 |---|---|
 | **Crown** (root only) | the only infinite loop on the canvas: halo breathes at 2400ms `--ease-glow` (α .22↔.34, radius ±2px). Other complete nodes wear a static halo (α .28). |
-| **Ember** (active) | `wm-ember` waveform, same 2400ms clock and phase, amplitude below a resting halo, no ring offset. |
 | **Hover** (interactive nodes) | scale 1.06 over 280ms `--ease-soft`; locked nodes ignore hover. Feedback-class: never queued. |
 | **Press** | scale ~0.97, soft release, no bounce. |
 | **Unlock** | the travel beat: a bright head runs parent→child, the edge wakes behind it, the child ignites at 85% of the arc. |
@@ -241,7 +236,7 @@ Easing tokens: `--ease-soft = cubic-bezier(0.16,1,0.3,1)`, `--ease-glow = cubic-
   radius, capped at half the nearest-neighbor distance. Below the working zoom an ambiguous crowded
   tap zooms around the point without selecting.
 - **Captions:** fixed 14px/20px text, up to two lines inside 168px with overflow ellipsized. Priority
-  is selected → hovered → selected trunk family → landmarks → active/available → remaining steps.
+  is selected → hovered → selected trunk family → landmarks → available → remaining steps.
   Ordinary drawn body diameter sets the eligible rank: landmarks below 12px, frontier from 12px,
   everyone from 18px; selection and hover keep their names. Seats avoid other names, discs and chrome,
   preferring below → above → right → left; a ribbon crossing is allowed if no clear seat exists.

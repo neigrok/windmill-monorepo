@@ -22,7 +22,7 @@ const engine    = await loadLayoutEngine(layoutNameFrom(location)); // layout/in
 const repo      = new HttpTreeRepository({ treeId });
 const seed      = await repo.loadTree();              // …or loadDeviceTree(id): the blob, if the row is ours
 const tree      = new SkillTree(seed);                // entity + DAG validation
-const progress  = await repo.loadProgress(seed);      // {completed, inProgress, startedAt, completedAt, server}
+const progress  = await repo.loadProgress(seed);      // {completed, completedAt, server}
 const states    = UnlockRules.derive(tree, progress); // Map<id, NodeState>
 const positions = layoutPositions(tree);              // Map<id, Vec2> — synchronous, memoized per engine
 const model     = tree.toRenderModel(positions, states);
@@ -104,9 +104,8 @@ is two orthogonal dimensions:
 - **kind** — `NODE_COLORS` / `NODE_COLOR_NAMES`: terracotta · olive · gold · brick · sky · plum, each
   `base` (accent-500), `ring` (accent-600), `soft` (accent-200), `glow`. The shader and the swatch
   rows size themselves off the name list.
-- **tier** — `nodeTier(state)`, four rising indices: locked (low-opacity wash, no glow), available
-  (saturated fill + ring, glow on hover), ember (`active` — a soft glow breathing at half the crown),
-  complete (outer ring + breathing halo). Indices rise with progress, so a state diff reads growth as
+- **tier** — `nodeTier(state)`, three rising indices: locked (low-opacity wash, no glow), available
+  (saturated fill + ring, glow on hover), complete (outer ring + static halo). Indices rise with progress, so a state diff reads growth as
   a rise in tier. `isDone(state)` (complete only) drives edge growth.
 
 A third, structural axis is `nodeForm(label, parentCount, childCount)` — `linked` · `bud` (born,
@@ -142,8 +141,7 @@ pure JS — no WebGL, no React.
   DAG, and derives branch root, trunk depth, leaf weight. Same-kind parents win; ties go to the
   shallowest, then the smallest id. Trunk children keep sibling order (fractional-index key, then
   creation stamp), which is what the layout sweeps.
-- `UnlockRules.js` — `derive(tree, progress)`: `complete` if completed, else `active` if in progress,
-  else `available` if every prerequisite is complete (roots qualify vacuously), else `locked`. Every
+- `UnlockRules.js` — `derive(tree, progress)`: `complete` if completed, else `available` if every prerequisite is complete (roots qualify vacuously), else `locked`. Every
   state transition routes through here; nothing hand-sets a state.
 - `Legend.js` — the tree's kinds. Pure: every op takes a legend and returns a new one. `deriveLegend`
   reconciles the server's kinds with the hues actually worn; `withCounts`, `inUseCount`, `freeHue`,
@@ -255,7 +253,7 @@ most two 20 px lines inside 168 px), never DOM-measured, so every device lays th
   under the 6 px floor, so the rule follows the dot on screen): from 18 px everyone, from 12 px the
   frontier, and below that the landmarks alone — and `CaptionPlacer` — priority selected > hovered >
   the selected's trunk family > anchors (crowned roots and branch heads of eight or more, biggest
-  subtree first) > active/available > the rest. Seats are tried last-seat-first, then below → above →
+  subtree first) > available > the rest. Seats are tried last-seat-first, then below → above →
   right → left, against one 64 px collision grid holding three kinds of obstacle — the names already
   placed and the corners chrome holds, the disc rims, and the ribbons drawn across the canvas — inside
   the inset-reduced viewport. A caption takes a seat clear of all three; finding none it takes one that
@@ -357,7 +355,7 @@ projection — what the render pipeline consumes.
 who can read the tree. The PRIVATE lane is this account's progress. They never share a frame.
 
 - `progressLattice.js` — the private lane's replica: one last-writer-wins register per node over
-  `complete | active | none`, where `none` is a VALUE and not a deletion, so a clear converges like
+  `complete | none`, where `none` is a VALUE and not a deletion, so a clear converges like
   any other write and needs no tombstone list. Two clocks ride each register and are not
   interchangeable — `at` decides what wins, `markedAt` is the SERVER's receipt instant and the only
   one any surface may show.

@@ -45,10 +45,10 @@ seeded tree keeps the dogfood tree's id, `t_9362d9bc883e0a1e`, so the URL is `/#
 
 ## Fixture and seed
 
-`web/test/products/roadmap/fixtures/dogfood-tree.json` is the dogfood tree as captured on 2026-09-09 —
-476 steps, 618 links, 9 roots, 6 kinds, status 411 complete / 18 active / 47 none — slimmed to
+`web/test/products/roadmap/fixtures/dogfood-tree.json` is the dogfood layout fixture —
+476 steps, 618 links, 9 roots, 6 kinds, status 411 complete / 65 none — slimmed to
 `id, label, icon, color, prerequisites, order?, outOfOrder?, status`. `dogfoodTree.js` beside it builds the
-`SkillTree`, the progress sets and the derived states for tests and the benchmark. No creation stamps
+`SkillTree`, the completed set and the derived states for tests and the benchmark. No creation stamps
 survive the capture, so siblings sort by id; the seeded copy shows the same order in a browser.
 
 `node seed.mjs --backend http://localhost:8088 --cookie <wm_session> [--tree t_…] [--snapshot <raw get_tree json>]`
@@ -58,7 +58,7 @@ survive the capture, so siblings sort by id; the seeded copy shows the same orde
    stripped from the body: there it would be the authored seed, not the caller's mark.
 2. MCP `set_progress` in bulk (bearer `devtoken`; the backend must run with `WINDMILL_MCP_USER` = the
    cookie's user).
-3. Reads the copy back over HTTP and asserts nodes / edges / complete / active / outOfOrder / kinds.
+3. Reads the copy back over HTTP and asserts nodes / edges / complete / none / outOfOrder / kinds.
 
 ## Capture
 

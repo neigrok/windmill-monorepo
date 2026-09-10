@@ -2,12 +2,12 @@ import React from 'react';
 
 // Colour comes from `kind`; tier comes from `state` and is shown by treatment alone — the tier never re-hues.
 const KINDS = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
-const STATES = ['locked', 'available', 'active', 'complete'];
+const STATES = ['locked', 'available', 'complete'];
 
 export function SkillNode({
   label,
   kind = 'terracotta',
-  state, // 'locked' | 'available' | 'active' | 'complete'
+  state, // 'locked' | 'available' | 'complete'
   done = false, // alias: done → 'complete', not-done → 'locked'. Prefer `state`.
   progress = null, // 0–1 sub-task fraction; renders the gauge arc + track. null = no gauge.
   icon = null,
@@ -25,9 +25,6 @@ export function SkillNode({
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // wm-ember frozen at mid-breath: the reduced-motion / pulse-off face
-  const emberRest = `0 0 8px 0 color-mix(in srgb, ${glow} 44%, transparent), 0 0 15px 2px color-mix(in srgb, ${glow} 20%, transparent)`;
-
   const body = {
     locked: {
       background: `color-mix(in oklab, ${base} 22%, var(--surface-card))`,
@@ -41,12 +38,6 @@ export function SkillNode({
       color: `color-mix(in oklab, ${base} 80%, var(--text-primary))`,
       boxShadow: 'var(--shadow-xs)',
     },
-    active: {
-      background: `color-mix(in oklab, ${base} 34%, var(--surface-card))`,
-      border: `2px solid ${base}`,
-      color: `color-mix(in oklab, ${base} 72%, var(--text-primary))`,
-      boxShadow: emberRest,
-    },
     complete: {
       background: base,
       border: `2px solid ${base}`,
@@ -58,9 +49,7 @@ export function SkillNode({
   const animation =
     !noMotion && pulse && s === 'complete'
       ? 'wm-pulse-node var(--duration-glow) var(--ease-glow) infinite'
-      : !noMotion && pulse && s === 'active'
-        ? 'wm-ember var(--duration-glow) var(--ease-glow) infinite'
-        : 'none';
+      : 'none';
 
   // the sub-task gauge: starts at 12 o'clock, clockwise
   const showArc = typeof progress === 'number' && s !== 'complete';

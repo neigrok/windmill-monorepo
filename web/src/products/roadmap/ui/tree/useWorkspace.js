@@ -41,8 +41,6 @@ export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef 
     setWorkspaceByNode(saved);
   }, []);
 
-  const clearWorkspaceStore = useCallback((treeId) => workspaceStore.clear(treeId), []);
-
   const cancelAutoComplete = useCallback((nodeId) => {
     const timer = pendingCompleteRef.current.get(nodeId);
     if (!timer) return;
@@ -50,10 +48,6 @@ export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef 
     pendingCompleteRef.current.delete(nodeId);
   }, []);
 
-  const cancelAllAutoCompletes = useCallback(() => {
-    pendingCompleteRef.current.forEach(clearTimeout);
-    pendingCompleteRef.current.clear();
-  }, []);
 
   // The one seam every workspace edit funnels through: fresh ref, render, persist.
   const commitWorkspace = useCallback((nodeId, nextWs) => {
@@ -121,8 +115,6 @@ export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef 
   return {
     workspaceByNode,
     hydrateWorkspaces,
-    clearWorkspaceStore,
-    cancelAllAutoCompletes,
     pushArcs,
     onAddSubtask,
     onToggleSubtask,

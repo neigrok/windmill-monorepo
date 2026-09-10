@@ -13,7 +13,7 @@ instead of a fork.
 | **L1 · Foundation** | the neutral ramp · surfaces, borders, text roles · type (Baloo 2 / Nunito / JetBrains Mono) · spacing 4→128 · radii 8→32 + pill · warm shadows · motion easings, durations, ceilings · voice & casing | **verbatim, except the ramp: each product owns its ground** (§4a). |
 | **L2 · Kit** | Button · IconButton · Badge · Tag · Avatar · Card · Input · Select · Checkbox · Radio · Switch · Tooltip · Dialog · Toast · Tabs · ProgressBar, and their interaction laws | **verbatim, extendable.** New components are authored to the same laws (§3). |
 | **L3 · Patterns** | one docked home per concern · sheet / panel / dock by breakpoint · toast-with-one-action · two-tier undo · the mobile priority ladder · empty-loading-offline grammar · auth (one door, magic link) · transactional email shell · the share-artifact family · pricing conduct | **as shapes.** The structure travels; the content is re-written per product. |
-| **L4 · Product vocabulary** | the bubble skill tree, SkillNode / SkillConnector, kind × tier, the crown, halo & ember, TreePortrait, quests, AI assistance, fork & lineage, bark & leaf tokens, the plant/grow/unlock verbs | **never.** A sibling authors its own L4 and inherits L1–L3 whole. |
+| **L4 · Product vocabulary** | the bubble skill tree, SkillNode / SkillConnector, kind × tier, the crown and halo, TreePortrait, quests, AI assistance, fork & lineage, bark & leaf tokens, the plant/grow/unlock verbs | **never.** A sibling authors its own L4 and inherits L1–L3 whole. |
 
 **The commonest mistake is smuggling L4 into L2.** `SkillNode` looks like a component and is
 really a product metaphor; `--kind-*` and `--color-bark/leaf` look like tokens and are really

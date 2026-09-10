@@ -1,5 +1,4 @@
-// The private lane's replica: one last-writer-wins register per node over `complete | active |
-// none`. `none` is a value, not a deletion, so a step cleared elsewhere converges instead of being
+// The private lane's replica: one last-writer-wins register per node over `complete | none`. `none` is a value, not a deletion, so a step cleared elsewhere converges instead of being
 // resurrected by an older `complete`.
 // Two clocks: `at` is the stamp and decides what wins; `markedAt` is when the mark was recorded,
 // the server's instant, and the only one that may be shown to a person.
@@ -10,7 +9,7 @@
 import { VersionVector, compareHlc, hlcText, parseHlc } from './lattice.js';
 
 const UNSET = { ms: 0, counter: 0, actor: '' };
-const STATUSES = new Set(['complete', 'active', 'none']);
+const STATUSES = new Set(['complete', 'none']);
 
 function newMark() {
   return { status: 'none', at: { ...UNSET }, markedAt: null };
@@ -33,7 +32,7 @@ export class ProgressLattice {
     const rows = frame?.marks ?? [];
     for (const row of rows) {
       if (typeof row?.node !== 'string' || !row.node) throw new Error('malformed progress mark');
-      if (!STATUSES.has(row.status)) throw new Error(`unknown progress status "${row.status}"`);
+      if (row.status !== 'active' && row.status !== 'inProgress' && !STATUSES.has(row.status)) throw new Error(`unknown progress status "${row.status}"`);
     }
 
     const frontier = new VersionVector();
@@ -48,7 +47,7 @@ export class ProgressLattice {
         if (Number.isFinite(row.markedAt)) record.markedAt = row.markedAt;
         continue;
       }
-      record.status = row.status;
+      record.status = STATUSES.has(row.status) ? row.status : 'none';
       record.at = at;
       // A frame with no instant leaves the register undated rather than guessing one.
       record.markedAt = Number.isFinite(row.markedAt) ? row.markedAt : null;
@@ -98,22 +97,16 @@ export class ProgressLattice {
     for (const record of this.marks.values()) clock.observe(record.at);
   }
 
-  // One register answers both dates: an active mark's `markedAt` is when it started, a complete
-  // one's is when it finished.
   overlay() {
     const completed = new Set();
-    const inProgress = new Set();
-    const startedAt = {};
     const completedAt = {};
     for (const [node, record] of this.marks) {
       if (record.status === 'complete') {
         completed.add(node);
         if (record.markedAt != null) completedAt[node] = record.markedAt;
-      } else if (record.status === 'active') {
-        inProgress.add(node);
-        if (record.markedAt != null) startedAt[node] = record.markedAt;
+
       }
     }
-    return { completed, inProgress, startedAt, completedAt };
+    return { completed, completedAt };
   }
 }

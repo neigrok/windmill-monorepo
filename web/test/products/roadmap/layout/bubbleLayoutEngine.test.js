@@ -102,7 +102,7 @@ test('the dogfood tree meets the readability bar at the working zoom', () => {
   assert.deepEqual(footprintOverlaps(tree, positions), []);
   assert.equal(trunkEdgesThroughForeignCaptions(tree, positions), 0);
   assert.ok(countAround(positions, 'skilltree-scene') >= 15, 'the working window on skilltree-scene');
-  const frontier = tree.topoOrder().find((id) => states.get(id) === 'active');
+  const frontier = tree.topoOrder().find((id) => states.get(id) === 'available');
   assert.equal(frontier, 'gym-coach-wave');
   assert.ok(countAround(positions, frontier) >= 18, 'the working window on the frontier root');
   assert.ok(fitBodyPx(positions) >= 5, `fit body ${fitBodyPx(positions)} px`);

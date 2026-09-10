@@ -28,8 +28,8 @@ struct ProgressWrite {
   bool outOfOrder = false;
 };
 
-// Writes a user's private progress overlay. P2 (active/complete exclusivity) is structural — one
-// status per node. P1 is advised, never enforced, and reads only the node's prerequisites, so
+// Writes a user's private progress overlay with one completion status per node.
+// P1 is advised, never enforced, and reads only the node's prerequisites, so
 // progress never depends on the tree being a valid DAG.
 class ProgressService {
 public:
