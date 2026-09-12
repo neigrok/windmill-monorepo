@@ -16,6 +16,6 @@ a complete list — verify anything else against the code.
 - **UI type.** Baloo 2 / Nunito / JetBrains Mono are declared Google-Fonts stand-ins. Confirm those
   as the lasting UI families or supply replacement brand fonts. The approved logo's Baloo 2 Bold
   wordmark is fixed in its outlined SVG and does not depend on that decision.
-- **Native icons.** Apply the approved windmill mark to the native iOS and Android icon systems;
-  review platform masks, small sizes, and supported appearance variants. Scope is in
-  `design/brand-logo.md`.
+- **iOS icon.** Apply the approved windmill mark to the native iOS icon system; review its mask,
+  small sizes, and supported appearance variants. Android's adaptive foreground and cream
+  background are implemented. Scope and verification are in `design/brand-logo.md`.
