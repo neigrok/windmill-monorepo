@@ -81,3 +81,10 @@ On an Android API 28 emulator, the final APK loads through `PackageManager.loadI
 `AdaptiveIconDrawable` with a vector foreground and the exact `#FFF9F5EB` background. Its native
 Canvas render contains all seven logo colours and preserves the hill, tower, and blades under
 the system circle mask.
+
+## Android release status
+
+Android 0.7.1 contains the verified icon and is a prerelease for fresh installs. Its APK uses a
+different debug signing certificate from 0.7.0, so it cannot update an existing 0.7.0 installation
+in place. Signing repair is tracked by `android-release-signing` in dogfood tree
+`t_9362d9bc883e0a1e`.
