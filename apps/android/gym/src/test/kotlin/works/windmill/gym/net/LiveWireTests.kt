@@ -2,6 +2,10 @@ package works.windmill.gym.net
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -17,6 +21,7 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEntryWrite
+import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SessionStart
@@ -97,10 +102,18 @@ class LiveWireTests {
             created.entries,
         )
 
-        assertEquals(created, wire.routine(routineId))
+        val rawDetail = api.get<JsonObject>("/v1/gym/routines/$routineId")
+        val createdAt = rawDetail.getValue("history").jsonArray.single()
+            .jsonObject.getValue("at").jsonPrimitive.long
+        assertTrue(createdAt > 0)
+        val detail = created.copy(history = listOf(
+            RoutineEvent("created", createdAt, by = null, movements = 2, proposal = null),
+        ))
+        assertEquals(detail, wire.routine(routineId))
 
         val replaced = wire.replaceRoutine(routineId, RoutineWrite(created))
         assertEquals(created, replaced)
+        assertEquals(detail, wire.routine(routineId))
 
         assertTrue(wire.routines().any { it.id == routineId })
         assertNull("an absent routine folds to null, never throws", wire.routine("rt_probe_a_gone404"))
@@ -249,7 +262,7 @@ class LiveWireTests {
             GymHttp(WindmillApi("http://127.0.0.1:9".toHttpUrl(), { bearer })).exercises()
             fail("a dead port must be offline")
         } catch (offline: WindmillApiException.Offline) {
-            assertEquals("Can't reach windmill.works", offline.line)
+            assertEquals("Can’t reach windmill.works", offline.line)
             assertEquals(Verdict.Retry, Verdict.refusing(RefusalFacts(offline)))
         }
 
