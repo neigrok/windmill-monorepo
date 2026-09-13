@@ -248,6 +248,27 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
         return corrected
     }
 
+    fun acceptSession(oldId: String, stored: Session) {
+        keep(mine.copy(finished = finished.map { past ->
+            if (past.session.id != oldId) past
+            else past.copy(session = stored.copy(finishedAtMs = past.session.finishedAtMs,
+                plan = stored.plan ?: past.session.plan))
+        }))
+    }
+
+    fun acceptSet(sessionId: String, sent: TrainingSet, stored: TrainingSet) {
+        keep(mine.copy(finished = finished.map { past ->
+            if (past.session.id != sessionId) past
+            else past.copy(
+                sets = past.sets.map { current ->
+                    if (current.id != sent.id) current
+                    else current.copy(id = stored.id, setNumber = stored.setNumber, completedAtMs = stored.completedAtMs)
+                },
+                deleted = past.deleted.map { if (it == sent.id) stored.id else it },
+            )
+        }))
+    }
+
     // The set leaves the row and is remembered as gone: part of this session may already be on the
     // account.
     fun deleteSet(sessionId: String, setId: String): Boolean {
@@ -287,7 +308,8 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     fun remintSet(sessionId: String, old: String, fresh: String) {
         keep(mine.copy(finished = finished.map { past ->
             if (past.session.id != sessionId) past
-            else past.copy(sets = past.sets.map { if (it.id == old) it.copy(id = fresh) else it })
+            else past.copy(sets = past.sets.map { if (it.id == old) it.copy(id = fresh) else it },
+                deleted = past.deleted.map { if (it == old) fresh else it })
         }))
     }
 

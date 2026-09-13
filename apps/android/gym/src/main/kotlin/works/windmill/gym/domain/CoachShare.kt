@@ -12,9 +12,7 @@ class CoachDoors(
 )
 
 object Coach {
-    const val offer = "A link to this one workout — every set, load and rep in it, and nothing " +
-        "else about your account. Anyone who has the link can read it. It expires, and you can " +
-        "revoke it whenever you like."
+    const val offer = "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime."
 
     data class Card(
         val title: String,
@@ -75,6 +73,6 @@ object Coach {
         State.Revoked ->
             Card(title = "The link is dead",
                  body = "Anyone still holding it gets nothing. You can make a new one whenever you like.",
-                 link = null, action = "Get a new link", revoke = null, note = null)
+                 link = null, action = "Get a link", revoke = null, note = null)
     }
 }

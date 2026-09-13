@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -243,6 +244,7 @@ fun LogScreen(
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
+            WindmillSheetWindow()
             WeighInSheet(
                 initial = null,
                 fixedDate = null,

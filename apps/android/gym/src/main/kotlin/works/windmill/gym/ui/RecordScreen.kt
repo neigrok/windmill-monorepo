@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -129,6 +130,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
+            WindmillSheetWindow()
             RenameSheet(
                 title = "Rename this movement",
                 from = read.exercise.name,

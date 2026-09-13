@@ -1498,7 +1498,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
 
         assertEquals("the store told the lifter it landed",
-            FixOutcome.Corrected(sets.first().copy(weightKg = 90.0, reps = 3, kind = SetKind.Working)),
+            FixOutcome.Corrected(sets.first().copy(setNumber = 1, weightKg = 90.0, reps = 3, kind = SetKind.Working)),
             answered)
         assertEquals("and the account holds it — not the numbers they fixed away from",
             listOf(90.0, 60.0), server.sets.getValue(ended.id).map { it.weightKg })

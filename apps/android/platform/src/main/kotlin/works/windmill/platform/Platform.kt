@@ -20,9 +20,8 @@ interface ProductModule {
     fun Room(account: Account)
 }
 
-// `user` null means nobody is signed in; `verified` false means the seat stands on the device's
-// last-known user, unasked.
-class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true) {
+// An unresolved account is still restoring credentials; an unverified user stands on the device copy.
+class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true, val resolved: Boolean = true) {
     val isSignedIn: Boolean
         get() = user != null
 }

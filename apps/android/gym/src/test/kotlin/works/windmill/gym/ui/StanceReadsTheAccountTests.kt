@@ -349,7 +349,7 @@ class StanceReadsTheAccountTests {
         compose.waitForIdle()
         compose.onNodeWithText("Finish").performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Well done.").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isNotEmpty()
         }
 
         compose.runOnIdle {

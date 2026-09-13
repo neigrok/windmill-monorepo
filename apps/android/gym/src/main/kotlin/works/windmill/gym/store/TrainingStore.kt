@@ -11,6 +11,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskQuestion
@@ -160,6 +162,8 @@ class TrainingStore(
         private set
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
+    var restStartedAtMs: Long? by mutableStateOf(null)
+        private set
     var sets: List<TrainingSet> by mutableStateOf(emptyList())           // its sets, performed order
         private set
     var order: List<String> by mutableStateOf(emptyList())               // its movements, walk order
@@ -226,6 +230,10 @@ class TrainingStore(
     private var seated: Account? = null
     // Whose the names on this device are: the account id, or null for the anonymous seat.
     private var owner: String? = null
+    private val delivery = Mutex()
+    private var setIds = emptyMap<String, String>()
+    private var closedFailures by mutableStateOf<Map<String, WriteFailure>>(emptyMap())
+    private var closedDetails by mutableStateOf<Map<String, SessionDetail>>(emptyMap())
     private val lastTimes = mutableMapOf<String, LastTime>()
     // A change of seat drops the map and the picker's own effect never runs again, so `connect` asks
     // again on the way out.
@@ -347,6 +355,7 @@ class TrainingStore(
         seated = account
         // The names go with the seat: a rename is a per-account override. The shelf's own movements
         // ride with every seat, because a movement this device minted is nobody's until a claim.
+        if (owner != account.user?.id) exerciseId = null
         owner = account.user?.id
         // A workout composed on this device is filed under the seat that composed it, so a claim can
         // never replay one lifter's training into the account that signed in after them. An
@@ -386,6 +395,9 @@ class TrainingStore(
         // shelf's own discard runs through here while other windows are open, and dropping them
         // would leave a lifter told `Note deleted.` over a note that is never sent and never said.
         if (arriving) {
+            closedDetails = emptyMap()
+            setIds = emptyMap()
+            closedFailures = emptyMap()
             for (clock in clocks.values) clock.cancel()
             clocks.clear()
             withheld = emptyList()
@@ -424,6 +436,7 @@ class TrainingStore(
         isLoading = false
 
         val log = gym
+        val seat = owner
         if (log == null) {
             // Signed out the shelf is the whole log, so the foot is already at the bottom.
             claimOwed = false
@@ -439,14 +452,18 @@ class TrainingStore(
         // Forced, because nothing survives a relaunch to undo.
         shelved = localLog.summaries()
         deliver(force = true)
+        if (seat != owner || gym !== log) return
         runClaim()
+        if (seat != owner || gym !== log) return
         // The sets parked behind the live session's start go out before the first read: reads settle.
         deliver(force = true)
+        if (seat != owner || gym !== log) return
         coroutineScope {
             launch { loadLog() }
             // Held on the device as well as in memory, so the next cold launch draws names.
             launch {
                 val served = tried { log.exercises() }
+                if (seat != owner || gym !== log) return@launch
                 if (served == null) {
                     // Only when the room has nothing of its own to draw.
                     catalogUnread = known.isEmpty()
@@ -458,6 +475,7 @@ class TrainingStore(
             }
             launch {
                 val written = tried { log.routines() }
+                if (seat != owner || gym !== log) return@launch
                 if (written == null) {
                     routinesFailed = true
                     return@launch
@@ -467,6 +485,7 @@ class TrainingStore(
             // May not land on top of a document this device still owes; `readBack` refuses that.
             launch {
                 tried { log.preferences() }?.let {
+                    if (seat != owner || gym !== log) return@launch
                     localPreferences.readBack(it)
                     preferences = localPreferences.document
                 }
@@ -474,11 +493,13 @@ class TrainingStore(
             // The account's whole series; an owed write and a pending delete outrank it.
             launch {
                 tried { log.bodyweight() }?.let {
+                    if (seat != owner || gym !== log) return@launch
                     localBodyweight.readBack(it)
                     series = localBodyweight.entries
                 }
             }
         }
+        if (seat != owner || gym !== log) return
         resume()
         if (lastSetsWanted) loadLastSets()
     }
@@ -518,12 +539,14 @@ class TrainingStore(
     // routine's own row; signed out it is composed here off the local row. No signal composes on the
     // device and the claim lands it; only a refusal WITH A REASON is repeated.
     suspend fun start(routineId: String? = null): GymResult<Session> {
+        val seat = owner
         val log = gym ?: return startOnDevice(routineId)
         // Two starts the log cannot take: mid-claim a server start would join the past session the
         // replay has open, and a routine still on the shelf is a plan the account cannot resolve.
         if (claiming || routineId?.let { localLog.routine(it) } != null) return startOnDevice(routineId)
         // A start SETTLES a stale open session on the log, so every owed set drains first.
         deliver(force = true)
+        if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
         // One id collision is a coincidence; two is a device that cannot mint.
         var collision: WriteFailure = WriteFailure.NoAnswer
         repeat(2) {
@@ -534,17 +557,21 @@ class TrainingStore(
                 // omitted flag IS the join.
                 val opened = log.startSession(SessionStart(id = id, startedAt = startedAt,
                     routineId = routineId, joinOpenSession = false))
+                if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 adopt(opened, joined = opened.id != id)
+                if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 val live = session ?: return GymResult.Failed(WriteFailure.NoAnswer)
                 return GymResult.Ok(live)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: WindmillApiException) {
+                if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 val refused = refusing as? WindmillApiException.Refused
                 // A workout is already open on the account: the re-read adopts it and stands the
                 // lifter back where they were.
                 if (refused?.status == 409 && refused.refusal.code == "session-already-open") {
                     loadLog()
+                    if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                     resume()
                     return GymResult.Failed(WriteFailure(refusing))
                 }
@@ -559,6 +586,7 @@ class TrainingStore(
                 if (!spent) return GymResult.Failed(WriteFailure(refusing))
                 collision = WriteFailure(refusing)
             } catch (failed: Exception) {
+                if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 // The start may have landed before the reply was lost, so the same id rides.
                 return startOnDevice(routineId, id, startedAt)
             }
@@ -597,7 +625,7 @@ class TrainingStore(
     // The answer is kept for the life of the session: a last time is a FINISHED session, so none of
     // these answers can change mid-workout.
     suspend fun choose(movement: String) {
-        queue.append(movement)
+        queue.choose(movement)
         queue.flush()
         order = queue.order
         exerciseId = movement
@@ -618,7 +646,9 @@ class TrainingStore(
             return
         }
         if (lastTime != null) return
+        val seat = owner
         val answer = tried { log.lastTime(movement) }
+        if (seat != owner || gym !== log) return
         if (answer == null) {
             lastTimeFailed = exerciseId == movement
             return
@@ -708,59 +738,82 @@ class TrainingStore(
     // refuses that set forever; a set stranded against another session cannot stop it closing. A
     // session the log does not hold closes on the device and moves whole onto the shelf.
     suspend fun finish(): FinishOutcome {
+        if (isFinishing) return FinishOutcome.Failed(WriteFailure.Refused("this workout is already finishing"))
         val live = session ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
+        val seat = owner
         val log = gym
-        if (log == null || liveUnclaimed) return finishOnDevice(live)
         isFinishing = true
         try {
-            // Forced: a set still inside its undo window would be skipped by the walk and then
-            // refused forever by the close.
+            if (log == null || liveUnclaimed) return finishOnDevice(live)
             deliver(force = true)
-
-            val stranded = queue.owed(live.id).size
-            if (stranded > 0) return FinishOutcome.Stranded(stranded)
-            // Null is the one refusal that ends the workout anyway: a 404 is the log no longer
-            // holding it.
-            val closed: Session? = try {
-                log.finishSession(live.id, now())
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                if (RefusalFacts(refusing).status != 404) return FinishOutcome.Failed(WriteFailure(refusing))
-                null
+            val detail = delivery.withLock {
+                if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+                val stranded = queue.owed(live.id).size
+                if (stranded > 0) return FinishOutcome.Stranded(stranded)
+                val closed = try {
+                    log.finishSession(live.id, now())
+                } catch (interrupted: CancellationException) {
+                    throw interrupted
+                } catch (refusing: Exception) {
+                    if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+                    if (RefusalFacts(refusing).status != 404) return FinishOutcome.Failed(WriteFailure(refusing))
+                    null
+                }
+                if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+                val settled = closed?.let { SessionDetail(it, queue.sets(live.id)) }
+                if (settled != null) retainClosed(settled)
+                if (closed == null) queue.forget(live.id) else queue.close(live.id)
+                queue.flush()
+                settled
             }
-
-            if (closed == null) queue.forget(live.id) else queue.close(live.id)
-            queue.flush()
-            // The session that just closed is the next last time for every movement in it.
             lastTimes.clear()
             exerciseId = null
             lastTime = null
             drawFromQueue()
-            // A shelf session parked behind this one has its road open now.
             if (localLog.finished.isNotEmpty()) runClaim()
+            if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             loadLog()
-            if (closed == null) return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
-            return FinishOutcome.Closed(closed)
+            if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+            if (detail == null) return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
+            return FinishOutcome.Closed(detail)
         } finally {
             isFinishing = false
         }
     }
 
-    // Session and sets move WHOLE onto the shelf and the queue lets go of both, so the shelf is the
-    // single owner of a finished local session.
     private suspend fun finishOnDevice(live: Session): FinishOutcome {
+        val seat = owner
+        val log = gym
         val closed = shelve(live, finishedAtMs = now())
+        val detail = localLog.detail(closed.id) ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
+        retainClosed(detail)
         drawFromQueue()
         shelved = localLog.summaries()
-        // The day a shelf routine was last trained is derived off the sessions that just moved.
         redrawShelfRoutines()
-        if (gym != null) {
+        if (log != null) {
             runClaim()
+            if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             deliver()
+            if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             loadLog()
+            if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
         }
-        return FinishOutcome.Closed(closed)
+        retainedSessionFailure(detail)?.let { return FinishOutcome.Failed(it) }
+        return FinishOutcome.Closed(retainedSession(detail))
+    }
+
+    fun canonicalSetId(id: String): String = setIds[id] ?: id
+
+    fun retainedSession(detail: SessionDetail): SessionDetail = closedDetails[detail.session.id]
+        ?: closedDetails.values.firstOrNull { it.session.id == detail.session.id } ?: detail
+
+    fun retainedSessionFailure(detail: SessionDetail): WriteFailure? =
+        closedFailures[retainedSession(detail).session.id]
+
+    private fun retainClosed(detail: SessionDetail) {
+        closedDetails = closedDetails.mapValues { (_, old) ->
+            if (old.session.id == detail.session.id) detail else old
+        } + (detail.session.id to detail)
     }
 
     // Closed at the instant given: the finish's own, or the auto-close's last activity. The queue
@@ -804,23 +857,13 @@ class TrainingStore(
 
     // Composed from the session's own sets, in performed order, with the weights used as targets. The
     // carrier session exists because RoutineWrite.from reads a SessionDetail; only its sets are read.
-    suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String): GymResult<Routine> {
+    suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String, creationId: String = mintRoutine(),
+                     position: Int = program.size): GymResult<Routine> {
         val carrier = SessionDetail(Session(id = "ses_kept", startedAtMs = now()), sets)
-        val write = RoutineWrite.from(asRoutineNamed, carrier, position = program.size)
+        val write = RoutineWrite.from(asRoutineNamed, carrier, position = position)
             ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one working set"))
-        val log = gym ?: return GymResult.Ok(keepOnDevice(write))
-        return try {
-            val saved = log.createRoutine(write)
-            routines = program + saved
-            GymResult.Ok(saved)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            if (Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
-                return GymResult.Failed(WriteFailure(refusing))
-            }
-            GymResult.Ok(keepOnDevice(write))
-        }
+        return saveRoutine(RoutineDraft(name = write.name, position = write.position,
+            entries = Routine(write).entries, creationId = creationId))
     }
 
     // Kept on the shelf; the claim sends this same document later.
@@ -868,6 +911,7 @@ class TrainingStore(
     // which moves the revision and supersedes every proposal pending on it; without one it is a
     // create and the id is minted here. Savable while incomplete but not while EMPTY.
     suspend fun saveRoutine(draft: RoutineDraft): GymResult<Routine> {
+        if (Program.nameProblem(draft.name) == Program.nameTooLong) return GymResult.Failed(WriteFailure.Refused(Program.nameTooLong))
         val name = Program.named(draft.name)
             ?: return GymResult.Failed(WriteFailure.Refused("a routine needs a name"))
         if (draft.entries.isEmpty()) {
@@ -1365,17 +1409,26 @@ class TrainingStore(
     suspend fun review(of: String): Review? {
         localLog.detail(of)?.let { return Review.of(it) }
         val log = gym ?: return null
-        return tried { log.review(of) }
+        val seat = owner
+        val result = tried { log.review(of) }
+        return result.takeIf { seat == owner && gym === log }
     }
 
     // Off the shelf when only the shelf holds it, otherwise off the log.
-    suspend fun sessionDetail(sessionId: String): GymResult<SessionDetail> {
+    suspend fun sessionDetail(sessionId: String, seed: SessionDetail? = null): GymResult<SessionDetail> {
+        val seat = owner
         localLog.detail(sessionId)?.let { return GymResult.Ok(it) }
         val log = gym
             ?: return GymResult.Failed(WriteFailure.Refused("that session is on your account — sign in to read it"))
+        if (seed != null && seed.session.id == sessionId && !seed.session.isOpen && closedDetails[sessionId] == null) retainClosed(seed)
+        val before = closedDetails[sessionId]
         return try {
             val detail = log.session(sessionId)
-                ?: return GymResult.Failed(WriteFailure.Refused("that session is no longer on the log"))
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while reading"))
+            if (detail == null) return GymResult.Failed(WriteFailure.Refused("that session is no longer on the log"))
+            val current = closedDetails[sessionId]
+            if (current != before && current != null) return GymResult.Ok(current)
+            if (!detail.session.isOpen) retainClosed(detail)
             GymResult.Ok(detail)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -1388,28 +1441,48 @@ class TrainingStore(
     // so the correction rewrites the row that will be sent. Anything else goes over the wire. The log
     // moves and the routine does not: a fix carries three fields, none of them a target.
     suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): FixOutcome {
-        // The live session's rows are the queue's, and the strip draws off the queue: a fix the log
-        // took has to land back in it, or the pill keeps the old numbers. A set the log has not heard
-        // of yet is rewritten IN the queue, still owed, so the corrected body is what the walk sends.
-        val live = session
-        if (live != null && sessionId == live.id) {
-            val standing = sets.firstOrNull { it.id == setId }
-                ?: return FixOutcome.Gone("that set is no longer on this device")
-            val owed = queue.pending.firstOrNull { it.set.id == setId }
-            if (owed != null) {
-                val corrected = fix.corrected(standing)
-                queue.store(corrected, live.id, needsPush = true, heldUntilMs = owed.heldUntilMs)
-                queue.flush()
-                drawFromQueue()
-                return FixOutcome.Corrected(corrected)
+        val seat = owner
+        val log = gym
+        return delivery.withLock {
+            if (seat != owner || gym !== log) return@withLock FixOutcome.Failed(
+                WriteFailure.Refused("the account changed while fixing"))
+            val currentSession = closedDetails[sessionId]?.session?.id ?: sessionId
+            val currentSet = setIds[setId] ?: setId
+            val live = session?.takeIf { it.id == currentSession }
+            if (live != null) {
+                val standing = sets.firstOrNull { it.id == currentSet }
+                    ?: return@withLock FixOutcome.Gone("that set is no longer on this device")
+                val owed = queue.pending.firstOrNull { it.set.id == currentSet }
+                if (owed != null) {
+                    val corrected = fix.corrected(standing)
+                    queue.store(corrected, live.id, needsPush = true, heldUntilMs = owed.heldUntilMs)
+                    queue.flush()
+                    drawFromQueue()
+                    return@withLock FixOutcome.Corrected(corrected)
+                }
             }
-            val log = gym
-                ?: return FixOutcome.Failed(WriteFailure.Refused("that set is on your account — sign in to fix it"))
-            return try {
-                val stored = log.fixSet(live.id, setId, fix)
-                queue.store(stored, live.id, needsPush = false)
-                queue.flush()
-                drawFromQueue()
+            if (localLog.row(currentSession) != null) {
+                val corrected = localLog.fixSet(currentSession, currentSet, fix)
+                    ?: return@withLock FixOutcome.Gone("that set is no longer on this device")
+                claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, corrected))
+                shelved = localLog.summaries()
+                return@withLock FixOutcome.Corrected(corrected)
+            }
+            if (log == null) return@withLock FixOutcome.Failed(
+                WriteFailure.Refused("that set is on your account — sign in to fix it"))
+            try {
+                val stored = log.fixSet(currentSession, currentSet, fix)
+                if (seat != owner || gym !== log) return@withLock FixOutcome.Failed(
+                    WriteFailure.Refused("the account changed while fixing"))
+                if (live != null) {
+                    queue.store(stored, live.id, needsPush = false)
+                    queue.flush()
+                    drawFromQueue()
+                }
+                claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, stored))
+                if (live == null) rereadRow(currentSession)
+                if (seat != owner || gym !== log) return@withLock FixOutcome.Failed(
+                    WriteFailure.Refused("the account changed while fixing"))
                 FixOutcome.Corrected(stored)
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -1421,75 +1494,48 @@ class TrainingStore(
                 }
             }
         }
-        // THE SESSION decides the road, not the set: falling through would PATCH an id the log has
-        // never seen.
-        if (localLog.row(sessionId) != null) {
-            val corrected = localLog.fixSet(sessionId, setId, fix)
-                ?: return FixOutcome.Gone("that set is no longer on this device")
-            shelved = localLog.summaries()
-            return FixOutcome.Corrected(corrected)
-        }
-        val log = gym
-            ?: return FixOutcome.Failed(WriteFailure.Refused("that set is on your account — sign in to fix it"))
-        return try {
-            val stored = log.fixSet(sessionId, setId, fix)
-            rereadRow(sessionId)
-            FixOutcome.Corrected(stored)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            when (val verdict = FixVerdict.refusing(RefusalFacts(refusing))) {
-                is FixVerdict.Gone -> FixOutcome.Gone(verdict.said)
-                is FixVerdict.Unwritable -> FixOutcome.Failed(WriteFailure.Refused(verdict.said))
-                FixVerdict.Retry -> FixOutcome.Failed(WriteFailure(refusing))
-            }
-        }
     }
 
     // Once the window over it has closed. Same two roads as the fix, and the wire's has no terminal
     // refusal: already gone, never existed and another account's are all 204, so a retry after a lost
     // reply is safe. Nothing here recovers a deleted row.
     suspend fun deleteSet(sessionId: String, setId: String): WriteFailure? {
-        // The live session's rows are the queue's: a set the log never took leaves the queue and
-        // nothing is sent; one the log holds leaves the queue once the log has let it go.
-        val live = session
-        if (live != null && sessionId == live.id) {
-            val owed = queue.pending.any { it.set.id == setId }
+        val seat = owner
+        val log = gym
+        return delivery.withLock {
+            if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("the account changed while deleting")
+            val currentSession = closedDetails[sessionId]?.session?.id ?: sessionId
+            val currentSet = setIds[setId] ?: setId
+            val live = session?.takeIf { it.id == currentSession }
+            if (live == null && localLog.row(currentSession) != null) {
+                if (localLog.deleteSet(currentSession, currentSet)) {
+                    deletedSets = deletedSets + currentSet
+                    shelved = localLog.summaries()
+                    claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, null))
+                }
+                return@withLock null
+            }
+            val owed = live != null && queue.pending.any { it.set.id == currentSet }
             if (!owed) {
-                val log = gym ?: return WriteFailure.Refused("that set is on your account — sign in to delete it")
+                if (log == null) return@withLock WriteFailure.Refused("that set is on your account — sign in to delete it")
                 try {
-                    log.deleteSet(live.id, setId)
+                    log.deleteSet(currentSession, currentSet)
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
-                    return WriteFailure(refusing)
+                    return@withLock WriteFailure(refusing)
                 }
+                if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("the account changed while deleting")
             }
-            queue.drop(setId)
-            queue.flush()
-            deletedSets = deletedSets + setId
-            drawFromQueue()
-            return null
-        }
-        // A row the shelf's session no longer holds is the same nothing-to-do the wire answers 204
-        // with, never a question to put to the account.
-        if (localLog.row(sessionId) != null) {
-            if (localLog.deleteSet(sessionId, setId)) {
-                deletedSets = deletedSets + setId
-                shelved = localLog.summaries()
+            if (live != null) {
+                queue.drop(currentSet)
+                queue.flush()
+                drawFromQueue()
             }
-            return null
-        }
-        val log = gym ?: return WriteFailure.Refused("that set is on your account — sign in to delete it")
-        return try {
-            log.deleteSet(sessionId, setId)
-            deletedSets = deletedSets + setId
-            rereadRow(sessionId)
+            deletedSets = deletedSets + currentSet
+            claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, null))
+            if (live == null) rereadRow(currentSession)
             null
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            WriteFailure(refusing)
         }
     }
 
@@ -1498,13 +1544,16 @@ class TrainingStore(
     // the head; the answer is taken only if it IS the row asked for, since the cursor is a position.
     private suspend fun rereadRow(sessionId: String) {
         val log = gym ?: return
+        val seat = owner
         val at = logged.indexOfFirst { it.id == sessionId }
         if (at < 0) return
         // One row is still the log read, and the log read settles: not mid-claim.
         claimIdle.await()
+        if (seat != owner || gym !== log) return
         val above = logged.getOrNull(at - 1)
         val fresh = tried { log.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) }
             ?.singleOrNull()?.takeIf { it.id == sessionId } ?: return
+        if (seat != owner || gym !== log) return
         logged = logged.map { if (it.id == sessionId) fresh else it }
     }
 
@@ -1518,15 +1567,41 @@ class TrainingStore(
     fun withhold(deletion: Deletion) {
         val open = WithheldDelete(deletion, untilMs = now() + undoWindowMs)
         withheld = withheld.filterNot { it.subjectId == open.subjectId } + open
+        armDelete(open)
+    }
+
+    private fun armDelete(open: WithheldDelete) {
         clocks.remove(open.subjectId)?.cancel()
+        if (!open.takeable) return
+        val seat = owner
+        val log = gym
         clocks[open.subjectId] = scope.launch {
-            delay(undoWindowMs)
+            delay((open.untilMs - now()).coerceAtLeast(0))
             clocks.remove(open.subjectId)
             val failed = settleWithheld(open.subjectId)
-            // A verb with no terminal refusal has nothing to say after the window: `stillThere` is
-            // null and the room stays quiet.
-            deletion.stillThere?.let { tail -> failed?.let { deleteRefused = it.line(tail) } }
+            if (seat == owner && gym === log) {
+                open.deletion.stillThere?.let { tail -> failed?.let { deleteRefused = it.line(tail) } }
+            }
         }
+    }
+
+    private fun changeHeldSet(sessionId: String, oldId: String, set: TrainingSet?) {
+        if (set != null && set.id != oldId) {
+            setIds = setIds.mapValues { (_, id) -> if (id == oldId) set.id else id } + (oldId to set.id)
+            if (oldId in deletedSets) deletedSets = deletedSets - oldId + set.id
+        }
+        val held = withheld.firstOrNull {
+            val deletion = it.deletion as? Deletion.Set
+            deletion?.sessionId == sessionId && deletion.set.id == oldId
+        } ?: return
+        clocks.remove(oldId)?.cancel()
+        if (set == null) {
+            withheld = withheld - held
+            return
+        }
+        val updated = held.copy(deletion = Deletion.Set(sessionId, set))
+        withheld = withheld.map { if (it == held) updated else it }
+        armDelete(updated)
     }
 
     // One named window, taken back by the WRITE that names its subject again rather than by a tap.
@@ -1580,8 +1655,12 @@ class TrainingStore(
         val settling = withheld.firstOrNull { it.subjectId == subjectId } ?: return null
         clocks.remove(subjectId)?.cancel()
         withheld = withheld.map { if (it.subjectId == subjectId) it.copy(sent = true) else it }
+        val seat = owner
+        val log = gym
         val failed = send(settling.deletion)
-        withheld = withheld.filterNot { it.subjectId == subjectId }
+        if (seat != owner || gym !== log) return failed
+        val currentId = setIds[subjectId] ?: closedDetails[subjectId]?.session?.id ?: subjectId
+        withheld = withheld.filterNot { it.subjectId == currentId && it.untilMs == settling.untilMs }
         return failed
     }
 
@@ -1715,92 +1794,104 @@ class TrainingStore(
     // One pass over what is owed, per (session, movement) lane, so a set that cannot land holds up
     // its own lane and nothing else.
     private suspend fun deliver(force: Boolean = false) {
-        retryTask?.cancel()
-        retryTask = null
-        if (queue.pending.isEmpty()) {
-            // An owed claim keeps the cadence armed even with no set to walk.
-            if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
-            return
-        }
+        val seat = owner
         val log = gym
-        if (log == null) {
-            settle(SaveState.OnThisDevice)
-            return
-        }
-
-        // Sets of an UNCLAIMED session are parked, not walked: the log has never heard of their
-        // session, so every send would 404.
-        val parked = if (liveUnclaimed) queue.session?.id else null
-        val blocked = mutableSetOf<SetQueue.Lane>()
-        parked?.let { held -> blocked.addAll(queue.owed(held).map { it.lane }) }
-        var refusal: String? = null
-        var blockedBy: Blocker? = null
         var gone = false
-        while (true) {
-            val owed = queue.nextOwed(skipping = blocked, readyAt = if (force) null else now()) ?: break
-            try {
-                val stored = log.appendSet(owed.sessionId, SetWrite(owed.set))
-                queue.delivered(stored, owed.set.id, owed.sessionId)
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                val facts = RefusalFacts(refusing)
-                // Every session this walk reaches is one the log once answered for, so a 404 is the
-                // workout GONE.
-                if (facts.status == 404) {
-                    refusals = refusals + RefusedSet(owed.set, "that workout is no longer on the log")
-                    refusal = "that workout is no longer on the log"
-                    queue.forget(owed.sessionId)
-                    gone = true
-                    continue
-                }
-                val verdict = Verdict.refusing(facts)
-                val reason = verdict.terminalReason(afterRemints = owed.remints)
-                if (reason != null) {
-                    // Removed and said: this is the only copy left of a set somebody lifted.
-                    queue.drop(owed.set.id)
-                    refusals = refusals + RefusedSet(owed.set, reason)
-                    refusal = reason
-                    continue
-                }
-                if (verdict is Verdict.Remint) {
-                    queue.remint(owed.set.id, mintSet())
-                    continue
-                }
-                blocked.add(owed.lane)
-                if (blockedBy == null) blockedBy = facts.blocker
+        delivery.withLock {
+            if (seat != owner || gym !== log) return@withLock
+            retryTask?.cancel()
+            retryTask = null
+            if (queue.pending.isEmpty()) {
+                // An owed claim keeps the cadence armed even with no set to walk.
+                if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
+                return@withLock
             }
-        }
+            if (log == null) {
+                settle(SaveState.OnThisDevice)
+                return@withLock
+            }
 
-        queue.flush()
-        // Off the failure the walk met, and off nothing else.
-        strandedBy = blockedBy
-        drawFromQueue()
-        if (gone) loadLog()
+            // Sets of an UNCLAIMED session are parked, not walked: the log has never heard of their
+            // session, so every send would 404.
+            val parked = if (liveUnclaimed) queue.session?.id else null
+            val blocked = mutableSetOf<SetQueue.Lane>()
+            parked?.let { held -> blocked.addAll(queue.owed(held).map { it.lane }) }
+            var refusal: String? = null
+            var blockedBy: Blocker? = null
+            while (true) {
+                val owed = queue.nextOwed(skipping = blocked, readyAt = if (force) null else now()) ?: break
+                try {
+                    val stored = log.appendSet(owed.sessionId, SetWrite(owed.set))
+                    if (seat != owner || gym !== log) return@withLock
+                    queue.delivered(stored, owed.set.id, owed.sessionId)
+                    changeHeldSet(owed.sessionId, owed.set.id, stored)
+                } catch (interrupted: CancellationException) {
+                    throw interrupted
+                } catch (refusing: Exception) {
+                    if (seat != owner || gym !== log) return@withLock
+                    val facts = RefusalFacts(refusing)
+                    // Every session this walk reaches is one the log once answered for, so a 404 is the
+                    // workout GONE.
+                    if (facts.status == 404) {
+                        refusals = refusals + RefusedSet(owed.set, "that workout is no longer on the log")
+                        refusal = "that workout is no longer on the log"
+                        queue.sets(owed.sessionId).forEach { changeHeldSet(owed.sessionId, it.id, null) }
+                        queue.forget(owed.sessionId)
+                        gone = true
+                        continue
+                    }
+                    val verdict = Verdict.refusing(facts)
+                    val reason = verdict.terminalReason(afterRemints = owed.remints)
+                    if (reason != null) {
+                        // Removed and said: this is the only copy left of a set somebody lifted.
+                        queue.drop(owed.set.id)
+                        changeHeldSet(owed.sessionId, owed.set.id, null)
+                        refusals = refusals + RefusedSet(owed.set, reason)
+                        refusal = reason
+                        continue
+                    }
+                    if (verdict is Verdict.Remint) {
+                        val fresh = mintSet()
+                        queue.remint(owed.set.id, fresh)
+                        changeHeldSet(owed.sessionId, owed.set.id, owed.set.copy(id = fresh))
+                        continue
+                    }
+                    blocked.add(owed.lane)
+                    if (blockedBy == null) blockedBy = facts.blocker
+                }
+            }
 
-        // The next attempt is scheduled off the queue BEFORE anything is said, or a refusal in one
-        // lane takes the retry away from a set merely jammed in another. Parked sets schedule
-        // nothing: the claim is their road.
-        val carried = queue.pending.filter { it.sessionId != parked }
-        val earliestReady = carried.minOfOrNull { it.heldUntilMs ?: 0 }
-        if (earliestReady == null) {
-            if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
+            queue.flush()
+            // Off the failure the walk met, and off nothing else.
+            strandedBy = blockedBy
+            drawFromQueue()
+            if (seat != owner || gym !== log) return@withLock
+
+            // The next attempt is scheduled off the queue BEFORE anything is said, or a refusal in one
+            // lane takes the retry away from a set merely jammed in another. Parked sets schedule
+            // nothing: the claim is their road.
+            val carried = queue.pending.filter { it.sessionId != parked }
+            val earliestReady = carried.minOfOrNull { it.heldUntilMs ?: 0 }
+            if (earliestReady == null) {
+                if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
+                if (refusal != null) {
+                    settle(SaveState.Refused(refusal))
+                    return@withLock
+                }
+                settle(if (queue.pending.isEmpty()) SaveState.OnTheLog else SaveState.OnThisDevice)
+                return@withLock
+            }
+            // A set the walk never offered is not a set that failed: everything owed being inside its own
+            // undo window means this device is holding them on purpose.
+            val waiting = earliestReady - now()
+            scheduleDeliver(afterMs = if (waiting > 0) waiting else retryAfterMs)
             if (refusal != null) {
                 settle(SaveState.Refused(refusal))
-                return
+                return@withLock
             }
-            settle(if (queue.pending.isEmpty()) SaveState.OnTheLog else SaveState.OnThisDevice)
-            return
+            if (waiting <= 0) settle(SaveState.Blocked(blockedBy ?: Blocker.LogFailed))
         }
-        // A set the walk never offered is not a set that failed: everything owed being inside its own
-        // undo window means this device is holding them on purpose.
-        val waiting = earliestReady - now()
-        scheduleDeliver(afterMs = if (waiting > 0) waiting else retryAfterMs)
-        if (refusal != null) {
-            settle(SaveState.Refused(refusal))
-            return
-        }
-        if (waiting <= 0) settle(SaveState.Blocked(blockedBy ?: Blocker.LogFailed))
+        if (gone && seat == owner && gym === log) loadLog()
     }
 
     // Carries what is still owed: the retry after a failure, the send after a window closes, and the
@@ -1831,7 +1922,7 @@ class TrainingStore(
             while (claimAgain) {
                 claimAgain = false
                 val seat = gym ?: return
-                val outcome = replay(seat).run()
+                val outcome = try { replay(seat).run() } catch (_: ClaimReplay.SeatChanged) { continue }
                 if (gym !== seat) continue
                 // A live start the log refuses is said again on every pass; the banner holds one copy.
                 refusals = refusals + outcome.said.filter { it !in refusals }
@@ -1850,9 +1941,60 @@ class TrainingStore(
 
     // One argument list, so the cadence's send and the sign-in's walk cannot be handed different
     // collaborators.
-    private fun replay(seat: TrainingSyncing) =
-        ClaimReplay(seat, localLog, queue, localPreferences, localBodyweight,
-                    mintExercise, mintRoutine, mintSession, mintSet)
+    private fun replay(log: TrainingSyncing): ClaimReplay {
+        val seat = owner
+        return ClaimReplay(log, localLog, queue, localPreferences, localBodyweight,
+            mintExercise, mintRoutine, mintSession, mintSet,
+            isCurrent = { seat == owner && gym === log }, onChange = ::claimChanged)
+    }
+
+    private fun claimChanged(change: ClaimReplay.Change) {
+        when (change) {
+            is ClaimReplay.Change.SessionMoved -> {
+                closedDetails = closedDetails.mapValues { (_, detail) ->
+                    if (detail.session.id == change.oldId) detail.copy(session = change.session) else detail
+                }
+                withheld.toList().forEach { held ->
+                    val deletion = when (val current = held.deletion) {
+                        is Deletion.Set -> current.takeIf { it.sessionId == change.oldId }
+                            ?.copy(sessionId = change.session.id)
+                        is Deletion.Session -> current.takeIf { it.sessionId == change.oldId }
+                            ?.copy(sessionId = change.session.id)
+                        else -> null
+                    } ?: return@forEach
+                    clocks.remove(held.subjectId)?.cancel()
+                    val updated = held.copy(deletion = deletion)
+                    withheld = withheld.map { if (it == held) updated else it }
+                    armDelete(updated)
+                }
+            }
+            is ClaimReplay.Change.SetChanged -> {
+                changeHeldSet(change.sessionId, change.oldId, change.set)
+                closedDetails = closedDetails.mapValues { (_, detail) ->
+                    if (detail.session.id != change.sessionId) detail
+                    else detail.copy(sets = detail.sets.mapNotNull {
+                        if (it.id == change.oldId) change.set else it
+                    })
+                }
+            }
+            is ClaimReplay.Change.SessionRefused -> {
+                closedFailures = closedFailures + (change.sessionId to WriteFailure.Refused(change.reason))
+                withheld.filter { held ->
+                    when (val deletion = held.deletion) {
+                        is Deletion.Set -> deletion.sessionId == change.sessionId
+                        is Deletion.Session -> deletion.sessionId == change.sessionId
+                        else -> false
+                    }
+                }.forEach { held ->
+                    clocks.remove(held.subjectId)?.cancel()
+                    withheld = withheld - held
+                }
+            }
+            is ClaimReplay.Change.Closed -> {
+                if (closedDetails.values.any { it.session.id == change.detail.session.id }) retainClosed(change.detail)
+            }
+        }
+    }
 
     // The walk follows the claim exactly as connect's does, the queue going out before any read, and
     // a claim that stopped being owed re-reads the log. A settings document owed on its own takes the
@@ -1862,7 +2004,7 @@ class TrainingStore(
         val seat = gym ?: return false
         if (!claimOwed) {
             if (!localPreferences.owed) return false
-            val said = replay(seat).runPreferences()
+            val said = try { replay(seat).runPreferences() } catch (_: ClaimReplay.SeatChanged) { return true }
             // The seat changed while the PUT was in the air: that seat's own connect owns the state.
             if (gym !== seat) return true
             refusals = refusals + said.filter { it !in refusals }
@@ -1882,8 +2024,10 @@ class TrainingStore(
         // stands down rather than awaiting `claimIdle`, because a local finish that calls it must not
         // block on a replay already walking the shelf.
         if (claiming) return
+        val seat = owner
         val log = gym ?: return
         val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) }
+        if (seat != owner || gym !== log) return
         if (page == null) {
             // The foot is where a quiet log is said; the rows already in hand stay.
             older = Older.Failed
@@ -1923,11 +2067,14 @@ class TrainingStore(
     }
 
     private suspend fun adopt(opened: Session, joined: Boolean) {
+        val seat = owner
+        val log = gym
         queue.hold(opened)
         // A joined session is a list of sets this device may know nothing about, and adopting the row
         // without them would draw an empty workout over a live one.
         if (joined) {
-            val detail = gym?.let { tried { it.session(opened.id) } }
+            val detail = log?.let { tried { it.session(opened.id) } }
+            if (seat != owner || gym !== log) return
             if (detail != null) {
                 queue.hold(detail.session)
                 for (set in detail.sets) queue.store(set, detail.session.id, needsPush = false)
@@ -1941,7 +2088,7 @@ class TrainingStore(
     // re-CHOSEN rather than moved: connect cleared the last-time cache, and re-asking swaps the old
     // seat's answer for this seat's.
     private suspend fun resume() {
-        val movement = exerciseId ?: LiveOrder.resume(order, sets) ?: return
+        val movement = queue.chosenMovement ?: exerciseId?.takeIf { it in order } ?: LiveOrder.resume(order, sets) ?: return
         choose(movement)
     }
 
@@ -1954,6 +2101,7 @@ class TrainingStore(
     }
 
     private fun drawFromQueue() {
+        restStartedAtMs = queue.restStartedAtMs
         session = queue.session
         sets = queue.sets
         // Seeded from the plan and from what has already been performed, so a session joined from
@@ -2057,7 +2205,9 @@ sealed interface AskOutcome {
 // `Failed` carries the log's answer the way every other write does, including "that workout is no
 // longer on the log", after which the room is standing over no session.
 sealed interface FinishOutcome {
-    data class Closed(val session: Session) : FinishOutcome
+    data class Closed(val detail: SessionDetail) : FinishOutcome {
+        val session: Session get() = detail.session
+    }
     data class Stranded(val count: Int) : FinishOutcome   // this session's sets that never landed — a closed one cannot take them
     data class Failed(val why: WriteFailure) : FinishOutcome
 }

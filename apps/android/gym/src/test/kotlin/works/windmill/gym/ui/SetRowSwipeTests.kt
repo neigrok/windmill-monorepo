@@ -206,7 +206,7 @@ class SetRowSwipeTests {
         assertTrue("the survivor is drawn where a row belongs, not parked off the leading edge: " +
             "left was ${survivor.left}", survivor.left >= 0f)
         compose.onNodeWithText("90 × 3").performClick()
-        compose.onNodeWithText("Fix this set").assertIsDisplayed()
+        compose.onNodeWithText("Fix set").assertIsDisplayed()
         scope.cancel()
     }
 
@@ -220,7 +220,7 @@ class SetRowSwipeTests {
 
         compose.onNodeWithText("82.5 × 5").performClick()
 
-        compose.onNodeWithText("Fix this set").assertIsDisplayed()
+        compose.onNodeWithText("Fix set").assertIsDisplayed()
         compose.onNodeWithText("Set note").assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptySet<String>(), store.withheldIds) }
         scope.cancel()

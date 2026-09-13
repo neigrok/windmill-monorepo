@@ -8,8 +8,9 @@ and behavior contracts and stress specimens live in
 Implementation coverage is tracked in `android-delivery.md` and the repository `worklog.md`.
 Wave 1 implements shared chrome, system palettes, Settings and the approved control removals.
 Wave 2 implements routines, target editing, duplication, independent Undo and movement creation
-from planning or quick logging, with native and real-backend verification. Training, Log, Coach
-and the wider native behavior audit remain assigned to later delivery waves.
+from planning or quick logging. Wave3 implements planned/free training, offline recovery, correction,
+receipts, sharing and save as routine, with native and real-backend verification. Log, Coach and
+the wider native behavior audit remain assigned to later delivery waves.
 
 ## Screen library
 

@@ -103,6 +103,7 @@ object LiveLines {
         val isCurrent: Boolean,
         val justAdded: Boolean,
         val canDrop: Boolean,
+        val metadata: String = "",
     )
 
     // "set 3 of 5". An open plan line answers like no line at all — "set 3", never "set 3 of 0".
@@ -148,14 +149,14 @@ object LiveLines {
         return "movement ${at + 1} of ${order.size}"
     }
 
-    // The chip's spoken card. No history is NULL — the screen draws nothing for a first time — and a
-    // failed read is a card, because a read that missed must never draw as no history.
+    // A missing card is an empty history; a failed read keeps its distinct disclosure.
     fun prefillCard(lastTime: LastTime?, routine: String?, readFailed: Boolean, now: Long): Card? {
         if (lastTime == null) {
             if (!readFailed) return null
             return Card(title = "Last time", body = "the log didn’t answer")
         }
         val session = lastTime.session ?: return null
+        if (lastTime.sets.isEmpty()) return null
         val elsewhere = lastTime.routine?.takeIf { it != routine }?.let { "  ·  $it" } ?: ""
         val shown = lastTime.sets.take(4)
             .joinToString(",   ") { Readout.effort(it.weightKg, it.reps) }
@@ -190,6 +191,7 @@ object LiveLines {
                      catalog: List<Exercise>, current: String?,
                      stalled: Set<String> = emptySet()): List<MovementRow> {
         val foot = order.lastOrNull()
+        val next = order.firstOrNull { id -> sets.none { it.exerciseId == id && it.kind == SetKind.Working } }
         return order.map { exerciseId ->
             val performed = sets.filter { it.exerciseId == exerciseId }
             val done = workingCount(performed)
@@ -211,6 +213,18 @@ object LiveLines {
                 isCurrent = exerciseId == current,
                 justAdded = justAdded,
                 canDrop = LiveOrder.droppable(exerciseId, sets, plan),
+                metadata = when {
+                    performed.isNotEmpty() -> {
+                        val actual = performed.filter { it.kind == SetKind.Working }.ifEmpty { performed }
+                        val values = actual.map { Readout.effort(it.weightKg, it.reps) }.distinct()
+                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(actual.map { SetTarget(it.reps, it.weightKg) })
+                        val progress = if (planned != null) "$done of $planned sets" else Readout.setCount(actual.size)
+                        "$progress · $effort"
+                    }
+                    exerciseId == next -> "Up next" + (entry?.sets?.takeIf { it.isNotEmpty() }?.let { " · ${Readout.targetWithUnit(it)}" } ?: "")
+                    entry?.sets?.isNotEmpty() == true -> Readout.targetWithUnit(entry.sets)
+                    else -> "No sets yet"
+                },
             )
         }
     }
@@ -220,11 +234,20 @@ object LiveLines {
         if (count <= 0) return null
         val subject = if (count == 1) "1 set is" else "$count sets are"
         val why = when (by) {
-            Blocker.Offline -> "No signal down here — they flush when you’re back up."
-            Blocker.LogFailed -> "The log didn’t answer — they flush when it does."
-            Blocker.SignInLapsed -> "Your sign-in lapsed — they flush once you sign in again."
-            null -> "They flush when the log takes them."
+            Blocker.Offline -> "They’ll sync when you’re online."
+            Blocker.LogFailed -> "The log didn’t answer. They’ll sync when it’s available."
+            Blocker.SignInLapsed -> "Sign in again to sync these sets."
+            null -> "They’re waiting to sync."
         }
         return "$subject saved on this device only. $why"
     }
+}
+
+
+data class RestReading(val startedAtMs: Long?, val targetSeconds: Int?) {
+    constructor(startedAtMs: Long?, entry: PlanEntry?, preferences: GymPreferences) :
+        this(startedAtMs, entry?.restSeconds ?: preferences.restSeconds)
+
+    fun elapsedMs(nowMs: Long): Long? = startedAtMs?.let { (nowMs - it).coerceAtLeast(0) }
+    val target: String get() = targetSeconds?.let { Readout.clock(it * 1_000L) } ?: "Off"
 }

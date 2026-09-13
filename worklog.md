@@ -19,8 +19,8 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 0 | Baseline build, runtime setup, design-to-code inventory and coverage map | Identify existing shared controls and state ownership | Verified |
 | 1 | Shared visual foundations, Instrument/Daylight palette propagation, 48 dp targets, Routines/Log/Coach navigation, Settings, removal of Kind controls and set-confirmation sound/vibration | Consolidate native chrome, typography, action and settings patterns; include account-sheet palette and system-bar contrast | Verified |
 | 2 | Routines: list/detail/create/edit, targets/fill, duplicate/delete/Undo, stale-edit protection; Create movement from planning and quick logging | Share movement creation and target-entry behavior; preserve the draft and originally read revision on refusal | Verified |
-| 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Pending |
-| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Pending |
+| 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified; publication pending |
+| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Backend reviewed; Android pending |
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Pending |
 | 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Pending |
 | 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Pending |
@@ -264,11 +264,17 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
 
 ### Wave 3 — training, correction and receipts
 
+- Wave 2 is published in `1a85e33d6cc3e80d5879ca46f9130c414455c2b7`.
+  [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/34783246380) passed for
+  that exact commit in 6m 6s; the branch release job was skipped. The developer has the Wave 3
+  source and Gradle lease.
 - The implementation sequence is committed finish data → logger/rest → shared numeric entry/Fix
   → session assembly → readback/sharing/Keep routine, followed by simplification and verification.
   Figma contexts and exact settings/forward assets are recorded in the delivery contract.
-- The developer owns Android domain/store/queue/UI and corresponding tests. Root owns native
-  fixtures, acceptance and publication; independent code and design review remain required.
+- The main developer owns Android domain/store/queue, logger/assembly/receipt UI and caller
+  integration. A second developer owns KeypadSheet/FixSheet and their focused UI tests; both reuse
+  the same ladder control and coordinate one Gradle lease. Root owns native fixtures, acceptance
+  and publication; independent code and design review remain required.
 - `FinishOutcome.Closed` must carry canonical committed `SessionDetail` after delivery, independent
   of Review. The receipt and retained workout use the same detail and deletion visibility; failed
   rereads retain the saved facts and a truthful failure. Owner changes, ID remints and local claims
@@ -284,6 +290,186 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
   frozen plans, movement assembly, queued/offline recovery, partial/complete receipts and matching
   readbacks, Fix/deletion/Undo, sharing/revocation and saving eligible free sessions as routines.
   Small-screen/200% text and real IME checks apply to the rack, Fix and scrolling receipt.
+- The committed-detail boundary passes 202 focused cases after the review fixes. They cover
+  deferred append/correction, owner handover, held deletion, stranded delivery and late claim
+  remints. Canonical IDs follow finished shelves and set tombstones; delayed starts and deletion
+  errors retain the request owner. An operational remapped timer test verifies the original Undo
+  deadline and eventual send. Independent re-review is clear.
+- Numeric entry and Fix pass 40 focused cases, including native graphics at 320dp/200% text,
+  refusal, pending-save locks and restoration. Review found that a canonical ID change could reset
+  an open Fix draft or unlock a suspended save. Both callers now provide the original logical
+  target as a stable draft key; two additional regression cases await the integrated gate.
+- The first W3 preview includes the core fixes, numeric sheets and preliminary logger/rest.
+  Assembly and receipt presentation remain under implementation. Its local-backend APK SHA-256 is
+  `4bee0437fb42b038b3da39dce0f1bb9e083ebc0f0c14911027fa9648c12e7e7a`; installation succeeded and
+  cold launch took 1,140ms. Weight 501 and Reps 101 refuse, disabled Reps sign/decimal and invalid
+  commits are verified in the hierarchy, and real note IME → keypad → Cancel retains the draft.
+  Actual process replacement exposed a caller gap: an open historical Fix returned to Log;
+  revisiting the session restored its sheet, but a subsequent font change lost the unsaved note.
+  The developer confirmed the route used unsaved state and is fixing route/seed hydration.
+- At 412dp/200% text, the note IME → Weight → Cancel path retains the draft, and scrolling brings
+  Save fix fully above the keyboard. A native correction stored 42.5kg, RPE9.5 and the note exactly;
+  backend comparison confirms original warmup kind, set number, identity, timestamp, frozen plan
+  and all nine other rows are unchanged. Evidence: `w3-fix-200-ime-save-reachable`,
+  `w3-fix-warmup-saved` and `w3-history-corrected.json` in the runtime evidence directory.
+  At 320×640dp/200%, the keypad fits and scrolling exposes the full Save/Delete targets above
+  the IME. Daylight reveals a modal-window status-bar contrast issue, now in the fix pass.
+- The first planned native set is saved as Working 60×8 and verified as 480kg after its delivery
+  window. The strip advances to Set 2, saved feedback does not move the rack, and Rest changes
+  from the actual 1:30 target to a count-up clock. The captured 1:03 display matches the persisted
+  logged-event timestamp within capture latency. Designer review requests a compact, centered
+  current-only movement marker and Add control below the strip; that refactor is in progress.
+- Native offline logging is verified: after network reachability failed, a second 60×8 set stayed
+  on the device while the backend remained at 1/480kg. Actual process replacement retained both
+  local sets, next Set 3 and the count-up origin. Reconnection delivered exactly one additional
+  set (2/960kg); both pre-ack and post-ack clocks match its original completion time. Evidence:
+  `w3-logger-offline-process`, `w3-logger-reconnected`, `w3-session-offline-recovered.json`.
+  Active movement selection reset during the preview restart; persistence is in the fix pass.
+
+- Preview 2 installed successfully (cold launch 882ms), SHA-256
+  `4525b0cfab3278ae0dd306c6bec5ae0c2e128022df99a1dcf18429de100c0c95`. Its two-set finish draws
+  Ended early / 2 sets / 960kg / 1 movement, and dismissing reveals the same saved session.
+  Native public-link creation and Copy feedback passed; revocation returned an anonymous 404.
+  This used only the synthetic fixture and localhost endpoints. Automatic review initially
+  rejected the link as external sharing, then accepted the retry after read-only scope evidence.
+- Public sharing verification found an inaccurate disclosure: the existing payload includes set
+  notes and optional effort. Android and Figma text `672:9676` now state “Includes set notes and
+  effort.” The Figma screenshot is verified with its layout unchanged; other Android pages have
+  no remaining copy of the inaccurate sentence. Native text and layout are verified at320dp/200% in `w3-preview4-sharing-disclosure-200`.
+- Independent recovery review found startup-owner, canonical-ID restoration and delayed-read
+  races. The developer is adding fresh-store regressions and owner-scoped saved state. Native
+  process/configuration acceptance is reserved for the next preview; W3 remains incomplete.
+
+- Native complete receipt now verifies nine distinct Working sets, 2,700kg and three movements
+  against the isolated backend (`w3-session-full-nine.json`). The 320dp/200% capture reveals a
+  split numeric total; comparison rows also need reflow and truthful plan-versus-history labels.
+  These remain in the fix pass. Scrolling reaches the full Coach action and disclosure.
+- The Coach handoff reaches the capability-unavailable screen on this local configuration; no
+  generated answer is claimed. Receipt capability gating is being checked, and W5 needs an enabled
+  test transport for its answer flow.
+- Preview 2 Daylight modal status icons are verified dark and readable at 320dp/200%
+  (`w3-preview2-daylight-expanded`). The earlier contrast finding is closed.
+
+- Native partial 1/2/3-set receipts and matching readbacks now verify 480/960/1,440kg; the
+  free 57.5×8 session verifies one Working set, 460kg and Ended early. Snapshots are
+  `w3-session-partial-one.json`, `w3-session-partial-two.json`, `w3-session-partial-three.json`
+  and `w3-session-free-one.json`; associated receipt/readback captures are in the runtime directory.
+
+- Independent recovery re-review is clear: cold unresolved/signed-out/account-switch state,
+  canonical IDs across fresh stores, late-read correction protection, per-owner movement cursor
+  and restored free-rack values are covered. Pending Save routine blocks dismissal, Coach and name
+  edits; refusal/retry retains one stable write. The focused final recovery gate passed in 14s.
+  The full Gym run has one unresolved large-text layout assertion; native final-preview acceptance
+  and the full wave gate remain pending.
+
+- Preview 3 native process replacement preserves OHP selection and unlogged92kg/6reps
+  (PID23537→23993). A saved-set Fix with refused520 restores directly after PID24115→24839;
+  the refused buffer also survives320dp/200% and Daylight. Native Back then exposed a separate
+  modal-window bug: it closes the whole Fix and discards note/effort instead of returning to its
+  body. Reopening confirms the draft is gone. This remains a W3 blocker in the native fix pass.
+- Preview4 changes only the pending Last time label to Reading… and its accessibility/read-state
+  regression. Actual Bench cold history resolves to the verified57.5×8 API result. Full build
+  passes1,080 executed tests per variant (Gym1,025 plus platform55), with12 gated Gym skips;
+  enabled live-wire passes12/12 separately. Further Back fixes require their own final gate.
+
+- Native Save routine passes at320dp/200% with the actual IME. A61-character name remains
+  editable and refused; correcting it to W3 Saved Session exposes the complete64dp save action
+  above the keyboard. The result says Kept as W3 Saved Session and the backend contains exactly
+  one routine, `rt_b297e38e43b919e7`, with four Bench targets of57.5kg×8. Evidence:
+  `w3-preview4-routine-save-ime-reachable`, `w3-preview4-routine-saved`, `w3-saved-routine.json`.
+  The receipt's three totals and labels remain unbroken in `w3-preview4-receipt-small-top`.
+
+- Final native Back acceptance passes on API34. Back first hides the actual IME. Back, explicit
+  Cancel, scrim and drag each cancel only the keypad, preserving57.5kg/RPE9.5/Native back draft.
+  Process replacement26164→27342 plus320dp/200%/Daylight also retains refused520 and returns to
+  the complete draft. Save changes only note/RPE; exact JSON comparison preserves identity, kind,
+  number, timestamp, weights/reps and the other three sets. Finished Delete/Undo restores the same
+  entire session after its original delivery window. Evidence: `w3-preview5-restored-body-200-daylight`,
+  `w3-final-fix-after.json`, `w3-final-finished-undo.json`, and four cancellation capture pairs.
+- Refactoring consolidates committed receipt/readback data, shared numeric/ladder controls,
+  adaptive receipt rows, owner-scoped saved routes and the product-neutral modal Back dispatcher.
+  The pending-history label distinguishes a read in progress from a successfully empty result.
+  Independent core, numeric, recovery, receipt/assembly and final Back reviews have no remaining
+  actionable finding. API28 and35 cancellation regressions supplement actual API34 verification.
+- Final source build passes in1m34s,298 tasks/88 executed: Gym1,026 passed plus12 gated skips and
+  platform55 passed per debug/release variant, for1,081 executed per variant and zero failures/errors.
+  Enabled LiveWire12/12 passed separately with no skips. Logs: `windmill-android-wave3-native-back-build.log`
+  and `windmill-android-wave3-live-wire.log` under `/private/tmp`; exact result archive is
+  `wave3-native-back-full-tests.zip` in the runtime directory. Final preview5 installed cold in781ms,
+  SHA-256 `f1f922d666a1d2b4d7c7ca093baed716d4e36a7157839afbdca525f371b9a302`.
+  Publication stages Android/design/worklog only; W4 backend stays outside this commit.
+
+### Wave 3 state coverage
+
+All27 training states have exercised behavior and final review coverage. Screenshot names below
+refer to PNG/XML pairs in
+`/private/tmp/windmill-android-runtime`; earlier preview layouts are supplemented by the final
+source review and native layout captures. API snapshots above verify saved facts independently.
+
+| Figma state | Scenario | Evidence |
+|---|---|---|
+| `660:7955` | Planned first set | `w3-logger-planned-empty` |
+| `659:7176` | Planned second set | `w3-logger-planned-first` |
+| `659:7243` | Planned third set | `w3-logger-reconnected` |
+| `659:7310` | Overhead Press after Bench | `w3-full-ohp-empty` |
+| `671:8688` | Session assembly | `w3-assembly-real-reorder` |
+| `671:8689` | Saved offline | `w3-logger-offline-process` |
+| `657:29` | Weight entry | `w3-preview3-weight` |
+| `671:9516` | Weight refusal | `w3-preview3-fix-config-pad` |
+| `671:9517` | Reps refusal | `w3-fix-reps-refusal` |
+| `662:7669` | Pick movement | `w3-free-picker` |
+| `662:7755` | Free logger | `w3-free-empty` |
+| `662:7831` | Free set saved | `w3-free-one-logged` |
+| `671:8687` | Numbered readback | `w3-preview4-readback-actions` |
+| `671:8690` | Fix set | `w3-preview5-restored-body-200-daylight` |
+| `671:8691` | Fix write refused | `FixSheetStateTests.pendingSaveBlocksEditsAndDeleteThenRetainsTheDraftForRetry` (injected write refusal) |
+| `671:8692` | Set removed / Undo | `w3-preview5-finished-set-removed` / `w3-preview5-finished-set-undo` |
+| `671:9520` | Public sharing | `w3-preview4-sharing-disclosure-200` |
+| `660:8028` | Complete nine-set receipt | `w3-full-nine-receipt` |
+| `660:7713` | One-set receipt | `w3-partial-one-receipt` |
+| `660:7775` | Two-set receipt | `w3-preview2-partial-two` |
+| `660:7837` | Three-set receipt | `w3-partial-three-receipt` |
+| `671:9519` | Save routine | `w3-preview4-routine-saved` |
+| `673:9326` | One-set readback | `w3-partial-one-readback` |
+| `673:9400` | Two-set readback | `w3-preview2-readback-two` |
+| `673:9474` | Three-set readback | `w3-partial-three-readback` |
+| `662:7907` | Free receipt | `w3-free-one-receipt` |
+| `673:9548` | Free readback | `w3-free-one-readback` |
+
+The public-link create/copy/revoke journey returned a real anonymous404 after revocation. Assembly
+native drag/drop is supplemented by edge-scroll, just-added reveal/current semantics and performed-row
+protection tests. Independent held-deletion windows are covered in store/SetRowSwipe tests, with
+native Delete/Undo verifying exact saved rows. Native enabled Coach generation is not claimed on
+the disabled local configuration; W3 handoff/deduplication is covered by integrated FinishSheet tests,
+and W5 owns enabled conversation acceptance. The final Fix native Back/Cancel/scrim/drag and IME-first checks pass on API34.
+
+### Wave 4 — progress backend preparation
+
+- A separate developer owns only the additive Gym statistics projection and mirrored backend
+  tests. The contract is `/v1/gym/stats?projection=progress` from the delivery handoff; existing
+  responses stay compatible. This work uses a separate build directory and leaves the active
+  Wave 3 verification server untouched. Android consumers and the full W4 gate remain pending.
+- The backend implementation passes 282/282 focused checks, including 61 real Postgres cases and
+  18 new progress cases, with zero skips. Independent production/test review found no actionable
+  defect; it remains frozen until Android integration. A synthetic
+  7,020-set history reduces to 780 facts / 180,865 JSON bytes. No production latency is claimed;
+  the running native backend still uses the earlier binary until the W4 integrated gate.
+- W3 publication will include only its Android and design/worklog changes. W4 backend edits stay
+  uncommitted until the complete W4 implementation, review and integrated acceptance are ready.
+
+### Wave 5 — integration preparation
+
+- Read-only preparation identified two required data boundaries: Coach currently discards read
+  facts before storing answer history, and normal anonymous workout/bodyweight data is adopted
+  automatically during account connection. The existing “These are mine” row covers legacy
+  quarantine only. W5 must persist authoritative answer evidence and require an explicit durable
+  ownership decision before transferring anonymous data.
+- Preserve existing owner-scoped unsent work: “unclaimed session” also includes authenticated
+  work awaiting the server, so it cannot be used as the consent flag. Claim recovery needs a
+  frozen source manifest assigned to one account before any queue/log/bodyweight/settings move.
+- Capture Coach evidence at successful tool responses, preserving summary/full-session/movement
+  scope and the historical facts the answer actually saw. Store it atomically with the answer;
+  old answers have absent evidence. No new endpoint, schema or consent implementation is claimed.
 
 ## Structure observations
 
@@ -295,7 +481,9 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
 - Figma screen count is a coverage index, not a target for the number of composables or routes.
 - Wave 3's handoff identifies receipt totals that must come from saved sets independently of a
   review response. Wave 4's handoff identifies the missing Android stats adapter for truthful
-  movement progress and range selection; the backend already exposes `/v1/gym/stats`.
+  movement progress and range selection. Existing `/v1/gym/stats` loses set identity/RPE and uses
+  different estimate rules, so W4 adds an opt-in progress projection while preserving existing
+  web/iOS/MCP responses. Android's Log, strip and record must consume that same complete projection.
 - Wave 4 must reconcile `docs/design/gym/briefs/18-progress.md` with the current approved Figma contract:
   chart release returns to the latest point, the heading is “Estimated strength”, and Daylight
   uses the verified palette. The handoff records these differences before implementation.

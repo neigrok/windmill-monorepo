@@ -16,6 +16,19 @@ private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
 
 class LiveOrderTests {
     @Test
+    fun restCountUpIsSeparateFromTheFrozenTargetAndNeverInventsAnOrigin() {
+        val prefs = GymPreferences(restSeconds = 90)
+        val plan = PlanEntry("bench", restSeconds = 120)
+        assertEquals(RestReading(null, 120), RestReading(null, plan, prefs))
+        assertEquals(null, RestReading(null, plan, prefs).elapsedMs(90_000))
+        assertEquals("2:00", RestReading(null, plan, prefs).target)
+        assertEquals(RestReading(10_000, 90), RestReading(10_000, null, prefs))
+        assertEquals(65_000L, RestReading(10_000, plan, prefs).elapsedMs(75_000))
+        assertEquals(0L, RestReading(10_000, plan, prefs).elapsedMs(5_000))
+        assertEquals("Off", RestReading(null, null, prefs.copy(restSeconds = null)).target)
+    }
+
+    @Test
     fun testThePlanLeadsAndWhateverElseWasLiftedFollowsIt() {
         val order = LiveOrder.merged(
             held = emptyList(),
@@ -308,19 +321,19 @@ class LiveLinesTests {
     @Test
     fun testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {
         assertNull(LiveLines.onThisDeviceLine(0, Blocker.Offline))
-        assertEquals("1 set is saved on this device only. No signal down here — they flush when you’re back up.",
+        assertEquals("1 set is saved on this device only. They’ll sync when you’re online.",
                      LiveLines.onThisDeviceLine(1, Blocker.Offline))
-        assertEquals("3 sets are saved on this device only. No signal down here — they flush when you’re back up.",
+        assertEquals("3 sets are saved on this device only. They’ll sync when you’re online.",
                      LiveLines.onThisDeviceLine(3, Blocker.Offline))
     }
 
     @Test
     fun testTheStripNamesWhatBlockedTheSetsRatherThanAssertingNoSignal() {
-        assertEquals("2 sets are saved on this device only. The log didn’t answer — they flush when it does.",
+        assertEquals("2 sets are saved on this device only. The log didn’t answer. They’ll sync when it’s available.",
                      LiveLines.onThisDeviceLine(2, Blocker.LogFailed))
-        assertEquals("1 set is saved on this device only. Your sign-in lapsed — they flush once you sign in again.",
+        assertEquals("1 set is saved on this device only. Sign in again to sync these sets.",
                      LiveLines.onThisDeviceLine(1, Blocker.SignInLapsed))
-        assertEquals("1 set is saved on this device only. They flush when the log takes them.",
+        assertEquals("1 set is saved on this device only. They’re waiting to sync.",
                      LiveLines.onThisDeviceLine(1, null))
     }
 }

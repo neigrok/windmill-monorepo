@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -333,6 +334,7 @@ fun MovementPicker(
             containerColor = skin.surface, scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
+            WindmillSheetWindow()
             BackHandler(enabled = state.busy) {}
             CreateMovementSheet(
                 name = name, onName = { state.createName = Program.capped(it); state.refusal = null },

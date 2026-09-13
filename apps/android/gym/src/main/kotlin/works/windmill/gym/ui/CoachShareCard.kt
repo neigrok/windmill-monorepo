@@ -1,8 +1,9 @@
 package works.windmill.gym.ui
 
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,17 +80,16 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x4),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp).padding(bottom = 20.dp),
     ) {
-        Text(card.title, style = WindmillFont.display(18), color = skin.ink)
+        Text(card.title, style = WindmillFont.display(26, FontWeight.ExtraBold), color = skin.ink)
 
-        Text(
-            card.body,
-            style = GymType.numeral(12).copy(lineHeight = 17.sp),
-            color = skin.inkDim,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            card.body.split('\n').forEach { paragraph ->
+                Text(paragraph, style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+            }
+        }
 
         card.link?.let { link ->
             SelectionContainer {
@@ -110,7 +110,7 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
         card.note?.let { note ->
             Text(
                 note,
-                style = GymType.numeral(12).copy(lineHeight = 17.sp),
+                style = WindmillFont.body(16).copy(lineHeight = 21.sp),
                 color = skin.alarmInk,
             )
         }
@@ -119,14 +119,14 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
+                .heightIn(min = 64.dp)
+                .background(skin.accent, RoundedCornerShape(16.dp))
                 .clickable(enabled = state != Coach.State.Working, role = Role.Button) { act() },
         ) {
             Text(
                 card.action,
-                style = WindmillFont.body(16, FontWeight.SemiBold),
-                color = skin.accent,
+                style = WindmillFont.body(16, FontWeight.Bold),
+                color = skin.onAccent,
             )
         }
 

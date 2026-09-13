@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -342,6 +343,7 @@ fun BodyweightScreen(
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
+            WindmillSheetWindow()
             WeighInSheet(
                 initial = open,
                 fixedDate = open.date,

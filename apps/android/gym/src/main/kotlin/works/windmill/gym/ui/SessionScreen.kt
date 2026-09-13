@@ -1,15 +1,20 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,12 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -35,6 +38,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -155,8 +161,15 @@ object Performed {
         return Note("on plan")
     }
 
-    private fun planLine(entry: PlanEntry): String = "plan ${Readout.target(entry.sets)}"
+    private fun planLine(entry: PlanEntry): String = "Plan ${Readout.targetWithUnit(entry.sets)}"
 }
+
+private val sessionDetailSaver = Saver<SessionDetail?, String>(
+    save = { it?.let { detail -> WindmillJson.encodeToString(SessionDetail.serializer(), detail) } ?: "" },
+    restore = { raw -> raw.takeIf(String::isNotEmpty)?.let {
+        runCatching { WindmillJson.decodeFromString(SessionDetail.serializer(), it) }.getOrNull()
+    } },
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,23 +181,42 @@ fun SessionScreen(
     onBack: () -> Unit,
     say: (String?) -> Unit,
     onOpenMovement: (String) -> Unit,
-    onDiscard: () -> Unit,
+    onDiscard: (String) -> Unit,
+    seed: SessionDetail? = null,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    var detail by remember(summary.id) { mutableStateOf<SessionDetail?>(null) }
+    var detail by rememberSaveable(summary.id, stateSaver = sessionDetailSaver) { mutableStateOf<SessionDetail?>(seed) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
     var read by remember(summary.id) { mutableStateOf(false) }
-    var fixing by remember(summary.id) { mutableStateOf<String?>(null) }
+    var fixing by rememberSaveable(summary.id) { mutableStateOf<String?>(null) }
+    var fixSetId by rememberSaveable(summary.id) { mutableStateOf<String?>(null) }
+    val fixStates = rememberSaveableStateHolder()
     // Half of the review's key — the session's id does not change when its sets do.
     var corrected by remember(summary.id) { mutableStateOf(0) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var fixBusy by remember { mutableStateOf(false) }
+    var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { destination ->
+            when {
+                fixBusy -> false
+                destination == SheetValue.Hidden && cancelFixEntry != null -> {
+                    cancelFixEntry?.invoke()
+                    false
+                }
+                else -> true
+            }
+        })
 
-    val standing = store.recent.firstOrNull { it.id == summary.id } ?: summary
+    val currentDetail = detail?.let(store::retainedSession)
+    val readId = currentDetail?.session?.id ?: summary.id
+    val visibleSets = currentDetail?.sets?.filterNot { it.id in store.deletedSets || it.id in store.withheldIds }
+    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty()) }
+        ?: store.recent.firstOrNull { it.id == summary.id } ?: summary
+    var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
     // Null until the read lands, which is a different silence from a session with no sets in it. A
     // set inside its undo window is off the screen and nothing has been sent.
-    val movements = detail?.let { held ->
+    val movements = currentDetail?.let { held ->
         Performed.movements(
             held.sets.filterNot { it.id in store.deletedSets || it.id in store.withheldIds },
             store.catalog,
@@ -192,21 +224,29 @@ fun SessionScreen(
         )
     }
 
-    LaunchedEffect(summary.id) {
-        when (val found = store.sessionDetail(summary.id)) {
-            is GymResult.Ok -> detail = found.value
+    LaunchedEffect(currentDetail) {
+        if (currentDetail != null && detail != currentDetail) detail = currentDetail
+    }
+
+    LaunchedEffect(readId) {
+        when (val found = store.sessionDetail(readId, currentDetail)) {
+            is GymResult.Ok -> { detail = found.value; setsFailure = null }
             is GymResult.Failed -> setsFailure = found.why
         }
     }
 
     // A delete keys off `deletedSets`, which grows only when the log has ACTUALLY taken the row.
-    LaunchedEffect(summary.id, corrected, store.deletedSets) {
-        review = store.review(summary.id)
+    LaunchedEffect(readId, corrected, store.deletedSets) {
+        review = store.review(readId)
         read = true
     }
 
     fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { fixing = null }
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            fixing?.let(fixStates::removeState)
+            fixing = null
+            fixSetId = null
+        }
     }
 
     // The withheld row's undo is the room's transient, not a row inside this scroll: the window has
@@ -233,14 +273,15 @@ fun SessionScreen(
                     MovementCard(
                         movement = movement,
                         onOpenMovement = onOpenMovement,
-                        onFix = { fixing = it },
-                        onDelete = { row -> store.withhold(Deletion.Set(summary.id, row)) },
+                        onFix = { fixing = it; fixSetId = it },
+                        onDelete = { row -> store.withhold(Deletion.Set(readId, row)) },
                     )
                 }
-            } else if (setsFailure != null) {
+            }
+            if (setsFailure != null || currentDetail?.let(store::retainedSessionFailure) != null) {
                 item("failure") {
                     Text(
-                        setsFailure!!.line("the sets are on your account"),
+                        (currentDetail?.let(store::retainedSessionFailure) ?: setsFailure)!!.line("the saved sets are shown"),
                         style = GymType.numeral(13),
                         color = skin.inkDim,
                     )
@@ -255,7 +296,10 @@ fun SessionScreen(
             }
             item("share") {
                 Column(Modifier.padding(top = WindmillSpace.x2)) {
-                    CoachShareCard(coach, summary.id)
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(skin.raised, RoundedCornerShape(16.dp))
+                        .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
+                        Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                    }
                 }
             }
             // The drawn door into the act the log row's long press also reaches: a gesture may
@@ -270,7 +314,7 @@ fun SessionScreen(
                         .fillMaxWidth()
                         .padding(top = WindmillSpace.x2)
                         .heightIn(min = GymTap.row)
-                        .clickable(role = Role.Button, onClick = onDiscard),
+                        .clickable(role = Role.Button, onClick = { onDiscard(readId) }),
                 ) {
                     Text(
                         Finish.discard,
@@ -283,91 +327,80 @@ fun SessionScreen(
     }
 
     val open = movements.orEmpty().firstNotNullOfOrNull { movement ->
-        movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
+        movement.rows.firstOrNull { it.id == (fixSetId ?: fixing)?.let(store::canonicalSetId) }?.let { movement.movement to it }
     }
+    LaunchedEffect(open?.second?.id) { if (open != null) fixSetId = open.second.id }
     if (open != null) {
         ModalBottomSheet(
-            onDismissRequest = { close() },
+            onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
             sheetState = sheetState,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
+            WindmillSheetWindow()
             val (movement, row) = open
-            FixSheet(
-                set = row.set,
-                movement = movement,
-                setNumber = row.number,
-                routine = standing.plan?.routine,
-                onSave = { fix ->
-                    close()
-                    say(null)
-                    scope.launch {
-                        when (val ended = store.fixSet(summary.id, row.id, fix)) {
+            fixStates.SaveableStateProvider(fixing!!) {
+            WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
+                FixSheet(
+                    set = row.set,
+                    draftKey = fixing ?: row.id,
+                    movement = movement,
+                    setNumber = row.number,
+                    routine = standing.plan?.routine,
+                    onSave = { fix ->
+                        val ended = store.fixSet(readId, row.id, fix)
+                        when (ended) {
                             is FixOutcome.Corrected -> {
-                                detail = detail?.let { held ->
-                                    held.copy(sets = held.sets.map {
-                                        if (it.id == row.id) ended.set else it
-                                    })
-                                }
+                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
+                                    if (it.id == row.id) ended.set else it
+                                }) }
                                 corrected += 1
                             }
                             is FixOutcome.Gone -> {
-                                detail = detail?.let { held ->
-                                    held.copy(sets = held.sets.filterNot { it.id == row.id })
-                                }
-                                say(ended.said)
+                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.filterNot { it.id == row.id }) }
                                 corrected += 1
                             }
-                            is FixOutcome.Failed -> say(ended.why.line("that set wasn’t changed"))
+                            is FixOutcome.Failed -> Unit
                         }
-                    }
-                },
-                // Nothing is told yet: the row comes off the screen and the window opens, because the
-                // log has no undelete. A second delete opens a window of its own and settles nothing.
-                onDelete = {
-                    close()
-                    say(null)
-                    store.withhold(Deletion.Set(summary.id, row.set))
-                },
-            )
+                        ended
+                    },
+                    onSaved = { close(); say(null) },
+                    onGone = { close(); say(it) },
+                    onBusy = { fixBusy = it },
+                    onEntryCancel = { cancelFixEntry = it },
+                    // Nothing is told yet: the row comes off the screen and the window opens, because the
+                    // log has no undelete. A second delete opens a window of its own and settles nothing.
+                    onDelete = {
+                        close()
+                        say(null)
+                        store.withhold(Deletion.Set(readId, row.set))
+                    },
+                )
+            }
+            }
         }
     }
+    if (shareOpen) ModalBottomSheet(onDismissRequest = { shareOpen = false },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = skin.surface, scrimColor = skin.scrim) {
+            WindmillSheetWindow()
+        CoachShareCard(coach, readId)
+    }
+
 }
 
 @Composable
 private fun SessionHead(summary: SessionSummary) {
     val skin = LocalGymColors.current
-    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        Text(headLine(summary), style = GymType.numeral(12), color = skin.inkDim)
-        if (summary.closedItself) {
-            Text(
-                "closed on its own — no set for four hours",
-                style = GymType.numeral(12),
-                color = skin.inkDim,
-            )
-        }
-        summary.plan?.let {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier
-                    .padding(top = WindmillSpace.x1)
-                    .background(skin.raised, RoundedCornerShape(WindmillRadius.full))
-                    .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.full))
-                    .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
-            ) {
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .background(skin.targetInk, CircleShape),
-                )
-                Text(
-                    "plan snapshot · frozen ${Readout.time(summary.startedAtMs)}",
-                    style = GymType.numeral(11),
-                    color = skin.inkDim,
-                )
-            }
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(headLine(summary), style = WindmillFont.body(14), color = skin.inkDim)
+        Text("Volume", style = WindmillFont.body(12), color = skin.inkDim)
+        Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—", style = WindmillFont.display(32, FontWeight.ExtraBold), color = skin.ink)
+        val count = summary.workingSetCount?.let { "$it working ${if (it == 1) "set" else "sets"}" } ?: Readout.setCount(summary.setCount)
+        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(14), color = skin.inkDim)
+        if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12), color = skin.inkDim)
+        if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillFont.body(13), color = skin.inkDim)
     }
 }
 
@@ -383,30 +416,17 @@ private fun MovementCard(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
+            .padding(vertical = 12.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClickLabel = "open this movement") {
-                    onOpenMovement(movement.id)
-                },
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
+                .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(movement.id) },
         ) {
-            Text(
-                movement.movement,
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = skin.ink,
-            )
-            Spacer(Modifier.weight(1f))
+            Text(movement.movement, style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
             when (val against = movement.against) {
-                is Performed.Against.Plan ->
-                    Text(against.line, style = GymType.numeral(11), color = skin.targetInk)
-                Performed.Against.Unplanned ->
-                    Text("not in the plan", style = GymType.numeral(11), color = skin.inkDim)
+                is Performed.Against.Plan -> Text(against.line, style = WindmillFont.body(13), color = skin.inkDim)
+                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillFont.body(13), color = skin.inkDim)
                 Performed.Against.Silent -> Unit
             }
         }
@@ -466,89 +486,36 @@ private fun DeleteGround() {
     }
 }
 
-// The set's kind glyph; the note under a set starts past it and one gap.
-private val setGlyph = 15.dp
-
 @Composable
 private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val skin = LocalGymColors.current
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.sm))
-            .background(if (pressed) skin.raised else skin.surface)
-            .clickable(
-                interactionSource = pressing,
-                indication = null,
-                role = Role.Button,
-                onClickLabel = "fix this set",
-            ) { onFix(set.id) },
-    ) {
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
-      ) {
-        val counts = set.kind == SetKind.Working
-        if (counts) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = skin.setDone,
-                modifier = Modifier.size(setGlyph),
-            )
-        } else {
-            // No core icon says `warmup`; the dot does, and the kind is said in the tree.
-            Box(
-                Modifier.size(setGlyph).semantics { contentDescription = set.kind.wire },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.size(5.dp).clip(CircleShape).background(skin.warmupInk))
-            }
+    val largeText = LocalDensity.current.fontScale > 1.3f
+    Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
+        .background(if (pressed) skin.raised else skin.surface)
+        .clickable(interactionSource = pressing, indication = null, role = Role.Button,
+            onClickLabel = "fix this set") { onFix(set.id) }
+        .padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(set.number.toString(), style = GymType.numeral(14), color = skin.inkDim,
+                modifier = Modifier.widthIn(min = 24.dp))
+            BasicText(set.effort, maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
+                style = GymType.numeral(18).copy(color = skin.ink), modifier = Modifier.weight(1f))
+            if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(13), color = skin.inkDim) }
         }
-        Text(
-            set.effort,
-            style = GymType.numeral(14),
-            color = if (counts) skin.ink else skin.inkDim,
-        )
-        Spacer(Modifier.weight(1f))
-        if (pressed) {
-            Text("tap to fix", style = GymType.numeral(11, FontWeight.Bold), color = skin.accent)
-        } else {
-            set.note?.let {
-                Text(
-                    it.text,
-                    style = GymType.numeral(11),
-                    color = when {
-                        !counts -> skin.inkDim
-                        it.short -> skin.inkDim
-                        else -> skin.inkDim
-                    },
-                )
-            }
+        if (largeText) set.note?.let {
+            Text(it.text, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 36.dp))
         }
-      }
-      // What the LIFTER said about this set, under the numbers rather than beside them: it is prose
-      // and the row above is a measurement.
-      SetEffort.line(set.set.rpe, set.set.note)?.let {
-          Text(
-              it,
-              style = GymType.numeral(11),
-              color = skin.inkDim,
-              maxLines = 2,
-              modifier = Modifier.padding(start = setGlyph + WindmillSpace.x2, bottom = WindmillSpace.x1),
-          )
-      }
+        SetEffort.line(set.set.rpe, set.set.note)?.let {
+            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 36.dp))
+        }
     }
 }
 
-private fun headLine(summary: SessionSummary): String {
-    val facts = mutableListOf(Readout.day(summary.startedAtMs))
-    summary.finishedAtMs?.let { facts.add(Readout.duration(it - summary.startedAtMs)) }
-    summary.workingSetCount?.let { facts.add(Readout.workingSets(it)) }
-    summary.tonnageKg?.let(Readout::tonnes)?.let { facts.add(it) }
-    return facts.joinToString(" · ")
-}
+private fun headLine(summary: SessionSummary): String = listOfNotNull(
+    Readout.day(summary.startedAtMs),
+    summary.finishedAtMs?.let { Readout.duration(it - summary.startedAtMs) },
+).joinToString(" · ")

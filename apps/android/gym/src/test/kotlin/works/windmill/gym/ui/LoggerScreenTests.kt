@@ -18,6 +18,9 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
@@ -165,12 +168,19 @@ class LoggerScreenTests {
 
     // The strip's pills left to right, each as what it says and whether it is a door. A pill still on
     // this device merges the cloud's own words after its name, so the name is the first said.
-    private fun strip(): List<Pair<String, Boolean>> = compose
-        .onAllNodes(hasContentDescription("Set ", substring = true) or hasContentDescription("set ", substring = true))
-        .fetchSemanticsNodes()
-        .filter { it.config[SemanticsProperties.ContentDescription].first().matches(Regex("(Set|set) \\d+, .*")) }
-        .sortedBy { it.boundsInRoot.left }
-        .map { it.config[SemanticsProperties.ContentDescription].first() to (SemanticsActions.OnClick in it.config) }
+    private fun strip(count: Int): List<Pair<String, Boolean>> {
+        val found = mutableMapOf<Int, Pair<String, Boolean>>()
+        repeat(count) { index ->
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(index)
+            compose.onAllNodes(hasContentDescription("Set ", substring = true) or hasContentDescription("set ", substring = true))
+                .fetchSemanticsNodes().forEach { node ->
+                    val name = node.config[SemanticsProperties.ContentDescription].first()
+                    val number = Regex("(?:Set|set) (\\d+), .*").matchEntire(name)?.groupValues?.get(1)?.toIntOrNull()
+                    if (number != null) found[number] = name to (SemanticsActions.OnClick in node.config)
+                }
+        }
+        return found.toSortedMap().values.toList()
+    }
 
     // The fake log with its last-time read down and nothing else.
     private fun down(server: FakeTraining): TrainingSyncing = object : TrainingSyncing by server {
@@ -201,7 +211,7 @@ class LoggerScreenTests {
 
         pills().assertCountEquals(1)
         walk().assertIsDisplayed()
-        assertEquals("the walk did not move", add, addMovement().assertIsDisplayed().getBoundsInRoot())
+        assertEquals("the movement action remains48dp", GymTap.minimum, addMovement().performScrollTo().assertIsDisplayed().getBoundsInRoot().height)
         assertEquals("the rack did not move", rack, compose.onNodeWithText("Log set").getBoundsInRoot())
         scope.cancel()
     }
@@ -233,10 +243,9 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    // A last time with a session and no set in it is no history: nothing is drawn, and nothing
-    // crashes reaching for a set that is not there.
+    // An empty prior session presents the empty context without inventing a prior set.
     @Test
-    fun aLastTimeWithNoSetsDrawsNoChip() {
+    fun aLastTimeWithNoSetsShowsTheEmptyContext() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val history = LastTime(
             exerciseId = "bench-press",
@@ -247,7 +256,7 @@ class LoggerScreenTests {
         logger(scope, lastTime = history)
 
         compose.onNodeWithText("Log set").assertIsDisplayed()
-        compose.onAllNodes(hasContentDescription("Last time", substring = true)).assertCountEquals(0)
+        compose.onNodeWithText("No sets yet").performScrollTo().assertIsDisplayed()
         scope.cancel()
     }
 
@@ -270,15 +279,15 @@ class LoggerScreenTests {
         )
         logger(scope, lastTime = history)
         val chip = compose.onNode(hasContentDescription("Last time · ", substring = true))
-        chip.assert(hasText("80 kg × 5"))
+        chip.assert(hasText("80 × 5"))
 
         compose.onNodeWithText("Log set").performClick()
         compose.waitForIdle()
-        chip.assert(hasText("82.5 kg × 3"))
+        chip.assert(hasText("82.5 × 3"))
 
         compose.onNodeWithText("Log set").performClick()
         compose.waitForIdle()
-        chip.assert(hasText("82.5 kg × 3"))
+        chip.assert(hasText("82.5 × 3"))
         scope.cancel()
     }
 
@@ -297,9 +306,9 @@ class LoggerScreenTests {
         compose.onNode(hasContentDescription(LiveLines.onThisDevice)).assertExists()
 
         pill.performClick()
-        compose.onNodeWithText("Fix this set").assertIsDisplayed()
+        compose.onNodeWithText("Fix set").assertIsDisplayed()
         compose.onNodeWithText("+").performClick()
-        compose.onNodeWithText("Save the fix").performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.waitForIdle()
 
         compose.onNode(hasContentDescription("Set 1, 60 × 6")).assertIsDisplayed()
@@ -334,11 +343,11 @@ class LoggerScreenTests {
 
     // No history is an absence: nothing is drawn for it, not a chip and not a sentence.
     @Test
-    fun theLastTimeChipIsAbsentWithoutHistory() {
+    fun theLastTimeContextIsHonestWithoutHistory() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope)
 
-        compose.onAllNodes(hasContentDescription("Last time", substring = true)).assertCountEquals(0)
+        compose.onNodeWithText("No sets yet").performScrollTo().assertIsDisplayed()
         compose.onAllNodes(hasContentDescription("First time", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasContentDescription("no history", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasText("First time logging this")).assertCountEquals(0)
@@ -355,7 +364,7 @@ class LoggerScreenTests {
 
         compose.onNode(hasContentDescription("Last time: the log didn’t answer"))
             .assertIsDisplayed()
-            .assert(hasText("didn’t load"))
+            .assert(hasText("Didn’t load"))
         scope.cancel()
     }
 
@@ -379,7 +388,7 @@ class LoggerScreenTests {
 
         val chip = compose.onNode(hasContentDescription("Last time · ", substring = true))
         chip.assertIsDisplayed()
-        chip.assert(hasText("80 kg × 5"))
+        chip.assert(hasText("80 × 5"))
         chip.assert(hasContentDescription("  ·  Push B: 80 × 5,   82.5 × 3", substring = true))
 
         chip.performClick()
@@ -397,7 +406,7 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         rack(scope)
 
-        compose.onNodeWithText("Set 3 of 5 · target 3 @ 90").assertIsDisplayed()
+        compose.onNodeWithText("Set 3 of 5").assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
         assertEquals(
@@ -408,7 +417,7 @@ class LoggerScreenTests {
                 "set 4, target 100 × 1" to false,
                 "set 5, target 80 × 5" to false,
             ),
-            strip(),
+            strip(5),
         )
         compose.onNode(hasContentDescription("set 3, target 90 × 3")).assert(hasText("90 × 3"))
         compose.onNode(hasContentDescription("set 3, target 90 × 3"))
@@ -416,7 +425,7 @@ class LoggerScreenTests {
 
         compose.onNodeWithText("Log set").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Set 4 of 5 · target 1 @ 100").assertIsDisplayed()
+        compose.onNodeWithText("Set 4 of 5").assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 100 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 1")).assertIsDisplayed()
         assertEquals(
@@ -427,7 +436,7 @@ class LoggerScreenTests {
                 "set 4, target 100 × 1" to false,
                 "set 5, target 80 × 5" to false,
             ),
-            strip(),
+            strip(5),
         )
         scope.cancel()
     }
@@ -445,7 +454,7 @@ class LoggerScreenTests {
         }
 
         compose.onNodeWithText("Set 7 of 5").assertIsDisplayed()
-        compose.onAllNodes(hasText("target", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasText("target ", substring = true)).assertCountEquals(0)
         assertEquals(
             listOf(
                 "Set 1, 60 × 5" to true,
@@ -455,7 +464,7 @@ class LoggerScreenTests {
                 "Set 5, 80 × 5" to true,
                 "Set 6, 80 × 5" to true,
             ),
-            strip(),
+            strip(6),
         )
         scope.cancel()
     }
@@ -470,17 +479,18 @@ class LoggerScreenTests {
         pill.assertIsDisplayed()
         pill.assertHasClickAction()
         pill.performClick()
-        compose.onNodeWithText("Fix this set").assertIsDisplayed()
+        compose.onNodeWithText("Fix set").assertIsDisplayed()
         scope.cancel()
     }
 
-    // No rest clock stands between a landed set and its pill.
+    // The elapsed clock and the target are distinct, without a reset action.
     @Test
-    fun aLandedSetDrawsNoRestClock() {
+    fun aLandedSetShowsRestWithoutAResetAction() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, logged = true)
 
-        compose.onNode(hasContentDescription("resting", substring = true)).assertDoesNotExist()
+        compose.onNodeWithText("Rest").assertIsDisplayed()
+        compose.onNodeWithText("Rest target").assertDoesNotExist()
         compose.onNode(hasContentDescription("clear the rest", substring = true)).assertDoesNotExist()
         scope.cancel()
     }
@@ -516,7 +526,7 @@ class LoggerScreenTests {
         compose.onAllNodes(hasText("Set 1")).assertCountEquals(1)
         compose.onAllNodes(hasText("SET 1")).assertCountEquals(0)
         compose.onAllNodes(hasText("no target")).assertCountEquals(0)
-        compose.onAllNodes(hasText("target", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasText("target ", substring = true)).assertCountEquals(0)
         scope.cancel()
     }
 

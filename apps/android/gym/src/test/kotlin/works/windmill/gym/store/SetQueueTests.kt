@@ -24,6 +24,31 @@ class SetQueueTests {
         id = id, exerciseId = exerciseId, weightKg = 82.5, reps = 5, completedAtMs = at)
 
     @Test
+    fun theRestOriginAndSelectedMovementSurviveCanonicalRepliesAndReopening() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.hold(Session(id = "live", startedAtMs = 1_000))
+        assertNull(queue.restStartedAtMs)
+        queue.choose("bench-press")
+        queue.store(aSet("local", at = 2_000), "live", needsPush = true)
+        queue.choose("overhead-press")
+        assertEquals(2_000L, queue.restStartedAtMs)
+        queue.remint("local", "retry")
+        val canonical = aSet("stored", at = 3_000).copy(setNumber = 7)
+        queue.delivered(canonical, "retry", "live")
+        queue.store(canonical.copy(completedAtMs = 4_000), "live", needsPush = false)
+        queue.flush()
+        val reopened = SetQueue(file)
+        assertEquals(listOf("overhead-press", 2_000L, listOf(canonical.copy(completedAtMs = 4_000))),
+            listOf(reopened.chosenMovement, reopened.restStartedAtMs, reopened.sets))
+        reopened.remapExercise("overhead-press", "canonical-press")
+        assertEquals("canonical-press", reopened.chosenMovement)
+        reopened.adopt("another", confirmed = false)
+        assertNull(reopened.chosenMovement)
+        assertNull(reopened.restStartedAtMs)
+    }
+
+    @Test
     fun testTheLiveSessionAndItsOwedSetsSurviveBeingReadBackFromDisk() {
         val file = queueFile()
         val queue = SetQueue(file)

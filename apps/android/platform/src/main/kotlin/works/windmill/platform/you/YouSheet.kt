@@ -1,5 +1,6 @@
 package works.windmill.platform.you
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,7 @@ fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = { BottomSheetDefaults.DragHandle(color = palette.inkFaint) },
     ) {
+            WindmillSheetWindow()
         when (val status = auth.status) {
             is AuthStatus.SignedIn -> Column(
                 Modifier

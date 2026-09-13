@@ -69,7 +69,8 @@ private fun Root(auth: AuthStore) {
 
     val standing = auth.status
     val account = Account(auth.api, standing.user,
-        verified = (standing as? AuthStatus.SignedIn)?.verified ?: true)
+        verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
+        resolved = standing != AuthStatus.Unknown)
 
     // WindmillMaterial wraps everything Material draws; the room's Skin wraps the room AND the
     // shell's sheet, so the sheet borrows the hosting room's colours — in gym the brand's gold

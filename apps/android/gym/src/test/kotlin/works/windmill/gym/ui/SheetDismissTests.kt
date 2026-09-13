@@ -152,7 +152,7 @@ class SheetDismissTests {
         val dismissed = mutableListOf<String>()
         raised(dismissed) {
             AssemblySheet(
-                rows = listOf(row("bench-press"), row("squat")), elapsedMs = 0,
+                rows = listOf(row("bench-press"), row("squat")), routine = null,
                 onJump = {}, onReorder = { _, _ -> }, onDrop = { true }, onAdd = {},
             )
         }
@@ -167,7 +167,7 @@ class SheetDismissTests {
         val dismissed = mutableListOf<String>()
         raised(dismissed) {
             AssemblySheet(
-                rows = listOf(row("bench-press")), elapsedMs = 0,
+                rows = listOf(row("bench-press")), routine = null,
                 onJump = {}, onReorder = { _, _ -> }, onDrop = { true }, onAdd = {},
             )
         }

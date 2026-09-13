@@ -39,6 +39,7 @@ class SetQueue(
         // The undo window: a set can be taken back only while this device is the only place it
         // exists. Defaulted — the decoder tolerates a missing key only where there is a default.
         val heldUntilMs: Long? = null,
+        val loggedAtMs: Long? = null,
     ) {
         val lane: Lane get() = Lane(sessionId, set.exerciseId)
 
@@ -64,6 +65,7 @@ class SetQueue(
         // The movements this session walks, in order. Not derivable from the sets: a movement
         // appended and not yet logged has none.
         val order: List<String>? = null,
+        val chosenMovement: String? = null,
         // True for a session composed on this device with no server answer; the claim's landed start
         // turns it false. Absent reads as unclaimed, costing at most one start replay.
         val unclaimed: Boolean? = null,
@@ -103,6 +105,7 @@ class SetQueue(
             entries = StoredDocument.keyed(fields["entries"], Entry.serializer()),
             order = StoredDocument.each(fields["order"], String.serializer()),
             unclaimed = StoredDocument.one(fields["unclaimed"], Boolean.serializer()),
+            chosenMovement = StoredDocument.one(fields["chosenMovement"], String.serializer()),
         )
     }
 
@@ -156,13 +159,20 @@ class SetQueue(
 
     val order: List<String> get() = mine.order ?: emptyList()
 
+    val chosenMovement: String? get() = mine.chosenMovement?.takeIf { it in order }
+
+    fun choose(exerciseId: String) {
+        append(exerciseId)
+        keep(mine.copy(chosenMovement = exerciseId))
+    }
+
     fun append(exerciseId: String) {
         if (exerciseId in order) return
         keep(mine.copy(order = order + exerciseId))
     }
 
     fun hold(order: List<String>) {
-        keep(mine.copy(order = order))
+        keep(mine.copy(order = order, chosenMovement = mine.chosenMovement?.takeIf { it in order }))
     }
 
     val session: Session? get() = mine.session
@@ -175,7 +185,8 @@ class SetQueue(
     // `unclaimed` defaults to false: only the on-device start passes true.
     fun hold(session: Session?, unclaimed: Boolean = false) {
         val kept = if (mine.session?.id == session?.id) mine.order else null
-        keep(mine.copy(session = session, order = kept, unclaimed = if (session == null) null else unclaimed))
+        keep(mine.copy(session = session, order = kept, chosenMovement = mine.chosenMovement.takeIf { mine.session?.id == session?.id },
+            unclaimed = if (session == null) null else unclaimed))
     }
 
     fun claimed(sessionId: String) {
@@ -188,6 +199,11 @@ class SetQueue(
             val live = mine.session ?: return emptyList()
             return sets(live.id)
         }
+
+    val restStartedAtMs: Long?
+        get() = mine.session?.let { live -> mine.entries.values
+            .filter { it.sessionId == live.id }
+            .maxOfOrNull { it.loggedAtMs ?: it.set.completedAtMs } }
 
     fun sets(sessionId: String): List<TrainingSet> = mine.entries.values
         .filter { it.sessionId == sessionId }
@@ -224,16 +240,18 @@ class SetQueue(
     // Both directions: a set just logged (owed), and a row the log handed back (not owed), which
     // settles an owed set.
     fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, heldUntilMs: Long? = null) {
-        val remints = mine.entries[set.id]?.remints ?: 0
-        keep(mine.copy(
-            entries = mine.entries + (set.id to Entry(set, sessionId, needsPush, remints, heldUntilMs))))
+        val existing = mine.entries[set.id]
+        val loggedAt = existing?.loggedAtMs ?: if (needsPush && existing == null) set.completedAtMs else null
+        keep(mine.copy(entries = mine.entries + (set.id to Entry(set, sessionId, needsPush,
+            existing?.remints ?: 0, heldUntilMs, loggedAt))))
     }
 
     // Clear the sent key as well as the stored one, or a reply that disagreed leaves an entry owed
     // forever.
     fun delivered(stored: TrainingSet, id: String, sessionId: String) {
         keep(mine.copy(entries = mine.entries - id +
-            (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0, heldUntilMs = null))))
+            (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0,
+                heldUntilMs = null, loggedAtMs = mine.entries[id]?.loggedAtMs))))
     }
 
     // The same set under a new key, still owed, with the remint budget counted down.
@@ -242,7 +260,7 @@ class SetQueue(
         // The fresh id carries no hold: the undo window was already spent.
         keep(mine.copy(entries = mine.entries - id +
             (fresh to Entry(entry.set.copy(id = fresh), entry.sessionId, needsPush = true,
-                remints = entry.remints + 1, heldUntilMs = null))))
+                remints = entry.remints + 1, heldUntilMs = null, loggedAtMs = entry.loggedAtMs))))
     }
 
     fun drop(id: String) {
@@ -273,7 +291,8 @@ class SetQueue(
             }
             live.copy(plan = plan)
         }
-        keep(mine.copy(session = session, entries = entries, order = order))
+        keep(mine.copy(session = session, entries = entries, order = order,
+            chosenMovement = if (mine.chosenMovement == old) fresh else mine.chosenMovement))
     }
 
     // Delivered sets are released; an owed set stays queued until the log answers for it.
@@ -289,7 +308,7 @@ class SetQueue(
     }
 
     private fun letGo() {
-        keep(mine.copy(session = null, order = null, unclaimed = null))
+        keep(mine.copy(session = null, order = null, chosenMovement = null, unclaimed = null))
     }
 
     fun flush() {

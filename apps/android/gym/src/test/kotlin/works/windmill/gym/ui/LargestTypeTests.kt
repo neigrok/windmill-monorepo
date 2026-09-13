@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import org.junit.Assert.assertEquals
@@ -293,10 +294,10 @@ class LargestTypeTests {
             compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
         }
 
-        compose.onNodeWithText("Bench Press").assertIsDisplayed()
-        compose.onNodeWithText("Set 2").assertIsDisplayed()
-        compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
-        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
+        compose.onNodeWithText("Bench Press").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Set 2").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasContentDescription("Movement 1 of 2")).performScrollTo().assertIsDisplayed()
+        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).performScrollTo().assertIsDisplayed().getBoundsInRoot()
         val region = scroller()
         assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
         assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())

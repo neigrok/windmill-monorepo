@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.material.icons.materialPath
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -102,7 +103,7 @@ fun GymScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (sessionBar) {
-                CenterAlignedTopAppBar(
+                TopAppBar(
                     title = {
                         Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink,
@@ -112,7 +113,7 @@ fun GymScreen(
                     actions = actions,
                     expandedHeight = 64.dp,
                     windowInsets = WindowInsets(0, 0, 0, 0),
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = skin.canvas),
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas),
                 )
             } else Row(
                 Modifier.fillMaxWidth().heightIn(min = 64.dp)

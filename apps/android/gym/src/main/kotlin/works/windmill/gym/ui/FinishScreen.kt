@@ -1,9 +1,12 @@
 package works.windmill.gym.ui
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,20 +14,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.Ids
+import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetTarget
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,7 +57,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// Everything here RENDERS the `Review` the domain computed and nothing here computes one.
+// Receipt totals come from committed sets; optional review adds comparisons.
 object Finish {
     // The one act, said the same way at both of its doors — the log row's long press and the
     // session review screen. Read from here by each of them so two spellings of one act cannot
@@ -99,13 +110,27 @@ object Finish {
 
     fun comparison(against: Against?, catalog: List<Exercise>): Comparison? {
         if (against == null) return null
+        val sources = against.movements.map { movement ->
+            when {
+                movement.planned?.top != null -> "Plan"
+                movement.before != null -> "Last time"
+                else -> "Performed"
+            }
+        }
+        val mixed = sources.distinct().size > 1
+        val title = when (sources.distinct().singleOrNull()) {
+            "Plan" -> "Against plan"
+            "Last time" -> "Against last ${against.routine ?: "time"}"
+            "Performed" -> "Performed"
+            else -> "Comparison"
+        }
         return Comparison(
-            title = "Against last ${against.routine ?: "time"}",
-            rows = against.movements.map { movement ->
+            title = title,
+            rows = against.movements.mapIndexed { index, movement ->
                 Row(
                     id = movement.exerciseId,
                     movement = Readout.movement(movement.exerciseId, catalog),
-                    detail = detail(movement),
+                    detail = (if (mixed) "${sources[index]}: " else "") + detail(movement),
                 )
             },
         )
@@ -147,14 +172,19 @@ object FinishCoach {
 }
 
 // The sets travel with it because the log has let go of them by now.
+@Serializable
 data class FinishedSession(
     val session: Session,
     val sets: List<TrainingSet>,
     val review: Review?,
     val isFirst: Boolean,
+    val routineCreationId: String = Ids.routine(),
+    val routinePosition: Int = 0,
+    val reviewRead: Boolean = true,
 ) {
     val routine: String? get() = session.plan?.routine
-    val slight: Boolean get() = review?.slight ?: false
+    val summary: SessionSummary get() = SessionSummary(session, sets)
+    val slight: Boolean get() = (summary.workingSetCount ?: 0) < 4
 
     // Offered only for a session that had nothing written down for it, and never over a slight one.
     val offersRoutine: Boolean
@@ -248,21 +278,7 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     ) {
         Text(comparison.title, style = GymType.numeral(11), color = skin.inkDim)
         comparison.rows.forEach { row ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    row.movement,
-                    style = WindmillFont.body(15),
-                    color = skin.ink,
-                    modifier = Modifier.alignByBaseline(),
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    row.detail,
-                    style = GymType.numeral(13),
-                    color = skin.inkDim,
-                    modifier = Modifier.alignByBaseline(),
-                )
-            }
+            ReceiptLine(row.movement, row.detail, skin.ink, skin.inkDim)
         }
     }
 }
@@ -277,12 +293,14 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
 fun FinishScreen(
     finished: FinishedSession,
     catalog: List<Exercise>,
-    kept: Boolean,
+    keptName: String?,
     onKeepRoutine: (String) -> Unit,
     onShareWithCoach: (() -> Unit)? = null,
     failure: String? = null,
+    pending: Boolean = false,
 ) {
     val skin = LocalGymColors.current
+    BackHandler(enabled = pending) {}
     val head = Finish.head(
         startedAtMs = finished.session.startedAtMs,
         finishedAtMs = finished.session.finishedAtMs ?: finished.session.startedAtMs,
@@ -290,14 +308,15 @@ fun FinishScreen(
         slight = finished.slight,
         first = finished.isFirst,
     )
-    var routineName by remember(finished.session.id) {
+    var routineName by rememberSaveable(finished.routineCreationId) {
         mutableStateOf(Readout.weekday(finished.session.startedAtMs))
     }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
@@ -305,28 +324,55 @@ fun FinishScreen(
         // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-            Text(head.title, style = WindmillFont.display(24), color = skin.ink)
-            Text(head.subtitle, style = WindmillFont.body(17), color = skin.inkDim)
-            Text(head.at, style = GymType.numeral(12), color = skin.inkDim)
+            Text(head.title, style = WindmillFont.display(40, FontWeight.Bold).copy(lineHeight = 52.sp), color = skin.ink)
+            Text("${finished.routine ?: "Free session"} · Workout saved", style = WindmillFont.body(16), color = skin.inkDim)
         }
 
-        ReviewReadout(finished.review, catalog)
+        val summary = finished.summary
+        val facts = listOf(summary.setCount.toString() to "Sets",
+            Readout.weight(summary.tonnageKg ?: 0.0) to "kg lifted",
+            summary.exercises.size.toString() to "Movements")
+        val largeText = LocalDensity.current.fontScale > 1.3f
+        BoxWithConstraints(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(16.dp)).padding(12.dp)) {
+            if (largeText || maxWidth < 270.dp) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    facts.forEach { (value, label) -> ReceiptFact(value, label, Modifier.fillMaxWidth()) }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().heightIn(min = 60.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    facts.forEach { (value, label) -> ReceiptFact(value, label, Modifier.weight(1f)) }
+                }
+            }
+        }
+        summary.exercises.forEach { id ->
+            val sets = finished.sets.filter { it.exerciseId == id }
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("✓", style = WindmillFont.body(20), color = skin.setDone)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(Readout.movement(id, catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                    Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }), style = GymType.numeral(13), color = skin.inkDim)
+                }
+            }
+        }
+        if (finished.reviewRead) ReviewRemarks(finished.review, catalog)
 
         // Drawn on the slight branch too: a short session is exactly the one worth a second opinion.
-        onShareWithCoach?.let { ShareWithCoach(it) }
+        onShareWithCoach?.let { ShareWithCoach(it, enabled = !pending) }
 
+        if (!finished.offersRoutine) failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
         if (finished.offersRoutine) {
             // The keep is the one thing this receipt does that writes, so it is the one thing the
             // receipt owes an answer for. The form it stood in is gone by then and the room's own
             // line is behind the sheet, which leaves one sentence where the form was.
-            if (kept) {
+            if (keptName != null) {
                 Text(
-                    Finish.keptAs(routineName),
+                    Finish.keptAs(keptName),
                     style = WindmillFont.body(16),
                     color = skin.inkDim,
                 )
             } else {
-                KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, failure)
+                KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, failure, pending)
             }
         }
     }
@@ -336,16 +382,46 @@ fun FinishScreen(
 // tap sends. The link card is NOT here: two share verbs on one receipt are two meanings, and the
 // link keeps its doors on the session page and the log row.
 @Composable
-private fun ShareWithCoach(onShareWithCoach: () -> Unit) {
+private fun ReceiptFact(value: String, label: String, modifier: Modifier) {
+    val skin = LocalGymColors.current
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        BasicText(value, maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 18.sp, maxFontSize = 28.sp),
+            style = WindmillFont.display(28, FontWeight.Bold).copy(color = skin.ink))
+        Text(label, style = WindmillFont.body(12), color = skin.inkDim, maxLines = 1,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun ReceiptLine(name: String, detail: String, nameColor: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color) {
+    val largeText = LocalDensity.current.fontScale > 1.3f
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (largeText || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.fillMaxWidth())
+                Text(detail, style = GymType.numeral(13), color = detailColor, modifier = Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.weight(1f))
+                Text(detail, style = GymType.numeral(13), color = detailColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShareWithCoach(onShareWithCoach: () -> Unit, enabled: Boolean) {
     val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        PrimaryButton(FinishCoach.action, onClick = onShareWithCoach)
+        PrimaryButton(FinishCoach.action, height = 64, enabled = enabled, onClick = onShareWithCoach)
         Text(
             FinishCoach.caption,
-            style = GymType.numeral(12).copy(lineHeight = 17.sp),
+            style = WindmillFont.body(14).copy(lineHeight = 18.sp),
             color = skin.inkDim,
         )
     }
@@ -359,55 +435,21 @@ private fun KeepAsRoutine(
     onName: (String) -> Unit,
     onKeepRoutine: (String) -> Unit,
     failure: String?,
+    pending: Boolean,
 ) {
     val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
-            .fillMaxWidth()
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
+            .fillMaxWidth(),
     ) {
-        Text("Keep this as a routine", style = WindmillFont.display(18), color = skin.ink)
+        Text("Save a routine", style = WindmillFont.display(22), color = skin.ink)
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum),
-        ) {
-            OutlinedTextField(
-                value = name,
-                // The room's one cap, counted the way the editor counts it: a routine minted on the
-                // receipt is bounded exactly like a routine built in the editor. No counter — the
-                // editor is where a lifter works a name, and this field mints one in passing.
-                onValueChange = { onName(Program.capped(it)) },
-                singleLine = true,
-                label = { Text("Routine name") },
-                textStyle = WindmillFont.body(17, FontWeight.SemiBold),
-                shape = RoundedCornerShape(WindmillRadius.md),
-                colors = gymFieldColours(),
-                modifier = Modifier.weight(1f),
-            )
-        }
+        PlanningNameField(name, onName, "Routine name", "Routine name", enabled = !pending)
 
         val entries = RoutineWrite.from(name, SessionDetail(finished.session, finished.sets))?.entries
         entries.orEmpty().forEach { entry ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    Readout.movement(entry.exerciseId, catalog),
-                    style = WindmillFont.body(15),
-                    color = skin.inkDim,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    Readout.target(entry.sets),
-                    style = GymType.numeral(13),
-                    color = skin.targetInk,
-                )
-            }
+            ReceiptLine(Readout.movement(entry.exerciseId, catalog), Readout.targetWithUnit(entry.sets), skin.inkDim, skin.targetInk)
         }
 
         Text(
@@ -416,13 +458,13 @@ private fun KeepAsRoutine(
             color = skin.inkDim,
         )
 
-        val named = Program.named(name) != null
-        PrimaryButton("Save routine", enabled = named) { onKeepRoutine(name) }
+        val named = Program.nameProblem(name) == null
+        PrimaryButton(if (pending) "Saving…" else "Save routine", enabled = named && !pending, tonal = true) { onKeepRoutine(name) }
 
         // ONE sentence under one grey button, drawn here because a sheet covers the room's bottom
         // bar, where every other refusal lands. An empty name is what holds the button NOW, so it
         // outranks what the log said about a keep the lifter has already read and moved on from.
-        val missing = Program.nameItToSaveIt.takeIf { !named }
+        val missing = Program.nameProblem(name)
         (missing ?: failure)?.let {
             Text(
                 it,
@@ -436,17 +478,17 @@ private fun KeepAsRoutine(
 }
 
 @Composable
-private fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun PrimaryButton(label: String, enabled: Boolean = true, height: Int = 56, tonal: Boolean = false, onClick: () -> Unit) {
     val skin = LocalGymColors.current
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.primary)
+            .heightIn(min = height.dp)
             .alpha(if (enabled) 1f else 0.4f)
-            .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .background(if (tonal) skin.raised else skin.accent, RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     ) {
-        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
+        Text(label, style = WindmillFont.body(16, FontWeight.Bold), color = if (tonal) skin.ink else skin.onAccent)
     }
 }

@@ -47,6 +47,9 @@ object Readout {
         return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
     }
 
+    fun targetWithUnit(sets: List<SetTarget>): String =
+        target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
+
     // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
     fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)
 

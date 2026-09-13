@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -41,36 +43,40 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import works.windmill.gym.R
+import works.windmill.gym.domain.RestReading
+import works.windmill.platform.design.WindmillFont
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,11 +96,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -107,34 +109,57 @@ import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LoggerWalk
-import works.windmill.gym.domain.Scheme
-import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOutcome
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillMotion
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// The live training screen. Two regions: the READING region (name, set line, history, the
-// slot strip, the walk's dots) is the one elastic part and scrolls only when the largest text
-// leaves it no room; the RACK (Weight, the ladder, Reps, Log set) is pinned to the bottom and never
-// moves, because it is what a hand with a bar in it presses forty times.
-//
-// Every weight and rep tap goes through `Ladder`, and every weight is kilograms in and out. The
-// domain's bytes — `set 2 of 4`, `movement 1 of 3` —
-// are capitalised or spoken at the draw site and never rewritten.
-
+// Readings scroll above a fixed rack. All loads remain kilograms.
 private sealed class LoggerSheet {
     data object Weight : LoggerSheet()
     data object Reps : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
-    data class Fix(val setId: String) : LoggerSheet()
+    data class Fix(val setId: String, val draftKey: String = setId) : LoggerSheet()
+}
+
+private val loggerSheetSaver = Saver<LoggerSheet?, String>(
+    save = { when (it) {
+        LoggerSheet.Weight -> "weight"
+        LoggerSheet.Reps -> "reps"
+        LoggerSheet.Assembly -> "assembly"
+        LoggerSheet.Picker -> "picker"
+        is LoggerSheet.Fix -> "fix:${it.setId}:${it.draftKey}"
+        else -> ""
+    } },
+    restore = { when {
+        it == "weight" -> LoggerSheet.Weight
+        it == "reps" -> LoggerSheet.Reps
+        it == "assembly" -> LoggerSheet.Assembly
+        it == "picker" -> LoggerSheet.Picker
+        it.startsWith("fix:") -> it.removePrefix("fix:").split(':').let { parts -> LoggerSheet.Fix(parts[0], parts.getOrElse(1) { parts[0] }) }
+        else -> null
+    } },
+)
+
+private data class RackDraft(
+    val movement: String?,
+    val setCount: Int,
+    val weightKg: Double,
+    val reps: Int,
+    val edited: Boolean = false,
+) {
+    companion object {
+        val saver = listSaver<RackDraft, Any>(
+            save = { listOf(it.movement.orEmpty(), it.setCount, it.weightKg, it.reps, it.edited) },
+            restore = { RackDraft((it[0] as String).ifEmpty { null }, it[1] as Int, it[2] as Double, it[3] as Int, it[4] as Boolean) },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -146,29 +171,45 @@ fun LoggerScreen(
     onFinish: () -> Unit,
     onSignIn: () -> Unit,
     onSettings: () -> Unit,
-    // The room's transient, hosted HERE while the logger stands: it lands over the reading region
-    // with its foot on the hairline, so no control of the rack is ever under it. `null` hosts none.
+    // The transient overlays readings without covering the rack.
     transient: SnackbarHostState? = null,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    var weightKg by remember { mutableDoubleStateOf(store.prefill.weightKg) }
-    var reps by remember { mutableIntStateOf(store.prefill.reps) }
+    var rack by rememberSaveable(stateSaver = RackDraft.saver) {
+        mutableStateOf(RackDraft(store.exerciseId, store.todaySets.size, store.prefill.weightKg, store.prefill.reps))
+    }
+    val weightKg = rack.weightKg
+    val reps = rack.reps
     val pickerState = rememberMovementPickerState()
-    var pickerOpen by rememberSaveable { mutableStateOf(false) }
-    var sheet by remember { mutableStateOf<LoggerSheet?>(if (pickerOpen) LoggerSheet.Picker else null) }
-    LaunchedEffect(sheet) { pickerOpen = sheet == LoggerSheet.Picker }
+    var sheet by rememberSaveable(stateSaver = loggerSheetSaver) { mutableStateOf<LoggerSheet?>(null) }
+    var fixBusy by remember { mutableStateOf(false) }
+    var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
     var pendingDeviation by remember { mutableStateOf<DeviationOffer?>(null) }
     var asked by remember { mutableStateOf(setOf<String>()) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { destination ->
+            when {
+                fixBusy -> false
+                destination == SheetValue.Hidden && cancelFixEntry != null -> {
+                    cancelFixEntry?.invoke()
+                    false
+                }
+                else -> true
+            }
+        })
+    val sheetStates = rememberSaveableStateHolder()
     val strip = rememberLazyListState()
     val reading = rememberScrollState()
 
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.draftKey}" else it.javaClass.simpleName) }
+            sheet = null
+        }
     }
 
     // `hide()` on a sheet never shown has no anchor to animate to, so it is closed only if one stands.
@@ -214,9 +255,13 @@ fun LoggerScreen(
         if (pickerUp) store.loadLastSets()
     }
 
-    LaunchedEffect(store.prefill) {
-        weightKg = store.prefill.weightKg
-        reps = store.prefill.reps
+    LaunchedEffect(store.exerciseId, store.todaySets.size, store.prefill) {
+        val movement = store.exerciseId ?: return@LaunchedEffect
+        val count = store.todaySets.size
+        val nextSet = rack.movement != movement || rack.setCount != count
+        if (nextSet || !rack.edited) {
+            rack = RackDraft(movement, count, store.prefill.weightKg, store.prefill.reps)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -226,7 +271,7 @@ fun LoggerScreen(
         }
     }
 
-    val title = store.session?.plan?.routine ?: Readout.noRoutine
+    val title = store.session?.plan?.routine ?: "Free session"
     // Finish rides the top bar: the band below holds one primary and it is Log set, pressed forty
     // times to Finish's once. The gear is a door to a planning screen, which is what a top corner
     // may hold.
@@ -236,7 +281,7 @@ fun LoggerScreen(
         navigation = { TopAction("Finish", enabled = !store.isFinishing, onClick = onFinish) },
         actions = {
             IconButton(onClick = onSettings) {
-                Icon(Icons.Outlined.Settings, contentDescription = "Gym settings", tint = skin.inkDim)
+                Icon(painterResource(R.drawable.gym_settings), contentDescription = "Gym settings", tint = skin.inkDim, modifier = Modifier.size(24.dp))
             }
         },
     ) {
@@ -287,91 +332,70 @@ fun LoggerScreen(
             readFailed = store.lastTimeFailed, now = nowMs,
         )
 
-        // The reading region: centred while it is short, scrolling only once the largest text
-        // leaves it no room. The walk's dots and the `+` sit UNDER the scroller, pinned above the
-        // hairline: a landed set's strip may push the head up, never the walk off. The
-        // whole region is one box so the transient can stand on its floor, over it and never over
-        // the rack; the rack below grows no inset for it, so nothing there moves.
+        // Keep the readings and movement walk together above the rack.
         Box(Modifier.weight(1f).fillMaxWidth()) {
-          Column(Modifier.fillMaxSize()) {
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewport = maxHeight
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = viewport)
                         .verticalScroll(reading),
-                    // 8 dp between rows: on a 411 × 731 phone the head, the set line and the strip
-                    // have 196 dp between the bar and the dots, and the spec's gaps cost 24
-                    // of it that the strip does not have.
                     verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterVertically),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     MovementHead(
                         name = name,
-                        setLine = setLine(counter, Scheme.slot(store.planEntry?.sets.orEmpty(), workingToday), skin.targetInk),
+                        setLine = counter.replaceFirstChar { it.uppercase() },
                         previous = if (at < 0) null else store.order.getOrNull(at - 1),
                         next = if (at < 0) null else store.order.getOrNull(at + 1),
                         onMove = { move(it) },
                         onOpenSession = { sheet = LoggerSheet.Assembly },
                     )
                     val shown = history?.sets?.let { LiveLines.lastTimeSet(it, workingToday) }
-                    // A last time with no set in it is no history: no chip, no row, no reserved height.
-                    if (history?.session != null && historyCard != null && shown != null) {
-                        LastTimeChip(
-                            history = history,
-                            card = historyCard,
-                            shown = shown,
-                            onDial = { weightKg = it.weightKg; reps = it.reps },
-                        )
-                    } else if (history == null && historyCard != null) {
-                        // A read that missed draws a chip; no history draws none. Never the same shape.
-                        AssistChip(
-                            onClick = {},
-                            enabled = false,
-                            label = { Text("didn’t load", style = MaterialTheme.typography.labelLarge) },
-                            leadingIcon = { Icon(historyGlyph, contentDescription = null, Modifier.size(18.dp)) },
-                            border = null,
-                            colors = AssistChipDefaults.assistChipColors(
-                                disabledContainerColor = skin.raised,
-                                disabledLabelColor = skin.inkFaint,
-                                disabledLeadingIconContentColor = skin.inkFaint,
-                            ),
-                            modifier = Modifier.semantics {
-                                contentDescription = "${historyCard.title}: ${historyCard.body}"
-                            },
-                        )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        LastTimeChip(history, historyCard, shown, reading = history == null && !store.lastTimeFailed,
+                            onDial = { rack = rack.copy(weightKg = it.weightKg, reps = it.reps, edited = true) }, modifier = Modifier.weight(1f))
+                        val rest = RestReading(store.restStartedAtMs, store.planEntry, store.preferences)
+                        Column(Modifier.weight(1f).heightIn(min = 72.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(if (rest.startedAtMs == null) "Rest target" else "Rest", style = WindmillFont.body(12), color = skin.inkDim)
+                            Text(rest.elapsedMs(nowMs)?.let(Readout::clock) ?: rest.target,
+                                style = GymType.numeral(24, FontWeight.Bold), color = skin.ink)
+                            if (rest.startedAtMs != null && rest.targetSeconds != null) {
+                                Text("Target ${rest.target}", style = WindmillFont.body(12), color = skin.inkDim)
+                            }
+                        }
                     }
                     StrandedBand(store.strandedCount, store.strandedBy)
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
                     if (slots.isNotEmpty()) {
                         SlotStrip(slots, landed, strip, onFix = { sheet = LoggerSheet.Fix(it) })
                     }
+                    Spacer(Modifier.height(4.dp))
+                    Walk(
+                        place = LiveLines.place(store.order, movement),
+                        walk = store.order.size,
+                        standing = at,
+                        onAdd = { sheet = LoggerSheet.Picker },
+                    )
                 }
-                // The strip is the scroller's last row: where the largest text overflows the region, a
-                // landed set brings its own pill into view rather than leaving it under the dots. The
-                // frame is waited for so the reach is the one this set's layout produced.
+                // Scroll after layout so the latest set and movement walk stay reachable.
                 LaunchedEffect(landed) {
                     withFrameNanos {}
                     reading.animateScrollTo(reading.maxValue)
                 }
             }
-            Walk(
-                place = LiveLines.place(store.order, movement),
-                walk = store.order.size,
-                standing = at,
-                onAdd = { sheet = LoggerSheet.Picker },
-            )
-            HorizontalDivider(thickness = 1.dp, color = skin.line)
-          }
-          transient?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter)) }
+            transient?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter)) }
         }
         Rack(
             weightKg = weightKg,
             reps = reps,
             finishing = store.isFinishing,
-            onWeight = { weightKg = it },
-            onReps = { reps = it },
+            onWeight = { rack = rack.copy(weightKg = it, edited = true) },
+            onReps = { rack = rack.copy(reps = it, edited = true) },
             onTypeWeight = { sheet = LoggerSheet.Weight },
             onTypeReps = { sheet = LoggerSheet.Reps },
             onLog = {
@@ -382,28 +406,35 @@ fun LoggerScreen(
     }
 
     // A fix for a set that has since left the strip has nothing to stand on.
-    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
+    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == store.canonicalSetId(fix.setId) } }
+    LaunchedEffect(fixing?.id) {
+        val target = sheet as? LoggerSheet.Fix
+        if (target != null && fixing != null) sheet = target.copy(setId = fixing.id)
+    }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
         ModalBottomSheet(
-            onDismissRequest = { close() },
+            onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
             sheetState = sheetState,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = open !is LoggerSheet.Fix),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
+            WindmillSheetWindow()
+            sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.draftKey}" else open.javaClass.simpleName) {
             when (open) {
                 LoggerSheet.Weight -> KeypadSheet(
                     KeypadEntry.Mode.Weight, weightKg,
-                    onCommit = { weightKg = it; close() },
+                    onCommit = { rack = rack.copy(weightKg = it, edited = true); close() },
                 )
                 LoggerSheet.Reps -> KeypadSheet(
                     KeypadEntry.Mode.Reps, reps.toDouble(),
-                    onCommit = { reps = it.toInt(); close() },
+                    onCommit = { rack = rack.copy(reps = it.toInt(), edited = true); close() },
                 )
                 LoggerSheet.Assembly -> AssemblySheet(
-                    rows = LiveLines.assemblyRows(store.order, store.sets, store.session?.plan,
+                    rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,
                                                   store.catalog, store.exerciseId, store.stalled),
-                    elapsedMs = nowMs - (store.session?.startedAtMs ?: nowMs),
+                    routine = store.session?.plan?.routine,
                     onJump = { move(it) },
                     onReorder = { from, to -> store.reorder(from, to) },
                     onDrop = { store.drop(it) },
@@ -445,47 +476,34 @@ fun LoggerScreen(
                 is LoggerSheet.Fix -> {
                     val set = fixing!!
                     val sessionId = store.session?.id
-                    FixSheet(
-                        set = set,
-                        movement = Readout.movement(set.exerciseId, store.catalog),
-                        setNumber = store.todaySets.indexOfFirst { it.id == set.id } + 1,
-                        routine = store.session?.plan?.routine,
-                        onSave = { fix ->
-                            close()
-                            say(null)
-                            if (sessionId == null) return@FixSheet
-                            scope.launch {
-                                when (val ended = store.fixSet(sessionId, set.id, fix)) {
-                                    is FixOutcome.Corrected -> Unit
-                                    is FixOutcome.Gone -> say(ended.said)
-                                    is FixOutcome.Failed -> say(ended.why.line("that set wasn’t changed"))
-                                }
-                            }
-                        },
-                        // The pill comes off the strip and the window opens on the room's transient;
-                        // nothing is sent until it closes.
-                        onDelete = {
-                            close()
-                            say(null)
-                            if (sessionId != null) store.withhold(Deletion.Set(sessionId, set))
-                        },
-                    )
+                    WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
+                        FixSheet(
+                            set = set,
+                            draftKey = open.draftKey,
+                            movement = Readout.movement(set.exerciseId, store.catalog),
+                            setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
+                            routine = store.session?.plan?.routine,
+                            onSave = { fix ->
+                                if (sessionId == null) FixOutcome.Gone("that workout is no longer open")
+                                else store.fixSet(sessionId, set.id, fix)
+                            },
+                            onSaved = { close(); say(null) },
+                            onGone = { close(); say(it) },
+                            onBusy = { fixBusy = it },
+                            onEntryCancel = { cancelFixEntry = it },
+                            // The pill comes off the strip and the window opens on the room's transient;
+                            // nothing is sent until it closes.
+                            onDelete = {
+                                close()
+                                say(null)
+                                if (sessionId != null) store.withhold(Deletion.Set(sessionId, set))
+                            },
+                        )
+                    }
                 }
             }
         }
-    }
-}
-
-// `Set 3 of 5` — the domain's `set 3 of 5`, capitalised here — and, when the CURRENT slot names a
-// rep or load target, ` · target 3 @ 90` in the target ink. No slot, or one naming neither, draws
-// no tail: the absence says it.
-private fun setLine(count: String, slot: SetTarget?, targetInk: Color) = buildAnnotatedString {
-    append(count.replaceFirstChar { it.uppercase() })
-    val load = slot?.weightKg?.takeIf { it != 0.0 }
-    if (slot == null || (slot.reps == null && load == null)) return@buildAnnotatedString
-    withStyle(SpanStyle(color = targetInk)) {
-        append(" · target ${Readout.repTarget(slot.reps)}")
-        load?.let { append(" @ ${Readout.weight(it)}") }
+        }
     }
 }
 
@@ -499,7 +517,7 @@ private fun setLine(count: String, slot: SetTarget?, targetInk: Color) = buildAn
 @Composable
 private fun MovementHead(
     name: String,
-    setLine: AnnotatedString,
+    setLine: String,
     previous: String?,
     next: String?,
     onMove: (String) -> Unit,
@@ -549,17 +567,17 @@ private fun MovementHead(
         BasicText(
             name,
             maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 26.sp),
-            style = MaterialTheme.typography.headlineMedium
+            autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 30.sp),
+            style = WindmillFont.body(30, FontWeight.Bold)
                 .copy(color = skin.ink, textAlign = TextAlign.Center),
             modifier = Modifier
                 .fillMaxWidth()
-                .lineBox(32.sp)
+                .heightIn(min = 48.dp)
                 .clickable(role = Role.Button, onClickLabel = "open this session", onClick = onOpenSession)
                 .semantics { customActions = steps },
         )
         Box(Modifier.heightIn(min = GymTap.minimum), contentAlignment = Alignment.Center) {
-            Text(setLine, style = MaterialTheme.typography.bodyMedium, color = skin.inkDim)
+            Text(setLine, style = WindmillFont.body(16), color = skin.inkDim, modifier = Modifier.clickable(role = Role.Button, onClick = onOpenSession).padding(vertical = 12.dp))
         }
     }
 }
@@ -568,50 +586,43 @@ private fun MovementHead(
 // every set — is what the chip SAYS, and the menu under it dials any of those sets.
 @Composable
 private fun LastTimeChip(
-    history: LastTime,
-    card: LiveLines.Card,
-    shown: TrainingSet,
+    history: LastTime?,
+    card: LiveLines.Card?,
+    shown: TrainingSet?,
+    reading: Boolean,
     onDial: (TrainingSet) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val skin = LocalGymColors.current
     var open by remember { mutableStateOf(false) }
-    Box {
-        AssistChip(
-            onClick = { open = true },
-            label = {
-                Text("${Readout.weight(shown.weightKg)} kg × ${shown.reps}",
-                     style = MaterialTheme.typography.labelLarge)
-            },
-            leadingIcon = { Icon(historyGlyph, contentDescription = null, Modifier.size(18.dp)) },
-            border = null,
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = skin.accentSoft,
-                labelColor = skin.accent,
-                leadingIconContentColor = skin.accent,
-            ),
-            modifier = Modifier.semantics { contentDescription = "${card.title}: ${card.body}" },
-        )
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            containerColor = skin.surface,
-        ) {
-            DropdownMenuItem(
-                text = { Text(card.title, style = MaterialTheme.typography.bodySmall, color = skin.inkDim) },
-                onClick = {},
-                enabled = false,
-            )
-            history.sets.forEach { set ->
-                DropdownMenuItem(
-                    text = {
-                        Text(Readout.effort(set.weightKg, set.reps),
-                             style = MaterialTheme.typography.bodyMedium, color = skin.ink)
-                    },
-                    onClick = {
-                        onDial(set)
-                        open = false
-                    },
-                )
+    Box(modifier) {
+        Column(Modifier.fillMaxWidth().heightIn(min = 72.dp)
+            .clip(RoundedCornerShape(16.dp)).background(skin.surface)
+            .clickable(enabled = shown != null, role = Role.Button) { open = true }
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (reading) "Last time: Reading…" else card?.let { "${it.title}: ${it.body}" } ?: "Last time: no sets yet"
+            }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
+            Text("Last time", style = WindmillFont.body(12), color = skin.inkDim)
+            if (shown == null) {
+                Text(when {
+                    reading -> "Reading…"
+                    card != null -> "Didn’t load"
+                    else -> "No sets yet"
+                }, style = WindmillFont.body(14), color = skin.ink)
+            } else {
+                BasicText(Readout.effort(shown.weightKg, shown.reps), maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 18.sp),
+                    style = GymType.numeral(18).copy(color = skin.ink, textAlign = TextAlign.Center),
+                    modifier = Modifier.fillMaxWidth())
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = skin.surface) {
+            card?.let { DropdownMenuItem(text = { Text(it.title, style = WindmillFont.body(13), color = skin.inkDim) },
+                onClick = {}, enabled = false) }
+            history?.sets.orEmpty().forEach { set ->
+                DropdownMenuItem(text = { Text(Readout.effort(set.weightKg, set.reps), color = skin.ink) },
+                    onClick = { onDial(set); open = false })
             }
         }
     }
@@ -659,7 +670,7 @@ private fun SlotStrip(slots: List<LiveLines.Slot>, landed: Int, state: LazyListS
     }
     LazyRow(
         state = state,
-        modifier = Modifier.fillMaxWidth().height(32.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
     ) {
         items(
@@ -689,51 +700,33 @@ private fun SlotStrip(slots: List<LiveLines.Slot>, landed: Int, state: LazyListS
 @Composable
 private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modifier = Modifier) {
     val skin = LocalGymColors.current
-    val said = (if (row.isWarmup) "Warmup set" else "Set ${row.index}") + ", ${row.value}"
-    val shape = RoundedCornerShape(WindmillRadius.full)
-    Row(
-        modifier
-            .height(32.dp)
-            .clip(shape)
-            .background(skin.surface)
-            .border(1.dp, skin.line, shape)
-            .clickable(role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) }
-            .semantics(mergeDescendants = true) { contentDescription = said }
-            .padding(horizontal = GymLayout.rowInset),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(row.index, style = MaterialTheme.typography.labelMedium,
-             color = if (row.isWarmup) skin.inkDim else skin.inkDim)
-        Text(row.value, style = MaterialTheme.typography.labelMedium,
-             color = if (row.isWarmup) skin.inkDim else skin.ink)
-        if (row.isOnThisDevice) {
-            Icon(cloudOffGlyph, contentDescription = LiveLines.onThisDevice, tint = skin.unsyncedInk,
-                 modifier = Modifier.size(14.dp))
+    Column(modifier.widthIn(min = 118.dp).heightIn(min = 56.dp)
+        .clip(RoundedCornerShape(12.dp)).background(skin.setDoneSoft)
+        .clickable(role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) }
+        .semantics(mergeDescendants = true) { contentDescription = "${if (row.isWarmup) "Warmup" else "Set ${row.index}"}, ${row.value}" }
+        .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (row.isWarmup) "Warmup" else "Set ${row.index} ✓", style = WindmillFont.body(11), color = skin.inkDim)
+            if (row.isOnThisDevice) Icon(cloudOffGlyph, contentDescription = LiveLines.onThisDevice,
+                tint = skin.inkDim, modifier = Modifier.size(14.dp))
         }
+        Text(row.value, style = GymType.numeral(15), color = skin.ink)
     }
 }
 
-// A slot still to come reads its target: the set about to be lifted in the target ink behind the
-// accent outline, the ones after it in the faint ink. Spoken as `set 4, target 100 × 1`.
 @Composable
 private fun PlannedPill(slot: LiveLines.Slot.Planned, modifier: Modifier = Modifier) {
     val skin = LocalGymColors.current
-    val shape = RoundedCornerShape(WindmillRadius.full)
-    Row(
-        modifier
-            .height(32.dp)
-            .clip(shape)
-            .background(skin.surface)
-            .border(1.dp, if (slot.current) skin.accent else skin.line, shape)
-            .semantics(mergeDescendants = true) { contentDescription = slot.spoken }
-            .padding(horizontal = GymLayout.rowInset),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(slot.index.toString(), style = MaterialTheme.typography.labelMedium, color = skin.inkDim)
-        Text(slot.value, style = MaterialTheme.typography.labelMedium,
-             color = if (slot.current) skin.targetInk else skin.inkDim)
+    val shape = RoundedCornerShape(12.dp)
+    Column(modifier.widthIn(min = 118.dp).heightIn(min = 56.dp).clip(shape)
+        .background(if (slot.current) skin.accentSoft else skin.surface)
+        .border(1.dp, if (slot.current) skin.accent else skin.line, shape)
+        .semantics(mergeDescendants = true) { contentDescription = slot.spoken }
+        .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text("Set ${slot.index}", style = WindmillFont.body(11), color = skin.inkDim)
+        Text(slot.value, style = GymType.numeral(15), color = if (slot.current) skin.targetInk else skin.inkDim)
     }
 }
 
@@ -742,9 +735,8 @@ private fun PlannedPill(slot: LiveLines.Slot.Planned, modifier: Modifier = Modif
 @Composable
 private fun Walk(place: String?, walk: Int, standing: Int, onAdd: () -> Unit) {
     val skin = LocalGymColors.current
-    // No padding of its own: on a 411 × 731 phone a landed set fills the reading region to the
-    // dp, and the 46 dp button already holds the dots clear of the strip.
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center) {
         place?.let { said ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -755,17 +747,17 @@ private fun Walk(place: String?, walk: Int, standing: Int, onAdd: () -> Unit) {
                 repeat(walk) { step ->
                     Box(
                         Modifier
-                            .size(7.dp)
+                            .size(width = if (step == standing) 16.dp else 6.dp, height = 6.dp)
                             .clip(CircleShape)
-                            .background(if (step <= standing) skin.accent else skin.lineStrong),
+                            .background(if (step == standing) skin.accent else skin.lineStrong),
                     )
                 }
             }
         }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onAdd, modifier = Modifier.size(GymTap.minimum)) {
+        if (walk <= 1) TopAction("Add movement", onClick = onAdd)
+        else IconButton(onClick = onAdd, modifier = Modifier.size(GymTap.minimum)) {
             Icon(Icons.Filled.Add, contentDescription = "Add movement", tint = skin.inkDim,
-                 modifier = Modifier.size(22.dp))
+                modifier = Modifier.size(22.dp))
         }
     }
 }
@@ -784,22 +776,16 @@ private fun Rack(
     onLog: () -> Unit,
 ) {
     val skin = LocalGymColors.current
-    Column(
-        Modifier.fillMaxWidth().padding(top = WindmillSpace.x4, bottom = WindmillSpace.x3),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Weight", style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
-             modifier = Modifier.clearAndSetSemantics {})
-        Spacer(Modifier.height(WindmillSpace.x1))
-        WeightReadout(weightKg, onTypeWeight)
-        Spacer(Modifier.height(WindmillSpace.x3))
-        LadderRow(weightKg, onDial = onWeight)
-        Spacer(Modifier.height(WindmillSpace.x5))
-        Text("Reps", style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
-             modifier = Modifier.clearAndSetSemantics {})
-        Spacer(Modifier.height(WindmillSpace.x1))
+    Column(Modifier.fillMaxWidth().padding(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.heightIn(min = 112.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
+            Text("Weight", style = WindmillFont.body(14), color = skin.inkDim,
+                modifier = Modifier.clearAndSetSemantics {})
+            WeightReadout(weightKg, onTypeWeight)
+        }
+        LadderRow(weightKg, onDial = onWeight, enabled = !finishing)
         RepsRow(reps, onDial = onReps, onType = onTypeReps)
-        Spacer(Modifier.height(WindmillSpace.x5))
         LogButton(finishing, onLog)
     }
 }
@@ -821,33 +807,33 @@ private fun WeightReadout(weightKg: Double, onType: () -> Unit) {
         BasicText(
             Readout.weight(weightKg),
             maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 44.sp, maxFontSize = 80.sp),
-            style = GymType.weight.copy(lineHeight = 72.sp, color = skin.weightInk),
-            modifier = Modifier.lineBox(72.sp).alignByBaseline(),
+            autoSize = TextAutoSize.StepBased(minFontSize = 40.sp, maxFontSize = 96.sp),
+            style = GymType.weight.copy(fontSize = 96.sp, lineHeight = 92.sp, color = skin.weightInk),
+            modifier = Modifier.weight(1f, fill = false).lineBox(92.sp).alignByBaseline(),
         )
-        Text("kg", style = MaterialTheme.typography.displaySmall, color = skin.inkDim,
+        Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = skin.inkDim,
              modifier = Modifier.alignByBaseline())
     }
 }
 
 // Four EQUAL pills whose labels are the golden's, by weight band — never a fixed ±1/±5.
 @Composable
-internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
+internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit, enabled: Boolean = true) {
     val skin = LocalGymColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
         Ladder.labels(weightKg).forEachIndexed { index, label ->
             val big = index == 0 || index == 3
             val interaction = remember { MutableInteractionSource() }
-            val shape = RoundedCornerShape(WindmillRadius.md)
+            val shape = RoundedCornerShape(16.dp)
             Box(
                 Modifier
                     .weight(1f)
-                    .height(GymTap.row)
+                    .heightIn(min = 56.dp)
                     .pressed(interaction)
                     .clip(shape)
                     .background(skin.raised)
-                    .border(1.dp, skin.lineStrong, shape)
                     .clickable(
+                        enabled = enabled,
                         interactionSource = interaction,
                         indication = LocalIndication.current,
                         role = Role.Button,
@@ -857,20 +843,19 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.titleMedium, color = skin.ink, maxLines = 1)
+                Text(label, style = WindmillFont.body(16, FontWeight.Bold), color = if (enabled) skin.ink else skin.inkDim, maxLines = 1)
             }
         }
     }
 }
 
-// Two accent circles either side of the numeral. The words are the circles' names, not glyphs.
+// The number and both adjustments retain separate native touch targets.
 @Composable
 private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
     val skin = LocalGymColors.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x6),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Reps", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.weight(1f))
         RepCircle(removeGlyph, "one rep fewer") { onDial(Ladder.bumpReps(reps, direction = -1)) }
         Box(
             Modifier
@@ -885,8 +870,8 @@ private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
                 transitionSpec = { fadeIn(tween(WindmillMotion.fastMs)) togetherWith fadeOut(tween(WindmillMotion.fastMs)) },
                 label = "reps",
             ) { count ->
-                Text(count.toString(), style = GymType.reps, color = skin.ink, maxLines = 1,
-                     modifier = Modifier.lineBox(60.sp))
+                Text(count.toString(), style = GymType.numeral(36, FontWeight.Bold), color = skin.ink, maxLines = 1,
+                     modifier = Modifier.heightIn(min = 48.dp))
             }
         }
         RepCircle(Icons.Filled.Add, "one rep more") { onDial(Ladder.bumpReps(reps, direction = 1)) }
@@ -900,10 +885,11 @@ private fun RepCircle(glyph: ImageVector, said: String, onTap: () -> Unit) {
     FilledIconButton(
         onClick = onTap,
         interactionSource = interaction,
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier.size(GymTap.primary).pressed(interaction),
         colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = skin.accent,
-            contentColor = skin.onAccent,
+            containerColor = skin.raised,
+            contentColor = skin.ink,
         ),
     ) {
         Icon(glyph, contentDescription = said, modifier = Modifier.size(28.dp))
@@ -919,7 +905,7 @@ private fun LogButton(finishing: Boolean, onLog: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.logSet)
-            .clip(RoundedCornerShape(WindmillRadius.lg))
+            .clip(RoundedCornerShape(16.dp))
             .background(if (finishing) skin.raised else skin.accent)
             .clickable(enabled = !finishing, role = Role.Button, onClick = onLog),
         contentAlignment = Alignment.Center,
@@ -955,8 +941,7 @@ private fun Modifier.pressed(interaction: MutableInteractionSource): Modifier {
     }
 }
 
-// Four glyphs from Material's extended set, drawn from their paths: the room depends on the core
-// set alone, and four glyphs are not a reason to pull the whole extended artifact in.
+// Material paths for the two glyphs outside the core icon artifact.
 private fun glyph(name: String, path: String): ImageVector =
     ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp,
                         viewportWidth = 24f, viewportHeight = 24f)
@@ -964,13 +949,6 @@ private fun glyph(name: String, path: String): ImageVector =
         .build()
 
 private val removeGlyph = glyph("Filled.Remove", "M19 13H5v-2h14v2z")
-
-private val historyGlyph = glyph(
-    "Outlined.History",
-    "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0" +
-        "-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 " +
-        "2.54.72-1.21-3.5-2.08V8H12z",
-)
 
 private val cloudOffGlyph = glyph(
     "Outlined.CloudOff",

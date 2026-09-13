@@ -30,10 +30,7 @@ class CoachShareTests {
         assertEquals("Get a link", card.action)
         assertNull(card.revoke)
         assertNull(card.note)
-        assertTrue(Coach.offer.contains("Anyone who has the link can read it"))
-        assertTrue(Coach.offer.contains("It expires"))
-        assertTrue(Coach.offer.contains("revoke it whenever you like"))
-        assertTrue(Coach.offer.contains("nothing else about your account"))
+        assertEquals("Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime.", card.body)
     }
 
     @Test
@@ -93,7 +90,7 @@ class CoachShareTests {
         assertEquals("Anyone still holding it gets nothing. You can make a new one whenever you like.",
                      card.body)
         assertNull(card.link)
-        assertEquals("Get a new link", card.action)
+        assertEquals("Get a link", card.action)
         assertNull(card.revoke)
     }
 

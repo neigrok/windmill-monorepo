@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -180,6 +181,7 @@ private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) 
         containerColor = skin.surface,
         scrimColor = skin.scrim,
     ) {
+            WindmillSheetWindow()
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

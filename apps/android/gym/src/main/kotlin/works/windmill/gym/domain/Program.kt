@@ -17,6 +17,7 @@ object Program {
     // What the two Save refusals say, one at a time and never concatenated: there is no screen before
     // the editor to have asked for a name, so the name is the first thing missing.
     const val nameItToSaveIt = "Name it to save it."
+    const val nameTooLong = "Use 60 characters or fewer."
     const val atLeastOneMovement = "A routine is at least one movement."
 
     // The server's own bounds. These are the PLAN's bands, which `TargetEntry` enforces; a set that
@@ -41,6 +42,12 @@ object Program {
     }
 
     fun named(name: String): String? = name.trim().takeIf { it.isNotEmpty() }
+
+    fun nameProblem(name: String): String? {
+        val named = named(name) ?: return nameItToSaveIt
+        if (length(named) > maxNameLength) return nameTooLong
+        return null
+    }
 
     // A no-op rename is refused: a whole-document write would supersede every proposal on that day.
     // The TRIMMED name is compared, since that is what writes.

@@ -1,11 +1,24 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,12 +46,37 @@ class AssemblySwipeTests {
     )
 
     @Test
+    fun holdingTheGripAtTheViewportEdgeMovesPastInitiallyVisibleRows() {
+        var rows by mutableStateOf(List(18) { row("movement-$it", canDrop = false) })
+        compose.setContent {
+            AssemblySheet(rows, "Push A", onJump = {},
+                onReorder = { from, to -> rows = rows.toMutableList().apply { add(to, removeAt(from)) } },
+                onDrop = { false }, onAdd = {})
+        }
+        val grip = compose.onNodeWithContentDescription("Reorder movement-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val viewport = compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        compose.onRoot().performTouchInput {
+            down(grip.center)
+            advanceEventTime(600)
+            moveTo(Offset(grip.center.x, viewport.bottom - 10f), delayMillis = 100)
+        }
+        compose.mainClock.advanceTimeBy(1_600)
+        compose.onRoot().performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
+        compose.runOnIdle {
+            assertTrue("a held edge reaches rows beyond the first viewport", rows.indexOfFirst { it.id == "movement-0" } >= 10)
+            assertEquals((0..17).map { "movement-$it" }.toSet(), rows.map { it.id }.toSet())
+        }
+    }
+
+    @Test
     fun testOneSwipeDropsTheRowExactlyOnce() {
         val dropped = mutableListOf<String>()
         compose.setContent {
             AssemblySheet(
                 rows = listOf(row("bench-press", canDrop = true), row("row", canDrop = false)),
-                elapsedMs = 0,
+                routine = null,
                 onJump = {},
                 onReorder = { _, _ -> },
                 onDrop = { dropped.add(it); true },
@@ -60,7 +98,7 @@ class AssemblySwipeTests {
         compose.setContent {
             AssemblySheet(
                 rows = listOf(row("bench-press", canDrop = true), row("row", canDrop = false)),
-                elapsedMs = 0,
+                routine = null,
                 onJump = {},
                 onReorder = { _, _ -> },
                 onDrop = { asked.add(it); false },
@@ -81,7 +119,7 @@ class AssemblySwipeTests {
         compose.setContent {
             AssemblySheet(
                 rows = listOf(row("row", canDrop = false)),
-                elapsedMs = 0,
+                routine = null,
                 onJump = {},
                 onReorder = { _, _ -> },
                 onDrop = { dropped.add(it); true },
@@ -94,4 +132,14 @@ class AssemblySwipeTests {
 
         assertEquals(emptyList<String>(), dropped)
     }
+    @Test
+    fun aNewMovementAtTheEndOfALongWalkIsRevealedAndAnnouncedAsCurrent() {
+        val rows = List(18) { row("movement-$it", canDrop = true) }.mapIndexed { index, item ->
+            if (index == 17) item.copy(isCurrent = true, justAdded = true) else item
+        }
+        compose.setContent { AssemblySheet(rows, null, {}, { _, _ -> }, { false }, {}) }
+        compose.onNodeWithText("movement-17").assertIsDisplayed().assertIsSelected().assertIsFocused()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Just added, Current movement"))
+    }
+
 }

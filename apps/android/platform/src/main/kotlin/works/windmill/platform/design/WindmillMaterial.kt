@@ -1,11 +1,18 @@
 package works.windmill.platform.design
 
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.graphics.Color
 
 // The brand's Material scheme and its palette together: the shell's chrome reads the palette, a
@@ -73,5 +80,35 @@ fun windmillColorScheme(dark: Boolean): ColorScheme {
             outlineVariant = line,
             scrim = Color.Black,
         )
+    }
+}
+
+@Composable
+fun WindmillSheetWindow() {
+    val view = LocalView.current
+    val dark = LocalWindmillDark.current
+    val window = generateSequence(view.parent) { it.parent }
+        .filterIsInstance<DialogWindowProvider>().firstOrNull()?.window ?: return
+    SideEffect {
+        view.post {
+            val bars = WindowInsetsControllerCompat(window, view)
+            bars.isAppearanceLightStatusBars = !dark
+            bars.isAppearanceLightNavigationBars = !dark
+        }
+    }
+}
+
+// Nested sheet routes handle Back before their modal closes. The IME keeps native priority.
+@Composable
+fun WindmillSheetBack(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val view = LocalView.current
+    val window = generateSequence(view.parent) { it.parent }
+        .filterIsInstance<DialogWindowProvider>().firstOrNull()?.window
+    val owner = checkNotNull(window?.callback as? OnBackPressedDispatcherOwner) {
+        "The sheet window must own its Back dispatcher."
+    }
+    CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides owner) {
+        BackHandler(onBack = onDismiss)
+        content()
     }
 }

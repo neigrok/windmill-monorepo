@@ -2,6 +2,7 @@ package works.windmill.gym
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -32,6 +33,9 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.Routine
+import works.windmill.gym.domain.RoutineWrite
+import works.windmill.gym.net.TrainingSyncing
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
@@ -73,7 +77,7 @@ class FinishSheetTests {
 
     private fun program(
         scope: CoroutineScope,
-        server: FakeTraining,
+        server: TrainingSyncing,
         seat: Account = account,
     ): TrainingStore {
         val store = TrainingStore(
@@ -92,21 +96,21 @@ class FinishSheetTests {
     }
 
     // A workout with no routine behind it: one working set, then Finish off the logger's top bar.
-    private fun finishAWorkout(scope: CoroutineScope, server: FakeTraining) {
+    private fun finishAWorkout(scope: CoroutineScope, server: FakeTraining, sets: Int = 1) {
         val store = program(scope, server)
         runBlocking {
             store.start(null)
             store.choose("back-squat")
-            store.logSet(100.0, 5)
+            repeat(sets) { store.logSet(100.0, 5) }
         }
         compose.setContent { GymMaterial { GymRoom(account, store) } }
         compose.waitForIdle()
-        finish()
+        finish(if (sets < 4) "Ended early." else "Well done.")
     }
 
     // Either title: one working set read off the device is slight, and the log's fake carries no
     // review at all.
-    private fun finish(title: String = "Well done.") {
+    private fun finish(title: String = "Ended early.") {
         compose.onNodeWithText("Finish").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
@@ -129,7 +133,7 @@ class FinishSheetTests {
     // The receipt is its own window, so what stands on the session page beneath it — the link card
     // and the discard door, both of which keep their place there — is not on the receipt.
     private fun onTheReceipt(text: String): Int {
-        val sheet = compose.onNodeWithText("Well done.").fetchSemanticsNode().root
+        val sheet = compose.onNodeWithText("Ended early.").fetchSemanticsNode().root
         return compose.onAllNodesWithText(text).fetchSemanticsNodes().count { it.root == sheet }
     }
 
@@ -146,7 +150,7 @@ class FinishSheetTests {
 
         // The title is IN the receipt, not in a bar above it — `Ended early` is a slight session's
         // whole salience and a sheet has nowhere else to put it.
-        compose.onNodeWithText("Well done.").assertIsDisplayed()
+        compose.onNodeWithText("Ended early.").assertIsDisplayed()
         // And the workout itself is what stands underneath, so dismissing lands on its detail page.
         compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
         // A pushed screen covers the rail, before the sheet and after it.
@@ -195,7 +199,7 @@ class FinishSheetTests {
 
         compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Well done.").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
         }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
@@ -250,7 +254,7 @@ class FinishSheetTests {
         compose.mainClock.advanceTimeBy(1_000)
         compose.mainClock.autoAdvance = true
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Well done.").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
         }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
@@ -294,7 +298,7 @@ class FinishSheetTests {
 
         compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Well done.").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithText(Ask.waiting).assertIsDisplayed()
         // The question, not the empty room's chips: the thread was not wiped.
@@ -361,7 +365,7 @@ class FinishSheetTests {
             WindmillApiException.Refused(
                 400, Refusal(message = "that document is unclaimable", code = "bad-routine"))
         }
-        finishAWorkout(scope, server)
+        finishAWorkout(scope, server, sets = 4)
 
         // Scrolling to it is the point as well as the means: the sheet body carries its own scroll.
         compose.onNodeWithText("Save routine").performScrollTo().performClick()
@@ -378,32 +382,6 @@ class FinishSheetTests {
         scope.cancel()
     }
 
-    // And once the receipt is gone the sheet is no home at all: the keep outlives it, so its refusal
-    // falls back to the room's own line — the one every other refusal in this room lands in.
-    @Test
-    fun testAKeepRefusedAfterTheReceiptIsGoneIsSaidOnTheRoomsOwnLine() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        val answer = CompletableDeferred<Unit>()
-        server.refuseRoutine = {
-            answer.await()
-            WindmillApiException.Refused(
-                400, Refusal(message = "that document is unclaimable", code = "bad-routine"))
-        }
-        finishAWorkout(scope, server)
-
-        compose.onNodeWithText("Save routine").performScrollTo().performClick()
-        compose.waitForIdle()
-        dismissTheReceipt()
-
-        answer.complete(Unit)
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("that document is unclaimable").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithText("that document is unclaimable").assertIsDisplayed()
-        scope.cancel()
-    }
-
     // The door closes while one is in flight, as it does on every other write this room owns: the
     // log mints no id for a routine, so a second tap is a second routine and not a replay.
     @Test
@@ -412,10 +390,11 @@ class FinishSheetTests {
         val server = FakeTraining()
         val answer = CompletableDeferred<Unit>()
         server.refuseRoutine = { answer.await(); null }
-        finishAWorkout(scope, server)
+        finishAWorkout(scope, server, sets = 4)
 
-        compose.onNodeWithText("Save routine").performScrollTo().performClick()
-        compose.onNodeWithText("Save routine").performClick()
+        val save = compose.onNodeWithText("Save routine").performScrollTo()
+            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        compose.runOnIdle { save(); save() }
         compose.waitForIdle()
         answer.complete(Unit)
         compose.waitUntil(10_000) {
@@ -434,4 +413,47 @@ class FinishSheetTests {
             compose.onAllNodesWithText("Well done.").fetchSemanticsNodes().isEmpty()
         }
     }
+    @Test
+    fun aPendingKeepHoldsTheReceiptAndDraftThroughRefusalAndRetry() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val gate = CompletableDeferred<Unit>()
+        val writes = mutableListOf<RoutineWrite>()
+        val delayed = object : TrainingSyncing by server {
+            override suspend fun createRoutine(write: RoutineWrite): Routine {
+                writes += write
+                if (writes.size == 1) {
+                    gate.await()
+                    throw WindmillApiException.Refused(400, Refusal(message = "Try this name again", code = "bad-routine"))
+                }
+                return server.createRoutine(write)
+            }
+        }
+        val held = program(scope, delayed)
+        runBlocking {
+            held.start(); held.choose("back-squat")
+            repeat(4) { held.logSet(100.0, 5) }
+        }
+        compose.setContent { GymMaterial { GymRoom(account, held) } }
+        finish("Well done.")
+        compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("Friday strength")
+        compose.onNodeWithText("Save routine").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Routine name").assertIsNotEnabled()
+        compose.onNodeWithText("Saving…").assertIsNotEnabled()
+        compose.onNodeWithText(FinishCoach.action).performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Well done.").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { assertEquals(1, writes.size); gate.complete(Unit) }
+        compose.onNodeWithText("Try this name again").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Routine name").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save routine").performScrollTo().performClick()
+        compose.onNodeWithText(Finish.keptAs("Friday strength")).performScrollTo().assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(listOf(writes.first(), writes.first()), writes)
+            assertEquals(listOf("Friday strength"), server.written.values.map { it.name })
+            assertTrue(server.calls.none { it == "ask" })
+        }
+        scope.cancel()
+    }
+
 }

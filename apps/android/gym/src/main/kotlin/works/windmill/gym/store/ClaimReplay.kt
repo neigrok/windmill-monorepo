@@ -6,6 +6,8 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Instants
 import works.windmill.gym.domain.RoutineWrite
+import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
@@ -44,7 +46,30 @@ class ClaimReplay(
     private val mintRoutine: () -> String = Ids::routine,
     private val mintSession: () -> String = Ids::session,
     private val mintSet: () -> String = Ids::set,
+    private val isCurrent: () -> Boolean = { true },
+    private val onChange: (Change) -> Unit = {},
 ) {
+    sealed interface Change {
+        data class SessionMoved(val oldId: String, val session: Session) : Change
+        data class SetChanged(val sessionId: String, val oldId: String, val set: TrainingSet?) : Change
+        data class Closed(val detail: SessionDetail) : Change
+        data class SessionRefused(val sessionId: String, val reason: String) : Change
+    }
+
+    class SeatChanged : CancellationException("the account changed during replay")
+
+    private suspend fun <T> exchange(write: suspend () -> T): T {
+        if (!isCurrent()) throw SeatChanged()
+        try {
+            val result = write()
+            if (!isCurrent()) throw SeatChanged()
+            return result
+        } catch (failure: Exception) {
+            if (!isCurrent()) throw SeatChanged()
+            throw failure
+        }
+    }
+
     // `retryable` is true exactly when a later pass could change the stop; the store arms the
     // deliver cadence off it, while a wait stays event-driven. `liveLanded` is a report only.
     data class Outcome(val said: List<RefusedWrite>, val liveLanded: Boolean, val retryable: Boolean)
@@ -79,7 +104,7 @@ class ClaimReplay(
     private suspend fun claimPreferences(said: MutableList<RefusedWrite>) {
         if (!preferences.owed) return
         try {
-            preferences.landed(log.savePreferences(preferences.document))
+            preferences.landed(exchange { log.savePreferences(preferences.document) })
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -96,8 +121,8 @@ class ClaimReplay(
             var remints = 0
             while (true) {
                 try {
-                    log.createExercise(ExerciseWrite(id = movement.id, name = movement.name,
-                        pattern = movement.pattern, equipment = movement.equipment, stepKg = movement.stepKg))
+                    exchange { log.createExercise(ExerciseWrite(id = movement.id, name = movement.name,
+                        pattern = movement.pattern, equipment = movement.equipment, stepKg = movement.stepKg)) }
                     localLog.claimExercise(movement.id)
                     break
                 } catch (interrupted: CancellationException) {
@@ -130,7 +155,7 @@ class ClaimReplay(
             var remints = 0
             while (true) {
                 try {
-                    log.createRoutine(RoutineWrite(routine))
+                    exchange { log.createRoutine(RoutineWrite(routine)) }
                     localLog.claimRoutine(routine.id)
                     break
                 } catch (interrupted: CancellationException) {
@@ -159,18 +184,27 @@ class ClaimReplay(
         return true
     }
 
+    private fun moveSession(oldId: String, freshId: String): Session? {
+        queue.remapSession(oldId, freshId)
+        localLog.remintSession(oldId, freshId)
+        queue.flush()
+        val current = localLog.row(freshId)?.session ?: queue.session?.takeIf { it.id == freshId }
+        if (current != null) onChange(Change.SessionMoved(oldId, current))
+        return current
+    }
+
     private suspend fun claimFinished(shelved: LocalLog.FinishedSession, said: MutableList<RefusedWrite>): Halt? {
         // Off the shelf's current row, never the loop's snapshot: a fix made mid-walk must replay.
         var session = (localLog.row(shelved.session.id) ?: shelved).session
         var remints = 0
         while (true) {
             try {
-                log.startSession(SessionStart(
+                exchange { log.startSession(SessionStart(
                     id = session.id,
                     startedAt = Instants.repaired(session.startedAtMs),
                     routineId = landed(session.routineId),
                     joinOpenSession = false,
-                ))
+                )) }
                 break
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -178,8 +212,7 @@ class ClaimReplay(
                 val facts = RefusalFacts(refusing)
                 if (facts.code == "session-id-taken" && remints < SetQueue.maxRemints) {
                     val fresh = mintSession()
-                    localLog.remintSession(session.id, fresh)
-                    session = session.copy(id = fresh)
+                    session = moveSession(session.id, fresh) ?: return null
                     remints += 1
                     continue
                 }
@@ -200,7 +233,9 @@ class ClaimReplay(
                 // `clock-ahead` is transient by construction: the instant ages into the past.
                 if (facts.code == "clock-ahead") return Halt.Retry
                 if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
-                said += RefusedClaim(session, facts.sentence ?: "the log refused this workout")
+                val reason = facts.sentence ?: "the log refused this workout"
+                said += RefusedClaim(session, reason)
+                onChange(Change.SessionRefused(session.id, reason))
                 localLog.forget(session.id)
                 return null
             }
@@ -215,7 +250,7 @@ class ClaimReplay(
         val landed = mutableMapOf<String, TrainingSet>()   // what the log is holding, by set id
         val toldOf = mutableSetOf<String>()                // tombstones the log has taken
         val letGo = mutableSetOf<String>()                 // repairs that can never land, already said
-        var closed = false
+        var closed: Session? = null
         while (true) {
             val past = localLog.row(session.id) ?: return null   // discarded under us; nothing is owed
             var moved = false
@@ -229,28 +264,39 @@ class ClaimReplay(
                 moved = true
                 while (true) {
                     try {
-                        landed[set.id] = log.appendSet(session.id, SetWrite(set))
+                        val stored = exchange { log.appendSet(session.id, SetWrite(set)) }
+                        localLog.acceptSet(session.id, set, stored)
+                        landed[stored.id] = stored
+                        onChange(Change.SetChanged(session.id, set.id, stored))
                         break
                     } catch (interrupted: CancellationException) {
                         throw interrupted
                     } catch (refusing: Exception) {
                         val facts = RefusalFacts(refusing)
                         if (facts.code == "set-id-taken" && repairs < SetQueue.maxRemints) {
+                            if (localLog.row(session.id)?.sets?.none { it.id == set.id } != false) {
+                                onChange(Change.SetChanged(session.id, set.id, null))
+                                break
+                            }
                             val fresh = mintSet()
                             localLog.remintSet(session.id, set.id, fresh)
+                            val old = set.id
                             set = set.copy(id = fresh)
+                            onChange(Change.SetChanged(session.id, old, set))
                             repairs += 1
                             continue
                         }
                         // The start answered, so a 404 here is the workout gone from the log.
                         if (facts.status == 404) {
                             said += RefusedClaim(session, "that workout is no longer on the log")
+                            onChange(Change.SessionRefused(session.id, "that workout is no longer on the log"))
                             localLog.forget(session.id)
                             return null
                         }
                         val reason = Verdict.refusing(facts).terminalReason(afterRemints = SetQueue.maxRemints)
                         if (reason == null) return Halt.Retry
                         localLog.dropSet(session.id, set.id)
+                        onChange(Change.SetChanged(session.id, set.id, null))
                         said += RefusedSet(set, reason)
                         break
                     }
@@ -258,15 +304,17 @@ class ClaimReplay(
             }
 
             // Corrections made after the set had already landed. Where one is found the shelf wins.
-            for (mine in past.sets) {
+            for (mine in localLog.row(session.id)?.sets.orEmpty()) {
                 if (mine.id in letGo) continue
                 val stored = landed[mine.id] ?: continue
                 val fix = SetFix(mine)
                 if (!fix.moves(stored)) continue
                 moved = true
                 try {
-                    val corrected = log.fixSet(session.id, mine.id, fix)
+                    val corrected = exchange { log.fixSet(session.id, mine.id, fix) }
                     landed[mine.id] = corrected
+                    localLog.acceptSet(session.id, mine, corrected)
+                    onChange(Change.SetChanged(session.id, mine.id, corrected))
                     // A row still disagreeing after the fix has gone as far as it ever will.
                     if (fix.moves(corrected)) letGo += mine.id
                 } catch (interrupted: CancellationException) {
@@ -274,7 +322,12 @@ class ClaimReplay(
                 } catch (refusing: Exception) {
                     val verdict = FixVerdict.refusing(RefusalFacts(refusing))
                     if (verdict is FixVerdict.Retry) return Halt.Retry
-                    // Neither answer can change. `Gone` says nothing: the row it aimed at is deleted.
+                    if (verdict is FixVerdict.Gone) {
+                        landed.remove(mine.id)
+                        localLog.dropSet(session.id, mine.id)
+                        onChange(Change.SetChanged(session.id, mine.id, null))
+                        continue
+                    }
                     letGo += mine.id
                     if (verdict is FixVerdict.Unwritable) {
                         said += RefusedSet(mine, "the log kept the numbers this set was logged with")
@@ -288,8 +341,10 @@ class ClaimReplay(
                 if (gone in toldOf) continue
                 moved = true
                 try {
-                    log.deleteSet(session.id, gone)
+                    exchange { log.deleteSet(session.id, gone) }
                     toldOf += gone
+                    landed.remove(gone)
+                    onChange(Change.SetChanged(session.id, gone, null))
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
@@ -300,11 +355,11 @@ class ClaimReplay(
             // Anything happened on the wire: read the shelf again before believing it is settled.
             if (moved) continue
 
-            if (!closed) {
+            if (closed == null) {
                 val startedAt = Instants.repaired(session.startedAtMs)
                 val finishedAt = maxOf(Instants.repaired(session.finishedAtMs ?: startedAt), startedAt)
                 try {
-                    log.finishSession(session.id, finishedAt)
+                    closed = exchange { log.finishSession(session.id, finishedAt) }
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
@@ -312,17 +367,19 @@ class ClaimReplay(
                     if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
                     // A 404 is the workout gone; anything else leaves the session standing open for
                     // the log's own auto-close. Either way the shelf lets go.
-                    said += RefusedClaim(session, if (facts.status == 404) "that workout is no longer on the log"
-                        else facts.sentence ?: "the log refused to close this workout")
+                    val reason = if (facts.status == 404) "that workout is no longer on the log"
+                        else facts.sentence ?: "the log refused to close this workout"
+                    said += RefusedClaim(session, reason)
+                    onChange(Change.SessionRefused(session.id, reason))
                     localLog.forget(session.id)
                     return null
                 }
                 // The close is a round trip too: a fix made inside it targets a now-closed session,
                 // which neither correction route refuses.
-                closed = true
                 continue
             }
 
+            onChange(Change.Closed(SessionDetail(closed, landed.values.sortedBy { it.completedAtMs })))
             localLog.forget(session.id)
             return null
         }
@@ -335,14 +392,25 @@ class ClaimReplay(
         var live = queue.session ?: return null
         var remints = 0
         while (true) {
+            if (queue.session?.id != live.id && localLog.row(live.id) == null) return null
             try {
-                log.startSession(SessionStart(
+                val stored = exchange { log.startSession(SessionStart(
                     id = live.id,
                     startedAt = Instants.repaired(live.startedAtMs),
                     routineId = landed(live.routineId),
                     joinOpenSession = false,
-                ))
-                queue.claimed(live.id)
+                )) }
+                val oldId = live.id
+                if (stored.id != oldId) moveSession(oldId, stored.id)
+                val shelved = localLog.row(stored.id)
+                if (shelved != null) {
+                    localLog.acceptSession(stored.id, stored)
+                    onChange(Change.SessionMoved(oldId, localLog.row(stored.id)!!.session))
+                    return null
+                }
+                if (queue.session?.id != stored.id) return null
+                queue.hold(stored)
+                queue.claimed(stored.id)
                 queue.flush()
                 return null
             } catch (interrupted: CancellationException) {
@@ -350,24 +418,18 @@ class ClaimReplay(
             } catch (refusing: Exception) {
                 val facts = RefusalFacts(refusing)
                 if (facts.code == "session-id-taken" && remints < SetQueue.maxRemints) {
-                    val fresh = mintSession()
-                    queue.remapSession(live.id, fresh)
-                    queue.flush()
-                    live = live.copy(id = fresh)
+                    live = moveSession(live.id, mintSession()) ?: return null
                     remints += 1
                     continue
                 }
-                // The deleted-routine 404 against the queue's copy: the plan snapshot stays, the id
-                // goes, and the start retries plain.
                 val gone = landed(live.routineId)
                 if (facts.status == 404 && gone != null) {
-                    queue.hold(live.copy(routineId = null))
-                    queue.flush()
+                    localLog.orphanRoutine(gone)
                     live = live.copy(routineId = null)
+                    if (queue.session?.id == live.id) queue.hold(live, unclaimed = true)
+                    queue.flush()
                     continue
                 }
-                // Wait, retry and refusal all leave the queue holding the workout: it is the lifter's
-                // live one and cannot be let go.
                 if (facts.code == "session-already-open") return Halt.Wait
                 if (facts.code == "clock-ahead") return Halt.Retry
                 if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
@@ -384,7 +446,7 @@ class ClaimReplay(
     private suspend fun claimBodyweight(said: MutableList<RefusedWrite>): Boolean {
         for (owed in bodyweight.owed) {
             try {
-                bodyweight.landed(log.putBodyweight(owed.dateLocal, WeighInWrite(owed.weightKg, owed.recordedAt)))
+                bodyweight.landed(exchange { log.putBodyweight(owed.dateLocal, WeighInWrite(owed.weightKg, owed.recordedAt)) })
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
@@ -397,7 +459,7 @@ class ClaimReplay(
         }
         for (gone in bodyweight.deletions) {
             try {
-                log.deleteBodyweight(gone)
+                exchange { log.deleteBodyweight(gone) }
                 bodyweight.deletionLanded(gone)
             } catch (interrupted: CancellationException) {
                 throw interrupted

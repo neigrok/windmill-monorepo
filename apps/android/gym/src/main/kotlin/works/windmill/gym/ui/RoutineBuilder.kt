@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -211,6 +212,7 @@ fun RoutineBuilder(
             scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
+            WindmillSheetWindow()
             // Back with the keyboard up puts the keyboard down and nothing else: read and hidden
             // inside the sheet's own window, ahead of the sheet's own back.
             val sheetKeyboard = LocalSoftwareKeyboardController.current

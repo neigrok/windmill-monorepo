@@ -2313,8 +2313,16 @@ Wave 2 implements routines, targets/fill, More/Duplicate, independent Undo and s
 creation. Native real-backend checks cover saved order/targets, guarded revision refusal and
 recovery, source-preserving duplication, continuous drag scrolling and both creation contexts.
 Instrument/Daylight, 200% text, numeric/text IME and process-restored drafts have native evidence.
-Compact training/rest and receipts belong to Wave 3; Log/records/bodyweight to Wave 4;
-Coach/account/sign-in refinements to Wave 5.
+Wave3 implements compact training/rest, numeric entry, correction, truthful receipts and readback,
+public sharing and save as routine. Native verification covers complete/partial/free arithmetic,
+offline delivery, actual process restoration, retained drafts, IME-first Back and keypad-only
+cancellation through Back/Cancel/scrim/drag at normal and200% text. Historical kind remains intact.
+Log/records/bodyweight belong to Wave4; Coach/account/sign-in refinements to Wave5.
 Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
 simplification and release verification. Daylight follows the approved existing tokens and still
 carries F44. Tracking node: `android-gym-implement-refined-flows`.
+
+Android public-sharing disclosure matches the backend payload in Figma `672:9676` and the app:
+“Includes set notes and effort.” Public workout dates/name and set facts are shared; account IDs
+and the frozen plan are excluded. Native loopback verification covers a synthetic link's creation,
+copy feedback and revoked404; the final disclosure is readable at320dp/200% text.

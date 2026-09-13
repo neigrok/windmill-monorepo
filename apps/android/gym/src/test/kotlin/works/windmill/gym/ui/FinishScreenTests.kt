@@ -6,6 +6,9 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -136,9 +139,9 @@ class FinishTests {
                                 before = Effort(sets = 3, reps = 12, weightKg = 135.0)),
             ))
         val comparison = Finish.comparison(against, catalog)
-        assertEquals("Against last Legs", comparison?.title)
+        assertEquals("Comparison", comparison?.title)
         assertEquals(listOf("Back Squat", "Leg Press"), comparison?.rows?.map { it.movement })
-        assertEquals(listOf("5 × 5 · 102.5 → 5 × 5 · 105", "3 × 12 · 135 → 3 × 12 · 140"),
+        assertEquals(listOf("Plan: 5 × 5 · 102.5 → 5 × 5 · 105", "Last time: 3 × 12 · 135 → 3 × 12 · 140"),
                      comparison?.rows?.map { it.detail })
     }
 
@@ -287,10 +290,10 @@ class FinishedSessionTests {
     private fun session(routineId: String?) =
         Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 900_000, routineId = routineId)
 
-    private val lifted = listOf(
-        TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
-                    completedAtMs = 2_000),
-    )
+    private val lifted = List(4) { index ->
+        TrainingSet(id = "set_$index", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
+                    completedAtMs = 2_000L + index)
+    }
 
     @Test
     fun keepingASessionAsARoutineIsOfferedOnlyWhenThereWasNoRoutine() {
@@ -313,7 +316,7 @@ class FinishedSessionTests {
     @Test
     fun aShortSessionIsNeverAlsoOfferedAsARoutine() {
         val short = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true)
-        val ended = FinishedSession(session = session(routineId = null), sets = lifted,
+        val ended = FinishedSession(session = session(routineId = null), sets = lifted.take(3),
                                     review = short, isFirst = true)
 
         assertTrue(ended.slight)
@@ -325,14 +328,36 @@ class FinishedSessionTests {
     }
 
     @Test
-    fun withoutAReviewASessionIsNeverCalledShort() {
-        assertFalse(FinishedSession(session = session(routineId = null), sets = lifted,
-                                    review = null, isFirst = false).slight)
-
-        val short = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true)
-        assertTrue(FinishedSession(session = session(routineId = null), sets = lifted,
-                                   review = short, isFirst = false).slight)
+    fun actualWorkingCountDecidesTheHeadingWithoutDependingOnReview() {
+        val misleading = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 20), slight = false)
+        for (review in listOf(null, misleading)) {
+            for (count in 0..4) {
+                val ended = FinishedSession(session = session(null), sets = lifted.take(count), review = review, isFirst = false)
+                assertEquals(count < 4, ended.slight)
+                assertEquals(count == 4, ended.offersRoutine)
+            }
+        }
     }
+
+    @Test
+    fun actualReceiptTotalsIncludePerformedMovementsAndExcludeWarmupVolume() {
+        val bench = List(3) { index -> TrainingSet("bench_$index", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 100L + index) }
+        val press = List(3) { index -> TrainingSet("press_$index", "overhead-press", weightKg = 30.0, reps = 8, completedAtMs = 200L + index) }
+        val raise = List(3) { index -> TrainingSet("raise_$index", "lateral-raise", weightKg = 18.0, reps = 10, completedAtMs = 300L + index) }
+        for (count in 1..3) {
+            val partial = FinishedSession(session(null), bench.take(count), null, false)
+            assertEquals(listOf(count, count * 480.0, listOf("bench-press"), true),
+                listOf(partial.summary.setCount, partial.summary.tonnageKg, partial.summary.exercises, partial.slight))
+        }
+        val full = FinishedSession(session(null), bench + press + raise, null, false)
+        assertEquals(listOf(9, 2700.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
+            listOf(full.summary.setCount, full.summary.tonnageKg, full.summary.exercises, full.slight))
+        val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null, false)
+        assertEquals(listOf(1, 460.0, true), listOf(free.summary.setCount, free.summary.tonnageKg, free.slight))
+        val warm = full.copy(sets = full.sets + bench.first().copy(id = "warm", kind = SetKind.Warmup))
+        assertEquals(listOf(10, 9, 2700.0), listOf(warm.summary.setCount, warm.summary.workingSetCount, warm.summary.tonnageKg))
+    }
+
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -353,7 +378,7 @@ class ShareWithCoachTests {
 
     private val ordinary = FinishedSession(
         session = Session(id = "ses_2", startedAtMs = 1_000, finishedAtMs = 3_600_000),
-        sets = short.sets,
+        sets = List(4) { index -> short.sets.single().copy(id = "set_$index", completedAtMs = 2_000L + index) },
         review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
         isFirst = false,
     )
@@ -368,7 +393,7 @@ class ShareWithCoachTests {
             FinishScreen(
                 finished = shown.value,
                 catalog = catalog,
-                kept = false,
+                keptName = null,
                 onKeepRoutine = {},
                 onShareWithCoach = if (reachable.value) { { shared.value += 1 } } else null,
             )
@@ -461,10 +486,10 @@ class KeepAsRoutineTests {
 
     private val ordinary = FinishedSession(
         session = Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 3_600_000),
-        sets = listOf(
-            TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
-                        completedAtMs = 2_000),
-        ),
+        sets = List(4) { index ->
+            TrainingSet(id = "set_$index", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
+                        completedAtMs = 2_000L + index)
+        },
         review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
         isFirst = false,
     )
@@ -474,7 +499,7 @@ class KeepAsRoutineTests {
             FinishScreen(
                 finished = ordinary,
                 catalog = catalog,
-                kept = kept,
+                keptName = if (kept) Readout.weekday(ordinary.session.startedAtMs) else null,
                 onKeepRoutine = {},
                 onShareWithCoach = {},
                 failure = failure,
@@ -488,7 +513,7 @@ class KeepAsRoutineTests {
     fun theRoutineCardSitsBelowShareWithCoach() {
         card()
         assertTrue(
-            compose.onNodeWithText("Keep this as a routine").fetchSemanticsNode().positionInRoot.y >
+            compose.onNodeWithText("Save a routine").fetchSemanticsNode().positionInRoot.y >
                 compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().positionInRoot.y,
         )
     }
@@ -507,14 +532,14 @@ class KeepAsRoutineTests {
             ),
         )
         compose.setContent {
-            FinishScreen(finished = ramped, catalog = catalog, kept = false, onKeepRoutine = {}, onShareWithCoach = {})
+            FinishScreen(finished = ramped, catalog = catalog, keptName = null, onKeepRoutine = {}, onShareWithCoach = {})
         }
-        compose.onNodeWithText("3 × 1–5 · 60–100").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("2 × 12 · 140").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("3 × 1–5 · 60–100kg").onLast().performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("2 × 12 · 140kg").onLast().performScrollTo().assertIsDisplayed()
         assertTrue(
             "each scheme stands beside its movement",
-            compose.onNodeWithText("3 × 1–5 · 60–100").fetchSemanticsNode().positionInRoot.y ==
-                compose.onNodeWithText("Back Squat").fetchSemanticsNode().positionInRoot.y,
+            compose.onAllNodesWithText("3 × 1–5 · 60–100kg").onLast().fetchSemanticsNode().positionInRoot.y ==
+                compose.onAllNodesWithText("Back Squat").onLast().fetchSemanticsNode().positionInRoot.y,
         )
     }
 
@@ -524,7 +549,7 @@ class KeepAsRoutineTests {
     fun aKeptRoutineIsSaidWhereTheFormStood() {
         card(kept = true)
         compose.onNodeWithText("Save routine").assertDoesNotExist()
-        compose.onNodeWithText("Routine name").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
         compose.onNodeWithText(Finish.keptAs(Readout.weekday(ordinary.session.startedAtMs)))
             .performScrollTo()
             .assertIsDisplayed()
@@ -535,10 +560,10 @@ class KeepAsRoutineTests {
         card()
         compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
 
-        compose.onNodeWithText("Routine name").performScrollTo().performTextReplacement("   ")
+        compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("   ")
         compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
 
-        compose.onNodeWithText("Routine name").performTextReplacement("Push A")
+        compose.onNodeWithContentDescription("Routine name").performTextReplacement("Push A")
         compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
     }
 
@@ -546,24 +571,21 @@ class KeepAsRoutineTests {
     // counts it — code points, not UTF-16 units — so which surface a lifter is holding stops deciding
     // how long a name may be. The counter does NOT come with it: this field mints a name in passing.
     @Test
-    fun theNameFieldTakesTheRoomsCapCountedInCodePoints() {
+    fun theNameFieldRetainsUnicodeTypingAndRefusesAboveTheRoomsCharacterLimit() {
         card()
-        val field = compose.onNodeWithText("Routine name").performScrollTo()
+        val field = compose.onNodeWithContentDescription("Routine name").performScrollTo()
 
         field.performTextReplacement("\uD83D\uDE00".repeat(61))
-        assertEquals("sixty code points, not eighty UTF-16 units",
-                     "\uD83D\uDE00".repeat(Program.maxNameLength), typedName())
-        assertEquals(Program.maxNameLength, Program.length(typedName()))
-        // Asserted while the field still HOLDS the capped name: that is the only state a counter
-        // would be drawn in, so a shorter name here would pass whether or not one is drawn.
-        compose.onNodeWithText(Program.counter(typedName())!!).assertDoesNotExist()
+        assertEquals("arbitrary Unicode typing is retained", "\uD83D\uDE00".repeat(61), typedName())
+        compose.onNodeWithText("Save routine").assertIsNotEnabled()
+        compose.onNodeWithText(Program.nameTooLong).assertIsDisplayed()
 
         field.performTextReplacement("Push A")
         assertEquals("and a short name is left alone", "Push A", typedName())
     }
 
     private fun typedName(): String =
-        compose.onNodeWithText("Routine name").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Routine name").fetchSemanticsNode()
             .config[SemanticsProperties.EditableText].text
 
     // One grey button, one sentence. A blank name is what holds Save NOW, so it outranks what the
@@ -573,7 +595,7 @@ class KeepAsRoutineTests {
         card(failure = "that document is unclaimable")
         compose.onNodeWithText("that document is unclaimable").assertIsDisplayed()
 
-        compose.onNodeWithText("Routine name").performScrollTo().performTextReplacement("   ")
+        compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("   ")
         compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
         compose.onNodeWithText("that document is unclaimable").assertDoesNotExist()
     }
