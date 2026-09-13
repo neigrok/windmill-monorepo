@@ -10,15 +10,14 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
   const [ticker, setTicker] = useState([]);
   const [newEventIds, setNewEventIds] = useState(() => new Set());
   const [feedOpen, setFeedOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activityPing, setActivityPing] = useState(false);
 
   const logRef = useRef(new ActivityLog());
   const unseenIdsRef = useRef(new Set());
-  // Mirrors feedOpen || pinned for the synchronous checks a gesture makes.
+  // Mirrors feedOpen for the synchronous checks a gesture makes.
   const feedSummonedRef = useRef(false);
-  useEffect(() => { feedSummonedRef.current = feedOpen || pinned; }, [feedOpen, pinned]);
+  useEffect(() => { feedSummonedRef.current = feedOpen; }, [feedOpen]);
 
   const emit = useCallback((partial, options = {}) => {
     const event = new ActivityEvent({
@@ -65,7 +64,6 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
     setTicker([]);
     setNewEventIds(new Set());
     setFeedOpen(false);
-    setPinned(false);
     setUnreadCount(0);
     setActivityPing(false);
   }, []);
@@ -83,7 +81,6 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
   const closeActivity = useCallback(() => {
     cancelNextUpSelect();
     setFeedOpen(false);
-    setPinned(false);
   }, [cancelNextUpSelect]);
 
   const toggleActivity = useCallback(() => {
@@ -95,9 +92,8 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
 
   // Auto-open summons the dock without deselecting.
   const openActivity = useCallback(() => setFeedOpen(true), []);
-  const togglePin = useCallback(() => setPinned((value) => !value), []);
 
-  const feedVisible = (feedOpen || pinned) && !selectedId;
+  const feedVisible = feedOpen && !selectedId;
   useEffect(() => { if (feedVisible) markRead(); }, [feedVisible, markRead]);
 
   const activityGroups = useMemo(() => logRef.current.groupedByDay(Date.now()), [logVersion]);
@@ -108,7 +104,6 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
     seedActivity,
     ticker,
     newEventIds,
-    pinned,
     unreadCount,
     activityPing,
     feedVisible,
@@ -119,6 +114,5 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
     toggleActivity,
     openActivity,
     closeActivity,
-    togglePin,
   };
 }

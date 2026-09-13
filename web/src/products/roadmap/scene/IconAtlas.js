@@ -9,9 +9,17 @@ const GLYPH_INSET = 0.28;
 
 export class IconAtlas {
   constructor(iconNames) {
-    const names = [...new Set(iconNames)].slice(0, CAPACITY);
-    this.cols = Math.max(1, Math.ceil(Math.sqrt(names.length)));
-    this.rows = Math.max(1, Math.ceil(names.length / this.cols));
+    // Every name asked for is remembered, so the scene can tell a name with no glyph from one this atlas never saw and
+    // never rebuilds for a tree it already covers; only names that actually draw spend one of the cells.
+    this.names = new Set(iconNames);
+    const glyphs = [];
+    for (const name of this.names) {
+      const markup = renderToStaticMarkup(createElement(Icon, { name, color: '#ffffff', size: CELL, strokeWidth: 2.25 }));
+      if (markup) glyphs.push({ name, markup });
+      if (glyphs.length === CAPACITY) break;
+    }
+    this.cols = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
+    this.rows = Math.max(1, Math.ceil(glyphs.length / this.cols));
     this.cellByName = new Map();
     this.ready = false;
     this.readyCallbacks = [];
@@ -30,9 +38,7 @@ export class IconAtlas {
       this.readyCallbacks = [];
     };
 
-    names.forEach((name, index) => {
-      const markup = renderToStaticMarkup(createElement(Icon, { name, color: '#ffffff', size: CELL, strokeWidth: 2.25 }));
-      if (!markup) return;
+    glyphs.forEach(({ name, markup }, index) => {
       this.cellByName.set(name, index);
 
       const inset = CELL * GLYPH_INSET;
@@ -57,5 +63,9 @@ export class IconAtlas {
   cellFor(name) {
     const cell = this.cellByName.get(name);
     return cell === undefined ? -1 : cell;
+  }
+
+  knows(name) {
+    return this.names.has(name);
   }
 }

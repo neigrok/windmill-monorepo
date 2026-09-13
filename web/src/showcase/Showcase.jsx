@@ -2,6 +2,7 @@ import React from 'react';
 import './showcase.css';
 import {
   Icon,
+  BrandWordmark,
   Button,
   IconButton,
   Badge,
@@ -179,10 +180,7 @@ export default function Showcase() {
     <div className="wm-page">
       {/* ---- Top bar ---- */}
       <header className="wm-topbar">
-        <span className="wm-wordmark">
-          <span className="wm-mark"><Icon name="git-branch-plus" size={26} /></span>
-          Windmill
-        </span>
+        <BrandWordmark className="wm-wordmark" size={34} />
         <div className="wm-row wm-row-tight">
           <Button variant="ghost" size="sm">Docs</Button>
           <Button variant="primary" size="sm" icon={<Icon name="sparkles" size={16} />}>

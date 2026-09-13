@@ -46,12 +46,6 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
     return (
       <div className="st-nextup st-nextup--empty">
         <p className="st-nextup-line">Nothing’s unlocked yet.</p>
-        <p className="st-nextup-hint">Finish what’s growing to open the path:</p>
-        <div className="st-nextup-rows">
-          {plan.blockers.map((entry) => (
-            <StepRow key={entry.id} entry={entry} node={nodesById.get(entry.id)} state={states.get(entry.id)} ember onHover={onHoverNode} onLeave={onLeaveNode} onOpen={onOpenStep} />
-          ))}
-        </div>
       </div>
     );
   }
@@ -75,9 +69,9 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
   );
 }
 
-function StepRow({ entry, node, state, ember = false, onHover, onLeave, onOpen }) {
+function StepRow({ entry, node, state, onHover, onLeave, onOpen }) {
   if (!node) return null; // deleted while the plan was frozen — the row simply retires
-  if (state !== (ember ? 'active' : 'available')) return null; // live state left the tier — silent retirement
+  if (state !== 'available') return null; // live state left the tier — silent retirement
   const hue = KIND_CSS[node.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   return (
     <button
@@ -89,9 +83,7 @@ function StepRow({ entry, node, state, ember = false, onHover, onLeave, onOpen }
     >
       <span
         className="st-nextup-disc"
-        style={ember
-          ? { background: hue.base, boxShadow: `0 0 8px 2px ${hue.glow}` }
-          : { boxShadow: `inset 0 0 0 2px ${hue.base}` }}
+        style={{ boxShadow: `inset 0 0 0 2px ${hue.base}` }}
       />
       <span className="st-nextup-text">
         <span className="st-nextup-name">{node.label?.trim() || 'Unnamed step'}</span>

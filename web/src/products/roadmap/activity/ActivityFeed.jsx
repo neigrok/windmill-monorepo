@@ -2,22 +2,13 @@ import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';
 
-export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds, pinned, onTogglePin, onClose, onHoverNode, onLeaveNode, onRevealNode, nextUp = null, readyPill = null }) {
+export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds, onClose, onHoverNode, onLeaveNode, onRevealNode, nextUp = null, readyPill = null }) {
   return (
     <div className="st-activity">
       <div className="st-activity-head">
         <span>{nextUp ? 'Next up' : 'Activity'}</span>
         <span className="st-activity-count">{nextUp ? readyPill : count}</span>
         <span className="st-activity-live" title="Live" />
-        <button
-          type="button"
-          className={`st-activity-pin ${pinned ? 'st-activity-pin--on' : ''}`}
-          title={pinned ? 'Unpin — summon on demand' : 'Pin — keep docked'}
-          aria-pressed={pinned}
-          onClick={onTogglePin}
-        >
-          <Icon name="pin" size={13} />
-        </button>
         <IconButton icon={<Icon name="x" size={14} />} label="Close activity" size="sm" onClick={onClose} />
       </div>
       {nextUp}

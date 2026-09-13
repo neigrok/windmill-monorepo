@@ -69,16 +69,53 @@ TEST(pg_progress_batch_rolls_back_a_late_storage_failure_and_preserves_outcome_o
   try {
     repo.setStatuses(kTree, kUser, {
         {NodeId{"a"}, ProgressStatus::complete, false, Hlc{20, 0, "good"}},
-        {NodeId{"z"}, ProgressStatus::active, false, Hlc{20, 0, std::string(1, '\xff')}}}, kNow);
+        {NodeId{"z"}, ProgressStatus::none, false, Hlc{20, 0, std::string(1, '\xff')}}}, kNow);
   } catch (const std::exception&) { failed = true; }
   CHECK(failed);
   CHECK(repo.load(kTree, kUser).marks.empty());
   CHECK(repo.setStatus(kTree, kUser, NodeId{"a"}, ProgressStatus::complete, false, at(50), kNow));
   const auto applied = repo.setStatuses(kTree, kUser, {
-      {NodeId{"z"}, ProgressStatus::active, false, at(60)},
+      {NodeId{"z"}, ProgressStatus::none, false, at(60)},
       {NodeId{"a"}, ProgressStatus::none, false, at(40)}}, kNow);
   CHECK_EQ(applied, (std::vector<bool>{true, false}));
   CHECK_EQ(repo.load(kTree, kUser).completed, (std::set<NodeId>{NodeId{"a"}}));
-  CHECK_EQ(repo.load(kTree, kUser).inProgress, (std::set<NodeId>{NodeId{"z"}}));
+  CHECK_EQ(repo.load(kTree, kUser).cleared, (std::set<NodeId>{NodeId{"z"}}));
   reset();
+}
+
+TEST(pg_legacy_progress_reads_as_cleared_and_preserves_completion_and_stamps) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  const TreeId tree{"pgtest-progress-legacy"};
+  const UserId user{"pgtest-progress-legacy-user"};
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1", tree.str());
+    txn.exec_params(
+        "INSERT INTO node_progress (tree_id,user_id,node_id,status,out_of_order,hlc,stamp_ms,updated_at) VALUES "
+        "($1,$2,'a','active',true,'100:0:r_old',100,to_timestamp(1000)),"
+        "($1,$2,'b','inProgress',true,'101:0:r_old',101,to_timestamp(1001)),"
+        "($1,$2,'c','complete',true,'102:0:r_old',102,to_timestamp(1002))",
+        tree.str(), user.str());
+    txn.commit();
+  }
+  PgProgressRepository repo{pgTestPool()};
+  const Progress progress = repo.load(tree, user);
+  CHECK_EQ(progress.completed, (std::set<NodeId>{NodeId{"c"}}));
+  CHECK_EQ(progress.cleared, (std::set<NodeId>{NodeId{"a"}, NodeId{"b"}}));
+  CHECK_EQ(progress.marks.at(NodeId{"a"}).at, (Hlc{100, 0, "r_old"}));
+  CHECK_EQ(progress.marks.at(NodeId{"a"}).markedAt, 1000000u);
+  CHECK_FALSE(progress.marks.at(NodeId{"a"}).outOfOrder);
+  CHECK_FALSE(progress.marks.at(NodeId{"b"}).outOfOrder);
+  CHECK(progress.marks.at(NodeId{"c"}).outOfOrder);
+  CHECK_EQ(repo.overlaysFor(user).at(tree).overlay.completed, (std::set<NodeId>{NodeId{"c"}}));
+
+  CHECK_FALSE(repo.setStatus(tree, user, NodeId{"a"}, ProgressStatus::complete, false, at(99), 1003));
+  CHECK(repo.setStatus(tree, user, NodeId{"a"}, ProgressStatus::complete, false, at(103), 1003));
+  CHECK_EQ(repo.load(tree, user).completed, (std::set<NodeId>{NodeId{"a"}, NodeId{"c"}}));
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1", tree.str());
+  txn.commit();
 }

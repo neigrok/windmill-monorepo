@@ -71,8 +71,6 @@ test('loadProgress folds the server frame into the overlay to open at, credentia
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     assert.deepEqual(await repo.loadProgress(SEEDED), {
       completed: new Set(['a']),
-      inProgress: new Set(['b']),      // 'c' is a cleared register: carried, and in neither set
-      startedAt: { b: 1700000600000 }, // an active register is dated by when it was marked active
       completedAt: { a: 1700000000000 },
       server: true,
     });
@@ -85,8 +83,6 @@ test('loadProgress falls back to the document seeds when the server holds no mar
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     assert.deepEqual(await repo.loadProgress(SEEDED), {
       completed: new Set(['a']),
-      inProgress: new Set(['b']),
-      startedAt: {},
       completedAt: {},  // an authored seed status is nobody's mark, at no instant we know
       server: false,
     });
@@ -98,8 +94,6 @@ test('loadProgress falls back to the seeds when the server never answered at all
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     assert.deepEqual(await repo.loadProgress(SEEDED), {
       completed: new Set(['a']),
-      inProgress: new Set(['b']),
-      startedAt: {},
       completedAt: {},
       server: false,
     });

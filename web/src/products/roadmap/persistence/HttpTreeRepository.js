@@ -37,8 +37,6 @@ export class HttpTreeRepository extends TreeRepository {
     }
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
-      inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
-      startedAt: {},
       completedAt: {},  // an authored seed status carries no instant
       server: false,
     };

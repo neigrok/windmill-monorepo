@@ -9,10 +9,6 @@ export class UnlockRules {
         states.set(node.id, 'complete');
         continue;
       }
-      if (progress.inProgress.has(node.id)) {
-        states.set(node.id, 'active');
-        continue;
-      }
       const unlocked = node.prerequisites.every((prereqId) => progress.completed.has(prereqId));
       states.set(node.id, unlocked ? 'available' : 'locked');
     }

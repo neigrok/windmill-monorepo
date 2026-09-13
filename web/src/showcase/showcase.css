@@ -32,10 +32,6 @@
   letter-spacing: var(--tracking-tight);
   color: var(--text-primary);
 }
-.wm-wordmark .wm-mark {
-  color: var(--color-brand);
-  display: inline-flex;
-}
 
 /* ---- Layout ---- */
 .wm-main {

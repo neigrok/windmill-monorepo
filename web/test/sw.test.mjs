@@ -15,7 +15,7 @@ const SW = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.u
 const ORIGIN = 'https://windmill.works';
 const SHELL_CACHE = 'windmill-shell-v1';
 const ASSET_CACHE = 'windmill-assets-v1';
-const ICON_CACHE = 'windmill-icons-v1';
+const ICON_CACHE = 'windmill-icons-v2';
 
 function quota() {
   const error = new Error('The quota has been exceeded.');

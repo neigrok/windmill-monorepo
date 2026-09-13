@@ -15,8 +15,6 @@ link back to the canvas. Motion physics come from `motion-language.md`.
   reflows, no camera jump. × or any canvas click closes it; the chip stays put. The dock
   stacks two tenants — **NEXT UP leads, ACTIVITY follows** — one scroll, same grammar
   (`whats-next.md`).
-- **A pin in the panel header docks it persistently**, for wide screens and heavy shared
-  sessions.
 - **Editor surfaces only.** Read-only and hosted pages have no toolbars; the feed never
   mounts there.
 - **Keyboard:** `a` toggles, esc closes. Focus moves into the panel on open, back to the
@@ -26,7 +24,7 @@ link back to the canvas. Motion physics come from `motion-language.md`.
 
 | Logs | Never logs |
 |---|---|
-| step started · step completed (+ the unlocks it causes) · step added / renamed / removed | pans, hovers, selections, readout recalcs |
+| step reset · step completed (+ the unlocks it causes) · step added / renamed / removed | pans, hovers, selections, readout recalcs |
 
 - **Object = a node.** The step name carries its kind-hue dot — the same hue the fruit
   wears. Removed steps lose their dot, mute, and strike through.

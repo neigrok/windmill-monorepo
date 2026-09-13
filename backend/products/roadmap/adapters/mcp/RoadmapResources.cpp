@@ -20,9 +20,9 @@ that edit. Existing problems do not mean the edit caused them.
 Structure is shared; progress is private to the caller. `roadmap_set_progress` accepts completion
 with unmet prerequisites and returns `prerequisitesMet: false`. Use `outOfOrder: true` when intended.
 
-- `status` is your mark: `active`, `complete` or `none`.
+- `status` is your mark: `complete` or `none`.
 - `seedStatus` is the document's authored baseline, carried when copying a graph.
-- `state` is derived from prerequisites and your marks: `locked`, `available`, `active` or `complete`.
+- `state` is derived from prerequisites and your marks: `locked`, `available` or `complete`.
 
 `roadmap_find_nodes {state: "available"}` finds the current frontier. Import personal marks through
 `progress[]`, separately from node `seedStatus`.

@@ -547,27 +547,10 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
-§5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
-threshold. `RadialLayoutEngine.js` is the only engine in `web/src/products/roadmap/layout/`, it uses
-no fixed ring gap (`RING = NODE_SIZE * 2.8`, each ring pushed out until its tightest pair clears
-`MIN_ARC = NODE_SIZE * 1.7`), and no dagre appears anywhere in `web/src`. The contract's own Known
-gaps section records the mismatch without resolving it. Either the contract becomes radial-only and
-§5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
-a rendering rule.
-
-**Roadmap caption readability** → align renderer and working-camera behavior with a readable label contract.
-`roadmap/guidelines/tree-layout-contract.md` asks for upright, unscaled captions and nominal 14px
-type. `NodeOverlay.js` instead uses `56 × 0.23 × zoom` and displays captions from zoom 0.5,
-where they are 6.44px; its pool has no label collision handling. The current Fit cap permits at
-most 8.13px captions. `roadmap/readability-research.md` records the code and live-tree evidence,
-proposes readable labels, local branch compaction and focus, and identifies the overview label
-policy that still needs a design decision. These are research recommendations; the app is unchanged.
-
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
-(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
-`float toLit = tier == 0 ? 0.0 : 1.0`, so tiers 1–3 all paint the full base fill and ring colour:
+(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js` sets
+`float toLit = tier == 0 ? 0.0 : 1.0`, so available and complete both paint the full base fill and ring colour:
 on the GL canvas — which is production — an available node is saturated and differs from complete
 only by the halo. Either the shader gains an available face, or the contract and the DOM reference
 take the renderer's.
@@ -2277,6 +2260,34 @@ open gym light round.
 All eight narrow index boards clip a 506px list into roughly 410, so the end marker is drawn and
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
+
+## Roadmap bubble graduation · 10 September 2026
+
+The canvas defaults to bubble with a 168px caption reserve, up to two 14px/20px lines and
+ellipsized overflow. Bubble and radial are bundled; rings and mindmap remain URL alternatives.
+The layout result names its effective engine, including fallback, for camera storage and reorder
+behavior. Bubble siblings reorder within their trunk parent's open fan; root islands stay packed.
+
+The written contract is in `roadmap/guidelines/tree-layout-contract.md`, `responsive.md`,
+`angular-reorder.md`, and `keyboard-shortcuts.md`: 52px desktop / 40px phone working bodies,
+Focus (`F`) and All steps (`0`), 44px phone camera targets, a zoom floor of half the smaller of
+fit and working zoom, and crowded-tap zoom below the working view. Captions use ranked placement
+with 200ms eligibility holds and a 150ms fade. `roadmap/bubble-graduation.md` holds the phase's
+verification status and remaining engineering concerns; `roadmap/readability-research.md` holds
+the measurement apparatus and layout comparison.
+
+**F50 · marketing drawings and the app use different tree silhouettes** → designer follow-up.
+The app uses bubble. Live gallery portraits and the minimap draw the canvas positions; quest
+thumbnails and the paste ghost use the selected page layout with the same fallback policy.
+The `Windmill · Marketing` boards (0k) and `marketing/treeScenes.js` use hand-authored radial
+compositions. The sail scene contains 17 coordinates on rings and a scripted unlock ceremony.
+A visitor who forks that tree therefore sees a different silhouette in the app.
+
+Update the Figma marketing boards to bubble while keeping the authored names, staged progress
+states, and unlock sequence legible; then update the landing scene coordinates to match those
+boards. This is a composed design pass: engine-generated coordinates alone do not specify the
+marketing framing or the ceremony. The Figma drawings and landing scenes remain the outstanding
+canon mismatch for bubble graduation.
 
 ## Android gym refactor
 

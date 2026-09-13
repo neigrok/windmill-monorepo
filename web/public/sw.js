@@ -12,10 +12,12 @@
 const VERSION = 'v1';
 const SHELL_CACHE = `windmill-shell-${VERSION}`;
 const ASSET_CACHE = `windmill-assets-${VERSION}`;
-const ICON_CACHE = `windmill-icons-${VERSION}`;
+const ICON_CACHE = 'windmill-icons-v2';
 const LIVE_CACHES = [SHELL_CACHE, ASSET_CACHE, ICON_CACHE];
 
 const ICON_PATHS = [
+  '/brand-logo.svg',
+  '/brand-mark.svg',
   '/site.webmanifest',
   '/icon-192.png',
   '/icon-512.png',

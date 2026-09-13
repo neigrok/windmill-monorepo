@@ -100,6 +100,13 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
+Json::Value progressStatusArgument(const Json::Value& value) {
+  if (!value.isString()) return value;
+  const auto status = parseProgressStatus(value.asString());
+  if (!status) return value;
+  return progressStatusName(*status);
+}
+
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
@@ -107,7 +114,7 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["label"], path + ".label")) return bad;
   if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
-  if (std::optional<std::string> bad = optionalOneOf(node["seedStatus"], path + ".seedStatus", kStatuses))
+  if (std::optional<std::string> bad = optionalOneOf(progressStatusArgument(node["seedStatus"]), path + ".seedStatus", kStatuses))
     return bad;
   if (!node["status"].isNull()) return path + kSeedStatusMoved;
   if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
@@ -703,7 +710,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
       if (std::optional<std::string> bad = requireHandle(args["updates"][i], kNodeHandle, row, node))
         return ToolResult::failure(*bad);
       if (std::optional<std::string> bad =
-              requireOneOf(args["updates"][i]["status"], row + ".status", kStatuses))
+              requireOneOf(progressStatusArgument(args["updates"][i]["status"]), row + ".status", kStatuses))
         return ToolResult::failure(*bad);
       const ProgressStatus status = *parseProgressStatus(args["updates"][i]["status"].asString());
       bool outOfOrder = false;
@@ -717,7 +724,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     std::string node;
     if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node))
       return ToolResult::failure(*bad);
-    if (std::optional<std::string> bad = requireOneOf(args["status"], "status", kStatuses))
+    if (std::optional<std::string> bad = requireOneOf(progressStatusArgument(args["status"]), "status", kStatuses))
       return ToolResult::failure(*bad);
     const ProgressStatus status = *parseProgressStatus(args["status"].asString());
     bool outOfOrder = false;
@@ -805,7 +812,7 @@ std::optional<std::string> checkImport(const Json::Value& args) {
     if (std::optional<std::string> bad = requireHandle(args["progress"][i], kNodeHandle, row, node))
       return bad;
     if (std::optional<std::string> bad =
-            requireOneOf(args["progress"][i]["status"], row + ".status", kStatuses))
+            requireOneOf(progressStatusArgument(args["progress"][i]["status"]), row + ".status", kStatuses))
       return bad;
   }
 
@@ -884,7 +891,7 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     if (node["seedStatus"].isString()) seeds[node["id"].asString()] = node["seedStatus"].asString();
   for (NodeSpec& node : graft.document.nodes) {
     auto seed = seeds.find(node.id.str());
-    if (seed != seeds.end()) node.status = seed->second;
+    if (seed != seeds.end()) node.status = normalizeSeedStatus(seed->second);
   }
   // A field the batch leaves off a kind is not sent blank: the graft stamps that register unset, so a
   // kind already in the legend keeps its value and a new one lands with the default.
@@ -985,7 +992,7 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
       const Progress overlay = progress.progressOf(tree, actor);
       std::vector<ProgressWrite> clears;
       for (const NodeId& node : footprint.tombstonedNodes) {
-        if (!overlay.completed.count(node) && !overlay.inProgress.count(node)) continue;
+        if (!overlay.completed.count(node)) continue;
         clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
       }
       if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
@@ -1047,7 +1054,6 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
     Progress overlay = progress.progressOf(tree, actor);
     std::vector<NodeId> orphans;
     for (const NodeId& node : overlay.completed) if (!room.hasNode(node)) orphans.push_back(node);
-    for (const NodeId& node : overlay.inProgress) if (!room.hasNode(node)) orphans.push_back(node);
 
     Seq seq = room.head();
     if (prunedEdges > 0) {
@@ -1136,7 +1142,7 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const 
     if (prune) {
       const Progress overlay = progress.progressOf(tree, actor);
       for (const NodeId& node : targets)
-        if (overlay.completed.count(node) || overlay.inProgress.count(node)) orphans.push_back(node);
+        if (overlay.completed.count(node)) orphans.push_back(node);
     }
 
     const TreeDiagnostics before = room.diagnose();

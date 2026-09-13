@@ -143,9 +143,15 @@ release APK and publishes it as a GitHub Release; `workflow_dispatch` with a ver
 build and leaves the APK as an actions artifact. There is no store distribution: a release is a
 sideload. `versionCode` is the workflow run number, so a later tag can never ship a smaller code.
 
-Signing is armed by four repo secrets. With none set, the build falls back to the **debug key** —
-sideload-ready, no store identity, and not updatable in place once the real key exists. Some but not
-all four set fails the workflow. Arm the real key once with:
+Signing is armed by four repo secrets. With none set, each CI runner can generate its own **debug
+key**, so releases from different runs can carry incompatible signatures. The published
+`android-v0.7.0` and `android-v0.7.1` APKs have different signing certificates: `0.7.1` cannot update
+a `0.7.0` installation in place.
+
+An in-place update that preserves app data requires the same key that signed the installed APK.
+Configuring a new key does not restore compatibility with that installation. Future releases need
+one retained release key supplied through all four secrets; setting only some fails the workflow.
+Configure that key once with:
 
 ```sh
 gh secret set WINDMILL_ANDROID_KEYSTORE_B64 --body "$(base64 -i windmill.keystore)"

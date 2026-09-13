@@ -35,7 +35,7 @@ for (const quest of ROSTER) {
     const roots = quest.nodes.filter((node) => node.prerequisites.length === 0);
     assert.deepStrictEqual(roots, [quest.nodes[0]], 'exactly one root, and it is nodes[0]');
 
-    const zeroProgress = { completed: new Set(), inProgress: new Set() };
+    const zeroProgress = { completed: new Set() };
     const atZero = UnlockRules.derive(tree, zeroProgress);
     assert.deepStrictEqual(
       quest.nodes.filter((node) => atZero.get(node.id) === 'available').map((node) => node.id),
@@ -43,7 +43,7 @@ for (const quest of ROSTER) {
       'zero progress must light exactly one available node — the root',
     );
 
-    const afterRoot = UnlockRules.derive(tree, { completed: new Set([quest.nodes[0].id]), inProgress: new Set() });
+    const afterRoot = UnlockRules.derive(tree, { completed: new Set([quest.nodes[0].id]) });
     const cascade = quest.nodes.filter((node) => afterRoot.get(node.id) === 'available');
     assert.ok(cascade.length >= 2, `completing the root unlocks ${cascade.length} step(s) — the cascade must show at least 2`);
 
@@ -66,7 +66,7 @@ for (const quest of ROSTER) {
       assert.ok(!('status' in node), `node "${node.id}" seeds a status — quests arrive unlit`);
       assert.ok(!('icon' in node), `node "${node.id}" carries an icon — the plant road crowns the root itself`);
       assert.ok(!('position' in node) && !('x' in node) && !('y' in node),
-        `node "${node.id}" carries a position — the radial layout owns placement`);
+        `node "${node.id}" carries a position — the layout engine owns placement`);
     }
 
     assert.ok(typeof quest.estimate === 'string' && quest.estimate.length > 0, 'carries an estimate');

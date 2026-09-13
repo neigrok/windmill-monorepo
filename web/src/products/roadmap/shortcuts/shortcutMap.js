@@ -10,8 +10,8 @@ export const SHORTCUT_GROUPS = [
       { label: 'Pan the canvas', chords: [[gesture('Drag')], [gesture('Space+Drag')]] },
       { label: 'Zoom in / out', chords: [[gesture('Scroll')], [key('⌘'), key('=')], [key('⌘'), key('−')]] },
       { label: 'Zoom to a point', chords: [[gesture('Double-click')]] },
-      { label: 'Fit tree to screen', chords: [[key('F')]] },
-      { label: 'Reset zoom', chords: [[key('0')]] },
+      { label: 'Focus on a step', chords: [[key('F')]] },
+      { label: 'All steps', chords: [[key('0')]] },
     ],
   },
   {

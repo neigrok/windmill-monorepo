@@ -1,3 +1,8 @@
+// The landing's tree worlds. Every seat here is a hand-placed coordinate, not layout-engine output: these are
+// compositions with staged states, authored names and a scripted unlock ceremony hung off particular nodes. So they
+// draw a radial burst while the app draws a bubble tree — a deliberate divergence, filed as F50 in
+// docs/design/consistency.md, and owed a redraw from the boards.
+
 import { KIND_CSS, isNightFor, sceneTheme } from '../theme.js';
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;

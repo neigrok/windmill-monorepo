@@ -83,7 +83,7 @@ TEST(tree_from_json_refuses_a_non_object_root) {
 TEST(the_progress_overlay_answers_as_stamped_registers) {
   Progress progress;
   progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(500, "r_phone"), 1700000000000ull});
-  progress.record(nid("b"), ProgressMark{ProgressStatus::active, at(600, "r_tab"), 1700000600000ull});
+  progress.record(nid("b"), ProgressMark{ProgressStatus::none, at(600, "r_tab"), 1700000600000ull});
 
   Json::Value root = toJson(progress);
 
@@ -93,7 +93,7 @@ TEST(the_progress_overlay_answers_as_stamped_registers) {
   CHECK_EQ(root["marks"][0]["at"].asString(), std::string("500:0:r_phone"));
   CHECK_EQ(root["marks"][0]["markedAt"].asUInt64(), 1700000000000ull);
   CHECK_EQ(root["marks"][1]["node"].asString(), std::string("b"));
-  CHECK_EQ(root["marks"][1]["status"].asString(), std::string("active"));
+  CHECK_EQ(root["marks"][1]["status"].asString(), std::string("none"));
   CHECK_EQ(root["marks"][1]["at"].asString(), std::string("600:0:r_tab"));
 }
 
@@ -112,13 +112,12 @@ TEST(a_cleared_register_is_carried_not_omitted) {
 // `record` is the only way into the overlay, so re-marking a node must move it between the sets, never leave it in two.
 TEST(recording_over_a_node_moves_it_between_the_projected_sets) {
   Progress progress;
-  progress.record(nid("a"), ProgressMark{ProgressStatus::active, at(500), 1});
+  progress.record(nid("a"), ProgressMark{ProgressStatus::none, at(500), 1});
   progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(600), 2});
   progress.record(nid("b"), ProgressMark{ProgressStatus::complete, at(600), 2});
   progress.record(nid("b"), ProgressMark{ProgressStatus::none, at(700), 3});
 
   CHECK_EQ(progress.completed, (std::set<NodeId>{nid("a")}));
-  CHECK_EQ(progress.inProgress, (std::set<NodeId>{}));
   CHECK_EQ(progress.cleared, (std::set<NodeId>{nid("b")}));
   CHECK_EQ(progress.marks.size(), 2u);
   CHECK_EQ(progress.marks.at(nid("a")).status, ProgressStatus::complete);
@@ -175,4 +174,26 @@ TEST(the_out_of_order_word_rides_a_progress_register_only_when_set) {
            (std::vector<std::string>{"at", "markedAt", "node", "outOfOrder", "status"}));
   CHECK_EQ(root["marks"][1]["node"].asString(), std::string("b"));
   CHECK_EQ(root["marks"][1].getMemberNames(), (std::vector<std::string>{"at", "markedAt", "node", "status"}));
+}
+
+TEST(legacy_authored_progress_is_cleared_in_documents_and_replayed_graph_frames) {
+  const Json::Value legacy = parse(R"({"nodes":[
+    {"id":"a","status":"active","statusAt":"100:0:r_old"},
+    {"id":"b","status":"inProgress","statusAt":"101:0:r_old"},
+    {"id":"c","status":"complete","statusAt":"102:0:r_old"}
+  ]})");
+  const Json::Value expected = parse(R"(["none","none","complete"])");
+  const TreeData document = treeFromJson(legacy, TreeId{"t"}).value();
+  const GraphState graph = graphStateFromJson(legacy);
+  LooseGraph restored{graph};
+  restored.join(graph);
+
+  Json::Value documentStatuses(Json::arrayValue), graphStatuses(Json::arrayValue);
+  for (const NodeSpec& node : document.nodes) documentStatuses.append(*node.status);
+  for (const NodeStateEntry& node : restored.exportState().nodes) graphStatuses.append(*node.status);
+  CHECK_EQ(documentStatuses, expected);
+  CHECK_EQ(graphStatuses, expected);
+  CHECK_EQ(restored.exportState().nodes[0].statusAt, (Hlc{100, 0, "r_old"}));
+  CHECK_EQ(restored.exportState().nodes[1].statusAt, (Hlc{101, 0, "r_old"}));
+  CHECK_EQ(restored.exportState().nodes[2].statusAt, (Hlc{102, 0, "r_old"}));
 }

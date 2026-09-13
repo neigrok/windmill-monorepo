@@ -4,7 +4,7 @@
 // door — but keeps its place in the cross-nav and the footer, where it reads as a tool that exists.
 
 import React, { Suspense, useEffect } from 'react';
-import { Button } from '../../design-system';
+import { BrandWordmark, Button } from '../../design-system';
 import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { LandingPage } from './LandingChrome.jsx';
@@ -95,7 +95,7 @@ export function BrandLanding() {
       <div className="rootSeparator" role="presentation">
         <span className="rootSeparator-rule" />
         <span className="rootSeparator-beat">
-          <span className="rootSeparator-mark">Windmill</span>
+          <BrandWordmark className="rootSeparator-mark" size={34} />
           <span className="rootSeparator-dot" />
           <span className="rootSeparator-phrase">{BRAND_PROMISE}</span>
         </span>

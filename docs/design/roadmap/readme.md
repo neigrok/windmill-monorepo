@@ -14,6 +14,10 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 
 - `guidelines/` — the feature canon (decoder below).
 - `briefs.md` — the open asks to the designers.
+- `guidelines/node-progress.md` — the binary progress contract and minimal control set.
+- `readability-research.md` — how the canvas is made readable: the caption frame, the working zoom,
+  the four layout engines measured side by side, and the remaining evaluations.
+- `bubble-graduation.md` — current graduation contract, structure observations, verification and follow-ups.
 
 ## Spec codes — decoder
 
@@ -47,10 +51,13 @@ DAG editing.
 
 ## Tree layout & metaphor
 
-The canvas lays out radially from a centered root: each node sits on the ring for its trunk
-depth, at the center of an angular wedge, wedges split among children by subtree leaf count.
-A live gallery SVG portrait must use the tree's own canvas positions. Social link previews can
-be stored or generic and are not guaranteed to match the live page (`guidelines/og-tree-cards.md`).
+The canvas uses bubble layout: children sit on rays around their trunk parent, subtrees tuck
+inward with room for their captions, and root islands pack around the largest root. Bubble and
+the radial fallback are bundled; `?layout=radial|rings|mindmap` opens the alternatives without a UI
+switch (`readability-research.md`). Captions reserve up to 168 px, with overflow ellipsized after
+two lines. A live gallery SVG portrait must use the tree's own canvas positions.
+Social link previews can be stored or generic and are not guaranteed to match the live page
+(`guidelines/og-tree-cards.md`).
 
 Connectors are stroked bezier curves, even-width with a gentle stable bend; a branch that starts
 in a **done** node lights up in that node's colour (no glow), otherwise it stays a thin muted
@@ -58,8 +65,8 @@ line. Nodes are flat, uniform circular discs, base size 56.
 
 **Colour and state are decoupled.** A node's colour comes from its `kind` — one of six palette
 hues (terracotta, olive, gold, brick, sky, plum) — and progress is carried by treatment across
-four tiers: **locked** dimmed, **available**, **ember** (in-progress, low breathing glow, no
-halo), **complete** (bright, glowing halo — breathing on the crowned root, static elsewhere).
+three tiers: **locked** dimmed, **available**, and **complete** (bright, glowing halo —
+breathing on the crowned root, static elsewhere).
 The tier never re-hues a node.
 
 The production renderer is a hand-rolled WebGL2 canvas (`web/src/products/roadmap/scene/`);

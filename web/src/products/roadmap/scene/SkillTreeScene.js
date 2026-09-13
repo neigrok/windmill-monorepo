@@ -1,5 +1,5 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
-import { NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
+import { NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -9,27 +9,23 @@ import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
 import { ArrivalChevron } from './ArrivalChevron.js';
-import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
 import { ReorderSlot } from './ReorderSlot.js';
-import { circularInsertionIndex, reorderPlan } from './input/reorderGeometry.js';
+import { reorderPlan, seatOn } from './input/reorderGeometry.js';
 import { edgeKey } from './edgeKey.js';
 import { createTextureFromCanvas } from './glcore.js';
+import { hitTest as pickAt } from './picking.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
-const PICK_RADIUS = NODE_SIZE * 0.65;
-const TOUCH_HIT_RADIUS = 22; // screen px: read-only pick floor
 const PAN_SETTLE_MS = 200;
 const EDGE_PICK_RADIUS = 12; // screen px
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
-const ICON_ZOOM_FULL = 1.1;
-// Caps the fit zoom so a near-empty tree cannot balloon: the emphasised root reads at ~46px.
-const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
+const ICON_ZOOM_FULL = WORKING_ZOOM; // the baked glyph is whole exactly at the working view
 const SETTLE_MS = 520;
 const SETTLE_MIN_DELTA = 2; // world units
 const SETTLE_STAGGER_MS = 120;
@@ -37,6 +33,7 @@ const AUTO_FRAME_IDLE_S = 2;
 const AUTO_FRAME_EXPIRY_S = 10;
 const AUTO_FRAME_MAX_ZOOM_OUT = 0.82;
 const AUTO_FRAME_PAD = NODE_SIZE * 2; // world units
+const FAMILY_FRAME_PAD = NODE_SIZE * 2; // the air a focused step's family keeps inside the frame
 
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -60,17 +57,17 @@ export class SkillTreeScene {
     this.theme = sceneTheme(isNightFor(canvas));
     this.clearColor = hexRgb(this.theme.BACKGROUND.canvas);
 
-    this.camera = new Camera2D();
+    this.camera = new Camera2D({ workingZoom: options.workingZoom });
     this.nodeBatch = new NodeBatch(gl, this.theme);
     this.connectorBatch = new ConnectorBatch(gl, this.theme);
-    this.labelOverlay = new LabelOverlay(canvas);
+    this.labelOverlay = new LabelOverlay(canvas, this.theme);
     this.iconOverlay = new IconOverlay(canvas, this.theme);
-    this.hoverLabel = new HoverLabel(canvas, this.theme);
     this.affordanceLayer = null;
     this.edgeChrome = null;
     this.marqueeOverlay = null;
     this.reorderSlot = null;
-    this.reorder = null; // { id, radius, siblings, homeX, homeY }
+    this.reorder = null; // { id, centre, radius, homeAngle, siblings, homeX, homeY }
+    this.reorderHint = 'none'; // the active layout engine's static hint; 'ring' and 'parent-arc' arm the angular gesture
     if (!this.readOnly) {
       this.marqueeOverlay = new MarqueeOverlay(canvas);
       this.reorderSlot = new ReorderSlot(canvas);
@@ -132,6 +129,8 @@ export class SkillTreeScene {
     this.arrivalNoun = 'Roadmap';
     this.arrivalSummaryOverride = null;
     this.arrivalToastSuppressed = false;
+    this.arrivalSuppressed = false; // one-shot intent, latched into arrivalSkipped by the next setModel
+    this.arrivalSkipped = false;
     this.returnRecap = null; // { sinceIds, summary } | null
     this.pendingSummary = null;
     this.pendingAction = null; // { label, run } | null
@@ -154,10 +153,11 @@ export class SkillTreeScene {
 
     this.toolContext = {
       camera: this.camera,
-      pick: (x, y) => this.pick(x, y),
+      pick: (x, y, pointerType) => this.pick(x, y, pointerType),
+      zoomIntoCrowd: (x, y, pointerType) => this.zoomIntoCrowd(x, y, pointerType),
       pickEdge: (x, y) => this.pickEdge(x, y),
-      // A handler present consumes the tap by returning true; absent, false lets it through.
-      editTap: (x, y) => this.editTap ? (this.editTap(x, y), true) : false,
+      // A handler present takes the picked step (or null) and consumes the tap by returning true; absent, false lets it through.
+      editTap: (x, y, id) => this.editTap ? (this.editTap(x, y, id), true) : false,
       // Returning true makes the InputController swallow the lift, so no tap follows the hold.
       onLongPress: (id) => (id != null && this.longPress ? (this.longPress(id), true) : false),
       select: (id) => this.select(id),
@@ -181,10 +181,7 @@ export class SkillTreeScene {
       this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.updateMarquee(x0, y0, x1, y1);
       this.toolContext.cancelMarquee = () => { this.marqueeOverlay?.hide(); this.nodeBatch.setMarqueePreview(new Set()); };
       this.toolContext.commitMarquee = (x0, y0, x1, y1, additive) => this.commitMarquee(x0, y0, x1, y1, additive);
-      this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
-      this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
-      this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
-      this.toolContext.cancelReorder = () => this.cancelReorder();
+      this.setReorderHint(options.reorderHint ?? 'none');
     }
     const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
     this.input = new InputController(canvas, this.toolContext, tool);
@@ -200,6 +197,8 @@ export class SkillTreeScene {
     this.director.cancel();
     this.settle = null;
     this.pendingFrame = null;
+    this.arrivalSkipped = this.arrivalSuppressed;
+    this.arrivalSuppressed = false;
     this.arrivalChevron.clear();
     this.nodeStates = new Map();
     this.lastArcs = new Map();
@@ -208,6 +207,7 @@ export class SkillTreeScene {
     this.hoveredId = null;
     this.selectedEdge = null;
     this.selectedEdges = new Set();
+    this.syncCaptionContext();
     this.fitToView();
     // Pre-dim before the first paint: a return-recap darkens only the steps it replays, any other first paint the whole tree.
     if (this.returnRecap) {
@@ -245,8 +245,8 @@ export class SkillTreeScene {
       else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
     } else this.nodeBatch.setSelectedSet(this.selectedIds);
     this.affordanceLayer?.setSelected(this.selectedId);
-    this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     const arrivals = renderModel.nodes.filter((node) => !previous.has(node.id));
     this.beginSettle(previous, arrivals);
@@ -275,10 +275,7 @@ export class SkillTreeScene {
     delete this.toolContext.updateMarquee;
     delete this.toolContext.cancelMarquee;
     delete this.toolContext.commitMarquee;
-    delete this.toolContext.beginReorder;
-    delete this.toolContext.updateReorder;
-    delete this.toolContext.commitReorder;
-    delete this.toolContext.cancelReorder;
+    this.disarmReorder();
     this.cancelReorder();
     this.marqueeOverlay?.dispose();
     this.marqueeOverlay = null;
@@ -314,26 +311,28 @@ export class SkillTreeScene {
     moves.sort((a, b) => Math.hypot(a.toX - anchor.x, a.toY - anchor.y) - Math.hypot(b.toX - anchor.x, b.toY - anchor.y));
     moves.forEach((move, index) => { move.delayMs = (SETTLE_STAGGER_MS * index) / Math.max(1, moves.length - 1); });
 
-    for (const move of moves) this.moveNode(move.id, move.fromX, move.fromY);
+    this.moveNodes(moves.map((move) => ({ id: move.id, x: move.fromX, y: move.fromY })));
     this.settle = { startAt: this.elapsedSeconds, moves };
   }
 
   advanceSettle() {
     const elapsedMs = (this.elapsedSeconds - this.settle.startAt) * 1000;
+    const moving = [];
     let settling = false;
     for (const move of this.settle.moves) {
       const t = (elapsedMs - move.delayMs) / SETTLE_MS;
       if (t < 0) { settling = true; continue; }
       const eased = t >= 1 ? 1 : easeInOutCubic(t);
-      this.moveNode(move.id, move.fromX + (move.toX - move.fromX) * eased, move.fromY + (move.toY - move.fromY) * eased);
+      moving.push({ id: move.id, x: move.fromX + (move.toX - move.fromX) * eased, y: move.fromY + (move.toY - move.fromY) * eased });
       if (t < 1) settling = true;
     }
+    this.moveNodes(moving);
     if (!settling) this.settle = null;
   }
 
   finishSettle() {
     if (!this.settle) return;
-    for (const move of this.settle.moves) this.moveNode(move.id, move.toX, move.toY);
+    this.moveNodes(this.settle.moves.map((move) => ({ id: move.id, x: move.toX, y: move.toY })));
     this.settle = null;
   }
 
@@ -376,6 +375,7 @@ export class SkillTreeScene {
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
     this.spatialGrid = new SpatialGrid(renderModel.nodes, SPATIAL_CELL_SIZE);
     this.hoveredEdge = null;
+    this.camera.setFitBounds(renderModel.bounds);
 
     this.syncIconAtlas(renderModel.nodes);
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
@@ -383,7 +383,6 @@ export class SkillTreeScene {
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
-    this.hoverLabel.setModel(renderModel);
     this.affordanceLayer?.setModel(renderModel);
     this.edgeChrome?.setModel(renderModel);
     if (this.readOnly) this.camera.setPanBounds(renderModel.bounds);
@@ -392,6 +391,7 @@ export class SkillTreeScene {
   // The first push paints the resting look silently; later pushes diff against it.
   applyStates(statesMap) {
     this.iconOverlay.setStates(statesMap);
+    this.labelOverlay.setStates(statesMap);
 
     // A stopped scene must never arm the director: the settle poll would spin on a frozen clock and burst stale beats on resume.
     if (!this.running) {
@@ -424,7 +424,6 @@ export class SkillTreeScene {
     this.director.celebrate(changeset);
   }
 
-  // A rise into ember is applied here as a quiet kindle and kept out of `risen`, so the director never celebrates a start.
   buildChangeset(statesMap) {
     const risen = [];
     const fell = [];
@@ -435,8 +434,7 @@ export class SkillTreeScene {
       const fromTier = nodeTier(from);
       const node = this.nodesById.get(id);
       if (toTier > fromTier && node) {
-        if (state === 'active') this.kindle(id);
-        else risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
+        risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
       } else if (toTier < fromTier) {
         fell.push({ id, toTier });
       }
@@ -461,11 +459,6 @@ export class SkillTreeScene {
     return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, action: null };
   }
 
-  // Kindle the ember directly: no camera glide, light-travel, pulse or toast, and kept out of the changeset.
-  kindle(id) {
-    this.nodeBatch.igniteNode(id, this.elapsedSeconds, TIER_EMBER, { blossom: false, durationMs: 480 });
-  }
-
   announceCeremony(summary, opts = {}) {
     this.pendingSummary = summary;
     this.pendingAction = opts.action ?? null;
@@ -480,7 +473,7 @@ export class SkillTreeScene {
   // ---- arrival cascade --------------------------------------------------
 
   arrivalLikely() {
-    return !!this.renderModel && this.renderModel.nodes.length >= 2;
+    return !this.arrivalSkipped && !!this.renderModel && this.renderModel.nodes.length >= 2;
   }
 
   shouldAnimateArrival(statesMap) {
@@ -574,18 +567,29 @@ export class SkillTreeScene {
 
   setArrivalSummary(text) { this.arrivalSummaryOverride = text; }
   suppressArrivalToast() { this.arrivalToastSuppressed = true; }
+  // The owner's first view opens on the frontier at the working zoom; the crown-outward arrival would play off screen.
+  suppressArrival() { this.arrivalSuppressed = true; }
 
   // Armed before the model installs: the first applyStates push replays these ids.
   armReturnRecap(sinceIds, summary) { this.returnRecap = { sinceIds: new Set(sinceIds), summary }; }
 
   moveNode(id, x, y) {
-    const node = this.nodesById.get(id);
-    if (!node) return;
-    node.x = x;
-    node.y = y;
-    this.nodeBatch.moveInstance(id, x, y);
-    this.connectorBatch.moveNode(id, x, y);
-    this.spatialGrid.move(id, x, y);
+    this.moveNodes([{ id, x, y }]);
+  }
+
+  // A batch of movers — a settle frame, or one dragged node: the model, the grid and both GPU batches, then the
+  // captions, which re-place from the live positions on the same frame rather than hanging where the discs were.
+  moveNodes(moves) {
+    for (const move of moves) {
+      const node = this.nodesById.get(move.id);
+      if (!node) continue;
+      node.x = move.x;
+      node.y = move.y;
+      this.spatialGrid.move(move.id, move.x, move.y);
+    }
+    this.nodeBatch.moveInstances(moves);
+    this.connectorBatch.moveNodes(moves);
+    this.labelOverlay.markMoved();
     this.overlaysDirty = true;
   }
 
@@ -600,9 +604,58 @@ export class SkillTreeScene {
   setFaded(ids) { this.nodeBatch.setFaded(ids); }
   clearFaded() { this.nodeBatch.clearFaded(); }
 
+  // All steps: the whole tree inside the visible area, capped at the working zoom.
   fitToView() {
     if (!this.renderModel) return;
-    this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight, 0.9, FIT_MAX_ZOOM);
+    this.camera.fitToView(this.renderModel.bounds);
+  }
+
+  // Focus: the working zoom over `id`'s family, else over the current selection's. Returns whether there was a step
+  // to go to.
+  focusWorking(id = null, { instant = false } = {}) {
+    const node = this.nodesById.get(id ?? this.selectedId);
+    if (!node) return false;
+    this.pendingFrame = null;
+    this.director.yieldToInput();
+    this.finishSettle();
+    const zoom = this.camera.workingZoom;
+    const target = this.familyCentre(node, zoom);
+    if (instant) {
+      const centre = this.camera.centreFor(target.x, target.y, zoom);
+      this.camera.restore(centre.x, centre.y, zoom);
+      return true;
+    }
+    this.camera.glideTo(target.x, target.y, zoom, { force: true });
+    return true;
+  }
+
+  // What a focus frames: the box holding the step, its trunk parent and its trunk children when that box fits the
+  // visible area at `zoom` — a step at the edge of its family never opens on half a screen of empty canvas — else the step.
+  familyCentre(node, zoom) {
+    let minX = node.x;
+    let maxX = node.x;
+    let minY = node.y;
+    let maxY = node.y;
+    for (const edge of this.renderModel.edges) {
+      if (edge.kind !== 'trunk') continue;
+      const relative = edge.to === node.id ? this.nodesById.get(edge.from) : edge.from === node.id ? this.nodesById.get(edge.to) : null;
+      if (!relative) continue;
+      minX = Math.min(minX, relative.x);
+      maxX = Math.max(maxX, relative.x);
+      minY = Math.min(minY, relative.y);
+      maxY = Math.max(maxY, relative.y);
+    }
+    const span = this.camera.visibleSpanAt(zoom);
+    if (maxX - minX + FAMILY_FRAME_PAD * 2 > span.width || maxY - minY + FAMILY_FRAME_PAD * 2 > span.height) return node;
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  }
+
+  setWorkingZoom(zoom) { this.camera.setWorkingZoom(zoom); }
+
+  // Chrome-covered px per side; the camera centres inside the rest and the captions keep clear of it.
+  setViewportInsets(insets) {
+    this.camera.setInsets(insets);
+    this.labelOverlay.setInsets(insets);
   }
 
   getViewpoint() { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom }; }
@@ -614,6 +667,7 @@ export class SkillTreeScene {
     this.selectedId = id;
     this.selectedIds = new Set([id]);
     this.nodeBatch.setSelected(id);
+    this.syncCaptionContext();
     this.camera.focus(node.x, node.y);
   }
 
@@ -738,11 +792,11 @@ export class SkillTreeScene {
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
-    this.hoverLabel.dispose();
     this.arrivalChevron.dispose();
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
     this.marqueeOverlay?.dispose();
+    this.reorderSlot?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -755,8 +809,8 @@ export class SkillTreeScene {
     this.clearColor = hexRgb(theme.BACKGROUND.canvas);
     this.nodeBatch.setTheme(theme);
     this.connectorBatch.setTheme(theme);
+    this.labelOverlay.setTheme(theme);
     this.iconOverlay.setTheme(theme);
-    this.hoverLabel.setTheme(theme);
     this.arrivalChevron.setTheme(theme);
   }
 
@@ -775,7 +829,6 @@ export class SkillTreeScene {
     if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
-      this.hoverLabel.update(this.camera);
       this.arrivalChevron.update(this.camera);
       this.affordanceLayer?.update(this.camera);
       this.edgeChrome?.update(this.camera);
@@ -797,8 +850,10 @@ export class SkillTreeScene {
 
   // ---- icon atlas -------------------------------------------------------
 
+  // Kept whenever it already knows every icon the model names — a name with no glyph included, or the atlas would be
+  // rebuilt on every edit for a tree that carries one.
   syncIconAtlas(nodes) {
-    if (this.iconAtlas && nodes.every((node) => this.iconAtlas.cellFor(node.icon) >= 0)) return;
+    if (this.iconAtlas && nodes.every((node) => this.iconAtlas.knows(node.icon))) return;
     this.buildIconAtlas(nodes);
   }
 
@@ -868,41 +923,78 @@ export class SkillTreeScene {
   }
 
   // ---- Angular reorder ----------------------------------------------------
+  // The gesture rides the dragged node round an arc, so only the two engine families whose siblings sweep one arm
+  // it: 'ring' turns about the world origin, 'parent-arc' about the node's own trunk parent.
+  setReorderHint(hint) {
+    this.reorderHint = hint;
+    if (this.readOnly || (hint !== 'ring' && hint !== 'parent-arc')) { this.disarmReorder(); return; }
+    this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
+    this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
+    this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
+    this.toolContext.cancelReorder = () => this.cancelReorder();
+  }
+
+  disarmReorder() {
+    delete this.toolContext.beginReorder;
+    delete this.toolContext.updateReorder;
+    delete this.toolContext.commitReorder;
+    delete this.toolContext.cancelReorder;
+  }
+
+  // The centre the dragged node turns about: the world origin on a ring, its trunk parent's seat on a parent arc —
+  // and a root has no such parent, so nothing there is draggable into a new order.
+  reorderCentre(id) {
+    if (this.reorderHint === 'ring') return { x: 0, y: 0 };
+    const inEdge = this.renderModel?.edges.find((edge) => edge.to === id && edge.kind === 'trunk');
+    const parent = inEdge ? this.nodesById.get(inEdge.from) : null;
+    return parent ? { x: parent.x, y: parent.y } : null;
+  }
+
   // The view supplies the siblings and their order keys via reorderContext; the scene reports the chosen fractional key through onSetNodeOrder on release.
   beginReorder(id, sx, sy) {
+    this.finishSettle();
     const node = this.nodesById.get(id);
     const context = this.options.reorderContext?.(id);
     if (!node || !context) { this.reorder = null; return; }
+    const centre = this.reorderCentre(id);
+    if (!centre) { this.reorder = null; return; }
     const siblings = context.siblings
       .filter((s) => s.id !== id)
       .map((s) => { const n = this.nodesById.get(s.id); return n ? { id: s.id, order: s.order, x: n.x, y: n.y } : null; })
       .filter(Boolean);
     if (siblings.length === 0) { this.reorder = null; return; }
-    this.finishSettle(); // land any in-flight glide first
-    this.reorder = { id, radius: Math.hypot(node.x, node.y), siblings, homeX: node.x, homeY: node.y };
+    // On a parent arc the siblings sweep an open fan, so the node's own seat marks where that fan ends.
+    const homeAngle = this.reorderHint === 'ring' ? null : Math.atan2(node.y - centre.y, node.x - centre.x);
+    this.reorder = { id, centre, radius: Math.hypot(node.x - centre.x, node.y - centre.y), homeAngle, siblings, homeX: node.x, homeY: node.y };
     this.nodeBatch.setMarqueePreview(new Set([id]));
-    this.reorderSlot?.show();
-    this.updateReorder(sx, sy);
+    this.updateReorder(sx, sy); // the first move decides whether this drop has a slot to offer
   }
 
   updateReorder(sx, sy) {
     if (!this.reorder) return;
-    const { id, radius, siblings } = this.reorder;
+    const { id, centre, radius, homeAngle, siblings, homeX, homeY } = this.reorder;
     const world = this.camera.screenToWorld(sx, sy);
-    const angle = Math.atan2(world.y, world.x);
-    this.moveNode(id, radius * Math.cos(angle), radius * Math.sin(angle)); // arc: radius pinned
-    const index = circularInsertionIndex(siblings.map((s) => Math.atan2(s.y, s.x)), angle);
-    const slot = this.slotAngle(siblings, index);
-    const screen = this.camera.worldToScreen(radius * Math.cos(slot), radius * Math.sin(slot));
+    const plan = reorderPlan(siblings, world, { centre, homeAngle });
+    if (!plan) { // off the fan: the node waits in the seat it left and no slot is offered
+      this.moveNode(id, homeX, homeY);
+      this.reorderSlot?.hide();
+      return;
+    }
+    const ride = seatOn(centre, radius, Math.atan2(world.y - centre.y, world.x - centre.x)); // arc: radius pinned
+    this.moveNode(id, ride.x, ride.y);
+    const slot = seatOn(centre, radius, plan.slotAngle);
+    const screen = this.camera.worldToScreen(slot.x, slot.y);
+    this.reorderSlot?.show();
     this.reorderSlot?.moveTo(screen.x, screen.y, 1.3 * NODE_SIZE * this.camera.zoom);
   }
 
   commitReorder(sx, sy) {
     if (!this.reorder) return;
-    const { id, siblings } = this.reorder;
-    const plan = reorderPlan(siblings, this.camera.screenToWorld(sx, sy));
+    const { id, centre, homeAngle, siblings } = this.reorder;
+    const plan = reorderPlan(siblings, this.camera.screenToWorld(sx, sy), { centre, homeAngle });
+    if (!plan) { this.cancelReorder(); return; } // a drop off the fan belongs to no gap: nothing is written
     this.clearReorder();
-    if (plan) this.options.onSetNodeOrder?.(id, plan.key);
+    this.options.onSetNodeOrder?.(id, plan.key);
   }
 
   cancelReorder() {
@@ -918,25 +1010,17 @@ export class SkillTreeScene {
     this.reorder = null;
   }
 
-  // The angle of the insertion slot at `index`: the midpoint of the gap the node drops into, the ends borrowing half the wrap gap.
-  slotAngle(siblings, index) {
-    const TAU = Math.PI * 2;
-    const norm = (a) => ((a % TAU) + TAU) % TAU;
-    const m = siblings.length;
-    const ang = siblings.map((s) => Math.atan2(s.y, s.x));
-    if (m === 1) return index === 0 ? ang[0] - 0.3 : ang[0] + 0.3;
-    const wrap = norm(ang[0] - ang[m - 1]);
-    if (index === 0) return norm(ang[0] - wrap / 2);
-    if (index === m) return norm(ang[m - 1] + wrap / 2);
-    return norm(ang[index - 1] + norm(ang[index] - ang[index - 1]) / 2);
-  }
-
   setSelection(id) {
     if (id === this.selectedId) return;
     this.selectedId = id;
     this.affordanceLayer?.setSelected(id);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     this.refreshHighlight();
+  }
+
+  syncCaptionContext() {
+    this.labelOverlay.setContext({ selectedId: this.selectedId, hoveredId: this.hoveredId });
   }
 
   selectEdge(edge) {
@@ -956,8 +1040,8 @@ export class SkillTreeScene {
   hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
-    this.hoverLabel.setHovered(id);
     this.nodeBatch.setHover(id, this.elapsedSeconds);
+    this.syncCaptionContext();
     this.overlaysDirty = true;
     if (this.options.onNodeHover) this.options.onNodeHover(id);
   }
@@ -989,11 +1073,21 @@ export class SkillTreeScene {
     this.connectorBatch.setInSetEdges(this.selectedIds);
   }
 
-  pick(x, y) {
-    if (!this.spatialGrid) return null;
-    const world = this.camera.screenToWorld(x, y);
-    const radius = this.readOnly ? Math.max(PICK_RADIUS, TOUCH_HIT_RADIUS / this.camera.zoom) : PICK_RADIUS;
-    return this.spatialGrid.nearest(world.x, world.y, radius);
+  pick(x, y, pointerType = 'mouse') {
+    return this.hitTest(x, y, pointerType).id;
+  }
+
+  // A tap among nodes too crowded to tell apart glides the working view in around the tapped point instead of
+  // missing; true when it did. At the working view the disc itself is the target, so there is nothing to zoom into.
+  zoomIntoCrowd(x, y, pointerType = 'mouse') {
+    if (!this.hitTest(x, y, pointerType).crowded) return false;
+    if (this.camera.zoom >= this.camera.workingZoom) return false;
+    this.camera.glideZoomAround(x, y, this.camera.workingZoom);
+    return true;
+  }
+
+  hitTest(x, y, pointerType) {
+    return pickAt(this.spatialGrid, this.nodesById, this.camera, x, y, pointerType, this.selectedIds.size < 2 ? this.selectedId : null);
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS, or null; only meaningful off-node.

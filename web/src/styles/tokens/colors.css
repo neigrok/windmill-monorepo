@@ -105,8 +105,7 @@
   --field-focus-edge: var(--accent-terracotta-400);
   --chip-selected-edge: var(--accent-terracotta-400);
 
-  /* ---- Node KINDS: colour comes from a node's kind; its tier (locked / available / active /
-     complete) is treatment only. Kinds + treatments are the whole node colour API. Per kind: the
+  /* ---- Node KINDS: colour comes from a node's kind; its tier (locked / available / complete) is treatment only. Kinds + treatments are the whole node colour API. Per kind: the
      base, a soft wash, a ring and a glow — the same four faces theme.js hands the WebGL scene. ---- */
   --kind-terracotta:      var(--accent-terracotta-500);
   --kind-terracotta-soft: var(--accent-terracotta-200);

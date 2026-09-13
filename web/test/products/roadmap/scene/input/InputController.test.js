@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { InputController } from '../../../../../src/products/roadmap/scene/input/InputController.js';
+import { NavigateTool, ReadOnlyTool } from '../../../../../src/products/roadmap/scene/input/tools.js';
 
-function tapper(startZoom) {
-  const camera = { zoom: startZoom };
+function tapper(startZoom, workingZoom = 1) {
+  const camera = { zoom: startZoom, workingZoom };
   camera.glideZoomAround = (px, py, target) => { camera.zoom = target; };
   const controller = new InputController({}, { camera }, {});
   const pos = { x: 100, y: 100 };
@@ -33,4 +34,64 @@ test('double-tap in the settled range toggles between the two zoom levels', () =
 
 test('double-tap from just below the out-level snaps to it, not past it', () => {
   assert.equal(tapper(0.8)(), 1); // ×2 would overshoot to 1.6 — capped at the out-level instead
+});
+
+test('the ladder is measured in the camera\'s working zoom: the out-level is the working view itself', () => {
+  const desktop = 1.1054421768707483;
+  assert.equal(tapper(0.04, desktop)(), 0.08);
+  assert.equal(tapper(0.8, desktop)(), Number(desktop.toFixed(6)));
+  assert.equal(tapper(desktop, desktop)(), Number((desktop * 1.6).toFixed(6)));
+  assert.equal(tapper(desktop * 1.6, desktop)(), Number(desktop.toFixed(6)));
+  assert.equal(tapper(0.5, 0.85)(), 0.85); // the phone: ×2 would overshoot its 0.85 working view
+});
+
+test('a tap the tool turned into a zoom runs no ladder step on top of it and pairs with no later tap', () => {
+  const camera = { zoom: 0.1, workingZoom: 1, glideZoomAround: (px, py, target) => { camera.zoom = target; } };
+  const canvas = { addEventListener() {}, setPointerCapture() {}, hasPointerCapture: () => false, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const controller = new InputController(canvas, { camera }, { onPointerDown() {}, onPointerUp: () => true });
+  const touch = { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 };
+  controller.onDown(touch);
+  controller.onUp(touch);
+  assert.equal(camera.zoom, 0.1);
+  assert.equal(controller.lastTap, null);
+
+  // The next lift is a plain tap: it records itself and steps nothing.
+  controller.tool = { onPointerDown() {}, onPointerUp() {} };
+  controller.onDown(touch);
+  controller.onUp(touch);
+  assert.equal(camera.zoom, 0.1);
+  assert.deepEqual({ x: controller.lastTap.x, y: controller.lastTap.y }, { x: 100, y: 100 });
+});
+
+test('a tap picks the bubble visible at pointerdown before a settle moves it, in editor and viewer tools', () => {
+  for (const ToolClass of [NavigateTool, ReadOnlyTool]) {
+    let settled = false;
+    const selected = [];
+    const context = {
+      camera: { stopMotion() {} },
+      pick: () => settled ? 'new-seat' : 'visible-bubble',
+      onInteract: () => { settled = true; },
+      select: (id) => selected.push(id),
+    };
+    const canvas = { setPointerCapture() {}, hasPointerCapture: () => false, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    const controller = new InputController(canvas, context, new ToolClass(context));
+    const pointer = { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100 };
+    controller.onDown(pointer);
+    controller.onUp(pointer);
+    assert.deepEqual(selected, ['visible-bubble']);
+  }
+});
+
+test('a cancelled pointer abandons its gesture without selecting or double-tap zooming', () => {
+  const selected = [];
+  const context = { camera: {}, pick: () => 'bubble', select: (id) => selected.push(id) };
+  const canvas = { setPointerCapture() {}, hasPointerCapture: () => false, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const tool = new NavigateTool(context);
+  const controller = new InputController(canvas, context, tool);
+  const pointer = { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 };
+  controller.onDown(pointer);
+  controller.onUp({ ...pointer, type: 'pointercancel' });
+  assert.deepEqual(selected, []);
+  assert.equal(tool.drag, null);
+  assert.equal(controller.lastTap, null);
 });

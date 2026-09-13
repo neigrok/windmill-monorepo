@@ -1,13 +1,15 @@
 // Every edge tessellated once into a bézier ribbon, merged into one buffer and drawn in a single call. setStates rewrites only the aActive / aGrowStart floats, never vertex positions.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLOR_NAMES, isDone, NODE_SIZE } from '../theme.js';
+import { NODE_COLOR_NAMES, isDone, BODY_WU } from '../theme.js';
+import { bendOf, controlPoint } from './edgeCurve.js';
 import { edgeKey } from './edgeKey.js';
+
+export { bendOf };
 
 const SEGMENTS = 14;
 const WIDTH = 4;
 const KIND_HALF_WIDTH = { trunk: 2.6, 'in-branch': 1.6, 'cross-branch': 1.3 };
 const KIND_CODE = { trunk: 0, 'in-branch': 1, 'cross-branch': 2 };
-const BEND_FACTOR = 0.18;
 const GROW_DURATION = 0.5;
 const SOLO_SPEED = 400; // world-px/s
 const MIN_TRAVEL = 0.28; // seconds
@@ -16,8 +18,8 @@ const ALREADY_GROWN = -1000;
 const VERTS_PER_EDGE = (SEGMENTS + 1) * 2;
 const NC = NODE_COLOR_NAMES.length;
 
-// Matches NodeBatch's disc edge (0.84 of its half-size): edges stop at the rim, not the centre.
-const NODE_RADIUS = NODE_SIZE * 0.42;
+// The drawn disc's radius: edges stop at the rim, not the centre.
+const NODE_RADIUS = BODY_WU / 2;
 
 const VERTEX_SRC = `#version 300 es
 precision highp float;
@@ -138,27 +140,6 @@ void main() {
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
-function hashStr(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
-  return Math.abs(h);
-}
-
-// `sway` is the edge's own bow, in [-0.5, 0.5), hashed from the two node ids by bendOf. Never derive it from the endpoint coordinates, or a drag re-rolls the curve every frame.
-function controlPoint(fx, fy, tx, ty, sway) {
-  const dx = tx - fx;
-  const dy = ty - fy;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny = dx / len;
-  const bend = sway * len * BEND_FACTOR;
-  return { cx: (fx + tx) / 2 + nx * bend, cy: (fy + ty) / 2 + ny * bend };
-}
-
-export function bendOf(fromId, toId) {
-  return (hashStr(`${fromId}-${toId}`) % 100) / 100 - 0.5;
 }
 
 // The curve parameter range that lies outside both endpoint discs, so the drawn ribbon meets each node’s boundary instead of running to its centre.
@@ -344,16 +325,22 @@ export class ConnectorBatch {
     gl.bindVertexArray(null);
   }
 
-  // Re-tessellate only the edges touching a moved node and re-upload their vertex ranges in place.
-  moveNode(id, x, y) {
-    const pos = this.nodePos.get(id);
-    if (!pos) return;
-    pos.x = x;
-    pos.y = y;
-    const indices = this.edgesByNode.get(id);
-    if (!indices || indices.length === 0) return;
-    const gl = this.gl;
-    for (const e of indices) {
+  // Re-tessellate every edge touching a moved node — once, however many of its ends moved — then upload the one
+  // vertex range they span: a settle costs three calls a frame instead of three per edge per node.
+  moveNodes(moves) {
+    const touched = new Set();
+    for (const move of moves) {
+      const pos = this.nodePos.get(move.id);
+      if (!pos) continue;
+      pos.x = move.x;
+      pos.y = move.y;
+      for (const e of this.edgesByNode.get(move.id) ?? []) touched.add(e);
+    }
+    if (touched.size === 0) return;
+
+    let first = Infinity;
+    let last = -1;
+    for (const e of touched) {
       const edge = this.edges[e];
       const from = this.nodePos.get(edge.from);
       const to = this.nodePos.get(edge.to);
@@ -363,13 +350,18 @@ export class ConnectorBatch {
       const start = edge.vertexStart;
       this.length.fill(length, start, start + VERTS_PER_EDGE);
       this.duration.fill(edge.duration, start, start + VERTS_PER_EDGE);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, start * 2 * 4, this.positions, start * 2, VERTS_PER_EDGE * 2);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.lengthBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.length, start, VERTS_PER_EDGE);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.durationBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.duration, start, VERTS_PER_EDGE);
+      first = Math.min(first, start);
+      last = Math.max(last, start + VERTS_PER_EDGE);
     }
+
+    const gl = this.gl;
+    const count = last - first;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, first * 2 * 4, this.positions, first * 2, count * 2);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.lengthBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, first * 4, this.length, first, count);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.durationBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, first * 4, this.duration, first, count);
   }
 
   uploadStatic(buffer, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); }

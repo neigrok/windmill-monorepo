@@ -43,11 +43,12 @@ test('nearest is null when nothing is inside maxRadius, and null on an empty gri
   assert.equal(new SpatialGrid([], 100).nearest(0, 0, 1000), null);
 });
 
-test('nearest never looks past the 3x3 cells around the query, so cellSize must be >= maxRadius', () => {
-  const tooFineGrid = new SpatialGrid([node('a', 35, 0)], 10);
-  assert.equal(tooFineGrid.nearest(0, 0, 100), null);
-  assert.equal(tooFineGrid.nearest(0, 0, 35), null);
-  assert.equal(new SpatialGrid([node('a', 15, 0)], 10).nearest(0, 0, 100), 'a');
+test('nearest scans every cell the radius reaches, so a radius wider than a cell still finds its node', () => {
+  const fineGrid = new SpatialGrid([node('a', 35, 0), node('b', 0, 400)], 10);
+  assert.equal(fineGrid.nearest(0, 0, 100), 'a');
+  assert.equal(fineGrid.nearest(0, 0, 35), 'a');
+  assert.equal(fineGrid.nearest(0, 0, 34), null);
+  assert.equal(fineGrid.nearest(0, 380, 25), 'b');
   assert.equal(new SpatialGrid([node('a', 35, 0)], 100).nearest(0, 0, 100), 'a');
 });
 

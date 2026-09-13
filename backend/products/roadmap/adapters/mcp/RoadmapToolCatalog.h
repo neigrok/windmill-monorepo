@@ -13,8 +13,8 @@ namespace wm {
 // that refuse against them. `kStatuses` is the mark a caller WRITES; `kNodeStates` is what the
 // tree DERIVES from those marks.
 inline const std::vector<const char*> kHues = {"terracotta", "olive", "gold", "brick", "sky", "plum"};
-inline const std::vector<const char*> kStatuses = {"active", "complete", "none"};
-inline const std::vector<const char*> kNodeStates = {"locked", "available", "active", "complete"};
+inline const std::vector<const char*> kStatuses = {"complete", "none"};
+inline const std::vector<const char*> kNodeStates = {"locked", "available", "complete"};
 
 // The two batch forms' item caps, published as `maxItems` and refused past them.
 inline constexpr std::size_t kMaxDeleteNodeIds = 200;    // delete_node's `nodeIds`

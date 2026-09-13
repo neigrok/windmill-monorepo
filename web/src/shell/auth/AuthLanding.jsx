@@ -109,7 +109,7 @@ const goldDot = {
   borderRadius: 'var(--radius-full)',
   background: 'var(--accent-gold-500)',
   ['--nd-glow']: 'var(--kind-gold-glow)',
-  animation: 'wm-ember var(--duration-glow) var(--ease-glow) infinite',
+  animation: 'wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite',
 };
 
 const signingText = {

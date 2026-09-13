@@ -51,7 +51,6 @@ export function nextUp(tree, states, limit = 3, kind = null) {
 export function treatmentOf(state) {
   if (state === 'complete') return 'done';
   if (state === 'available') return 'ready';
-  if (state === 'active') return 'active';
   return 'locked';
 }
 

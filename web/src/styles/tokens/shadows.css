@@ -7,11 +7,10 @@
   --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
   --shadow-lg: 0 16px 40px rgba(33, 27, 19, 0.10), 0 4px 12px rgba(33, 27, 19, 0.06);
 
-  /* Glow rings, kind-hued. Complete wears the full halo; the ember (active) face is --glow-ember,
-     which reads the node's kind glow from --nd-glow (olive fallback). */
+  /* Kind-hued completion halos. */
   --glow-olive: 0 0 0 4px var(--kind-olive-glow), 0 0 28px var(--kind-olive-glow);
+  --glow-soft: 0 0 8px 0 color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 44%, transparent), 0 0 15px 2px color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 20%, transparent);
   --glow-gold: 0 0 0 4px var(--kind-gold-glow), 0 0 28px var(--kind-gold-glow);
-  --glow-ember: 0 0 8px 0 color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 44%, transparent), 0 0 15px 2px color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 20%, transparent); /* wm-ember frozen mid-breath (reduced motion / static) */
   --glow-terracotta: 0 0 0 5px var(--kind-terracotta-glow), 0 0 36px var(--kind-terracotta-glow);
   --focus-ring: 0 0 0 4px var(--accent-terracotta-100);
 }
