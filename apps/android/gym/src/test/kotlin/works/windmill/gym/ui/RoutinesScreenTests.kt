@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.SemanticsActions
@@ -125,8 +126,10 @@ class RoutinesScreenTests {
         home(scope, doors, drafts)
 
         compose.onNodeWithText("Just start logging").assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertDoesNotExist()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        val newRoutine = compose.onNodeWithText("New routine")
+        newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
+        newRoutine.performClick()
+        compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
         compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
         compose.onNodeWithText("Gym settings").assertIsDisplayed()
 

@@ -1,5 +1,9 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -36,19 +40,41 @@ class FixSheetEffortTests {
         weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0,
     )
 
-    private fun sheet(set: TrainingSet = plain): () -> SetFix? {
+    private fun sheet(set: TrainingSet = plain, haptics: HapticFeedback? = null): () -> SetFix? {
         var saved: SetFix? = null
         compose.setContent {
-            FixSheet(
+            CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
+                FixSheet(
                 set = set,
                 movement = "Bench Press",
                 setNumber = 2,
                 routine = null,
                 onSave = { saved = it },
-                onDelete = {},
-            )
+                    onDelete = {},
+                )
+            }
         }
         return { saved }
+    }
+
+    @Test
+    fun correctingAHistoricalWarmupKeepsItsKindAndDoesNotConfirmWithAHaptic() {
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val saved = sheet(plain.copy(kind = SetKind.Warmup), object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                sensations += hapticFeedbackType
+            }
+        })
+
+        compose.onNodeWithText("Kind").assertDoesNotExist()
+        compose.onNodeWithText("warmup").assertDoesNotExist()
+        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
+        compose.onNodeWithText("Save the fix").performClick()
+
+        compose.runOnIdle {
+            assertEquals(SetFix(note = "left shoulder"), saved())
+            assertEquals(emptyList<HapticFeedbackType>(), sensations)
+        }
     }
 
     @Test

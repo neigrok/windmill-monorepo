@@ -37,13 +37,13 @@ Design-context calls were made for Routines Home `656:6692`, Settings `669:8191`
 | Primary/tonal/quiet `656:6699` | Min56dp high,16dp corner radius,24dp horizontal padding; label16sp bold. Primary accent/onAccent; tonal raised/ink; quiet transparent/ink. Reversible pressed color120ms. Reduced motion instantly changes state. Logger primary is64dp. |
 | NavigationBar `659:6945` | Surface fill,80dp high before actual navigation inset,12dp horizontal padding. Three equal-width targets,72dp high; centered64×32 fully rounded indicator;24dp glyph;4dp gap to12sp bold persistent label. Selected indicator raised, glyph accent, label ink. Unselected glyph/label inkDim.120ms selection, no tab haptics. |
 | Routine row `659:6856` | 80dp min;16dp horizontal padding;16sp bold title,13sp dim metadata;4dp copy gap. Whole row navigates; More target48. List spacing12. |
-| Support row `677:10201` | Min64dp,12dp vertical padding,12dp gap; label16sp bold/22sp line-height, metadata14sp/20sp; text wraps. Optional trailing chevron only for a destination. |
+| Support row `677:10201` | Min70dp in Settings,12dp vertical padding,12dp gap; label16sp bold/22sp line-height, metadata14sp/20sp; text wraps. Optional trailing chevron only for a destination. |
 | Field surface `680:107` | Native field, min56dp;20dp radius; Default/Focused/Refused. Labels and refusal text stay outside surface in form flow; grow multiline surfaces. |
 | Performed row `678:10530` | Min52dp,12dp padding/gap; stored number mono14sp/18; performed mono18sp medium/23; deviation13sp/17. Native tap and accessibility deletion. |
 
 Routines root: outer20dp, top16dp; quiet count14sp/20; list gap12. Bottom reach band has20dp top and12dp bottom inset around full-width Start logging56dp; then NavigationBar. The count/recency comes from actual loaded data. New routine is a text action, profile initial uses actual account.
 
-Settings: back bar followed by vertically scrolling content padded20dp with20dp gaps. “At the rack”14sp bold/20 in inkDim. Units label16sp bold/22; segmented container152×48, fully rounded raised fill, two68×48 segments with4dp inner gap/padding. Native selected semantics must be clear. The current spec states “This phone still draws kg”; do not claim unit conversion until every weight format/input is implemented consistently. Rest timer appears with value1:30 in the fixture, then separator, Notes, Connected log, separator, Account. Values, connections and email are real state. No Sound/Haptic/Set confirmation row. Profile, connections and notes retain their real routes even before Wave 5 restyles them.
+Settings: back bar followed by vertically scrolling content padded20dp with20dp gaps. “At the rack”14sp bold/20 in inkDim. Units row72dp with12dp vertical padding; label16sp bold/22; segmented container152×48, fully rounded raised fill, two68×48 segments with4dp inner gap/padding. Native selected semantics must be clear. The current spec states “This phone still draws kg”; do not claim unit conversion until every weight format/input is implemented consistently. Rest timer appears with value1:30 in the fixture, then separator, Notes, Connected log, separator, Account. Values, connections and email are real state. No Sound/Haptic/Set confirmation row. Profile, connections and notes retain their real routes even before Wave 5 restyles them.
 
 ### Resolved shared palette
 
@@ -72,7 +72,7 @@ Use inkDim for small metadata. The faint token is insufficient on Instrument sur
 
 The current Kotlin rail maps Routines/Log/Coach to List/DateRange/Face; those glyphs **do not match** the approved design. The Figma Routines icon is a barbell, Log is an outlined record page, Coach a chat outline. Replace these mismatches.
 
-The committed SVG files below preserve exact bytes exported by Figma MCP on 13 September 2026. Routines and Log come from NavigationBar variants in component set `659:6945`, More from Routines Home `656:6692` (`677:10204`), and the chevron from Settings `669:8191` / Support row `677:10201`. Use these exact glyphs unless a native Material glyph is visually verified identical; any Android conversion must preserve the exported geometry. Selected glyphs use #5FCDB4 and unselected/secondary glyphs #B6B5AF in the Instrument source; runtime tint uses the corresponding resolved token.
+The committed SVG files below preserve exact bytes exported by Figma MCP on 13 September 2026. Coach uses Plugin API SVG_STRING export of `659:6821` in NavigationBar `659:6945`, preserving the 24 × 24 viewBox and Material chat outline geometry. Routines and Log come from NavigationBar variants in component set `659:6945`, More from Routines Home `656:6692` (`677:10204`), and the chevron from Settings `669:8191` / Support row `677:10201`. Use these exact glyphs unless a native Material glyph is visually verified identical; any Android conversion must preserve the exported geometry. Selected glyphs use #5FCDB4 and unselected/secondary glyphs #B6B5AF in the Instrument source; runtime tint uses the corresponding resolved token.
 
 | Asset | Preserved Figma export |
 |---|---|
@@ -80,10 +80,42 @@ The committed SVG files below preserve exact bytes exported by Figma MCP on 13 S
 | Routines unselected | [nav-routines.svg](assets/android/nav-routines.svg) |
 | Log unselected | [nav-log.svg](assets/android/nav-log.svg) |
 | Log selected | [nav-log-selected.svg](assets/android/nav-log-selected.svg) |
+| Coach | [nav-coach.svg](assets/android/nav-coach.svg) |
 | Routine More | [more.svg](assets/android/more.svg) |
 | Support chevron | [chevron.svg](assets/android/chevron.svg) |
 
 Root context supplies Material Code Connect glyph hints for ArrowBack and ChatBubble. Use matching Compose Material glyphs and proper auto-mirroring; confirm the screenshot, since Figma's code uses ArrowBack even for a rotated forward arrow. All nav glyphs stay24×24; the support chevron is8×14 inside its row. System status and gesture symbols remain Android-owned.
+
+## Wave 2 · Planning detail
+
+Design contexts were read from New routine `660:7420`, Target/Straight `673:2567`, Create/Ready `669:8631` and picker sheet `660:7110`. The existing `RoutineDraft`, `TargetEntry`, `PickerOptions` and controlled picker state already carry much of the behavior; keep them while simplifying the Compose structure. Full state ownership and behavioral bounds remain in the tables below.
+
+| Surface | Concrete approved UI |
+|---|---|
+| New/edit routine | Existing shared64dp app bar,24sp title, top-right Save88×48. Scroll body20dp padding and24dp section gap. Name label14sp/20 above field with8dp gap; field18sp regular/25,16dp inset,8dp corners, surface fill and1dp line (2dp accent focused). Placeholder “Routine name”. Movements heading18sp bold/25. Do not show fabricated history or initial error prose in a fresh empty draft. |
+| Routine movement row | Flat row with8dp inset and12dp gap; leading48dp reorder handle; name17sp bold/24 above target15sp/21 dim,4dp gap. One1dp separator between rows. Whole row opens target; handle performs actual native drag with Move up/Move down alternatives. Replace the current single-line bordered cards and tap-pick/tap-place-only interaction. Add movement is a quiet full-width56dp action with a plus, not a dashed card. Recent changes is shown only from actual events. |
+| Target sheet | Fully expanded native sheet: surface,24dp top corners, native handle; specimen starts at y116 on915dp phone, not a fixed runtime height. Header76dp: movement22sp bold/31, context14sp/20 below, Cancel88×48 at right. Header and commit stay outside the scroll body. Keep contextual order/routine name, allow reflow rather than fixed clip. |
+| Target head | “Every set”16sp bold/22; three equal-width columns with12dp gaps, labels14sp/20 and8dp field gap. At372dp content width each field is116dp×52dp. Raised fill,12dp corners,16dp horizontal padding, value18sp bold/25. Same native numeric control for head and row; values may require extra height at larger text. |
+| Target ladder | “Each set”16sp bold/22 with Fill88×48 on right. Column labels Set/Reps/kg13sp/18 dim. Set-number column40dp, then12dp gaps and two roughly equal flexible fields (152/156 at reference width),52dp minimum; rows8dp gap. Add set is a centered quiet56dp action. Keep actual native numeric IME and existing Next/Done ordering; never use the rack keypad here. Bodyweight sign control must preserve accessible width by adapting the layout. |
+| Target commit | Fixed footer20dp horizontal/12dp vertical padding; primary56dp with16dp radius, exact dynamic summary from target reading: “Set · 3 × 8 · 60”, “Set · 5 sets”, “Set · open”. It stays above actual IME/system insets; refusal disables it and remains by its field. Blank Sets hides the ladder and says “You decide the numbers at the rack.”; no mode-switch UI is added. |
+| Movement picker | Raised native bottom sheet,28dp top corners; title24sp bold/34. Body20dp horizontal padding,8dp top,20dp section gaps. Search is56dp min, fully rounded28dp, canvas fill,16dp inset,24dp search icon,12dp gap and16sp/22 placeholder “Search movements”. “The six”14sp bold/20 dim appears only for that real section. Rows64dp min,8dp inset,12dp gap; name16sp bold/22, equipment13sp/18 below. Existing picked movements show check and cannot be added twice; others plus. Footer pins quiet Create movement56dp with20dp horizontal/8dp vertical inset. |
+| Create movement | Native sheet,24dp handle region then64dp toolbar; title22sp bold/31, Cancel64×48. Form20dp horizontal/12dp top/20dp bottom padding,24dp section gap. Name as above. Equipment label14sp/20,8dp gap. Two columns and two rows: Barbell/Dumbbell then Machine/Bodyweight; each180×56 at reference width with12dp column gap and8dp row gap.12dp radius/inset/gap; native radio semantics/circles;16sp labels. Selected row has1dp accent outline and selected radio. Grow/reflow for large text. |
+| Create commit | Full-width Create and add56dp,20dp horizontal/12dp vertical footer inset, above actual IME. Empty name disables. Explicit Cancel, native Back/scrim/handle restore caller and query. Routine and quick paths use the same form but different real result handling. Native text IME opens on Name; never render the drawn Gboard specimen. |
+
+The current builder's compact mono section labels, unequally weighted target columns,64dp planning commit and horizontal name/target row differ from these specifications. The current create form's “not in the library”, “Your movement” and “How is it loaded?” become the approved title/labels above; its four tightly packed chips become the2×2 radio grid. The current picker only draws a create action in its matching-state branch; the approved footer keeps Create movement available with an empty query too. Preserve query, arbitrary typed names, equipment and draft through dismissal/recreation. A creation write must not duplicate on repeated taps, and failed creation must not manufacture a movement or discard the user's recoverable input.
+
+Do not remove meaningful domain refusals or signed-out behavior while cleaning copy. Save is single-flight, disabled for an unchanged or unsavable routine. Name counters and inline refusals must use actual Unicode-point counts. Target head/ladder errors retain the existing ordered ownership. Routine duplication creates a new identity, keeps the copied target order and allows editing the draft; row More offers Duplicate and Delete. Each deletion still has its own9-second Undo.
+
+Additional exact assets are exported with Plugin API SVG_STRING, with source geometry unchanged:
+
+| Asset | Source node | Local export |
+|---|---|---|
+| Routine reorder handle | `660:7074` ·48×48 frame containing the drawn two-line grip | [reorder-handle.svg](assets/android/reorder-handle.svg) |
+| Picker search | `660:7116` ·24×24 | [search.svg](assets/android/search.svg) |
+
+The reorder export includes its48dp source frame and its original placement; do not scale the entire48dp image into a24dp icon. The search export is a stroked circle plus diagonal. Both use Instrument inkDim; tint with the resolved role. Native radio, plus/check and OS keyboard controls remain native; use an existing glyph only when it visually matches.
+
+Wave2 acceptance scenarios: new empty routine→name→add/create→target→Save; existing unchanged/empty/60-point name states; straight/ramp/open and invalid101reps; shrink/grow/open draft restoration; Fill Ramp up/Match set1; reorder by drag and accessibility; duplicate→save→list; two independent deletions→Undo/settle/failure; query-preserving cancel and arbitrary successful movement creation from both routine and quick pickers. At200% text/visible IME, fields scroll, Cancel remains reachable, and primary commits stay reachable without overlaying input.
 
 ## Behavior acceptance beyond the phone frames
 
@@ -207,4 +239,4 @@ Wave-level screenshots should compare the exact intended state at reference geom
 
 Test meaningful invariants and user workflows, especially arbitrary Unicode/byte entry, undo clocks, identity/queue persistence, partial receipt arithmetic, failed writes, draft restoration, real permissions and data-dependent empty states. A green JVM suite alone does not verify native behavior. Release completion needs the built APK, install/smoke evidence, published GitHub release and downloaded-asset checksum/build version correspondence.
 
-Status at inventory: read-only Figma audit, Wave 1 design context and six preserved SVG exports. SVG roots, nonempty geometry and expected Instrument paint values were checked. No application implementation or runtime verification is claimed here.
+Delivery status: Wave 1 shared foundations, Settings and approved removals are implemented and verified. The remaining state/behavior coverage stays assigned to its wave. See [worklog.md](../../../worklog.md) for commands, native evidence and limits. Nine exact SVG exports are preserved; their roots, geometry and Instrument paint values were checked.

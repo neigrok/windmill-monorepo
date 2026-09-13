@@ -149,6 +149,7 @@ fun KeypadSheet(
     onCommit: (Double) -> Unit,
     onCancel: (() -> Unit)? = null,
 ) {
+    val skin = LocalGymColors.current
     val opening = if (mode == KeypadEntry.Mode.Weight) Readout.weight(current) else current.toInt().toString()
     var pad by remember { mutableStateOf(KeypadEntry.Pad(opening)) }
     val reading = KeypadEntry.read(pad, mode, keeping = current)
@@ -156,7 +157,7 @@ fun KeypadSheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -164,7 +165,7 @@ fun KeypadSheet(
         Text(
             if (mode == KeypadEntry.Mode.Weight) "Weight" else "Reps",
             style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
 
         BasicText(
@@ -172,14 +173,14 @@ fun KeypadSheet(
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 56.sp),
             style = WindmillFont.display(56, FontWeight.ExtraBold)
-                .copy(fontFeatureSettings = "tnum", color = if (reading.isValid) GymSkin.weightInk else GymSkin.alarmInk),
+                .copy(fontFeatureSettings = "tnum", color = if (reading.isValid) skin.weightInk else skin.alarmInk),
             modifier = Modifier.fillMaxWidth(),
         )
 
         Text(
             reading.message,
             style = GymType.numeral(12),
-            color = if (reading.isValid) GymSkin.inkFaint else GymSkin.alarmInk,
+            color = if (reading.isValid) skin.inkDim else skin.alarmInk,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -196,7 +197,7 @@ fun KeypadSheet(
                                 .weight(1f)
                                 .heightIn(min = GymTap.secondary)
                                 .clip(RoundedCornerShape(WindmillRadius.md))
-                                .background(GymSkin.raised)
+                                .background(skin.raised)
                                 .clickable(role = Role.Button) { pad = pad.pressing(key, mode) }
                                 // A digit is its own name; a glyph is not, so a glyph key says what it is.
                                 .then(
@@ -209,7 +210,7 @@ fun KeypadSheet(
                             Text(
                                 key,
                                 style = WindmillFont.display(24, FontWeight.SemiBold).copy(fontFeatureSettings = "tnum"),
-                                color = if (KeypadEntry.isLive(key, mode)) GymSkin.ink else GymSkin.inkFaint,
+                                color = if (KeypadEntry.isLive(key, mode)) skin.ink else skin.inkDim,
                             )
                         }
                     }
@@ -230,7 +231,7 @@ fun KeypadSheet(
                         .clickable(role = Role.Button, onClick = cancel),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
+                    Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.inkDim)
                 }
             }
 
@@ -246,7 +247,7 @@ fun KeypadSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 // No core icon draws a backspace, so the glyph stays and the key carries its name.
-                Text(KeypadEntry.deleteGlyph, style = WindmillFont.body(20), color = GymSkin.ink)
+                Text(KeypadEntry.deleteGlyph, style = WindmillFont.body(20), color = skin.ink)
             }
 
             Box(
@@ -254,14 +255,14 @@ fun KeypadSheet(
                     .weight(1f)
                     .heightIn(min = GymTap.row)
                     .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(if (reading.isValid) GymSkin.accent else GymSkin.raised)
+                    .background(if (reading.isValid) skin.accent else skin.raised)
                     .clickable(role = Role.Button) { reading.value?.let(onCommit) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "Set",
                     style = WindmillFont.body(17, FontWeight.Bold),
-                    color = if (reading.isValid) GymSkin.onAccent else GymSkin.inkFaint,
+                    color = if (reading.isValid) skin.onAccent else skin.inkDim,
                 )
             }
         }

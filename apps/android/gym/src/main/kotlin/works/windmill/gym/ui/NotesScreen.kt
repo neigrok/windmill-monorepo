@@ -74,6 +74,7 @@ fun NotesScreen(
     onSignIn: () -> Unit,
     say: (String?) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     // The STORE owns the notebook, so a delete that settles takes the row and the cap with it. This
     // screen keeps one thing of its own: the order under the finger, which is nobody's until the
@@ -122,8 +123,8 @@ fun NotesScreen(
                 .padding(horizontal = GymLayout.gutter)
                 .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x4),
         ) {
-            Text(Notes.honesty, style = WindmillFont.display(22), color = GymSkin.ink)
-            Text(Notes.sub, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(Notes.honesty, style = WindmillFont.display(22), color = skin.ink)
+            Text(Notes.sub, style = GymType.numeral(12), color = skin.inkDim)
         }
         if (!isSignedIn) {
             SignedOut(onSignIn)
@@ -133,7 +134,7 @@ fun NotesScreen(
             Text(
                 it,
                 style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.inkDim,
+                color = skin.inkDim,
                 modifier = Modifier.padding(horizontal = GymLayout.gutter),
             )
         }
@@ -164,7 +165,7 @@ fun NotesScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
             ) {
                 // With the second note there is an order to explain; one note has none.
-                if (held.size > 1) Text(Notes.topWins, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                if (held.size > 1) Text(Notes.topWins, style = GymType.numeral(12), color = skin.inkDim)
                 AddRow(count = store.noteCount) { onEdit(null, "") }
             }
         }
@@ -174,6 +175,7 @@ fun NotesScreen(
 
 @Composable
 private fun SignedOut(onSignIn: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
         modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
@@ -181,17 +183,17 @@ private fun SignedOut(onSignIn: () -> Unit) {
         Text(
             Notes.signedOut,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                 .clickable(role = Role.Button, onClick = onSignIn),
         ) {
-            Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
+            Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = skin.onAccent)
         }
     }
 }
@@ -200,17 +202,18 @@ private fun SignedOut(onSignIn: () -> Unit) {
 // saves.
 @Composable
 private fun PlaceholderRow(title: String, onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.row)
-            .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg)
+            .dashedEdge(skin.lineStrong, WindmillRadius.lg)
             .clip(RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClickLabel = "write this note", onClick = onOpen)
             .padding(horizontal = WindmillSpace.x4),
     ) {
-        Text(title, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+        Text(title, style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.inkDim)
         Spacer(Modifier.weight(1f))
         Chevron()
     }
@@ -219,11 +222,12 @@ private fun PlaceholderRow(title: String, onOpen: () -> Unit) {
 // At ten the row stops offering and says so, in the body face: a sentence with a number in it.
 @Composable
 private fun AddRow(count: Int, onAdd: () -> Unit) {
+    val skin = LocalGymColors.current
     if (count >= Notes.maxNotes) {
         Text(
             Notes.full,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
             modifier = Modifier.fillMaxWidth().padding(vertical = WindmillSpace.x3),
         )
         return
@@ -232,11 +236,11 @@ private fun AddRow(count: Int, onAdd: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.secondary)
-            .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
+            .dashedEdge(skin.lineStrong, WindmillRadius.md)
             .clickable(role = Role.Button, onClick = onAdd),
         contentAlignment = Alignment.Center,
     ) {
-        Text(Notes.add, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+        Text(Notes.add, style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.accent)
     }
 }
 
@@ -253,6 +257,7 @@ private fun NoteList(
     onSettle: (List<Note>) -> Unit,
     foot: @Composable () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val listState = rememberLazyListState()
     val standing by rememberUpdatedState(notes)
     // The handle appears with the second note, beside the caption that says what dragging decides.
@@ -287,8 +292,8 @@ private fun NoteList(
                     .graphicsLayer { translationY = if (held) dragOffset else 0f }
                     .heightIn(min = GymTap.row)
                     .clip(RoundedCornerShape(WindmillRadius.lg))
-                    .background(GymSkin.surface)
-                    .border(1.dp, if (held) GymSkin.accent else GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+                    .background(skin.surface)
+                    .border(1.dp, if (held) skin.accent else skin.line, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClickLabel = "open this note") { onOpen(note) }
                     .semantics { customActions = steps }
                     .padding(start = if (handles) 0.dp else WindmillSpace.x4, end = WindmillSpace.x4)
@@ -348,11 +353,11 @@ private fun NoteList(
                     Text(
                         note.title,
                         style = WindmillFont.body(15, FontWeight.SemiBold),
-                        color = GymSkin.ink,
+                        color = skin.ink,
                         maxLines = 1,
                     )
                     note.firstLine?.let {
-                        Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
+                        Text(it, style = GymType.numeral(12), color = skin.inkDim, maxLines = 1)
                     }
                 }
                 Chevron()
@@ -375,6 +380,7 @@ fun NoteEditorScreen(
     onBack: () -> Unit,
     onDone: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val id = rememberSaveable { note?.id ?: Ids.note() }
     var title by rememberSaveable { mutableStateOf(note?.title ?: seedTitle) }
@@ -429,7 +435,7 @@ fun NoteEditorScreen(
                 Text(
                     it,
                     style = GymType.numeral(12),
-                    color = if (Notes.titleOver(title)) GymSkin.alarmInk else GymSkin.inkFaint,
+                    color = if (Notes.titleOver(title)) skin.alarmInk else skin.inkDim,
                 )
             }
             Field(
@@ -445,11 +451,11 @@ fun NoteEditorScreen(
                 Text(
                     it,
                     style = GymType.numeral(12),
-                    color = if (Notes.over(body)) GymSkin.alarmInk else GymSkin.inkFaint,
+                    color = if (Notes.over(body)) skin.alarmInk else skin.inkDim,
                 )
             }
             said?.let {
-                Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.inkDim)
+                Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = skin.inkDim)
             }
             val ready = Notes.savable(title) && !saving
             Box(
@@ -458,10 +464,10 @@ fun NoteEditorScreen(
                     .fillMaxWidth()
                     .heightIn(min = GymTap.primary)
                     .alpha(if (ready) 1f else 0.4f)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(enabled = ready, role = Role.Button) { save() },
             ) {
-                Text(Notes.save, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
+                Text(Notes.save, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
             }
             if (note != null) {
                 Box(
@@ -476,7 +482,7 @@ fun NoteEditorScreen(
                             onDone()
                         },
                 ) {
-                    Text(Notes.delete, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
+                    Text(Notes.delete, style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.alarmInk)
                 }
             }
         }

@@ -52,6 +52,7 @@ fun RenameSheet(
     onValue: (String) -> Unit,
     onRename: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val changed = Program.renamed(from, value) != null
@@ -64,13 +65,13 @@ fun RenameSheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Text(title, style = WindmillFont.display(22), color = GymSkin.ink)
+        Text(title, style = WindmillFont.display(22), color = skin.ink)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -91,13 +92,13 @@ fun RenameSheet(
                 Text(
                     counted,
                     style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
+                    color = skin.inkDim,
                     modifier = Modifier.padding(start = WindmillSpace.x3),
                 )
             }
         }
 
-        refused?.let { Text(it, style = GymType.numeral(12), color = GymSkin.alarmInk) }
+        refused?.let { Text(it, style = GymType.numeral(12), color = skin.alarmInk) }
 
         if (proof.isNotEmpty()) ProofBlock(proof)
 
@@ -107,13 +108,13 @@ fun RenameSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (changed) GymSkin.accent else GymSkin.raised)
+                .background(if (changed) skin.accent else skin.raised)
                 .clickable(enabled = changed, role = Role.Button, onClick = onRename),
         ) {
             Text(
                 "Rename",
                 style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (changed) GymSkin.onAccent else GymSkin.inkFaint,
+                color = if (changed) skin.onAccent else skin.inkDim,
             )
         }
     }
@@ -124,12 +125,13 @@ private val proofLabel = 80.dp
 
 @Composable
 private fun ProofBlock(proof: List<Record.Proof>) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.raised, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Row(
@@ -139,13 +141,13 @@ private fun ProofBlock(proof: List<Record.Proof>) {
             Icon(
                 Icons.Filled.Check,
                 contentDescription = null,
-                tint = GymSkin.setDone,
+                tint = skin.setDone,
                 modifier = Modifier.size(15.dp),
             )
             Text(
                 "Everything follows the name",
                 style = WindmillFont.body(14, FontWeight.SemiBold),
-                color = GymSkin.ink,
+                color = skin.ink,
             )
         }
         proof.forEach { row ->
@@ -153,10 +155,10 @@ private fun ProofBlock(proof: List<Record.Proof>) {
                 Text(
                     row.label,
                     style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-                    color = GymSkin.inkFaint,
+                    color = skin.inkDim,
                     modifier = Modifier.width(proofLabel),
                 )
-                Text(row.value, style = GymType.numeral(12), color = GymSkin.inkDim)
+                Text(row.value, style = GymType.numeral(12), color = skin.inkDim)
                 Spacer(Modifier.weight(1f))
             }
         }

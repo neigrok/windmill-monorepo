@@ -127,6 +127,7 @@ fun RoutineBuilder(
     onClose: () -> Unit,
     say: (String?) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     var sheet by remember { mutableStateOf<BuilderSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -178,7 +179,8 @@ fun RoutineBuilder(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             // Back with the keyboard up puts the keyboard down and nothing else: read and hidden
             // inside the sheet's own window, ahead of the sheet's own back.
@@ -225,7 +227,7 @@ fun RoutineBuilder(
                     },
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
-                        .background(GymSkin.surface)
+                        .background(skin.surface)
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },
@@ -249,6 +251,7 @@ private fun BuildStep(
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val dropAt = with(LocalDensity.current) { 108.dp.toPx() }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -354,7 +357,7 @@ private fun BuildStep(
                 Text(
                     counted,
                     style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
+                    color = skin.inkDim,
                     modifier = Modifier.padding(start = WindmillSpace.x3),
                 )
             }
@@ -364,19 +367,19 @@ private fun BuildStep(
         // because no screen before this one asked for a name. The FAINT ink: the alarm ink is for a
         // write that failed, and a draft that is not finished has sent nothing to fail.
         missing?.let {
-            Text(it, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
+            Text(it, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = skin.inkDim)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("Movements", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+            Text("Movements", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = skin.inkDim)
             Spacer(Modifier.weight(1f))
             if (draft.entries.isNotEmpty()) {
-                Text(draft.entries.size.toString(), style = GymType.numeral(11), color = GymSkin.inkFaint)
+                Text(draft.entries.size.toString(), style = GymType.numeral(11), color = skin.inkDim)
             }
         }
 
         if (draft.entries.isEmpty()) {
-            Text("Nothing in this day yet.", style = WindmillFont.body(16), color = GymSkin.inkDim)
+            Text("Nothing in this day yet.", style = WindmillFont.body(16), color = skin.inkDim)
         }
 
         ordered.forEachIndexed { index, entry ->
@@ -392,10 +395,10 @@ private fun BuildStep(
                         alpha = 1f - (abs(swipe) / (dropAt * 2f)).coerceAtMost(0.6f)
                     }
                     .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(GymSkin.surface)
+                    .background(skin.surface)
                     .border(
                         1.dp,
-                        if (held) GymSkin.accent else GymSkin.line,
+                        if (held) skin.accent else skin.line,
                         RoundedCornerShape(WindmillRadius.md),
                     )
                     .pointerInput(entry.exerciseId) {
@@ -442,19 +445,19 @@ private fun BuildStep(
                     Icon(
                         Icons.Filled.DragHandle,
                         contentDescription = handleName(index),
-                        tint = if (held) GymSkin.accent else GymSkin.inkFaint,
+                        tint = if (held) skin.accent else skin.inkFaint,
                     )
                 }
                 Text(
                     Readout.movement(entry.exerciseId, store.catalog),
                     style = WindmillFont.body(15, FontWeight.SemiBold),
-                    color = GymSkin.ink,
+                    color = skin.ink,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     Readout.target(entry.sets),
                     style = GymType.numeral(13),
-                    color = if (entry.isOpen) GymSkin.inkFaint else GymSkin.targetInk,
+                    color = if (entry.isOpen) skin.inkDim else skin.targetInk,
                 )
             }
         }
@@ -465,7 +468,7 @@ private fun BuildStep(
         Text(
             said,
             style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
 
@@ -476,15 +479,15 @@ private fun BuildStep(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.secondary)
-                    .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
+                    .dashedEdge(skin.lineStrong, WindmillRadius.md)
                     .clickable(role = Role.Button, onClick = onAdd),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.accent)
-                    Text("Add movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = skin.accent)
+                    Text("Add movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.accent)
                 }
             }
         }
@@ -514,6 +517,7 @@ private fun TargetSheet(
     store: TrainingStore,
     onSet: (TargetEntry.Reading) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val entry = draft.entry(exerciseId)
     var rows by remember(exerciseId) { mutableStateOf(TargetEntry.rows(entry?.sets.orEmpty())) }
     var sets by remember(exerciseId) { mutableStateOf(rows.size.takeIf { it > 0 }?.toString().orEmpty()) }
@@ -593,7 +597,7 @@ private fun TargetSheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -611,7 +615,7 @@ private fun TargetSheet(
                     Text(
                         Readout.movement(exerciseId, store.catalog),
                         style = WindmillFont.display(22),
-                        color = GymSkin.ink,
+                        color = skin.ink,
                         maxLines = 1,
                         modifier = Modifier.weight(1f, fill = false),
                     )
@@ -619,7 +623,7 @@ private fun TargetSheet(
                         Text(
                             "$place of ${draft.entries.size} · ${draft.name}",
                             style = GymType.numeral(12),
-                            color = GymSkin.inkFaint,
+                            color = skin.inkDim,
                             maxLines = 1,
                         )
                     }
@@ -628,7 +632,7 @@ private fun TargetSheet(
                     Text(
                         "Never logged — these are your numbers.",
                         style = GymType.numeral(12),
-                        color = GymSkin.inkDim,
+                        color = skin.inkDim,
                     )
                 }
             }
@@ -643,7 +647,7 @@ private fun TargetSheet(
                 Text(
                     TargetEntry.openLine,
                     style = WindmillFont.body(14).copy(lineHeight = 20.sp),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
             }
 
@@ -700,7 +704,7 @@ private fun TargetSheet(
                     Spacer(Modifier.weight(1f))
                     Box {
                         TextButton(onClick = { fillMenuOnHead = true }) {
-                            Text(TargetEntry.fill, style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
+                            Text(TargetEntry.fill, style = WindmillFont.body(14, FontWeight.SemiBold), color = skin.accent)
                         }
                         fillMenu(fillMenuOnHead) { fillMenuOnHead = false }
                     }
@@ -730,7 +734,7 @@ private fun TargetSheet(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .heightIn(min = GymTap.minimum)
-                                                .background(GymSkin.surface)
+                                                .background(skin.surface)
                                                 // Law 1: the swipe is half-built until its custom
                                                 // action exists. The long press is a shortcut to
                                                 // Fill, never the only path, so it carries no
@@ -748,7 +752,7 @@ private fun TargetSheet(
                                             Text(
                                                 "${index + 1}",
                                                 style = GymType.numeral(13),
-                                                color = GymSkin.inkFaint,
+                                                color = skin.inkDim,
                                                 modifier = Modifier.width(24.dp),
                                             )
                                             TargetField(
@@ -795,8 +799,8 @@ private fun TargetSheet(
                             .heightIn(min = GymTap.minimum)
                             .clickable(role = Role.Button, onClick = ::addSet),
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.accent)
-                        Text(TargetEntry.addSet, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = skin.accent)
+                        Text(TargetEntry.addSet, style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.accent)
                     }
                     if (atCeiling) FaultLine(TargetEntry.outsideSets)
                 }
@@ -809,13 +813,13 @@ private fun TargetSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (refused == null) GymSkin.accent else GymSkin.raised)
+                .background(if (refused == null) skin.accent else skin.raised)
                 .clickable(enabled = refused == null, role = Role.Button) { onSet(reading) },
         ) {
             Text(
                 TargetEntry.commitLabel(reading),
                 style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (refused == null) GymSkin.onAccent else GymSkin.inkFaint,
+                color = if (refused == null) skin.onAccent else skin.inkDim,
             )
         }
     }
@@ -823,13 +827,15 @@ private fun TargetSheet(
 
 @Composable
 private fun SectionHead(words: String) {
-    Text(words, style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+    val skin = LocalGymColors.current
+    Text(words, style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = skin.inkDim)
 }
 
 // One refusal at a time, in the alarm ink, under the field or the row that carries it.
 @Composable
 private fun FaultLine(said: String) {
-    Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
+    val skin = LocalGymColors.current
+    Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = skin.alarmInk)
 }
 
 // A sign the lifter can reach without a keyboard that has one. Empty stays empty: a sign with no
@@ -843,18 +849,19 @@ private fun signFlipped(typed: String): String {
 
 @Composable
 private fun SignKey(onFlip: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         Modifier
             .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(GymSkin.raised)
+            .background(skin.raised)
             .clickable(role = Role.Button, onClickLabel = KeypadEntry.signName, onClick = onFlip)
             // The glyph reads as nothing out loud, so the control says what it is — and what a
             // negative load is, since no sentence beside the fields says it.
             .semantics(mergeDescendants = true) { contentDescription = KeypadEntry.signName },
         contentAlignment = Alignment.Center,
     ) {
-        Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = GymSkin.ink)
+        Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = skin.ink)
     }
 }
 
@@ -879,6 +886,7 @@ private fun TargetField(
     enabled: Boolean = true,
     onTyped: (String) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val interaction = remember { MutableInteractionSource() }
@@ -905,11 +913,11 @@ private fun TargetField(
                 onValueChange = typed,
                 singleLine = true,
                 enabled = enabled,
-                textStyle = GymType.numeral(17, FontWeight.Bold).copy(color = GymSkin.ink),
+                textStyle = GymType.numeral(17, FontWeight.Bold).copy(color = skin.ink),
                 keyboardOptions = keyboardOptions,
                 keyboardActions = keyboardActions,
                 interactionSource = interaction,
-                cursorBrush = SolidColor(GymSkin.accent),
+                cursorBrush = SolidColor(skin.accent),
                 modifier = described.height(GymTap.minimum),
                 decorationBox = { inner ->
                     OutlinedTextFieldDefaults.DecorationBox(
@@ -940,7 +948,7 @@ private fun TargetField(
         Text(
             label,
             style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-            color = if (enabled) GymSkin.inkFaint else GymSkin.inkFaint.copy(alpha = 0.5f),
+            color = if (enabled) skin.inkDim else skin.inkDim.copy(alpha = 0.5f),
         )
         OutlinedTextField(
             value = value,

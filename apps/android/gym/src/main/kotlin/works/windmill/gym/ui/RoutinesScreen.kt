@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -79,6 +78,7 @@ fun RoutinesScreen(
     onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
     // The ROWS are the window's and the STANCE is the program's: an account holding one routine the
@@ -90,9 +90,7 @@ fun RoutinesScreen(
     GymScreen(
         title = "Routines",
         actions = {
-            IconButton(onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) }) {
-                Icon(Icons.Filled.Add, contentDescription = "New routine")
-            }
+            TopAction("New routine") { onBuild(RoutineDraft(position = store.allRoutines.size)) }
             YouSeat(seat)
         },
     ) {
@@ -112,7 +110,7 @@ fun RoutinesScreen(
                         Text(
                             Readout.routineCount(routines.size),
                             style = GymType.numeral(13),
-                            color = GymSkin.inkFaint,
+                            color = skin.inkDim,
                         )
                     }
                 }
@@ -170,13 +168,13 @@ fun RoutinesScreen(
                         .padding(horizontal = WindmillSpace.x5)
                         .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
                         .heightIn(min = GymTap.primary)
-                        .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                        .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                         .clickable(role = Role.Button, onClick = onJustStart),
                 ) {
                     Text(
                         "Just start logging",
                         style = WindmillFont.body(17, FontWeight.Bold),
-                        color = GymSkin.onAccent,
+                        color = skin.onAccent,
                     )
                 }
             }
@@ -186,6 +184,7 @@ fun RoutinesScreen(
 
 @Composable
 private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -197,20 +196,20 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(62.dp)
-                .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg),
+                .dashedEdge(skin.lineStrong, WindmillRadius.lg),
         ) {
             Icon(
                 Icons.Filled.Add,
                 contentDescription = null,
-                tint = GymSkin.inkFaint,
+                tint = skin.inkFaint,
                 modifier = Modifier.size(26.dp),
             )
         }
-        Text("No routines yet", style = WindmillFont.display(20), color = GymSkin.ink)
+        Text("No routines yet", style = WindmillFont.display(20), color = skin.ink)
         Text(
             "One training day, written down.",
             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
             textAlign = TextAlign.Center,
         )
         Box(
@@ -218,13 +217,13 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                 .clickable(role = Role.Button, onClick = onBuild),
         ) {
             Text(
                 "Build a routine",
                 style = WindmillFont.body(17, FontWeight.Bold),
-                color = GymSkin.onAccent,
+                color = skin.onAccent,
             )
         }
         Box(
@@ -232,13 +231,13 @@ private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
-                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
+                .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
                 .clickable(role = Role.Button, onClick = onJustStart),
         ) {
             Text(
                 "Just start logging",
                 style = WindmillFont.body(16, FontWeight.SemiBold),
-                color = GymSkin.accent,
+                color = skin.accent,
             )
         }
     }
@@ -288,6 +287,7 @@ private fun RoutineRow(
     onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val waiting = routine.pendingProposal
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -295,10 +295,10 @@ private fun RoutineRow(
             .fillMaxWidth()
             // The row's own floor: with no control at its trailing edge, its height is its text's.
             .heightIn(min = GymTap.row)
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(
                 1.dp,
-                if (waiting == null) GymSkin.line else GymSkin.accent,
+                if (waiting == null) skin.line else skin.accent,
                 RoundedCornerShape(WindmillRadius.lg),
             )
             .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") {
@@ -317,7 +317,7 @@ private fun RoutineRow(
                 Text(
                     routine.name,
                     style = WindmillFont.body(17, FontWeight.Bold),
-                    color = GymSkin.ink,
+                    color = skin.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -325,7 +325,7 @@ private fun RoutineRow(
                 if (routine.untested) UntestedChip()
                 waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
             }
-            Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = skin.inkDim)
         }
     }
 }
@@ -333,40 +333,43 @@ private fun RoutineRow(
 // `untested` is derived, never stored: the day the first session starts the word goes.
 @Composable
 private fun UntestedChip() {
+    val skin = LocalGymColors.current
     Box(
         Modifier
-            .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.full))
+            .background(skin.accentSoft, RoundedCornerShape(WindmillRadius.full))
             .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
     ) {
-        Text("untested", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
+        Text("untested", style = GymType.numeral(11, FontWeight.Bold), color = skin.accent)
     }
 }
 
 @Composable
 private fun ClaimCard(onSignIn: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.raised, RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClickLabel = "sign in", onClick = onSignIn)
             .padding(GymLayout.cardInset),
     ) {
         Text(
             "Your log is saved on this device.",
             style = WindmillFont.body(15, FontWeight.SemiBold),
-            color = GymSkin.ink,
+            color = skin.ink,
         )
         Text(
             "Sign in to claim it — it opens on the web too.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
     }
 }
 
 @Composable
 private fun SettingsDoor(onOpenSettings: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -374,7 +377,7 @@ private fun SettingsDoor(onOpenSettings: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .clickable(role = Role.Button, onClick = onOpenSettings),
     ) {
-        Text("Gym settings", style = GymType.numeral(13), color = GymSkin.inkFaint)
+        Text("Gym settings", style = GymType.numeral(13), color = skin.inkDim)
         Spacer(Modifier.weight(1f))
         Chevron()
     }
@@ -382,6 +385,7 @@ private fun SettingsDoor(onOpenSettings: () -> Unit) {
 
 @Composable
 private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: (String) -> Unit) {
+    val skin = LocalGymColors.current
     val movement = store.catalog.firstOrNull { it.id == entry.exerciseId }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -395,20 +399,20 @@ private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: 
         Text(
             movement?.name ?: entry.exerciseId,
             style = WindmillFont.body(14),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
         if (movement?.custom == true) {
             Text(
                 " · yours",
                 style = GymType.numeral(11),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
         }
         Spacer(Modifier.weight(1f))
         Text(
             Readout.target(entry.sets),
             style = GymType.numeral(12),
-            color = if (entry.isOpen) GymSkin.inkFaint else GymSkin.targetInk,
+            color = if (entry.isOpen) skin.inkDim else skin.targetInk,
         )
     }
 }
@@ -428,6 +432,7 @@ fun RoutineScreen(
     onReview: (Proposal) -> Unit,
     onOpenThread: (String) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
     val routine = store.routine(routineId)
     var history by remember(routineId) { mutableStateOf<List<RoutineEvent>>(emptyList()) }
@@ -462,17 +467,17 @@ fun RoutineScreen(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(GymSkin.canvas)
+                        .background(skin.canvas)
                         .padding(horizontal = WindmillSpace.x5)
                         .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
                         .heightIn(min = GymTap.primary)
-                        .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                        .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                         .clickable(role = Role.Button) { onStart(routine.id) },
                 ) {
                     Text(
                         "Start workout",
                         style = WindmillFont.body(17, FontWeight.Bold),
-                        color = GymSkin.onAccent,
+                        color = skin.onAccent,
                     )
                 }
             }
@@ -490,7 +495,7 @@ fun RoutineScreen(
                 Text(
                     "That routine is no longer in your program. Everything you logged against it is still in the log.",
                     style = WindmillFont.body(16).copy(lineHeight = 24.sp),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
                 return@Column
             }
@@ -502,7 +507,7 @@ fun RoutineScreen(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
             ) {
                 if (head.untested) UntestedChip()
-                Text(head.line, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                Text(head.line, style = GymType.numeral(12), color = skin.inkDim)
             }
 
             routine.pendingProposal?.let { waiting ->
@@ -531,6 +536,7 @@ private fun History(
     onReview: (Proposal) -> Unit,
     onOpenThread: (String) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val drawn = events.filterNot { it.isPending }.mapNotNull { event ->
         event.line(nowMs)?.let { event to it }
     }
@@ -539,12 +545,12 @@ private fun History(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
     ) {
-        Text("History", style = GymType.numeral(11), color = GymSkin.inkFaint)
+        Text("History", style = GymType.numeral(11), color = skin.inkDim)
         if (unread != null) {
             Text(
                 unread.line("this routine’s history is out of reach"),
                 style = GymType.numeral(12),
-                color = GymSkin.inkDim,
+                color = skin.inkDim,
             )
         }
         drawn.forEach { (event, line) ->
@@ -555,13 +561,13 @@ private fun History(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum)
-                    .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
+                    .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
                     .padding(start = WindmillSpace.x3),
             ) {
                 Text(
                     line,
                     style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                     modifier = Modifier
                         .weight(1f)
                         .then(
@@ -583,7 +589,7 @@ private fun History(
                         Text(
                             "Coach ›",
                             style = GymType.numeral(11, FontWeight.Bold),
-                            color = GymSkin.accent,
+                            color = skin.accent,
                             maxLines = 1,
                         )
                     }

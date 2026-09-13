@@ -42,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AskTurn
 import works.windmill.gym.domain.Proposal
@@ -65,6 +64,7 @@ fun ThreadsScreen(
     onDelete: (String) -> Unit,
     onAskNew: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
     var read by remember { mutableStateOf(false) }
     var outOfReach by remember { mutableStateOf(false) }
@@ -110,14 +110,14 @@ fun ThreadsScreen(
                         Text(
                             Threads.counted(held.size),
                             style = GymType.numeral(12),
-                            color = GymSkin.inkFaint,
+                            color = skin.inkDim,
                             maxLines = 1,
                         )
                     }
                 }
                 if (outOfReach) {
                     item("outOfReach") {
-                        Text(Threads.outOfReach, style = GymType.numeral(12), color = GymSkin.inkDim)
+                        Text(Threads.outOfReach, style = GymType.numeral(12), color = skin.inkDim)
                     }
                 }
                 if (read && store.allThreads.isEmpty() && !outOfReach) {
@@ -125,7 +125,7 @@ fun ThreadsScreen(
                         Text(
                             Threads.none,
                             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                            color = GymSkin.inkDim,
+                            color = skin.inkDim,
                         )
                     }
                 }
@@ -135,7 +135,7 @@ fun ThreadsScreen(
                             Text(
                                 label,
                                 style = GymType.numeral(11),
-                                color = GymSkin.inkFaint,
+                                color = skin.inkDim,
                                 modifier = Modifier.padding(top = WindmillSpace.x2),
                             )
                         }
@@ -157,10 +157,10 @@ fun ThreadsScreen(
                     .padding(horizontal = GymLayout.gutter)
                     .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
                     .heightIn(min = GymTap.primary)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClick = onAskNew),
             ) {
-                Text(Threads.open, style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
+                Text(Threads.open, style = WindmillFont.body(16, FontWeight.Bold), color = skin.onAccent)
             }
         }
     }
@@ -199,13 +199,14 @@ private fun SwipeableThreadRow(
 // A row whose outcome this build cannot name draws the title alone.
 @Composable
 private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(WindmillRadius.lg))
-            .background(GymSkin.surface)
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface)
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClickLabel = "open this conversation", onClick = onOpen)
             .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
     ) {
@@ -213,7 +214,7 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
         Text(
             thread.title,
             style = WindmillFont.body(15, FontWeight.SemiBold).copy(lineHeight = 21.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
             maxLines = 2,
         )
         Row(
@@ -223,11 +224,11 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
         ) {
             thread.outcome.label?.let { OutcomeChip(it, applied = thread.outcome.moved) }
             thread.outcome.detail?.let { detail ->
-                Text(detail, style = GymType.numeral(11), color = GymSkin.inkDim, maxLines = 1)
+                Text(detail, style = GymType.numeral(11), color = skin.inkDim, maxLines = 1)
             }
             Spacer(Modifier.weight(1f))
             thread.day(nowMs)?.let {
-                Text(it, style = GymType.numeral(11), color = GymSkin.inkFaint, maxLines = 1)
+                Text(it, style = GymType.numeral(11), color = skin.inkDim, maxLines = 1)
             }
         }
     }
@@ -235,17 +236,18 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
 
 @Composable
 private fun OutcomeChip(label: String, applied: Boolean) {
+    val skin = LocalGymColors.current
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .clip(RoundedCornerShape(WindmillRadius.full))
-            .background(if (applied) GymSkin.accentSoft else GymSkin.raised)
+            .background(if (applied) skin.accentSoft else skin.raised)
             .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
     ) {
         Text(
             label.uppercase(),
             style = GymType.numeral(10, FontWeight.Bold),
-            color = if (applied) GymSkin.accent else GymSkin.inkDim,
+            color = if (applied) skin.accent else skin.inkDim,
             maxLines = 1,
         )
     }
@@ -264,6 +266,7 @@ fun ThreadScreen(
     onReview: (ThreadProposal) -> Unit,
     say: (String?) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     var thread by remember(threadId) { mutableStateOf<AskThread?>(null) }
@@ -300,9 +303,9 @@ fun ThreadScreen(
         ) {
             if (held == null) return@Column
             held.outcome.detail?.let {
-                Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
+                Text(it, style = GymType.numeral(12), color = skin.inkDim, maxLines = 1)
             }
-            Text(Threads.past, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(Threads.past, style = GymType.numeral(12), color = skin.inkDim)
             held.turns.forEach { turn -> Turn(turn) }
             held.proposals.forEach { proposal ->
                 Minted(proposal, minted[proposal.id], nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
@@ -317,11 +320,12 @@ fun ThreadScreen(
 
 @Composable
 private fun Turn(turn: AskTurn) {
+    val skin = LocalGymColors.current
     if (!turn.fromLifter) {
         Text(
             turn.text,
             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
             modifier = Modifier.fillMaxWidth(),
         )
         return
@@ -332,11 +336,11 @@ private fun Turn(turn: AskTurn) {
         Text(
             turn.text,
             style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
             modifier = Modifier
                 .weight(0.8f, fill = false)
-                .background(GymSkin.accentSoft, bubble)
-                .border(1.dp, GymSkin.accent, bubble)
+                .background(skin.accentSoft, bubble)
+                .border(1.dp, skin.accent, bubble)
                 .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
         )
     }
@@ -352,22 +356,23 @@ private fun Minted(
     stillWaiting: Boolean,
     onReview: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val routineName = proposal.routine.ifBlank { read?.routineName ?: "this routine" }
     Column(
         verticalArrangement = Arrangement.spacedBy(GymLayout.blockGap),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.accent, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
+            Box(Modifier.size(6.dp).clip(CircleShape).background(skin.accent))
             Spacer(Modifier.size(WindmillSpace.x2))
             Text(
                 "Proposal · $routineName",
                 style = GymType.numeral(11, FontWeight.Bold),
-                color = GymSkin.accent,
+                color = skin.accent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -375,22 +380,22 @@ private fun Minted(
         Text(
             read?.summaryLine(routineName) ?: proposal.summaryLine,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
         )
         Text(
             proposal.line(nowMs, stillWaiting),
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
+                .background(skin.accent, RoundedCornerShape(WindmillRadius.md))
                 .clickable(role = Role.Button, onClick = onReview),
         ) {
-            Text(Proposal.review, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
+            Text(Proposal.review, style = WindmillFont.body(14, FontWeight.Bold), color = skin.onAccent)
         }
     }
 }

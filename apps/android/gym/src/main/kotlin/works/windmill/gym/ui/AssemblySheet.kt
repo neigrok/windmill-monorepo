@@ -66,6 +66,7 @@ fun AssemblySheet(
     onDrop: (String) -> Boolean,
     onAdd: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val listState = rememberLazyListState()
     // Read from inside a gesture that outlives its composition: the drag detector is keyed on the row id.
     val standing by rememberUpdatedState(rows)
@@ -75,15 +76,15 @@ fun AssemblySheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("This session", style = WindmillFont.display(20), color = GymSkin.ink)
+            Text("This session", style = WindmillFont.display(20), color = skin.ink)
             Spacer(Modifier.width(WindmillSpace.x3))
-            Text(Readout.clock(elapsedMs), style = GymType.numeral(13), color = GymSkin.inkFaint)
+            Text(Readout.clock(elapsedMs), style = GymType.numeral(13), color = skin.inkDim)
         }
 
         LazyColumn(
@@ -113,10 +114,10 @@ fun AssemblySheet(
                             .zIndex(if (held) 1f else 0f)
                             .graphicsLayer { translationY = if (held) dragOffset else 0f }
                             .clip(RoundedCornerShape(WindmillRadius.lg))
-                            .background(if (row.justAdded) GymSkin.raised else GymSkin.surface)
+                            .background(if (row.justAdded) skin.raised else skin.surface)
                             .border(
                                 1.dp,
-                                if (row.justAdded || row.isCurrent) GymSkin.accent else GymSkin.line,
+                                if (row.justAdded || row.isCurrent) skin.accent else skin.line,
                                 RoundedCornerShape(WindmillRadius.lg),
                             )
                             .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") {
@@ -174,20 +175,20 @@ fun AssemblySheet(
                             Text(
                                 row.name,
                                 style = WindmillFont.body(16, FontWeight.Bold),
-                                color = if (row.isCurrent) GymSkin.accent else GymSkin.ink,
+                                color = if (row.isCurrent) skin.accent else skin.ink,
                                 modifier = Modifier.weight(1f),
                             )
                             row.tag?.let {
                                 Text(
                                     it,
                                     style = GymType.numeral(11),
-                                    color = if (row.justAdded) GymSkin.accent else GymSkin.inkFaint,
+                                    color = if (row.justAdded) skin.accent else skin.inkDim,
                                 )
                             }
                         }
 
                         row.line?.let {
-                            Text(it, style = WindmillFont.body(13), color = GymSkin.inkFaint)
+                            Text(it, style = WindmillFont.body(13), color = skin.inkDim)
                         }
                         row.sets.forEach { set ->
                             Row(
@@ -197,18 +198,18 @@ fun AssemblySheet(
                                 Text(
                                     if (set.isWarmup) "w" else "✓",
                                     style = GymType.numeral(12),
-                                    color = if (set.isWarmup) GymSkin.warmupInk else GymSkin.setDone,
+                                    color = if (set.isWarmup) skin.inkDim else skin.setDone,
                                     modifier = Modifier.width(14.dp),
                                 )
                                 Text(
                                     set.value,
                                     style = GymType.numeral(13),
-                                    color = if (set.isWarmup) GymSkin.warmupInk else GymSkin.inkDim,
+                                    color = if (set.isWarmup) skin.inkDim else skin.inkDim,
                                 )
                                 Text(
                                     set.note,
                                     style = GymType.numeral(11),
-                                    color = if (set.isOnThisDevice) GymSkin.unsyncedInk else GymSkin.inkFaint,
+                                    color = skin.inkDim,
                                 )
                             }
                         }
@@ -237,7 +238,7 @@ fun AssemblySheet(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
-                .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
+                .dashedEdge(skin.lineStrong, WindmillRadius.md)
                 .clickable(role = Role.Button, onClick = onAdd),
             contentAlignment = Alignment.Center,
         ) {
@@ -245,9 +246,9 @@ fun AssemblySheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.accent)
+                Icon(Icons.Filled.Add, contentDescription = null, tint = skin.accent)
                 Text("Add next movement", style = WindmillFont.body(16, FontWeight.SemiBold),
-                     color = GymSkin.accent)
+                     color = skin.accent)
             }
         }
 
@@ -257,14 +258,14 @@ fun AssemblySheet(
                     .fillMaxWidth()
                     .heightIn(min = GymTap.primary)
                     .clip(RoundedCornerShape(WindmillRadius.lg))
-                    .background(GymSkin.accent)
+                    .background(skin.accent)
                     .clickable(role = Role.Button) { onJump(added.id) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "Log a set of ${added.name}",
                     style = WindmillFont.body(17, FontWeight.Bold),
-                    color = GymSkin.onAccent,
+                    color = skin.onAccent,
                     maxLines = 1,
                 )
             }
@@ -275,23 +276,25 @@ fun AssemblySheet(
 // What the swipe uncovers: the row is coming off the walk, and nothing about it is logged.
 @Composable
 private fun DropGround() {
+    val skin = LocalGymColors.current
     Row(
         Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(WindmillRadius.lg))
-            .background(GymSkin.raised)
+            .background(skin.raised)
             .padding(horizontal = WindmillSpace.x4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.alarmInk)
-        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.alarmInk)
+        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
+        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
     }
 }
 
 // Shared with the notes list, which drags the same way.
 @Composable
 internal fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
+    val skin = LocalGymColors.current
     Column(
         modifier.size(width = 32.dp, height = GymTap.minimum),
         verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
@@ -302,7 +305,7 @@ internal fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
                     .width(16.dp)
                     .height(2.dp)
                     .clip(RoundedCornerShape(WindmillRadius.sm))
-                    .background(if (lit) GymSkin.accent else GymSkin.inkFaint),
+                    .background(if (lit) skin.accent else skin.inkFaint),
             )
         }
     }

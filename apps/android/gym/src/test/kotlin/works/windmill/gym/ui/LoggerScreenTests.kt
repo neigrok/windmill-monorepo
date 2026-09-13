@@ -1,5 +1,9 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -7,7 +11,6 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -34,6 +37,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Ladder
@@ -77,8 +81,10 @@ class LoggerScreenTests {
         logged: Boolean = false,
         lastTimeDown: Boolean = false,
         offline: Boolean = false,
+        haptics: HapticFeedback? = null,
+        preferences: GymPreferences = GymPreferences(),
     ): TrainingStore {
-        val server = FakeTraining()
+        val server = FakeTraining().apply { settings = preferences }
         server.catalog = listOf(
             Exercise(id = "bench-press", name = "Bench Press"),
             Exercise(id = "barbell-row", name = "Barbell Row"),
@@ -113,7 +119,9 @@ class LoggerScreenTests {
             if (logged) store.logSet(60.0, 5)
         }
         compose.setContent {
-            LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+            CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
+                LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+            }
         }
         return store
     }
@@ -168,8 +176,6 @@ class LoggerScreenTests {
     private fun down(server: FakeTraining): TrainingSyncing = object : TrainingSyncing by server {
         override suspend fun lastTime(exerciseId: String): LastTime = throw IOException("the log is down")
     }
-
-    private fun kindChip() = compose.onNode(hasContentDescription("Set kind"))
 
     private fun walk() = compose.onNode(hasContentDescription("Movement 1 of 3"))
 
@@ -304,26 +310,25 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    private fun state(said: String) = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, said)
-
-    // The four-segment row is gone; the kind is one chip whose menu holds the four, and it disarms
-    // itself the moment a set lands so a warmup left on cannot file the working sets after it.
     @Test
-    fun theKindChipPicksAKindAndDisarmsWhenASetLands() {
+    fun loggingUsesWorkingKindAndStaysSilentWithLegacyConfirmationEnabled() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = logger(scope)
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val preferences = GymPreferences(confirmHaptic = true, confirmSound = true)
+        val store = logger(scope, preferences = preferences, haptics = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                sensations += hapticFeedbackType
+            }
+        })
 
-        kindChip().assert(state("working"))
-        kindChip().performClick()
-        compose.onNodeWithText("warmup").performClick()
-        kindChip().assert(state("warmup"))
-
+        compose.onNode(hasContentDescription("Set kind")).assertDoesNotExist()
+        compose.onNodeWithText("Kind").assertDoesNotExist()
         compose.onNodeWithText("Log set").performClick()
-        compose.waitForIdle()
         compose.runOnIdle {
-            assertEquals("the set went in as the kind the chip held", SetKind.Warmup, store.sets.single().kind)
+            assertEquals(listOf(SetKind.Working), store.sets.map { it.kind })
+            assertEquals(preferences, store.preferences)
+            assertEquals(emptyList<HapticFeedbackType>(), sensations)
         }
-        kindChip().assert(state("working"))
         scope.cancel()
     }
 

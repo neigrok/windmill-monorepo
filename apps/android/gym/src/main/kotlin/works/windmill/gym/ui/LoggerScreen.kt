@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,8 +41,6 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -55,7 +52,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
@@ -63,7 +59,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -73,7 +68,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -94,9 +88,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -117,7 +109,6 @@ import works.windmill.gym.domain.LoggerWalk
 import works.windmill.gym.domain.Scheme
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOutcome
@@ -158,13 +149,10 @@ fun LoggerScreen(
     // with its foot on the hairline, so no control of the rack is ever under it. `null` hosts none.
     transient: SnackbarHostState? = null,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val preferences = store.preferences
-    val confirm = rememberGymConfirm(preferences)
     var weightKg by remember { mutableDoubleStateOf(store.prefill.weightKg) }
     var reps by remember { mutableIntStateOf(store.prefill.reps) }
-    // The one piece of dial state that is saved: the weight and reps are re-seeded from the prefill.
-    var kind by rememberSaveable { mutableStateOf(SetKind.Working) }
     var sheet by remember { mutableStateOf<LoggerSheet?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
     var pendingDeviation by remember { mutableStateOf<DeviationOffer?>(null) }
@@ -250,11 +238,11 @@ fun LoggerScreen(
     // may hold.
     GymScreen(
         title = title,
-        centred = true,
+        sessionBar = true,
         navigation = { TopAction("Finish", enabled = !store.isFinishing, onClick = onFinish) },
         actions = {
             IconButton(onClick = onSettings) {
-                Icon(Icons.Outlined.Settings, contentDescription = "Gym settings", tint = GymSkin.inkDim)
+                Icon(Icons.Outlined.Settings, contentDescription = "Gym settings", tint = skin.inkDim)
             }
         },
     ) {
@@ -326,9 +314,7 @@ fun LoggerScreen(
                 ) {
                     MovementHead(
                         name = name,
-                        setLine = setLine(counter, Scheme.slot(store.planEntry?.sets.orEmpty(), workingToday)),
-                        kind = kind,
-                        onKind = { kind = it },
+                        setLine = setLine(counter, Scheme.slot(store.planEntry?.sets.orEmpty(), workingToday), skin.targetInk),
                         previous = if (at < 0) null else store.order.getOrNull(at - 1),
                         next = if (at < 0) null else store.order.getOrNull(at + 1),
                         onMove = { move(it) },
@@ -345,21 +331,21 @@ fun LoggerScreen(
                         )
                     } else if (history == null && historyCard != null) {
                         // A read that missed draws a chip; no history draws none. Never the same shape.
-                        ChipRow { AssistChip(
+                        AssistChip(
                             onClick = {},
                             enabled = false,
                             label = { Text("didn’t load", style = MaterialTheme.typography.labelLarge) },
                             leadingIcon = { Icon(historyGlyph, contentDescription = null, Modifier.size(18.dp)) },
                             border = null,
                             colors = AssistChipDefaults.assistChipColors(
-                                disabledContainerColor = GymSkin.raised,
-                                disabledLabelColor = GymSkin.inkFaint,
-                                disabledLeadingIconContentColor = GymSkin.inkFaint,
+                                disabledContainerColor = skin.raised,
+                                disabledLabelColor = skin.inkFaint,
+                                disabledLeadingIconContentColor = skin.inkFaint,
                             ),
                             modifier = Modifier.semantics {
                                 contentDescription = "${historyCard.title}: ${historyCard.body}"
                             },
-                        ) }
+                        )
                     }
                     StrandedBand(store.strandedCount, store.strandedBy)
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
@@ -381,7 +367,7 @@ fun LoggerScreen(
                 standing = at,
                 onAdd = { sheet = LoggerSheet.Picker },
             )
-            HorizontalDivider(thickness = 1.dp, color = GymSkin.line)
+            HorizontalDivider(thickness = 1.dp, color = skin.line)
           }
           transient?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter)) }
         }
@@ -394,11 +380,7 @@ fun LoggerScreen(
             onTypeWeight = { sheet = LoggerSheet.Weight },
             onTypeReps = { sheet = LoggerSheet.Reps },
             onLog = {
-                val logging = kind
-                confirm.setLogged()
-                // Disarmed on the tap and never on the reply: a warmup is a single set, not a mode.
-                kind = SetKind.Working
-                scope.launch { store.logSet(weightKg, reps, logging) }
+                scope.launch { store.logSet(weightKg, reps) }
             },
         )
       }
@@ -411,7 +393,8 @@ fun LoggerScreen(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             when (open) {
                 LoggerSheet.Weight -> KeypadSheet(
@@ -446,7 +429,7 @@ fun LoggerScreen(
                     },
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
-                        .background(GymSkin.surface)
+                        .background(skin.surface)
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },
@@ -503,11 +486,11 @@ fun LoggerScreen(
 // `Set 3 of 5` — the domain's `set 3 of 5`, capitalised here — and, when the CURRENT slot names a
 // rep or load target, ` · target 3 @ 90` in the target ink. No slot, or one naming neither, draws
 // no tail: the absence says it.
-private fun setLine(count: String, slot: SetTarget?) = buildAnnotatedString {
+private fun setLine(count: String, slot: SetTarget?, targetInk: Color) = buildAnnotatedString {
     append(count.replaceFirstChar { it.uppercase() })
     val load = slot?.weightKg?.takeIf { it != 0.0 }
     if (slot == null || (slot.reps == null && load == null)) return@buildAnnotatedString
-    withStyle(SpanStyle(color = GymSkin.targetInk)) {
+    withStyle(SpanStyle(color = targetInk)) {
         append(" · target ${Readout.repTarget(slot.reps)}")
         load?.let { append(" @ ${Readout.weight(it)}") }
     }
@@ -524,13 +507,12 @@ private fun setLine(count: String, slot: SetTarget?) = buildAnnotatedString {
 private fun MovementHead(
     name: String,
     setLine: AnnotatedString,
-    kind: SetKind,
-    onKind: (SetKind) -> Unit,
     previous: String?,
     next: String?,
     onMove: (String) -> Unit,
     onOpenSession: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val density = LocalDensity.current
     val slopPx = with(density) { LoggerWalk.slopDp.dp.toPx() }
     val edgePx = with(density) { LoggerWalk.edgeDp.dp.toPx() }
@@ -576,72 +558,18 @@ private fun MovementHead(
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 26.sp),
             style = MaterialTheme.typography.headlineMedium
-                .copy(color = GymSkin.ink, textAlign = TextAlign.Center),
+                .copy(color = skin.ink, textAlign = TextAlign.Center),
             modifier = Modifier
                 .fillMaxWidth()
                 .lineBox(32.sp)
                 .clickable(role = Role.Button, onClickLabel = "open this session", onClick = onOpenSession)
                 .semantics { customActions = steps },
         )
-        // At the largest text the set line and the chip do not share a line; the chip wraps under.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        ) {
-            Box(Modifier.heightIn(min = 32.dp), contentAlignment = Alignment.Center) {
-                Text(setLine, style = MaterialTheme.typography.bodyMedium, color = GymSkin.inkDim)
-            }
-            KindChip(kind, onKind)
+        Box(Modifier.heightIn(min = GymTap.minimum), contentAlignment = Alignment.Center) {
+            Text(setLine, style = MaterialTheme.typography.bodyMedium, color = skin.inkDim)
         }
     }
 }
-
-// Four kinds one tap away on the set being logged: the kind is a property of the rep you are about
-// to do, and choosing it must not cost a trip. It disarms itself when a set lands.
-@Composable
-private fun KindChip(kind: SetKind, onPick: (SetKind) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    ChipRow { Box {
-        AssistChip(
-            onClick = { open = true },
-            label = { Text(kind.wire, style = MaterialTheme.typography.labelMedium) },
-            trailingIcon = {
-                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, Modifier.size(18.dp))
-            },
-            border = null,
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = GymSkin.accentSoft,
-                labelColor = GymSkin.accent,
-                trailingIconContentColor = GymSkin.accent,
-            ),
-            modifier = Modifier.semantics {
-                contentDescription = "Set kind"
-                stateDescription = kind.wire
-            },
-        )
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            containerColor = GymSkin.surface,
-        ) {
-            SetKind.entries.forEach { option ->
-                val picked = option == kind
-                DropdownMenuItem(
-                    text = { Text(option.wire, style = MaterialTheme.typography.bodyMedium, color = GymSkin.ink) },
-                    leadingIcon = if (!picked) null else ({
-                        Icon(Icons.Filled.Check, contentDescription = null, tint = GymSkin.accent,
-                             modifier = Modifier.size(18.dp))
-                    }),
-                    onClick = {
-                        onPick(option)
-                        open = false
-                    },
-                    modifier = Modifier.semantics { selected = picked },
-                )
-            }
-        }
-    }
-} }
 
 // One set from last time, on the chip; the whole card — the day, how long ago, the other routine,
 // every set — is what the chip SAYS, and the menu under it dials any of those sets.
@@ -652,8 +580,9 @@ private fun LastTimeChip(
     shown: TrainingSet,
     onDial: (TrainingSet) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     var open by remember { mutableStateOf(false) }
-    ChipRow { Box {
+    Box {
         AssistChip(
             onClick = { open = true },
             label = {
@@ -663,19 +592,19 @@ private fun LastTimeChip(
             leadingIcon = { Icon(historyGlyph, contentDescription = null, Modifier.size(18.dp)) },
             border = null,
             colors = AssistChipDefaults.assistChipColors(
-                containerColor = GymSkin.accentSoft,
-                labelColor = GymSkin.accent,
-                leadingIconContentColor = GymSkin.accent,
+                containerColor = skin.accentSoft,
+                labelColor = skin.accent,
+                leadingIconContentColor = skin.accent,
             ),
             modifier = Modifier.semantics { contentDescription = "${card.title}: ${card.body}" },
         )
         DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
         ) {
             DropdownMenuItem(
-                text = { Text(card.title, style = MaterialTheme.typography.bodySmall, color = GymSkin.inkFaint) },
+                text = { Text(card.title, style = MaterialTheme.typography.bodySmall, color = skin.inkDim) },
                 onClick = {},
                 enabled = false,
             )
@@ -683,7 +612,7 @@ private fun LastTimeChip(
                 DropdownMenuItem(
                     text = {
                         Text(Readout.effort(set.weightKg, set.reps),
-                             style = MaterialTheme.typography.bodyMedium, color = GymSkin.ink)
+                             style = MaterialTheme.typography.bodyMedium, color = skin.ink)
                     },
                     onClick = {
                         onDial(set)
@@ -693,29 +622,22 @@ private fun LastTimeChip(
             }
         }
     }
-} }
-
-// A chip row is the 32 dp the chip draws, not the 48 Material reserves around it: the reading
-// region on a 411 × 731 phone has no 16 dp to spare per chip, and a chip is a door opened once a
-// set, beside a set line that is not a target at all.
-@Composable
-private fun ChipRow(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 32.dp, content = content)
 }
 
 // The one caption that survives: a disclosure at the moment of consequence — your data is not on
 // the server — and it exists only while something is wrong.
 @Composable
 private fun StrandedBand(count: Int, by: Blocker?) {
+    val skin = LocalGymColors.current
     val line = LiveLines.onThisDeviceLine(count, by) ?: return
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(cloudOffGlyph, contentDescription = null, tint = GymSkin.unsyncedInk,
+        Icon(cloudOffGlyph, contentDescription = null, tint = skin.unsyncedInk,
              modifier = Modifier.size(16.dp).padding(top = 1.dp))
-        Text(line, style = MaterialTheme.typography.bodySmall, color = GymSkin.unsyncedInk,
+        Text(line, style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
              lineHeight = 17.sp, modifier = Modifier.weight(1f))
     }
 }
@@ -773,14 +695,15 @@ private fun SlotStrip(slots: List<LiveLines.Slot>, landed: Int, state: LazyListS
 // corrected body is what lands.
 @Composable
 private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modifier = Modifier) {
+    val skin = LocalGymColors.current
     val said = (if (row.isWarmup) "Warmup set" else "Set ${row.index}") + ", ${row.value}"
     val shape = RoundedCornerShape(WindmillRadius.full)
     Row(
         modifier
             .height(32.dp)
             .clip(shape)
-            .background(GymSkin.surface)
-            .border(1.dp, GymSkin.line, shape)
+            .background(skin.surface)
+            .border(1.dp, skin.line, shape)
             .clickable(role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) }
             .semantics(mergeDescendants = true) { contentDescription = said }
             .padding(horizontal = GymLayout.rowInset),
@@ -788,11 +711,11 @@ private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modif
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(row.index, style = MaterialTheme.typography.labelMedium,
-             color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.inkFaint)
+             color = if (row.isWarmup) skin.inkDim else skin.inkDim)
         Text(row.value, style = MaterialTheme.typography.labelMedium,
-             color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.ink)
+             color = if (row.isWarmup) skin.inkDim else skin.ink)
         if (row.isOnThisDevice) {
-            Icon(cloudOffGlyph, contentDescription = LiveLines.onThisDevice, tint = GymSkin.unsyncedInk,
+            Icon(cloudOffGlyph, contentDescription = LiveLines.onThisDevice, tint = skin.unsyncedInk,
                  modifier = Modifier.size(14.dp))
         }
     }
@@ -802,21 +725,22 @@ private fun SetPill(row: LiveLines.Row, onFix: (String) -> Unit, modifier: Modif
 // accent outline, the ones after it in the faint ink. Spoken as `set 4, target 100 × 1`.
 @Composable
 private fun PlannedPill(slot: LiveLines.Slot.Planned, modifier: Modifier = Modifier) {
+    val skin = LocalGymColors.current
     val shape = RoundedCornerShape(WindmillRadius.full)
     Row(
         modifier
             .height(32.dp)
             .clip(shape)
-            .background(GymSkin.surface)
-            .border(1.dp, if (slot.current) GymSkin.accent else GymSkin.line, shape)
+            .background(skin.surface)
+            .border(1.dp, if (slot.current) skin.accent else skin.line, shape)
             .semantics(mergeDescendants = true) { contentDescription = slot.spoken }
             .padding(horizontal = GymLayout.rowInset),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(slot.index.toString(), style = MaterialTheme.typography.labelMedium, color = GymSkin.inkFaint)
+        Text(slot.index.toString(), style = MaterialTheme.typography.labelMedium, color = skin.inkDim)
         Text(slot.value, style = MaterialTheme.typography.labelMedium,
-             color = if (slot.current) GymSkin.targetInk else GymSkin.inkFaint)
+             color = if (slot.current) skin.targetInk else skin.inkDim)
     }
 }
 
@@ -824,6 +748,7 @@ private fun PlannedPill(slot: LiveLines.Slot.Planned, modifier: Modifier = Modif
 // domain's `movement 1 of 3` capitalised. The `+` is the free session's only way to a next movement.
 @Composable
 private fun Walk(place: String?, walk: Int, standing: Int, onAdd: () -> Unit) {
+    val skin = LocalGymColors.current
     // No padding of its own: on a 411 × 731 phone a landed set fills the reading region to the
     // dp, and the 46 dp button already holds the dots clear of the strip.
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -839,14 +764,14 @@ private fun Walk(place: String?, walk: Int, standing: Int, onAdd: () -> Unit) {
                         Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(if (step <= standing) GymSkin.accent else GymSkin.lineStrong),
+                            .background(if (step <= standing) skin.accent else skin.lineStrong),
                     )
                 }
             }
         }
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onAdd, modifier = Modifier.size(GymTap.minimum)) {
-            Icon(Icons.Filled.Add, contentDescription = "Add movement", tint = GymSkin.inkDim,
+            Icon(Icons.Filled.Add, contentDescription = "Add movement", tint = skin.inkDim,
                  modifier = Modifier.size(22.dp))
         }
     }
@@ -865,18 +790,19 @@ private fun Rack(
     onTypeReps: () -> Unit,
     onLog: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(
         Modifier.fillMaxWidth().padding(top = WindmillSpace.x4, bottom = WindmillSpace.x3),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Weight", style = MaterialTheme.typography.bodySmall, color = GymSkin.inkFaint,
+        Text("Weight", style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
              modifier = Modifier.clearAndSetSemantics {})
         Spacer(Modifier.height(WindmillSpace.x1))
         WeightReadout(weightKg, onTypeWeight)
         Spacer(Modifier.height(WindmillSpace.x3))
         LadderRow(weightKg, onDial = onWeight)
         Spacer(Modifier.height(WindmillSpace.x5))
-        Text("Reps", style = MaterialTheme.typography.bodySmall, color = GymSkin.inkFaint,
+        Text("Reps", style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
              modifier = Modifier.clearAndSetSemantics {})
         Spacer(Modifier.height(WindmillSpace.x1))
         RepsRow(reps, onDial = onReps, onType = onTypeReps)
@@ -889,6 +815,7 @@ private fun Rack(
 // its unit are one node: the tap raises the rack's own keypad, never the system keyboard.
 @Composable
 private fun WeightReadout(weightKg: Double, onType: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         Modifier
             .clip(RoundedCornerShape(WindmillRadius.md))
@@ -902,10 +829,10 @@ private fun WeightReadout(weightKg: Double, onType: () -> Unit) {
             Readout.weight(weightKg),
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 44.sp, maxFontSize = 80.sp),
-            style = GymType.weight.copy(lineHeight = 72.sp, color = GymSkin.weightInk),
+            style = GymType.weight.copy(lineHeight = 72.sp, color = skin.weightInk),
             modifier = Modifier.lineBox(72.sp).alignByBaseline(),
         )
-        Text("kg", style = MaterialTheme.typography.displaySmall, color = GymSkin.inkDim,
+        Text("kg", style = MaterialTheme.typography.displaySmall, color = skin.inkDim,
              modifier = Modifier.alignByBaseline())
     }
 }
@@ -913,6 +840,7 @@ private fun WeightReadout(weightKg: Double, onType: () -> Unit) {
 // Four EQUAL pills whose labels are the golden's, by weight band — never a fixed ±1/±5.
 @Composable
 internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
+    val skin = LocalGymColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
         Ladder.labels(weightKg).forEachIndexed { index, label ->
             val big = index == 0 || index == 3
@@ -924,8 +852,8 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
                     .height(GymTap.row)
                     .pressed(interaction)
                     .clip(shape)
-                    .background(GymSkin.raised)
-                    .border(1.dp, GymSkin.lineStrong, shape)
+                    .background(skin.raised)
+                    .border(1.dp, skin.lineStrong, shape)
                     .clickable(
                         interactionSource = interaction,
                         indication = LocalIndication.current,
@@ -936,7 +864,7 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.titleMedium, color = GymSkin.ink, maxLines = 1)
+                Text(label, style = MaterialTheme.typography.titleMedium, color = skin.ink, maxLines = 1)
             }
         }
     }
@@ -945,6 +873,7 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
 // Two accent circles either side of the numeral. The words are the circles' names, not glyphs.
 @Composable
 private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x6),
         verticalAlignment = Alignment.CenterVertically,
@@ -963,7 +892,7 @@ private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
                 transitionSpec = { fadeIn(tween(WindmillMotion.fastMs)) togetherWith fadeOut(tween(WindmillMotion.fastMs)) },
                 label = "reps",
             ) { count ->
-                Text(count.toString(), style = GymType.reps, color = GymSkin.ink, maxLines = 1,
+                Text(count.toString(), style = GymType.reps, color = skin.ink, maxLines = 1,
                      modifier = Modifier.lineBox(60.sp))
             }
         }
@@ -973,14 +902,15 @@ private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
 
 @Composable
 private fun RepCircle(glyph: ImageVector, said: String, onTap: () -> Unit) {
+    val skin = LocalGymColors.current
     val interaction = remember { MutableInteractionSource() }
     FilledIconButton(
         onClick = onTap,
         interactionSource = interaction,
         modifier = Modifier.size(GymTap.primary).pressed(interaction),
         colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = GymSkin.accent,
-            contentColor = GymSkin.onAccent,
+            containerColor = skin.accent,
+            contentColor = skin.onAccent,
         ),
     ) {
         Icon(glyph, contentDescription = said, modifier = Modifier.size(28.dp))
@@ -991,16 +921,17 @@ private fun RepCircle(glyph: ImageVector, said: String, onTap: () -> Unit) {
 // numerals stand directly above it, so it echoes neither.
 @Composable
 private fun LogButton(finishing: Boolean, onLog: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.primary)
+            .heightIn(min = GymTap.logSet)
             .clip(RoundedCornerShape(WindmillRadius.lg))
-            .background(if (finishing) GymSkin.raised else GymSkin.accent)
+            .background(if (finishing) skin.raised else skin.accent)
             .clickable(enabled = !finishing, role = Role.Button, onClick = onLog),
         contentAlignment = Alignment.Center,
     ) {
-        Text("Log set", style = GymType.primary, color = if (finishing) GymSkin.inkFaint else GymSkin.onAccent)
+        Text("Log set", style = GymType.primary, color = if (finishing) skin.inkDim else skin.onAccent)
     }
 }
 

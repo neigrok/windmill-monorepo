@@ -27,7 +27,7 @@ class GymTabsTests {
 
     @Test
     fun testTheRailIsRoutinesTheLogCoach() {
-        assertEquals(listOf("Routines", "The log", "Coach"), Tab.entries.map { it.title })
+        assertEquals(listOf("Routines", "Log", "Coach"), Tab.entries.map { it.title })
         assertEquals("home is the first seat on the rail", Tab.Routines, Tab.entries.first())
     }
 }

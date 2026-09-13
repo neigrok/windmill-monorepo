@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -145,6 +144,7 @@ fun LogScreen(
     onShareSession: (String) -> Unit,
     onDiscardSession: (String) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val onThisDevice = store.shelved.map { it.id }.toSet()
@@ -166,7 +166,7 @@ fun LogScreen(
         }
     }
 
-    GymScreen(title = "The log", actions = { YouSeat(seat) }) {
+    GymScreen(title = "Log", actions = { YouSeat(seat) }) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -180,7 +180,7 @@ fun LogScreen(
                 item("head") {
                     Column {
                         LogFold.head(weeks, store.older, logHolds)?.let {
-                            Text(it, style = GymType.numeral(13), color = GymSkin.inkFaint)
+                            Text(it, style = GymType.numeral(13), color = skin.inkDim)
                         }
                         BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
                     }
@@ -240,7 +240,8 @@ fun LogScreen(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             WeighInSheet(
                 initial = null,
@@ -273,6 +274,7 @@ fun LogScreen(
 
 @Composable
 private fun WeekDivider(week: LogFold.Week) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -283,15 +285,15 @@ private fun WeekDivider(week: LogFold.Week) {
         Text(
             week.label.uppercase(),
             style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
         Box(
             Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(GymSkin.line),
+                .background(skin.line),
         )
-        week.tonnage?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
+        week.tonnage?.let { Text(it, style = GymType.numeral(12), color = skin.inkDim) }
     }
 }
 
@@ -310,6 +312,7 @@ private fun SessionRow(
     onShare: () -> Unit,
     onDiscard: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     var menuUp by remember { mutableStateOf(false) }
     val haptics = rememberGymHaptics()
     Column(
@@ -317,8 +320,8 @@ private fun SessionRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .combinedClickable(
                 role = Role.Button,
                 onClickLabel = "open this session",
@@ -343,17 +346,17 @@ private fun SessionRow(
         DropdownMenu(
             expanded = menuUp,
             onDismissRequest = { menuUp = false },
-            containerColor = GymSkin.raised,
+            containerColor = skin.raised,
         ) {
             DropdownMenuItem(
-                text = { Text("Share this workout", color = GymSkin.ink) },
+                text = { Text("Share this workout", color = skin.ink) },
                 onClick = {
                     menuUp = false
                     onShare()
                 },
             )
             DropdownMenuItem(
-                text = { Text(Finish.discard, color = GymSkin.alarmInk) },
+                text = { Text(Finish.discard, color = skin.alarmInk) },
                 onClick = {
                     menuUp = false
                     onDiscard()
@@ -365,12 +368,12 @@ private fun SessionRow(
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(row.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+            Text(row.title, style = WindmillFont.body(15, FontWeight.Bold), color = skin.ink)
             if (row.record) {
                 Box(
                     Modifier
                         .size(7.dp)
-                        .background(GymSkin.prInk, CircleShape)
+                        .background(skin.prInk, CircleShape)
                         .semantics { contentDescription = "a record was set" },
                 )
             }
@@ -378,23 +381,24 @@ private fun SessionRow(
                 Box(
                     Modifier
                         .size(7.dp)
-                        .border(1.5.dp, GymSkin.unsyncedInk, CircleShape)
+                        .border(1.5.dp, skin.unsyncedInk, CircleShape)
                         .semantics { contentDescription = "on this device only" },
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(row.at, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(row.at, style = GymType.numeral(12), color = skin.inkDim)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-            row.working?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
-            row.tonnage?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
-            row.estimate?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
+            row.working?.let { Text(it, style = GymType.numeral(12), color = skin.inkDim) }
+            row.tonnage?.let { Text(it, style = GymType.numeral(12), color = skin.inkDim) }
+            row.estimate?.let { Text(it, style = GymType.numeral(12), color = skin.inkDim) }
         }
     }
 }
 
 @Composable
 private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
+    val skin = LocalGymColors.current
     if (older == Older.End) {
         if (first == null) return
         Box(
@@ -407,13 +411,13 @@ private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
             Text(
                 "first session · ${Readout.date(first.startedAtMs)}",
                 style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
         }
         return
     }
     if (older == Older.Failed) {
-        FootBox("That read failed · retry", GymSkin.alarmInk, GymSkin.alarmInk, onLoad)
+        FootBox("That read failed · retry", skin.alarmInk, skin.alarmInk, onLoad)
         return
     }
     if (older == Older.Loading) {
@@ -424,21 +428,21 @@ private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .padding(top = WindmillSpace.x3)
-                .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+                .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
                 .padding(horizontal = WindmillSpace.x4),
         ) {
             Spacer(Modifier.weight(1f))
             CircularProgressIndicator(
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(14.dp),
             )
-            Text("Loading", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+            Text("Loading", style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.inkDim)
             Spacer(Modifier.weight(1f))
         }
         return
     }
-    FootBox("Load older", GymSkin.inkDim, GymSkin.lineStrong, onLoad)
+    FootBox("Load older", skin.inkDim, skin.lineStrong, onLoad)
 }
 
 @Composable
@@ -458,10 +462,11 @@ private fun FootBox(label: String, ink: Color, line: Color, onTap: () -> Unit) {
 
 @Composable
 private fun Empty() {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier.padding(top = WindmillSpace.x6),
     ) {
-        Text("No sessions yet.", style = WindmillFont.body(16), color = GymSkin.inkDim)
+        Text("No sessions yet.", style = WindmillFont.body(16), color = skin.inkDim)
     }
 }

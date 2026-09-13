@@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -26,22 +28,25 @@ import works.windmill.platform.ShellActions
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.PrefsSessions
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillMaterial
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.you.YouSheet
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Edge to edge on every version, not only where the platform enforces it: the room draws
-        // under both bars and its own Scaffold holds the insets. The bars keep light icons, because
-        // the one skin this app has is dark.
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val auth = AuthStore(WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL), PrefsSessions(this))
-        setContent { Root(auth) }
+        setContent {
+            val dark = isSystemInDarkTheme()
+            SideEffect {
+                val bars = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+                    else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+            }
+            CompositionLocalProvider(LocalWindmillDark provides dark) { Root(auth) }
+        }
     }
 }
 

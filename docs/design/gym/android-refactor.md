@@ -1,11 +1,13 @@
 # Android gym design
 
-The editable proposal lives in [Android · Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2),
+The approved editable design lives in [Android · Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2),
 at the original Android page URL. Its shared controls live in
 [Android · Components](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-3),
 and behavior contracts and stress specimens live in
 [Android · Specifications](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9987).
-These are design artifacts, not a claim that the Android application implements the proposal.
+Implementation coverage is tracked in `android-delivery.md` and the repository `worklog.md`.
+Wave 1 implements shared chrome, system palettes, Settings and the approved control removals;
+the remaining screens and native behavior are assigned to later delivery waves.
 
 ## Screen library
 

@@ -2,6 +2,8 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -23,6 +25,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.OAuthGrant
@@ -74,7 +77,9 @@ class SettingsScreenTests {
                 isSignedIn = signedIn,
                 backTo = "routines",
                 onBack = {},
-                onNotes = {},
+                onNotes = { opened += "notes" },
+                accountEmail = if (signedIn) "sam@example.com" else null,
+                onAccount = { opened += "account" },
                 onConnectedLog = { opened += "connected-log" },
                 say = {},
             )
@@ -147,7 +152,7 @@ class SettingsScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
 
-        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Gym settings").assertIsDisplayed()
         compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
         scope.cancel()
     }
@@ -168,14 +173,51 @@ class SettingsScreenTests {
         scope.cancel()
     }
 
-    // The rest dial is the web's: nothing on this phone draws it.
     @Test
-    fun testThereIsNoRestCard() {
+    fun restAndUnitEditsKeepLegacyConfirmationAndRestSoundPreferences() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+        val preferences = GymPreferences(restSeconds = 90, restSound = true,
+            confirmHaptic = true, confirmSound = true)
+        val server = FakeTraining().apply { settings = preferences }
+        val store = store(scope, server, signedIn = true)
+        settings(store, signedIn = true)
 
-        compose.onNodeWithText("Rest timer").assertDoesNotExist()
+        compose.onNodeWithText("Set confirmation").assertDoesNotExist()
         compose.onNodeWithText("Sound when it ends").assertDoesNotExist()
+        compose.onNodeWithText("1:30").assertIsDisplayed()
+        compose.onNodeWithText("Rest timer").performClick()
+        compose.onNodeWithText("Seconds").performTextReplacement("14")
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Seconds").performTextReplacement("901")
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Seconds").performTextReplacement("120")
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText("2:00").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(preferences.copy(restSeconds = 120), store.preferences)
+            assertEquals(store.preferences, server.settings)
+        }
+
+        compose.onNodeWithText("lb").performClick()
+        compose.onNodeWithText("Rest timer").performClick()
+        compose.onNodeWithText("Turn off").performClick()
+        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(preferences.copy(restSeconds = null, units = Units.Pounds), store.preferences)
+            assertEquals(store.preferences, server.settings)
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun theAccountRowShowsTheCurrentEmailAndOpensTheAccountSheet() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val opened = mutableListOf<String>()
+        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true, opened)
+
+        compose.onNodeWithText("sam@example.com").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Account").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf("account"), opened) }
         scope.cancel()
     }
 

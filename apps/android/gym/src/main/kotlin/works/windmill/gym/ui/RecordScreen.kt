@@ -61,6 +61,7 @@ import works.windmill.platform.design.WindmillSpace
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     var record by remember(exerciseId) { mutableStateOf<MovementRecord?>(null) }
@@ -125,7 +126,8 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                 close()
             },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             RenameSheet(
                 title = "Rename this movement",
@@ -155,13 +157,14 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
 
 @Composable
 private fun Body(page: Record.Page) {
-    Text(page.subhead, style = GymType.numeral(12), color = GymSkin.inkFaint)
+    val skin = LocalGymColors.current
+    Text(page.subhead, style = GymType.numeral(12), color = skin.inkDim)
 
     page.nothingYet?.let {
         Text(
             it,
             style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
             modifier = Modifier.padding(top = WindmillSpace.x2),
         )
         return
@@ -180,7 +183,7 @@ private fun Body(page: Record.Page) {
         Text(
             it,
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
     }
 
@@ -199,10 +202,10 @@ private fun Body(page: Record.Page) {
                     Text(
                         day.day,
                         style = GymType.numeral(13),
-                        color = GymSkin.inkFaint,
+                        color = skin.inkDim,
                         modifier = Modifier.width(WindmillSpace.x16),
                     )
-                    Text(day.sets, style = GymType.numeral(13), color = GymSkin.ink)
+                    Text(day.sets, style = GymType.numeral(13), color = skin.ink)
                 }
             }
         }
@@ -211,53 +214,55 @@ private fun Body(page: Record.Page) {
 
 @Composable
 private fun MarkTile(tile: Record.Tile, modifier: Modifier) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = modifier
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Text(
             tile.label.uppercase(),
             style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
         Text(
             tile.value,
             style = WindmillFont.display(34),
-            color = if (tile.loud) GymSkin.prInk else GymSkin.ink,
+            color = if (tile.loud) skin.prInk else skin.ink,
         )
-        Text(tile.caption, style = GymType.numeral(11), color = GymSkin.inkFaint)
+        Text(tile.caption, style = GymType.numeral(11), color = skin.inkDim)
     }
 }
 
 @Composable
 private fun ChartCard(chart: Record.Chart) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
                 "e1RM per session".uppercase(),
                 style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
             Spacer(Modifier.weight(1f))
-            Text(chart.window, style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(chart.window, style = GymType.numeral(11), color = skin.inkDim)
         }
         Bars(chart.bars)
         Row(
             horizontalArrangement = if (chart.to == null) Arrangement.Center else Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(chart.from, style = GymType.numeral(10), color = GymSkin.inkFaint)
-            chart.to?.let { Text(it, style = GymType.numeral(10), color = GymSkin.inkFaint) }
+            Text(chart.from, style = GymType.numeral(10), color = skin.inkDim)
+            chart.to?.let { Text(it, style = GymType.numeral(10), color = skin.inkDim) }
         }
     }
 }
@@ -283,6 +288,7 @@ internal object BarRow {
 // Gold on exactly one bar — the session holding the standing best, when it is inside the window.
 @Composable
 private fun Bars(bars: List<Record.Bar>) {
+    val skin = LocalGymColors.current
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -309,7 +315,7 @@ private fun Bars(bars: List<Record.Bar>) {
                         bottomRight = CornerRadius.Zero, bottomLeft = CornerRadius.Zero,
                     ))
                 },
-                color = if (bar.standingBest) GymSkin.prInk else GymSkin.raised,
+                color = if (bar.standingBest) skin.prInk else skin.raised,
             )
         }
     }
@@ -317,6 +323,7 @@ private fun Bars(bars: List<Record.Bar>) {
 
 @Composable
 private fun RecordRow(best: Record.Best) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -324,47 +331,49 @@ private fun RecordRow(best: Record.Best) {
             .fillMaxWidth()
             .heightIn(min = WindmillSpace.x10)
             .background(
-                if (best.standing) GymSkin.prSoft else GymSkin.surface,
+                if (best.standing) skin.prSoft else skin.surface,
                 RoundedCornerShape(WindmillRadius.md),
             )
             .border(
                 1.dp,
-                if (best.standing) GymSkin.prInk else GymSkin.line,
+                if (best.standing) skin.prInk else skin.line,
                 RoundedCornerShape(WindmillRadius.md),
             )
             .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x2),
     ) {
-        Text(best.effort, style = GymType.numeral(14, FontWeight.Bold), color = GymSkin.ink)
-        Text(best.estimate, style = GymType.numeral(11), color = GymSkin.inkDim)
+        Text(best.effort, style = GymType.numeral(14, FontWeight.Bold), color = skin.ink)
+        Text(best.estimate, style = GymType.numeral(11), color = skin.inkDim)
         Spacer(Modifier.weight(1f))
-        Text(best.day, style = GymType.numeral(11), color = GymSkin.inkFaint)
+        Text(best.day, style = GymType.numeral(11), color = skin.inkDim)
     }
 }
 
 @Composable
 private fun SectionHead(label: String) {
+    val skin = LocalGymColors.current
     Text(
         label.uppercase(),
         style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-        color = GymSkin.inkFaint,
+        color = skin.inkDim,
         modifier = Modifier.padding(top = WindmillSpace.x2),
     )
 }
 
 @Composable
 private fun Silence(line: String, retry: (() -> Unit)?) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        Text(line, style = GymType.numeral(13), color = GymSkin.inkFaint)
+        Text(line, style = GymType.numeral(13), color = skin.inkDim)
         if (retry != null) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum)
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
+                    .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClick = retry),
             ) {
-                Text("Try again", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                Text("Try again", style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.accent)
             }
         }
     }

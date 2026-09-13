@@ -37,7 +37,6 @@ import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
-import works.windmill.gym.domain.RoutineEntryWrite
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -175,6 +174,7 @@ fun ReviewReadout(review: Review?, catalog: List<Exercise>) {
 
 @Composable
 fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
         modifier = Modifier.fillMaxWidth(),
@@ -183,7 +183,7 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
             Text(
                 "the log didn’t answer — the session is saved",
                 style = GymType.numeral(13),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
             return@Column
         }
@@ -194,11 +194,12 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
 
 @Composable
 private fun Tiles(tiles: List<Finish.Tile>) {
+    val skin = LocalGymColors.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         tiles.forEach { tile ->
@@ -209,10 +210,10 @@ private fun Tiles(tiles: List<Finish.Tile>) {
                 Text(
                     tile.value,
                     style = GymType.numeral(26, FontWeight.SemiBold),
-                    color = GymSkin.ink,
+                    color = skin.ink,
                     maxLines = 1,
                 )
-                Text(tile.label, style = GymType.numeral(11), color = GymSkin.inkFaint)
+                Text(tile.label, style = GymType.numeral(11), color = skin.inkDim)
             }
         }
     }
@@ -220,43 +221,45 @@ private fun Tiles(tiles: List<Finish.Tile>) {
 
 @Composable
 private fun RecordLine(sentence: String) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.prSoft, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.prSoft, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
-        Text("Personal record", style = GymType.numeral(11), color = GymSkin.prInk)
+        Text("Personal record", style = GymType.numeral(11), color = skin.ink)
         Text(
             sentence,
             style = WindmillFont.body(16).copy(lineHeight = 23.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
         )
     }
 }
 
 @Composable
 private fun AgainstBlock(comparison: Finish.Comparison) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(comparison.title, style = GymType.numeral(11), color = GymSkin.inkFaint)
+        Text(comparison.title, style = GymType.numeral(11), color = skin.inkDim)
         comparison.rows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     row.movement,
                     style = WindmillFont.body(15),
-                    color = GymSkin.ink,
+                    color = skin.ink,
                     modifier = Modifier.alignByBaseline(),
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     row.detail,
                     style = GymType.numeral(13),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                     modifier = Modifier.alignByBaseline(),
                 )
             }
@@ -279,6 +282,7 @@ fun FinishScreen(
     onShareWithCoach: (() -> Unit)? = null,
     failure: String? = null,
 ) {
+    val skin = LocalGymColors.current
     val head = Finish.head(
         startedAtMs = finished.session.startedAtMs,
         finishedAtMs = finished.session.finishedAtMs ?: finished.session.startedAtMs,
@@ -301,9 +305,9 @@ fun FinishScreen(
         // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-            Text(head.title, style = WindmillFont.display(24), color = GymSkin.ink)
-            Text(head.subtitle, style = WindmillFont.body(17), color = GymSkin.inkDim)
-            Text(head.at, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(head.title, style = WindmillFont.display(24), color = skin.ink)
+            Text(head.subtitle, style = WindmillFont.body(17), color = skin.inkDim)
+            Text(head.at, style = GymType.numeral(12), color = skin.inkDim)
         }
 
         ReviewReadout(finished.review, catalog)
@@ -319,7 +323,7 @@ fun FinishScreen(
                 Text(
                     Finish.keptAs(routineName),
                     style = WindmillFont.body(16),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
             } else {
                 KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, failure)
@@ -333,6 +337,7 @@ fun FinishScreen(
 // link keeps its doors on the session page and the log row.
 @Composable
 private fun ShareWithCoach(onShareWithCoach: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.fillMaxWidth(),
@@ -341,7 +346,7 @@ private fun ShareWithCoach(onShareWithCoach: () -> Unit) {
         Text(
             FinishCoach.caption,
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
     }
 }
@@ -355,15 +360,16 @@ private fun KeepAsRoutine(
     onKeepRoutine: (String) -> Unit,
     failure: String?,
 ) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
-        Text("Keep this as a routine", style = WindmillFont.display(18), color = GymSkin.ink)
+        Text("Keep this as a routine", style = WindmillFont.display(18), color = skin.ink)
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -393,13 +399,13 @@ private fun KeepAsRoutine(
                 Text(
                     Readout.movement(entry.exerciseId, catalog),
                     style = WindmillFont.body(15),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     Readout.target(entry.sets),
                     style = GymType.numeral(13),
-                    color = GymSkin.targetInk,
+                    color = skin.targetInk,
                 )
             }
         }
@@ -407,7 +413,7 @@ private fun KeepAsRoutine(
         Text(
             "Today’s weights become next week’s targets.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
 
         val named = Program.named(name) != null
@@ -423,7 +429,7 @@ private fun KeepAsRoutine(
                 style = GymType.numeral(12).copy(lineHeight = 18.sp),
                 // The alarm ink is for a write that failed. An empty name is neither destructive nor
                 // invalid — nothing was sent — so the unfinished form takes the faint ink.
-                color = if (missing != null) GymSkin.inkFaint else GymSkin.alarmInk,
+                color = if (missing != null) skin.inkDim else skin.alarmInk,
             )
         }
     }
@@ -431,15 +437,16 @@ private fun KeepAsRoutine(
 
 @Composable
 private fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.primary)
             .alpha(if (enabled) 1f else 0.4f)
-            .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     ) {
-        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
+        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
     }
 }

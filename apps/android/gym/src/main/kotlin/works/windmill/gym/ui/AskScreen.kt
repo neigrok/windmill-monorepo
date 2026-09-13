@@ -95,6 +95,7 @@ fun AskScreen(
     onNotes: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
     val scroll = rememberScrollState()
 
@@ -143,7 +144,7 @@ fun AskScreen(
             thread.forEachIndexed { index, exchange ->
                 Question(exchange.question)
                 if (exchange.pending) {
-                    Text(Ask.waiting, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                    Text(Ask.waiting, style = GymType.numeral(12), color = skin.inkDim)
                 }
                 exchange.answer?.let { answered ->
                     Answer(answered, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview)
@@ -171,7 +172,7 @@ fun AskScreen(
                 Text(
                     thread.lastOrNull()?.trouble ?: it.wordless,
                     style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-                    color = GymSkin.ink,
+                    color = skin.ink,
                 )
             }
         }
@@ -188,7 +189,7 @@ fun AskScreen(
         ) {
             if (cap == null && thread.isEmpty()) Openers(asking, onAsk)
             if (cap != AskCap.Ceiling) {
-                Text(Ask.allowance, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                Text(Ask.allowance, style = GymType.numeral(12), color = skin.inkDim)
             }
             if (cap == null) Composer(seed, asking, onAsk) else CapDoors(cap, origin, onAskNew)
         }
@@ -200,6 +201,7 @@ fun AskScreen(
 // would say Coach owns the notes, which is the opposite of what the notes screen exists to say.
 @Composable
 private fun Head(onNotes: (() -> Unit)?) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.padding(bottom = WindmillSpace.x3),
@@ -209,7 +211,7 @@ private fun Head(onNotes: (() -> Unit)?) {
         Text(
             Ask.subtitle,
             style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
             modifier = Modifier.padding(horizontal = GymLayout.gutter),
         )
         onNotes?.let { open ->
@@ -220,12 +222,12 @@ private fun Head(onNotes: (() -> Unit)?) {
                     .padding(horizontal = GymLayout.gutter)
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(GymSkin.surface)
-                    .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+                    .background(skin.surface)
+                    .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.md))
                     .clickable(role = Role.Button, onClick = open)
                     .padding(horizontal = GymLayout.rowInset),
             ) {
-                Text(Ask.notesDoor, style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.ink)
+                Text(Ask.notesDoor, style = WindmillFont.body(14, FontWeight.SemiBold), color = skin.ink)
                 Spacer(Modifier.weight(1f))
                 Chevron()
             }
@@ -235,6 +237,7 @@ private fun Head(onNotes: (() -> Unit)?) {
 
 @Composable
 fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
+    val skin = LocalGymColors.current
     GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
       Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -248,22 +251,22 @@ fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
             Text(
                 Ask.whatItIs,
                 style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                color = GymSkin.inkDim,
+                color = skin.inkDim,
             )
             Text(
                 Ask.signedOut,
                 style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.secondary)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(role = Role.Button, onClick = onSignIn),
             ) {
-                Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
+                Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = skin.onAccent)
             }
         }
       }
@@ -273,6 +276,7 @@ fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
 // A bare 404 means the feature is not configured, so there is nothing to retry.
 @Composable
 fun AskAbsentStance(seat: String) {
+    val skin = LocalGymColors.current
     GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -282,7 +286,7 @@ fun AskAbsentStance(seat: String) {
             Text(
                 Ask.notHere,
                 style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                color = GymSkin.inkDim,
+                color = skin.inkDim,
                 modifier = Modifier.padding(horizontal = GymLayout.gutter),
             )
         }
@@ -291,17 +295,18 @@ fun AskAbsentStance(seat: String) {
 
 @Composable
 private fun Opening(origin: String) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
         Text(
             Ask.whatItIs,
             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
         ConnectDoor(origin)
         Text(
             Ask.kept,
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
     }
 }
@@ -310,19 +315,20 @@ private fun Opening(origin: String) {
 // allowance spent.
 @Composable
 private fun ConnectDoor(origin: String) {
+    val skin = LocalGymColors.current
     val web = LocalUriHandler.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Text(
             Ask.freeDoor,
             style = WindmillFont.body(14).copy(lineHeight = 22.sp),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
         Box(
             contentAlignment = Alignment.Center,
@@ -330,12 +336,12 @@ private fun ConnectDoor(origin: String) {
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .clip(RoundedCornerShape(WindmillRadius.md))
-                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.md))
                 .clickable(role = Role.Button) {
                     runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
                 },
         ) {
-            Text(Ask.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+            Text(Ask.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.accent)
         }
     }
 }
@@ -350,6 +356,7 @@ private fun ConnectDoor(origin: String) {
 // a way out of this one.
 @Composable
 private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3), modifier = Modifier.fillMaxWidth()) {
         if (cap == AskCap.Ceiling) ConnectDoor(origin)
         Box(
@@ -358,10 +365,10 @@ private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit) {
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .clip(RoundedCornerShape(WindmillRadius.md))
-                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.md))
                 .clickable(role = Role.Button, onClick = onAskNew),
         ) {
-            Text(Threads.open, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+            Text(Threads.open, style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.accent)
         }
         if (cap == AskCap.Daily) ConnectDoor(origin)
     }
@@ -369,17 +376,18 @@ private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit) {
 
 @Composable
 private fun Question(question: String) {
+    val skin = LocalGymColors.current
     val bubble = RoundedCornerShape(17.dp, 17.dp, 6.dp, 17.dp)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Spacer(Modifier.weight(0.2f))
         Text(
             question,
             style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
             modifier = Modifier
                 .weight(0.8f, fill = false)
-                .background(GymSkin.accentSoft, bubble)
-                .border(1.dp, GymSkin.accent, bubble)
+                .background(skin.accentSoft, bubble)
+                .border(1.dp, skin.accent, bubble)
                 .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
         )
     }
@@ -394,11 +402,12 @@ private fun Answer(
     lookedAt: Set<String>,
     onReview: (Proposal) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
         Text(
             answer.answer,
             style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.ink,
+            color = skin.ink,
         )
         // Drawn from the LOG's own copy and never from what the model said about it.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
@@ -412,13 +421,14 @@ private fun Answer(
 // draw it again, and nothing here pretends otherwise.
 @Composable
 fun ReceiptLine(line: String) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
     ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.setDone))
-        Text(line, style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.inkDim)
+        Box(Modifier.size(6.dp).clip(CircleShape).background(skin.setDone))
+        Text(line, style = GymType.numeral(12, FontWeight.Bold), color = skin.inkDim)
     }
 }
 
@@ -426,6 +436,7 @@ fun ReceiptLine(line: String) {
 // behind it, in the lifter's words, and open on one tap; a step this build cannot name is not drawn.
 @Composable
 private fun Receipt(answer: AskAnswer) {
+    val skin = LocalGymColors.current
     val phrases = Ask.steps(answer.steps)
     var open by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
@@ -441,12 +452,12 @@ private fun Receipt(answer: AskAnswer) {
                         .clickable(role = Role.Button) { open = !open },
                 ),
         ) {
-            Text(Ask.receipt(answer.read), style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(Ask.receipt(answer.read), style = GymType.numeral(11), color = skin.inkDim)
             if (phrases.isNotEmpty()) {
                 Icon(
                     if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
-                    tint = GymSkin.inkFaint,
+                    tint = skin.inkFaint,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -456,12 +467,12 @@ private fun Receipt(answer: AskAnswer) {
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
-                    .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+                    .background(skin.surface, RoundedCornerShape(WindmillRadius.md))
+                    .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.md))
                     .padding(WindmillSpace.x3),
             ) {
                 phrases.forEach { phrase ->
-                    Text(phrase, style = GymType.numeral(12), color = GymSkin.inkDim)
+                    Text(phrase, style = GymType.numeral(12), color = skin.inkDim)
                 }
             }
         }
@@ -476,21 +487,22 @@ private fun Minted(
     stillWaiting: Boolean,
     onReview: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.accent, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
+            Box(Modifier.size(6.dp).clip(CircleShape).background(skin.accent))
             Spacer(Modifier.size(WindmillSpace.x2))
             Text(
                 "Proposal · ${proposal.routineName}",
                 style = GymType.numeral(11, FontWeight.Bold),
-                color = GymSkin.accent,
+                color = skin.accent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -501,18 +513,18 @@ private fun Minted(
                     Text(
                         Readout.movement(change.exerciseId, catalog),
                         style = GymType.numeral(12),
-                        color = GymSkin.inkFaint,
+                        color = skin.inkDim,
                         maxLines = 1,
                         modifier = Modifier.width(96.dp),
                     )
-                    Text(change.compactLine, style = GymType.numeral(12), color = GymSkin.inkDim)
+                    Text(change.compactLine, style = GymType.numeral(12), color = skin.inkDim)
                 }
             }
             if (proposal.drawn.size > 3) {
                 Text(
                     "+ ${proposal.drawn.size - 3} more",
                     style = GymType.numeral(11),
-                    color = GymSkin.inkFaint,
+                    color = skin.inkDim,
                 )
             }
         }
@@ -520,40 +532,41 @@ private fun Minted(
             if (proposal.isPending) proposal.cardLine(proposal.routineName, stillWaiting)
             else proposal.historyLine(nowMs),
             style = GymType.numeral(11),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
         )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
+                .background(skin.accent, RoundedCornerShape(WindmillRadius.md))
                 .clickable(role = Role.Button, onClick = onReview),
         ) {
-            Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
+            Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = skin.onAccent)
         }
         // A promise about what Apply will do is spent the moment Apply is taken or turned down: a
         // card that reads `applied` may not still say nothing has been.
         if (proposal.isPending) {
-            Text(Ask.promise, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
+            Text(Ask.promise, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = skin.inkDim)
         }
     }
 }
 
 @Composable
 private fun Trouble(said: String, onRetry: (() -> Unit)?) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Text(
             said,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
         onRetry?.let { retry ->
             Box(
                 Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = retry),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
+                Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = skin.accent)
             }
         }
     }
@@ -562,6 +575,7 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
 // The empty room's three openers: each is a question sent as tapped.
 @Composable
 private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -572,11 +586,11 @@ private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
                 modifier = Modifier
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.full))
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.full))
+                    .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.full))
                     .clickable(enabled = !asking, role = Role.Button) { onAsk(opener) }
                     .padding(horizontal = GymLayout.rowInset),
             ) {
-                Text(opener, style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.inkDim)
+                Text(opener, style = WindmillFont.body(13, FontWeight.SemiBold), color = skin.inkDim)
             }
         }
     }
@@ -586,6 +600,7 @@ private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
 // shut on a blank question.
 @Composable
 private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
+    val skin = LocalGymColors.current
     var typed by rememberSaveable { mutableStateOf(seed) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -608,7 +623,7 @@ private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
             modifier = Modifier
                 .size(GymTap.secondary)
                 .background(
-                    if (ready) GymSkin.accent else GymSkin.raised,
+                    if (ready) skin.accent else skin.raised,
                     RoundedCornerShape(WindmillRadius.lg),
                 )
                 .clickable(enabled = ready, role = Role.Button) {
@@ -619,7 +634,7 @@ private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = if (ready) GymSkin.onAccent else GymSkin.inkFaint,
+                tint = if (ready) skin.onAccent else skin.inkFaint,
                 modifier = Modifier.size(22.dp),
             )
         }

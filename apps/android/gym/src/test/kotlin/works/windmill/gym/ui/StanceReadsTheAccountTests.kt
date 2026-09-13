@@ -3,7 +3,6 @@ package works.windmill.gym.ui
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.io.File
@@ -155,7 +154,7 @@ class StanceReadsTheAccountTests {
         compose.onNodeWithText("No routines yet").assertDoesNotExist()
         compose.onNodeWithText("Build a routine").assertDoesNotExist()
         compose.onNodeWithText("Push Day").assertDoesNotExist()
-        compose.onNodeWithContentDescription("New routine").performClick()
+        compose.onNodeWithText("New routine").performClick()
         compose.runOnIdle {
             assertEquals("the program still holds it, so the next routine goes after it",
                 listOf(1), drafts.map { it.position })

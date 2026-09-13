@@ -44,7 +44,6 @@ import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -60,9 +59,9 @@ fun FixSheet(
     onSave: (SetFix) -> Unit,
     onDelete: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     var weightKg by remember(set.id) { mutableDoubleStateOf(set.weightKg) }
     var reps by remember(set.id) { mutableIntStateOf(set.reps) }
-    var kind by remember(set.id) { mutableStateOf(set.kind) }
     // Seeded from what the LOG holds, so a sheet opened and closed sends nothing: only a field the
     // lifter moved travels, and the note's empty string is a clear rather than an omission.
     var rpe by remember(set.id) { mutableStateOf(set.rpe) }
@@ -71,7 +70,6 @@ fun FixSheet(
     // opening a second one over it: a modal over a modal is a layer the phone does not need, and the
     // pad is a whole answer to the same question the sheet is asking.
     var typing by remember(set.id) { mutableStateOf<KeypadEntry.Mode?>(null) }
-    val haptics = rememberGymHaptics()
 
     val pad = typing
     if (pad != null) {
@@ -93,7 +91,7 @@ fun FixSheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .verticalScroll(rememberScrollState())
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
@@ -101,11 +99,11 @@ fun FixSheet(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text("Fix this set", style = WindmillFont.display(22), color = GymSkin.ink)
+            Text("Fix this set", style = WindmillFont.display(22), color = skin.ink)
             Spacer(Modifier.weight(1f))
             // The log's own numbering where it has spoken — a delete leaves a gap — and the list
             // position is only the fallback.
-            Text("$movement · set $setNumber", style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text("$movement · set $setNumber", style = GymType.numeral(11), color = skin.inkDim)
         }
 
         Row(
@@ -120,14 +118,14 @@ fun FixSheet(
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 40.sp, maxFontSize = 72.sp),
                 style = GymType.weight.copy(
-                    fontSize = 72.sp, lineHeight = 66.sp, color = GymSkin.weightInk),
+                    fontSize = 72.sp, lineHeight = 66.sp, color = skin.weightInk),
                 modifier = Modifier
                     .alignByBaseline()
                     .clickable(role = Role.Button, onClickLabel = "type a weight") {
                         typing = KeypadEntry.Mode.Weight
                     },
             )
-            Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint,
+            Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = skin.inkDim,
                  modifier = Modifier.alignByBaseline())
         }
 
@@ -138,8 +136,8 @@ fun FixSheet(
                         .weight(1f)
                         .heightIn(min = GymTap.row)
                         .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(GymSkin.raised)
-                        .border(1.dp, if (index == 0 || index == 3) GymSkin.line else GymSkin.lineStrong,
+                        .background(skin.raised)
+                        .border(1.dp, if (index == 0 || index == 3) skin.line else skin.lineStrong,
                                 RoundedCornerShape(WindmillRadius.md))
                         .clickable(role = Role.Button, onClickLabel = "change the weight by $label") {
                             weightKg = Ladder.bump(weightKg, direction = if (index < 2) -1 else 1,
@@ -150,14 +148,14 @@ fun FixSheet(
                     Text(
                         label,
                         style = GymType.numeral(if (index == 0 || index == 3) 15 else 16, FontWeight.SemiBold),
-                        color = if (index == 0 || index == 3) GymSkin.inkDim else GymSkin.ink,
+                        color = if (index == 0 || index == 3) skin.inkDim else skin.ink,
                     )
                 }
             }
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Reps", style = WindmillFont.body(14), color = GymSkin.inkDim)
+            Text("Reps", style = WindmillFont.body(14), color = skin.inkDim)
             Spacer(Modifier.weight(1f))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -172,17 +170,11 @@ fun FixSheet(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(reps.toString(), style = GymType.numeral(22, FontWeight.Bold), color = GymSkin.ink)
+                    Text(reps.toString(), style = GymType.numeral(22, FontWeight.Bold), color = skin.ink)
                 }
                 RepStep("+", "one rep more") { reps = Ladder.bumpReps(reps, direction = 1) }
             }
         }
-
-        GymSegmented(
-            options = SetKind.entries.map { it to it.wire },
-            picked = kind,
-            onPick = { kind = it },
-        )
 
         RpeBand(rpe, onPick = { rpe = it })
 
@@ -199,7 +191,7 @@ fun FixSheet(
                 Text(
                     if (tooLong) SetEffort.noteTooLong else SetEffort.noteCaption,
                     style = GymType.numeral(11),
-                    color = if (tooLong) GymSkin.alarmInk else GymSkin.inkFaint,
+                    color = if (tooLong) skin.alarmInk else skin.inkDim,
                 )
             },
             textStyle = WindmillFont.body(15),
@@ -216,7 +208,7 @@ fun FixSheet(
             Text(
                 it,
                 style = GymType.numeral(12),
-                color = if (tooLong) GymSkin.alarmInk else GymSkin.inkFaint,
+                color = if (tooLong) skin.alarmInk else skin.inkDim,
             )
         }
 
@@ -226,15 +218,14 @@ fun FixSheet(
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .alpha(if (tooLong) 0.4f else 1f)
-                .background(GymSkin.accent)
+                .background(skin.accent)
                 .clickable(enabled = !tooLong, role = Role.Button) {
-                    haptics.saved()
-                    onSave(SetFix(set, weightKg = weightKg, reps = reps, kind = kind,
+                    onSave(SetFix(set, weightKg = weightKg, reps = reps, kind = set.kind,
                                   rpe = rpe, note = note))
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Text("Save the fix", style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
+            Text("Save the fix", style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -242,11 +233,11 @@ fun FixSheet(
                 Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = onDelete),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("Delete set", style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.alarmInk)
+                Text("Delete set", style = WindmillFont.body(14, FontWeight.Bold), color = skin.alarmInk)
             }
             Spacer(Modifier.weight(1f))
             routine?.let {
-                Text("$it keeps its own numbers", style = GymType.numeral(12), color = GymSkin.inkFaint)
+                Text("$it keeps its own numbers", style = GymType.numeral(12), color = skin.inkDim)
             }
         }
     }
@@ -257,8 +248,9 @@ fun FixSheet(
 // segmented control makes is the same one, and only the geometry differs.
 @Composable
 private fun RpeBand(picked: Double?, onPick: (Double?) -> Unit) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-        Text(SetEffort.rpeLabel, style = WindmillFont.body(14), color = GymSkin.inkDim)
+        Text(SetEffort.rpeLabel, style = WindmillFont.body(14), color = skin.inkDim)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -276,12 +268,13 @@ private fun RpeBand(picked: Double?, onPick: (Double?) -> Unit) {
 @Composable
 private fun RpeSeat(label: String, said: String, picked: Boolean, numeral: Boolean = true,
                     onTap: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         Modifier
             .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
-            .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
+            .background(if (picked) skin.accentSoft else skin.raised)
+            .border(1.dp, if (picked) skin.accent else skin.line,
                     RoundedCornerShape(WindmillRadius.md))
             .clickable(role = Role.RadioButton, onClick = onTap)
             // A bare numeral would be read out as a number with no scale, so every seat says
@@ -297,7 +290,7 @@ private fun RpeSeat(label: String, said: String, picked: Boolean, numeral: Boole
             label,
             style = if (numeral) GymType.numeral(15, if (picked) FontWeight.Bold else FontWeight.Normal)
                     else WindmillFont.body(14, if (picked) FontWeight.Bold else FontWeight.Normal),
-            color = if (picked) GymSkin.accent else GymSkin.inkDim,
+            color = if (picked) skin.accent else skin.inkDim,
             maxLines = 1,
         )
     }
@@ -305,14 +298,15 @@ private fun RpeSeat(label: String, said: String, picked: Boolean, numeral: Boole
 
 @Composable
 private fun RepStep(glyph: String, said: String, onTap: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         Modifier
             .size(GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
-            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+            .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.md))
             .clickable(role = Role.Button, onClickLabel = said, onClick = onTap),
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, style = WindmillFont.display(19, FontWeight.SemiBold), color = GymSkin.ink)
+        Text(glyph, style = WindmillFont.display(19, FontWeight.SemiBold), color = skin.ink)
     }
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Geometry from docs/design/gym/assets/android/nav-routines.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24" android:autoMirrored="false">
+    <path android:pathData="M6 4H9V20H6V4ZM15 4H18V20H15V4ZM3 8H6V16H3V8ZM18 8H21V16H18V8ZM9 10H15V14H9V10Z" android:fillColor="#B6B5AF" />
+</vector>

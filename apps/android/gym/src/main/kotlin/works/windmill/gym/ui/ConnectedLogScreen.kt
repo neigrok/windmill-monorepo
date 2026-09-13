@@ -65,6 +65,7 @@ fun ConnectedLogScreen(
     onBack: () -> Unit,
     onSignIn: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
     var open by rememberSaveable { mutableStateOf(false) }
@@ -118,13 +119,13 @@ fun ConnectedLogScreen(
                     }
                     state == ConnectedLogState.Refused -> {
                         item("connected") { SectionHead(ConnectedLog.connectedHead) }
-                        item("unread") { Fact(ConnectedLog.unread, GymSkin.inkDim) }
+                        item("unread") { Fact(ConnectedLog.unread, skin.inkDim) }
                     }
                     else -> item("head") {
                         Text(
                             ConnectedLog.head,
                             style = WindmillFont.display(22),
-                            color = GymSkin.ink,
+                            color = skin.ink,
                             modifier = Modifier.padding(horizontal = rowInset, vertical = WindmillSpace.x2),
                         )
                     }
@@ -136,7 +137,7 @@ fun ConnectedLogScreen(
                         colors = rowColors(),
                     )
                 }
-                item("caption") { Fact(ConnectedLog.caption, GymSkin.inkFaint) }
+                item("caption") { Fact(ConnectedLog.caption, skin.inkDim) }
                 if (connected != null) {
                     item("manage") {
                         ListItem(
@@ -158,7 +159,7 @@ fun ConnectedLogScreen(
                             Icon(
                                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                                 contentDescription = null,
-                                tint = GymSkin.inkFaint,
+                                tint = skin.inkFaint,
                                 modifier = Modifier.size(20.dp),
                             )
                         },
@@ -168,7 +169,7 @@ fun ConnectedLogScreen(
                             .semantics { stateDescription = if (open) ConnectedLog.open else ConnectedLog.closed },
                     )
                 }
-                if (open) items(ConnectedLog.how) { line -> Fact(line, GymSkin.inkDim) }
+                if (open) items(ConnectedLog.how) { line -> Fact(line, skin.inkDim) }
             }
         }
     }
@@ -178,29 +179,31 @@ fun ConnectedLogScreen(
 // that leaves the app says so in the glyph, in the bytes a screen reader hears.
 @Composable
 private fun ActionBand(label: String, leavesTheApp: Boolean, onTap: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.canvas)
+            .background(skin.canvas)
             .padding(horizontal = GymLayout.gutter)
             .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
             .heightIn(min = GymTap.primary)
-            .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
             .clickable(role = Role.Button, onClick = onTap),
     ) {
-        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
-        if (leavesTheApp) LeavesTheApp(tint = GymSkin.onAccent)
+        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
+        if (leavesTheApp) LeavesTheApp(tint = skin.onAccent)
     }
 }
 
 @Composable
-private fun LeavesTheApp(tint: Color = GymSkin.accent) {
+private fun LeavesTheApp(tint: Color? = null) {
+    val skin = LocalGymColors.current
     Icon(
         GymGlyph.openInNew,
         contentDescription = ConnectedLog.opensInBrowser,
-        tint = tint,
+        tint = tint ?: skin.accent,
         modifier = Modifier.size(16.dp),
     )
 }
@@ -216,10 +219,11 @@ private fun ToolRow(tool: ConnectedTool, now: Long) {
 
 @Composable
 private fun SectionHead(title: String) {
+    val skin = LocalGymColors.current
     Text(
         title,
         style = GymType.numeral(11, FontWeight.Bold),
-        color = GymSkin.inkFaint,
+        color = skin.inkDim,
         modifier = Modifier.padding(horizontal = rowInset, vertical = WindmillSpace.x2),
     )
 }
@@ -238,11 +242,14 @@ private fun Fact(line: String, color: Color) {
 }
 
 @Composable
-private fun rowColors() = ListItemDefaults.colors(
-    containerColor = Color.Transparent,
-    headlineColor = GymSkin.ink,
-    supportingColor = GymSkin.inkDim,
-)
+private fun rowColors(): androidx.compose.material3.ListItemColors {
+    val skin = LocalGymColors.current
+    return ListItemDefaults.colors(
+        containerColor = Color.Transparent,
+        headlineColor = skin.ink,
+        supportingColor = skin.inkDim,
+    )
+}
 
 // The platform's own list-item inset, so prose drawn between rows lines up with their text.
 private val rowInset = 16.dp

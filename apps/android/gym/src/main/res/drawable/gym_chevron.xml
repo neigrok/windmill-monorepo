@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Geometry from docs/design/gym/assets/android/chevron.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="10.1771dp" android:height="15.5052dp" android:viewportWidth="10.1771" android:viewportHeight="15.5052" android:autoMirrored="true">
+    <path android:pathData="M0.658505 0.752577L8.6585 7.75258L0.658505 14.7526" android:fillColor="#00000000" android:strokeColor="#B6B5AF" android:strokeWidth="2" />
+</vector>

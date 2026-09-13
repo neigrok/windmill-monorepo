@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -200,6 +199,7 @@ fun MovementPicker(
     onClose: (() -> Unit)? = null,
     onBuildRoutine: () -> Unit = {},
 ) {
+    val skin = LocalGymColors.current
     // The search, and the two answers the create step collects — saved, and all three HERE: state
     // written inside a `ModalBottomSheet` does not come back from a process reclaim, so the step's
     // own slots are held by the picker that raises it. `minting` is the name being typed, null when
@@ -227,7 +227,7 @@ fun MovementPicker(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = WindmillFont.display(if (firstSession) 26 else 20), color = GymSkin.ink)
+                Text(title, style = WindmillFont.display(if (firstSession) 26 else 20), color = skin.ink)
                 Spacer(Modifier.weight(1f))
                 onClose?.let { close ->
                     Box(
@@ -236,11 +236,11 @@ fun MovementPicker(
                             .clickable(role = Role.Button, onClick = close),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("Cancel", style = WindmillFont.body(16), color = GymSkin.inkDim)
+                        Text("Cancel", style = WindmillFont.body(16), color = skin.inkDim)
                     }
                 }
             }
-            subtitle?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint) }
+            subtitle?.let { Text(it, style = GymType.numeral(12), color = skin.inkDim) }
         }
 
         OutlinedTextField(
@@ -267,21 +267,21 @@ fun MovementPicker(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         ) {
             options.unread?.let { unread ->
-                Text(unread, style = WindmillFont.body(14), color = GymSkin.inkDim, lineHeight = 20.sp)
+                Text(unread, style = WindmillFont.body(14), color = skin.inkDim, lineHeight = 20.sp)
             }
             // One section label and a gap: the catalog follows under no head of its own.
             if (options.six.isNotEmpty()) {
                 Text(
                     "The six",
                     style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-                    color = GymSkin.inkFaint,
+                    color = skin.inkDim,
                 )
                 options.six.forEach { MovementRow(it, onPick) }
             }
             options.matches.forEach { MovementRow(it, onPick) }
 
             options.empty?.let { empty ->
-                Text(empty, style = WindmillFont.body(14), color = GymSkin.inkDim, lineHeight = 20.sp)
+                Text(empty, style = WindmillFont.body(14), color = skin.inkDim, lineHeight = 20.sp)
             }
 
             options.create?.let { create ->
@@ -290,14 +290,14 @@ fun MovementPicker(
                         .fillMaxWidth()
                         .heightIn(min = GymTap.row)
                         .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(GymSkin.accent)
+                        .background(skin.accent)
                         .clickable(role = Role.Button) {
                             minting = Program.capped(query.trim())
                             equipment = Exercise.loadings.first()
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(create, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.onAccent)
+                    Text(create, style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.onAccent)
                 }
             }
 
@@ -311,7 +311,8 @@ fun MovementPicker(
         ModalBottomSheet(
             onDismissRequest = { minting = null },
             sheetState = createSheet,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             CreateMovementSheet(
                 name = typed,
@@ -340,23 +341,24 @@ private fun CreateMovementSheet(
     onEquipment: (String) -> Unit,
     onCreate: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val named = Program.named(name) != null
 
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .imePadding()
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
+        Text("not in the library", style = GymType.numeral(12), color = skin.inkDim)
 
-        Text("Your movement", style = WindmillFont.display(22), color = GymSkin.ink)
+        Text("Your movement", style = WindmillFont.display(22), color = skin.ink)
 
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+            Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = skin.inkDim)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = name,
@@ -375,7 +377,7 @@ private fun CreateMovementSheet(
                     Text(
                         counted,
                         style = GymType.numeral(12),
-                        color = GymSkin.inkFaint,
+                        color = skin.inkDim,
                         modifier = Modifier.padding(start = WindmillSpace.x3),
                     )
                 }
@@ -384,7 +386,7 @@ private fun CreateMovementSheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Text("How is it loaded?", style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-                 color = GymSkin.inkFaint)
+                 color = skin.inkDim)
             // Four are offered; `cable` and `kettlebell` stay valid on every read.
             Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
                 Exercise.loadings.forEach { loading ->
@@ -395,15 +397,15 @@ private fun CreateMovementSheet(
                             .weight(1f)
                             .heightIn(min = GymTap.minimum)
                             .clip(RoundedCornerShape(WindmillRadius.md))
-                            .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
-                            .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
+                            .background(if (picked) skin.accentSoft else skin.raised)
+                            .border(1.dp, if (picked) skin.accent else skin.line,
                                     RoundedCornerShape(WindmillRadius.md))
                             .selectable(selected = picked, role = Role.RadioButton) { onEquipment(loading) },
                     ) {
                         Text(
                             loading.replaceFirstChar { it.uppercase() },
                             style = WindmillFont.body(13, if (picked) FontWeight.Bold else FontWeight.Normal),
-                            color = if (picked) GymSkin.accent else GymSkin.inkDim,
+                            color = if (picked) skin.accent else skin.inkDim,
                             maxLines = 1,
                         )
                     }
@@ -417,13 +419,13 @@ private fun CreateMovementSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (named) GymSkin.accent else GymSkin.raised)
+                .background(if (named) skin.accent else skin.raised)
                 .clickable(enabled = named, role = Role.Button, onClick = onCreate),
         ) {
             Text(
                 "Create and add",
                 style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (named) GymSkin.onAccent else GymSkin.inkFaint,
+                color = if (named) skin.onAccent else skin.inkDim,
             )
         }
     }
@@ -431,38 +433,40 @@ private fun CreateMovementSheet(
 
 @Composable
 private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = WindmillSpace.x2)
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .dashedEdge(GymSkin.accent, WindmillRadius.lg)
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .dashedEdge(skin.accent, WindmillRadius.lg)
             .clickable(role = Role.Button, onClick = onBuildRoutine)
             .padding(GymLayout.cardInset),
     ) {
         Text(
             "Have a written program? An agent can build it — sign in first.",
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
         )
         Text(
             "Build my routine →",
             style = WindmillFont.body(14, FontWeight.Bold),
-            color = GymSkin.accent,
+            color = skin.accent,
         )
     }
 }
 
 @Composable
 private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.row)
             .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(GymSkin.surface)
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+            .background(skin.surface)
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.md))
             .clickable(role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
             .padding(horizontal = GymLayout.rowInset),
         verticalAlignment = Alignment.CenterVertically,
@@ -473,21 +477,21 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
             ) {
-                Text(row.name, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.ink)
+                Text(row.name, style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.ink)
                 if (row.yours) {
                     Text(
                         "YOURS",
                         style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-                        color = GymSkin.accent,
+                        color = skin.accent,
                     )
                 }
             }
             // Only where the query found this row by its OLD name.
             row.alias?.let {
-                Text("was “$it”", style = GymType.numeral(11), color = GymSkin.inkFaint)
+                Text("was “$it”", style = GymType.numeral(11), color = skin.inkDim)
             }
-            row.meta?.let { Text(it, style = GymType.numeral(11), color = GymSkin.inkFaint) }
+            row.meta?.let { Text(it, style = GymType.numeral(11), color = skin.inkDim) }
         }
-        Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.inkDim)
+        Icon(Icons.Filled.Add, contentDescription = null, tint = skin.inkDim)
     }
 }

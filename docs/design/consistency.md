@@ -44,8 +44,9 @@ theme, so only four are real light decisions; `--set-done-glow` is **deleted** i
 dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it
 (done in `gym.css`; the Figma collection still carries it — `1w`); and `--pr-ink` needs a designer's
 value first — see F4, which puts it at 3.2:1 with no darker gold in the ramp.
-Android takes a staged version: its skin is a compile-time object read at ~560 sites,
-`LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
+Android follows system appearance through `LocalWindmillDark` and immutable Instrument/Daylight
+palettes. Shared chrome, Settings, account sheets and system icons have native verification in
+Android delivery Wave 1; the wider device/motion audit remains in Wave 6.
 
 **F6 · a focused control inside gym rings iris, not the family's terracotta** → built 2026-08-26,
 nothing owed. The room answers three shared roles for itself, one named block per skin in
@@ -2177,11 +2178,13 @@ existing web planning/review charter. Tracking node: `gym-web-ux-review-2026-09-
 
 ### Set kind · product direction
 
-The proposed gym web and Android screens omit set Kind at the user's direction. Set entry and
-correction have no classification selector. Removing Kind from the apps and reconciling stored
-classification in the domain, metrics and cross-surface specifications remain implementation work;
-the Figma revisions do not change those behaviors. Past-workout design refinement is tracked by
-`gym-past-workout-figma-refinement`; Android implementation by `android-gym-implement-refined-flows`.
+The approved gym web and Android screens omit set Kind at the user's direction. Android entry
+and correction have no classification selector: new sets use Working, and corrections preserve
+the stored kind. Native correction of a warm-up set and new Working entry have real-backend
+verification. Stored classification, metrics and wire fields remain intact. Web implementation and
+cross-surface specification reconciliation retain their own scope. Past-workout design refinement
+is tracked by `gym-past-workout-figma-refinement`; Android delivery by
+`android-gym-implement-refined-flows`.
 
 ### Planned targets and actual sets
 
@@ -2292,20 +2295,22 @@ canon mismatch for bubble graduation.
 
 ## Android gym refactor
 
-**F46 · Android's minimum target is 46 dp; the refined design requires 48 dp** → implementation
-follow-up. `apps/android/gym/src/main/kotlin/works/windmill/gym/ui/GymSkin.kt` declares
-`GymTap.minimum = 46.dp`. [Android · Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2)
-uses a scoped Android metric with a 48 dp minimum. Apply it during
-implementation and verify bounds, font scaling and system insets on device.
+**F46 · Android shared controls require a 48 dp minimum** → implemented in delivery Wave 1.
+`GymTap.minimum` and the platform action minimum are 48 dp; the logger no longer overrides
+Material's interactive minimum to 32 dp. Native root, Settings, correction and last-time targets
+were measured, with normal/200% text and gesture/three-button insets. The wider touch and TalkBack
+audit remains part of Wave 6.
 
-**F47 · Android's refined flows are a design proposal** → implementation follow-up.
-The 90 states, shared components, compact logger, browse flows and Live Update proposal are described
-in `gym/android-refactor.md`; behavior contracts live on Android · Specifications. Figma validation
-does not establish app behavior. Android routine writes omit the expected revision, so a stale-edit
-409 guard remains an implementation gap. The visible routine More/Duplicate actions and email-code
-resend countdown are proposals. The Android design omits set Kind and Sound/Haptic set-confirmation
-settings. Saving a set has a visual saved state with no sound or vibration; ordinary Android gesture
-feedback remains system-owned. Removing those runtime controls and effects, and reconciling stored
-set classification, remain implementation work. Native input, font scaling, TalkBack, gestures,
-notification behavior and queue persistence need device verification. Daylight uses existing tokens
-and still carries F44. The implementation dogfood node is `android-gym-implement-refined-flows`.
+**F47 · Android's refined flows are being delivered in waves** → implementation in progress.
+The 90 states and behavior contracts are mapped in `gym/android-delivery.md`; the running evidence
+and plan are in `../../worklog.md`. Wave 1 implements shared chrome, native navigation, system
+Instrument/Daylight palettes, Settings, and removal of Kind and set-confirmation effects. Historical
+kind and legacy preference fields are preserved, with native real-backend correction and preference
+round-trip verification. Ordinary gesture/non-set feedback remains. Shared chrome and Settings have
+native screenshot, 200% text, IME/Back and gesture/three-button inset evidence.
+
+Routine expected-revision protection and More/Duplicate belong to Wave 2; compact training/rest and
+receipts to Wave 3; Log/records/bodyweight to Wave 4; Coach/account/sign-in refinements to Wave 5.
+Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
+simplification and release verification. Daylight follows the approved existing tokens and still
+carries F44. Tracking node: `android-gym-implement-refined-flows`.

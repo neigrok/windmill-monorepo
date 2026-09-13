@@ -186,7 +186,7 @@ fun ActionCapsule(
     Box(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 46.dp)
+            .heightIn(min = 48.dp)
             .alpha(if (enabled) 1f else 0.4f)
             .clip(shape)
             .then(

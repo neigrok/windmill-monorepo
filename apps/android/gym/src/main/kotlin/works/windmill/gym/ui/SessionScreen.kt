@@ -40,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -171,6 +170,7 @@ fun SessionScreen(
     onOpenMovement: (String) -> Unit,
     onDiscard: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     var detail by remember(summary.id) { mutableStateOf<SessionDetail?>(null) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
@@ -242,7 +242,7 @@ fun SessionScreen(
                     Text(
                         setsFailure!!.line("the sets are on your account"),
                         style = GymType.numeral(13),
-                        color = GymSkin.inkFaint,
+                        color = skin.inkDim,
                     )
                 }
             }
@@ -275,7 +275,7 @@ fun SessionScreen(
                     Text(
                         Finish.discard,
                         style = WindmillFont.body(16, FontWeight.SemiBold),
-                        color = GymSkin.alarmInk,
+                        color = skin.alarmInk,
                     )
                 }
             }
@@ -289,7 +289,8 @@ fun SessionScreen(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             val (movement, row) = open
             FixSheet(
@@ -335,13 +336,14 @@ fun SessionScreen(
 
 @Composable
 private fun SessionHead(summary: SessionSummary) {
+    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        Text(headLine(summary), style = GymType.numeral(12), color = GymSkin.inkDim)
+        Text(headLine(summary), style = GymType.numeral(12), color = skin.inkDim)
         if (summary.closedItself) {
             Text(
                 "closed on its own — no set for four hours",
                 style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
+                color = skin.inkDim,
             )
         }
         summary.plan?.let {
@@ -350,19 +352,19 @@ private fun SessionHead(summary: SessionSummary) {
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
                 modifier = Modifier
                     .padding(top = WindmillSpace.x1)
-                    .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.full))
-                    .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
+                    .background(skin.raised, RoundedCornerShape(WindmillRadius.full))
+                    .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.full))
                     .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
             ) {
                 Box(
                     Modifier
                         .size(6.dp)
-                        .background(GymSkin.targetInk, CircleShape),
+                        .background(skin.targetInk, CircleShape),
                 )
                 Text(
                     "plan snapshot · frozen ${Readout.time(summary.startedAtMs)}",
                     style = GymType.numeral(11),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
             }
         }
@@ -376,12 +378,13 @@ private fun MovementCard(
     onFix: (String) -> Unit,
     onDelete: (TrainingSet) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         Row(
@@ -396,14 +399,14 @@ private fun MovementCard(
             Text(
                 movement.movement,
                 style = WindmillFont.body(16, FontWeight.Bold),
-                color = GymSkin.ink,
+                color = skin.ink,
             )
             Spacer(Modifier.weight(1f))
             when (val against = movement.against) {
                 is Performed.Against.Plan ->
-                    Text(against.line, style = GymType.numeral(11), color = GymSkin.targetInk)
+                    Text(against.line, style = GymType.numeral(11), color = skin.targetInk)
                 Performed.Against.Unplanned ->
-                    Text("not in the plan", style = GymType.numeral(11), color = GymSkin.inkFaint)
+                    Text("not in the plan", style = GymType.numeral(11), color = skin.inkDim)
                 Performed.Against.Silent -> Unit
             }
         }
@@ -448,17 +451,18 @@ private fun SwipeableSetRow(
 
 @Composable
 private fun DeleteGround() {
+    val skin = LocalGymColors.current
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
-            .background(GymSkin.alarmInk.copy(alpha = 0.18f))
+            .background(skin.alarmInk.copy(alpha = 0.18f))
             .padding(horizontal = GymLayout.rowInset),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Delete", style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.alarmInk)
+        Text("Delete", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
     }
 }
 
@@ -467,6 +471,7 @@ private val setGlyph = 15.dp
 
 @Composable
 private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
+    val skin = LocalGymColors.current
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
     Column(
@@ -474,7 +479,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
-            .background(if (pressed) GymSkin.raised else GymSkin.surface)
+            .background(if (pressed) skin.raised else skin.surface)
             .clickable(
                 interactionSource = pressing,
                 indication = null,
@@ -492,7 +497,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
             Icon(
                 Icons.Filled.Check,
                 contentDescription = null,
-                tint = GymSkin.setDone,
+                tint = skin.setDone,
                 modifier = Modifier.size(setGlyph),
             )
         } else {
@@ -501,26 +506,26 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
                 Modifier.size(setGlyph).semantics { contentDescription = set.kind.wire },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(5.dp).clip(CircleShape).background(GymSkin.warmupInk))
+                Box(Modifier.size(5.dp).clip(CircleShape).background(skin.warmupInk))
             }
         }
         Text(
             set.effort,
             style = GymType.numeral(14),
-            color = if (counts) GymSkin.ink else GymSkin.warmupInk,
+            color = if (counts) skin.ink else skin.inkDim,
         )
         Spacer(Modifier.weight(1f))
         if (pressed) {
-            Text("tap to fix", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
+            Text("tap to fix", style = GymType.numeral(11, FontWeight.Bold), color = skin.accent)
         } else {
             set.note?.let {
                 Text(
                     it.text,
                     style = GymType.numeral(11),
                     color = when {
-                        !counts -> GymSkin.warmupInk
-                        it.short -> GymSkin.inkDim
-                        else -> GymSkin.inkFaint
+                        !counts -> skin.inkDim
+                        it.short -> skin.inkDim
+                        else -> skin.inkDim
                     },
                 )
             }
@@ -532,7 +537,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
           Text(
               it,
               style = GymType.numeral(11),
-              color = GymSkin.inkDim,
+              color = skin.inkDim,
               maxLines = 2,
               modifier = Modifier.padding(start = setGlyph + WindmillSpace.x2, bottom = WindmillSpace.x1),
           )

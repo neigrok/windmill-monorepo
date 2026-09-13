@@ -4,14 +4,10 @@ import androidx.compose.ui.graphics.Color
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.gym.ui.GymSkin
 
-// Ledger `1v`: the rail may not carry its whole selected state in two colours that barely differ.
-// The numbers are measured here rather than asserted in a comment, because a token can move.
 class GymRailTests {
     private fun channel(part: Float): Double {
         val value = part.toDouble()
@@ -29,42 +25,12 @@ class GymRailTests {
     }
 
     @Test
-    fun testTheSelectedTintIsFarEnoughFromTheUnselectedInkToReadAsADifference() {
-        val separation = contrast(GymSkin.ink, GymSkin.inkFaint)
-        assertEquals("the room's brightest ink against the faint ink — iOS picked the same token",
-                     4.01, separation, 0.01)
-        assertEquals("the accent is what `1v` refused: it separates by half as much",
-                     2.37, contrast(GymSkin.accent, GymSkin.inkFaint), 0.01)
-        assertTrue("the tint must beat the accent, or `1v` reopens on a token move",
-                   separation > contrast(GymSkin.accent, GymSkin.inkFaint))
-    }
-
-    @Test
-    fun testTheIndicatorIsVisibleAgainstTheBarItSitsOn() {
-        val wash = contrast(GymSkin.accentSoft.compositeOver(GymSkin.surface), GymSkin.surface)
-        val hairline = contrast(GymSkin.lineStrong, GymSkin.surface)
-        assertEquals("the accent wash the indicator sits on, over the bar's own ground", 1.52, wash, 0.01)
-        assertEquals("border-default, which the indicator does not use", 1.30, hairline, 0.01)
-        assertTrue("the wash must stay the more visible of the two, or the indicator moves back", wash > hairline)
-    }
-
-    // Colour is one channel of four; the glyph is a second, and it may not be the same drawing in
-    // both states.
-    @Test
-    fun testEverySeatDrawsADifferentGlyphSelectedAndUnselected() {
-        Tab.entries.forEach { tab ->
-            assertNotEquals("${tab.title} draws one glyph for both states",
-                            railIcon(tab, selected = true).name, railIcon(tab, selected = false).name)
+    fun navigationLabelsAndGlyphsStayLegibleInBothModes() {
+        listOf(GymSkin.Instrument, GymSkin.Daylight).forEach { skin ->
+            assertTrue("selected label", contrast(skin.ink, skin.surface) >= 4.5)
+            assertTrue("unselected label", contrast(skin.inkDim, skin.surface) >= 4.5)
+            assertTrue("selected icon", contrast(skin.accent, skin.raised) >= 3.0)
+            assertTrue("unselected icon", contrast(skin.inkDim, skin.surface) >= 3.0)
         }
     }
-}
-
-// Composited the way the bar is painted: per channel, then quantized to 8 bits.
-private fun Color.compositeOver(ground: Color): Color {
-    fun channel(top: Float, under: Float) = (top * alpha + under * (1 - alpha)) * 255f
-    return Color(
-        red = Math.round(channel(red, ground.red)),
-        green = Math.round(channel(green, ground.green)),
-        blue = Math.round(channel(blue, ground.blue)),
-    )
 }

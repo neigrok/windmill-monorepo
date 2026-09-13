@@ -4,6 +4,9 @@ import android.app.Activity
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -11,13 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.List
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.outlined.DateRange
-import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -42,7 +40,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -92,7 +91,7 @@ import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymMaterial
-import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
@@ -114,6 +113,7 @@ import works.windmill.platform.Account
 import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
+import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
 // Gym's one seam into the superapp.
@@ -134,7 +134,7 @@ class GymModule : ProductModule {
 
 internal enum class Tab(val title: String) {
     Routines("Routines"),
-    Log("The log"),
+    Log("Log"),
     Coach("Coach"),
 }
 
@@ -245,6 +245,7 @@ internal fun rememberDeviceStore(): TrainingStore {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
+    val skin = LocalGymColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -735,7 +736,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
             },
             sheetState = reviewSheet,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             ReviewSheet(
                 proposalId = open.proposalId,
@@ -768,7 +770,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 finishFailure = null
             },
             sheetState = finishSheet,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             FinishScreen(
                 finished = ended,
@@ -813,7 +816,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         Away.Threads -> Threads.title
         // The noun, not the thread's title: a title is the lifter's first message verbatim.
         is Away.Thread -> Threads.conversation
-        Away.Settings -> "Settings"
+        Away.Settings -> "Gym settings"
         Away.Connections -> ConnectedLog.title
         Away.Notes -> Notes.title
         is Away.NoteEditor -> Notes.title
@@ -825,7 +828,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = GymSkin.canvas,
+        containerColor = skin.canvas,
         // While the logger stands it hosts the transient itself, over its reading region and off
         // its rack: a snackbar anywhere in the reach band would cover a dial for nine seconds every
         // time a set landed. Everywhere else the transient sits where the platform puts it.
@@ -835,12 +838,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
             // Nothing at all when there is neither: an empty bar would take the window inset away
             // from the content below it.
             if (railUp || line != null) {
-                Column(Modifier.fillMaxWidth().background(GymSkin.canvas)) {
+                Column(Modifier.fillMaxWidth().background(skin.canvas)) {
                     line?.let {
                         Text(
                             it,
                             style = GymType.numeral(12),
-                            color = GymSkin.inkDim,
+                            color = skin.inkDim,
                             maxLines = 2,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -905,6 +908,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                     onBack = { back() },
                     onNotes = { look(Away.Notes) },
                     onConnectedLog = { look(Away.Connections) },
+                    accountEmail = account.user?.email,
+                    onAccount = LocalShellActions.current.openYou,
                     say = { note = it },
                 )
                 standing is Away.Connections -> ConnectedLogScreen(
@@ -1059,46 +1064,39 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
 }
 
-// The platform's rail, three seats and no fourth: the account seat a hand-rolled rail could carry
-// past a hairline now rides each root's top bar instead.
-//
-// Selection is carried on four channels, not on one colour (ledger `1v`). The tint is the room's
-// BRIGHTEST ink, not its accent: verdigris `#5FCDB4` against the faint ink `#727771` separates by 2.37:1
-// and a lifter cannot tell which tab they are on, while `#F1F0EB` against the same faint ink is
-// 4.01:1 — the same token iOS picked, so the two phones close `1v` on one token. Beneath that: a
-// filled glyph selected against an outlined one, a bold label against a normal one, and the
-// indicator on the verdigris wash `accentSoft` (`#5FCDB4` at 20% over the bar's `#161C1D`, 1.52:1;
-// `lineStrong` `#2A3133` on the same bar would measure 1.30:1, and GymRailTests pins both).
 @Composable
 private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
-    NavigationBar(containerColor = GymSkin.surface, tonalElevation = 0.dp) {
-        Tab.entries.forEach { entry ->
-            val here = entry == current
-            NavigationBarItem(
-                selected = here,
-                onClick = { onPick(entry) },
-                icon = { Icon(railIcon(entry, here), contentDescription = null) },
-                label = {
-                    Text(
-                        entry.title,
-                        maxLines = 1,
-                        fontWeight = if (here) FontWeight.Bold else FontWeight.Normal,
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = GymSkin.ink,
-                    selectedTextColor = GymSkin.ink,
-                    indicatorColor = GymSkin.accentSoft,
-                    unselectedIconColor = GymSkin.inkFaint,
-                    unselectedTextColor = GymSkin.inkFaint,
-                ),
-            )
+    val skin = LocalGymColors.current
+    Column(Modifier.fillMaxWidth().background(skin.surface)) {
+        NavigationBar(
+            containerColor = skin.surface,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            modifier = Modifier.height(80.dp).padding(horizontal = 12.dp),
+        ) {
+            Tab.entries.forEach { entry ->
+                NavigationBarItem(
+                    selected = entry == current,
+                    onClick = { onPick(entry) },
+                    icon = { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    label = { Text(entry.title, maxLines = 1, style = WindmillFont.body(12, FontWeight.Bold)) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = skin.accent,
+                        selectedTextColor = skin.ink,
+                        indicatorColor = skin.raised,
+                        unselectedIconColor = skin.inkDim,
+                        unselectedTextColor = skin.inkDim,
+                    ),
+                )
+            }
         }
+        Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())
     }
 }
 
-internal fun railIcon(tab: Tab, selected: Boolean): ImageVector = when (tab) {
-    Tab.Routines -> if (selected) Icons.AutoMirrored.Filled.List else Icons.AutoMirrored.Outlined.List
-    Tab.Log -> if (selected) Icons.Filled.DateRange else Icons.Outlined.DateRange
-    Tab.Coach -> if (selected) Icons.Filled.Face else Icons.Outlined.Face
+@DrawableRes
+internal fun railIcon(tab: Tab): Int = when (tab) {
+    Tab.Routines -> R.drawable.gym_nav_routines
+    Tab.Log -> R.drawable.gym_nav_log
+    Tab.Coach -> R.drawable.gym_nav_coach
 }

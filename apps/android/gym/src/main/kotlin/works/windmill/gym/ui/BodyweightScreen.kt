@@ -79,6 +79,7 @@ import works.windmill.platform.design.WindmillSpace
 // a zero, never a field asking for one. Tapping it opens the chart, a destination.
 @Composable
 fun BodyweightReading(latest: WeighIn?, nowMs: Long, onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
     val reading = Bodyweight.reading(latest, nowMs) ?: return
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -87,7 +88,7 @@ fun BodyweightReading(latest: WeighIn?, nowMs: Long, onOpen: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .clickable(role = Role.Button, onClickLabel = "open the bodyweight chart", onClick = onOpen),
     ) {
-        Text(reading, style = GymType.numeral(13), color = GymSkin.inkDim)
+        Text(reading, style = GymType.numeral(13), color = skin.inkDim)
         Chevron()
     }
 }
@@ -96,17 +97,18 @@ fun BodyweightReading(latest: WeighIn?, nowMs: Long, onOpen: () -> Unit) {
 // out of reach at exactly the length of log that earns one.
 @Composable
 fun WeighInChip(onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.full))
-            .background(GymSkin.accentSoft)
-            .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.full))
+            .background(skin.accentSoft)
+            .border(1.dp, skin.accent, RoundedCornerShape(WindmillRadius.full))
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = WindmillSpace.x5),
     ) {
-        Text(Bodyweight.chip, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.accent)
+        Text(Bodyweight.chip, style = WindmillFont.body(15, FontWeight.Bold), color = skin.accent)
     }
 }
 
@@ -124,6 +126,7 @@ fun WeighInSheet(
     onSave: (String, Double) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    val skin = LocalGymColors.current
     val today = Bodyweight.today(nowMs)
     var typed by remember { mutableStateOf(initial?.let { Bodyweight.kilograms(it.weightKg) } ?: "") }
     var date by remember { mutableStateOf(fixedDate ?: initial?.date ?: today) }
@@ -177,13 +180,13 @@ fun WeighInSheet(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .imePadding()
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
-        Text(Bodyweight.sheetTitle(fixedDate), style = WindmillFont.display(22), color = GymSkin.ink)
+        Text(Bodyweight.sheetTitle(fixedDate), style = WindmillFont.display(22), color = skin.ink)
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
             OutlinedTextField(
@@ -202,10 +205,10 @@ fun WeighInSheet(
                     .focusRequester(focus)
                     .semantics { contentDescription = weightField },
             )
-            Text(Bodyweight.unit, style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint)
+            Text(Bodyweight.unit, style = WindmillFont.body(18, FontWeight.Bold), color = skin.inkDim)
         }
         (said ?: refused)?.let {
-            Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.alarmInk)
+            Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = skin.alarmInk)
         }
 
         Row(
@@ -225,15 +228,15 @@ fun WeighInSheet(
                 )
                 .padding(horizontal = WindmillSpace.x4),
         ) {
-            Text("Date", style = WindmillFont.body(14), color = GymSkin.inkDim)
+            Text("Date", style = WindmillFont.body(14), color = skin.inkDim)
             Spacer(Modifier.weight(1f))
             Text(
                 Bodyweight.dayLine(date, today),
                 style = GymType.numeral(13, FontWeight.Bold),
-                color = if (fixedDate == null) GymSkin.accent else GymSkin.inkDim,
+                color = if (fixedDate == null) skin.accent else skin.inkDim,
             )
             if (fixedDate == null) {
-                Text("  ›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+                Text("  ›", style = WindmillFont.body(15, FontWeight.SemiBold), color = skin.inkDim)
             }
         }
 
@@ -244,10 +247,10 @@ fun WeighInSheet(
                 .heightIn(min = GymTap.primary)
                 .alpha(if (saving) 0.4f else 1f)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(GymSkin.accent)
+                .background(skin.accent)
                 .clickable(enabled = !saving, role = Role.Button) { save() },
         ) {
-            Text(Bodyweight.save, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
+            Text(Bodyweight.save, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
         }
 
         onDelete?.let {
@@ -258,7 +261,7 @@ fun WeighInSheet(
                     .heightIn(min = GymTap.row)
                     .clickable(enabled = !saving, role = Role.Button, onClick = it),
             ) {
-                Text(Bodyweight.deleteRow, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
+                Text(Bodyweight.deleteRow, style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.alarmInk)
             }
         }
     }
@@ -278,6 +281,7 @@ fun BodyweightScreen(
     onBack: () -> Unit,
     say: (String?) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val today = Bodyweight.today(nowMs)
@@ -310,19 +314,19 @@ fun BodyweightScreen(
         // are. Deleting your only weigh-in leaves nine seconds of Undo, and this screen may not
         // stand on `No weigh-ins yet` over a series that still holds one.
         if (Bodyweight.windowed(store.allWeighIns, ChartWindow.All, today).isEmpty()) {
-            Text(Bodyweight.nothingYet, style = WindmillFont.body(15), color = GymSkin.inkDim)
+            Text(Bodyweight.nothingYet, style = WindmillFont.body(15), color = skin.inkDim)
             return@Column
         }
 
         WindowControl(window, onPick = { window = it })
-        Text(Bodyweight.windowLine(window, shown.size), style = GymType.numeral(12), color = GymSkin.inkFaint)
+        Text(Bodyweight.windowLine(window, shown.size), style = GymType.numeral(12), color = skin.inkDim)
 
         if (shown.isEmpty()) {
             // The sentence names the ninety days, so it is drawn only under that window. Over the
             // whole series the count line above is the whole of what there is to say — which is the
             // state a held delete of the only weigh-in leaves this screen in.
             if (window == ChartWindow.Ninety) {
-                Text(Bodyweight.noneInWindow, style = WindmillFont.body(15), color = GymSkin.inkDim)
+                Text(Bodyweight.noneInWindow, style = WindmillFont.body(15), color = skin.inkDim)
             }
         } else {
             DotChart(shown, runs, window, today, onDot = { repairing = it })
@@ -335,7 +339,8 @@ fun BodyweightScreen(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = GymSkin.surface,
+            containerColor = skin.surface,
+            scrimColor = skin.scrim,
         ) {
             WeighInSheet(
                 initial = open,
@@ -406,6 +411,7 @@ private fun DotChart(
     today: LocalDate,
     onDot: (WeighIn) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val axis = Bodyweight.axis(entries) ?: return
     val start = if (window == ChartWindow.Ninety) today.minusDays(89) else entries.first().date
     val span = maxOf(1L, ChronoUnit.DAYS.between(start, today))
@@ -416,8 +422,8 @@ private fun DotChart(
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Row(Modifier.fillMaxWidth().height(chartHeight)) {
             Column(Modifier.width(axisWidth).height(chartHeight), verticalArrangement = Arrangement.SpaceBetween) {
-                Text(Bodyweight.axisLabel(axis.ceilingKg), style = GymType.numeral(11), color = GymSkin.inkFaint)
-                Text(Bodyweight.axisLabel(axis.floorKg), style = GymType.numeral(11), color = GymSkin.inkFaint)
+                Text(Bodyweight.axisLabel(axis.ceilingKg), style = GymType.numeral(11), color = skin.inkDim)
+                Text(Bodyweight.axisLabel(axis.floorKg), style = GymType.numeral(11), color = skin.inkDim)
             }
             BoxWithConstraints(Modifier.weight(1f).height(chartHeight)) {
                 val width = maxWidth
@@ -426,13 +432,13 @@ private fun DotChart(
                 Canvas(Modifier.fillMaxSize()) {
                     val top = plotInset.toPx()
                     val bottom = size.height - plotInset.toPx()
-                    drawLine(GymSkin.line, Offset(0f, top), Offset(size.width, top), strokeWidth = 1.dp.toPx())
-                    drawLine(GymSkin.line, Offset(0f, bottom), Offset(size.width, bottom), strokeWidth = 1.dp.toPx())
+                    drawLine(skin.line, Offset(0f, top), Offset(size.width, top), strokeWidth = 1.dp.toPx())
+                    drawLine(skin.line, Offset(0f, bottom), Offset(size.width, bottom), strokeWidth = 1.dp.toPx())
                     val dashed = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
                     runs.forEach { run ->
                         when (run) {
                             is ChartRun.Segment -> drawLine(
-                                GymSkin.accent,
+                                skin.accent,
                                 Offset(xDp(run.from.date).toPx(), yDp(run.from.weightKg).toPx()),
                                 Offset(xDp(run.to.date).toPx(), yDp(run.to.weightKg).toPx()),
                                 strokeWidth = 2.dp.toPx(),
@@ -440,7 +446,7 @@ private fun DotChart(
                             // The gap is marked where it is, not joined: a short dashed run along
                             // the baseline from the last dot before it to the first dot after.
                             is ChartRun.Gap -> drawLine(
-                                GymSkin.inkFaint,
+                                skin.inkFaint,
                                 Offset(xDp(run.from.date).toPx(), bottom),
                                 Offset(xDp(run.to.date).toPx(), bottom),
                                 strokeWidth = 1.5.dp.toPx(),
@@ -449,7 +455,7 @@ private fun DotChart(
                         }
                     }
                     entries.forEach { dot ->
-                        drawCircle(GymSkin.ink, radius = 4.dp.toPx(),
+                        drawCircle(skin.ink, radius = 4.dp.toPx(),
                             center = Offset(xDp(dot.date).toPx(), yDp(dot.weightKg).toPx()))
                     }
                 }
@@ -471,9 +477,9 @@ private fun DotChart(
             }
         }
         Row(Modifier.fillMaxWidth().padding(start = axisWidth)) {
-            Text(Bodyweight.shortDay(start), style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(Bodyweight.shortDay(start), style = GymType.numeral(11), color = skin.inkDim)
             Spacer(Modifier.weight(1f))
-            Text(Bodyweight.shortDay(today), style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(Bodyweight.shortDay(today), style = GymType.numeral(11), color = skin.inkDim)
         }
         val gaps = runs.filterIsInstance<ChartRun.Gap>()
         if (gaps.isNotEmpty()) {
@@ -496,10 +502,11 @@ private fun GapLabels(
     midpoint: (ChartRun.Gap) -> Float,
     modifier: Modifier = Modifier,
 ) {
+    val skin = LocalGymColors.current
     Layout(
         content = {
             gaps.forEach { gap ->
-                Text(gap.label, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
+                Text(gap.label, style = GymType.numeral(12), color = skin.inkDim, maxLines = 1)
             }
         },
         modifier = modifier,
