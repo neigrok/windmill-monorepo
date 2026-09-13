@@ -647,12 +647,14 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // The save lives here rather than on the builder: the builder's composition dies the moment the
     // draft is let go of. The door closes while one is in flight, or two taps are two routines.
     fun write(draft: RoutineDraft) {
+        if (savingRoutine) return
+        val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = Ids.routine()) else draft
+        building = prepared
+        savingRoutine = true
         scope.launch {
-            if (savingRoutine) return@launch
-            savingRoutine = true
             try {
                 note = null
-                when (val written = store.saveRoutine(draft)) {
+                when (val written = store.saveRoutine(prepared)) {
                     is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
                     is GymResult.Ok -> {
                         haptics.saved()

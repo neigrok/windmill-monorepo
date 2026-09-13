@@ -25,7 +25,6 @@ class PickerOptionsTests {
         val options = PickerOptions.matching(query = "  bench ", catalog = catalog, taken = emptyList())
         assertEquals(listOf("bench-press", "close-grip-bench-press"), options.matches.map { it.id })
         assertNull(options.empty)
-        assertNull("there is something to pick, so there is nothing to mint", options.create)
     }
 
     @Test
@@ -36,8 +35,6 @@ class PickerOptionsTests {
             nowMs = nowMs,
         )
         assertEquals(listOf("last 82.5 × 5 · 2 days ago", "never logged"), options.matches.map { it.meta })
-        assertEquals("a movement the lifter minted is tagged so they recognise their own",
-                     listOf(false, true), options.matches.map { it.yours })
     }
 
     @Test
@@ -50,7 +47,6 @@ class PickerOptionsTests {
         assertEquals(listOf("last 0 × 12 · today"), options.matches.map { it.meta })
     }
 
-    // The six stand over EVERY empty query and never over a typed one, first session or thousandth.
     @Test
     fun testTheSixStandOverAnUntouchedFieldAndNeverOverATypedOne() {
         val untouched = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
@@ -68,17 +64,17 @@ class PickerOptionsTests {
     }
 
     @Test
-    fun testAMovementAlreadyInTheSessionIsNotOffered() {
+    fun testAnAddedMovementStaysVisibleAndSelected() {
         val options = PickerOptions.matching(query = "squat", catalog = catalog, taken = listOf("back-squat"))
-        assertEquals(listOf("zercher-squat"), options.matches.map { it.id })
+        assertEquals(listOf("back-squat", "zercher-squat"), options.matches.map { it.id })
+        assertEquals(listOf(true, false), options.matches.map { it.selected })
     }
 
     @Test
-    fun testOnlyACatalogThatDidNotLoadBlamesTheNetworkAndItOffersNoDoor() {
+    fun testOnlyACatalogThatDidNotLoadBlamesTheNetwork() {
         val options = PickerOptions.matching(query = "bench", catalog = emptyList(), taken = emptyList())
         assertEquals(PickerOptions.catalogUnread, options.unread)
         assertNull("one silence, one sentence", options.empty)
-        assertNull(options.create)
     }
 
     @Test
@@ -91,7 +87,6 @@ class PickerOptionsTests {
 
         val typed = PickerOptions.matching(query = "Zottman Curl", catalog = TheSix.movements,
                                            taken = emptyList(), catalogUnread = true)
-        assertNull(typed.create)
         assertNull(typed.empty)
         assertEquals(PickerOptions.catalogUnread, typed.unread)
 
@@ -113,26 +108,24 @@ class PickerOptionsTests {
     }
 
     @Test
-    fun testACatalogEntirelyInTheSessionSaysThatAndOffersNoDoor() {
+    fun testASelectedCatalogKeepsItsRowsInsteadOfClaimingItIsEmpty() {
         val taken = catalog.map { it.id }
         val options = PickerOptions.matching(query = "", catalog = catalog, taken = taken)
-        assertEquals("Every movement in the catalog is already in this session.", options.empty)
-        assertNull(options.create)
+        assertNull(options.empty)
+        assertTrue((options.six + options.matches).all { it.selected })
     }
 
     @Test
-    fun testATypedNameHasADoorEvenWhenEveryKnownMovementIsAlreadyInTheSession() {
+    fun testAnUnknownNameHasAnEmptyResultEvenWhenTheKnownCatalogIsSelected() {
         val options = PickerOptions.matching(query = "Sled Push", catalog = TheSix.movements,
                                              taken = TheSix.movements.map { it.id })
         assertEquals("No movement by that name.", options.empty)
-        assertEquals("Create “Sled Push”", options.create)
     }
 
     @Test
-    fun testAQueryThatMatchesNothingSaysOnlyThatAndOffersToMintIt() {
+    fun testAQueryThatMatchesNothingSaysOnlyThat() {
         val options = PickerOptions.matching(query = " zottman ", catalog = catalog, taken = emptyList())
         assertEquals("No movement by that name.", options.empty)
-        assertEquals("Create “zottman”", options.create)
     }
 
     @Test
@@ -164,11 +157,8 @@ class PickerOptionsTests {
         assertNull(plain.matches.single().alias)
 
         val neither = PickerOptions.matching(query = "zottman", catalog = renamed, taken = emptyList())
-        assertEquals("Create “zottman”", neither.create)
     }
 
-    // `bench-press` is one of the openers, so this account's own name for it stands in the six —
-    // where it is still drawn under the name the lifter chose and never under the word that found it.
     @Test
     fun testAnUntypedFieldNamesNoAliases() {
         val renamed = listOf(Exercise(id = "bench-press", name = "Flat press", aliases = listOf("Bench Press")))

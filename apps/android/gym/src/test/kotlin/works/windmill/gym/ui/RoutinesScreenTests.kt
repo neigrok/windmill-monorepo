@@ -116,8 +116,6 @@ class RoutinesScreenTests {
             exerciseId = "bench-press", before = ProposalTargets(List(5) { SetTarget(5, 82.5) }),
             after = ProposalTargets(List(5) { SetTarget(3, 87.5) }))))
 
-    // The reach band holds what a lifter does with a bar in their hands; planning work rides the top
-    // bar, where nobody has to reach one-handed. And the connect pitch is not on this screen at all.
     @Test
     fun testTheBandStartsTheWorkoutAndTheNewRoutineActionIsInTheTopBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -125,7 +123,7 @@ class RoutinesScreenTests {
         val drafts = mutableListOf<RoutineDraft>()
         home(scope, doors, drafts)
 
-        compose.onNodeWithText("Just start logging").assertIsDisplayed()
+        compose.onNodeWithText("Start logging").assertIsDisplayed()
         val newRoutine = compose.onNodeWithText("New routine")
         newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
         newRoutine.performClick()
@@ -133,14 +131,11 @@ class RoutinesScreenTests {
         compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
         compose.onNodeWithText("Gym settings").assertIsDisplayed()
 
-        compose.onNodeWithText("Just start logging").performClick()
+        compose.onNodeWithText("Start logging").performClick()
         compose.runOnIdle { assertEquals(listOf("start"), doors) }
         scope.cancel()
     }
 
-    // A device-local clock can support an omission, never an assertion. The tabs are not mounted while
-    // a session is open, and offline this room cannot read the account the other phone is training on
-    // — so the head counts the program and claims nothing about what is running.
     @Test
     fun testTheHeadCountsTheProgramAndClaimsNothingAboutASessionItCannotSee() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -151,8 +146,6 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // Law 1: the row draws no control for Delete — the swipe is its whole door — so the row declares
-    // the same Delete as a custom action a screen reader reaches, named with the routine.
     @Test
     fun testTheRowDeclaresItsDeleteAsACustomActionNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -161,17 +154,15 @@ class RoutinesScreenTests {
         val store = home(scope, doors, drafts)
         val routineId = store.routines.single().id
 
-        compose.onNodeWithContentDescription("More for Push Day").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
         compose.onNodeWithText("Duplicate").assertDoesNotExist()
-        // One node says it: the swipe's lane behind the row. The row's own Delete is the custom
-        // action, not a drawn button.
         compose.onAllNodesWithText("Delete").assertCountEquals(1)
 
         val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
         val actions = row.config[SemanticsActions.CustomActions]
-        assertEquals(listOf("Delete Push Day"), actions.map { it.label })
+        assertEquals(listOf("Duplicate Push Day", "Delete Push Day"), actions.map { it.label })
 
-        compose.runOnIdle { actions.single().action() }
+        compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
         compose.runOnIdle {
             assertEquals("the same act the swipe makes, and the room withholds it",
                 listOf("delete:$routineId"), doors)
@@ -180,21 +171,16 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // With no control at its trailing edge the row's height is its text's, over the room's row floor
-    // (`GymTap.row`). The number is what ledger 5s records beside iOS's 62 pt.
     @Test
     fun testTheRowStandsOnTheRoomsRowFloor() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         home(scope, mutableListOf(), mutableListOf())
 
         val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
-        assertEquals(63.dp, bounds.height)
+        assertEquals(80.dp, bounds.height)
         scope.cancel()
     }
 
-    // One proposal, one rendering. The newest waiting proposal is the standing card at the head, and
-    // the routine it is about wears the accent border and NO chip; every other waiting routine keeps
-    // the chip that is its only rendering.
     @Test
     fun testTheRoutineTheStandingCardIsAboutDrawsNoChipOfItsOwn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -297,8 +283,6 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // The routine page's one primary is under the thumb: pinned in the Scaffold's bottom bar, out of
-    // the scrolling body, and it starts the workout.
     @Test
     fun testStartWorkoutIsPinnedOutOfTheScrollAndStartsTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

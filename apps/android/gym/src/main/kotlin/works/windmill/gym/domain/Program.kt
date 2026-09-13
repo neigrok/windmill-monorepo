@@ -101,7 +101,7 @@ object TargetEntry {
     const val openLine = "You decide the numbers at the rack."
 
     const val everySet = "Every set"
-    const val setBySet = "Set by set"
+    const val setBySet = "Each set"
     const val addSet = "Add set"
     const val fill = "Fill"
     const val rampUp = "Ramp up"
@@ -113,6 +113,7 @@ object TargetEntry {
     enum class Field { Sets, Reps, Weight }
 
     // One ladder row as typed: text per field, never numbers.
+    @Serializable
     data class TypedSet(val reps: String = "", val weight: String = "") {
         constructor(set: SetTarget) :
             this(set.reps?.toString() ?: "", set.weightKg?.let(Readout::weight) ?: "")
@@ -275,8 +276,13 @@ data class RoutineDraft(
     val position: Int = 0,
     val entries: List<RoutineEntry> = emptyList(),
     val trained: Boolean = false,
+    val original: RoutineWrite? = null,
+    val creationId: String? = null,
 ) {
     val savable: Boolean get() = Program.named(name) != null && entries.isNotEmpty()
+
+    val changed: Boolean get() = original == null ||
+        Program.named(name) != original.name || position != original.position || write != original.entries
 
     val full: Boolean get() = entries.size >= Program.maxEntries
 
@@ -328,12 +334,23 @@ data class RoutineDraft(
         entries.mapIndexed { index, entry -> entry.copy(position = index + 1) }
 
     companion object {
+        fun duplicate(routine: Routine, position: Int): RoutineDraft {
+            val suffix = " copy"
+            val name = routine.name.trim()
+            val keep = (Program.maxNameLength - Program.length(suffix)).coerceAtLeast(0)
+            val prefix = name.takeIf { Program.length(it) <= keep }
+                ?: name.substring(0, name.offsetByCodePoints(0, keep))
+            return RoutineDraft(name = prefix + suffix, position = position,
+                entries = routine.entries.sortedBy { it.position })
+        }
+
         fun of(routine: Routine): RoutineDraft = RoutineDraft(
             id = routine.id,
             name = routine.name,
             position = routine.position,
             entries = routine.entries.sortedBy { it.position },
             trained = !routine.untested,
+            original = RoutineWrite(routine, routine.revision),
         )
     }
 }

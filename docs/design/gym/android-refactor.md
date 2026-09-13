@@ -6,8 +6,10 @@ at the original Android page URL. Its shared controls live in
 and behavior contracts and stress specimens live in
 [Android · Specifications](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9987).
 Implementation coverage is tracked in `android-delivery.md` and the repository `worklog.md`.
-Wave 1 implements shared chrome, system palettes, Settings and the approved control removals;
-the remaining screens and native behavior are assigned to later delivery waves.
+Wave 1 implements shared chrome, system palettes, Settings and the approved control removals.
+Wave 2 implements routines, target editing, duplication, independent Undo and movement creation
+from planning or quick logging, with native and real-backend verification. Training, Log, Coach
+and the wider native behavior audit remain assigned to later delivery waves.
 
 ## Screen library
 

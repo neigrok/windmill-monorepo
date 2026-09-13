@@ -1,22 +1,30 @@
 package works.windmill.gym.ui
 
+import android.graphics.Insets
+import android.view.View
+import android.view.WindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -24,23 +32,23 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LiveLines
 
-// 12-native-idiom: a sheet is the platform's, and so is what leaving one means. The four sheets that
-// used to draw their own Cancel or Close draw none now, so the way out has to be PROVEN rather than
-// assumed: the drag handle exposes the platform's Dismiss action and invoking it reaches
-// `onDismissRequest`; a tap on the scrim does the same; and neither commits anything — the keypad's
-// buffer stands, which its own copy promises ("cancel to keep").
+// Native sheet dismissal preserves each form’s uncommitted state.
 @OptIn(ExperimentalMaterial3Api::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class SheetDismissTests {
+    private lateinit var contentView: View
+
     @get:Rule
     val compose = createComposeRule()
 
     private fun raised(dismissed: MutableList<String>, content: @Composable () -> Unit) {
         compose.setContent {
+            contentView = LocalView.current
             // The hosts all raise their sheets past the partial stop; the harness raises them the same way.
             ModalBottomSheet(
                 onDismissRequest = { dismissed += "dismissed" },
@@ -173,27 +181,42 @@ class SheetDismissTests {
     fun testTheCreateStepDismissesFromItsHandleMintsNothingAndHandsTheQueryBack() {
         val minted = mutableListOf<String>()
         compose.setContent {
+            contentView = LocalView.current
             MovementPicker(
                 catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
                 taken = emptyList(), lastSets = null, nowMs = 0, title = "Add movement",
-                onPick = {}, onCreate = { name, _ -> minted += name },
+                onPick = {}, onCreate = { name, equipment, id -> minted += name; works.windmill.gym.store.GymResult.Ok(Exercise(id, name, equipment = equipment, custom = true)) },
             )
         }
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
-        compose.onNodeWithText("Create “Zercher”").performClick()
+        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+        val hidden = WindowInsets.Builder()
+            .setInsets(WindowInsets.Type.ime(), Insets.NONE)
+            .setVisible(WindowInsets.Type.ime(), false).build()
+        compose.runOnIdle {
+            contentView.dispatchApplyWindowInsets(hidden)
+            ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(Stage.RESUMED)
+                .forEach { it.window.decorView.dispatchApplyWindowInsets(hidden) }
+            ShadowDialog.getShownDialogs().filter { it.isShowing }
+                .forEach { it.window!!.decorView.dispatchApplyWindowInsets(hidden) }
+        }
+        compose.mainClock.advanceTimeBy(64)
         compose.waitForIdle()
-        compose.onNodeWithText("Your movement").assertIsDisplayed()
-        compose.onAllNodesWithText("Cancel").assertCountEquals(0)
+        compose.waitForIdle()
+        compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
+        compose.onAllNodesWithText("Cancel").assertCountEquals(1)
 
         val handle = handles()
         assertEquals("the create step's handle exposes SemanticsActions.Dismiss", 1, handle.size)
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
             .performSemanticsAction(SemanticsActions.Dismiss)
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Your movement").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodes(hasText("Create movement") and !hasClickAction()).fetchSemanticsNodes().isEmpty()
         }
 
         assertTrue("nothing was minted", minted.isEmpty())
-        compose.onNodeWithText("Create “Zercher”").assertIsDisplayed()
+        compose.onNode(hasText("Create movement") and hasClickAction()).assertIsDisplayed()
+        compose.onNodeWithText("Zercher").assertIsDisplayed()
     }
 }

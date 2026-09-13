@@ -62,14 +62,7 @@ import works.windmill.gym.net.TrainingSyncing
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 
-// Where gym's pure rules meet the network, the clock and the disk. Every decision is made by asking a
-// module: the ladder moves the weight, Prefill picks the number, the queue owns durability.
-//
-// The order of every write never varies: mint an id → store on the device → tell the log, or owe it.
-// Nothing is held in memory waiting for a network call to decide whether it counts.
-//
-// Main-thread-confined: every verb is called from the composition scope, and TrainingSyncing does its
-// own IO dispatching.
+// Main-thread boundary for training reads, durable local writes, and account synchronization.
 class TrainingStore(
     private val queue: SetQueue,
     private val deviceCopy: DeviceCopy,
@@ -834,7 +827,7 @@ class TrainingStore(
     private suspend fun keepOnDevice(write: RoutineWrite): Routine {
         val made = Routine(write)
         localLog.hold(made)
-        routines = if (gym == null) localLog.routines else program + localLog.routine(made.id)!!
+        routines = if (gym == null) localLog.routines else program.filterNot { it.id == made.id } + localLog.routine(made.id)!!
         if (gym != null) {
             claimOwed = true
             deliver()
@@ -842,10 +835,7 @@ class TrainingStore(
         return made
     }
 
-    // The READ is not optional: a routine PUT is a whole-document replace, so writing from a copy
-    // this device last read would delete every line added since. Addressed by POSITION and refused
-    // out loud when that row is gone, because a PUT of an unchanged document still moves the revision
-    // and supersedes every pending proposal.
+    // Read the full routine, then guard its revision before replacing the targeted plan entry.
     suspend fun save(sets: List<SetTarget>, toRoutine: String, atPosition: Int,
                      forExercise: String): WriteFailure? {
         // A routine still on the shelf is the device's to move.
@@ -864,7 +854,7 @@ class TrainingStore(
                 ?: return WriteFailure.Refused("that routine is no longer on the log")
             val moved = routine.retargeting(atPosition, forExercise, sets)
                 ?: return WriteFailure.Refused("${routine.name} has changed since this session started")
-            val saved = log.replaceRoutine(toRoutine, RoutineWrite(moved))
+            val saved = log.replaceRoutine(toRoutine, RoutineWrite(moved, routine.revision))
             routines = program.map { if (it.id == saved.id) saved else it }
             null
         } catch (interrupted: CancellationException) {
@@ -884,6 +874,15 @@ class TrainingStore(
             return GymResult.Failed(WriteFailure.Refused("a routine needs at least one movement"))
         }
         val standing = draft.id
+        val creationId = draft.creationId ?: mintRoutine()
+        if (standing == null) {
+            localLog.routine(creationId)?.let { existing ->
+                val expected = RoutineWrite(creationId, name, draft.position, draft.write)
+                if (RoutineWrite(existing) != expected) return GymResult.Failed(WriteFailure.Refused(
+                    "this save already holds different details — reopen the saved routine to edit it"))
+                return GymResult.Ok(existing)
+            }
+        }
         // A routine still on the shelf is the device's to write; the claim sends whatever it finds.
         if (standing != null && localLog.routine(standing) != null) {
             val held = Routine(RoutineWrite(standing, name, draft.position, draft.write))
@@ -892,6 +891,7 @@ class TrainingStore(
                 else program.map { if (it.id == standing) localLog.routine(standing)!! else it }
             return GymResult.Ok(held)
         }
+        val seat = owner
         val log = gym
         if (log == null) {
             // Signed out, a routine this shelf does not hold is the account's.
@@ -899,24 +899,34 @@ class TrainingStore(
                 return GymResult.Failed(
                     WriteFailure.Refused("that routine is on your account — sign in to change it"))
             }
-            return GymResult.Ok(keepOnDevice(RoutineWrite(mintRoutine(), name, draft.position, draft.write)))
+            return GymResult.Ok(keepOnDevice(RoutineWrite(creationId, name, draft.position, draft.write)))
         }
-        val write = RoutineWrite(standing ?: mintRoutine(), name, draft.position, draft.write)
+        if (standing != null && draft.original?.expectedRevision == null) {
+            return GymResult.Failed(WriteFailure.Refused("reopen this routine before saving — its original revision is missing"))
+        }
+        val write = RoutineWrite(standing ?: creationId, name, draft.position, draft.write,
+            expectedRevision = draft.original?.expectedRevision)
         return try {
             val saved = if (standing == null) log.createRoutine(write)
                 else log.replaceRoutine(standing, write)
-            routines = if (standing == null) program + saved
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
+            routines = if (standing == null) program.filterNot { it.id == saved.id } + saved
                 else program.map { if (it.id == saved.id) saved else it }
+            if (standing == null && RoutineWrite(saved) != write) return GymResult.Failed(WriteFailure.Refused(
+                "this save already holds different details — reopen the saved routine to edit it"))
             GymResult.Ok(saved)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
             // A NEW day typed with no signal is kept on the shelf. An EDIT of the account's day
             // cannot be: the shelf's create would land it as a second routine.
             if (standing != null || Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
                 return GymResult.Failed(WriteFailure(refusing))
             }
-            GymResult.Ok(keepOnDevice(write))
+            val held = keepOnDevice(write)
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
+            GymResult.Ok(held)
         }
     }
 
@@ -951,10 +961,13 @@ class TrainingStore(
     // history, and that is an answer rather than a failure.
     suspend fun routineHistory(routineId: String): GymResult<List<RoutineEvent>> {
         if (localLog.routine(routineId) != null) return GymResult.Ok(emptyList())
+        val seat = owner
         val log = gym ?: return GymResult.Ok(emptyList())
         return try {
             val read = log.routine(routineId)
                 ?: return GymResult.Failed(WriteFailure.Refused("that routine is no longer on the log"))
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while reading"))
+            routines = program.map { if (it.id == read.id) read else it }
             GymResult.Ok(read.history)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -1223,36 +1236,56 @@ class TrainingStore(
     // The equipment is the CALLER's and is never guessed. The pattern is the domain's value for "we
     // did not ask": nothing on this surface reads it, because the ladder is taken off the MAGNITUDE
     // of the load.
-    suspend fun create(name: String, equipment: String): GymResult<Exercise> {
-        val log = gym ?: return GymResult.Ok(createOnDevice(name, equipment))
+    suspend fun create(name: String, equipment: String, id: String = mintExercise()): GymResult<Exercise> {
+        val named = Program.named(name)
+            ?: return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
+        if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings) {
+            return GymResult.Failed(WriteFailure.Refused("check the movement name and equipment"))
+        }
+        val write = ExerciseWrite(id, named, Exercise.unclassified, equipment)
+        if (localLog.exercises.any { it.id == write.id }) return createOnDevice(write)
+        val seat = owner
+        val log = gym ?: return createOnDevice(write)
         return try {
-            val made = log.createExercise(ExerciseWrite(id = mintExercise(), name = name,
-                pattern = Exercise.unclassified, equipment = equipment))
-            catalog = catalog + made
+            val made = log.createExercise(write)
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            catalog = catalog.filterNot { it.id == made.id } + made
             deviceCopy.hold(owner, catalog)
+            if (made.id != write.id || made.name != write.name || made.equipment != write.equipment || made.pattern != write.pattern) {
+                return GymResult.Failed(WriteFailure.Refused("already saved as ${made.name} (${made.equipment}) — choose it from the movement list"))
+            }
             GymResult.Ok(made)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             if (Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
                 return GymResult.Failed(WriteFailure(refusing))
             }
-            GymResult.Ok(createOnDevice(name, equipment))
+            val result = createOnDevice(write)
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            result
         }
     }
 
-    // The claim carries it onto the account before any set that names it.
-    private suspend fun createOnDevice(name: String, equipment: String): Exercise {
-        val made = Exercise(id = mintExercise(), name = name, pattern = Exercise.unclassified,
-            equipment = equipment, custom = true)
+    // The same identity survives an accepted write whose reply was lost; claim replays it once.
+    private suspend fun createOnDevice(write: ExerciseWrite): GymResult<Exercise> {
+        localLog.exercises.firstOrNull { it.id == write.id }?.let { existing ->
+            if (existing.name != write.name || existing.equipment != write.equipment || existing.pattern != write.pattern) {
+                return GymResult.Failed(WriteFailure.Refused("that movement identity already holds different details"))
+            }
+            return GymResult.Ok(existing)
+        }
+        val made = Exercise(id = write.id, name = write.name, pattern = write.pattern,
+            equipment = write.equipment, custom = true)
         localLog.hold(made)
-        catalog = catalog + made
+        catalog = catalog.filterNot { it.id == made.id } + made
         deviceCopy.hold(owner, catalog)
         if (gym != null) {
             claimOwed = true
             deliver()
         }
-        return made
+        return GymResult.Ok(made)
     }
 
     // Held on the device FIRST, so the screen obeys it on the next frame whether or not the log

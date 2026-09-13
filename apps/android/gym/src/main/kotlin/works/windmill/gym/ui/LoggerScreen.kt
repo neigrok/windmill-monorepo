@@ -58,6 +58,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -153,7 +154,10 @@ fun LoggerScreen(
     val scope = rememberCoroutineScope()
     var weightKg by remember { mutableDoubleStateOf(store.prefill.weightKg) }
     var reps by remember { mutableIntStateOf(store.prefill.reps) }
-    var sheet by remember { mutableStateOf<LoggerSheet?>(null) }
+    val pickerState = rememberMovementPickerState()
+    var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf<LoggerSheet?>(if (pickerOpen) LoggerSheet.Picker else null) }
+    LaunchedEffect(sheet) { pickerOpen = sheet == LoggerSheet.Picker }
     var goingTo by remember { mutableStateOf<String?>(null) }
     var pendingDeviation by remember { mutableStateOf<DeviationOffer?>(null) }
     var asked by remember { mutableStateOf(setOf<String>()) }
@@ -165,16 +169,6 @@ fun LoggerScreen(
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     fun close() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
-    }
-
-    fun mint(name: String, equipment: String) {
-        say(null)
-        scope.launch {
-            when (val made = store.create(name, equipment)) {
-                is GymResult.Ok -> store.choose(made.value.id)
-                is GymResult.Failed -> say(made.why.line("“$name” wasn’t created"))
-            }
-        }
     }
 
     // `hide()` on a sheet never shown has no anchor to animate to, so it is closed only if one stands.
@@ -270,7 +264,8 @@ fun LoggerScreen(
                 signedIn = isSignedIn,
                 catalogUnread = store.catalogUnread,
                 onPick = { picked -> scope.launch { store.choose(picked) } },
-                onCreate = { name, equipment -> mint(name, equipment) },
+                onCreate = { name, equipment, id -> store.create(name, equipment, id) },
+                state = pickerState,
                 onBuildRoutine = onSignIn,
                 modifier = Modifier.weight(1f),
             )
@@ -423,10 +418,8 @@ fun LoggerScreen(
                     title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
-                    onCreate = { name, equipment ->
-                        close()
-                        mint(name, equipment)
-                    },
+                    onCreate = { name, equipment, id -> store.create(name, equipment, id) },
+                    state = pickerState,
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
                         .background(skin.surface)

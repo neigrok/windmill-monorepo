@@ -2309,8 +2309,12 @@ kind and legacy preference fields are preserved, with native real-backend correc
 round-trip verification. Ordinary gesture/non-set feedback remains. Shared chrome and Settings have
 native screenshot, 200% text, IME/Back and gesture/three-button inset evidence.
 
-Routine expected-revision protection and More/Duplicate belong to Wave 2; compact training/rest and
-receipts to Wave 3; Log/records/bodyweight to Wave 4; Coach/account/sign-in refinements to Wave 5.
+Wave 2 implements routines, targets/fill, More/Duplicate, independent Undo and shared movement
+creation. Native real-backend checks cover saved order/targets, guarded revision refusal and
+recovery, source-preserving duplication, continuous drag scrolling and both creation contexts.
+Instrument/Daylight, 200% text, numeric/text IME and process-restored drafts have native evidence.
+Compact training/rest and receipts belong to Wave 3; Log/records/bodyweight to Wave 4;
+Coach/account/sign-in refinements to Wave 5.
 Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
 simplification and release verification. Daylight follows the approved existing tokens and still
 carries F44. Tracking node: `android-gym-implement-refined-flows`.

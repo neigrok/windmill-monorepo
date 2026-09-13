@@ -19,13 +19,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,15 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import works.windmill.gym.R
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
@@ -57,12 +61,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// A change to a routine mints a card rather than a write, and it waits here until it is decided.
-//
-// The band at the foot holds `Just start logging`, because that is what a lifter does with a bar in
-// their hands; making a new routine is planning work and rides the top bar, where nobody needs to
-// reach one-handed. The connect pitch is not here at all — it interrupted the one screen a lifter
-// opens to start training, and gym settings keeps the door.
+// Planning stays in the top bar; Start logging stays within reach.
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
@@ -100,16 +99,16 @@ fun RoutinesScreen(
                 contentPadding = PaddingValues(
                     start = GymLayout.gutter,
                     end = GymLayout.gutter,
-                    top = GymLayout.contentTop,
+                    top = 16.dp,
                     bottom = GymLayout.scrollTailBand,
                 ),
-                verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (routines.isNotEmpty()) {
                     item("count") {
                         Text(
                             Readout.routineCount(routines.size),
-                            style = GymType.numeral(13),
+                            style = WindmillFont.body(14),
                             color = skin.inkDim,
                         )
                     }
@@ -137,10 +136,8 @@ fun RoutinesScreen(
 
                 if (empty) {
                     item("empty") {
-                        EmptyRoutines(
-                            onBuild = { onBuild(RoutineDraft(position = 0)) },
-                            onJustStart = onJustStart,
-                        )
+                        Text("No routines yet.", style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink,
+                            modifier = Modifier.padding(top = 20.dp))
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
@@ -150,6 +147,7 @@ fun RoutinesScreen(
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
                             onDelete = { onDeleteRoutine(routine.id) },
+                            onDuplicate = { onBuild(RoutineDraft.duplicate(routine, store.allRoutines.size)) },
                             onReview = onReview,
                         )
                     }
@@ -158,97 +156,26 @@ fun RoutinesScreen(
                 item("settings") { SettingsDoor(onOpenSettings) }
             }
 
-            // The reach band. The empty state above keeps its own two-button answer, so this one is
-            // drawn only where there is already a program to start from.
-            if (!empty) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = WindmillSpace.x5)
-                        .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
-                        .heightIn(min = GymTap.primary)
-                        .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(role = Role.Button, onClick = onJustStart),
-                ) {
-                    Text(
-                        "Just start logging",
-                        style = WindmillFont.body(17, FontWeight.Bold),
-                        color = skin.onAccent,
-                    )
-                }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = WindmillSpace.x5)
+                    .padding(top = 20.dp, bottom = 12.dp)
+                    .heightIn(min = GymTap.primary)
+                    .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .clickable(role = Role.Button, onClick = onJustStart),
+            ) {
+                Text(
+                    "Start logging",
+                    style = WindmillFont.body(16, FontWeight.Bold),
+                    color = skin.onAccent,
+                )
             }
         }
     }
 }
 
-@Composable
-private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
-    val skin = LocalGymColors.current
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = WindmillSpace.x6),
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(62.dp)
-                .dashedEdge(skin.lineStrong, WindmillRadius.lg),
-        ) {
-            Icon(
-                Icons.Filled.Add,
-                contentDescription = null,
-                tint = skin.inkFaint,
-                modifier = Modifier.size(26.dp),
-            )
-        }
-        Text("No routines yet", style = WindmillFont.display(20), color = skin.ink)
-        Text(
-            "One training day, written down.",
-            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = skin.inkDim,
-            textAlign = TextAlign.Center,
-        )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.primary)
-                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(role = Role.Button, onClick = onBuild),
-        ) {
-            Text(
-                "Build a routine",
-                style = WindmillFont.body(17, FontWeight.Bold),
-                color = skin.onAccent,
-            )
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.secondary)
-                .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(role = Role.Button, onClick = onJustStart),
-        ) {
-            Text(
-                "Just start logging",
-                style = WindmillFont.body(16, FontWeight.SemiBold),
-                color = skin.accent,
-            )
-        }
-    }
-}
-
-// Trailing swipe, one action, and it is Delete: the row's only act besides opening it, and the swipe
-// is its whole door. A stroke carried across settles it, and the room withholds what it deletes.
-//
-// LAW 1: the row draws no control for Delete, so the swipe would be the only way to it — the row
-// declares the same Delete as a custom accessibility action, named with the routine, which is where
-// a screen reader reaches it.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeableRoutineRow(
@@ -257,6 +184,7 @@ private fun SwipeableRoutineRow(
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
+    onDuplicate: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val haptics = rememberGymHaptics()
@@ -271,7 +199,7 @@ private fun SwipeableRoutineRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = { RowDeleteGround() },
     ) {
-        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onReview)
+        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onDuplicate, onReview)
     }
 }
 
@@ -285,61 +213,34 @@ private fun RoutineRow(
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
+    onDuplicate: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val skin = LocalGymColors.current
     val waiting = routine.pendingProposal
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            // The row's own floor: with no control at its trailing edge, its height is its text's.
-            .heightIn(min = GymTap.row)
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(
-                1.dp,
-                if (waiting == null) skin.line else skin.accent,
-                RoundedCornerShape(WindmillRadius.lg),
-            )
-            .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") {
-                onOpenRoutine(routine.id)
-            }
-            .semantics {
-                customActions = listOf(CustomAccessibilityAction("Delete ${routine.name}") { onDelete(); true })
-            }
-            .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x2),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            ) {
-                Text(
-                    routine.name,
-                    style = WindmillFont.body(17, FontWeight.Bold),
-                    color = skin.ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (routine.untested) UntestedChip()
-                waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
-            }
-            Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = skin.inkDim)
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 80.dp)
+        .background(skin.canvas)
+        .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
+        .semantics { customActions = listOf(
+            CustomAccessibilityAction("Duplicate ${routine.name}") { onDuplicate(); true },
+            CustomAccessibilityAction("Delete ${routine.name}") { onDelete(); true }) }
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(routine.name, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+            Text(Readout.routineLine(routine, nowMs), style = WindmillFont.body(13), color = skin.inkDim)
+            waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
         }
-    }
-}
-
-// `untested` is derived, never stored: the day the first session starts the word goes.
-@Composable
-private fun UntestedChip() {
-    val skin = LocalGymColors.current
-    Box(
-        Modifier
-            .background(skin.accentSoft, RoundedCornerShape(WindmillRadius.full))
-            .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
-    ) {
-        Text("untested", style = GymType.numeral(11, FontWeight.Bold), color = skin.accent)
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = skin.inkDim)
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = skin.raised) {
+                DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; onDuplicate() })
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
+            }
+        }
     }
 }
 
@@ -386,34 +287,21 @@ private fun SettingsDoor(onOpenSettings: () -> Unit) {
 @Composable
 private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: (String) -> Unit) {
     val skin = LocalGymColors.current
-    val movement = store.catalog.firstOrNull { it.id == entry.exerciseId }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clickable(role = Role.Button, onClickLabel = "open this movement") {
-                onOpenMovement(entry.exerciseId)
-            },
-    ) {
-        Text(
-            movement?.name ?: entry.exerciseId,
-            style = WindmillFont.body(14),
-            color = skin.inkDim,
-        )
-        if (movement?.custom == true) {
-            Text(
-                " · yours",
-                style = GymType.numeral(11),
-                color = skin.inkDim,
-            )
+    Row(Modifier.fillMaxWidth().heightIn(min = 112.dp)
+        .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(entry.exerciseId) }
+        .padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(Modifier.size(32.dp).background(skin.raised, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+            Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            Readout.target(entry.sets),
-            style = GymType.numeral(12),
-            color = if (entry.isOpen) skin.inkDim else skin.targetInk,
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(Readout.movement(entry.exerciseId, store.catalog), style = WindmillFont.body(19, FontWeight.Bold), color = skin.ink)
+            val target = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg" else ""
+            Text(target, style = GymType.numeral(15), color = skin.inkDim)
+            (entry.restSeconds ?: store.preferences.restSeconds)?.let {
+                Text("Rest ${Readout.clock(it * 1000L)}", style = WindmillFont.body(13), color = skin.inkDim)
+            }
+        }
     }
 }
 
@@ -449,47 +337,32 @@ fun RoutineScreen(
     }
 
     GymScreen(
-        title = routine?.name ?: "Routine",
+        title = "Routine",
         onBack = onBack,
         backTo = backTo,
-        actions = {
-            if (routine != null) {
-                TopAction("Edit") { onBuild(RoutineDraft.of(routine)) }
-            }
-        },
-        // The reach band: the one thing a lifter does here with a bar in their hands, pinned above
-        // the safe-bottom inset and out of the scroll — the room's Scaffold already pads a pushed
-        // screen for the navigation bar, so this band sits on top of that padding. The routine's
-        // name is the screen title, so the verb is locked — literally "Start workout".
         bottomBar = {
             if (routine != null) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(skin.canvas)
-                        .padding(horizontal = WindmillSpace.x5)
-                        .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
-                        .heightIn(min = GymTap.primary)
-                        .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(role = Role.Button) { onStart(routine.id) },
-                ) {
-                    Text(
-                        "Start workout",
-                        style = WindmillFont.body(17, FontWeight.Bold),
-                        color = skin.onAccent,
-                    )
+                Column(Modifier.fillMaxWidth().background(skin.canvas).padding(horizontal = 20.dp)
+                    .padding(top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onStart(routine.id) }, shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+                        Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
+                    }
+                    TextButton(onClick = { onBuild(RoutineDraft.of(routine)) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                    }
                 }
             }
         },
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = GymLayout.gutter)
-                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTailBand),
+                .padding(top = 20.dp, bottom = GymLayout.scrollTailBand),
         ) {
             if (routine == null) {
                 Text(
@@ -500,14 +373,14 @@ fun RoutineScreen(
                 return@Column
             }
 
-            // The routine came off the LIST and carries no history of its own.
-            val head = Program.head(routine, history, nowMs)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            ) {
-                if (head.untested) UntestedChip()
-                Text(head.line, style = GymType.numeral(12), color = skin.inkDim)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(routine.name, style = WindmillFont.display(40), color = skin.ink)
+                val targets = routine.entries.sumOf { it.sets.size }
+                val summary = listOf(Program.movements(routine.entries.size), Readout.setCount(targets)).joinToString(" · ")
+                Text(summary, style = WindmillFont.body(16), color = skin.inkDim)
+                routine.lastTrainedAtMs?.let {
+                    Text("Last trained ${Readout.date(it)}", style = WindmillFont.body(14), color = skin.inkDim)
+                }
             }
 
             routine.pendingProposal?.let { waiting ->
@@ -515,7 +388,7 @@ fun RoutineScreen(
                     onReview = { onReview(waiting) })
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface)) {
                 routine.entries.sortedBy { it.position }.forEach { entry ->
                     EntryRow(entry, store, onOpenMovement)
                 }

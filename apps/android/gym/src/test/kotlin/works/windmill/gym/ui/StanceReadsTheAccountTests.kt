@@ -151,7 +151,7 @@ class StanceReadsTheAccountTests {
 
         compose.runOnIdle { store.withhold(Deletion.Routine(id, "Push Day")) }
 
-        compose.onNodeWithText("No routines yet").assertDoesNotExist()
+        compose.onNodeWithText("No routines yet.").assertDoesNotExist()
         compose.onNodeWithText("Build a routine").assertDoesNotExist()
         compose.onNodeWithText("Push Day").assertDoesNotExist()
         compose.onNodeWithText("New routine").performClick()
@@ -163,8 +163,8 @@ class StanceReadsTheAccountTests {
 
         compose.runOnIdle { runBlocking { store.settleWithheld(id) } }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.allRoutines.map { it.name }) }
-        compose.onNodeWithText("No routines yet").assertIsDisplayed()
-        compose.onNodeWithText("Build a routine").assertIsDisplayed()
+        compose.onNodeWithText("No routines yet.").assertIsDisplayed()
+        compose.onNodeWithText("Start logging").assertIsDisplayed()
         scope.cancel()
     }
 

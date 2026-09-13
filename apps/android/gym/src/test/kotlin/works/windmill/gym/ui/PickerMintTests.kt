@@ -1,13 +1,18 @@
 package works.windmill.gym.ui
 
+import android.graphics.Insets
+import android.view.View
+import android.view.WindowInsets
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -16,8 +21,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import java.io.File
-import org.junit.rules.TemporaryFolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,9 +33,11 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.store.DeviceCopy
@@ -41,21 +49,17 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 
-// Creating a movement stays inside the picker (15-the-routine): the create step is drawn by the
-// picker over itself, so cancelling it hands back the search that opened it rather than a fresh
-// picker. Nothing else on the screen reaches a name the query does not match, so losing the query
-// costs the typing AND the six the picker froze.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class PickerMintTests {
+    private lateinit var contentView: View
+
     @get:Rule
     val compose = createComposeRule()
 
     @get:Rule
     val tmp = TemporaryFolder()
 
-    // Signed out on purpose: the mint lands on this device and never on the wire, which is the path
-    // with no server refusal behind it.
     private val account = Account(
         api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
         user = null,
@@ -71,7 +75,6 @@ class PickerMintTests {
             scope = scope,
             sync = { null },
         )
-        // The six are the whole catalog here, so any other name matches nothing and opens the door.
         runBlocking { store.connect(account) }
         return store
     }
@@ -80,6 +83,7 @@ class PickerMintTests {
         val held = store(scope)
         var draft by mutableStateOf(RoutineDraft(name = "Push"))
         compose.setContent {
+            contentView = LocalView.current
             RoutineBuilder(
                 draft = draft,
                 store = held,
@@ -95,20 +99,33 @@ class PickerMintTests {
         return { draft }
     }
 
-    // The editor draws a name field of its own, so the picker's search is named by its placeholder.
     private fun search() =
-        compose.onAllNodes(hasSetTextAction()).filterToOne(hasText("Search 6 movements"))
+        compose.onAllNodes(hasSetTextAction()).filterToOne(hasText("Search movements"))
 
-    // The create step draws no Cancel of its own: its sheet's drag handle carries the platform's
-    // Dismiss, told from the picker's own handle by the window the step is drawn in.
     private fun dismissTheCreateStep() {
-        val step = compose.onNodeWithText("Your movement").fetchSemanticsNode().root
+        val step = compose.onNode(hasText("Create movement") and !hasClickAction()).fetchSemanticsNode().root
         val handle = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
             .fetchSemanticsNodes().single { it.root === step }
         compose.runOnIdle { handle.config[SemanticsActions.Dismiss].action!!.invoke() }
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Your movement").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodes(hasText("Create movement") and !hasClickAction()).fetchSemanticsNodes().isEmpty()
         }
+    }
+
+    private fun hideSearchIme() {
+        val hidden = WindowInsets.Builder()
+            .setInsets(WindowInsets.Type.ime(), Insets.NONE)
+            .setVisible(WindowInsets.Type.ime(), false).build()
+        compose.runOnIdle {
+            contentView.dispatchApplyWindowInsets(hidden)
+            ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(Stage.RESUMED)
+                .forEach { it.window.decorView.dispatchApplyWindowInsets(hidden) }
+            ShadowDialog.getShownDialogs().filter { it.isShowing }
+                .forEach { it.window!!.decorView.dispatchApplyWindowInsets(hidden) }
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.waitForIdle()
     }
 
     @Test
@@ -118,15 +135,15 @@ class PickerMintTests {
 
         search().performTextReplacement("Zercher")
         compose.waitForIdle()
-        compose.onNodeWithText("Create “Zercher”").performClick()
+        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+        hideSearchIme()
         compose.waitForIdle()
 
-        compose.onNodeWithText("Your movement").assertIsDisplayed()
+        compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
         dismissTheCreateStep()
 
-        // The door is drawn only where the query matches nothing, so its bytes ARE the query.
-        compose.onNodeWithText("Create “Zercher”").assertIsDisplayed()
-        compose.onNodeWithText("Your movement").assertDoesNotExist()
+        compose.onNodeWithText("Create movement").assertIsDisplayed()
+        compose.onNode(hasText("Create movement") and !hasClickAction()).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -137,7 +154,8 @@ class PickerMintTests {
 
         search().performTextReplacement("Zercher Squat")
         compose.waitForIdle()
-        compose.onNodeWithText("Create “Zercher Squat”").performClick()
+        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+        hideSearchIme()
         compose.waitForIdle()
         compose.onNodeWithText("Create and add").performClick()
         compose.waitForIdle()
@@ -150,13 +168,12 @@ class PickerMintTests {
         scope.cancel()
     }
 
-    // The typed search is saved as the pending create step already is: a process reclaimed with the
-    // picker open comes back to the same shortlist rather than to an empty field.
     @Test
     fun testTheTypedSearchSurvivesTheProcessBeingReclaimed() {
         val restorer = StateRestorationTester(compose)
         val catalog = listOf(Exercise(id = "back-squat", name = "Back Squat"))
         restorer.setContent {
+            contentView = LocalView.current
             MovementPicker(
                 catalog = catalog,
                 taken = emptyList(),
@@ -164,26 +181,25 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { _, _ -> },
+                onCreate = { name, equipment, id -> works.windmill.gym.store.GymResult.Ok(works.windmill.gym.domain.Exercise(id, name, equipment = equipment, custom = true)) },
             )
         }
 
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
         compose.waitForIdle()
-        compose.onNodeWithText("Create “Zercher”").assertIsDisplayed()
+        compose.onNodeWithText("Zercher").assertIsDisplayed()
 
         restorer.emulateSavedInstanceStateRestore()
+        hideSearchIme()
 
-        compose.onNodeWithText("Create “Zercher”").assertIsDisplayed()
+        compose.onNodeWithText("Zercher").assertIsDisplayed()
     }
 
-    // And so do the two answers the create step collects. They are held by the PICKER and not by the
-    // sheet drawing them: state written inside a `ModalBottomSheet` does not come back from a
-    // reclaim, so a step that kept its own would return with the name retyped and barbell chosen.
     @Test
     fun testTheCreateStepsAnswersSurviveTheProcessBeingReclaimed() {
         val restorer = StateRestorationTester(compose)
         restorer.setContent {
+            contentView = LocalView.current
             MovementPicker(
                 catalog = listOf(Exercise(id = "back-squat", name = "Back Squat")),
                 taken = emptyList(),
@@ -191,13 +207,14 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { _, _ -> },
+                onCreate = { name, equipment, id -> works.windmill.gym.store.GymResult.Ok(works.windmill.gym.domain.Exercise(id, name, equipment = equipment, custom = true)) },
             )
         }
 
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
         compose.waitForIdle()
-        compose.onNodeWithText("Create “Zercher”").performClick()
+        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+        hideSearchIme()
         compose.waitForIdle()
         compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("Zercher Carry")
         compose.onNodeWithText("Dumbbell").performClick()
@@ -205,8 +222,9 @@ class PickerMintTests {
         compose.onNodeWithText("Dumbbell").assertIsSelected()
 
         restorer.emulateSavedInstanceStateRestore()
+        hideSearchIme()
 
-        compose.onNodeWithText("Your movement").assertIsDisplayed()
+        compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("Zercher Carry").assertIsDisplayed()
         compose.onNodeWithText("Dumbbell").assertIsSelected()
     }

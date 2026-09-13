@@ -260,7 +260,7 @@ class TargetEntryTests {
         assertEquals("max", TargetEntry.repsPlaceholder)
         assertEquals("last time", TargetEntry.weightPlaceholder)
         assertEquals("Every set", TargetEntry.everySet)
-        assertEquals("Set by set", TargetEntry.setBySet)
+        assertEquals("Each set", TargetEntry.setBySet)
         assertEquals("Add set", TargetEntry.addSet)
         assertEquals("Fill", TargetEntry.fill)
         assertEquals("Ramp up", TargetEntry.rampUp)
