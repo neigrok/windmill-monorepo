@@ -9,7 +9,7 @@ These are design artifacts, not a claim that the Android application implements 
 
 ## Screen library
 
-The library contains 91 phone screens and states in eight named sections. Routines, Log and Coach
+The library contains 90 phone screens and states in eight named sections. Routines, Log and Coach
 are together at the top; Create movement has its own section immediately below.
 
 | Section | States | Coverage |
@@ -20,7 +20,7 @@ are together at the top; Create movement has its own section immediately below.
 | [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-5) | 8 | Empty, movement record, rename, bodyweight, weigh-in correction and removed workout |
 | [Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-6) | 15 | Conversation, read receipt, history, notes, sign-in door, review, apply and turn down |
 | [Account](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-7) | 6 | Settings, account sheet, sign-in, email code and connected log |
-| [Log sets](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-8) | 16 | Planned and free sessions, Daylight, numeric entry, session assembly, refusal, offline queue and notification specimens |
+| [Log sets](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-8) | 15 | Planned and free sessions, Daylight, numeric entry, session assembly, refusal, offline queue and notification specimens |
 | [Review and finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=686-9) | 15 | Complete and partial receipts, matching records, set correction/removal, sharing and save as routine |
 
 Seven prototype starts open Routines, Log, Coach, Create movement, Start workout, Quick logging
@@ -43,12 +43,14 @@ contracts and ten computed text-scale specimens are retained on the three Androi
   for instrument facts. These remain design stand-ins: Android currently uses system sans and mono.
 - Shared components bind to Gym · Colour. Instrument uses the existing mint accent. Daylight
   specimens use the existing mode; the open Daylight accent issue remains `consistency.md` F44.
-- Press and set-confirmation feedback are brief. Native sheet and back transitions carry spatial
-  movement. Reduced motion removes translation and scale while preserving the state change.
+- Press feedback and the visual saved state are brief. Saving a set uses no sound or vibration;
+  Settings has no Sound or Haptic set-confirmation controls. Ordinary Android gesture feedback
+  remains system-owned. Native sheet and back transitions carry spatial movement. Reduced motion
+  removes translation and scale while preserving the state change.
 
 ## Fixture
 
-The reference date is 13 September 2026. Push A contains these working sets:
+The reference date is 13 September 2026. Push A contains these sets:
 
 | Movement | Sets | Reps | Load | Volume |
 |---|---:|---:|---:|---:|
@@ -56,7 +58,7 @@ The reference date is 13 September 2026. Push A contains these working sets:
 | Overhead Press | 3 | 8 | 30 kg | 720 kg |
 | Cable Fly | 3 | 12 | 15 kg | 540 kg |
 
-The complete example is nine working sets, 2,700 kg and 48 minutes. Previous Bench Press is
+The complete example is nine sets, 2,700 kg and 48 minutes. Previous Bench Press is
 three sets of eight at 57.5 kg. Epley estimates are 76 kg and 72.8 kg respectively.
 Finishing after one, two or three bench sets means 480, 960 or 1,440 kg; the complete receipt
 must never be the result of ending those partial states.
@@ -88,6 +90,9 @@ example contains four sets of eight at 60, 60, 57.5 and 55 kg: 1,860 kg in total
   limits, review gating and account failures without duplicating every rule as a phone frame.
 - Log keeps manual bodyweight entry and correction, movement aliases and exact performed sets.
   Set removal retains stored set numbers. Bodyweight charts do not interpolate gaps over seven days.
+- Set entry and correction have no Kind selector or classification control. Reconcile stored set
+  classification, metrics and cross-surface contracts during implementation; this Figma change
+  does not migrate data or change runtime behavior.
 - Receipts open matching complete, partial or free-session records. Public sharing discloses its
   contents and 30-day expiry before Get a link; the prototype does not mint a link.
 - Android routine writes currently omit the expected revision. A stale-edit 409 guard is an
@@ -115,9 +120,11 @@ implementation verification. The design does not promise promotion or locked-dev
 ## Structure observations
 
 The current design separates shared controls, composed screens and specifications. Logger and
-receipt states share masters. Performed-set rows, support rows, fields, target fields, switches,
+receipt states share masters. Performed-set rows, support rows, fields, target fields,
 create-movement forms and native chrome use instances. Changes to a control should land in its
 master before screen-specific overrides. Captions travel with their screens inside named sections.
+The unused confirmation switch component and Kind menu are removed with their controls and routes.
+Removing a setting includes the components that have no remaining instances.
 
 The existing faint text token measures 3.77:1 on the Instrument surface, so readable small metadata
 uses ink-dim instead. The primary action's token pairs measure 9.46:1 in Instrument and 8.89:1 in
@@ -128,10 +135,11 @@ Daylight. These are token calculations, not device-rendering measurements.
 Coverage was compared with every source-board family and the current Android contracts before
 source removal. A cross-page audit found no external instance or prototype references into the
 source boards; the replacement library and retained specifications also had no such dependencies.
-The final Figma audit found 91 phones, no placeholders, no component masters on the screen page,
-and no section overflow or direct-child overlap. All 472 inspected prototype destinations resolve:
-196 navigation destinations on Screens and 276 component-state destinations on Components. All
-205 visible click targets carrying prototype reactions meet the 48 dp minimum.
+The Figma audit found 90 phones and no placeholders. Screens has no component masters, section
+overflow or direct-child overlap. All 442 inspected node destinations on Screens resolve, with no
+navigation to another page or references to retired nodes. All 201 visible click targets carrying
+prototype reactions meet the 48 dp minimum. Components has 28 resolving destinations. Specification
+links are supporting references, not part of the phone-flow audit.
 
 Screenshots, font families, fixture arithmetic, relevant scroll containers, action bounds and
 prototype destinations were checked through Figma MCP. Partial receipts contain only their
@@ -144,11 +152,11 @@ layouts or Android device results. Android 14 supports
 one scale factor does not reproduce the platform. Native implementation must also verify
 [48 × 48 dp touch targets](https://developer.android.com/guide/topics/ui/accessibility/apps).
 
-The prototype demonstrates representative navigation, press feedback, switches and logging states.
+The prototype demonstrates representative navigation, press feedback and logging states.
 Arbitrary text/numeric entry, chart scrubbing, actual saves, public-link creation and Coach replies
 to partial workouts are specified rather than simulated. Native font scaling,
-TalkBack, keyboard entry, predictive back, haptics, notification behavior and queue persistence
-need Android implementation tests; a Figma specimen does not establish those behaviors.
+TalkBack, keyboard entry, predictive back, ordinary gesture feedback, notification behavior and
+queue persistence need Android implementation tests; a Figma specimen does not establish those behaviors.
 The embedded browser requires a separate Figma sign-in, so browser playback was not verified.
 Application implementation and device verification are tracked by dogfood node
 `android-gym-implement-refined-flows`.

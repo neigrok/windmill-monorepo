@@ -2177,10 +2177,11 @@ existing web planning/review charter. Tracking node: `gym-web-ux-review-2026-09-
 
 ### Set kind · product direction
 
-The proposed gym web screens omit set Kind at the user's direction. Removing Kind from the app
-and reconciling set classification in the domain, metrics and cross-surface specifications remain
-implementation work; the Figma revision does not change those behaviors. Past-workout design
-refinement is tracked by `gym-past-workout-figma-refinement`.
+The proposed gym web and Android screens omit set Kind at the user's direction. Set entry and
+correction have no classification selector. Removing Kind from the apps and reconciling stored
+classification in the domain, metrics and cross-surface specifications remain implementation work;
+the Figma revisions do not change those behaviors. Past-workout design refinement is tracked by
+`gym-past-workout-figma-refinement`; Android implementation by `android-gym-implement-refined-flows`.
 
 ### Planned targets and actual sets
 
@@ -2298,10 +2299,13 @@ uses a scoped Android metric with a 48 dp minimum. Apply it during
 implementation and verify bounds, font scaling and system insets on device.
 
 **F47 · Android's refined flows are a design proposal** → implementation follow-up.
-The 91 states, shared components, compact logger, browse flows and Live Update proposal are described
+The 90 states, shared components, compact logger, browse flows and Live Update proposal are described
 in `gym/android-refactor.md`; behavior contracts live on Android · Specifications. Figma validation
 does not establish app behavior. Android routine writes omit the expected revision, so a stale-edit
 409 guard remains an implementation gap. The visible routine More/Duplicate actions and email-code
-resend countdown are proposals. Native input, font scaling, TalkBack, gestures, haptics, notification
-behavior and queue persistence need device verification. Daylight uses existing tokens and still
-carries F44. The implementation dogfood node is `android-gym-implement-refined-flows`.
+resend countdown are proposals. The Android design omits set Kind and Sound/Haptic set-confirmation
+settings. Saving a set has a visual saved state with no sound or vibration; ordinary Android gesture
+feedback remains system-owned. Removing those runtime controls and effects, and reconciling stored
+set classification, remain implementation work. Native input, font scaling, TalkBack, gestures,
+notification behavior and queue persistence need device verification. Daylight uses existing tokens
+and still carries F44. The implementation dogfood node is `android-gym-implement-refined-flows`.
