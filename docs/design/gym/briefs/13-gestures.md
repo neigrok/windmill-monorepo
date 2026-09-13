@@ -461,8 +461,8 @@ the system's edge strip is never the room's (`LoggerScreen.swift:232`, `:241`;
 **Swiping between tabs.** It would collide with row swipes and with the edge, and neither platform's
 current navigation offers it.
 
-**Scrubbing a chart.** Canon already rules one chart with **no scrub**; a bodyweight point is reached
-by tapping it.
+**Scrubbing a compact chart.** Log-strip cards open Record; they do not scrub. Record supports
+scrubbing and panning under `18-progress.md`. Bodyweight points are reached by tapping them.
 
 **Pull-to-refresh, for now.** It is available on iOS today without converting anything, but it *adds*
 an action rather than removing one — nothing on either surface currently offers a refresh at all — so

@@ -9,7 +9,7 @@ The phone owns the open session because it holds the offline queue. **A Live Act
 that. It is a second window onto the same device's queue, and the whole design turns on keeping it a
 window rather than letting it become a second writer.**
 
-## Read this first, because it sizes the feature
+## Authentication on iOS
 
 > On a locked device, buttons and toggles are inactive, and the system does not perform an action
 > unless the person authenticates.
@@ -99,17 +99,20 @@ leaves a stale face with no button; a set arriving after it would be refused by 
 **Unsynced work is said, never hidden.** A set sitting in the offline queue says so on the card, in
 the room's own words.
 
-## What Android gets, and it is not parity
+## Android Live Update proposal
 
-Android has no Live Activity. The counterpart is an ongoing notification from a foreground service,
-and it is buildable — Google names starting a workout as an appropriate case.
+Android supports promoted ongoing notifications called **Live Updates**. Google's
+[current guidance](https://developer.android.com/develop/ui/views/notifications/live-update)
+includes user-started workouts. Gym's proposed presentation shows the movement, next set and
+count-up rest, with **Log set** as its one action. The status chip may use a positive chronometer.
 
-Three honest caveats, and they are why this is a **separate wave** rather than a parity item:
-the promotion mechanism arrives one SDK level above where this app currently compiles; it needs a
-dependency bump to reach it; and a health-type foreground service at the SDK gym targets asks for a
-**sensor permission to run a stopwatch**, which does not obviously pass this product's own honesty
-bar. The clock and the bar transpose exactly. The Dynamic Island does not exist and nothing should
-imply it does.
+Use a standard notification layout, without custom RemoteViews or a colorized card. Promotion
+depends on platform support, user settings and OEM eligibility; a standard ongoing notification
+is the fallback. Respect dismissal rather than reposting the activity.
+
+The design is a proposal, not a shipped capability. Implementation must verify SDK and dependency
+support, the background execution strategy, authentication for the logging action, and replay
+safety against the same device queue. Android does not have a Dynamic Island.
 
 ## What this costs
 
@@ -123,5 +126,5 @@ is no Live-Activity-specific App Store guideline to satisfy.
   actually re-renders, what a progress view does past the end of its range, a one-point layout margin
   against the truncation threshold, the circular presentation, and **what a tap on an inactive
   locked-screen button actually shows the lifter**. Nothing here has been run on a device.
-- **Whether asking for a sensor permission to run a stopwatch is acceptable on Android.** It is a
-  permission for a thing the feature does not do.
+- **Android background execution and permissions.** Choose an execution strategy appropriate to
+  logging and elapsed time; do not request a sensor permission for a feature that reads no sensor.
