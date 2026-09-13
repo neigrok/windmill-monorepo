@@ -2293,11 +2293,15 @@ canon mismatch for bubble graduation.
 
 **F46 · Android's minimum target is 46 dp; the refined design requires 48 dp** → implementation
 follow-up. `apps/android/gym/src/main/kotlin/works/windmill/gym/ui/GymSkin.kt` declares
-`GymTap.minimum = 46.dp`. The [refined Android design](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-2)
-uses a separate scoped metric so source boards remain intact. Apply the 48 dp minimum during
+`GymTap.minimum = 46.dp`. [Android · Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2)
+uses a scoped Android metric with a 48 dp minimum. Apply it during
 implementation and verify bounds, font scaling and system insets on device.
 
 **F47 · Android's refined flows are a design proposal** → implementation follow-up.
-The shared components, compact logger, browse hierarchy and Live Update proposal are described in
-`gym/android-refactor.md`. Figma validation does not establish app behavior. Daylight uses existing
-tokens and still carries F44. The dogfood node is `android-gym-clean-native-design-system`.
+The 91 states, shared components, compact logger, browse flows and Live Update proposal are described
+in `gym/android-refactor.md`; behavior contracts live on Android · Specifications. Figma validation
+does not establish app behavior. Android routine writes omit the expected revision, so a stale-edit
+409 guard remains an implementation gap. The visible routine More/Duplicate actions and email-code
+resend countdown are proposals. Native input, font scaling, TalkBack, gestures, haptics, notification
+behavior and queue persistence need device verification. Daylight uses existing tokens and still
+carries F44. The implementation dogfood node is `android-gym-implement-refined-flows`.
