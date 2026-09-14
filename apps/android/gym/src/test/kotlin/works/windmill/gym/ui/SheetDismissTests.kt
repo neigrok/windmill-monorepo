@@ -125,7 +125,7 @@ class SheetDismissTests {
         raised(dismissed) {
             RenameSheet(
                 title = "Rename this movement", from = "Bench Press", value = "Bench Pres",
-                proof = emptyList(), refused = null, onValue = {}, onRename = { renamed += "renamed" },
+                keepsAlias = false, refused = null, onValue = {}, onRename = { renamed += "renamed" },
             )
         }
 
@@ -141,7 +141,7 @@ class SheetDismissTests {
         raised(dismissed) {
             RenameSheet(
                 title = "Rename this movement", from = "Bench Press", value = "Bench Press",
-                proof = emptyList(), refused = null, onValue = {}, onRename = {},
+                keepsAlias = false, refused = null, onValue = {}, onRename = {},
             )
         }
         dismissFromTheScrim(dismissed)

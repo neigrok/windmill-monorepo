@@ -915,6 +915,34 @@ TrainingLog PgLogRepository::trainingLog(const UserId& user) {
 }
 
 
+std::vector<ProgressSet> PgLogRepository::progressHistory(const UserId& user) {
+  std::vector<ProgressSet> history;
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    const pqxx::result rows = txn.exec_params(
+        "SELECT s.id AS session_id, "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
+        "       st.exercise_id, st.id AS set_id, st.weight_kg::float8 AS weight_kg, "
+        "       st.reps, st.rpe::float8 AS rpe "
+        "FROM gym_sessions s JOIN gym_sets st ON st.session_id = s.id AND st.user_id = s.user_id "
+        "WHERE s.user_id = $1::uuid AND s.finished_at IS NOT NULL AND st.kind = 'working' "
+        "ORDER BY s.started_at, s.id COLLATE \"C\", st.exercise_id COLLATE \"C\", st.id COLLATE \"C\"",
+        user.str());
+    history.reserve(rows.size());
+    for (const auto& row : rows) {
+      std::optional<double> rpe;
+      if (!row["rpe"].is_null()) rpe = row["rpe"].as<double>();
+      history.push_back(ProgressSet{
+          SessionId{row["session_id"].as<std::string>()}, instantFrom(row["started_ms"]),
+          ExerciseId{row["exercise_id"].as<std::string>()},
+          PerformedFact{SetId{row["set_id"].as<std::string>()}, row["weight_kg"].as<double>(),
+                        row["reps"].as<int>(), rpe}});
+    }
+  }
+  return history;
+}
+
 std::optional<SessionShare> PgLogRepository::insertShare(const SessionShare& incoming,
                                                               std::uint64_t nowMs) {
   // The INSERT selects from the caller's own session row, so a session that is absent or another

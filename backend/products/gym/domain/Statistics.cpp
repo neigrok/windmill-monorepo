@@ -59,4 +59,33 @@ Statistics statistics(const TrainingLog& log) {
   return Statistics{log.weeks, std::move(movements)};
 }
 
+StatsProgress statsProgress(const std::vector<ProgressSet>& history, std::uint64_t asOfMs) {
+  StatsProgress progress{asOfMs, {}};
+  for (const ProgressSet& row : history) {
+    if (progress.sessions.empty() || progress.sessions.back().session != row.session)
+      progress.sessions.push_back(ProgressSession{row.session, row.startedAtMs, {}});
+    ProgressSession& session = progress.sessions.back();
+    if (session.movements.empty() || session.movements.back().exercise != row.exercise)
+      session.movements.push_back(MovementSessionFact{row.exercise, 0, row.performed, std::nullopt});
+    MovementSessionFact& movement = session.movements.back();
+    ++movement.workingSetCount;
+
+    const PerformedFact& set = row.performed;
+    const PerformedFact& heaviest = movement.heaviest;
+    if (set.weightKg > heaviest.weightKg ||
+        (set.weightKg == heaviest.weightKg && set.reps > heaviest.reps) ||
+        (set.weightKg == heaviest.weightKg && set.reps == heaviest.reps &&
+         set.set.str() < heaviest.set.str()))
+      movement.heaviest = set;
+
+    if (set.weightKg <= 0 || set.reps < 1 || set.reps > 10 || (set.rpe && *set.rpe < 7)) continue;
+    const double estimate = set.reps == 1 ? set.weightKg : set.weightKg * (1.0 + set.reps / 30.0);
+    if (!movement.estimate || estimate > movement.estimate->e1rm ||
+        (estimate == movement.estimate->e1rm &&
+         set.set.str() < movement.estimate->performed.set.str()))
+      movement.estimate = EstimatedFact{set, estimate};
+  }
+  return progress;
+}
+
 }

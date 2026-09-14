@@ -1,6 +1,9 @@
 package works.windmill.gym.store
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import works.windmill.platform.net.WindmillApiException
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.Ids
@@ -48,6 +51,7 @@ class ClaimReplay(
     private val mintSet: () -> String = Ids::set,
     private val isCurrent: () -> Boolean = { true },
     private val onChange: (Change) -> Unit = {},
+    private val bodyweightWrite: Mutex = Mutex(),
 ) {
     sealed interface Change {
         data class SessionMoved(val oldId: String, val session: Session) : Change
@@ -444,30 +448,41 @@ class ClaimReplay(
     // that. A 400 is the one answer that cannot change: said, and the row let go. A delete has no
     // terminal refusal, so anything but a 204 waits for another pass.
     private suspend fun claimBodyweight(said: MutableList<RefusedWrite>): Boolean {
-        for (owed in bodyweight.owed) {
+        for (date in bodyweight.owed.map { it.dateLocal }) bodyweightWrite.withLock {
+            if (!isCurrent()) throw SeatChanged()
+            val owed = bodyweight.owed.firstOrNull { it.dateLocal == date } ?: return@withLock
+            val revision = bodyweight.revision(date)
             try {
-                bodyweight.landed(exchange { log.putBodyweight(owed.dateLocal, WeighInWrite(owed.weightKg, owed.recordedAt)) })
+                val stored = exchange { log.putBodyweight(date, WeighInWrite(owed.weightKg, owed.recordedAt)) }
+                if (stored.dateLocal != date) throw WindmillApiException.Malformed
+                if (bodyweight.revision(date) == revision) bodyweight.landed(stored)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                if (!isCurrent()) throw SeatChanged()
                 val facts = RefusalFacts(refusing)
                 if (Verdict.refusing(facts) is Verdict.Retry) return false
-                said += RefusedClaim(owed.dateLocal, "weigh-in · ${Bodyweight.shortDay(owed.date)}",
+                if (bodyweight.revision(date) != revision) return@withLock
+                said += RefusedClaim(date, "weigh-in · ${Bodyweight.shortDay(owed.date)}",
                     facts.sentence ?: "the log refused this weigh-in")
-                bodyweight.letGo(owed.dateLocal)
+                bodyweight.letGo(date)
             }
         }
-        for (gone in bodyweight.deletions) {
+        for (date in bodyweight.deletions) bodyweightWrite.withLock {
+            if (!isCurrent()) throw SeatChanged()
+            if (date !in bodyweight.deletions) return@withLock
+            val revision = bodyweight.revision(date)
             try {
-                exchange { log.deleteBodyweight(gone) }
-                bodyweight.deletionLanded(gone)
+                exchange { log.deleteBodyweight(date) }
+                if (bodyweight.revision(date) == revision) bodyweight.deletionLanded(date)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                if (!isCurrent()) throw SeatChanged()
                 return false
             }
         }
-        return true
+        return bodyweight.owed.isEmpty() && bodyweight.deletions.isEmpty()
     }
 
     // A routine still on the shelf is one the account does not have, so a start may not name it.

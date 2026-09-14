@@ -12,6 +12,7 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.McpKey
+import works.windmill.gym.domain.StatsProgress
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.OAuthGrant
@@ -117,6 +118,8 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 
     override suspend fun dismissProposal(id: String): ProposalDecision =
         api.send<ProposalDecision>("POST", "/v1/gym/proposals/$id/dismiss")
+
+    override suspend fun progress(): StatsProgress = api.get("/v1/gym/stats?projection=progress")
 
     override suspend fun record(exerciseId: String): MovementRecord? = try {
         api.get<MovementRecord>("/v1/gym/exercises/$exerciseId/record")

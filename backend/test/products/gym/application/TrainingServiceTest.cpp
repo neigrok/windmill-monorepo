@@ -1281,6 +1281,66 @@ TEST(statistics_never_reaches_another_accounts_log) {
   CHECK_EQ(answer.weeks.size(), static_cast<std::size_t>(0));
 }
 
+TEST(progress_settles_stale_work_and_reads_only_finished_working_sessions_for_the_owner) {
+  Harness h;
+  const std::uint64_t began = h.clock.now - 6 * 3'600'000;
+  h.startAt(began, "ses_00000001");
+  REQUIRE(h.training.append(uid(), sid("ses_00000001"),
+      SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, -10, 8,
+               SetKind::working, std::nullopt, "", began + 60'000}).set);
+  h.repo.db.sessions.push_back(Session{sid("ses_00000002"), uid(), began - 1'000, began});
+  h.repo.db.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"),
+      ExerciseId{"bench-press"}, 1, 100, 8, SetKind::warmup, std::nullopt, "", began});
+  h.repo.db.sessions.push_back(Session{sid("ses_00000003"), uid(), began - 2'000, began});
+  h.repo.db.sessions.push_back(Session{sid("ses_00000004"), uid("other"), began, began + 60'000});
+  h.repo.db.sets.push_back(Set{setId("set_00000004"), sid("ses_00000004"),
+      ExerciseId{"bench-press"}, 1, 200, 8, SetKind::working, 8, "", began + 60'000});
+
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {
+      {sid("ses_00000001"), began, {{ExerciseId{"bench-press"}, 1,
+          {setId("set_00000001"), -10, 8, std::nullopt}, std::nullopt}}}}}));
+  CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{began + 60'000});
+  CHECK_EQ(h.training.progress(uid("empty")), (StatsProgress{h.clock.now, {}}));
+}
+
+TEST(progress_reads_corrections_and_deletions_without_cached_or_legacy_estimates) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - 604'800'000, 100, 1, 1);
+  const std::uint64_t startedAtMs = h.clock.now - 604'800'000;
+  const SessionId session = sid("ses_00000001");
+  const SetId set = setId("set_000000011");
+  const ExerciseId exercise{"back-squat"};
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {
+      {session, startedAtMs, {{exercise, 1, {set, 100, 1, std::nullopt},
+          EstimatedFact{{set, 100, 1, std::nullopt}, 100}}}}}}));
+
+  REQUIRE(h.training.fixSet(uid(), session, set, SetFix{90, 10, std::nullopt, std::nullopt, true, 7}));
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {
+      {session, startedAtMs, {{exercise, 1, {set, 90, 10, 7},
+          EstimatedFact{{set, 90, 10, 7}, 120}}}}}}));
+
+  REQUIRE(h.training.fixSet(uid(), session, set, SetFix{std::nullopt, std::nullopt,
+      std::nullopt, std::nullopt, true, 6.5}));
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {
+      {session, startedAtMs, {{exercise, 1, {set, 90, 10, 6.5}, std::nullopt}}}}}));
+
+  h.training.deleteSet(uid(), session, set);
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {}}));
+}
+
+TEST(progress_omits_a_current_workout_until_finish) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  REQUIRE(h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 90, h.clock.now)).set);
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {}}));
+
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1'000);
+  CHECK_EQ(h.training.progress(uid()), (StatsProgress{h.clock.now, {
+      {sid("ses_00000001"), h.clock.now, {{ExerciseId{"bench-press"}, 1,
+          {setId("set_00000001"), 90, 8, std::nullopt},
+          EstimatedFact{{setId("set_00000001"), 90, 8, std::nullopt}, 114}}}}}}));
+}
+
 TEST(share_is_idempotent_on_the_session) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);

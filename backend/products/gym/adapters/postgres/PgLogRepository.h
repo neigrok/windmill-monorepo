@@ -42,6 +42,7 @@ public:
   bool deleteSession(const UserId& user, const SessionId& id) override;
   MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override;
   TrainingLog trainingLog(const UserId& user) override;
+  std::vector<ProgressSet> progressHistory(const UserId& user) override;
   std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                           std::uint64_t nowMs) override;
   bool revokeShare(const UserId& user, const SessionId& id) override;

@@ -737,6 +737,18 @@ public:
     return log;
   }
 
+  std::vector<ProgressSet> progressHistory(const UserId& user) override {
+    std::vector<ProgressSet> history;
+    for (const auto& [session, set] : workingSetsOfFinished(user))
+      history.push_back(ProgressSet{session.id, session.startedAtMs, set.exercise,
+                                   PerformedFact{set.id, set.weightKg, set.reps, set.rpe}});
+    std::sort(history.begin(), history.end(), [](const ProgressSet& a, const ProgressSet& b) {
+      return std::tuple(a.startedAtMs, a.session.str(), a.exercise.str(), a.performed.set.str()) <
+             std::tuple(b.startedAtMs, b.session.str(), b.exercise.str(), b.performed.set.str());
+    });
+    return history;
+  }
+
   // The INSERT..SELECT off the caller's own session row; the conflict is on the SESSION, so a live share replays.
   std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                           std::uint64_t nowMs) override {

@@ -210,6 +210,7 @@ Json::Value toJson(const std::vector<Bodyweight>& entries);   // the array; the 
 Json::Value toJson(const Review& review);
 // The share omits the ids and the frozen plan: a reader who is not the owner gets neither.
 Json::Value toJson(const Statistics& statistics);
+Json::Value toJson(const StatsProgress& progress);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
 Json::Value toJson(const ReadTally& tally);

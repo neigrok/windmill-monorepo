@@ -484,8 +484,8 @@ class TrainingStoreTests {
         assertEquals(0, record.routineCount)
         assertEquals(82.5, record.heaviest?.weightKg)
         assertEquals(ended.startedAtMs, record.heaviest?.atMs)
-        assertNull("no estimate is computed on this phone", record.heaviest?.e1rm)
-        assertNull("and no best e1RM either, so the page draws no chart", record.bestE1rm)
+        assertNull("legacy movement metadata leaves estimates to the complete projection", record.heaviest?.e1rm)
+        assertNull("the shared progress projection owns the best estimate", record.bestE1rm)
         assertEquals(emptyList<Any>(), record.e1rmSeries)
         assertEquals(emptyList<Any>(), record.records)
         assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
@@ -495,7 +495,7 @@ class TrainingStoreTests {
         val review = store.review(ended.id)
         assertEquals(4, review?.stats?.workingSets)
         assertEquals(false, review?.slight)
-        assertNull("no estimate is computed on this phone", review?.stats?.topE1rm)
+        assertNull("local review does not replace the progress projection", review?.stats?.topE1rm)
 
         val detail = (store.sessionDetail(ended.id) as GymResult.Ok).value
         assertEquals(5, detail.sets.size)
@@ -522,7 +522,7 @@ class TrainingStoreTests {
         assertEquals("Bench Press", record.exercise.name)
         assertEquals("the history is whole — the id never moved", 1, record.sessionCount)
 
-        assertEquals("a movement needs a name",
+        assertEquals("Name it to save it.",
             ((store.rename(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)
         assertEquals("renaming a catalog movement needs your account — sign in first",
             ((store.rename("back-squat", "Squat") as GymResult.Failed).why as WriteFailure.Refused).said)

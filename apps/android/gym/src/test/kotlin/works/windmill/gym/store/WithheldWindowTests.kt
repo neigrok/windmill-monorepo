@@ -489,6 +489,7 @@ class WithheldWindowTests {
     // gone off the log nine seconds later.
     @Test
     fun testAWeighInForAHeldDayTakesThatWindowBackInsteadOfQueueingBehindIt() = runTest {
+        clockMs = java.time.LocalDate.of(2026, 8, 31).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         val server = FakeTraining()
         val store = seated(server)
         val day = "2026-08-31"

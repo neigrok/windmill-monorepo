@@ -19,8 +19,8 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 0 | Baseline build, runtime setup, design-to-code inventory and coverage map | Identify existing shared controls and state ownership | Verified |
 | 1 | Shared visual foundations, Instrument/Daylight palette propagation, 48 dp targets, Routines/Log/Coach navigation, Settings, removal of Kind controls and set-confirmation sound/vibration | Consolidate native chrome, typography, action and settings patterns; include account-sheet palette and system-bar contrast | Verified |
 | 2 | Routines: list/detail/create/edit, targets/fill, duplicate/delete/Undo, stale-edit protection; Create movement from planning and quick logging | Share movement creation and target-entry behavior; preserve the draft and originally read revision on refusal | Verified |
-| 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified; publication pending |
-| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Backend reviewed; Android pending |
+| 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified |
+| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified locally; publication gate pending |
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Pending |
 | 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Pending |
 | 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Pending |
@@ -397,7 +397,9 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
   and `windmill-android-wave3-live-wire.log` under `/private/tmp`; exact result archive is
   `wave3-native-back-full-tests.zip` in the runtime directory. Final preview5 installed cold in781ms,
   SHA-256 `f1f922d666a1d2b4d7c7ca093baed716d4e36a7157839afbdca525f371b9a302`.
-  Publication stages Android/design/worklog only; W4 backend stays outside this commit.
+  Published in `c8becf80beb02699407db6bdf7d18a29040d84d2`;
+  [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/34789872333) succeeded for
+  that exact commit. W4 backend changes remain outside the W3 commit.
 
 ### Wave 3 state coverage
 
@@ -443,22 +445,104 @@ native Delete/Undo verifying exact saved rows. Native enabled Coach generation i
 the disabled local configuration; W3 handoff/deduplication is covered by integrated FinishSheet tests,
 and W5 owns enabled conversation acceptance. The final Fix native Back/Cancel/scrim/drag and IME-first checks pass on API34.
 
-### Wave 4 — progress backend preparation
+### Wave 4 — Log, records and bodyweight
 
-- A separate developer owns only the additive Gym statistics projection and mirrored backend
-  tests. The contract is `/v1/gym/stats?projection=progress` from the delivery handoff; existing
-  responses stay compatible. This work uses a separate build directory and leaves the active
-  Wave 3 verification server untouched. Android consumers and the full W4 gate remain pending.
-- The backend implementation passes 282/282 focused checks, including 61 real Postgres cases and
-  18 new progress cases, with zero skips. Independent production/test review found no actionable
-  defect; it remains frozen until Android integration. A synthetic
-  7,020-set history reduces to 780 facts / 180,865 JSON bytes. No production latency is claimed;
-  the running native backend still uses the earlier binary until the W4 integrated gate.
-- W3 publication will include only its Android and design/worklog changes. W4 backend edits stay
-  uncommitted until the complete W4 implementation, review and integrated acceptance are ready.
+- Android implementation has three disjoint owners: the complete progress transport/store and
+  Log/Record integration; the shared dated-plot domain/renderer; and bodyweight presentation,
+  correction and persistence. The main Android developer coordinates the single Gradle lease.
+  Root owns docs, runtime verification, independent review and publication.
+- The chart API separates passive Log previews, Record pan/held scrub and Bodyweight point
+  selection. Callers own the factual series, qualification, explicit date range and standing-best
+  identity. Geometry preserves real dates, including equal-time sessions, with separate21/7-day
+  gap rules. The written Progress brief now matches Android's approved heading,90dp preview,
+  above-plot readout, release-to-latest behavior, Daylight palette and complete data contract.
+- The additive `/v1/gym/stats?projection=progress` backend implementation passes282/282 focused
+  checks, including61 real Postgres cases and18 new progress cases, with zero skips. Independent
+  production/test review found no actionable defect. A synthetic7,020-set history reduces to
+  780 facts /180,865 JSON bytes; no production latency is claimed.
+- Built the W4 production server and replaced only the isolated8089 runtime, preserving its local
+  environment/database. Native fixtures use a new synthetic account:57 finished-working sessions,
+  17 movements, a31-session recent Bench series plus a180-day standing peak, three-session sparse
+  and four-session qualifying movements, assisted/zero and high-rep no-estimate records, and nine
+  weigh-ins. The real API returns all57 progress identities while the first Log page holds50;
+  latest Bench estimate95 and lifetime best121 are independently checked. Fixture scripts and
+  exact JSON snapshots live under `/private/tmp/windmill-android-runtime/w4-*`.
+- Bodyweight passes35 focused tests, including both themes at200% text, raw draft restoration,
+  read/refusal states and newer canonical precedence. The shared chart passes12 focused cases
+  plus2 affected accessibility/momentum regressions. The686-case boundary suite passes without
+  skips. Independent re-review clears catalog rename/upsert ordering, direct/queued bodyweight
+  serialization, owner-safe pagination, malformed responses and restored-date/current-picker bounds.
+- Refactoring moves Log grouping into pure `LogReadout`, shared record facts into `Progress`, and
+  both charts onto one dated renderer. It removes obsolete proof/bars and redundant calculations.
+  Preview2's full build passed1,089 executed tests per variant, zero failures; fresh enabled
+  LiveWire passed12/12. A subsequent native finding requires a narrow final layout/build gate.
+- Native API34 verifies sparse3 versus qualifying chart data,31 recent/32 lifetime Bench points,
+  actual held scrub and immediate release-to-latest, time-scaled pan and the old121kg standing best.
+  Rename61-character refusal survives process replacement at320dp/200%; confirmed Bench Native
+  keeps `bench-press` identity and Bench Press alias. Log Back preserves strip position.
+- Bodyweight native checks cover90-day6/All9 counts, Instrument/Daylight200%, actual decimal IME,
+  range refusal401, process replacement and IME-first Back. Comma82,45 saves82.45 on the original
+  date; Delete/Undo restores the entire nine-entry JSON including timestamps. An offline82.5
+  correction survives process replacement and reaches the backend once after reconnecting.
+- Pagination failure preserves the loaded rows; Retry reaches the actual first-session footer.
+  A separate empty account verifies No sessions yet, native past-date selection with future days
+  disabled, and no false empty Bodyweight while its last entry is held for Undo. Settled deletion
+  returns a genuine empty server read. Evidence is in the runtime directory under `w4-*`.
+- The final snackbar host participates in measured bottom-bar layout so screen-owned actions
+  remain above Undo. Twelve focused checks pass, including320dp/200% in both themes, opening
+  Weigh in with two independent windows, and unchanged logger rack bounds. Native preview3
+  measures the complete56dp Weigh in above48dp Undo; Undo in2.84s restores exact workout identity,
+  classification, timestamps and sets after the original9-second window. One synthetic old-peak workout was deleted after the
+  test driver missed its Undo window; current fixture progress has56 sessions and is not reseeded.
+- Final source `./gradlew build` passes in79s:298 tasks/69 executed. Gym1,048 cases per variant
+  have1,036 passes and12 gated LiveWire skips; platform55 passes, giving1,091 executed per variant
+  and zero failures/errors. Enabled LiveWire12/12 passed before the final UI-only snackbar move;
+  transport/domain/store are unchanged. Final APK `wave4-preview3.apk` uses local8089 and has
+  SHA-256 `f243cdfc7f9af0c447a1f35a5a4ad99161f013a971da3c9b35d5a5211002261d`.
+  Independent review and final native acceptance are clear; the API34 crash buffer is empty.
+- W4 publication is the remaining wave gate.
+  Publication must also pass Backend CI/CD and its automatic Deploy to VPS run: the existing
+  workflow pins both checkout and container image to the triggering commit. The release APK uses
+  windmill.works and therefore depends on successful backend deployment, not only Android CI.
+
+### Wave 4 state coverage
+
+All eight assigned states have implementation and verification evidence. The Log root is covered
+by `w4-log-instrument` and the final `w4-preview3-workout-restored`; screen captures below are
+PNG/XML pairs in the runtime directory. Error/race scenarios also use the exact tests listed above.
+
+| Figma state | Scenario | Evidence |
+|---|---|---|
+| `656:6694` | Movement record | `w4-record-bench-recent`, `w4-bench-held`, `w4-bench-scrubbed`, `w4-bench-released`, `w4-bench-all-oldest`, `w4-record-sparse` |
+| `678:11447` | Rename | `w4-rename-overlimit-200-ime`, `w4-rename-process-200` |
+| `678:11551` | Confirmed rename | `w4-renamed-record-200`, `w4-renamed-log-200`, `w4-renamed-movement.json` |
+| `669:8306` | Bodyweight | `w4-bodyweight-200`, `w4-bodyweight-all-daylight` |
+| `669:8329` | New weigh-in | `w4-new-weigh-in`, `w4-native-date-picker`, `w4-new-weight-chosen-date`, `w4-empty-seat-weight-saved` |
+| `672:2984` | Correction | `w4-weight-401-result`, `w4-weight-process-daylight-200-ime`, `w4-weight-ime-back-retained`, `w4-weight-corrected.json`, `w4-weight-undo-restored.json` |
+| `669:8352` | Empty Log | `w4-log-empty` |
+| `671:9521` | Workout removed | `w4-preview3-workout-removed`, `w4-preview3-workout-restored`, `w4-preview3-workout-undo.json` |
+
+Native offline correction/replay, pagination failure/retry/end and held-versus-settled last entry
+are verified separately. Controlled transport refusal, account races, midnight rollover and
+accessibility actions use unit/Compose tests; no physical haptic output is claimed.
 
 ### Wave 5 — integration preparation
 
+- A separate backend implementation is assigned to `codex/android-w5-coach-evidence` in
+  `/private/tmp/windmill-android-wave5-backend`, based on published W3. It must leave the W4
+  worktree/runtime/database untouched and remain uncommitted until independent review and
+  integration after W4 publication. The new checkout was created from `c8becf80`; W4 remains
+  untouched. The typed receipt contract is pinned in the delivery handoff, including actual
+  opening/failed tool steps, successful scoped observations and immutable per-answer persistence.
+  Backend implementation is frozen and independently reviewed:169/169 focused cases pass with
+  zero skips, including eight real Postgres cases; production server builds and idempotent schema
+  application pass. Integration waits for W4 publication. A deterministic local model-boundary
+  harness is being prepared outside the repo for native acceptance; no vendor/email run is claimed.
+- Notes implementation is assigned separately in `/private/tmp/windmill-android-wave5-notes`.
+  It owns only Notes list/editor, pure limits and mirrored tests; main retains TrainingStore and
+  GymRoom integration. Current callbacks are pinned, with raw drafts/stable IDs, exact Unicode/
+  UTF-8 limits, accessible reorder and independent Undo. Consent's durable manifest schema is
+  still being pinned before implementation.
 - Read-only preparation identified two required data boundaries: Coach currently discards read
   facts before storing answer history, and normal anonymous workout/bodyweight data is adopted
   automatically during account connection. The existing “These are mine” row covers legacy
@@ -470,6 +554,17 @@ and W5 owns enabled conversation acceptance. The final Fix native Back/Cancel/sc
 - Capture Coach evidence at successful tool responses, preserving summary/full-session/movement
   scope and the historical facts the answer actually saw. Store it atomically with the answer;
   old answers have absent evidence. No new endpoint, schema or consent implementation is claimed.
+
+### Wave 6 — native capability preparation
+
+- Rechecked the current official [Live Updates guidance](https://developer.android.com/develop/ui/views/notifications/live-update):
+  user-started workouts are an eligible activity example. Promotion requires an ongoing native
+  notification and remains subject to system/user controls; dismissed updates must stay dismissed.
+  This supports the handoff's conditional promotion and ordinary-notification fallback.
+- [AndroidX Core](https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder)
+  provides the promotion request and short chip text from1.17.0. W6 must verify the actual runtime
+  capability and keep native chronometer/rest behavior independent of promotion. No notification
+  implementation or promoted-device acceptance is claimed yet.
 
 ## Structure observations
 
@@ -484,9 +579,9 @@ and W5 owns enabled conversation acceptance. The final Fix native Back/Cancel/sc
   movement progress and range selection. Existing `/v1/gym/stats` loses set identity/RPE and uses
   different estimate rules, so W4 adds an opt-in progress projection while preserving existing
   web/iOS/MCP responses. Android's Log, strip and record must consume that same complete projection.
-- Wave 4 must reconcile `docs/design/gym/briefs/18-progress.md` with the current approved Figma contract:
-  chart release returns to the latest point, the heading is “Estimated strength”, and Daylight
-  uses the verified palette. The handoff records these differences before implementation.
+- The Progress brief and Android handoff now agree on “Estimated strength”, an above-plot readout
+  that returns to the latest point on release, and the verified Daylight palette. The complete
+  projection makes local-week counts independent of pagination and prevents a partial All range.
 
 ## Completion audit
 

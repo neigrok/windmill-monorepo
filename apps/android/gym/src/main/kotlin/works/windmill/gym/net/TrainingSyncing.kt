@@ -9,6 +9,7 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.McpKey
+import works.windmill.gym.domain.StatsProgress
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.OAuthGrant
@@ -83,6 +84,8 @@ interface TrainingSyncing {
     suspend fun applyProposal(id: String): ProposalDecision
 
     suspend fun dismissProposal(id: String): ProposalDecision
+
+    suspend fun progress(): StatsProgress
 
     suspend fun record(exerciseId: String): MovementRecord?
 

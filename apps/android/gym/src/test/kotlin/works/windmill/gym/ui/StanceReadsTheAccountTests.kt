@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import java.io.File
 import java.io.IOException
@@ -95,7 +96,7 @@ class StanceReadsTheAccountTests {
         store.finish()
     }
 
-    // The log's own two silences. `No sessions yet.` is the never-trained stance and `opening the
+    // The log's own two silences. `No sessions yet` is the never-trained stance and `opening the
     // log…` is the read still in flight; a window holding the only row is neither, and the account
     // still has the workout the head would otherwise be counting.
     @Test
@@ -109,12 +110,12 @@ class StanceReadsTheAccountTests {
             LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {})
         }
-        compose.onNodeWithText("No sessions yet.").assertDoesNotExist()
+        compose.onNodeWithText("No sessions yet").assertDoesNotExist()
 
         compose.runOnIdle { store.withhold(Deletion.Session("ses_1")) }
 
-        compose.onNodeWithText("No sessions yet.").assertDoesNotExist()
-        compose.onNodeWithText("The first one you log lands here, newest first.").assertDoesNotExist()
+        compose.onNodeWithText("No sessions yet").assertDoesNotExist()
+        compose.onNodeWithText("Your training will land here.").assertDoesNotExist()
         compose.onNodeWithText("opening the log…").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals("the row is off the screen", emptyList<String>(), store.recent.map { it.id })
@@ -126,7 +127,7 @@ class StanceReadsTheAccountTests {
         // rather than never being drawn again.
         compose.runOnIdle { runBlocking { store.settleWithheld("ses_1") } }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.allSessions.map { it.id }) }
-        compose.onNodeWithText("No sessions yet.").assertIsDisplayed()
+        compose.onNodeWithText("No sessions yet").assertIsDisplayed()
         scope.cancel()
     }
 
@@ -250,12 +251,12 @@ class StanceReadsTheAccountTests {
             LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {})
         }
-        compose.onNodeWithText("first session · ${Readout.date(oldMs)}").assertIsDisplayed()
+        compose.onNodeWithText("First session · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
 
         compose.runOnIdle { store.withhold(Deletion.Session("ses_old")) }
 
-        compose.onNodeWithText("first session · ${Readout.date(oldMs)}").assertIsDisplayed()
-        compose.onNodeWithText("first session · ${Readout.date(newMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First session · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First session · ${Readout.date(newMs)}").assertDoesNotExist()
 
         // And the settled delete moves it, once, to the day the account actually started on. The
         // re-read is not enough on its own: a row deeper than the page it answers with is folded
@@ -265,8 +266,8 @@ class StanceReadsTheAccountTests {
             assertEquals("the log let go of it and never drew it again",
                 listOf("ses_new"), store.allSessions.map { it.id })
         }
-        compose.onNodeWithText("first session · ${Readout.date(newMs)}").assertIsDisplayed()
-        compose.onNodeWithText("first session · ${Readout.date(oldMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First session · ${Readout.date(newMs)}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First session · ${Readout.date(oldMs)}").assertDoesNotExist()
         scope.cancel()
     }
 

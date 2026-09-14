@@ -5,9 +5,9 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import kotlin.math.ceil
-import kotlin.math.floor
+import java.util.Locale
 import kotlinx.serialization.Serializable
 
 // One row per local calendar date; the date IS the identity, so every write is idempotent by it and
@@ -30,15 +30,6 @@ sealed interface ParsedWeight {
     data class Refused(val said: String) : ParsedWeight
 }
 
-// A dot per measurement; a segment joins two dots only when the gap between them is short enough to
-// be an ordinary week. A longer gap is left empty and named.
-sealed interface ChartRun {
-    data class Segment(val from: WeighIn, val to: WeighIn) : ChartRun
-    data class Gap(val from: WeighIn, val to: WeighIn) : ChartRun {
-        val label: String get() = "no weigh-in · ${Bodyweight.shortDay(from.date)} – ${Bodyweight.shortDay(to.date)}"
-    }
-}
-
 enum class ChartWindow(val label: String) {
     Ninety("90 days"), All("All");
 }
@@ -46,7 +37,7 @@ enum class ChartWindow(val label: String) {
 object Bodyweight {
     const val title = "Bodyweight"
     const val chip = "Weigh in"
-    const val save = "Save"
+    const val save = "Save weight"
     const val unit = "kg"
 
     // The refusals, one at a time, in the order the field is read.
@@ -78,13 +69,14 @@ object Bodyweight {
     // Comma or point, at most one of either, digits on at least one side, and inside the bounds.
     fun parse(typed: String): ParsedWeight {
         val raw = typed.trim()
-        if (raw.isEmpty() || raw.none { it.isDigit() }) return ParsedWeight.Refused(notANumber)
+        if (raw.isEmpty() || raw.none { it in '0'..'9' } || raw.any { it !in '0'..'9' && it != '.' && it != ',' }) {
+            return ParsedWeight.Refused(notANumber)
+        }
         if (raw.count { it == '.' || it == ',' } > 1) return ParsedWeight.Refused(onePoint)
         val normalised = raw.replace(',', '.')
-        if (!normalised.all { it.isDigit() || it == '.' }) return ParsedWeight.Refused(notANumber)
         val value = normalised.toBigDecimalOrNull() ?: return ParsedWeight.Refused(notANumber)
+        if (value < BigDecimal.valueOf(minKg) || value > BigDecimal.valueOf(maxKg)) return ParsedWeight.Refused(outOfRange)
         val rounded = value.setScale(2, RoundingMode.HALF_UP).toDouble()
-        if (rounded < minKg || rounded > maxKg) return ParsedWeight.Refused(outOfRange)
         return ParsedWeight.Ok(rounded)
     }
 
@@ -96,9 +88,6 @@ object Bodyweight {
     // Two decimals stored; trailing zeros are not drawn: 82.40 reads 82.4, 82.00 reads 82.
     fun kilograms(weightKg: Double): String =
         BigDecimal.valueOf(weightKg).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
-
-    // The y-axis names its unit: `85.5 kg`.
-    fun axisLabel(weightKg: Double): String = "${kilograms(weightKg)} $unit"
 
     // `82.4 kg · 3 days ago`. A calendar claim: both ends are local dates.
     fun reading(latest: WeighIn?, nowMs: Long): String? {
@@ -115,16 +104,11 @@ object Bodyweight {
 
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-
     fun shortDay(date: LocalDate): String = "${date.dayOfMonth} ${months[date.monthValue - 1]}"
 
-    // `Tue 26 Aug`, or `Today · Tue 26 Aug` when it is.
-    fun dayLine(date: LocalDate, today: LocalDate): String {
-        val day = "${weekdays[date.dayOfWeek.value % 7]} ${shortDay(date)}"
-        if (date == today) return "Today · $day"
-        return day
-    }
+    fun listDay(date: LocalDate): String = "${shortDay(date)} ${date.year}"
+
+    fun fullDay(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH))
 
     // The reading: the newest day that has happened. A served row dated after this device's today is
     // never the reading and never a dot — the log refused it a day later than this phone would.
@@ -139,44 +123,13 @@ object Bodyweight {
         return sorted.filter { !it.date.isBefore(from) }
     }
 
-    // Printed on the chart: `last 90 days · 4 weigh-ins`, the same words on every surface.
+    // The caption names the selected window and its measured points.
     fun windowLine(window: ChartWindow, shown: Int): String {
         val counted = if (shown == 1) "1 weigh-in" else "$shown weigh-ins"
         return when (window) {
-            ChartWindow.Ninety -> "last 90 days · $counted"
-            ChartWindow.All -> "the whole series · $counted"
+            ChartWindow.Ninety -> "90 days · $counted"
+            ChartWindow.All -> "All · $counted"
         }
     }
 
-    // The repair sheet is titled by the day it repairs; the entry sheet by the verb.
-    fun sheetTitle(fixedDate: LocalDate?): String =
-        if (fixedDate == null) chip else "Weigh-in · ${shortDay(fixedDate)}"
-
-    // Consecutive dots, joined or left apart on the seven-day rule.
-    fun runs(entries: List<WeighIn>): List<ChartRun> =
-        entries.sortedBy { it.dateLocal }.zipWithNext { from, to ->
-            if (ChronoUnit.DAYS.between(from.date, to.date) > maxGapDays) ChartRun.Gap(from, to)
-            else ChartRun.Segment(from, to)
-        }
-
-    // The y-axis is the series' own floor and ceiling plus padding, never zero: a bodyweight between
-    // 82.0 and 84.5 has to be readable as a slope.
-    data class Axis(val floorKg: Double, val ceilingKg: Double) {
-        fun fraction(weightKg: Double): Float {
-            val span = ceilingKg - floorKg
-            if (span <= 0.0) return 0.5f
-            return ((weightKg - floorKg) / span).toFloat().coerceIn(0f, 1f)
-        }
-    }
-
-    fun axis(entries: List<WeighIn>): Axis? {
-        if (entries.isEmpty()) return null
-        val low = entries.minOf { it.weightKg }
-        val high = entries.maxOf { it.weightKg }
-        val padding = maxOf(1.0, (high - low) * 0.2)
-        return Axis(
-            floorKg = floor((low - padding) * 2) / 2,
-            ceilingKg = ceil((high + padding) * 2) / 2,
-        )
-    }
 }

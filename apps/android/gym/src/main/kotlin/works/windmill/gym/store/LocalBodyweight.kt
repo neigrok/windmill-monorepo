@@ -28,6 +28,7 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     private data class Held(val shelves: Map<String, Shelf> = emptyMap())
 
     private var seat: String = Seat.of(deviceOwner)
+    private val revisions = mutableMapOf<Pair<String, String>, Long>()
     private var held: Held = runCatching {
         diskJson.decodeFromString(Held.serializer(), file.readText())
     }.getOrElse { Held() }
@@ -70,10 +71,13 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
 
     val deletions: List<String> get() = mine.deleted.sorted()
 
+    fun revision(dateLocal: String): Long = revisions[seat to dateLocal] ?: 0L
+
     // The row that stands after the write: the newer of the two by `recordedAt`.
     fun record(weighIn: WeighIn): WeighIn {
         val standing = mine.entries[weighIn.dateLocal]
         if (standing != null && standing.recordedAt > weighIn.recordedAt) return standing
+        revisions[seat to weighIn.dateLocal] = revision(weighIn.dateLocal) + 1
         keep(mine.copy(
             entries = mine.entries + (weighIn.dateLocal to weighIn),
             owed = (mine.owed + weighIn.dateLocal).distinct(),
@@ -83,6 +87,7 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     }
 
     fun delete(dateLocal: String) {
+        revisions[seat to dateLocal] = revision(dateLocal) + 1
         keep(mine.copy(
             entries = mine.entries - dateLocal,
             owed = mine.owed - dateLocal,
@@ -111,12 +116,16 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
         keep(mine.copy(entries = mine.entries - dateLocal, owed = mine.owed - dateLocal))
     }
 
-    // The account's series replaces what this device last read, except for what the device still
-    // owes: an owed write outranks the server's older row, and a pending delete outranks its row.
+    // Pending writes survive missing or older server rows; a newer canonical row settles the date.
     fun readBack(stored: List<WeighIn>) {
-        val kept = mine.owed.mapNotNull { date -> mine.entries[date]?.let { date to it } }.toMap()
         val served = stored.filterNot { it.dateLocal in mine.deleted }.associateBy { it.dateLocal }
-        keep(mine.copy(entries = served + kept))
+        val pending = mine.owed.mapNotNull { date ->
+            val local = mine.entries[date] ?: return@mapNotNull null
+            val remote = served[date]
+            if (remote != null && remote.recordedAt >= local.recordedAt) return@mapNotNull null
+            date to local
+        }.toMap()
+        keep(mine.copy(entries = served + pending, owed = pending.keys.toList()))
     }
 
     private fun flush() {

@@ -29,6 +29,7 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
+import works.windmill.gym.domain.StatsProgress
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
@@ -104,6 +105,30 @@ class TrainingStore(
     // The whole series, a withheld weigh-in included. A window decides which ROWS are drawn and
     // never what state a screen is in, so the chart's empty stance is read from here.
     val allWeighIns: List<WeighIn> get() = series
+    var bodyweightRead by mutableStateOf(false)
+        private set
+    var bodyweightLoading by mutableStateOf(false)
+        private set
+    var bodyweightFailure: WriteFailure? by mutableStateOf(null)
+        private set
+    private val bodyweightWrite = Mutex()
+    private var bodyweightRevision = 0L
+    private val progressRead = Mutex()
+    private var progressRevision = 0L
+    private var progressWanted = false
+    private var progressCache: StatsProgress? by mutableStateOf(null)
+    var progressLoading by mutableStateOf(false)
+        private set
+    var progressFailure: WriteFailure? by mutableStateOf(null)
+        private set
+    val progress: StatsProgress?
+        get() {
+            val read = progressCache ?: return null
+            val heldSessions = withheld.mapNotNull { (it.deletion as? Deletion.Session)?.sessionId }.toSet()
+            return read.copy(sessions = read.sessions.filterNot { it.sessionId in heldSessions })
+        }
+    val accountKey: String get() = Seat.of(owner)
+
     // The account's notes as the log last answered them, in the log's order. Nothing is kept between
     // runs — the read on the way in is the whole of it — but the ROOM holds them while it is open,
     // because a screen keeping a snapshot of its own would draw a note back the moment its window
@@ -368,6 +393,14 @@ class TrainingStore(
         // Weigh-ins made with nobody signed in ride the same way, and every one of them is owed.
         localBodyweight.adopt(owner, confirmed = account.verified)
         series = localBodyweight.entries
+        bodyweightRevision += 1
+        bodyweightRead = gym == null
+        bodyweightLoading = false
+        bodyweightFailure = null
+        progressRevision += 1
+        progressCache = null
+        progressFailure = null
+        progressLoading = false
         // The six ride with every seat and fill only ids nothing else here holds, so a name this
         // account chose is never overwritten by a constant.
         val known = deviceCopy.movements(owner).let { held ->
@@ -462,6 +495,7 @@ class TrainingStore(
             launch { loadLog() }
             // Held on the device as well as in memory, so the next cold launch draws names.
             launch {
+                val before = catalog.associateBy { it.id }
                 val served = tried { log.exercises() }
                 if (seat != owner || gym !== log) return@launch
                 if (served == null) {
@@ -469,7 +503,9 @@ class TrainingStore(
                     catalogUnread = known.isEmpty()
                     return@launch
                 }
-                val whole = served + localLog.exercises.filter { mine -> served.none { it.id == mine.id } }
+                val changed = catalog.filter { before[it.id] != it }.associateBy { it.id }
+                val fetched = served + localLog.exercises.filter { mine -> served.none { it.id == mine.id } }
+                val whole = fetched.map { changed[it.id] ?: it } + changed.values.filter { fresh -> fetched.none { it.id == fresh.id } }
                 catalog = whole + TheSix.missingFrom(whole)
                 deviceCopy.hold(owner, catalog)
             }
@@ -490,14 +526,8 @@ class TrainingStore(
                     preferences = localPreferences.document
                 }
             }
-            // The account's whole series; an owed write and a pending delete outrank it.
-            launch {
-                tried { log.bodyweight() }?.let {
-                    if (seat != owner || gym !== log) return@launch
-                    localBodyweight.readBack(it)
-                    series = localBodyweight.entries
-                }
-            }
+            launch { loadBodyweight() }
+            if (progressWanted) launch { loadProgress() }
         }
         if (seat != owner || gym !== log) return
         resume()
@@ -775,6 +805,7 @@ class TrainingStore(
             loadLog()
             if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             if (detail == null) return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
+            invalidateProgress()
             return FinishOutcome.Closed(detail)
         } finally {
             isFinishing = false
@@ -799,6 +830,7 @@ class TrainingStore(
             if (seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
         }
         retainedSessionFailure(detail)?.let { return FinishOutcome.Failed(it) }
+        invalidateProgress()
         return FinishOutcome.Closed(retainedSession(detail))
     }
 
@@ -833,6 +865,7 @@ class TrainingStore(
     suspend fun discard(sessionId: String): Boolean {
         if (localLog.detail(sessionId) != null) {
             localLog.forget(sessionId)
+            invalidateProgress()
             queue.forget(sessionId)
             queue.flush()
             drawFromQueue()
@@ -842,7 +875,10 @@ class TrainingStore(
             return true
         }
         val log = gym ?: return false
+        val seat = owner
         tried { log.discardSession(sessionId) } ?: return false
+        if (seat != owner || gym !== log) return false
+        invalidateProgress()
         // The settled delete leaves the READ and not only the drawn rows, and the re-read below is
         // not enough on its own: `loadLog` keeps every row DEEPER than the page it answers with, so
         // a session older than the log's head would be folded straight back in and drawn again the
@@ -1359,49 +1395,150 @@ class TrainingStore(
     // The newest day that has happened: a row dated past this phone's today is not a reading (B2).
     val latestWeighIn: WeighIn? get() = Bodyweight.latest(bodyweight, Bodyweight.today(now()))
 
-    // Held on the device FIRST, keyed by the local date, then sent exactly like a set: a log that
-    // went quiet leaves it owed to the claim, and only a refusal with a reason comes back as one.
-    // The row that stands is the newer of the two by `recordedAt`, on this phone and on the log.
-    suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
-        // A day is the ONE subject a later write can name again — every other window is keyed on a
-        // minted id nothing reuses — so weighing the day again IS the undo: the window comes down
-        // before the number goes in. Left standing, its clock would delete the row just saved, and
-        // the row would be invisible from the moment the sheet reported success.
-        dropWithheld(dateLocal)
-        val recorded = localBodyweight.record(WeighIn(dateLocal, weightKg, recordedAt = now()))
-        series = localBodyweight.entries
-        val log = gym ?: return null
-        return try {
-            localBodyweight.landed(log.putBodyweight(recorded.dateLocal, WeighInWrite(recorded.weightKg, recorded.recordedAt)))
+    suspend fun loadBodyweight() {
+        if (bodyweightLoading) return
+        val seat = owner
+        val log = gym
+        if (log == null) {
             series = localBodyweight.entries
-            null
+            bodyweightRead = true
+            bodyweightFailure = null
+            return
+        }
+        bodyweightLoading = true
+        bodyweightFailure = null
+        try {
+            while (true) {
+                val revision = bodyweightRevision
+                val before = localBodyweight.entries
+                val deletions = localBodyweight.deletions
+                val read = log.bodyweight()
+                if (seat != owner || gym !== log) return
+                if (revision != bodyweightRevision || before != localBodyweight.entries || deletions != localBodyweight.deletions) continue
+                localBodyweight.readBack(read)
+                series = localBodyweight.entries
+                bodyweightRead = true
+                break
+            }
         } catch (interrupted: CancellationException) {
             throw interrupted
-        } catch (refusing: Exception) {
-            if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) {
-                claimOwed = true
-                deliver()
-                return null
-            }
-            localBodyweight.letGo(recorded.dateLocal)
-            series = localBodyweight.entries
-            WriteFailure(refusing)
+        } catch (failure: Exception) {
+            if (seat == owner && gym === log) bodyweightFailure = WriteFailure(failure)
+        } finally {
+            if (seat == owner && gym === log) bodyweightLoading = false
         }
     }
 
-    // Gone from the device at once; the log's delete has no terminal refusal, so a miss is owed to
-    // the claim rather than said.
-    suspend fun deleteWeighIn(dateLocal: String) {
-        localBodyweight.delete(dateLocal)
+    suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
+        if (!weightKg.isFinite() || weightKg !in Bodyweight.minKg..Bodyweight.maxKg)
+            return WriteFailure.Refused(Bodyweight.outOfRange)
+        val date = runCatching { java.time.LocalDate.parse(dateLocal) }.getOrNull()
+            ?: return WriteFailure.Refused("Choose a date.")
+        Bodyweight.dated(date, Bodyweight.today(now()))?.let { return WriteFailure.Refused(it) }
+        val seat = owner
+        val log = gym
+        dropWithheld(dateLocal)
+        bodyweightRevision += 1
+        val previous = localBodyweight.entries.firstOrNull { it.dateLocal == dateLocal }
+        val previousOwed = localBodyweight.owed.any { it.dateLocal == dateLocal }
+        val recorded = localBodyweight.record(WeighIn(dateLocal, weightKg,
+            recordedAt = maxOf(now(), (previous?.recordedAt ?: -1) + 1)))
         series = localBodyweight.entries
-        val log = gym ?: return
-        val landed = tried { log.deleteBodyweight(dateLocal) }
-        if (landed != null) {
-            localBodyweight.deletionLanded(dateLocal)
-            return
+        val revision = localBodyweight.revision(dateLocal)
+        if (log == null) {
+            bodyweightRead = true
+            return null
         }
-        claimOwed = true
-        deliver()
+        return bodyweightWrite.withLock {
+            if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("The account changed while saving.")
+            if (revision != localBodyweight.revision(dateLocal)) return@withLock null
+            try {
+                val stored = log.putBodyweight(recorded.dateLocal, WeighInWrite(recorded.weightKg, recorded.recordedAt))
+                if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("The account changed while saving.")
+                if (stored.dateLocal != dateLocal) throw WindmillApiException.Malformed
+                if (revision == localBodyweight.revision(dateLocal)) localBodyweight.landed(stored)
+                series = localBodyweight.entries
+                null
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("The account changed while saving.")
+                if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) {
+                    claimOwed = true
+                    scheduleDeliver(afterMs = retryAfterMs)
+                    return@withLock null
+                }
+                if (localBodyweight.entries.firstOrNull { it.dateLocal == recorded.dateLocal } == recorded) {
+                    localBodyweight.letGo(recorded.dateLocal)
+                    if (previous != null) {
+                        if (previousOwed) localBodyweight.record(previous) else localBodyweight.landed(previous)
+                    }
+                }
+                series = localBodyweight.entries
+                WriteFailure(refusing)
+            }
+        }
+    }
+
+    suspend fun deleteWeighIn(dateLocal: String) {
+        val seat = owner
+        val log = gym
+        bodyweightRevision += 1
+        localBodyweight.delete(dateLocal)
+        val revision = localBodyweight.revision(dateLocal)
+        series = localBodyweight.entries
+        if (log == null) return
+        bodyweightWrite.withLock {
+            if (seat != owner || gym !== log || revision != localBodyweight.revision(dateLocal) || dateLocal !in localBodyweight.deletions) return@withLock
+            val landed = tried { log.deleteBodyweight(dateLocal) }
+            if (seat != owner || gym !== log) return@withLock
+            if (landed != null) {
+                if (revision == localBodyweight.revision(dateLocal)) localBodyweight.deletionLanded(dateLocal)
+            }
+            else {
+                claimOwed = true
+                scheduleDeliver(afterMs = retryAfterMs)
+            }
+        }
+    }
+
+    suspend fun loadProgress(force: Boolean = false): GymResult<StatsProgress> {
+        progressWanted = true
+        val seat = owner
+        val log = gym
+        return progressRead.withLock {
+            if (seat != owner || gym !== log) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
+            if (!force) progressCache?.let { return@withLock GymResult.Ok(it) }
+            progressLoading = true
+            progressFailure = null
+            try {
+                if (log != null) claimIdle.await()
+                if (seat != owner || gym !== log) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
+                var revision: Long
+                var read: StatsProgress
+                do {
+                    revision = progressRevision
+                    read = if (log == null) StatsProgress.of(localLog.details(), now()) else log.progress()
+                    if (seat != owner || gym !== log) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
+                } while (revision != progressRevision)
+                progressCache = read
+                GymResult.Ok(read)
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (failure: Exception) {
+                val why = WriteFailure(failure)
+                if (seat == owner && gym === log) progressFailure = why
+                GymResult.Failed(why)
+            } finally {
+                if (seat == owner && gym === log) progressLoading = false
+            }
+        }
+    }
+
+    private fun invalidateProgress() {
+        progressRevision += 1
+        progressCache = null
+        if (progressWanted) scope.launch { loadProgress() }
     }
 
     // Computed by the DOMAIN and read here, never re-derived. For a session only the shelf holds it
@@ -1694,14 +1831,16 @@ class TrainingStore(
     // sessions can share an instant.
     suspend fun loadOlder() {
         if (older == Older.Loading || older == Older.End) return
+        val seat = owner
         val log = gym ?: return
-        // A page read SETTLES a stale open session, so it waits for a mid-replay claim to end and
-        // drains the queue first.
         older = Older.Loading
         claimIdle.await()
+        if (seat != owner || gym !== log) return
         deliver()
+        if (seat != owner || gym !== log) return
         val oldest = logged.lastOrNull()
         val page = tried { log.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) }
+        if (seat != owner || gym !== log) return
         if (page == null) {
             older = Older.Failed
             return
@@ -1714,6 +1853,7 @@ class TrainingStore(
     // shelf's own finished sessions. Signed in the log's answer stands ALONE and the shelf is not
     // merged into it, or one aggregate would mix claimed and unclaimed rows.
     suspend fun record(exerciseId: String): GymResult<MovementRecord> {
+        val seat = owner
         val log = gym
         if (log == null) {
             val movement = catalog.firstOrNull { it.id == exerciseId }
@@ -1723,10 +1863,13 @@ class TrainingStore(
         // The record read SETTLES a stale open session: it waits for a mid-replay claim to end and
         // drains the queue first.
         claimIdle.await()
+        if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
         deliver()
+        if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
         return try {
             val read = log.record(exerciseId)
                 ?: return GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log"))
+            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
             GymResult.Ok(read)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -1745,8 +1888,10 @@ class TrainingStore(
         gym != null && localLog.exercises.none { it.id == exerciseId }
 
     suspend fun rename(exerciseId: String, to: String): GymResult<Exercise> {
+        val seat = owner
+        val writer = gym
         val name = to.trim()
-        if (name.isEmpty()) return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
+        Program.nameProblem(to)?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
         val renamed = localLog.renameExercise(exerciseId, name) ?: run {
             val log = gym ?: return GymResult.Failed(
                 WriteFailure.Refused("renaming a catalog movement needs your account — sign in first"))
@@ -1758,8 +1903,10 @@ class TrainingStore(
                 return GymResult.Failed(WriteFailure(refusing))
             }
         }
+        if (seat != owner || gym !== writer) return GymResult.Failed(WriteFailure.Refused("The account changed while renaming."))
+        invalidateProgress()
         // Held under the seat that renamed it: the override belongs to this account.
-        catalog = catalog.map { if (it.id == renamed.id) renamed else it }
+        catalog = catalog.map { if (it.id == renamed.id) renamed else it } + listOfNotNull(renamed.takeIf { catalog.none { old -> old.id == it.id } })
         deviceCopy.hold(owner, catalog)
         return GymResult.Ok(renamed)
     }
@@ -1945,10 +2092,11 @@ class TrainingStore(
         val seat = owner
         return ClaimReplay(log, localLog, queue, localPreferences, localBodyweight,
             mintExercise, mintRoutine, mintSession, mintSet,
-            isCurrent = { seat == owner && gym === log }, onChange = ::claimChanged)
+            isCurrent = { seat == owner && gym === log }, onChange = ::claimChanged, bodyweightWrite = bodyweightWrite)
     }
 
     private fun claimChanged(change: ClaimReplay.Change) {
+        invalidateProgress()
         when (change) {
             is ClaimReplay.Change.SessionMoved -> {
                 closedDetails = closedDetails.mapValues { (_, detail) ->
@@ -2043,6 +2191,7 @@ class TrainingStore(
                 (held.startedAtMs == edge.startedAtMs && held.id < edge.id))
         }
         logged = page + deeper
+        invalidateProgress()
         shelved = localLog.summaries()
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.

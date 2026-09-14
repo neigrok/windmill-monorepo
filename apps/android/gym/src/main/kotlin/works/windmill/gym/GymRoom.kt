@@ -881,20 +881,17 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
             }
             val railUp = railStands(live, building != null, away.size)
             val youInitial = account.user?.email?.take(1) ?: ""
+            val loggerTransient = live && standing == null
 
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 containerColor = skin.canvas,
-                // While the logger stands it hosts the transient itself, over its reading region and off
-                // its rack: a snackbar anywhere in the reach band would cover a dial for nine seconds every
-                // time a set landed. Everywhere else the transient sits where the platform puts it.
-                snackbarHost = { if (!(live && standing == null)) SnackbarHost(transient) },
                 bottomBar = {
                     val line = note
-                    // Nothing at all when there is neither: an empty bar would take the window inset away
-                    // from the content below it.
-                    if (railUp || line != null) {
+                    if (railUp || line != null || !loggerTransient) {
                         Column(Modifier.fillMaxWidth().background(skin.canvas)) {
+                            // Reserve the transient's measured height below screen-owned actions.
+                            if (!loggerTransient) SnackbarHost(transient)
                             line?.let {
                                 Text(
                                     it,
@@ -1070,14 +1067,15 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
                             say = { note = it },
                         )
-                        tab == Tab.Log -> LogScreen(
+                        tab == Tab.Log -> sessionStates.SaveableStateProvider("log") { LogScreen(
                             store = store,
                             seat = youInitial,
                             onOpenSession = { look(Away.Session(it)) },
                             onOpenBodyweight = { look(Away.Bodyweight) },
+                            onOpenMovement = { look(Away.Movement(it)) },
                             onShareSession = { shareWorkout(it) },
                             onDiscardSession = { discard(it) },
-                        )
+                        ) }
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.
                         tab == Tab.Coach && !account.isSignedIn ->

@@ -701,6 +701,41 @@ Json::Value toJson(const Statistics& statistics) {
   return body;
 }
 
+Json::Value toJson(const StatsProgress& progress) {
+  const auto performedJson = [](const PerformedFact& fact) {
+    Json::Value body(Json::objectValue);
+    body["setId"] = fact.set.str();
+    body["weightKg"] = fact.weightKg;
+    body["reps"] = fact.reps;
+    if (fact.rpe) body["rpe"] = *fact.rpe;
+    return body;
+  };
+  Json::Value sessions(Json::arrayValue);
+  for (const ProgressSession& session : progress.sessions) {
+    Json::Value movements(Json::arrayValue);
+    for (const MovementSessionFact& fact : session.movements) {
+      Json::Value movement(Json::objectValue);
+      movement["exerciseId"] = fact.exercise.str();
+      movement["workingSetCount"] = fact.workingSetCount;
+      movement["heaviest"] = performedJson(fact.heaviest);
+      if (fact.estimate) {
+        movement["estimate"] = performedJson(fact.estimate->performed);
+        movement["estimate"]["e1rm"] = fact.estimate->e1rm;
+      }
+      movements.append(movement);
+    }
+    Json::Value row(Json::objectValue);
+    row["sessionId"] = session.session.str();
+    row["startedAt"] = Json::Value::UInt64(session.startedAtMs);
+    row["movements"] = movements;
+    sessions.append(row);
+  }
+  Json::Value body(Json::objectValue);
+  body["asOf"] = Json::Value::UInt64(progress.asOfMs);
+  body["sessions"] = sessions;
+  return body;
+}
+
 // Every list is omitted when empty rather than sent as `[]`; the two counts are always present. A
 // movement whose every set was unloaded carries no `bestE1rm` and no series, since Epley is
 // undefined at and below zero, but still carries its heaviest and its sets.
