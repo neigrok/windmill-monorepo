@@ -485,8 +485,9 @@ set with alerts Off remains quiet through24seconds. A later capture misses audio
 OS playback; physical-device hearing and vibration are not claimed. No Kind or set-confirmation
 sound/haptic control is rendered; optional rest-target audio remains separate.
 
-Capture stems and actual server facts are recorded in [worklog.md](../../../worklog.md). Final simplification and the complete regression gate pass. Retained-key signing and native update acceptance pass for0.8.0/code72. Downloaded-asset
-verification and GitHub publication await publication approval; the 90-state mapping alone does not complete them.
+Capture stems and actual server facts are recorded in [worklog.md](../../../worklog.md). Final simplification and the complete regression gate pass. Retained-key signing and native update acceptance pass for0.8.0/code72. The public0.8.0 release and all three downloaded assets are verified, including APK signature,
+source/run/version/digests and native saved-data retention. The 90-state mapping and the release
+acceptance are recorded separately in the worklog.
 
 ## Verification contract
 
@@ -494,4 +495,4 @@ Wave-level screenshots should compare the exact intended state at reference geom
 
 Test meaningful invariants and user workflows, especially arbitrary Unicode/byte entry, undo clocks, identity/queue persistence, partial receipt arithmetic, failed writes, draft restoration, real permissions and data-dependent empty states. A green JVM suite alone does not verify native behavior. Release completion needs the built APK, install/smoke evidence, published GitHub release and downloaded-asset checksum/build version correspondence.
 
-Delivery status: Waves 1–7 are implemented and verified: shared foundations, Settings, approved removals, routines, targets, movement creation, planned/free training, corrections, receipts, sharing, Log/progress/bodyweight, Coach/Notes/review and explicit account ownership. W6 adds durable native notifications, explicit permission/dismissal handling and representative accessibility verification. W7 removes unused presentation paths and protects current workout/history identity during background reads. The signed0.8.0/code72 APK passes native update acceptance; public GitHub publication awaits approval. See [worklog.md](../../../worklog.md) for commands, native evidence and limits. Twelve exact SVG exports are preserved; their roots, geometry and Instrument paint values were checked.
+Delivery status: Waves 1–7 are implemented and verified: shared foundations, Settings, approved removals, routines, targets, movement creation, planned/free training, corrections, receipts, sharing, Log/progress/bodyweight, Coach/Notes/review and explicit account ownership. W6 adds durable native notifications, explicit permission/dismissal handling and representative accessibility verification. W7 removes unused presentation paths and protects current workout/history identity during background reads. The [0.8.0 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.0) is published; the signed code72 APK passes native update and downloaded-asset acceptance. See [worklog.md](../../../worklog.md) for commands, native evidence and limits. Twelve exact SVG exports are preserved; their roots, geometry and Instrument paint values were checked.

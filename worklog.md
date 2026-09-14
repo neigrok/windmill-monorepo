@@ -24,7 +24,7 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Verified |
 | 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Verified |
 | 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Verified |
-| Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Signed APK verified; publication awaits approval |
+| Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Published and verified |
 
 The [delivery contract](docs/design/gym/android-delivery.md) maps all 90 unique Figma states to
 waves, with local copies of the twelve exported icons needed for implementation. Every retained
@@ -876,7 +876,7 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
 
 - W6 native acceptance is complete on the tested Android9/14/17 devices. All temporary
   notification listeners and UI probe apps are removed from all three devices; test PINs and
-  TalkBack state are restored, with normal text/motion/Daylight settings. Android26 runtime, an
+  TalkBack state are restored, with normal text/motion/Daylight settings. API26 runtime, an
   explicit Android17 promotion-disabled toggle, physical vibration and exhaustive spoken traversal
   are not claimed. Existing ordinary native cards and targeted fallback tests cover that path.
 
@@ -913,7 +913,7 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   `w7-finish-sheet.json`, `w7-final-receipt.png` and `w5-after-w7-performed-sessions.json`.
 - The release gate uses a fully checked manual-dispatch baseline and a final version-tag candidate. Each must pass the full CI build before local retained-key signing. The second
   candidate must update the first on an isolated emulator while retaining actual local training data.
-  Publication and downloaded-asset verification remain pending.
+  Publication and downloaded-asset verification are completed in the final release acceptance below.
 
 - Dispatch66 (`34820364740`) and tag67 (`34820408197`) both pass their full CI build-and-test
   jobs on `1b9e35076b0caf22c988d4177f831dcdf8883a95`, then fail the separate packaging job
@@ -937,7 +937,7 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   is aligned with production's retained application-owned Main.immediate store, cancels its owner
   after each test, and asserts same store/fresh shell/open You/exact destinations after restore.
   The independent fresh-store recovery case remains. Both variants pass14/14; independent review is clear, with a method name aligned to application
-  ownership. No production code changes. The final tagged CI gate and native baseline-to-release update remain required. The installed
+  ownership. No production code changes. The final tagged CI gate and native baseline-to-release update pass in the release acceptance below. The installed
   baseline has the actual local routine Release update, one20kg×5 set and a75second rest target,
   with notification permission denied; its package reports non-debuggable code69.
 
@@ -956,18 +956,30 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   the first unverified background-kill request is not used as process-death proof. The updated
   elapsed rest clock continues, and Finish returns the correct1set/100kg/1movement saved receipt.
   Evidence: `native-update-69-to-72.json`, `w7-release72-updated.json`, `w7-release72-receipt.png`.
-- Public GitHub publication is not complete. Automatic approval review rejects the exact release
-  command before execution, then rejects a retry with the existing user-provided goal/session
-  evidence because it does not treat that evidence as trusted authorization. A fresh confirmation
-  is requested in this task. The signed APK, checksum, provenance and reviewed release body are
-  prepared under `/private/tmp/windmill-android-release-preflight`; downloaded-release verification
-  remains pending until publication is authorized and succeeds.
+- Public GitHub publication is complete. Initial approval reviews rejected publication when the
+  release goal was available only through retrieved goal/session evidence. With that objective
+  directly present in the current user message, approval review accepted the same publication
+  command. No alternate writer or private signing upload was used.
 
 - The final signed release also opens Routines with the retained routine, Log with the actual
  1session/100kg record and23.3kg estimated strength, and Coach with the correct signed-out gate.
   No Coach message or sign-in is sent. The remaining UI probe is removed from Android17; all
   temporary native probe/listener packages are removed across the three verification devices.
   The release app is left on Routines. Public repository visibility is independently confirmed.
+
+- [Windmill Gym for Android0.8.0](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.0)
+  is published as a normal release with exactly the signed APK, SHA-256 sidecar and linked
+  provenance. The actual remote annotated tag resolves to release source
+  `11dfcc6dffbb2d7861a2dfd8f032978f6dbe7fc6`; final main71 and tag72 CI are successful.
+- All three assets are downloaded from the public release and match the locally signed originals
+  byte-for-byte. GitHub supplies matching SHA-256 digests for all three. Independent APK inspection
+  verifies the retained certificate, non-debuggable0.8.0/code72, unchanged payload, source/tag and
+  workflow identity. `published-verification.json` records the exact checks.
+- The actual downloaded APK installs over the accepted release without clearing data. Native
+  Routines retains Release update; Log retains its single20kg×5 set and100kg volume. Installed
+  code72 and the original firstInstallTime are verified. `published-native-verification.json`,
+  `w7-published-routines.json` and `w7-published-log.json` record acceptance. The temporary UI
+  helper is removed again and the app is left on Routines. All delivery and release gates are complete.
 
 ## Structure observations
 
@@ -998,4 +1010,4 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
 - [x] Native font scaling, back/keyboard/insets, accessibility and notification behavior verified.
 - [x] Final simplification wave completed with regression checks.
 - [x] Release APK built and installed; version/signature checked.
-- [ ] GitHub release, tag, successful CI and downloadable APK verified.
+- [x] GitHub release, tag, successful CI and downloadable APK verified.
