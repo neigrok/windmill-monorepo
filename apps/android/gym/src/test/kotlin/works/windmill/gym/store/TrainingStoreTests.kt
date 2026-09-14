@@ -581,7 +581,9 @@ class TrainingStoreTests {
         relaunched.connect(account(signedIn = false))
         assertEquals(TheSix.movements + made, relaunched.catalog)
 
-        val newSeat = makeStore(sync = null)
+        val newSeat = makeStore(sync = FakeTraining())
+        val flow = checkNotNull(newSeat.requestClaimSignIn())
+        newSeat.approveSignIn("alice", flow)
         newSeat.connect(account(signedIn = true, id = "alice"))
         assertEquals(listOf(made) + TheSix.movements, newSeat.catalog)
     }
@@ -605,7 +607,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testSigningInClaimsTheShelfInOrderAndTheServerBecomesTheTruth() = runTest {
+    fun testExplicitConsentClaimsTheShelfInOrderAndTheServerBecomesTheTruth() = runTest {
         val server = FakeTraining()
         val minted = mutableListOf("ses_a", "ses_b")
         val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
@@ -624,11 +626,13 @@ class TrainingStoreTests {
         store.choose("back-squat")
         store.logSet(weightKg = 140.0, reps = 5)
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         val walk = server.calls.filter { it in setOf("createRoutine", "start", "append", "finish", "sessions") }
-        assertEquals("the contract's order, and the boot read only after the claim",
-            listOf("createRoutine", "start", "append", "append", "finish", "start", "append", "sessions"),
+        assertEquals("active-slot preflight comes first; the boot read follows the complete replay",
+            listOf("sessions", "createRoutine", "start", "append", "append", "finish", "start", "append", "sessions"),
             walk)
         assertEquals("every claimed start declines to join",
             listOf(false, false), server.started.map { it.joinOpenSession })
@@ -667,6 +671,8 @@ class TrainingStoreTests {
                 refusal(409, code = "session-id-taken", message = "that id names a row elsewhere")
             else null
         }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertNull("nothing landed under the spent id", server.stored["ses_spent"])
@@ -688,6 +694,8 @@ class TrainingStoreTests {
         clockMs += 60_000
         store.finish()
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertNull("nothing was filed into the other device's workout", server.sets["ses_phone2"])
@@ -710,6 +718,8 @@ class TrainingStoreTests {
         store.finish()
 
         server.online = false
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
         assertEquals(1, shelfOnDisk().finished.size)
         assertTrue(store.refusals.isEmpty())
@@ -733,6 +743,8 @@ class TrainingStoreTests {
         store.finish()
 
         server.online = false
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
         assertEquals("the boot claim stopped offline — nothing lost, nothing said",
             1, shelfOnDisk().finished.size)
@@ -774,7 +786,7 @@ class TrainingStoreTests {
     fun testAFinishDuringTheCadenceReclaimNeverAdoptsTheMidReplaySession() = runTest {
         val server = FakeTraining()
         val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
+        var store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
         store.connect(account(signedIn = false))
         store.start()
         store.choose("bench-press")
@@ -786,6 +798,15 @@ class TrainingStoreTests {
         store.logSet(weightKg = 999.0, reps = 1)
 
         server.online = false
+        val batch = checkNotNull(store.localDataBatch)
+        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
+        journal.approve(batch, "u1")
+        SetQueue(queueFile).complete(batch, "u1")
+        LocalLog(localFile).complete(batch, "u1")
+        LocalBodyweight(bodyweightFile).complete(batch, "u1")
+        LocalPreferences(preferencesFile).complete(batch, "u1")
+        journal.complete(batch.id)
+        store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
         server.online = true
@@ -854,6 +875,8 @@ class TrainingStoreTests {
 
         val gate = CompletableDeferred<Unit>()
         server.onFinish = { if (server.finished.last().first == "ses_a") gate.await() }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         val connecting = launch { store.connect(account(signedIn = true)) }
         runCurrent()
         assertEquals("the boot claim stands parked inside the shelved session's finish",
@@ -891,6 +914,8 @@ class TrainingStoreTests {
             reps = 5, completedAtMs = 900)), asRoutineNamed = "Push Day") as GymResult.Ok).value
 
         server.refuseRoutine = { refusal(400, code = "bad-routine", message = "that document is unclaimable") }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertEquals("the loss is said by name, through the store fact Today draws the banner from",
@@ -918,6 +943,8 @@ class TrainingStoreTests {
 
         server.stored["ses_minted"] = Session(id = "ses_minted", startedAtMs = 1_000, finishedAtMs = 2_000)
         server.refuse = { refusal(409, code = "session-finished", message = "reworded on a Tuesday") }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertEquals(listOf("the session closed before this set reached it"),
@@ -1237,6 +1264,8 @@ class TrainingStoreTests {
 
         val gate = CompletableDeferred<Unit>()
         server.onFinish = { gate.await() }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         val connecting = launch { store.connect(account(signedIn = true)) }
         runCurrent()
         assertEquals("the claim stands parked inside the replayed session's finish",
@@ -1267,11 +1296,20 @@ class TrainingStoreTests {
     fun testAnUnclaimedSessionsSetsAreParkedRatherThanRetriedForever() = runTest {
         val server = FakeTraining()
         server.open(Session(id = "ses_phone2", startedAtMs = 500))
-        val store = makeStore(sync = server)
+        var store = makeStore(sync = server)
         store.connect(account(signedIn = false))
         store.start()
         store.choose("bench-press")
 
+        val batch = checkNotNull(store.localDataBatch)
+        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
+        journal.approve(batch, "u1")
+        SetQueue(queueFile).complete(batch, "u1")
+        LocalLog(localFile).complete(batch, "u1")
+        LocalBodyweight(bodyweightFile).complete(batch, "u1")
+        LocalPreferences(preferencesFile).complete(batch, "u1")
+        journal.complete(batch.id)
+        store = makeStore(sync = server)
         store.connect(account(signedIn = true))
         store.logSet(weightKg = 82.5, reps = 5)
 
@@ -1302,6 +1340,8 @@ class TrainingStoreTests {
         store.choose("bench-press")
         assertEquals("the shelf's honest answer for the nobody pass", true, store.lastTime?.isFirstTime)
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertTrue("the log was asked", server.calls.contains("lastTime"))
@@ -1462,6 +1502,8 @@ class TrainingStoreTests {
         store.fixSet(ended.id, sets.first().id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
         store.deleteSet(ended.id, sets.last().id)
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertEquals("one row, and it is the one the lifter fixed it to",
@@ -1495,6 +1537,8 @@ class TrainingStoreTests {
                     SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
             }
         }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertEquals("the store told the lifter it landed",
@@ -1846,6 +1890,8 @@ class TrainingStoreTests {
         assertTrue("nobody to tell yet", server.settingsWritten.isEmpty())
 
         val relaunched = makeStore(sync = server)
+        val flow = checkNotNull(relaunched.requestClaimSignIn())
+        relaunched.approveSignIn("u1", flow)
         relaunched.connect(account(signedIn = true))
 
         assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
@@ -1888,10 +1934,19 @@ class TrainingStoreTests {
     fun testAnOwedSettingRetriesAloneRatherThanReWalkingTheClaim() = runTest {
         val server = FakeTraining()
         server.open(Session(id = "ses_other", startedAtMs = 500))
-        val store = makeStore(sync = server)
+        var store = makeStore(sync = server)
         store.connect(account(signedIn = false))
         store.start()
         store.choose("bench-press")
+        val batch = checkNotNull(store.localDataBatch)
+        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
+        journal.approve(batch, "u1")
+        SetQueue(queueFile).complete(batch, "u1")
+        LocalLog(localFile).complete(batch, "u1")
+        LocalBodyweight(bodyweightFile).complete(batch, "u1")
+        LocalPreferences(preferencesFile).complete(batch, "u1")
+        journal.complete(batch.id)
+        store = makeStore(sync = server)
         store.connect(account(signedIn = true))
         server.calls.clear()
         server.started.clear()
@@ -2043,6 +2098,8 @@ class TrainingStoreTests {
         server.served.add(LastSet("back-squat", 90.0, 5, atMs = 500))
         server.served.add(LastSet("bench-press", 80.0, 8, atMs = 600))
         val signedIn = makeStore(sync = server)
+        val flow = checkNotNull(signedIn.requestClaimSignIn())
+        signedIn.approveSignIn("u1", flow)
         signedIn.connect(account(signedIn = true))
         signedIn.loadLastSets()
 
@@ -2067,6 +2124,8 @@ class TrainingStoreTests {
         store.logSet(weightKg = 80.0, reps = 8)
         clockMs += 60_000
         store.finish()
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
         assertEquals(1, store.recent.size)
 
@@ -2095,6 +2154,8 @@ class TrainingStoreTests {
         store.loadLastSets()
         assertEquals(140.0, store.lastSets!!.getValue("back-squat").weightKg, 0.0)
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertEquals("the seat's own answer arrives without the lifter leaving the screen",
@@ -2362,8 +2423,7 @@ class TrainingStoreTests {
 
         assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"),
             store.applyProposal("prop_gone"))
-        assertEquals(GymResult.Failed(WriteFailure.Refused("that proposal is no longer on the log")),
-            store.proposal("prop_gone"))
+        assertEquals(ProposalRead.Gone, store.proposal("prop_gone"))
     }
 
     @Test
@@ -2574,7 +2634,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testTheLogsRefusalsReachTheScreenInTheLogsOwnWords() = runTest {
+    fun testNoteBoundsAndStaleOrderRefusalsReachTheScreen() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
@@ -2587,9 +2647,9 @@ class TrainingStoreTests {
         assertEquals(GymResult.Failed(WriteFailure.Refused("a title runs to 60 characters")),
             store.saveNote("note_0", NoteWrite("t".repeat(61), "")))
         // A short order is the ordinary case — the drawn rows, with a note inside its undo window
-        // left out — and the store names the rest back in. What the log still refuses is an order
-        // naming a note it does not hold.
-        assertEquals(GymResult.Failed(WriteFailure.Refused("that order does not name every note")),
+        // left out — and the store names the rest back in. An order naming a note outside the
+        // current notebook is refused before it reaches the wire.
+        assertEquals(GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering.")),
             store.reorderNotes(listOf("note_gone")))
 
         server.refuseNotes = storageFailure
@@ -2820,6 +2880,8 @@ class TrainingStoreTests {
         server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"))
         server.refuseCreate = storageFailure
         val store = makeStore(sync = server)
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         store.connect(account(signedIn = true))
 
         assertTrue("a catalog movement renames on the log", store.renameKeepsAnAlias("bench-press"))
@@ -2893,6 +2955,8 @@ class TrainingStoreTests {
 
         val gate = CompletableDeferred<Unit>()
         server.onFinish = { gate.await() }
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("u1", flow)
         val connecting = launch { store.connect(account(signedIn = true)) }
         runCurrent()
         assertEquals("the claim stands parked inside the shelved session's finish",
@@ -3169,7 +3233,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testWorkMadeSignedOutStillClaimsOntoTheFirstAccountThatSignsIn() = runTest {
+    fun testWorkMadeSignedOutClaimsOnlyAfterAnExplicitDecision() = runTest {
         val alicesLog = FakeTraining()
         val store = makeStore(logs = mapOf("alice" to alicesLog))
 
@@ -3179,6 +3243,8 @@ class TrainingStoreTests {
         store.logSet(weightKg = 60.0, reps = 8)
         store.finish()
 
+        val flow = checkNotNull(store.requestClaimSignIn())
+        store.approveSignIn("alice", flow)
         store.connect(account(signedIn = true, id = "alice"))
         assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
         assertEquals(listOf(60.0), alicesLog.sets.getValue("ses_minted").map { it.weightKg })
@@ -3207,7 +3273,9 @@ class TrainingStoreTests {
             store.recent.map { it.id })
 
         store.connect(account(signedIn = true, id = "alice"))
-        assertEquals("the first verified connect claims it", listOf("ses_minted"),
+        assertEquals("verification alone still claims nothing", emptyList<String>(), alicesLog.stored.keys.toList())
+        assertNull(store.releaseUnattributed())
+        assertEquals("the explicit decision claims it", listOf("ses_minted"),
             alicesLog.stored.keys.toList())
     }
 
@@ -3271,17 +3339,32 @@ class TrainingStoreTests {
 
     @Test
     fun testTheQuarantineCannotBeClaimedBySomebodyWhoIsSignedOut() = runTest {
-        val alicesLog = FakeTraining()
+        val alicesLog = FakeTraining().apply { nowMs = { clockMs } }
+        val live = Session("ses_live", startedAtMs = 1_000)
         localFile.writeText(legacyShelf)
+        queueFile.writeText("""{"session":{"id":"ses_live","startedAt":1000},"entries":{}}""")
 
         val store = makeStore(logs = mapOf("alice" to alicesLog))
         store.connect(account(signedIn = false))
         assertEquals(TrainingStore.quarantineWantsAnAccount, store.releaseUnattributed())
-        assertEquals("and nothing moved", 1, store.unattributed?.sessions)
+        assertEquals("the finished workout stays quarantined", 1, store.unattributed?.sessions)
+        assertTrue("the live workout stays quarantined too", store.unattributedIsLive)
+        assertEquals(live, SetQueue(queueFile).unattributedSession)
+        assertEquals(emptyMap<String, Session>(), alicesLog.stored)
+        assertEquals(emptyList<SessionStart>(), alicesLog.started)
 
         store.connect(account(signedIn = true, id = "alice"))
+        assertEquals("selecting the account still claims neither workout", emptyMap<String, Session>(), alicesLog.stored)
         assertNull(store.releaseUnattributed())
-        assertEquals(listOf("ses_before"), alicesLog.stored.keys.toList())
+        assertEquals(mapOf(
+            "ses_before" to Session("ses_before", startedAtMs = 1_000, finishedAtMs = 2_000),
+            "ses_live" to live,
+        ), alicesLog.stored)
+        assertEquals(listOf(TrainingSet("set_before", "bench-press", setNumber = 1,
+            weightKg = 90.0, reps = 5, completedAtMs = 1_100)), alicesLog.sets.getValue("ses_before"))
+        assertEquals(live, store.session)
+        assertNull(store.unattributed)
+        assertNull(SetQueue(queueFile).unattributedSession)
     }
 
     @Test
@@ -3300,7 +3383,8 @@ class TrainingStoreTests {
         store.choose("bench-press")
         store.logSet(weightKg = 82.5, reps = 5)
 
-        assertEquals(TrainingStore.liveSlotTaken, store.releaseUnattributed())
+        alicesLog.online = true
+        assertEquals("Finish the account’s current workout before adding this training.", store.releaseUnattributed())
         assertEquals("the shelf's half did not land on its own", 1, store.unattributed?.sessions)
         assertTrue("and the queue's half is still quarantined too", store.unattributedIsLive)
         assertEquals("nor did A lose the bar they were under", "ses_minted", store.session?.id)

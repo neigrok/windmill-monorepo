@@ -30,6 +30,7 @@ object ConnectedLog {
     const val unnamedGrant = "A connected tool"
     const val unnamedKey = "A static key"
     const val unread = "Couldn’t read your connections."
+    const val unavailable = "Connections unavailable"
     const val manage = "Manage connections"
     const val accountWide = "whole account"
     const val apiKey = "API key"

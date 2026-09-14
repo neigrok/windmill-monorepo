@@ -1,5 +1,6 @@
 package works.windmill.gym.domain
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // POST /v1/gym/ask, owner-scoped: { thread, question } → { answer, steps, read, proposals, thread }.
@@ -29,7 +30,51 @@ data class AskAnswer(
     val read: ReadTally,
     val steps: List<AskStep> = emptyList(),
     val proposals: List<String> = emptyList(),
+    val receipt: AnswerReceipt? = null,
 )
+
+@Serializable
+data class WorkoutObservation(
+    val workingSetCount: Int,
+    val tonnageKg: Double,
+    val durationMs: Long? = null,
+) {
+    val valid: Boolean get() = workingSetCount >= 0 && tonnageKg.isFinite() && tonnageKg >= 0 &&
+        (durationMs == null || durationMs >= 0)
+}
+
+@Serializable
+data class SessionObservation(
+    val sessionId: String,
+    @SerialName("startedAt") val startedAtMs: Long,
+    val tool: String,
+    val coverage: String,
+    val setsRead: Int,
+    @SerialName("finishedAt") val finishedAtMs: Long? = null,
+    val routine: String? = null,
+    val exerciseId: String? = null,
+    val workout: WorkoutObservation? = null,
+) {
+    val wholeWorkout: Boolean get() = coverage in listOf("summary", "session") &&
+        exerciseId == null && workout?.valid == true
+    val valid: Boolean get() = sessionId.isNotBlank() && startedAtMs > 0 && setsRead >= 0 &&
+        coverage in listOf("summary", "session", "movement") &&
+        (coverage != "movement" || !exerciseId.isNullOrBlank())
+}
+
+@Serializable
+data class AnswerReceipt(
+    val version: Int,
+    val read: ReadTally,
+    val steps: List<AskStep> = emptyList(),
+    val proposals: List<String> = emptyList(),
+    val observations: List<SessionObservation> = emptyList(),
+) {
+    val supported: Boolean get() = version == 1
+    val observed: List<SessionObservation> get() = if (supported) observations.filter { it.valid } else emptyList()
+    val workouts: List<SessionObservation> get() = observed.filter { it.wholeWorkout && it.coverage == "session" }
+        .groupBy { it.sessionId }.values.map { it.last() }
+}
 
 // Which ceiling took the composer down. ONE state serves both, because the connect door beneath it
 // is unrationed under either; which one it is decides only what is said and which door leads. Read
@@ -48,6 +93,7 @@ data class AskExchange(
     val answer: AskAnswer? = null,
     val trouble: String? = null,
     val again: Boolean = false,
+    val needsNew: Boolean = false,
 ) {
     val pending: Boolean get() = answer == null && trouble == null
 }
@@ -77,6 +123,8 @@ object Ask {
         "This account has reached its AI ceiling for the last 30 days. Coach will answer again as " +
             "that window rolls on."
 
+    fun needsNew(thread: List<AskExchange>): Boolean = thread.count { it.answer != null } >= 4 || thread.lastOrNull()?.needsNew == true
+
     // The ceiling is four questions: the server counts a question and its answer as two turns.
     const val threadFull = "This conversation holds four questions. Start a new one."
 
@@ -91,14 +139,14 @@ object Ask {
     const val notesDoor = "Notes"
 
     const val promise =
-        "Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal."
+        "Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."
 
     const val waiting = "reading your log…"
 
     const val interrupted =
         "Coach didn’t finish that one. The log heard the question, so it may have counted against " +
             "today’s — and anything it proposed is on the routine either way. If it did answer, " +
-            "the conversation is in Threads."
+            "the conversation is in History."
 
     const val signedOut = "Coach reads your log, so it needs you signed in."
 

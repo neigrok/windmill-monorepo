@@ -1,6 +1,7 @@
 #include "products/gym/application/AskService.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "test/platform/Fakes.h"
@@ -605,7 +606,8 @@ TEST(the_reply_carries_the_servers_own_read_line_and_the_proposals_the_run_minte
                   {"get_session", sessionArgs(h.session)},
                   {"propose_routine_change", propose}};
 
-  const AskReply reply = h.question("write me the triples block");
+  const ThreadId thread = h.nextThread();
+  const AskReply reply = h.question(thread, "write me the triples block", h.lifter);
 
   CHECK(reply.refusal == AskRefusal::none);
   CHECK_EQ(reply.read, (ReadTally{1, 1, 1}));  // one workout, its one set, the week it fell in
@@ -613,6 +615,16 @@ TEST(the_reply_carries_the_servers_own_read_line_and_the_proposals_the_run_minte
   CHECK_EQ(reply.proposals[0], std::string("prop_00000009"));
   REQUIRE_EQ(reply.answer.steps.size(), 3u);
   CHECK_FALSE(reply.answer.steps[2].failed);
+  REQUIRE(reply.receipt.has_value());
+  CHECK_EQ(reply.receipt->read, reply.read);
+  CHECK_EQ(reply.receipt->proposals, reply.proposals);
+  CHECK_EQ(reply.receipt->steps, reply.answer.steps);
+  const auto held = h.threadService.thread(h.lifter, thread);
+  REQUIRE(held.has_value());
+  REQUIRE_EQ(held->turns.size(), 2u);
+  CHECK_FALSE(held->turns[0].receipt.has_value());
+  CHECK_EQ(held->turns[1].receipt, reply.receipt);
+  CHECK_EQ(held->turns[0].atMs, held->turns[1].atMs);
 }
 
 TEST(a_refused_tool_marks_its_step_and_leaves_the_log_alone) {
@@ -666,9 +678,13 @@ TEST(a_run_that_never_answered_stores_no_turns_and_leaves_no_empty_thread) {
   Harness h;
   h.agent.answers = false;
   h.agent.turnsSpent = 0;
+  h.agent.plan = {{"get_session", sessionArgs(h.session)}};
   const ThreadId thread = h.nextThread();
 
-  CHECK_FALSE(h.question(thread, "how did the squats go?", h.lifter).answer.ok);
+  const AskReply failed = h.question(thread, "how did the squats go?", h.lifter);
+  CHECK_FALSE(failed.answer.ok);
+  CHECK_FALSE(failed.receipt.has_value());
+  CHECK_EQ(failed.read, (ReadTally{1, 1, 1}));
   CHECK_FALSE(h.threadService.thread(h.lifter, thread).has_value());
   CHECK(h.threadService.threads(h.lifter).empty());
 
@@ -677,6 +693,34 @@ TEST(a_run_that_never_answered_stores_no_turns_and_leaves_no_empty_thread) {
   const std::optional<AskThread> landed = h.threadService.thread(h.lifter, thread);
   REQUIRE(landed.has_value());
   CHECK_EQ(landed->turns.size(), 2u);
+}
+
+TEST(the_actual_model_loop_receipt_includes_opening_reads_and_failed_attempts_in_order) {
+  Harness h;
+  AskTools hands{h.gymTools, ThreadId{"thr_evidence1"}};
+  int calls = 0;
+  const AskCall model = [&calls](const Json::Value&) -> std::optional<Json::Value> {
+    if (++calls == 1) return parse(R"({"stop_reason":"tool_use","content":[
+        {"type":"tool_use","id":"toolu_1","name":"get_session","input":{"sessionId":"ses_absent01"}},
+        {"type":"tool_use","id":"toolu_2","name":"get_session","input":{"sessionId":"ses_11111111"}}]})");
+    return parse(R"({"stop_reason":"end_turn","content":[{"type":"text","text":"One squat set."}]})");
+  };
+  const AskAnswer answer = driveAsk({AskTurn{true, "What did I train?"}},
+      ToolCaller{h.lifter, ToolScope::everything()}, hands, model,
+      [](const std::string&, const std::string&) {});
+
+  CHECK(answer.ok);
+  CHECK_EQ(answer.answer, std::string("One squat set."));
+  CHECK_EQ(calls, 2);
+  CHECK_EQ(answer.steps, (std::vector<AskStep>{{"list_notes", false},
+      {"get_session", true}, {"get_session", false}}));
+  CHECK_EQ(hands.steps(), (std::vector<AskStep>{{"list_sessions", false}, {"list_notes", false},
+      {"get_session", true}, {"get_session", false}}));
+  CHECK_EQ(hands.read().tally(), (ReadTally{1, 1, 1}));
+  const Session session = *h.repo.log.session(h.lifter, h.session);
+  CHECK_EQ(hands.read().observations(), (std::vector<SessionObservation>{
+      {"list_sessions", session, ReadCoverage::summary, 0, WorkoutObservation{session, 1, 500}},
+      {"get_session", session, ReadCoverage::session, 1, WorkoutObservation{session, 1, 500}}}));
 }
 
 TEST(a_failed_follow_up_leaves_the_conversation_that_already_happened_alone) {

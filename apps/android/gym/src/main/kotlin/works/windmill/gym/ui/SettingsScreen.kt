@@ -71,6 +71,7 @@ fun SettingsScreen(
     say: (String?) -> Unit,
     accountEmail: String? = null,
     onAccount: () -> Unit = {},
+    onClaimSignIn: (String) -> Unit = {},
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -103,7 +104,8 @@ fun SettingsScreen(
             SettingsRow(ConnectedLog.title, store.connectedLog.settingsMeta, onConnectedLog)
             HorizontalDivider(color = skin.line)
             SettingsRow("Account", accountEmail ?: "Not signed in", onAccount)
-            UnattributedRow(store, isSignedIn, say)
+            store.consentFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+            UnattributedRow(store, isSignedIn, say, onClaimSignIn)
         }
     }
     if (restOpen) {
@@ -216,20 +218,22 @@ private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) 
 // so a row left drawing would leave `These are mine` tappable over training a pending discard wipes
 // nine seconds later.
 @Composable
-private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit) {
+private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit, onSignIn: (String) -> Unit) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     if (Deletion.Unattributed.subjectId in store.withheldIds) return
     val held = store.unattributed ?: return
     val live = store.unattributedIsLive
-    if (held.sessions == 0 && held.routines == 0 && held.movements == 0 && !live) return
+    val batch = store.localDataBatch ?: return
 
     SettingCard {
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
             color = skin.ink)
         Caption("Logged before any sign-in. Nothing joins an account until you say it is yours.")
         Column(verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-            Text(heldLine(held, live), style = GymType.numeral(13), color = skin.inkDim)
+            Text((listOf(heldLine(held, live)).filter { it.isNotEmpty() } +
+                listOfNotNull(batch.weighIns.takeIf { it > 0 }?.let { count(it, "weigh-in") },
+                    "Settings".takeIf { batch.preferences > 0 })).joinToString(" · "), style = GymType.numeral(13), color = skin.inkDim)
             held.days.take(4).forEach {
                 Text(Readout.date(it), style = GymType.numeral(12), color = skin.inkDim)
             }
@@ -241,15 +245,16 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(if (isSignedIn) skin.accent else skin.canvas)
-                    .clickable(role = Role.Button) {
+                    .clickable(enabled = !store.claimBusy, role = Role.Button) {
                         scope.launch {
                             say(null)
-                            store.releaseUnattributed()?.let { say(it) }
+                            if (isSignedIn) store.releaseUnattributed()?.let { say(it) }
+                            else store.requestClaimSignIn()?.let(onSignIn)
                         }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text("These are mine", style = GymType.numeral(13, FontWeight.Bold),
+                Text(if (store.claimBusy) "Adding…" else "These are mine", style = GymType.numeral(13, FontWeight.Bold),
                     color = if (isSignedIn) skin.onAccent else skin.inkDim)
             }
             Box(
@@ -276,8 +281,7 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
         }
         Caption(
             if (isSignedIn) "Claiming adds it to the account you are signed in as."
-            else "Sign in first to claim it. Nobody signed in can say whose training this is, " +
-                "and it will not be handed to the next account on its own.")
+            else "These are mine opens sign-in for this local training.")
     }
 }
 

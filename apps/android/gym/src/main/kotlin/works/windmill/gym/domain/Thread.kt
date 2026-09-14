@@ -11,7 +11,12 @@ data class AskQuestion(val thread: String, val question: String)
 
 // Arrives on the DETAIL read only. `from` carries no default, and an absent `at` prints nothing.
 @Serializable
-data class AskTurn(val from: String, val text: String, @SerialName("at") val atMs: Long = 0) {
+data class AskTurn(
+    val from: String,
+    val text: String,
+    @SerialName("at") val atMs: Long = 0,
+    val receipt: AnswerReceipt? = null,
+) {
     val fromLifter: Boolean get() = from == Ask.fromLifter
 }
 
@@ -109,10 +114,10 @@ data class AskThread(
 data class ThreadMonth(val label: String?, val threads: List<AskThread>)
 
 object Threads {
-    const val title = "Threads"
+    const val title = "History"
     const val open = "Ask something new"
 
-    const val door = "Threads"
+    const val door = "History"
 
     const val conversation = "Conversation"
 

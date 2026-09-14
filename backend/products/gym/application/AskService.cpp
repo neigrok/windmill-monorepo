@@ -89,6 +89,13 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
 
 ToolResult AskTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
+  ToolResult outcome = dispatch(name, arguments, caller);
+  steps_.push_back(AskStep{name, outcome.isError});
+  return outcome;
+}
+
+ToolResult AskTools::dispatch(const std::string& name, const Json::Value& arguments,
+                              const ToolCaller& caller) {
   std::optional<ToolDeclaration> declared;
   for (ToolDeclaration& candidate : inner_.declareTools())
     if (candidate.name() == name) declared = std::move(candidate);
@@ -235,8 +242,10 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
           done(std::move(reply));
           return;
         }
+        reply.receipt = AnswerReceipt{1, reply.read, hands.steps(), reply.proposals,
+                                       hands.read().observations()};
         threads_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
-                                          ThreadTurn{false, reply.answer.answer}});
+                                          ThreadTurn{false, reply.answer.answer, 0, reply.receipt}});
         done(std::move(reply));
       });
 }

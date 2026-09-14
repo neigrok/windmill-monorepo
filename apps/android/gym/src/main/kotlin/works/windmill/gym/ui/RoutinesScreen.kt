@@ -74,7 +74,6 @@ fun RoutinesScreen(
     onOpenRoutine: (String) -> Unit,
     onDeleteRoutine: (String) -> Unit,
     onReview: (Proposal) -> Unit,
-    onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
 ) {
     val skin = LocalGymColors.current
@@ -153,7 +152,6 @@ fun RoutinesScreen(
                     }
                 }
 
-                item("settings") { SettingsDoor(onOpenSettings) }
             }
 
             Box(
@@ -265,22 +263,6 @@ private fun ClaimCard(onSignIn: () -> Unit) {
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
             color = skin.inkDim,
         )
-    }
-}
-
-@Composable
-private fun SettingsDoor(onOpenSettings: () -> Unit) {
-    val skin = LocalGymColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clickable(role = Role.Button, onClick = onOpenSettings),
-    ) {
-        Text("Gym settings", style = GymType.numeral(13), color = skin.inkDim)
-        Spacer(Modifier.weight(1f))
-        Chevron()
     }
 }
 

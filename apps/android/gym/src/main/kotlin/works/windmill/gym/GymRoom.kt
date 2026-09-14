@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
@@ -117,9 +118,11 @@ import works.windmill.gym.ui.ThreadScreen
 import works.windmill.gym.ui.ThreadsScreen
 import works.windmill.gym.ui.askThreadSaver
 import works.windmill.gym.ui.routineDraftSaver
+import works.windmill.platform.you.YouDestination
 import works.windmill.platform.Account
 import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
+import works.windmill.platform.AccountActions
 import works.windmill.platform.ProductModule
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
@@ -280,6 +283,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     val skin = LocalGymColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val shell = LocalShellActions.current
 
     // The committed detail survives process replacement after the queue closes.
     var finished by rememberSaveable(stateSaver = finishedSaver) { mutableStateOf<FinishedSession?>(null) }
@@ -301,7 +305,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
     // mid-review lands back on the card, which decides nothing either.
     var reviewing by remember { mutableStateOf<Reviewing?>(null) }
-    val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var reviewBusy by remember { mutableStateOf(false) }
+    val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !reviewBusy })
     // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
     // string it is, ids joined by a space.
     var lookedAt by rememberSaveable { mutableStateOf("") }
@@ -320,6 +325,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
     // Which conversation the next question lands in; minted by this phone, empty until somebody asks.
     var conversationId by rememberSaveable { mutableStateOf("") }
+    var conversationSeed by rememberSaveable { mutableStateOf("") }
     // Outlives the screen, because the request does.
     var asking by remember { mutableStateOf(false) }
     // Which seat the thread above belongs to; empty is the anonymous one. Saved with the thread.
@@ -364,10 +370,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // Opened over whatever is standing; the door is where the receipt will land.
     fun review(proposalId: String, routineId: String, door: String) {
+        if (store.session != null) { note = "Finish this session"; return }
         reviewing = Reviewing(proposalId, routineId, door)
     }
 
     fun closeReview() {
+        if (reviewBusy) return
         scope.launch { reviewSheet.hide() }.invokeOnCompletion { reviewing = null }
     }
 
@@ -417,6 +425,17 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // `connect` drains what the device is still holding BEFORE it reads the log: a read settles a
     // stale open session at its last activity, and past four hours from that close an owed set is
     // refused for good.
+    val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
+    val accountActions = remember(shell, store) {
+        AccountActions(
+            listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
+                YouDestination("connections", "Connected log") { openDestination(Away.Connections) }),
+            beforeSignIn = { user, flow -> store.approveSignIn(user.id, flow) },
+            cancelSignIn = store::cancelClaimSignIn,
+        )
+    }
+    SideEffect { shell.present(accountActions) }
+
     LaunchedEffect(account.user?.id, account.verified, account.resolved) {
         if (!account.resolved) return@LaunchedEffect
         // A conversation belongs to the seat it was had on. A bare `standing != seat` would be
@@ -424,6 +443,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         val standing = account.user?.id
         if (Ask.handedOver(seat, standing, seatRead) || (standing == null && seat.isNotEmpty())) {
             conversation = emptyList()
+            conversationSeed = ""
+            asking = false
+            cap = null
             // The id goes with the words, or the next lifter's question lands in somebody else's
             // conversation.
             conversationId = ""
@@ -634,7 +656,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // Asked from the room, not from the screen that draws it, so the coroutine and the answer outlive
     // a lifter walking away mid-wait. The door closes on the way IN, or two taps are two spends.
     fun ask(from: List<AskExchange>, question: String) {
-        if (asking || !Ask.sendable(question)) return
+        if (asking || Ask.needsNew(from) || !Ask.sendable(question)) return
+        val askingOwner = currentAccount.user?.id
         val asked = question.trim()
         // Minted before the send and kept whatever comes back, so a retry continues the same
         // conversation. It names the CONVERSATION and is not per-question idempotency, so nothing
@@ -644,7 +667,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         conversation = from + AskExchange(question = asked)
         scope.launch {
             try {
-                when (val outcome = store.ask(into, asked)) {
+                val outcome = store.ask(into, asked)
+                if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
+                when (outcome) {
                     is AskOutcome.Answered ->
                         conversation = from + AskExchange(question = asked, answer = outcome.answer)
                     is AskOutcome.Refused ->
@@ -659,9 +684,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                     // The conversation is over and the question is fine: let go of the id and offer
                     // the tap, which opens a new conversation with the same question.
                     is AskOutcome.Fresh -> {
-                        conversationId = ""
                         conversation = from + AskExchange(
-                            question = asked, trouble = outcome.said, again = true)
+                            question = asked, trouble = outcome.said, needsNew = true)
                     }
                     AskOutcome.Absent -> {
                         conversation = from + AskExchange(question = asked, trouble = Ask.notHere)
@@ -669,13 +693,14 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                     }
                 }
             } finally {
-                asking = false
+                if (askingOwner == currentAccount.user?.id && conversationId == into) asking = false
             }
         }
     }
 
     // The live thread and its id are let go of; what was asked is on the log.
-    fun askSomethingNew() {
+    fun askSomethingNew(draft: String = "") {
+        conversationSeed = draft
         conversation = emptyList()
         conversationId = ""
         cap = null
@@ -778,15 +803,18 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
             reviewing?.let { open ->
                 ModalBottomSheet(
                     onDismissRequest = {
+                        if (reviewBusy) return@ModalBottomSheet
                         reviewing = null
                         if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
                     },
                     sheetState = reviewSheet,
+                    properties = androidx.compose.material3.ModalBottomSheetProperties(shouldDismissOnBackPress = !reviewBusy),
                     containerColor = skin.surface,
                     scrimColor = skin.scrim,
                 ) {
                     WindmillSheetWindow()
                     ReviewSheet(
+                        onBusy = { reviewBusy = it },
                         proposalId = open.proposalId,
                         routineId = open.routineId,
                         store = store,
@@ -934,7 +962,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             say = { note = it },
                             onFinish = { close() },
                             // The shell's door: gym draws no sign-in of its own.
-                            onSignIn = LocalShellActions.current.openYou,
+                            onSignIn = { shell.openSignIn(null) },
                             onSettings = { look(Away.Settings) },
                             transient = transient,
                         )
@@ -962,7 +990,8 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             onNotes = { look(Away.Notes) },
                             onConnectedLog = { look(Away.Connections) },
                             accountEmail = account.user?.email,
-                            onAccount = LocalShellActions.current.openYou,
+                            onAccount = shell.openYou,
+                            onClaimSignIn = shell.openSignIn,
                             say = { note = it },
                         )
                         standing is Away.Connections -> ConnectedLogScreen(
@@ -971,7 +1000,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             origin = origin,
                             backTo = beneath,
                             onBack = { back() },
-                            onSignIn = LocalShellActions.current.openYou,
+                            onSignIn = { shell.openSignIn(null) },
                         )
                         standing is Away.Notes -> NotesScreen(
                             store = store,
@@ -979,7 +1008,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             backTo = beneath,
                             onBack = { back() },
                             onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
-                            onSignIn = LocalShellActions.current.openYou,
+                            onSignIn = { shell.openSignIn(null) },
                             say = { note = it },
                         )
                         // The list beneath reads itself again on the way back: a saved note is on the list
@@ -1030,6 +1059,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                         standing is Away.Coach -> AskScreen(
                             store = store,
                             thread = conversation,
+                            conversationId = conversationId,
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
@@ -1041,8 +1071,10 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                                 conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
                             },
                             onAskNew = { askSomethingNew() },
-                            seed = standing.seed,
+                            seed = conversationSeed.ifEmpty { standing.seed },
+                            onNewDraft = { askSomethingNew(it) },
                             onThreads = { look(Away.Threads) },
+                            onConnections = { look(Away.Connections) },
                             onNotes = { look(Away.Notes) },
                             origin = origin,
                             backTo = beneath,
@@ -1059,7 +1091,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                         )
                         standing is Away.Thread -> ThreadScreen(
                             threadId = standing.threadId,
-                            store = store,
+                            onAskNew = { askSomethingNew() },                            store = store,
                             receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
                             lookedAt = lookedAtIds,
                             backTo = beneath,
@@ -1079,11 +1111,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.
                         tab == Tab.Coach && !account.isSignedIn ->
-                            AskSignedOutStance(seat = youInitial, onSignIn = LocalShellActions.current.openYou)
-                        tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial)
+                            AskSignedOutStance(seat = youInitial, onSignIn = { shell.openSignIn(null) })
+                        tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
                         tab == Tab.Coach -> AskScreen(
                             store = store,
                             thread = conversation,
+                            conversationId = conversationId,
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
@@ -1093,8 +1126,10 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                                 conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
                             },
                             onAskNew = { askSomethingNew() },
-                            seed = "",
+                            seed = conversationSeed,
+                            onNewDraft = { askSomethingNew(it) },
                             onThreads = { look(Away.Threads) },
+                            onConnections = { look(Away.Connections) },
                             onNotes = { look(Away.Notes) },
                             origin = origin,
                             backTo = null,
@@ -1113,8 +1148,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             onOpenRoutine = { look(Away.Program(it)) },
                             onDeleteRoutine = { destroy(it) },
                             onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                            onOpenSettings = { look(Away.Settings) },
-                            onSignIn = LocalShellActions.current.openYou,
+                            onSignIn = { shell.openSignIn(null) },
                         )
                     }
                 }

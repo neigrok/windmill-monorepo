@@ -81,23 +81,17 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
       cb(error(drogon::k502BadGateway, "Coach didn’t answer. Try again in a moment"));
       return;
     }
-    Json::Value steps(Json::arrayValue);
-    for (const AskStep& step : reply.answer.steps) {
-      Json::Value entry(Json::objectValue);
-      entry["tool"] = step.tool;
-      entry["failed"] = step.failed;
-      steps.append(entry);
-    }
     Json::Value proposals(Json::arrayValue);
     for (const std::string& id : reply.proposals) proposals.append(id);
 
     Json::Value body(Json::objectValue);
     body["answer"] = reply.answer.answer;
-    body["steps"] = steps;          // tools called, in call order
+    body["steps"] = toJson(reply.answer.steps);
     // Rows the server's own tools served during this exchange, deduped by id.
     body["read"] = toJson(reply.read);
     body["proposals"] = proposals;
     body["thread"] = thread.str();
+    if (reply.receipt) body["receipt"] = toJson(*reply.receipt);
     cb(jsonResponse(body));
   });
 }

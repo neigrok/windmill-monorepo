@@ -38,6 +38,8 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +67,7 @@ import works.windmill.platform.design.WindmillFont
 @Composable
 fun ReadsAgainOnReturn(onReturn: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentReturn by rememberUpdatedState(onReturn)
     DisposableEffect(lifecycleOwner) {
         var stopped = false
         val watcher = LifecycleEventObserver { _, event ->
@@ -72,7 +75,7 @@ fun ReadsAgainOnReturn(onReturn: () -> Unit) {
                 Lifecycle.Event.ON_STOP -> stopped = true
                 Lifecycle.Event.ON_RESUME -> if (stopped) {
                     stopped = false
-                    onReturn()
+                    currentReturn()
                 }
                 else -> Unit
             }

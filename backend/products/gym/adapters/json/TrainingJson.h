@@ -214,6 +214,9 @@ Json::Value toJson(const StatsProgress& progress);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
 Json::Value toJson(const ReadTally& tally);
+Json::Value toJson(const std::vector<AskStep>& steps);
+Json::Value toJson(const AnswerReceipt& receipt);
+std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 // A stored `sets` array read back: anything that is not an array is the open line, and a set that
 // cannot be read is dropped rather than failing the row it sits on.

@@ -1,8 +1,13 @@
 package works.windmill.gym.store
 
 import java.io.File
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimSource
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimItem
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import works.windmill.gym.domain.Ask
@@ -74,8 +79,9 @@ class SetQueue(
     }
 
     @Serializable
-    private data class Held(val queues: Map<String, Queued> = emptyMap())
+    private data class Held(val queues: Map<String, Queued> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private var migrated = false
     private var held: Held = open(deviceOwner)
@@ -93,8 +99,9 @@ class SetQueue(
             migrated = true
             return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
-        val queues = document["queues"] as? JsonObject ?: return Held()
-        return Held(queues.mapValues { queued(it.value) })
+        val queues = document["queues"] as? JsonObject ?: JsonObject(emptyMap())
+        return Held(queues.mapValues { queued(it.value) },
+            document["claims"]?.let { diskJson.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }.orEmpty())
     }
 
     // Item by item: a live session or an owed set this build cannot read is the one thing lost.
@@ -112,26 +119,51 @@ class SetQueue(
     private val mine: Queued get() = held.queues[seat] ?: Queued()
 
     private fun keep(next: Queued) {
-        held = Held(held.queues + (seat to next))
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        held = held.copy(queues = held.queues + (seat to next))
     }
 
-    // The one place the seat changes hands. The departing seat's live session and owed sets stay on
-    // disk under their own key, so no set is re-sent under somebody else's bearer. The anonymous
-    // queue rides onto an arriving account seat only when that seat has nothing live of its own, and
-    // only once the server has answered for this seat in this process (`confirmed`).
-    fun adopt(owner: String?, confirmed: Boolean = true) {
-        val next = Seat.of(owner)
-        val arriving = held.queues[next] ?: Queued()
-        val anonymous = held.queues[Seat.anonymous] ?: Queued()
-        // Not conditioned on the seat changing: a confirmed account seat with a free slot sweeps any
-        // anonymous queue.
-        val carrying = owner != null && confirmed && !anonymous.isEmpty && arriving.isEmpty
-        if (next == seat && !carrying) return
-        val parked = if (carrying) held.queues - Seat.anonymous else held.queues
-        val landed = if (carrying) anonymous else arriving
-        seat = next
-        held = Held((parked + (next to landed)).filterValues { !it.isEmpty })
-        flush()
+    // Selecting a seat never transfers training from another seat.
+    fun adopt(owner: String?) {
+        seat = Seat.of(owner)
+    }
+
+    fun claimItems(): List<ClaimItem> = ClaimSource.entries.mapNotNull { source ->
+        val queue = held.queues[source.seat]?.takeUnless { it.isEmpty } ?: return@mapNotNull null
+        claimItem(source, ClaimKind.Queue, queue.session?.id ?: "pending", queue, Queued.serializer(),
+            queue.session?.startedAtMs, active = queue.session != null)
+    }
+
+    fun preflight(batch: ClaimBatch, owner: String?) { transfer(batch, owner) }
+
+    fun complete(batch: ClaimBatch, owner: String?) {
+        val next = transfer(batch, owner)
+        if (next == held) return
+        try {
+            persistClaimConsent(file, diskJson.encodeToString(Held.serializer(), next))
+        } catch (failure: Exception) {
+            transferFailed = true
+            throw failure
+        }
+        held = next
+    }
+
+    private fun transfer(batch: ClaimBatch, owner: String?): Held {
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        if (held.claims.completed(batch, owner)) return held
+        var queues = held.queues
+        for (item in batch.items.filter { it.kind == ClaimKind.Queue }) {
+            val value = item.decode(Queued.serializer())
+            check(item.id == (value.session?.id ?: "pending"))
+            if (owner != null) {
+                val target = queues[Seat.of(owner)] ?: Queued()
+                check(target.isEmpty || target == value) { "Finish the account’s current workout before adding this training." }
+                queues = queues + (Seat.of(owner) to value)
+            }
+            val source = queues[item.source.seat]
+            if (source != null && item.matches(source, Queued.serializer())) queues = queues - item.source.seat
+        }
+        return held.copy(queues = queues, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }
 
     // Names no movement and no numbers: whoever reads this may not be who lifted them.
@@ -139,23 +171,6 @@ class SetQueue(
 
     // There can be owed sets and no live session.
     val hasUnattributed: Boolean get() = Seat.quarantine in held.queues
-
-    // Only a signed-in seat may claim the quarantine, and only onto a seat holding nothing of its
-    // own: there is room for one live workout and one set of owed lanes.
-    fun release(): Boolean {
-        if (seat == Seat.anonymous) return false
-        val quarantined = held.queues[Seat.quarantine] ?: return false
-        if (!mine.isEmpty) return false
-        held = Held(held.queues - Seat.quarantine + (seat to quarantined))
-        flush()
-        return true
-    }
-
-    fun discardUnattributed() {
-        if (Seat.quarantine !in held.queues) return
-        held = Held(held.queues - Seat.quarantine)
-        flush()
-    }
 
     val order: List<String> get() = mine.order ?: emptyList()
 

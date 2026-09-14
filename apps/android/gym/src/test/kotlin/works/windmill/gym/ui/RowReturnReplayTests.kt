@@ -95,7 +95,6 @@ class RowReturnReplayTests {
                     store.withhold(Deletion.Routine(id, store.routine(id)?.name ?: "?"))
                 },
                 onReview = {},
-                onOpenSettings = {},
                 onSignIn = {},
             )
         }

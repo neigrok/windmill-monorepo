@@ -42,6 +42,30 @@ TEST(a_thread_that_proposed_nothing_is_read_only) {
   CHECK_EQ(toString(outcome.kind), std::string("read-only"));
 }
 
+TEST(a_missing_recorded_proposal_has_no_known_outcome_count_or_routine) {
+  AskThread held = thread({});
+  held.referencedProposals = {ProposalId{"prop_0001"}};
+  CHECK_EQ(outcomeOf(held), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
+}
+
+TEST(a_missing_proposal_does_not_turn_the_remaining_proposals_into_a_complete_total) {
+  for (const ProposalState state : {ProposalState::pending, ProposalState::applied,
+                                   ProposalState::dismissed, ProposalState::superseded}) {
+    AskThread held = thread({minted("prop_0002", state, 4)});
+    held.referencedProposals = {ProposalId{"prop_0001"}, ProposalId{"prop_0002"}};
+    CHECK_EQ(outcomeOf(held), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
+  }
+}
+
+TEST(repeated_receipt_references_do_not_repeat_the_count_of_a_known_proposal) {
+  AskThread held = thread({minted("prop_0001", ProposalState::applied, 3),
+                          minted("prop_0002", ProposalState::pending, 5)});
+  held.referencedProposals = {ProposalId{"prop_0002"}, ProposalId{"prop_0001"},
+                              ProposalId{"prop_0001"}};
+  CHECK_EQ(outcomeOf(held),
+           (ThreadOutcome{ThreadOutcomeKind::applied, 3, RoutineId{"rt_00000001"}, "Push A"}));
+}
+
 TEST(an_applied_thread_counts_what_landed_and_names_the_routine_it_landed_on) {
   const ThreadOutcome outcome =
       outcomeOf(thread({minted("prop_0001", ProposalState::applied, 3),
@@ -147,4 +171,5 @@ TEST(every_outcome_has_one_stored_word_and_they_do_not_collide) {
   CHECK_EQ(toString(ThreadOutcomeKind::applied), std::string("applied"));
   CHECK_EQ(toString(ThreadOutcomeKind::dismissed), std::string("dismissed"));
   CHECK_EQ(toString(ThreadOutcomeKind::superseded), std::string("superseded"));
+  CHECK_EQ(toString(ThreadOutcomeKind::unknown), std::string("unknown"));
 }

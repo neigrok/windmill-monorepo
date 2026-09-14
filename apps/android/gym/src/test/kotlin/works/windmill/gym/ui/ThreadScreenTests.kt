@@ -7,7 +7,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,23 +23,31 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.AskTurn
+import works.windmill.gym.domain.AnswerReceipt
+import works.windmill.gym.domain.ReadTally
+import works.windmill.gym.domain.ThreadOutcome
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalSource
+import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.ThreadProposal
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.net.TrainingSyncing
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.ProposalOutcome
+import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
@@ -53,7 +63,7 @@ class ThreadScreenTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun store(scope: CoroutineScope, server: FakeTraining): TrainingStore {
+    private fun store(scope: CoroutineScope, server: TrainingSyncing): TrainingStore {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
@@ -107,7 +117,7 @@ class ThreadScreenTests {
 
         compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
         compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
-        compose.onNodeWithText("1 change to Push Day · still waiting").assertIsDisplayed()
+        compose.onNodeWithText("1 change · still waiting").assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
         compose.runOnIdle { assertEquals(listOf("prop_1"), doors) }
         scope.cancel()
@@ -163,17 +173,151 @@ class ThreadScreenTests {
                 backTo = "Coach", onBack = {}, onReview = {}, say = {},
             )
         }
-        compose.onNodeWithText("1 change to Push Day · waiting").assertIsDisplayed()
-        compose.onNodeWithText("1 change waiting").assertIsDisplayed()
+        compose.onNodeWithText("1 change").assertIsDisplayed()
+        compose.onNodeWithText("Review").assertIsDisplayed()
+        compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
+            .performScrollTo().assertIsDisplayed()
 
         val settled = runBlocking { store.applyProposal("prop_1") as ProposalOutcome.Decided }
         compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
 
         compose.onNodeWithText("Applied · Push Day · 1 change").assertIsDisplayed()
-        compose.onNodeWithText("1 change to Push Day · applied").assertIsDisplayed()
-        compose.onNodeWithText("1 change → Push Day").assertIsDisplayed()
+        compose.onNodeWithText("1 change").assertIsDisplayed()
+        compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
         compose.onNodeWithText("waiting", substring = true).assertDoesNotExist()
+        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
         compose.runOnIdle { assertEquals(2, server.calls.count { it == "thread" }) }
         scope.cancel()
     }
+    @Test
+    fun aFailedConversationReadRetriesWithoutCreatingAConversation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        val thread = AskThread("thr_retry", "My question", turns = listOf(AskTurn("coach", "The original answer.")))
+        server.conversations[thread.id] = thread
+        server.online = false
+        compose.setContent {
+            ThreadScreen(thread.id, store, emptyList(), emptySet(), "Coach", {}, {}, {})
+        }
+        compose.onNodeWithText("the log didn’t answer — that conversation didn’t open").assertIsDisplayed()
+        compose.onNodeWithText("The original answer.").assertDoesNotExist()
+        server.online = true
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("The original answer.").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf(thread), server.conversations.values.toList())
+            assertEquals(0, server.calls.count { it == "ask" })
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aPastReceiptWhoseProposalIsGoneKeepsProseWithoutInventingItsOutcomeOrRetry() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val thread = AskThread("thr_removed", "What about this routine?",
+            outcome = ThreadOutcome("unknown"),
+            turns = listOf(AskTurn("coach", "The original proposal explanation.",
+                receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf("prop_removed")))))
+        server.conversations[thread.id] = thread
+        val store = store(scope, server)
+        compose.setContent {
+            ThreadScreen(thread.id, store, emptyList(), emptySet(), "Coach", {}, {}, {})
+        }
+        compose.onNodeWithText("The original proposal explanation.").assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText("Review").assertDoesNotExist()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.onNodeWithText("Read-only").assertDoesNotExist()
+        compose.onNodeWithText("Applied").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(mapOf(thread.id to thread), server.conversations)
+            assertEquals(listOf("proposal"), server.calls.filter { it == "proposal" })
+            assertEquals(emptyList<String>(), server.calls.filter { it == "applyProposal" || it == "dismissProposal" })
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aConfirmedRemovalReceiptStaysVisibleAfterTheThreadLosesItsProposalHeader() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        val routine = runBlocking { (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value }
+        val proposal = aProposal(routine.id, routine.revision, "Remove this routine.")
+            .copy(intent = ProposalIntent.Remove, changes = emptyList())
+        server.propose(proposal)
+        val thread = aThread(routine.id).copy(turns = listOf(AskTurn("coach", "The original removal explanation.",
+            receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf(proposal.id)))))
+        server.conversations[thread.id] = thread
+        var receipts by mutableStateOf<List<String>>(emptyList())
+        val reviewed = mutableListOf<String>()
+        compose.setContent {
+            ThreadScreen(thread.id, store, receipts, emptySet(), "Coach", {}, { reviewed += it.id }, {})
+        }
+        compose.onNodeWithText("Remove this routine.").assertIsDisplayed()
+        compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
+            .performScrollTo().assertIsDisplayed()
+        val settled = runBlocking { store.applyProposal(proposal.id) as ProposalOutcome.Decided }
+        compose.runOnIdle {
+            assertEquals(emptyMap<String, Proposal>(), server.ledger)
+            server.conversations[thread.id] = thread.copy(proposals = emptyList(), outcome = ThreadOutcome("unknown"))
+            receipts = listOf(requireNotNull(settled.proposal.receipt))
+        }
+        compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).assertIsDisplayed()
+        compose.onNodeWithText("Remove this routine.").assertIsDisplayed()
+        compose.onNodeWithText("Review").performClick()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf(proposal.id), reviewed)
+            assertEquals(ProposalRead.Found(settled.proposal), runBlocking { store.proposal(proposal.id) })
+            assertEquals(thread.turns, server.conversations.getValue(thread.id).turns)
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aReceiptOnlyProposalReadFailureOffersRetryAndThenTheActualProposal() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        var failed = true
+        var reads = 0
+        val wire = object : TrainingSyncing by server {
+            override suspend fun proposal(id: String): Proposal? {
+                reads += 1
+                if (failed) throw IOException("no connection")
+                return server.proposal(id)
+            }
+        }
+        val store = store(scope, wire)
+        val routine = runBlocking { (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value }
+        val proposal = aProposal(routine.id, routine.revision)
+        server.propose(proposal)
+        val thread = AskThread("thr_1", "My question", outcome = ThreadOutcome("unknown"),
+            turns = listOf(AskTurn("coach", "The original answer.",
+                receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf(proposal.id)))))
+        server.conversations[thread.id] = thread
+        compose.setContent {
+            ThreadScreen(thread.id, store, emptyList(), emptySet(), "Coach", {}, {}, {})
+        }
+        compose.onNodeWithText("The original answer.").assertIsDisplayed()
+        compose.onNodeWithText("the log didn’t answer — the proposal wasn’t read").assertIsDisplayed()
+        compose.onNodeWithText("Review").assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        failed = false
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
+        compose.onNodeWithText("Review").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(2, reads)
+            assertEquals(mapOf(proposal.id to proposal), server.ledger)
+            assertEquals(mapOf(thread.id to thread), server.conversations)
+        }
+        scope.cancel()
+    }
+
 }

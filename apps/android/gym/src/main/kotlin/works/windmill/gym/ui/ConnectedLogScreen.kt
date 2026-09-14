@@ -1,60 +1,32 @@
 package works.windmill.gym.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.ConnectedLogState
-import works.windmill.gym.domain.ConnectedTool
 import works.windmill.gym.domain.LogLevel
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
-// The decision surface where a lifter hands their log to their own AI: what a grant reaches, as
-// three rows of facts, and the one action that starts it. Two states from two reads — the head line
-// steps aside for the list of what is connected — and one disclosure, closed by default, that is the
-// whole of the long form. Signed out the log is this device's and a grant belongs to an account, so
-// the action is the sign-in door.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectedLogScreen(
@@ -68,188 +40,102 @@ fun ConnectedLogScreen(
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
-    var open by rememberSaveable { mutableStateOf(false) }
-    var refreshing by remember { mutableStateOf(false) }
-    val now = remember { System.currentTimeMillis() }
-
-    // Asked on the way in and again whenever the store drops the seat's answer; the store reads only
-    // while it holds none, so this ask and the settings row's are one read.
-    LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
-    // Back from the browser `Connect a tool` opened, the tool just connected must be here without a
-    // pull.
-    ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
-
+    val owner = store.accountKey
+    var open by rememberSaveable(owner) { mutableStateOf(false) }
+    var refreshing by remember(owner) { mutableStateOf(false) }
+    val now = System.currentTimeMillis()
+    fun refresh() {
+        if (refreshing || !isSignedIn) return
+        refreshing = true
+        scope.launch {
+            try { store.refreshConnectedLog() }
+            finally { if (store.accountKey == owner) refreshing = false }
+        }
+    }
+    LaunchedEffect(store, owner, isSignedIn) { if (isSignedIn) store.readConnectedLog() }
+    ReadsAgainOnReturn { refresh() }
     val state = store.connectedLog
     val connected = state as? ConnectedLogState.Connected
-
-    GymScreen(
-        title = ConnectedLog.title,
-        onBack = onBack,
-        backTo = backTo,
+    GymScreen(title = ConnectedLog.title, onBack = onBack, backTo = backTo,
         bottomBar = {
-            if (isSignedIn) {
-                ActionBand(ConnectedLog.action, leavesTheApp = true) {
-                    runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Button(onClick = {
+                    if (isSignedIn) runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                    else onSignIn()
+                }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent)) {
+                    Text(if (isSignedIn) ConnectedLog.action else ConnectedLog.actionSignedOut,
+                        style = WindmillFont.body(16, FontWeight.Bold), textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    if (isSignedIn) Icon(painterResource(R.drawable.gym_open_in_new), ConnectedLog.opensInBrowser,
+                        modifier = Modifier.size(24.dp))
                 }
-            } else {
-                ActionBand(ConnectedLog.actionSignedOut, leavesTheApp = false, onTap = onSignIn)
             }
-        },
-    ) {
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = {
-                scope.launch {
-                    refreshing = true
-                    store.refreshConnectedLog()
-                    refreshing = false
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = GymLayout.contentTop, bottom = GymLayout.scrollTailBand),
-            ) {
+        }) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 when {
-                    connected != null -> {
-                        item("connected") { SectionHead(ConnectedLog.connectedHead) }
-                        // Prefixed so a wire id can never collide with a fixed key below.
-                        items(connected.tools, key = { "tool:" + it.id }) { tool -> ToolRow(tool, now) }
+                    isSignedIn && connected != null -> {
+                        item("head") { Text(ConnectedLog.connectedHead, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 31.sp), color = skin.ink) }
+                        items(connected.tools, key = { "tool:${it.credential}:${it.id}" }) { tool -> ConnectionRow(tool.name, tool.meta(now)) }
                     }
-                    state == ConnectedLogState.Refused -> {
-                        item("connected") { SectionHead(ConnectedLog.connectedHead) }
-                        item("unread") { Fact(ConnectedLog.unread, skin.inkDim) }
+                    isSignedIn && state == ConnectedLogState.Refused -> item("head") {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(ConnectedLog.unavailable, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 31.sp), color = skin.ink)
+                            Text(ConnectedLog.unread, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
+                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
+                        }
+                    }
+                    isSignedIn && state == ConnectedLogState.Unknown -> item("head") {
+                        Text("Reading your connections…", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
                     }
                     else -> item("head") {
-                        Text(
-                            ConnectedLog.head,
-                            style = WindmillFont.display(22),
-                            color = skin.ink,
-                            modifier = Modifier.padding(horizontal = rowInset, vertical = WindmillSpace.x2),
-                        )
+                        Text(ConnectedLog.head, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 31.sp), color = skin.ink)
                     }
                 }
-                items(LogLevel.entries, key = { it.wire }) { level ->
-                    ListItem(
-                        headlineContent = { Text(level.label, style = WindmillFont.body(15, FontWeight.Bold)) },
-                        supportingContent = { Text(level.meta, style = GymType.numeral(13)) },
-                        colors = rowColors(),
-                    )
-                }
-                item("caption") { Fact(ConnectedLog.caption, skin.inkDim) }
-                if (connected != null) {
-                    item("manage") {
-                        ListItem(
-                            headlineContent = { Text(ConnectedLog.manage, style = WindmillFont.body(15)) },
-                            trailingContent = { LeavesTheApp() },
-                            colors = rowColors(),
-                            modifier = Modifier.clickable(role = Role.Button) {
-                                runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
-                            },
-                        )
+                items(LogLevel.entries, key = { "level:${it.wire}" }) { level ->
+                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        ConnectionRow(level.label, level.meta)
+                        HorizontalDivider(color = skin.raised)
                     }
                 }
-                // The platform's expand-more / expand-less pair, and the state in the bytes a screen
-                // reader hears: the chevron alone says nothing to TalkBack.
+                item("caption") { Text(ConnectedLog.caption, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink) }
+                if (isSignedIn && connected != null) item("manage") {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) {
+                        runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
+                    }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(ConnectedLog.manage, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                            color = skin.ink, modifier = Modifier.weight(1f))
+                        Icon(painterResource(R.drawable.gym_open_in_new), ConnectedLog.opensInBrowser, tint = skin.inkDim, modifier = Modifier.size(24.dp))
+                    }
+                }
                 item("disclosure") {
-                    ListItem(
-                        headlineContent = { Text(ConnectedLog.disclosure, style = WindmillFont.body(15)) },
-                        trailingContent = {
-                            Icon(
-                                if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = skin.inkFaint,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        },
-                        colors = rowColors(),
-                        modifier = Modifier
-                            .clickable(role = Role.Button) { open = !open }
-                            .semantics { stateDescription = if (open) ConnectedLog.open else ConnectedLog.closed },
-                    )
+                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) { open = !open }
+                        .semantics { stateDescription = if (open) ConnectedLog.open else ConnectedLog.closed }
+                        .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(ConnectedLog.disclosure, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                            color = skin.ink, modifier = Modifier.weight(1f))
+                        Box(Modifier.graphicsLayer { rotationZ = if (open) 90f else 0f }) { Chevron() }
+                    }
                 }
-                if (open) items(ConnectedLog.how) { line -> Fact(line, skin.inkDim) }
+                if (open) item("how") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        ConnectedLog.how.forEach { Text(it, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim) }
+                    }
+                }
             }
         }
     }
 }
 
-// The reach band: the screen's one primary, above the safe-bottom inset and out of the scroll. A tap
-// that leaves the app says so in the glyph, in the bytes a screen reader hears.
 @Composable
-private fun ActionBand(label: String, leavesTheApp: Boolean, onTap: () -> Unit) {
+private fun ConnectionRow(title: String, detail: String) {
     val skin = LocalGymColors.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(skin.canvas)
-            .padding(horizontal = GymLayout.gutter)
-            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3)
-            .heightIn(min = GymTap.primary)
-            .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(role = Role.Button, onClick = onTap),
-    ) {
-        Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
-        if (leavesTheApp) LeavesTheApp(tint = skin.onAccent)
+    Column(Modifier.fillMaxWidth().heightIn(min = 64.dp).semantics(mergeDescendants = true) {}
+        .padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+        Text(detail, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
     }
 }
-
-@Composable
-private fun LeavesTheApp(tint: Color? = null) {
-    val skin = LocalGymColors.current
-    Icon(
-        GymGlyph.openInNew,
-        contentDescription = ConnectedLog.opensInBrowser,
-        tint = tint ?: skin.accent,
-        modifier = Modifier.size(16.dp),
-    )
-}
-
-@Composable
-private fun ToolRow(tool: ConnectedTool, now: Long) {
-    ListItem(
-        headlineContent = { Text(tool.name, style = WindmillFont.body(15, FontWeight.Bold)) },
-        supportingContent = { Text(tool.meta(now), style = GymType.numeral(13)) },
-        colors = rowColors(),
-    )
-}
-
-@Composable
-private fun SectionHead(title: String) {
-    val skin = LocalGymColors.current
-    Text(
-        title,
-        style = GymType.numeral(11, FontWeight.Bold),
-        color = skin.inkDim,
-        modifier = Modifier.padding(horizontal = rowInset, vertical = WindmillSpace.x2),
-    )
-}
-
-// A line of prose under a group: the caption, the unread row, the disclosure's lines.
-@Composable
-private fun Fact(line: String, color: Color) {
-    Text(
-        line,
-        style = GymType.numeral(13).copy(lineHeight = 19.sp),
-        color = color,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = rowInset, vertical = WindmillSpace.x2),
-    )
-}
-
-@Composable
-private fun rowColors(): androidx.compose.material3.ListItemColors {
-    val skin = LocalGymColors.current
-    return ListItemDefaults.colors(
-        containerColor = Color.Transparent,
-        headlineColor = skin.ink,
-        supportingColor = skin.inkDim,
-    )
-}
-
-// The platform's own list-item inset, so prose drawn between rows lines up with their text.
-private val rowInset = 16.dp

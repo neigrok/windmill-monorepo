@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -63,8 +64,13 @@ private fun Root(auth: AuthStore) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(watcher) }
     }
 
-    var youUp by remember { mutableStateOf(false) }
-    val shell = remember { ShellActions(openYou = { youUp = true }) }
+    var youUp by rememberSaveable { mutableStateOf(false) }
+    var signIn by rememberSaveable { mutableStateOf(false) }
+    var authFlow by rememberSaveable { mutableStateOf<String?>(null) }
+    val shell = remember {
+        ShellActions(openYou = { signIn = false; authFlow = null; youUp = true },
+            openSignIn = { flow -> signIn = true; authFlow = flow; youUp = true })
+    }
     val gym = remember { GymModule() }
 
     val standing = auth.status
@@ -80,7 +86,9 @@ private fun Root(auth: AuthStore) {
         WindmillMaterial {
             gym.Skin {
                 gym.Room(account)
-                if (youUp) YouSheet(auth, onDismiss = { youUp = false })
+                if (youUp) YouSheet(auth, onDismiss = { youUp = false },
+                    destinations = shell.destinations, startSignIn = signIn, flowId = authFlow,
+                    onSignedIn = shell::authenticated, onAuthDismiss = shell::authDismissed)
             }
         }
     }

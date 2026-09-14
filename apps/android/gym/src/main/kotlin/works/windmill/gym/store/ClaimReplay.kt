@@ -52,6 +52,7 @@ class ClaimReplay(
     private val isCurrent: () -> Boolean = { true },
     private val onChange: (Change) -> Unit = {},
     private val bodyweightWrite: Mutex = Mutex(),
+    private val preferencesWrite: Mutex = Mutex(),
 ) {
     sealed interface Change {
         data class SessionMoved(val oldId: String, val session: Session) : Change
@@ -105,15 +106,20 @@ class ClaimReplay(
 
     // A send that could still land leaves the document owed; a refusal that never will is said and
     // let go, or a terminal write re-sent on every connect jams the claim forever.
-    private suspend fun claimPreferences(said: MutableList<RefusedWrite>) {
-        if (!preferences.owed) return
+    private suspend fun claimPreferences(said: MutableList<RefusedWrite>) = preferencesWrite.withLock {
+        if (!isCurrent()) throw SeatChanged()
+        if (!preferences.owed) return@withLock
+        val document = preferences.document
+        val revision = preferences.revision
         try {
-            preferences.landed(exchange { log.savePreferences(preferences.document) })
+            val stored = exchange { log.savePreferences(document) }
+            if (revision == preferences.revision) preferences.landed(stored)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
+            if (revision != preferences.revision) return@withLock
             val facts = RefusalFacts(refusing)
-            if (Verdict.refusing(facts) is Verdict.Retry) return
+            if (Verdict.refusing(facts) is Verdict.Retry) return@withLock
             said += RefusedClaim("preferences", "your gym settings", facts.sentence ?: "the log refused these settings")
             preferences.letGo()
         }

@@ -86,7 +86,7 @@ class PlanningSwipePaintTests {
             CompositionLocalProvider(LocalWindmillDark provides dark) {
                 GymMaterial {
                     RoutinesScreen(store, true, emptySet(), "S", {}, {}, {},
-                        { store.withhold(Deletion.Routine(it, "Push Day")) }, {}, {}, {})
+                        { store.withhold(Deletion.Routine(it, "Push Day")) }, {}, {})
                 }
             }
         }

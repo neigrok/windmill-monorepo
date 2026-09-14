@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.CancellationException
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import works.windmill.platform.User
@@ -34,23 +35,27 @@ class AuthStore(
         private set
 
     val api = WindmillApi(baseUrl, sessions::read, client)
+    private var generation = 0L
 
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
     suspend fun restore() {
+        val attempt = generation
         if (sessions.read() == null) {
             status = AuthStatus.SignedOut
             return
         }
-        status = try {
+        try {
             val user = api.get<UserResponse>("/v1/me").user
+            if (attempt != generation) return
             sessions.remember(user)
-            AuthStatus.SignedIn(user)
+            status = AuthStatus.SignedIn(user)
         } catch (unanswered: WindmillApiException) {
+            if (attempt != generation) return
             if (unanswered.isUnauthorized) {
                 sessions.clear()
-                AuthStatus.SignedOut
+                status = AuthStatus.SignedOut
             } else {
-                sessions.user()?.let { AuthStatus.SignedIn(it, verified = false) } ?: AuthStatus.SignedOut
+                status = sessions.user()?.let { AuthStatus.SignedIn(it, verified = false) } ?: AuthStatus.SignedOut
             }
         }
     }
@@ -63,21 +68,33 @@ class AuthStore(
 
     // `door: "app"` makes the mail carry a 6-digit code rather than a link.
     suspend fun requestLink(email: String) {
+        val attempt = generation
         val address = email.trim()
         api.send<Unit>("POST", "/v1/auth/magic-link", MagicLinkRequest(address, door = "app"))
+        if (attempt != generation) throw CancellationException("Authentication changed.")
         linkSentTo = address
     }
 
-    suspend fun completeCode(email: String, code: String) {
+    suspend fun completeCode(email: String, code: String, beforeCommit: (User) -> Unit = {}) {
+        val attempt = ++generation
         val answer = api.sendCapturingSession<UserResponse>(
             "POST", "/v1/auth/verify-code", CodeRequest(email.trim(), code.trim()))
+        if (attempt != generation) throw CancellationException("Authentication changed.")
+        if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
+        beforeCommit(answer.reply.user)
+        if (attempt != generation) throw CancellationException("Authentication changed.")
         signedIn(answer)
     }
 
     // Accepts either the whole magic-link URL or the bare token.
-    suspend fun completeLink(pasted: String) {
+    suspend fun completeLink(pasted: String, beforeCommit: (User) -> Unit = {}) {
+        val attempt = ++generation
         val token = MagicLink.token(pasted) ?: throw MagicLink.unreadable
         val answer = api.sendCapturingSession<UserResponse>("POST", "/v1/auth/verify", TokenRequest(token))
+        if (attempt != generation) throw CancellationException("Authentication changed.")
+        if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
+        beforeCommit(answer.reply.user)
+        if (attempt != generation) throw CancellationException("Authentication changed.")
         signedIn(answer)
     }
 
@@ -91,11 +108,13 @@ class AuthStore(
     }
 
     suspend fun signOut() {
+        val attempt = ++generation
         try {
             api.send<Unit>("POST", "/v1/auth/logout")
         } catch (unreachable: WindmillApiException) {
             // Sign-out is local.
         }
+        if (attempt != generation) return
         sessions.clear()
         linkSentTo = null
         status = AuthStatus.SignedOut

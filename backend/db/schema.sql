@@ -1170,6 +1170,7 @@ create table if not exists gym_ask_turns (
   said_at     timestamptz not null,
   primary key (thread_id, position)
 );
+alter table gym_ask_turns add column if not exists receipt jsonb;
 
 -- Which conversation minted this proposal. Null for every MCP-door proposal and for one whose
 -- thread was deleted; both read to a client as nothing to open.

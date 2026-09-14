@@ -145,7 +145,7 @@ class StanceReadsTheAccountTests {
             RoutinesScreen(
                 store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
                 onJustStart = {}, onBuild = { drafts += it }, onOpenRoutine = {},
-                onDeleteRoutine = {}, onReview = {}, onOpenSettings = {}, onSignIn = {},
+                onDeleteRoutine = {}, onReview = {}, onSignIn = {},
             )
         }
         val id = store.routines.single().id
@@ -184,7 +184,7 @@ class StanceReadsTheAccountTests {
                 onDelete = {}, onAskNew = {})
         }
         compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-        compose.onNodeWithText(Threads.counted(1)).assertIsDisplayed()
+        compose.onNodeWithText("Your conversations").assertIsDisplayed()
 
         compose.runOnIdle { store.withhold(Deletion.Thread("thr_1")) }
 
@@ -291,7 +291,7 @@ class StanceReadsTheAccountTests {
 
         compose.onNodeWithText(Threads.outOfReach).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
-        compose.onNodeWithText(Threads.counted(1)).assertDoesNotExist()
+        compose.onNodeWithText("Your conversations").assertDoesNotExist()
         // A list that could not be read is not an empty one either, so the never-asked stance stays
         // off as well.
         compose.onNodeWithText(Threads.none).assertDoesNotExist()

@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.gym.domain.ClaimBatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -174,10 +175,12 @@ class LocalLogTests {
         assertEquals(0, shelf.unattributed?.sessions)
         assertEquals(0, shelf.unattributed?.movements)
 
+        val batch = ClaimBatch("quarantine-approval", shelf.claimItems())
         shelf.adopt(null)
-        assertFalse("nobody signed in cannot say whose this is", shelf.release())
+        assertEquals(emptyList<Routine>(), shelf.routines)
         shelf.adopt("alice")
-        assertTrue(shelf.release())
+        shelf.preflight(batch, "alice")
+        shelf.complete(batch, "alice")
         assertEquals(listOf("Push Day"), shelf.routines.map { it.name })
         assertNull("and the quarantine is empty once it has been claimed", shelf.unattributed)
         val relaunched = LocalLog(file, deviceOwner = "alice")
@@ -200,18 +203,18 @@ class LocalLogTests {
     @Test
     fun testDiscardingTheQuarantineTakesItOffTheDiskAndLeavesTheSeatAlone() {
         val file = logFile()
-        val shelf = LocalLog(file)
-        shelf.hold(Routine(id = "rt_mine", name = "Mine"))
-        shelf.adopt("alice")
-        shelf.hold(Routine(id = "rt_alice", name = "Alice's"))
         file.writeText("""{"routines":[{"id":"rt_old","name":"Somebody's"}]}""")
-
         val reopened = LocalLog(file, deviceOwner = null)
+        val batch = ClaimBatch("quarantine-discard", reopened.claimItems())
+        val own = Routine(id = "rt_alice", name = "Alice's")
+        reopened.adopt("alice")
+        reopened.hold(own)
         assertEquals(1, reopened.unattributed?.routines)
-        reopened.discardUnattributed()
+        reopened.complete(batch, null)
         assertNull(reopened.unattributed)
-        assertEquals(emptyList<Routine>(), reopened.routines)
+        assertEquals(listOf(own), reopened.routines)
         assertNull("and it is gone from the disk too", LocalLog(file, null).unattributed)
+        assertEquals(listOf(own), LocalLog(file, "alice").routines)
     }
 
     @Test
@@ -241,7 +244,7 @@ class LocalLogTests {
     }
 
     @Test
-    fun testAnonymousWorkRidesOntoTheFirstConfirmedSeatAndOnlyOnce() {
+    fun testExplicitConsentMovesAnonymousWorkToOneAccountOnly() {
         val file = logFile()
         val shelf = LocalLog(file)
         shelf.hold(Exercise(id = "ex_anon", name = "Sled Push", custom = true))
@@ -249,7 +252,10 @@ class LocalLogTests {
             Session(id = "ses_anon", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
 
+        val batch = ClaimBatch("training-approval", shelf.claimItems())
         shelf.adopt("alice")
+        assertTrue(shelf.exercises.isEmpty() && shelf.finished.isEmpty())
+        shelf.complete(batch, "alice")
         assertEquals(listOf("ex_anon"), shelf.exercises.map { it.id })
         assertEquals(listOf("ses_anon"), shelf.finished.map { it.session.id })
 
@@ -261,20 +267,22 @@ class LocalLogTests {
     }
 
     @Test
-    fun testAnUnconfirmedSeatLeavesTheAnonymousShelfWhereItIs() {
+    fun testRepeatedSeatSelectionLeavesTheAnonymousShelfWhereItIs() {
         val file = logFile()
         val shelf = LocalLog(file)
         shelf.hold(Exercise(id = "ex_anon", name = "Sled Push", custom = true))
 
-        shelf.adopt("alice", confirmed = false)
-        assertEquals("nothing of nobody's rides onto a seat nobody answered for",
+        shelf.adopt("alice")
+        assertEquals("selecting an account does not claim anonymous work",
             emptyList<Exercise>(), shelf.exercises)
 
         shelf.adopt(null)
         assertEquals(listOf("ex_anon"), shelf.exercises.map { it.id })
-        shelf.adopt("alice", confirmed = true)
-        assertEquals("and the first verified connect carries it",
-            listOf("ex_anon"), shelf.exercises.map { it.id })
+        shelf.adopt("alice")
+        assertEquals("returning to the account still does not claim the shelf",
+            emptyList<Exercise>(), shelf.exercises)
+        shelf.adopt(null)
+        assertEquals(listOf("ex_anon"), shelf.exercises.map { it.id })
     }
 
     @Test

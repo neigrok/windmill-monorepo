@@ -1242,6 +1242,13 @@ private:
   // What this conversation minted, in mint order, each carrying the routine's name AS IT NOW STANDS.
   AskThread withMinted(const AskThread& held, bool withTurns) const {
     AskThread out = held;
+    out.referencedProposals.clear();
+    for (ThreadTurn& turn : out.turns) {
+      if (turn.fromLifter || (turn.receipt && !turn.receipt->valid())) turn.receipt.reset();
+      if (!turn.receipt) continue;
+      for (const std::string& id : turn.receipt->proposals)
+        out.referencedProposals.emplace_back(id);
+    }
     if (!withTurns) out.turns.clear();
     out.minted.clear();
     std::vector<const RoutineProposal*> minted;

@@ -20,8 +20,8 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 1 | Shared visual foundations, Instrument/Daylight palette propagation, 48 dp targets, Routines/Log/Coach navigation, Settings, removal of Kind controls and set-confirmation sound/vibration | Consolidate native chrome, typography, action and settings patterns; include account-sheet palette and system-bar contrast | Verified |
 | 2 | Routines: list/detail/create/edit, targets/fill, duplicate/delete/Undo, stale-edit protection; Create movement from planning and quick logging | Share movement creation and target-entry behavior; preserve the draft and originally read revision on refusal | Verified |
 | 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified |
-| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified locally; publication gate pending |
-| 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Pending |
+| 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified |
+| 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Verified |
 | 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Pending |
 | 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Pending |
 | Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Pending |
@@ -67,9 +67,11 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
 - JDK: `/Users/vs/.gradle/jdks/eclipse_adoptium-21-aarch64-os_x.2/jdk-21.0.7+6/Contents/Home`.
 - SDK: `/Users/vs/Library/Android/sdk`. GitHub authentication and adb work with the required host
   access. The existing emulator and other agents' local servers are preserved.
-- Authoritative verification uses backend 8089, Vite 5177 and fresh emulator `emulator-5556`.
-  Database `windmill_android_waves` and emulator data under `/private/tmp/windmill-android-runtime`
-  are isolated from the existing services and device. App API override: `http://10.0.2.2:8089`.
+- Current native verification uses the final W5 real-service fixture8097 through the reviewed
+  proxy8095, database `windmill_android_w5`, Vite5177 and isolated emulator `emulator-5556`.
+  App API override: `http://10.0.2.2:8095`. W4's8089 and its database remain preserved. An isolated
+  API37 emulator5558 is booted for Wave6 with no app installed. Runtime evidence stays under
+  `/private/tmp/windmill-android-runtime`; the existing personal device is untouched.
 
 ## Implementation log
 
@@ -500,10 +502,12 @@ and W5 owns enabled conversation acceptance. The final Fix native Back/Cancel/sc
   transport/domain/store are unchanged. Final APK `wave4-preview3.apk` uses local8089 and has
   SHA-256 `f243cdfc7f9af0c447a1f35a5a4ad99161f013a971da3c9b35d5a5211002261d`.
   Independent review and final native acceptance are clear; the API34 crash buffer is empty.
-- W4 publication is the remaining wave gate.
-  Publication must also pass Backend CI/CD and its automatic Deploy to VPS run: the existing
-  workflow pins both checkout and container image to the triggering commit. The release APK uses
-  windmill.works and therefore depends on successful backend deployment, not only Android CI.
+- W4 is published in `74403411a69065b1e4714ef42580238337559840`.
+  [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/34793748768) passed for
+  that exact commit in6m43s. [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/34793748531)
+  and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/34794238808) also
+  passed for the exact commit. The deployment pins both checkout and container image to the
+  triggering commit. The publication gate is complete.
 
 ### Wave 4 state coverage
 
@@ -526,36 +530,193 @@ Native offline correction/replay, pagination failure/retry/end and held-versus-s
 are verified separately. Controlled transport refusal, account races, midnight rollover and
 accessibility actions use unit/Compose tests; no physical haptic output is claimed.
 
-### Wave 5 — integration preparation
+### Wave 5 — implementation and acceptance
 
-- A separate backend implementation is assigned to `codex/android-w5-coach-evidence` in
-  `/private/tmp/windmill-android-wave5-backend`, based on published W3. It must leave the W4
-  worktree/runtime/database untouched and remain uncommitted until independent review and
-  integration after W4 publication. The new checkout was created from `c8becf80`; W4 remains
-  untouched. The typed receipt contract is pinned in the delivery handoff, including actual
-  opening/failed tool steps, successful scoped observations and immutable per-answer persistence.
-  Backend implementation is frozen and independently reviewed:169/169 focused cases pass with
-  zero skips, including eight real Postgres cases; production server builds and idempotent schema
-  application pass. Integration waits for W4 publication. A deterministic local model-boundary
-  harness is being prepared outside the repo for native acceptance; no vendor/email run is claimed.
-- Notes implementation is assigned separately in `/private/tmp/windmill-android-wave5-notes`.
-  It owns only Notes list/editor, pure limits and mirrored tests; main retains TrainingStore and
-  GymRoom integration. Current callbacks are pinned, with raw drafts/stable IDs, exact Unicode/
-  UTF-8 limits, accessible reorder and independent Undo. Consent's durable manifest schema is
-  still being pinned before implementation.
-- Read-only preparation identified two required data boundaries: Coach currently discards read
-  facts before storing answer history, and normal anonymous workout/bodyweight data is adopted
-  automatically during account connection. The existing “These are mine” row covers legacy
-  quarantine only. W5 must persist authoritative answer evidence and require an explicit durable
-  ownership decision before transferring anonymous data.
+- The independently reviewed17-file backend patch is integrated. Successful Coach answers carry
+  the actual opening/failed tool steps, successful scoped observations and immutable per-answer
+  receipts. Evidence is persisted atomically with the answer; old answers omit it. Integrated
+  backend verification passes187/187 cases with zero skips, including11 real Postgres cases and
+  all18 W4 progress regressions. Production server build and idempotent schema application pass.
+- The local model-boundary harness lives outside every repo in
+  `/private/tmp/windmill-android-runtime/w5-fixture`, using only `windmill_android_w5`. Its self-check
+  passes real authentication, receipts/history, proposal apply/replay, failed-model cleanup, Notes,
+  keys and grants. Root runs native scenarios on loopback8095; W4's8089 remains running. The
+  model is scripted and email is captured locally; neither model quality nor external delivery is
+  claimed. Native Coach, Notes and Review acceptance is recorded below.
+- The six-file Notes patch is independently reviewed and integrated;27/27 focused tests pass,
+  including native graphics at200% in both themes. It preserves raw drafts/stable IDs, exact
+  Unicode/UTF-8 limits, accessible reorder and independent Undo. Main retains TrainingStore and
+  GymRoom integration.
+- The four-file consent manifest/persistence implementation is independently reviewed;13/13
+  focused tests pass. Approval preserves the frozen payload/revision batch, sign-in flow and
+  target owner. The journal syncs its temporary file, atomically replaces the durable decision,
+  then syncs the parent directory before exposing authority. Corrupt state and uncertain writes
+  fail closed. Per-file transfer/replay, active-queue preflight and Undo integration pass the
+  final store and native process-recovery gates below.
 - Preserve existing owner-scoped unsent work: “unclaimed session” also includes authenticated
   work awaiting the server, so it cannot be used as the consent flag. Claim recovery needs a
   frozen source manifest assigned to one account before any queue/log/bodyweight/settings move.
-- Capture Coach evidence at successful tool responses, preserving summary/full-session/movement
-  scope and the historical facts the answer actually saw. Store it atomically with the answer;
-  old answers have absent evidence. No new endpoint, schema or consent implementation is claimed.
+- Android's typed receipt transport and shared live/history renderer are implemented. They preserve
+  complete model prose and label summary/full-session/movement evidence according to its actual
+  scope; movement-only reads cannot supply whole-workout totals.
+- Pre-gate native APK `wave5-preview1.apk` has SHA-256
+  `8d06954bb1363e7c7a45227e97972d4efe7809767c62cb2d01c85dffa0734533` and uses local8095.
+  AssembleDebug passes21s/75tasks18executed. The real auth restore is sealed and preserves the
+  fixture baseline: one routine, four sessions, two Notes, no conversations or connected tools.
+  One native question produces the exact saved receipt:10 sets,4 weeks,4 sessions; four summaries,
+  one10-set full-session read and one3-set movement read. History reopens the full prose and facts.
+- Native Notes creation/editing, drag reorder,61-point title refusal, process replacement at320dp/
+  200% and exact501-byte body refusal pass. Delete fully closes the editor; Undo in2.29s restores
+  exact content, identity and order beyond the original9-second window, with disjoint56dp Add and
+  48dp Undo targets. An initial unverified long adb input entered309 bytes; the501-byte retry was
+  asserted from native field content before Save. The intended44-byte Note body is restored.
+- Native Review Back leaves the proposal pending; Turn down / Keep it cancels the decision.
+  At320dp/200%, resizing and expanding retained rows each disable Apply until the actual end is
+  seen. Apply advances exactly one routine revision and changes only Bench targets60→62.5kg;
+  all four performed-workout documents and saved conversation turns remain identical. The
+  applied diff reopens without decision controls. A second65kg proposal is turned down, preserving
+  revision2 and all plan entries. A third proposal is superseded by a simulated second-device
+  rename to Push Native/revision3; native Apply refuses it and retains the original readable diff.
+  Actual routine fields, performed workouts and saved turns remain unchanged by that refusal.
+- Native failed-model retry preserves the single completed conversation and adds no failed
+  question, answer or receipt. Three failed attempts exhaust the real local burst bucket; the
+  next native retry shows the rate-limit state. This checks burst limiting, not the daily or
+  30-day ceiling.
+- Pre-gate `wave5-preview2.apk` SHA-256
+  `b754402fae5eae4b42e1a839884947f9febe62f440c93e9ef79be5a62cf95808` passes the corrected first-answer
+  layout: full prose, one directly read full-workout card and expandable scoped evidence.
+  Summary-only observations remain in the disclosure. Fast subsequent replies still need their
+  new question scrolled into view. After four successful questions, native Ask new replaces the composer; tapping it leaves stored conversations unchanged. Server-full draft preservation has focused coverage.
+- Account, Sign-in and Connected log support UI passes26 focused cases; deferred AuthStore
+  verification passes23/23. Independent review identified interrupted sheet dismissal, stale
+  browser-return callbacks and obsolete skin assertions; fixes and regressions are integrated
+  for the final full gate. Native first-open account→Connected log, expanded disclosure, Back and
+  signed-out account→Settings pass. Reopening the signed-in account sheet can lose both
+  destinations; the native reproduction remains open and the temporary Routines settings door stays.
+- Native explicit consent writes the Android atomic journal before sign-in. A saved anonymous
+  routine and settings remain absent from the server while awaiting consent. The invalid-code
+  draft survives actual process replacement (4803→6223) at320dp/200% in Instrument. Correct-code
+  sign-in transfers exactly the approved routine, with all four workouts, three Notes and old
+  conversation unchanged, but a transient duplicate routine row crashes the UI. Relaunch recovers
+  the correct two routines and sealed credentials; `w5-signin-adoption-crash.log` records this
+  open failure. This is not final adoption acceptance.
+- Consent boundary fixes cover initial partial-transfer replay blocking, owner-safe preference
+  writes, completion markers in empty repositories, a later Not mine superseding a pending
+  preflight and resuming the same durably approved sign-in. Independent review and fresh-store
+  regressions pass independent re-review. Six migrated store suites pass215/215 without deleting behavioral assertions. No W5 commit or publication is claimed yet.
+- Native Connected log renders a real local API key with its actual whole-account reach. Manage
+  connections opens Chrome; revocation while outside the app is reflected on return. Chrome's
+  first-run page prevents local web-content acceptance, so this records native handoff and refresh
+  only. The synthetic key is revoked. History swipe-delete/Undo in2.49s preserves both saved
+  conversations exactly beyond9s, with56dp Ask something new and48dp Undo disjoint.
+
+
+- Preview4 (`42e154b875f42874bc80c64fde2a358f5f252539b2f7534e3aead5fc59a2b7b9`) replaces
+  disposable account registration with a stable remembered product binding and closes a fully
+  hidden modal after IME cancellation. The diagnostic established that both registrations used
+  the same store; it did not reveal a second queue. Independent boundary review is clear and all
+  diagnostic logging is absent from the candidate. Signed-out account destinations survive both
+  roundtrips and actual200% text reconfiguration on the emulator.
+- The full Android build passes in1m46s (316 tasks,123 executed): Gym1,095 and Platform73
+  executed per variant with no failures, plus12 explicitly gated live-wire skips. Final native recovery found a
+  cold-entry gap: a durable awaiting-sign-in decision survives an APK restart, but These are mine
+  tries to start another decision. Resuming that exact existing flow is being fixed. The isolated
+ 8095 fault proxy forwards to the real fixture on8097 and blocks only the session preflight GET;
+  no interrupted-approval recovery acceptance is claimed before that native journey completes.
+
+
+- Preview5 (`6b7ca7f660257d8ee5f48038ff4d4c8d470ee2a0704184a45fc2c8df712c2c43`) passes native
+  cold Awaiting reopen with the exact saved flow/batch unchanged. Native cancellation clears only
+  that decision; the anonymous log remains byte-identical. A new decision explicitly includes the
+  Native recovery routine and active workout after one real20kg×5 working set. Actual timed
+  Resend and locally captured one-use code complete sign-in with sealed credentials and no
+  invisible modal blocking the next Settings action.
+- With only the active-session preflight GET returning503, the Approved journal retains its exact
+  batch/flow/owner and the server has only its two prior routines/four workouts. Actual process
+  replacement10679→11453 preserves that approval and still uploads nothing. After restoring the
+  check, merely resuming the Activity does not retry; following the screen's restart instruction
+  (11453→11566) recovers exactly one routine, one workout and its original set. Session/plan/set
+  identity, load, reps and original log time match the anonymous snapshot. The first read sees
+  the created workout before its queued set arrives; the final read confirms the one original set.
+  No duplicate-row crash occurs. Consent clears; native finish gives Ended early,1set/100kg/1movement.
+  All four original performed-workout documents remain exactly unchanged.
+- Final full build after the cold-flow fix passes1m35s: Gym1,096 + Platform73 executed per variant,
+  zero failures, plus12 gated live-wire skips. A fresh explicitly enabled LiveWire run passes12/12,
+  zero skips, in17s. The coverage audit maps all20 W5 phones and specification requirements;
+  remaining native presentation/error-state evidence is being completed before publication.
+
+
+- Native signed-out Coach and actual full-email-link completion pass. A consumed real code
+  receives the production expiry refusal with its raw buffer retained; this is used-code evidence,
+  not a claim of waiting15minutes. Repeated signed-in destinations, cold authenticated launch and
+  actual200% text pass. The redundant Routines settings row/callback is removed; the logger gear
+  remains. A fresh account proves empty Notes and unsaved suggestion/cancel behavior without
+  deleting the original account's Notes.
+- The reviewed local proxy's54-request self-check preserves raw forwarding and never fabricates
+  successful answers. Native controlled500s show history without stale rows/counts and Connections
+  unavailable, then pull-to-retry restores actual data. Exact production429 shapes distinguish
+  the daily allowance from the rolling AI ceiling. Route404 draws feature absence while Notes
+  and Connected log remain usable. These are transport-driven presentation checks; quota
+  enforcement is covered separately by backend tests and the earlier actual native burst refusal.
+- Holding one actual successful Coach response for30s allows native process replacement13878→14097
+  while pending. The exact question returns retryable, no automatic request is sent, and History
+  opens the one actually persisted answer. Full thread metadata remains unchanged after readback.
+- Preview7 (`3866075f55556850a75efa5280869cfd7876d416030f5249fd5c995b1ef80e9e`) passes actual
+  fast-follow-up anchoring: new question at the first-question position, old question offscreen,
+  complete prose/card/read receipt above the composer. Its full gate passes1,174 cases per variant
+  with12 separately gated LiveWire tests; the earlier explicitly enabled12/12 still covers unchanged
+  transport. A subsequent independent review closes cached positions across Ask new in preview8.
+- Native whole-routine removal passes on preview10 against the real service/PG pipeline. A
+  controlled proposal-read500 shows no invented diff and explicit retry; clearing it loads the
+  actual removal. Contextual Remove deletes only the expendable routine. All six performed
+  workout documents are retained; only that workout’s routine link clears. The original three
+  Notes and five prior workouts remain exactly unchanged. The immediate actual Applied receipt
+  and reopened decided review have no second decision control. Cold launch688ms opens the same
+  saved conversation with “This proposal is no longer available.” and no retry. Actual proposal
+  GET404 and conversation GET200/unknown0 agree with the native row, which shows no false Read only
+  label. The answer’s original receipt remains intact. Ask something new opens an empty unsent draft.
+  The final crash buffer is empty.
+- Independent backend review found raw malformed receipt JSON could fail history reads or provide
+  unsupported outcome evidence. The final fix shares accepted receipt validation across detail
+  and list before deriving references. Final focused Coach/thread tests pass190/190, including11
+  actual PG cases and18 raw stored-corruption variants, zero skips/failures. Independent final
+  review is clear. Production server and the immutable validated fixture build successfully;
+  fresh helper checks preserve actual removal404/history200/unknown0 and immutable receipts.
+
+- Preview10 (`5d1e2437afb1508d3b28fa832dba59f686e1cf6903b0829679e5509c45003bd0`)
+  closes terminal proposal availability and past receipt-only rendering. Found shows the actual
+  reply; Failed offers retry; Gone is terminal. Independent review is clear. The full Android
+  build passes1,179 executed cases per variant, zero failures; separately enabled LiveWire12/12
+  covers unchanged transport. New tests cover cold missing, immediate removal, header loss and
+  receipt-only read failure without changing performed records.
+- Native ten-note acceptance passes on preview10. A held deletion keeps Add unavailable and
+  leaves all ten server rows intact. Undo in2.33seconds restores exact content, identity and order
+  beyond the nine-second window. Fixture cleanup atomically removes only its seven unchanged
+  additions and preserves the original three Notes. A separate expendable removal routine and
+  actual finished20kg×5 set are prepared for the final native decision check.
+
+- Final Wave5 APK is `wave5-preview11.apk`, SHA-256
+  `cdbc652f646c41cba9737d385d7883efef2dde07bcc05311fac11dd601e7507b`. Its four-file copy
+  refinement shares one accurate confirmation promise for pending replacement/removal cards
+  in live and past conversations. Scoped Ask15/Thread7 tests pass22/22; independent review is
+  clear; assemble passes18s. The preceding complete Android build passes1,179 tests per variant
+  plus the separate enabled LiveWire12/12; no transport change follows that gate.
+- Final native install/launch954ms passes on API34 against the validated backend. First answer,
+  fast follow-up and the first answer after explicit Ask new all place the current question at
+  the same measured y465 position, with full actual9-set2700kg48min card above the composer.
+  Ask new is empty until Send. Final account state is3routines,6workouts,3Notes,8conversations,
+  no keys/grants; all prior routines, Notes, conversations and performed facts remain intact.
+- Wave5 refactoring consolidates live/past Coach presentation and proposal availability, explicit
+  account destinations, support layouts and one durable local-data consent authority. The final
+  source manifest covers72 Android files plus the receipt/history backend and current docs.
+  All local gates are complete; publication and exact-commit CI are the next delivery step.
 
 ### Wave 6 — native capability preparation
+
+- Fresh Figma context for660:8087,657:31 and657:32 matches the written native handoff. The
+  independent code map is `/private/tmp/windmill-android-runtime/w6-code-map.md`: one process
+  owner, durable rack/offer state, exact nonce+set persistence, stock notification adapter and
+  explicit permission/dismissal handling. W6 source work has not started.
 
 - Rechecked the current official [Live Updates guidance](https://developer.android.com/develop/ui/views/notifications/live-update):
   user-started workouts are an eligible activity example. Promotion requires an ongoing native

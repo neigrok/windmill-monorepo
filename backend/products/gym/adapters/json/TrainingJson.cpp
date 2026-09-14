@@ -1,6 +1,7 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <string>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -471,7 +472,7 @@ Json::Value toJson(const ProposalHead& head) {
 Json::Value toJson(const ThreadOutcome& outcome) {
   Json::Value body(Json::objectValue);
   body["kind"] = toString(outcome.kind);
-  // Always present; zero means the thread proposed nothing.
+  // Always present; an unknown outcome has no trustworthy count and carries zero.
   body["changes"] = outcome.changes;
   if (outcome.routine) {
     body["routineId"] = outcome.routine->str();
@@ -506,6 +507,7 @@ Json::Value toJson(const AskThread& thread) {
       turn["from"] = said.fromLifter ? "lifter" : "ask";
       turn["text"] = said.text;
       turn["at"] = Json::Value::UInt64(said.atMs);
+      if (!said.fromLifter && said.receipt) turn["receipt"] = toJson(*said.receipt);
       turns.append(turn);
     }
     body["turns"] = turns;
@@ -661,6 +663,112 @@ Json::Value toJson(const ReadTally& tally) {
   out["sessions"] = tally.sessions;
   out["weeks"] = tally.weeks;
   return out;
+}
+
+Json::Value toJson(const std::vector<AskStep>& steps) {
+  Json::Value out(Json::arrayValue);
+  for (const AskStep& step : steps) {
+    Json::Value line(Json::objectValue);
+    line["tool"] = step.tool;
+    line["failed"] = step.failed;
+    out.append(line);
+  }
+  return out;
+}
+
+Json::Value toJson(const AnswerReceipt& receipt) {
+  Json::Value out(Json::objectValue);
+  out["version"] = receipt.version;
+  out["read"] = toJson(receipt.read);
+  out["steps"] = toJson(receipt.steps);
+  out["proposals"] = Json::Value(Json::arrayValue);
+  for (const std::string& id : receipt.proposals) out["proposals"].append(id);
+  out["observations"] = Json::Value(Json::arrayValue);
+  for (const SessionObservation& fact : receipt.observations) {
+    Json::Value line(Json::objectValue);
+    line["tool"] = fact.tool;
+    line["sessionId"] = fact.sessionId.str();
+    line["startedAt"] = Json::Value::UInt64(fact.startedAtMs);
+    if (fact.finishedAtMs) line["finishedAt"] = Json::Value::UInt64(*fact.finishedAtMs);
+    if (fact.routine) line["routine"] = *fact.routine;
+    switch (fact.coverage) {
+      case ReadCoverage::summary: line["coverage"] = "summary"; break;
+      case ReadCoverage::session: line["coverage"] = "session"; break;
+      case ReadCoverage::movement: line["coverage"] = "movement"; break;
+    }
+    if (fact.exerciseId) line["exerciseId"] = fact.exerciseId->str();
+    line["setsRead"] = fact.setsRead;
+    if (fact.workout) {
+      line["workout"]["workingSetCount"] = fact.workout->workingSetCount;
+      line["workout"]["tonnageKg"] = fact.workout->tonnageKg;
+      if (fact.workout->durationMs)
+        line["workout"]["durationMs"] = Json::Value::UInt64(*fact.workout->durationMs);
+    }
+    out["observations"].append(line);
+  }
+  return out;
+}
+
+std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored) {
+  if (!stored.isObject() || !stored["version"].isInt() ||
+      !stored["read"].isObject() || !stored["steps"].isArray() ||
+      !stored["proposals"].isArray() || !stored["observations"].isArray()) return std::nullopt;
+  AnswerReceipt receipt;
+  receipt.version = stored["version"].asInt();
+  for (const char* key : {"sets", "sessions", "weeks"})
+    if (!stored["read"][key].isInt()) return std::nullopt;
+  receipt.read = ReadTally{stored["read"]["sets"].asInt(), stored["read"]["sessions"].asInt(),
+                           stored["read"]["weeks"].asInt()};
+  for (const Json::Value& step : stored["steps"]) {
+    if (!step.isObject() || !step["tool"].isString() || !step["failed"].isBool()) return std::nullopt;
+    receipt.steps.push_back(AskStep{step["tool"].asString(), step["failed"].asBool()});
+  }
+  for (const Json::Value& proposal : stored["proposals"]) {
+    if (!proposal.isString()) return std::nullopt;
+    receipt.proposals.push_back(proposal.asString());
+  }
+  for (const Json::Value& line : stored["observations"]) {
+    if (!line.isObject() || !line["tool"].isString() || !line["sessionId"].isString() ||
+        !line["startedAt"].isUInt64() || !line["coverage"].isString() ||
+        !line["setsRead"].isInt()) return std::nullopt;
+    SessionObservation fact;
+    fact.tool = line["tool"].asString();
+    fact.sessionId = SessionId{line["sessionId"].asString()};
+    fact.startedAtMs = line["startedAt"].asUInt64();
+    fact.setsRead = line["setsRead"].asInt();
+    if (!line["finishedAt"].isNull()) {
+      if (!line["finishedAt"].isUInt64()) return std::nullopt;
+      fact.finishedAtMs = line["finishedAt"].asUInt64();
+    }
+    if (!line["routine"].isNull()) {
+      if (!line["routine"].isString()) return std::nullopt;
+      fact.routine = line["routine"].asString();
+    }
+    if (line["coverage"].asString() == "summary") fact.coverage = ReadCoverage::summary;
+    else if (line["coverage"].asString() == "session") fact.coverage = ReadCoverage::session;
+    else if (line["coverage"].asString() == "movement") fact.coverage = ReadCoverage::movement;
+    else return std::nullopt;
+    if (!line["exerciseId"].isNull()) {
+      if (!line["exerciseId"].isString()) return std::nullopt;
+      fact.exerciseId = ExerciseId{line["exerciseId"].asString()};
+    }
+    if (!line["workout"].isNull()) {
+      const Json::Value& workout = line["workout"];
+      if (!workout.isObject() || !workout["workingSetCount"].isInt() ||
+          !workout["tonnageKg"].isNumeric()) return std::nullopt;
+      WorkoutObservation total;
+      total.workingSetCount = workout["workingSetCount"].asInt();
+      total.tonnageKg = workout["tonnageKg"].asDouble();
+      if (!workout["durationMs"].isNull()) {
+        if (!workout["durationMs"].isUInt64()) return std::nullopt;
+        total.durationMs = workout["durationMs"].asUInt64();
+      }
+      fact.workout = total;
+    }
+    receipt.observations.push_back(std::move(fact));
+  }
+  if (!receipt.valid()) return std::nullopt;
+  return receipt;
 }
 
 // No `e1rm` on a point or a best means that load has no one-rep estimate; an absent `bestE1rm` means

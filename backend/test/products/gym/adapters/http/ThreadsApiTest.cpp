@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -115,4 +116,68 @@ TEST(gym_threads_refuse_an_unsigned_caller_on_every_door) {
                ->getStatusCode(),
            drogon::k401Unauthorized);
   CHECK_EQ(h.repo.db.threadRows.size(), 1u);
+}
+
+TEST(gym_missing_proposal_evidence_keeps_an_explicit_unknown_outcome_on_both_thread_reads) {
+  Harness h;
+  const UserId lifter = h.signIn("s-live");
+  seedThread(h, lifter, "thr_00000001", "Remove this routine?");
+  AnswerReceipt receipt;
+  receipt.proposals = {"prop_00000001"};
+  h.repo.db.threadRows[0].turns.back().receipt = receipt;
+
+  const auto detail = send(h.threads, &ThreadsApi::getThread,
+      getRequest("/v1/gym/threads/thr_00000001", "s-live"), "thr_00000001");
+  const auto list = send(h.threads, &ThreadsApi::listThreads,
+      getRequest("/v1/gym/threads", "s-live"));
+  CHECK_EQ(detail->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(list->getStatusCode(), drogon::k200OK);
+  Json::Value expected = parse(R"({"id":"thr_00000001","title":"Remove this routine?",
+      "createdAt":1700000000000,"askedAt":1700000000000,
+      "outcome":{"kind":"unknown","changes":0},"proposals":[]})");
+  Json::Value expectedList(Json::objectValue);
+  expectedList["threads"] = Json::Value(Json::arrayValue);
+  expectedList["threads"].append(expected);
+  CHECK_EQ(dump(bodyOf(list)), dump(expectedList));
+  expected["turns"] = parse(R"([
+      {"from":"lifter","text":"Remove this routine?","at":1700000000000},
+      {"from":"ask","text":"Your top set has not moved.","at":1700000000000,
+       "receipt":{"version":1,"read":{"sets":0,"sessions":0,"weeks":0},
+        "steps":[],"proposals":["prop_00000001"],"observations":[]}}])");
+  CHECK_EQ(dump(bodyOf(detail)), dump(expected));
+}
+
+TEST(gym_thread_reads_admit_only_supported_complete_typed_receipts) {
+  Harness h;
+  const UserId lifter = h.signIn("s-live");
+  seedThread(h, lifter, "thr_00000001", "Unreadable evidence");
+  seedThread(h, lifter, "thr_00000002", "Available evidence");
+  AnswerReceipt valid;
+  valid.proposals = {"prop_missing1"};
+  h.repo.db.threadRows[1].turns.back().receipt = valid;
+  std::vector<AnswerReceipt> invalid(4, valid);
+  invalid[0].version = 2;
+  invalid[1].read.sets = -1;
+  invalid[2].observations.push_back(SessionObservation{});
+  SessionObservation movement;
+  movement.coverage = ReadCoverage::movement;
+  movement.exerciseId = ExerciseId{"bench-press"};
+  movement.workout = WorkoutObservation{};
+  invalid[3].observations.push_back(movement);
+  for (const AnswerReceipt& receipt : invalid) {
+    h.repo.db.threadRows[0].turns.back().receipt = receipt;
+    const auto detail = send(h.threads, &ThreadsApi::getThread,
+        getRequest("/v1/gym/threads/thr_00000001", "s-live"), "thr_00000001");
+    const auto list = send(h.threads, &ThreadsApi::listThreads,
+        getRequest("/v1/gym/threads", "s-live"));
+    CHECK_EQ(detail->getStatusCode(), drogon::k200OK);
+    CHECK_EQ(list->getStatusCode(), drogon::k200OK);
+    CHECK_FALSE(bodyOf(detail)["turns"][1].isMember("receipt"));
+    CHECK_EQ(bodyOf(detail)["outcome"], parse(R"({"kind":"read-only","changes":0})"));
+    REQUIRE_EQ(bodyOf(list)["threads"].size(), 2u);
+    CHECK_EQ(bodyOf(list)["threads"][0]["outcome"], parse(R"({"kind":"unknown","changes":0})"));
+    CHECK_EQ(bodyOf(list)["threads"][1]["outcome"], parse(R"({"kind":"read-only","changes":0})"));
+    CHECK_EQ(h.repo.db.threadRows[0].turns.back().receipt, std::optional<AnswerReceipt>{receipt});
+    CHECK_EQ(h.repo.db.threadRows[1].turns.back().receipt, std::optional<AnswerReceipt>{valid});
+  }
 }

@@ -1790,3 +1790,103 @@ TEST(gym_imported_ids_stay_spent_through_single_tool_paths_after_deletion) {
   CHECK(h.repo.db.sets.empty());
   CHECK(body(h.call("import_session", args))["sessionDeleted"].asBool());
 }
+
+TEST(gym_all_five_reads_capture_only_the_session_scope_they_actually_served) {
+  Harness h;
+  const Session session{SessionId{"ses_evidence1"}, uid(), 1'700'000'000'000,
+                        1'700'000'900'000, std::nullopt, PlanSnapshot{"Push A", {}}};
+  h.repo.db.sessions.push_back(session);
+  h.repo.db.sets = {
+      Set{SetId{"set_evidence1"}, session.id, ExerciseId{"bench-press"}, 1, 20, 5,
+          SetKind::warmup, std::nullopt, "", 1'700'000'100'000},
+      Set{SetId{"set_evidence2"}, session.id, ExerciseId{"bench-press"}, 2, 80, 5,
+          SetKind::working, std::nullopt, "", 1'700'000'200'000},
+      Set{SetId{"set_evidence3"}, session.id, ExerciseId{"back-squat"}, 1, 100, 5,
+          SetKind::working, std::nullopt, "", 1'700'000'200'000}};
+  AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
+  const ToolCaller caller{uid(), ToolScope::everything()};
+  const std::vector<std::pair<std::string, Json::Value>> calls = {
+      {"list_sessions", parse("{}")},
+      {"get_session", parse(R"({"sessionId":"ses_evidence1"})")},
+      {"last_time", parse(R"({"exerciseId":"bench-press"})")},
+      {"get_sessions", parse(R"({"sessionIds":["ses_evidence1"]})")},
+      {"get_last_times", parse(R"({"exerciseIds":["back-squat","bench-press"]})")}};
+  for (const auto& [name, args] : calls) CHECK_FALSE(hands.callTool(name, args, caller).isError);
+
+  const WorkoutObservation workout{session, 2, 900};
+  CHECK_EQ(hands.read().tally(), (ReadTally{3, 1, 1}));
+  CHECK_EQ(hands.read().observations(), (std::vector<SessionObservation>{
+      {"list_sessions", session, ReadCoverage::summary, 0, workout},
+      {"get_session", session, ReadCoverage::session, 3, workout},
+      {"last_time", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"bench-press"}},
+      {"get_sessions", session, ReadCoverage::session, 3, workout},
+      {"get_last_times", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"back-squat"}},
+      {"get_last_times", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"bench-press"}}}));
+  CHECK_EQ(hands.steps(), (std::vector<AskStep>{{"list_sessions", false}, {"get_session", false},
+      {"last_time", false}, {"get_sessions", false}, {"get_last_times", false}}));
+
+  h.repo.db.sets[1].weightKg = 90;
+  h.repo.db.sessions[0].plan->routineName = "Corrected";
+  CHECK_FALSE(hands.callTool("get_session", calls[1].second, caller).isError);
+  CHECK_EQ(hands.read().tally(), (ReadTally{3, 1, 1}));
+  REQUIRE_EQ(hands.read().observations().size(), 7u);
+  CHECK_EQ(hands.read().observations()[1].workout->tonnageKg, 900);
+  CHECK_EQ(hands.read().observations()[6].workout->tonnageKg, 950);
+  CHECK_EQ(hands.read().observations()[1].routine, std::optional<std::string>{"Push A"});
+  CHECK_EQ(hands.read().observations()[6].routine, std::optional<std::string>{"Corrected"});
+}
+
+TEST(gym_refused_oversized_batches_leave_no_evidence_from_unserved_rows) {
+  Harness h;
+  const Session session{SessionId{"ses_evidence1"}, uid(), 1'700'000'000'000, 1'700'000'900'000};
+  h.repo.db.sessions.push_back(session);
+  for (int index = 1; index <= 50; ++index)
+    h.repo.db.sets.emplace_back(SetId{"set_evidence" + std::to_string(index)}, session.id,
+        ExerciseId{"bench-press"}, index, 80, 5, SetKind::working, std::nullopt,
+        std::string(4000, 'x'), 1'700'000'100'000);
+  AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
+  const ToolCaller caller{uid(), ToolScope::everything()};
+
+  CHECK(hands.callTool("get_sessions", parse(R"({"sessionIds":["ses_evidence1"]})"), caller).isError);
+  CHECK(hands.callTool("get_last_times", parse(R"({"exerciseIds":["bench-press"]})"), caller).isError);
+  CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
+  CHECK(hands.read().observations().empty());
+  CHECK_EQ(hands.steps(), (std::vector<AskStep>{{"get_sessions", true}, {"get_last_times", true}}));
+}
+
+TEST(gym_failed_and_foreign_reads_cannot_contribute_observations) {
+  Harness h;
+  h.repo.db.sessions.emplace_back(SessionId{"ses_evidence1"}, UserId{"u2"}, 1000, 3000);
+  AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
+  const ToolCaller caller{uid(), ToolScope::everything()};
+  const ToolResult foreign = hands.callTool("get_session", with("sessionId", "ses_evidence1"), caller);
+  const ToolResult absent = hands.callTool("get_session", with("sessionId", "ses_absent01"), caller);
+  CHECK(foreign.isError);
+  CHECK_EQ(foreign.payload, absent.payload);
+  CHECK_EQ(foreign.content, absent.content);
+  CHECK(hands.callTool("get_sessions", parse(R"({"sessionIds":["ses_evidence1","ses_evidence1"]})"), caller).isError);
+  CHECK_FALSE(hands.callTool("get_sessions", parse(R"({"sessionIds":["ses_evidence1"]})"), caller).isError);
+  CHECK_FALSE(hands.callTool("last_time", with("exerciseId", "bench-press"), caller).isError);
+  CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
+  CHECK(hands.read().observations().empty());
+  CHECK_EQ(hands.steps(), (std::vector<AskStep>{{"get_session", true}, {"get_session", true},
+      {"get_sessions", true}, {"get_sessions", false}, {"last_time", false}}));
+}
+
+TEST(gym_equal_start_times_keep_distinct_session_evidence_in_requested_order) {
+  Harness h;
+  const Session first{SessionId{"ses_evidence1"}, uid(), 1'700'000'000'000, 1'700'000'900'000};
+  const Session second{SessionId{"ses_evidence2"}, uid(), first.startedAtMs, first.finishedAtMs};
+  h.repo.db.sessions = {first, second};
+  AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
+  const ToolCaller caller{uid(), ToolScope::everything()};
+  const Json::Value args = parse(R"({"sessionIds":["ses_evidence2","ses_evidence1"]})");
+  CHECK_FALSE(hands.callTool("get_sessions", args, caller).isError);
+  CHECK_FALSE(hands.callTool("get_sessions", args, caller).isError);
+  CHECK_EQ(hands.read().tally(), (ReadTally{0, 2, 1}));
+  const SessionObservation a{"get_sessions", first, ReadCoverage::session, 0,
+                              WorkoutObservation{first, 0, 0}};
+  const SessionObservation b{"get_sessions", second, ReadCoverage::session, 0,
+                              WorkoutObservation{second, 0, 0}};
+  CHECK_EQ(hands.read().observations(), (std::vector<SessionObservation>{b, a, b, a}));
+}

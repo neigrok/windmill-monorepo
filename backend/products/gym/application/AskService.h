@@ -37,12 +37,15 @@ public:
 
   const ReadReceipt& read() const { return read_; }
   const std::vector<std::string>& proposals() const { return proposals_; }
+  const std::vector<AskStep>& steps() const { return steps_; }
 
 private:
+  ToolResult dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& caller);
   GymTools& inner_;
   ThreadId thread_;
   ReadReceipt read_;
   std::vector<std::string> proposals_;
+  std::vector<AskStep> steps_;
 };
 
 // Settled BEFORE a single token is spent.
@@ -66,6 +69,7 @@ struct AskReply {
   AskAnswer answer;                     // meaningful only when refusal == none
   ReadTally read;                       // what the run's tools actually served
   std::vector<std::string> proposals;   // ids minted during the exchange, in mint order
+  std::optional<AnswerReceipt> receipt;
 };
 
 // What one turn may weigh; the count is `kMaxThreadTurns`.

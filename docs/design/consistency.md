@@ -2317,7 +2317,16 @@ Wave3 implements compact training/rest, numeric entry, correction, truthful rece
 public sharing and save as routine. Native verification covers complete/partial/free arithmetic,
 offline delivery, actual process restoration, retained drafts, IME-first Back and keypad-only
 cancellation through Back/Cancel/scrim/drag at normal and200% text. Historical kind remains intact.
-Log/records/bodyweight belong to Wave4; Coach/account/sign-in refinements to Wave5.
+Wave4 implements Log history, movement progress and bodyweight from a coherent server projection;
+native verification covers ranges, sparse data, correction, independent Undo and offline recovery.
+Wave5 implements shared Coach answers and recorded read evidence, Notes, review decisions, account
+destinations and explicit local-data ownership. Native acceptance covers actual approval recovery
+across failed preflight and process death, account/IME restoration, Notes limits and conversation
+reads. Whole-routine removal preserves actual performed workouts and its immutable answer receipt.
+Immediate decisions use the actual reply; cold missing proposals show terminal availability, and
+history suppresses unknown outcome details instead of claiming Read only. Supported receipt
+validation is shared across detail/list and rejects malformed stored evidence before deriving
+outcomes. Native acceptance, focused regressions and independent final review pass.
 Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
 simplification and release verification. Daylight follows the approved existing tokens and still
 carries F44. Tracking node: `android-gym-implement-refined-flows`.

@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.gym.domain.ClaimBatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -51,7 +52,11 @@ class LocalPreferencesTests {
     fun testAnAnonymousRoomRidesOntoTheAccountThatClaimsIt() {
         val held = LocalPreferences(file())
         held.save(chosen)
+        val batch = ClaimBatch("settings-approval", held.claimItems())
         held.adopt("u1")
+        assertEquals(GymPreferences(), held.document)
+        assertFalse(held.owed)
+        held.complete(batch, "u1")
         assertEquals(chosen, held.document)
         assertTrue("still owed — the log has not taken it yet", held.owed)
     }
@@ -64,7 +69,7 @@ class LocalPreferencesTests {
     }
 
     @Test
-    fun testASeatChangeDropsWhatTheLogIsAlreadyHolding() {
+    fun testASeatChangeKeepsEachAccountsConfirmedSettingsSeparate() {
         val held = LocalPreferences(file())
         held.adopt("u1")
         held.save(chosen)
@@ -76,17 +81,20 @@ class LocalPreferencesTests {
 
         held.adopt(null)
         assertEquals("and the anonymous seat is a seat like any other", GymPreferences(), held.document)
+        held.adopt("u1")
+        assertEquals(chosen, held.document)
+        assertFalse(held.owed)
     }
 
     @Test
-    fun testAChangeThatLandedNowhereRidesThroughASignOut() {
+    fun testAnOwedChangeStaysWithItsOwnerAcrossSignOut() {
         val held = LocalPreferences(file())
         held.adopt("u1")
         held.save(chosen)
 
         held.adopt(null)
-        assertEquals("nothing was thrown away at the door", chosen, held.document)
-        assertTrue(held.owed)
+        assertEquals("signed out cannot read the previous account’s settings", GymPreferences(), held.document)
+        assertFalse(held.owed)
 
         held.adopt("u1")
         assertEquals(chosen, held.document)

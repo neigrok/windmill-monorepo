@@ -28,7 +28,7 @@ class DeviationSheetTests {
     private val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
 
     private fun rows(): List<List<String>> = compose
-        .onAllNodes(hasText("→"))
+        .onAllNodes(hasText("→", substring = true))
         .fetchSemanticsNodes()
         .sortedBy { it.boundsInRoot.top }
         .map { row -> row.config[SemanticsProperties.Text].map { it.text } }
@@ -50,12 +50,12 @@ class DeviationSheetTests {
                                "Today’s session already has it. Lower A does not.").assertIsDisplayed()
         assertEquals(
             listOf(
-                listOf("set 1", "60 × 5", "→", "60 × 5"),
-                listOf("set 2", "80 × 5", "→", "80 × 5"),
-                listOf("set 3", "90 × 3", "→", "90 × 3"),
-                listOf("set 4", "100 × 1", "→", "102.5 × 1"),
-                listOf("set 5", "80 × 5", "→", "80 × 5"),
-                listOf("set 6", "—", "→", "80 × 5"),
+                listOf("set 1 · 60 × 5 → 60 × 5"),
+                listOf("set 2 · 80 × 5 → 80 × 5"),
+                listOf("set 3 · 90 × 3 → 90 × 3"),
+                listOf("set 4 · 100 × 1 → 102.5 × 1"),
+                listOf("set 5 · 80 × 5 → 80 × 5"),
+                listOf("set 6 · — → 80 × 5"),
             ),
             rows(),
         )
@@ -76,7 +76,7 @@ class DeviationSheetTests {
 
         compose.onNodeWithText("Heavier than the plan").assertIsDisplayed()
         compose.onNodeWithText("Save 82.5 to Push A").assertIsDisplayed().assertHasClickAction()
-        compose.onAllNodes(hasText("→")).assertCountEquals(0)
+        compose.onAllNodes(hasText("→", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasText("Save today’s sets")).assertCountEquals(0)
     }
 }

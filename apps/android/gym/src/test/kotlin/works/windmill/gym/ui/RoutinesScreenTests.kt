@@ -96,7 +96,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
-                onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
             )
         }
@@ -129,7 +128,7 @@ class RoutinesScreenTests {
         newRoutine.performClick()
         compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
         compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-        compose.onNodeWithText("Gym settings").assertIsDisplayed()
+        compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
         compose.onNodeWithText("Start logging").performClick()
         compose.runOnIdle { assertEquals(listOf("start"), doors) }
@@ -216,7 +215,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = {},
                 onDeleteRoutine = {},
                 onReview = { reviewed += it.id },
-                onOpenSettings = {},
                 onSignIn = {},
             )
         }
@@ -225,7 +223,7 @@ class RoutinesScreenTests {
             assertEquals(listOf("prop_1", "prop_2"), store.pendingProposals.map { it.id })
         }
         compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
-        compose.onNodeWithText("Push Day · 1 change · waiting").assertIsDisplayed()
+        compose.onNodeWithText("1 change").assertIsDisplayed()
         compose.onAllNodesWithText("1 proposal").assertCountEquals(1)
 
         compose.onNodeWithText("1 proposal").performClick()
@@ -269,7 +267,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
-                onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
             )
         }

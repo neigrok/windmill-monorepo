@@ -133,6 +133,8 @@ ToolResult getSessions(TrainingService& training, const UserId& caller, const Js
     present.insert(detail.session.id.str());
     served.sawSession(detail.session.id, detail.session.startedAtMs);
     for (const Set& set : detail.sets) served.sawSet(set.id, set.completedAtMs);
+    served.observed(SessionObservation{"get_sessions", detail.session, ReadCoverage::session,
+        static_cast<int>(detail.sets.size()), WorkoutObservation{detail.session, detail.sets}});
     Json::Value row(Json::objectValue);
     row["session"] = toJson(detail.session);
     row["sets"] = toJson(detail.sets);
@@ -161,6 +163,8 @@ ToolResult getLastTimes(TrainingService& training, const UserId& caller, const J
       row["sets"] = toJson(last.lastTime->sets);
       served.sawSession(last.lastTime->session.id, last.lastTime->session.startedAtMs);
       for (const Set& set : last.lastTime->sets) served.sawSet(set.id, set.completedAtMs);
+      served.observed(SessionObservation{"get_last_times", last.lastTime->session, ReadCoverage::movement,
+          static_cast<int>(last.lastTime->sets.size()), std::nullopt, ExerciseId{id}});
     }
     out["exercises"].append(row);
   }
@@ -208,6 +212,8 @@ ToolResult listSessions(TrainingService& training, const UserId& caller, const J
   for (const LogRow& row : training.log(caller, cursor)) {
     // A page hands over no set rows, so it claims none.
     served.sawSession(row.summary.session.id, row.summary.session.startedAtMs);
+    served.observed(SessionObservation{"list_sessions", row.summary.session, ReadCoverage::summary, 0,
+        WorkoutObservation{row.summary.session, row.summary.workingSetCount, row.summary.tonnageKg}});
     sessions.append(toJson(row));
   }
   Json::Value out(Json::objectValue);
@@ -228,6 +234,8 @@ ToolResult getSession(TrainingService& training, const UserId& caller, const Jso
   if (!detail) return ToolResult::failure(kNoSession);
   served.sawSession(detail->session.id, detail->session.startedAtMs);
   for (const Set& set : detail->sets) served.sawSet(set.id, set.completedAtMs);
+  served.observed(SessionObservation{"get_session", detail->session, ReadCoverage::session,
+      static_cast<int>(detail->sets.size()), WorkoutObservation{detail->session, detail->sets}});
   Json::Value out(Json::objectValue);
   out["session"] = toJson(detail->session);
   out["sets"] = toJson(detail->sets);
@@ -252,6 +260,8 @@ ToolResult lastTime(TrainingService& training, const UserId& caller, const Json:
   if (outcome.lastTime) {
     served.sawSession(outcome.lastTime->session.id, outcome.lastTime->session.startedAtMs);
     for (const Set& set : outcome.lastTime->sets) served.sawSet(set.id, set.completedAtMs);
+    served.observed(SessionObservation{"last_time", outcome.lastTime->session, ReadCoverage::movement,
+        static_cast<int>(outcome.lastTime->sets.size()), std::nullopt, ExerciseId{id}});
     out["session"] = toJson(outcome.lastTime->session);
     if (!outcome.lastTime->routineName.empty()) out["routine"] = outcome.lastTime->routineName;
     out["sets"] = toJson(outcome.lastTime->sets);

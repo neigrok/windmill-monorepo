@@ -48,6 +48,8 @@ import works.windmill.gym.domain.LogLevel
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.net.TrainingSyncing
+import kotlinx.coroutines.CompletableDeferred
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
@@ -85,7 +87,7 @@ class ConnectedLogScreenTests {
     private fun ms(date: String): Long =
         LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-    private fun store(scope: CoroutineScope, server: FakeTraining, signedIn: Boolean): TrainingStore {
+    private fun store(scope: CoroutineScope, server: TrainingSyncing, signedIn: Boolean): TrainingStore {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
@@ -302,7 +304,7 @@ class ConnectedLogScreenTests {
         val store = store(scope, server, signedIn = true)
         screen(store, signedIn = true)
 
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.unavailable).assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.unread).assertIsDisplayed()
         compose.onNodeWithText("Claude Desktop").assertDoesNotExist()
         compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
@@ -312,6 +314,33 @@ class ConnectedLogScreenTests {
         runBlocking { store.readConnectedLog() }
         compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test
+    fun anUnansweredReadHasNoEmptyInvitationOrCredentialCountAndRetryRestoresExactCredentials() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val release = CompletableDeferred<Unit>()
+        var reads = 0
+        val server = object : TrainingSyncing by FakeTraining() {
+            override suspend fun grants(): List<OAuthGrant> {
+                reads++
+                if (reads == 1) { release.await(); throw IllegalStateException("unavailable") }
+                return listOf(OAuthGrant("same", "Scoped", 1L, "gym:read"))
+            }
+            override suspend fun mcpKeys() = listOf(McpKey("same", "Static", 2L))
+        }
+        val store = store(scope, server, signedIn = true)
+        screen(store, signedIn = true)
+        compose.onNodeWithText("Reading your connections…").assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
+        compose.runOnIdle { release.complete(Unit) }
+        compose.onNodeWithText(ConnectedLog.unavailable).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Scoped").assertIsDisplayed()
+        compose.onNodeWithText("Static").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(2, reads) }
         scope.cancel()
     }
 }

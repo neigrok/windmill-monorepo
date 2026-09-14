@@ -1,6 +1,7 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
 
 #include <pqxx/pqxx>
@@ -46,13 +47,18 @@ std::vector<std::pair<std::string, ThreadProposal>> mintedIn(pqxx::work& txn, co
 
 std::vector<ThreadTurn> turnsOf(pqxx::work& txn, const ThreadId& id) {
   pqxx::result rows = txn.exec_params(
-      "SELECT from_lifter, text, (extract(epoch from said_at) * 1000)::bigint AS said_ms "
+      "SELECT from_lifter, text, receipt::text, (extract(epoch from said_at) * 1000)::bigint AS said_ms "
       "FROM gym_ask_turns WHERE thread_id = $1 ORDER BY position",
       id.str());
   std::vector<ThreadTurn> turns;
-  for (const auto& row : rows)
-    turns.push_back(ThreadTurn{row["from_lifter"].as<bool>(), row["text"].as<std::string>(),
-                               instantFrom(row["said_ms"])});
+  for (const auto& row : rows) {
+    const bool fromLifter = row["from_lifter"].as<bool>();
+    std::optional<AnswerReceipt> receipt;
+    if (!fromLifter && !row["receipt"].is_null())
+      receipt = receiptFrom(parse(row["receipt"].as<std::string>()));
+    turns.push_back(ThreadTurn{fromLifter, row["text"].as<std::string>(),
+                               instantFrom(row["said_ms"]), std::move(receipt)});
+  }
   return turns;
 }
 
@@ -76,6 +82,10 @@ std::optional<AskThread> loadThread(pqxx::work& txn, const UserId& user, const T
   if (rows.empty()) return std::nullopt;
   AskThread thread = threadFrom(rows[0]);
   thread.turns = turnsOf(txn, id);
+  for (const ThreadTurn& turn : thread.turns)
+    if (turn.receipt)
+      for (const std::string& proposal : turn.receipt->proposals)
+        thread.referencedProposals.emplace_back(proposal);
   for (const auto& [from, minted] : mintedIn(txn, user, id.str()))
     thread.minted.push_back(minted);
   return thread;
@@ -106,6 +116,21 @@ std::vector<AskThread> PgAskThreadRepository::threads(const UserId& user) {
   for (const auto& [from, minted] : mintedIn(txn, user, ids))
     for (AskThread& thread : threads)
       if (thread.id.str() == from) thread.minted.push_back(minted);
+  if (ids.empty()) return threads;
+  // Validate the complete stored receipt before its ids can influence an outcome. Turn prose stays behind.
+  const pqxx::result receipts = txn.exec_params(
+      "SELECT thread_id, receipt::text FROM gym_ask_turns "
+      "WHERE user_id = $1::uuid AND thread_id = ANY(string_to_array($2, ',')) "
+      "AND NOT from_lifter AND receipt IS NOT NULL ORDER BY thread_id, position",
+      user.str(), ids);
+  for (const auto& row : receipts) {
+    const auto receipt = receiptFrom(parse(row["receipt"].as<std::string>()));
+    if (!receipt) continue;
+    for (AskThread& thread : threads)
+      if (thread.id.str() == row["thread_id"].as<std::string>())
+        for (const std::string& proposal : receipt->proposals)
+          thread.referencedProposals.emplace_back(proposal);
+  }
   return threads;
 }
 
@@ -155,14 +180,17 @@ void PgAskThreadRepository::appendTurns(const UserId& user, const ThreadId& id,
       "SELECT 1 FROM gym_ask_threads WHERE id = $1 AND user_id = $2::uuid FOR UPDATE", id.str(),
       user.str());
   if (locked.empty()) return;
-  for (const ThreadTurn& turn : turns)
+  for (const ThreadTurn& turn : turns) {
+    const std::optional<std::string> receipt = !turn.fromLifter && turn.receipt
+        ? std::optional<std::string>{dump(toJson(*turn.receipt))} : std::nullopt;
     txn.exec_params(
-        "INSERT INTO gym_ask_turns (thread_id, position, user_id, from_lifter, text, said_at) "
+        "INSERT INTO gym_ask_turns (thread_id, position, user_id, from_lifter, text, said_at, receipt) "
         "SELECT $1, coalesce(max(position), 0) + 1, $2::uuid, $3, $4, "
-        "       to_timestamp($5::bigint / 1000.0) "
+        "       to_timestamp($5::bigint / 1000.0), $6::jsonb "
         "FROM gym_ask_turns WHERE thread_id = $1",
         id.str(), user.str(), turn.fromLifter, turn.text,
-        static_cast<long long>(turn.atMs));
+        static_cast<long long>(turn.atMs), receipt);
+  }
   txn.exec_params("UPDATE gym_ask_threads SET asked_at = to_timestamp($2::bigint / 1000.0) "
                   "WHERE id = $1",
                   id.str(), static_cast<long long>(turns.empty() ? 0 : turns.back().atMs));

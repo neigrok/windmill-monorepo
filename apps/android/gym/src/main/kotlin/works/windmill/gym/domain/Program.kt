@@ -67,6 +67,11 @@ object Program {
 
     fun movements(count: Int): String = if (count == 1) "1 movement" else "$count movements"
 
+    fun overlay(stored: List<Routine>, pending: List<Routine>): List<Routine> {
+        val local = pending.associateBy { it.id }
+        return stored.map { local[it.id] ?: it } + pending.filter { row -> stored.none { it.id == row.id } }
+    }
+
     // One at a time and in this order; null once the draft is savable.
     fun missing(draft: RoutineDraft): String? {
         if (named(draft.name) == null) return nameItToSaveIt

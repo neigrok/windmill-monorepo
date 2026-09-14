@@ -1,6 +1,12 @@
 package works.windmill.gym.store
 
 import java.io.File
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimSource
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimItem
 import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.WeighIn
 
@@ -25,8 +31,9 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     }
 
     @Serializable
-    private data class Held(val shelves: Map<String, Shelf> = emptyMap())
+    private data class Held(val shelves: Map<String, Shelf> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private val revisions = mutableMapOf<Pair<String, String>, Long>()
     private var held: Held = runCatching {
@@ -36,30 +43,64 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     private val mine: Shelf get() = held.shelves[seat] ?: Shelf()
 
     private fun keep(next: Shelf) {
-        held = Held((held.shelves + (seat to next)).filterValues { !it.isEmpty })
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        held = held.copy(shelves = (held.shelves + (seat to next)).filterValues { !it.isEmpty })
         flush()
     }
 
-    // The one place the seat changes hands. The anonymous shelf MOVES onto a confirmed account seat:
-    // every row on it is still owed, because nobody was signed in to send it.
-    fun adopt(owner: String?, confirmed: Boolean = true) {
-        val next = Seat.of(owner)
-        val anonymous = held.shelves[Seat.anonymous] ?: Shelf()
-        val carrying = owner != null && confirmed && !anonymous.isEmpty
-        if (next == seat && !carrying) return
-        val arriving = held.shelves[next] ?: Shelf()
-        val landed = if (!carrying) arriving else Shelf(
-            entries = arriving.entries + anonymous.entries.filterValues { mine ->
-                val theirs = arriving.entries[mine.dateLocal]
-                theirs == null || theirs.recordedAt < mine.recordedAt
-            },
-            owed = (arriving.owed + anonymous.entries.keys).distinct(),
-            deleted = arriving.deleted.filterNot { it in anonymous.entries },
-        )
-        val parked = if (carrying) held.shelves - Seat.anonymous else held.shelves
-        seat = next
-        held = Held((parked + (next to landed)).filterValues { !it.isEmpty })
-        flush()
+    // Selecting a seat never transfers training from another seat.
+    fun adopt(owner: String?) {
+        seat = Seat.of(owner)
+    }
+
+    fun claimItems(): List<ClaimItem> = ClaimSource.entries.flatMap { source ->
+        held.shelves[source.seat]?.entries.orEmpty().values.sortedBy { it.dateLocal }.map {
+            claimItem(source, ClaimKind.Bodyweight, it.dateLocal, it, WeighIn.serializer(), it.recordedAt)
+        }
+    }
+
+    fun preflight(batch: ClaimBatch, owner: String?) { transfer(batch, owner) }
+
+    fun complete(batch: ClaimBatch, owner: String?) {
+        val next = transfer(batch, owner)
+        if (next == held) return
+        try {
+            persistClaimConsent(file, diskJson.encodeToString(Held.serializer(), next))
+        } catch (failure: Exception) {
+            transferFailed = true
+            throw failure
+        }
+        next.shelves.forEach { (key, shelf) ->
+            shelf.entries.forEach { (date, value) ->
+                if (held.shelves[key]?.entries?.get(date) != value) revisions[key to date] = (revisions[key to date] ?: 0) + 1
+            }
+        }
+        held = next
+    }
+
+    private fun transfer(batch: ClaimBatch, owner: String?): Held {
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        if (held.claims.completed(batch, owner)) return held
+        var shelves = held.shelves
+        for (item in batch.items.filter { it.kind == ClaimKind.Bodyweight }) {
+            val value = item.decode(WeighIn.serializer())
+            check(value.dateLocal == item.id)
+            if (owner != null) {
+                val target = shelves[Seat.of(owner)] ?: Shelf()
+                val existing = target.entries[item.id]
+                if (existing == null || existing.recordedAt < value.recordedAt) {
+                    shelves = shelves + (Seat.of(owner) to target.copy(entries = target.entries + (item.id to value),
+                        owed = (target.owed + item.id).distinct(), deleted = target.deleted - item.id))
+                }
+            }
+            val source = shelves[item.source.seat] ?: continue
+            val existing = source.entries[item.id] ?: continue
+            if (item.matches(existing, WeighIn.serializer())) {
+                shelves = shelves + (item.source.seat to source.copy(entries = source.entries - item.id,
+                    owed = source.owed - item.id, deleted = source.deleted - item.id))
+            }
+        }
+        return held.copy(shelves = shelves.filterValues { !it.isEmpty }, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }
 
     // Ascending by date.

@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.gym.domain.ClaimBatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -91,15 +92,14 @@ class LocalBodyweightTests {
     }
 
     @Test
-    fun testTheAnonymousShelfMovesOntoAConfirmedAccountSeatAndEveryRowIsOwed() {
+    fun testExplicitConsentMovesTheAnonymousShelfAndEveryRowIsOwed() {
         val file = file()
         val shelf = LocalBodyweight(file)
         shelf.record(WeighIn("2026-08-25", 82.4, recordedAt = 1_000))
 
-        shelf.adopt("u1", confirmed = false)
-        assertTrue("an unverified seat draws its own empty room", shelf.entries.isEmpty())
-
-        shelf.adopt("u1", confirmed = true)
+        shelf.adopt("u1")
+        assertTrue("selecting an account does not claim a reading", shelf.entries.isEmpty())
+        shelf.complete(ClaimBatch("weigh-in-approval", shelf.claimItems()), "u1")
         assertEquals(listOf("2026-08-25"), shelf.entries.map { it.dateLocal })
         assertEquals(listOf("2026-08-25"), shelf.owed.map { it.dateLocal })
 
@@ -153,12 +153,12 @@ class LocalBodyweightTests {
         assertEquals(listOf(newerLocal, missingRemote), shelf.owed)
         assertEquals(listOf("2026-08-23"), shelf.deletions)
         assertEquals(revisions, revisions.keys.associateWith(shelf::revision))
-        shelf.adopt("u2", confirmed = false)
+        shelf.adopt("u2")
         assertEquals(emptyList<WeighIn>(), shelf.entries)
         shelf.record(WeighIn("2026-08-20", 70.0, 8_000))
         shelf.delete("2026-08-20")
         assertEquals(2L, shelf.revision("2026-08-20"))
-        shelf.adopt("u1", confirmed = false)
+        shelf.adopt("u1")
         assertEquals(revisions, revisions.keys.associateWith(shelf::revision))
         assertEquals(listOf(newerRemote, newerLocal, missingRemote, equivalent), shelf.entries)
     }

@@ -2,6 +2,7 @@
 
 #include "platform/domain/ToolScope.h"
 #include "platform/ports/ToolHost.h"
+#include "products/gym/domain/ReadReceipt.h"
 
 #include <string>
 #include <vector>
@@ -14,12 +15,6 @@ namespace wm::gym {
 struct AskTurn {
   bool fromLifter = true;  // false = an answer Ask gave earlier, echoed back for context
   std::string text;
-};
-
-// One tool the model reached for, in call order; drawn under the answer.
-struct AskStep {
-  std::string tool;
-  bool failed = false;
 };
 
 struct AskAnswer {

@@ -82,9 +82,99 @@ TEST(gym_ask_answers_with_the_servers_own_read_line_and_no_steps_it_did_not_take
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"answer":"You squatted 100 for five.","proposals":[],)"
-                       R"("read":{"sessions":0,"sets":0,"weeks":0},"steps":[],)"
+                       R"("read":{"sessions":0,"sets":0,"weeks":0},)"
+                       R"("receipt":{"observations":[],"proposals":[],"read":{"sessions":0,"sets":0,"weeks":0},"steps":[],"version":1},"steps":[],)"
                        R"("thread":"thr_00000001"})"));
   CHECK_EQ(a.agent.runs, 1);
+}
+
+TEST(gym_live_and_reopened_answer_evidence_is_exact_even_after_the_log_changes) {
+  AskHarness a;
+  const Session session{SessionId{"ses_evidence1"}, a.lifter, 1'700'000'000'000,
+                        1'700'000'900'000, std::nullopt, PlanSnapshot{"Push A", {}}};
+  a.h.repo.db.sessions.push_back(session);
+  a.h.repo.db.sets = {
+      Set{SetId{"set_evidence1"}, session.id, ExerciseId{"bench-press"}, 1, 20, 5,
+          SetKind::warmup, std::nullopt, "", 1'700'000'100'000},
+      Set{SetId{"set_evidence2"}, session.id, ExerciseId{"bench-press"}, 2, 80, 5,
+          SetKind::working, std::nullopt, "", 1'700'000'200'000}};
+  a.agent.plan = {{"list_sessions", parse("{}")},
+      {"get_session", parse(R"({"sessionId":"ses_evidence1"})")},
+      {"last_time", parse(R"({"exerciseId":"bench-press"})")},
+      {"get_session", parse(R"({"sessionId":"ses_absent01"})")}};
+  const Json::Value receipt = parse(R"({"version":1,"read":{"sets":2,"sessions":1,"weeks":1},
+      "steps":[{"tool":"list_sessions","failed":false},{"tool":"get_session","failed":false},
+               {"tool":"last_time","failed":false},{"tool":"get_session","failed":true}],
+      "proposals":[],"observations":[
+        {"tool":"list_sessions","sessionId":"ses_evidence1","startedAt":1700000000000,
+         "finishedAt":1700000900000,"routine":"Push A","coverage":"summary","setsRead":0,
+         "workout":{"workingSetCount":1,"tonnageKg":400.0,"durationMs":900000}},
+        {"tool":"get_session","sessionId":"ses_evidence1","startedAt":1700000000000,
+         "finishedAt":1700000900000,"routine":"Push A","coverage":"session","setsRead":2,
+         "workout":{"workingSetCount":1,"tonnageKg":400.0,"durationMs":900000}},
+        {"tool":"last_time","sessionId":"ses_evidence1","startedAt":1700000000000,
+         "finishedAt":1700000900000,"routine":"Push A","coverage":"movement","setsRead":1,
+         "exerciseId":"bench-press"}]})");
+  Json::Value expected = parse(R"({"answer":"You squatted 100 for five.","proposals":[],
+      "read":{"sets":2,"sessions":1,"weeks":1},"thread":"thr_evidence1"})");
+  expected["receipt"] = receipt;
+  expected["steps"] = receipt["steps"];
+
+  const auto live = a.ask("thr_evidence1", "What did I train?");
+  REQUIRE_EQ(live->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(live)), dump(expected));
+  a.h.repo.db.sets.clear();
+  a.h.repo.db.sessions.clear();
+
+  const auto history = send(a.h.threads, &ThreadsApi::getThread,
+      getRequest("/v1/gym/threads/thr_evidence1", "s-live"), "thr_evidence1");
+  Json::Value stored = parse(R"({"id":"thr_evidence1","title":"What did I train?",
+      "outcome":{"kind":"read-only","changes":0},"proposals":[],"turns":[
+        {"from":"lifter","text":"What did I train?"},
+        {"from":"ask","text":"You squatted 100 for five."}]})");
+  stored["createdAt"] = Json::UInt64(a.h.clock.now);
+  stored["askedAt"] = Json::UInt64(a.h.clock.now);
+  stored["turns"][0]["at"] = Json::UInt64(a.h.clock.now);
+  stored["turns"][1]["at"] = Json::UInt64(a.h.clock.now);
+  stored["turns"][1]["receipt"] = receipt;
+  CHECK_EQ(history->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(history)), dump(stored));
+  CHECK_EQ(receiptFrom(receipt), a.h.repo.db.threadRows[0].turns[1].receipt);
+}
+
+TEST(gym_stored_receipts_omit_unknown_or_incomplete_evidence_without_inventing_facts) {
+  const Json::Value empty = parse(R"({"version":1,"read":{"sets":0,"sessions":0,"weeks":0},
+      "steps":[],"proposals":[],"observations":[]})");
+  CHECK_EQ(receiptFrom(empty), std::optional<AnswerReceipt>{AnswerReceipt{}});
+  for (Json::Value invalid : {Json::Value(), Json::Value("prose"), parse("{}")})
+    CHECK_FALSE(receiptFrom(invalid).has_value());
+  Json::Value invalid = empty;
+  invalid["version"] = 2;
+  CHECK_FALSE(receiptFrom(invalid).has_value());
+  invalid = empty;
+  invalid["read"].removeMember("sets");
+  CHECK_FALSE(receiptFrom(invalid).has_value());
+  invalid = empty;
+  invalid["observations"].append(parse(R"({"tool":"last_time","sessionId":"ses_evidence1",
+      "startedAt":1000,"coverage":"movement","exerciseId":"bench-press","setsRead":1,
+      "workout":{"workingSetCount":1,"tonnageKg":400}})"));
+  CHECK_FALSE(receiptFrom(invalid).has_value());
+}
+
+TEST(gym_open_ad_hoc_evidence_omits_unknown_names_finishes_and_durations) {
+  const Session session{SessionId{"ses_evidence1"}, UserId{"u1"}, 1000};
+  const AnswerReceipt receipt{1, {1, 1, 1}, {{"get_session", false}, {"last_time", false}}, {},
+      {{"get_session", session, ReadCoverage::session, 1, WorkoutObservation{session, 1, 400}},
+       {"last_time", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"bench-press"}}}};
+  const Json::Value expected = parse(R"({"version":1,"read":{"sets":1,"sessions":1,"weeks":1},
+      "steps":[{"tool":"get_session","failed":false},{"tool":"last_time","failed":false}],
+      "proposals":[],"observations":[
+        {"tool":"get_session","sessionId":"ses_evidence1","startedAt":1000,"coverage":"session",
+         "setsRead":1,"workout":{"workingSetCount":1,"tonnageKg":400.0}},
+        {"tool":"last_time","sessionId":"ses_evidence1","startedAt":1000,"coverage":"movement",
+         "setsRead":1,"exerciseId":"bench-press"}]})");
+  CHECK_EQ(dump(toJson(receipt)), dump(expected));
+  CHECK_EQ(receiptFrom(expected), std::optional<AnswerReceipt>{receipt});
 }
 
 TEST(gym_ask_refuses_a_stranger_with_the_one_sentence_every_gym_door_sends) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/domain/Proposal.h"
+#include "products/gym/domain/ReadReceipt.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +18,7 @@ struct ThreadTurn {
   bool fromLifter = true;
   std::string text;
   std::uint64_t atMs = 0;
+  std::optional<AnswerReceipt> receipt;
 
   bool operator==(const ThreadTurn&) const = default;
 };
@@ -42,15 +44,16 @@ struct AskThread {
   std::uint64_t askedAtMs = 0;    // the newest turn — what the list sorts and dates by
   std::vector<ThreadTurn> turns;
   std::vector<ThreadProposal> minted;
+  std::vector<ProposalId> referencedProposals;  // assistant receipts, including ids whose ledger is gone
 
   bool operator==(const AskThread&) const = default;
 };
 
 // Every word here is something the server OBSERVED.
-enum class ThreadOutcomeKind { readOnly, proposed, applied, dismissed, superseded };
+enum class ThreadOutcomeKind { readOnly, proposed, applied, dismissed, superseded, unknown };
 
-// The word, the count of changes it is about, and the routine they landed on where there is exactly
-// ONE routine to name. Across two routines the name is empty and the count is the total.
+// Known outcomes count changes and name a routine only when there is one. Unknown carries zero
+// and no routine because the missing proposal's decision and count cannot be recovered.
 struct ThreadOutcome {
   ThreadOutcomeKind kind = ThreadOutcomeKind::readOnly;
   int changes = 0;
@@ -62,8 +65,8 @@ struct ThreadOutcome {
 
 std::string toString(ThreadOutcomeKind kind);
 
-// Derived from the proposals on every read, never stored. The ladder: applied beats proposed, which
-// beats dismissed, which beats superseded; a thread that minted nothing is `read only`.
+// A missing receipt reference makes the outcome unknown. Otherwise applied beats proposed, then
+// dismissed, then superseded; no known proposals or references means read only.
 ThreadOutcome outcomeOf(const AskThread& thread);
 
 // What a thread may weigh, in turns; it bounds the prompt the server assembles.

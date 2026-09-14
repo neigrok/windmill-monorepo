@@ -108,7 +108,7 @@
 // refusals are 409 `proposal-superseded`, 409 `proposal-settled` and a bare 404.
 // A Thread is {id, title, createdAt, askedAt, outcome, proposals: [head-ish…], turns?}. `title` is the
 // lifter's first message verbatim; no surface may summarise it. `outcome` is server-derived
-// {kind: 'read-only'|'proposed'|'applied'|'dismissed'|'superseded', changes, routineId?, routine?},
+// {kind: 'read-only'|'proposed'|'applied'|'dismissed'|'superseded'|'unknown', changes, routineId?, routine?},
 // where the routine pair is omitted together when the changes spanned more than one. A `proposals` row
 // is {id, state, changeCount, routineId, routine, createdAt}; a turn is {from: 'lifter'|'ask', text, at}.
 // Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms numbers,

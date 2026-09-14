@@ -87,7 +87,7 @@ class RowSwipeAccessibilityTests {
             RoutinesScreen(
                 store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
                 onJustStart = {}, onBuild = {}, onOpenRoutine = {},
-                onDeleteRoutine = { deleted += it }, onReview = {}, onOpenSettings = {}, onSignIn = {},
+                onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
             )
         }
 

@@ -48,14 +48,13 @@ object Notes {
     const val add = "Add a note"
     const val full = "10 of 10 notes. Delete one to add another."
 
-    // Placeholder text inside empty rows, never stored: tapping one opens the editor with the title
-    // filled in, and nothing is written until the lifter saves.
+    // Suggestions remain hints until the lifter types a title.
     val placeholders = listOf("How I want to be talked to", "What I am training for")
 
     const val signedOut = "Notes live with your account, so they need you signed in."
 
-    const val titlePlaceholder = "Title"
-    const val bodyPlaceholder = "What Coach should know"
+    const val titlePlaceholder = "How I want to be talked to"
+    const val bodyPlaceholder = "Write a note for Coach"
     const val save = "Save"
     // One tap. The note leaves the editor and the window holds it, with Undo on the room's transient.
     const val delete = "Delete note"

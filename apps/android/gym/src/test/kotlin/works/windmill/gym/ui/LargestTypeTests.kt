@@ -183,7 +183,7 @@ class LargestTypeTests {
         val left = with(compose.density) { scroller.size.height.toDp() }
         assertTrue("the diff is $left at fontScale 2.0", left >= floor)
 
-        val apply = compose.onNodeWithText(Proposal.apply).fetchSemanticsNode()
+        val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
         val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
             .fetchSemanticsNode()
         val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()

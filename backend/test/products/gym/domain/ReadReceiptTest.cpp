@@ -84,3 +84,47 @@ TEST(merging_two_replies_counts_the_overlap_once) {
   // merge does not drain the source.
   CHECK_EQ(page.tally(), (ReadTally{0, 2, 2}));
 }
+
+TEST(workout_evidence_counts_working_rows_and_positive_load_without_promoting_other_kinds) {
+  const Session session{SessionId{"ses_evidence1"}, UserId{"u1"}, 1000, 9000};
+  std::vector<Set> sets;
+  int number = 0;
+  for (const auto& [kind, kg] : std::vector<std::pair<SetKind, double>>{
+           {SetKind::warmup, 20}, {SetKind::working, 82.5}, {SetKind::working, 0},
+           {SetKind::working, -10}, {SetKind::drop, 60}, {SetKind::failure, 100}})
+    sets.emplace_back(SetId{"set_evidence" + std::to_string(++number)}, session.id,
+                      ExerciseId{"bench-press"}, number, kg, 5, kind, std::nullopt, "", 2000);
+
+  const WorkoutObservation total{session, sets};
+  CHECK_EQ(total.workingSetCount, 3);
+  CHECK_EQ(total.tonnageKg, 412.5);
+  CHECK_EQ(total.durationMs, std::optional<std::uint64_t>{8000});
+  const Session open{session.id, session.user, session.startedAtMs};
+  CHECK_FALSE(WorkoutObservation(open, sets).durationMs.has_value());
+  CHECK_EQ(WorkoutObservation(session, {}).workingSetCount, 0);
+}
+
+TEST(evidence_keeps_ordered_snapshots_when_repeat_reads_deduplicate_the_tally) {
+  const Session before{SessionId{"ses_evidence1"}, UserId{"u1"}, kMon4Aug2025,
+                       kMon4Aug2025 + 9000, std::nullopt, PlanSnapshot{"Push A", {}}};
+  Session after = before;
+  after.plan->routineName = "Renamed";
+  ReadReceipt first;
+  first.sawSession(before.id, before.startedAtMs);
+  first.observed(SessionObservation{"list_sessions", before, ReadCoverage::summary, 0,
+                                     WorkoutObservation{before, 2, 800}});
+  ReadReceipt second;
+  second.sawSession(after.id, after.startedAtMs);
+  second.observed(SessionObservation{"get_session", after, ReadCoverage::session, 3,
+                                      WorkoutObservation{after, 2, 900}});
+
+  ReadReceipt run;
+  run.merge(first);
+  run.merge(second);
+  run.merge(first);
+  CHECK_EQ(run.tally(), (ReadTally{0, 1, 1}));
+  CHECK_EQ(run.observations(), (std::vector<SessionObservation>{
+      first.observations()[0], second.observations()[0], first.observations()[0]}));
+  CHECK_EQ(run.observations()[0].routine, std::optional<std::string>{"Push A"});
+  CHECK_EQ(run.observations()[1].routine, std::optional<std::string>{"Renamed"});
+}

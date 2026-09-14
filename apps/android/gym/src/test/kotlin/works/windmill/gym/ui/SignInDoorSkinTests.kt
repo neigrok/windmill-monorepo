@@ -6,8 +6,11 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -21,7 +24,6 @@ import org.robolectric.annotation.Config
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.auth.SignInDoor
-import works.windmill.platform.design.CapsuleFill
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.LocalWindmillDark
 
@@ -41,14 +43,20 @@ class SignInDoorSkinTests {
             }
         }
 
-        val capsule = compose.onNode(hasText("Email me a code") and hasClickAction())
-        capsule.assert(SemanticsMatcher.expectValue(CapsuleFill, GymSkin.Instrument.accent))
+        compose.onNodeWithContentDescription("Email field").performTextReplacement("person@example.com")
+        val label = compose.onNode(hasText("Send code"), useUnmergedTree = true)
+        fun ink(): Color {
+            val layouts = mutableListOf<TextLayoutResult>()
+            label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return layouts.single().layoutInput.style.color
+        }
+        assertEquals(GymSkin.Instrument.onAccent, ink())
 
         compose.runOnIdle { dark.value = false }
-        capsule.assert(SemanticsMatcher.expectValue(CapsuleFill, GymSkin.Daylight.accent))
+        assertEquals(GymSkin.Daylight.onAccent, ink())
 
         compose.runOnIdle { dark.value = true }
-        capsule.assert(SemanticsMatcher.expectValue(CapsuleFill, GymSkin.Instrument.accent))
+        assertEquals(GymSkin.Instrument.onAccent, ink())
     }
 
     @Test
