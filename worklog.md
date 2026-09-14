@@ -911,8 +911,7 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   All seven earlier performed records remain byte-for-byte equal; new session
   `ses_d1535583374a2dd1` contains exactly the accepted working set. Evidence is
   `w7-finish-sheet.json`, `w7-final-receipt.png` and `w5-after-w7-performed-sessions.json`.
-- The release gate uses two CI candidates from the same final source: a manual dispatch followed
-  by the version tag. Each must pass the full CI build before local retained-key signing. The second
+- The release gate uses a fully checked manual-dispatch baseline and a final version-tag candidate. Each must pass the full CI build before local retained-key signing. The second
   candidate must update the first on an isolated emulator while retaining actual local training data.
   Publication and downloaded-asset verification remain pending.
 
@@ -925,6 +924,22 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   the quoted path handles spaces and matches the later verification tools. New candidates will
   establish the final source/run/code identities. The superseded main push65
   is cancelled by the deliberate dispatch and is not recorded as passing.
+
+- Corrected dispatch69 (`34821521081`, source `26c5ab0ab417d0b6fa9c3601c679b9b35a571ef5`)
+  passes the full app gate and packaging, including the SDK-root fix. Its locally signed baseline is
+  non-debuggable version0.8.0/code69, SHA256
+  `7a8d9614f16baa0e44685153f91cc989a972643d229749c573fa3627c919ad2d`, with the pinned retained
+  certificate and unchanged application payload. It installs on isolated Android17 after preserving
+  that device's debug fixture; the personal emulator is untouched.
+- Tag70's release test variant fails once with `NoSuchFileException` at the account restoration
+  call; CI does not include an inner path/stack. The original focused test and20 consecutive real
+  restorations pass locally, so the original exception mechanism is not established. The fixture
+  is aligned with production's retained application-owned Main.immediate store, cancels its owner
+  after each test, and asserts same store/fresh shell/open You/exact destinations after restore.
+  The independent fresh-store recovery case remains. Both variants pass14/14; independent review is clear, with a method name aligned to application
+  ownership. No production code changes. The final tagged CI gate and native baseline-to-release update remain required. The installed
+  baseline has the actual local routine Release update, one20kg×5 set and a75second rest target,
+  with notification permission denied; its package reports non-debuggable code69.
 
 ## Structure observations
 

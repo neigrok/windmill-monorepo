@@ -25,15 +25,16 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymModule
-import works.windmill.gym.GymRoom
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
@@ -56,6 +57,19 @@ import works.windmill.platform.you.YouSheet
 class AccountRouteTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val tmp = TemporaryFolder()
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val applicationStore by lazy {
+        val files = RuntimeEnvironment.getApplication().filesDir
+        TrainingStore(SetQueue(File(files, SetQueue.fileName)),
+            DeviceCopy(File(files, DeviceCopy.fileName)),
+            LocalLog(File(files, LocalLog.fileName)),
+            LocalPreferences(File(files, LocalPreferences.fileName)),
+            LocalBodyweight(File(files, LocalBodyweight.fileName)), applicationScope)
+    }
+
+    @After
+    fun stopApplication() { applicationScope.cancel() }
 
     private fun auth(signedIn: Boolean, restoreNow: Boolean = true, response: () -> Int = { 200 }): AuthStore {
         val user = User("u1", "sam@example.com", "Sam")
@@ -81,7 +95,7 @@ class AccountRouteTests {
         val auth = auth(signedIn = true)
         val store = store(scope, FakeTraining())
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, store) { shell = it } }
+        compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
         assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
@@ -104,7 +118,7 @@ class AccountRouteTests {
         val auth = auth(signedIn = false)
         val store = store(scope, FakeTraining())
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, store) { shell = it } }
+        compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("You").assertDoesNotExist()
@@ -118,10 +132,10 @@ class AccountRouteTests {
     }
 
     @Test
-    fun moduleOwnedStoreKeepsDestinationsAfterAConnectedLogRoundTrip() {
+    fun applicationOwnedStoreKeepsDestinationsAfterAConnectedLogRoundTrip() {
         val auth = auth(signedIn = true)
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, null) { shell = it } }
+        compose.setContent { AccountRoot(auth, applicationStore) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
         compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
@@ -135,14 +149,26 @@ class AccountRouteTests {
     }
 
     @Test
-    fun moduleDefaultStoreRegistersTheRestoredAccountOverview() {
+    fun restoredAccountOverviewKeepsTheApplicationStoreAndRegistersTheFreshShell() {
         val auth = auth(signedIn = true)
         lateinit var shell: ShellActions
+        val owners = mutableListOf<TrainingStore>()
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { AccountRoot(auth, null) { shell = it } }
+        restoration.setContent {
+            AccountRoot(auth, applicationStore) { current, owner ->
+                shell = current
+                owners += owner
+            }
+        }
         compose.onNodeWithContentDescription("Your account").performClick()
+        val firstShell = shell
+        val firstOwner = owners.last()
+        assertSame(applicationStore, firstOwner)
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("You").assertIsDisplayed()
+        assertNotSame(firstShell, shell)
+        assertSame(firstOwner, owners.last())
+        assertEquals(setOf(applicationStore), owners.toSet())
         assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
         compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
@@ -163,7 +189,7 @@ class AccountRouteTests {
                 }
             }
             SideEffect { auth = current }
-            AccountRoot(current, null) { shell = it }
+            AccountRoot(current, applicationStore) { currentShell, _ -> shell = currentShell }
         }
         compose.onNodeWithContentDescription("Your account").performClick()
         hold.set(true)
@@ -188,7 +214,7 @@ class AccountRouteTests {
         val reply = AtomicInteger(200)
         val auth = auth(signedIn = true, response = { reply.get() })
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, null) { shell = it } }
+        compose.setContent { AccountRoot(auth, applicationStore) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
@@ -218,7 +244,7 @@ class AccountRouteTests {
         var stores = 0
         restoration.setContent {
             val store = remember { stores++; store(scope, server) }
-            AccountRoot(auth, store) { shell = it }
+            AccountRoot(auth, store) { current, _ -> shell = current }
         }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
@@ -238,7 +264,7 @@ class AccountRouteTests {
 }
 
 @Composable
-private fun AccountRoot(auth: AuthStore, store: TrainingStore?, onShell: (ShellActions) -> Unit) {
+private fun AccountRoot(auth: AuthStore, store: TrainingStore, onShell: (ShellActions, TrainingStore) -> Unit) {
     LaunchedEffect(Unit) { auth.restore() }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -256,15 +282,7 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore?, onShell: (ShellA
         ShellActions(openYou = { signIn = false; authFlow = null; youUp = true },
             openSignIn = { flow -> signIn = true; authFlow = flow; youUp = true })
     }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val ownedStore = store ?: remember {
-        TrainingStore(SetQueue(File(context.filesDir, SetQueue.fileName)),
-            DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
-            LocalLog(File(context.filesDir, LocalLog.fileName)),
-            LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
-            LocalBodyweight(File(context.filesDir, LocalBodyweight.fileName)), scope)
-    }
-    val module = remember(ownedStore) { GymModule(ownedStore) }
+    val module = remember(store) { GymModule(store) }
     val standing = auth.status
     val account = Account(auth.api, standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
@@ -272,12 +290,12 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore?, onShell: (ShellA
     CompositionLocalProvider(LocalShellActions provides shell) {
         WindmillMaterial {
             module.Skin {
-                if (store == null) module.Room(account) else GymRoom(account, store)
+                module.Room(account)
                 if (youUp) YouSheet(auth, onDismiss = { youUp = false },
                     destinations = shell.destinations, startSignIn = signIn, flowId = authFlow,
                     onSignedIn = shell::authenticated, onAuthDismiss = shell::authDismissed)
             }
         }
     }
-    SideEffect { onShell(shell) }
+    SideEffect { onShell(shell, store) }
 }
