@@ -120,7 +120,7 @@ class SetRowSwipeTests {
     fun testATrailingSwipeWithheldsTheRowAndALeadingOneDoesNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store, session(store))
 
@@ -147,7 +147,7 @@ class SetRowSwipeTests {
     fun testAStrokeCarriedTheWholeWayAcrossDeletesExactlyOnce() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store, session(store))
 
@@ -169,7 +169,7 @@ class SetRowSwipeTests {
     fun testTheRowDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store, session(store))
 
@@ -195,7 +195,7 @@ class SetRowSwipeTests {
     fun theRowThatMovesUpIntoADeletedRowsPlaceIsAWholeRowAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store, session(store))
 
@@ -214,7 +214,7 @@ class SetRowSwipeTests {
     fun testATapStillOpensTheFixSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store, session(store))
 
@@ -232,7 +232,7 @@ class SetRowSwipeTests {
     fun testSwipeThenLeavingTheScreenDoesNotSendTheDelete() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         val standing = screen(store, session(store))
 
@@ -257,7 +257,7 @@ class SetRowSwipeTests {
     fun testTheWindowStillHoldsTheRowAfterTheScreenIsGoneAndUndoBringsItBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         val standing = screen(store, session(store))
 

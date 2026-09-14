@@ -771,3 +771,10 @@ object Ids {
         return prefix + bytes.joinToString("") { "%02x".format(it) }
     }
 }
+
+object LoggedSetLimits {
+    const val maxWeightKg = 500
+    const val maxReps = 99
+    fun permits(weightKg: Double, reps: Int): Boolean =
+        weightKg.isFinite() && kotlin.math.abs(weightKg) <= maxWeightKg && reps in 1..maxReps
+}

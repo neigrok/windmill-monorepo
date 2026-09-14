@@ -14,9 +14,10 @@ platform/             the product-neutral seam: WindmillApi (the Bearer transpor
                       the ProductModule / Account seam · SignInDoor · YouSheet — the door and
                       the sheet paint in `LocalWindmillPalette`, which a room's `Skin` provides,
                       so the shell's sheet wears whichever room is hosting it
-gym/                  the room — domain/ (pure) · store/ (SetQueue, the offline-first flush queue) ·
-                      net/ · ui/
-app/                  the composition root — the only module that knows which rooms exist.
+gym/                  the room — domain/ (pure) · store/ (the durable queue and runtime) ·
+                      net/ · notification/ (Android adapters) · ui/
+app/                  the application composition root — one AuthStore, GymRuntime, TrainingStore
+                      and notification adapter shared by the activity and receivers.
                       Portrait-only.
 ```
 
@@ -48,12 +49,13 @@ carries a code instead of a link, and typing the code finishes the sign-in
 (`POST /v1/auth/verify-code`). The same field takes a pasted magic link or bare token
 (`MagicLink.token`) as the fallback. There are no app links.
 
-The session secret rides `Authorization: Bearer` and sleeps behind `SessionStore` beside the last
-user it was answered for. A restore that cannot reach the server (or meets a 5xx) keeps the secret
-AND stands the seat up signed in and **unverified** on that user — the gym room connects for the
-account off the copies the device holds (`DeviceCopy`: names, routines, the picker's meta) — and
-`reverify` asks again on every resume until `/v1/me` answers. Only a definitive 401 spends the
-secret and signs the seat out.
+The session secret rides `Authorization: Bearer`. `SessionStore` seals the credential and its
+verified user in one committed document. A restore that cannot reach the server (or meets a 5xx)
+keeps a previously bound identity signed in and **unverified**; the room uses that account's
+device copies. Legacy, partial or unreadable identity data stays unresolved until `/v1/me`
+confirms it; it never becomes anonymous write authority. `reverify` asks again on resume.
+Only a definitive 401 spends the secret and signs the seat out. Each account transport remains
+bound to its selected user and credential, and local workout writes recheck current ownership.
 
 The secret and the remembered user are **sealed on disk** (`SecretVault`: AES-GCM under a key minted
 in the Android Keystore) and the app opts out of backup entirely — `allowBackup="false"` plus
@@ -146,7 +148,7 @@ account or restoring cached credentials grants no ownership. An unverified accou
 local room, while any incomplete approved transfer remains blocked until verified recovery.
 
 **A shelf or queue carrying no seat name** is attributed when that file is opened, off the session
-the device is holding — `PrefsSessions`, read at the room's edge (`GymRoom`) and handed to
+the device is holding — `PrefsSessions`, read by `WindmillApplication` and handed to
 `LocalLog`/`SetQueue` as `deviceOwner`. Never the arriving `Account`: the room mounts before
 `/v1/me` resolves, so the first account it connects for is nobody on every launch, and reading it
 would quarantine every signed-in lifter's shelf mid-workout. Rows written while signed in are seated
@@ -155,27 +157,44 @@ reachable by no seat, replayed to no account, deleted by nothing. The decision i
 once, so no later launch decides it differently. Gym's settings section is the one door out, and it
 requires the local-data decision; a signed-out decision opens its bound sign-in flow. iOS attributes legacy files using its Keychain session.
 
+## Native workout surface
+
+The application owns one local workout runtime. Notification receivers restore that same runtime
+without starting HTTP authentication. The queue commits the exact offered set, consumed action,
+nine-second delivery/Undo hold and original rest timer together before reporting success. Editing
+the rack, changing movement, Undo, finishing or changing account makes old actions ineligible.
+
+Android renders the stock ongoing workout card and count-up chronometer. Supported systems may
+promote it to a Live Update; eligibility, user permission and actual promotion are separate facts.
+The ordinary card uses the same workout state. Log set requires unlock and current action identity.
+Dismissing the card hides it for that workout and pauses rest alerts; Show workout in settings is
+the explicit way to restore it.
+
+Rest alerts are optional, use the notification channel's sound and require notification access
+plus exact-alarm access on Android 12+. No inexact or overdue catch-up alarm is substituted. Each
+rest event permits at most one durable alert attempt; a process failure before alarm registration
+or between claiming and posting can lose that alert. Android sound, DND and idle policy remain
+authoritative. Logging itself has no confirmation sound or vibration.
+
 ## CI and releases
 
-`.github/workflows/android.yml` builds and tests every push and pull_request touching
-`apps/android/**`, `packages/api-contract/**` or the workflow itself. An `android-v*` tag builds a
-release APK and publishes it as a GitHub Release; `workflow_dispatch` with a version does the same
-build and leaves the APK as an actions artifact. There is no store distribution: a release is a
-sideload. `versionCode` is the workflow run number, so a later tag can never ship a smaller code.
+`.github/workflows/android.yml` builds and tests main pushes and pull requests touching
+`apps/android/**`, `packages/api-contract/**` or the workflow itself. An `android-v*` tag or a
+versioned `workflow_dispatch` also produces an unpublished signing-input artifact containing a
+non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
+retained release identity. CI has read-only repository permissions and receives no private signing
+configuration. `versionCode` equals the workflow run number and must exceed the published code56.
 
-Signing is armed by four repo secrets. With none set, each CI runner can generate its own **debug
-key**, so releases from different runs can carry incompatible signatures. The published
-`android-v0.7.0` and `android-v0.7.1` APKs have different signing certificates: `0.7.1` cannot update
-a `0.7.0` installation in place.
+Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
+password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
+takes independently checked commit, ref, version, workflow and run identities, verifies the
+downloaded input, receives the password through stdin, and verifies the final certificate and
+unchanged application contents. Its output includes the APK, digest and provenance linked to the
+exact input bytes. It does not publish. Native acceptance and a same-key update check precede
+uploading the public artifacts to the matching GitHub release.
 
-An in-place update that preserves app data requires the same key that signed the installed APK.
-Configuring a new key does not restore compatibility with that installation. Future releases need
-one retained release key supplied through all four secrets; setting only some fails the workflow.
-Configure that key once with:
-
-```sh
-gh secret set WINDMILL_ANDROID_KEYSTORE_B64 --body "$(base64 -i windmill.keystore)"
-gh secret set WINDMILL_ANDROID_KEYSTORE_PASSWORD
-gh secret set WINDMILL_ANDROID_KEY_ALIAS
-gh secret set WINDMILL_ANDROID_KEY_PASSWORD
-```
+Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
+identity. The historical published APKs through0.7.1 used different debug certificates; the
+retained release key cannot update those installations in place. Uninstalling removes app data,
+including records saved only on that phone. Preserve those records before any installation change;
+signing in alone does not transfer anonymous records.

@@ -112,7 +112,7 @@ class SessionDiscardTests {
     fun testTheReviewScreenDrawsDiscardSoTheLongPressIsNeverTheOnlyPath() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store)
 
@@ -130,7 +130,7 @@ class SessionDiscardTests {
     fun testTheDrawnDiscardWithholdsTheSessionAndAsksTheLogNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         screen(store)
 

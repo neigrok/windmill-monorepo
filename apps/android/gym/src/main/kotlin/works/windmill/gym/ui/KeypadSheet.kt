@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import works.windmill.gym.domain.LoggedSetLimits
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
@@ -47,7 +48,7 @@ object KeypadEntry {
 
     const val maxBuffer = 8
 
-    const val maxLoggedReps = 99
+    const val maxLoggedReps = LoggedSetLimits.maxReps
 
     const val onePoint = "One decimal point only."
     const val notANumber = "That is not a number yet."
@@ -118,7 +119,7 @@ object KeypadEntry {
             return Reading(null, notANumber)
         }
         if (mode == Mode.Weight) {
-            if (kotlin.math.abs(value) > 500) {
+            if (kotlin.math.abs(value) > LoggedSetLimits.maxWeightKg) {
                 return Reading(null, overWeight)
             }
             return Reading(Ladder.round(value), weightHint)

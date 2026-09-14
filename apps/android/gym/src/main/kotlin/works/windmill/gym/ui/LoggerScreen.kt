@@ -147,21 +147,6 @@ private val loggerSheetSaver = Saver<LoggerSheet?, String>(
     } },
 )
 
-private data class RackDraft(
-    val movement: String?,
-    val setCount: Int,
-    val weightKg: Double,
-    val reps: Int,
-    val edited: Boolean = false,
-) {
-    companion object {
-        val saver = listSaver<RackDraft, Any>(
-            save = { listOf(it.movement.orEmpty(), it.setCount, it.weightKg, it.reps, it.edited) },
-            restore = { RackDraft((it[0] as String).ifEmpty { null }, it[1] as Int, it[2] as Double, it[3] as Int, it[4] as Boolean) },
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LoggerScreen(
@@ -176,11 +161,8 @@ fun LoggerScreen(
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    var rack by rememberSaveable(stateSaver = RackDraft.saver) {
-        mutableStateOf(RackDraft(store.exerciseId, store.todaySets.size, store.prefill.weightKg, store.prefill.reps))
-    }
-    val weightKg = rack.weightKg
-    val reps = rack.reps
+    val weightKg = store.rack?.weightKg ?: store.prefill.weightKg
+    val reps = store.rack?.reps ?: store.prefill.reps
     val pickerState = rememberMovementPickerState()
     var sheet by rememberSaveable(stateSaver = loggerSheetSaver) { mutableStateOf<LoggerSheet?>(null) }
     var fixBusy by remember { mutableStateOf(false) }
@@ -206,6 +188,7 @@ fun LoggerScreen(
 
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     fun close() {
+        store.editWorkout(false)
         scope.launch { sheetState.hide() }.invokeOnCompletion {
             sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.draftKey}" else it.javaClass.simpleName) }
             sheet = null
@@ -255,13 +238,8 @@ fun LoggerScreen(
         if (pickerUp) store.loadLastSets()
     }
 
-    LaunchedEffect(store.exerciseId, store.todaySets.size, store.prefill) {
-        val movement = store.exerciseId ?: return@LaunchedEffect
-        val count = store.todaySets.size
-        val nextSet = rack.movement != movement || rack.setCount != count
-        if (nextSet || !rack.edited) {
-            rack = RackDraft(movement, count, store.prefill.weightKg, store.prefill.reps)
-        }
+    LaunchedEffect(sheet) {
+        store.editWorkout(sheet == LoggerSheet.Weight || sheet == LoggerSheet.Reps || sheet is LoggerSheet.Fix)
     }
 
     LaunchedEffect(Unit) {
@@ -356,13 +334,13 @@ fun LoggerScreen(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         LastTimeChip(history, historyCard, shown, reading = history == null && !store.lastTimeFailed,
-                            onDial = { rack = rack.copy(weightKg = it.weightKg, reps = it.reps, edited = true) }, modifier = Modifier.weight(1f))
+                            onDial = { store.editRack(it.weightKg, it.reps) }, modifier = Modifier.weight(1f))
                         val rest = RestReading(store.restStartedAtMs, store.planEntry, store.preferences)
                         Column(Modifier.weight(1f).heightIn(min = 72.dp),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(if (rest.startedAtMs == null) "Rest target" else "Rest", style = WindmillFont.body(12), color = skin.inkDim)
-                            Text(rest.elapsedMs(nowMs)?.let(Readout::clock) ?: rest.target,
+                            Text(remember(nowMs, store.restStartedAtMs) { store.restElapsedMs() }?.let(Readout::clock) ?: rest.target,
                                 style = GymType.numeral(24, FontWeight.Bold), color = skin.ink)
                             if (rest.startedAtMs != null && rest.targetSeconds != null) {
                                 Text("Target ${rest.target}", style = WindmillFont.body(12), color = skin.inkDim)
@@ -393,13 +371,19 @@ fun LoggerScreen(
         Rack(
             weightKg = weightKg,
             reps = reps,
-            finishing = store.isFinishing,
-            onWeight = { rack = rack.copy(weightKg = it, edited = true) },
-            onReps = { rack = rack.copy(reps = it, edited = true) },
-            onTypeWeight = { sheet = LoggerSheet.Weight },
-            onTypeReps = { sheet = LoggerSheet.Reps },
+            finishing = store.isFinishing || store.workoutFailure != null,
+            onWeight = { store.editRack(it, reps) },
+            onReps = { store.editRack(weightKg, it) },
+            onTypeWeight = { store.editWorkout(true); sheet = LoggerSheet.Weight },
+            onTypeReps = { store.editWorkout(true); sheet = LoggerSheet.Reps },
             onLog = {
-                scope.launch { store.logSet(weightKg, reps) }
+                val offer = store.notification.value?.offer
+                if (offer == null) say(store.workoutFailure ?: "Check the weight and reps before logging.")
+                else when (val accepted = store.acceptSet(works.windmill.gym.domain.LogSetCommand(offer.key, offer.id))) {
+                    is works.windmill.gym.domain.LogSetAcceptance.Unavailable -> say(accepted.reason)
+                    works.windmill.gym.domain.LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
+                    is works.windmill.gym.domain.LogSetAcceptance.Accepted -> say(null)
+                }
             },
         )
       }
@@ -425,11 +409,11 @@ fun LoggerScreen(
             when (open) {
                 LoggerSheet.Weight -> KeypadSheet(
                     KeypadEntry.Mode.Weight, weightKg,
-                    onCommit = { rack = rack.copy(weightKg = it, edited = true); close() },
+                    onCommit = { if (store.editRack(it, reps) is works.windmill.gym.domain.WorkoutChange.Saved) close() },
                 )
                 LoggerSheet.Reps -> KeypadSheet(
                     KeypadEntry.Mode.Reps, reps.toDouble(),
-                    onCommit = { rack = rack.copy(reps = it.toInt(), edited = true); close() },
+                    onCommit = { if (store.editRack(weightKg, it.toInt()) is works.windmill.gym.domain.WorkoutChange.Saved) close() },
                 )
                 LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,

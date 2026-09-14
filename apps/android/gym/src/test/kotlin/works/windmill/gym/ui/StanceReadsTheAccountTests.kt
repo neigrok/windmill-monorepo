@@ -103,7 +103,7 @@ class StanceReadsTheAccountTests {
     fun theLogDrawsNeitherSilenceOverASessionTheAccountStillHolds() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         oneWorkout(store)
         compose.setContent {
@@ -217,7 +217,7 @@ class StanceReadsTheAccountTests {
     fun theFirstSessionStanceReadsTheAccountAndTheSettledDiscardBringsItBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
         val store = store(scope, server)
         oneWorkout(store)
         assertFalse("the log holds a workout", store.firstSession)

@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import works.windmill.gym.domain.ClaimBatch
@@ -10,12 +11,23 @@ import works.windmill.gym.domain.ClaimItem
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.domain.LogSetAcceptance
+import works.windmill.gym.domain.LogSetCommand
+import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.WorkoutEvent
+import works.windmill.gym.domain.WorkoutKey
+import works.windmill.gym.domain.WorkoutMoment
+import works.windmill.gym.domain.WorkoutState
 
 // The local-first write queue. A set's client-minted id IS the idempotency key, so sends may repeat
 // in any order and the log converges on one row per id.
@@ -27,11 +39,18 @@ import works.windmill.gym.domain.TrainingSet
 // A set that never landed is refused once the session is finished, so the queue must flush BEFORE a
 // finish, before the boot read and before the claim's starts.
 // `deviceOwner` is the account this device holds a session for at open time.
-class SetQueue(
+class SetQueue private constructor(
     private val file: File,
-    deviceOwner: String? = null,
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    deviceOwner: String?,
+    private val clock: () -> Long,
+    private val write: (File, String) -> Unit,
 ) {
+    constructor(file: File, deviceOwner: String? = null, clock: () -> Long = System::currentTimeMillis) :
+        this(file, deviceOwner, clock, AtomicDocument::write)
+
+    internal constructor(file: File, deviceOwner: String? = null, write: (File, String) -> Unit,
+        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, write)
+
     // The key the server numbers sets under.
     data class Lane(val sessionId: String, val exerciseId: String)
 
@@ -45,10 +64,18 @@ class SetQueue(
         // exists. Defaulted — the decoder tolerates a missing key only where there is a default.
         val heldUntilMs: Long? = null,
         val loggedAtMs: Long? = null,
+        val event: WorkoutEvent? = null,
+        val holdOrigin: WorkoutMoment? = null,
+        val holdDurationMs: Long = undoWindowMs,
+        val eventOrder: Long = 0,
     ) {
         val lane: Lane get() = Lane(sessionId, set.exerciseId)
 
         fun isHeld(at: Long): Boolean = (heldUntilMs ?: 0) > at
+
+        fun isHeld(at: WorkoutMoment): Boolean = holdOrigin?.let {
+            heldUntilMs != null && it.bootId == at.bootId && at.elapsedMs - it.elapsedMs in 0 until holdDurationMs
+        } ?: isHeld(at.wallMs)
     }
 
     companion object {
@@ -74,8 +101,18 @@ class SetQueue(
         // True for a session composed on this device with no server answer; the claim's landed start
         // turns it false. Absent reads as unclaimed, costing at most one start replay.
         val unclaimed: Boolean? = null,
+        val workout: WorkoutState? = null,
     ) {
         val isEmpty: Boolean get() = session == null && entries.isEmpty()
+
+        fun matchesClaim(value: Queued): Boolean {
+            if (copy(workout = null) != value.copy(workout = null)) return false
+            if (value.workout == null) return workout?.rack?.edited != true
+            fun content(state: WorkoutState?): WorkoutState? = state?.copy(revision = 0,
+                rack = state.rack?.copy(revision = 0), offer = null, alertAccess = false,
+                rest = state.rest?.copy(alertRevision = 0))
+            return content(workout) == content(value.workout)
+        }
     }
 
     @Serializable
@@ -84,7 +121,10 @@ class SetQueue(
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private var migrated = false
+    var unreadable: Boolean = false
+        private set
     private var held: Held = open(deviceOwner)
+    private var saved: Held? = null
 
     init {
         if (migrated) flush()
@@ -93,39 +133,77 @@ class SetQueue(
     // An unnamed queue is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val document = StoredDocument.tree(file) ?: return Held()
+        val document = StoredDocument.tree(file) ?: run {
+            if (file.exists()) unreadable = true
+            return Held()
+        }
         val before = queued(document)
         if (!before.isEmpty) {
             migrated = true
             return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
+        if (document["queues"] != null && document["queues"] !is JsonObject) unreadable = true
         val queues = document["queues"] as? JsonObject ?: JsonObject(emptyMap())
         return Held(queues.mapValues { queued(it.value) },
-            document["claims"]?.let { diskJson.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }.orEmpty())
+            document["claims"]?.let {
+                try { diskJson.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }
+                catch (_: Exception) { unreadable = true; emptyMap() }
+            }.orEmpty())
     }
 
     // Item by item: a live session or an owed set this build cannot read is the one thing lost.
     private fun queued(node: JsonElement): Queued {
-        val fields = node as? JsonObject ?: return Queued()
+        val fields = node as? JsonObject ?: run { unreadable = true; return Queued() }
+        if (fields["workout"] != null) {
+            try {
+                val authority = Json { explicitNulls = false }.decodeFromJsonElement(WorkoutState.serializer(), fields.getValue("workout"))
+                return diskJson.decodeFromJsonElement(Queued.serializer(), fields).copy(workout = authority)
+            } catch (_: Exception) {
+                unreadable = true
+            }
+        }
         return Queued(
             session = StoredDocument.one(fields["session"], Session.serializer()),
             entries = StoredDocument.keyed(fields["entries"], Entry.serializer()),
             order = StoredDocument.each(fields["order"], String.serializer()),
             unclaimed = StoredDocument.one(fields["unclaimed"], Boolean.serializer()),
             chosenMovement = StoredDocument.one(fields["chosenMovement"], String.serializer()),
+            workout = fields["workout"]?.let {
+                try { diskJson.decodeFromJsonElement(WorkoutState.serializer(), it) }
+                catch (_: Exception) { unreadable = true; null }
+            },
         )
     }
 
     private val mine: Queued get() = held.queues[seat] ?: Queued()
 
     private fun keep(next: Queued) {
-        check(!transferFailed) { "Restart the app to recover the local-data decision." }
-        held = held.copy(queues = held.queues + (seat to next))
+        commit(held.copy(queues = held.queues + (seat to next)))
+    }
+
+    private fun commit(next: Held) {
+        check(!transferFailed && !unreadable) { "Restart the app to recover the saved workout." }
+        if (next == saved) return
+        try {
+            write(file, diskJson.encodeToString(Held.serializer(), next))
+        } catch (failure: Exception) {
+            transferFailed = true
+            throw failure
+        }
+        held = next
+        saved = next
     }
 
     // Selecting a seat never transfers training from another seat.
     fun adopt(owner: String?) {
-        seat = Seat.of(owner)
+        val nextSeat = Seat.of(owner)
+        if (nextSeat == seat) return
+        val queues = held.queues.mapValues { (key, queue) ->
+            if (key != seat && key != nextSeat) queue
+            else queue.copy(workout = queue.workout?.invalidate()?.access(false))
+        }
+        if (queues != held.queues) commit(held.copy(queues = queues))
+        seat = nextSeat
     }
 
     fun claimItems(): List<ClaimItem> = ClaimSource.entries.mapNotNull { source ->
@@ -139,17 +217,11 @@ class SetQueue(
     fun complete(batch: ClaimBatch, owner: String?) {
         val next = transfer(batch, owner)
         if (next == held) return
-        try {
-            persistClaimConsent(file, diskJson.encodeToString(Held.serializer(), next))
-        } catch (failure: Exception) {
-            transferFailed = true
-            throw failure
-        }
-        held = next
+        commit(next)
     }
 
     private fun transfer(batch: ClaimBatch, owner: String?): Held {
-        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        check(!transferFailed && !unreadable) { "Restart the app to recover the local-data decision." }
         if (held.claims.completed(batch, owner)) return held
         var queues = held.queues
         for (item in batch.items.filter { it.kind == ClaimKind.Queue }) {
@@ -157,11 +229,11 @@ class SetQueue(
             check(item.id == (value.session?.id ?: "pending"))
             if (owner != null) {
                 val target = queues[Seat.of(owner)] ?: Queued()
-                check(target.isEmpty || target == value) { "Finish the account’s current workout before adding this training." }
-                queues = queues + (Seat.of(owner) to value)
+                check(target.isEmpty || target.matchesClaim(value)) { "Finish the account’s current workout before adding this training." }
+                queues = queues + (Seat.of(owner) to value.copy(workout = value.workout?.invalidate()?.access(false)))
             }
             val source = queues[item.source.seat]
-            if (source != null && item.matches(source, Queued.serializer())) queues = queues - item.source.seat
+            if (source != null && source.matchesClaim(value)) queues = queues - item.source.seat
         }
         return held.copy(queues = queues, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }
@@ -175,10 +247,83 @@ class SetQueue(
     val order: List<String> get() = mine.order ?: emptyList()
 
     val chosenMovement: String? get() = mine.chosenMovement?.takeIf { it in order }
+    val ownerKey: String get() = seat
+    val workout: WorkoutState get() = mine.workout ?: WorkoutState()
+    val writable: Boolean get() = !transferFailed && !unreadable
+
+    fun control(next: WorkoutState) {
+        keep(mine.copy(workout = next))
+    }
+
+    fun prepare(lastTime: LastTime?, preferences: GymPreferences, moment: WorkoutMoment,
+        ready: Boolean, mint: () -> String): WorkoutState {
+        val live = mine.session ?: return workout
+        val entries = mine.entries.mapValues { (_, entry) ->
+            if (entry.sessionId != live.id) entry else {
+                val oldOrigin = entry.event?.origin ?: WorkoutMoment(entry.loggedAtMs ?: entry.set.completedAtMs, 0, "legacy")
+                val event = WorkoutEvent(entry.event?.id ?: entry.set.id, oldOrigin.reconciled(moment) ?: oldOrigin)
+                val until = if (entry.heldUntilMs == null) null else entry.holdOrigin?.let { origin ->
+                    if (origin.bootId != moment.bootId) null else {
+                        val remaining = entry.holdDurationMs - (moment.elapsedMs - origin.elapsedMs)
+                        if (remaining in 1..entry.holdDurationMs) moment.wallMs + remaining else null
+                    }
+                }
+                entry.copy(event = event, heldUntilMs = until)
+            }
+        }
+        val next = prepared(mine.copy(entries = entries), lastTime, preferences, moment, ready, mint)
+        keep(next)
+        return requireNotNull(next.workout)
+    }
+
+    private fun prepared(queue: Queued, lastTime: LastTime?, preferences: GymPreferences,
+        moment: WorkoutMoment, ready: Boolean, mint: () -> String): Queued {
+        val live = queue.session ?: return queue
+        val movement = queue.chosenMovement
+        val plan = movement?.let { live.plan?.entry(it) }
+        val current = queue.entries.values.filter { it.sessionId == live.id }
+        val event = current.maxWithOrNull(compareBy<Entry> { it.eventOrder }
+            .thenBy { it.event?.origin?.bootId == moment.bootId }
+            .thenBy { if (it.event?.origin?.bootId == moment.bootId) it.event.origin.elapsedMs else it.loggedAtMs ?: it.set.completedAtMs })?.event
+        val target = plan?.restSeconds ?: preferences.restSeconds
+        val previous = queue.workout ?: WorkoutState()
+        val started = (previous.started ?: WorkoutMoment(live.startedAtMs, 0, "legacy")).reconciled(moment)
+        var state = previous.copy(started = started).reconcile(event, target, preferences.restSound, moment)
+        if (movement == null) return queue.copy(workout = state.offered(WorkoutKey(seat, live.id), 0, false, ""))
+        val today = current.map { it.set }.filter { it.exerciseId == movement }.sortedBy { it.completedAtMs }
+        val savedRack = state.rack
+        val unresolvedPrefill = lastTime == null && today.isEmpty() && plan?.sets.isNullOrEmpty()
+        if (!unresolvedPrefill || savedRack?.exerciseId != movement || savedRack.basisSetCount != today.size) {
+            state = state.redial(movement, today.size, Prefill.of(today, plan, lastTime))
+        }
+        val ordinal = LiveLines.workingCount(today) + 1
+        state = state.offered(WorkoutKey(seat, live.id), ordinal, ready, state.offer?.id ?: if (ready && !state.editorOpen) mint() else "")
+        return queue.copy(workout = state)
+    }
+
+    fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTime: LastTime?, preferences: GymPreferences,
+        holdDurationMs: Long = undoWindowMs, mint: () -> String): LogSetAcceptance {
+        val live = mine.session ?: return LogSetAcceptance.Stale
+        if (command.key != WorkoutKey(seat, live.id) || !workout.accepts(command)) return LogSetAcceptance.Stale
+        val offer = requireNotNull(workout.offer)
+        if (offer.exerciseId != chosenMovement || offer.workingOrdinal != LiveLines.workingCount(sets, chosenMovement) + 1) {
+            return LogSetAcceptance.Stale
+        }
+        val set = TrainingSet(offer.id, offer.exerciseId, weightKg = offer.weightKg, reps = offer.reps,
+            completedAtMs = moment.wallMs)
+        val entry = Entry(set, live.id, needsPush = true, remints = 0,
+            heldUntilMs = moment.wallMs + holdDurationMs, loggedAtMs = moment.wallMs,
+            event = WorkoutEvent(offer.id, moment), holdOrigin = moment, holdDurationMs = holdDurationMs, eventOrder = workout.revision + 1)
+        val next = prepared(mine.copy(entries = mine.entries + (set.id to entry), workout = workout.consume(command)),
+            lastTime, preferences, moment, true, mint)
+        keep(next)
+        return LogSetAcceptance.Accepted(set.id)
+    }
 
     fun choose(exerciseId: String) {
-        append(exerciseId)
-        keep(mine.copy(chosenMovement = exerciseId))
+        keep(mine.copy(order = if (exerciseId in order) order else order + exerciseId,
+            chosenMovement = exerciseId,
+            workout = if (mine.chosenMovement == exerciseId) mine.workout else mine.workout?.invalidate()))
     }
 
     fun append(exerciseId: String) {
@@ -201,7 +346,8 @@ class SetQueue(
     fun hold(session: Session?, unclaimed: Boolean = false) {
         val kept = if (mine.session?.id == session?.id) mine.order else null
         keep(mine.copy(session = session, order = kept, chosenMovement = mine.chosenMovement.takeIf { mine.session?.id == session?.id },
-            unclaimed = if (session == null) null else unclaimed))
+            unclaimed = if (session == null) null else unclaimed,
+            workout = mine.workout.takeIf { mine.session?.id == session?.id }))
     }
 
     fun claimed(sessionId: String) {
@@ -248,25 +394,30 @@ class SetQueue(
     fun withdraw(id: String): Boolean {
         val entry = mine.entries[id] ?: return false
         if (!entry.needsPush) return false
-        keep(mine.copy(entries = mine.entries - id))
+        keep(mine.copy(entries = mine.entries - id, workout = mine.workout?.invalidate()))
         return true
     }
 
     // Both directions: a set just logged (owed), and a row the log handed back (not owed), which
     // settles an owed set.
-    fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, heldUntilMs: Long? = null) {
+    fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, heldUntilMs: Long? = null, moment: WorkoutMoment? = null) {
         val existing = mine.entries[set.id]
         val loggedAt = existing?.loggedAtMs ?: if (needsPush && existing == null) set.completedAtMs else null
         keep(mine.copy(entries = mine.entries + (set.id to Entry(set, sessionId, needsPush,
-            existing?.remints ?: 0, heldUntilMs, loggedAt))))
+            existing?.remints ?: 0, heldUntilMs, loggedAt, existing?.event ?: moment?.let { WorkoutEvent(set.id, it) },
+            existing?.holdOrigin ?: moment, existing?.holdDurationMs ?: moment?.let { (heldUntilMs ?: it.wallMs) - it.wallMs } ?: undoWindowMs,
+            existing?.eventOrder ?: if (moment != null) workout.revision + 1 else 0)),
+            workout = if (existing?.set == set) mine.workout else mine.workout?.invalidate()))
     }
 
     // Clear the sent key as well as the stored one, or a reply that disagreed leaves an entry owed
     // forever.
     fun delivered(stored: TrainingSet, id: String, sessionId: String) {
+        val entry = mine.entries[id]
         keep(mine.copy(entries = mine.entries - id +
             (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0,
-                heldUntilMs = null, loggedAtMs = mine.entries[id]?.loggedAtMs))))
+                heldUntilMs = null, loggedAtMs = entry?.loggedAtMs, event = entry?.event, eventOrder = entry?.eventOrder ?: 0)),
+            workout = if (stored.id == id) mine.workout else mine.workout?.invalidate()))
     }
 
     // The same set under a new key, still owed, with the remint budget counted down.
@@ -275,11 +426,12 @@ class SetQueue(
         // The fresh id carries no hold: the undo window was already spent.
         keep(mine.copy(entries = mine.entries - id +
             (fresh to Entry(entry.set.copy(id = fresh), entry.sessionId, needsPush = true,
-                remints = entry.remints + 1, heldUntilMs = null, loggedAtMs = entry.loggedAtMs))))
+                remints = entry.remints + 1, heldUntilMs = null, loggedAtMs = entry.loggedAtMs, event = entry.event, eventOrder = entry.eventOrder)),
+            workout = mine.workout?.invalidate()))
     }
 
     fun drop(id: String) {
-        keep(mine.copy(entries = mine.entries - id))
+        keep(mine.copy(entries = mine.entries - id, workout = mine.workout?.invalidate()))
     }
 
     // Set ids do not move: each is its own key with its own remint budget.
@@ -288,7 +440,7 @@ class SetQueue(
             if (entry.sessionId == old) entry.copy(sessionId = fresh) else entry
         }
         val session = mine.session?.let { if (it.id == old) it.copy(id = fresh) else it }
-        keep(mine.copy(session = session, entries = entries))
+        keep(mine.copy(session = session, entries = entries, workout = mine.workout?.invalidate()))
     }
 
     // A movement id must change everywhere this queue wrote it: the sets, the walk order and the
@@ -307,28 +459,24 @@ class SetQueue(
             live.copy(plan = plan)
         }
         keep(mine.copy(session = session, entries = entries, order = order,
-            chosenMovement = if (mine.chosenMovement == old) fresh else mine.chosenMovement))
+            chosenMovement = if (mine.chosenMovement == old) fresh else mine.chosenMovement,
+            workout = mine.workout?.invalidate()))
     }
 
     // Delivered sets are released; an owed set stays queued until the log answers for it.
     fun close(sessionId: String) {
-        keep(mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId || it.needsPush }))
-        if (mine.session?.id == sessionId) letGo()
+        val next = mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId || it.needsPush })
+        keep(if (mine.session?.id == sessionId) next.copy(session = null, order = null, chosenMovement = null, unclaimed = null, workout = null) else next)
     }
 
     // A session that no longer exists: the one case where an owed set is dropped.
     fun forget(sessionId: String) {
-        keep(mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId }))
-        if (mine.session?.id == sessionId) letGo()
-    }
-
-    private fun letGo() {
-        keep(mine.copy(session = null, order = null, chosenMovement = null, unclaimed = null))
+        val next = mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId })
+        keep(if (mine.session?.id == sessionId) next.copy(session = null, order = null, chosenMovement = null, unclaimed = null, workout = null) else next)
     }
 
     fun flush() {
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), held) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        commit(held)
     }
 }
 

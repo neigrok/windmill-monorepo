@@ -64,8 +64,8 @@ docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS · d
              files) · LAUNCH · per-topic design and exploration notes
 .github/     backend.yml (context backend/ — test, build, push the image) · web.yml (workdir web/ —
              test, build, rsync dist/ to the VPS) · ios.yml (build + test only) · android.yml
-             (build + test on push/PR; on an android-v* tag it ships a release APK to a GitHub
-             Release) · deploy.yml (manual: renders ~/windmill/.env on the VPS from GitHub secrets
+             (build + test on push/PR; android-v* tags and versioned dispatches produce unpublished
+             signing inputs) · deploy.yml (manual: renders ~/windmill/.env on the VPS from GitHub secrets
              and variables, then compose up) · embedder.yml · tools.yml
 .attic/      pre-restructure repos, kept as a local recovery net (gitignored)
 ```
@@ -73,6 +73,14 @@ docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS · d
 A backend push publishes an image; it does not deploy. On a fresh host the web deploy must land
 before the backend one — the embedder bind-mounts its model weights out of the served web directory
 (`services/embedder/README.md`).
+
+Android CI has read-only repository access and no private signing configuration. Its signing input
+contains a non-debuggable APK, digest and source/run provenance. `apps/android/tools/release.py finalize`
+checks the downloaded input against independently supplied source/run identities, signs locally with
+the retained key, and verifies the public certificate pin and unchanged application contents. Native
+acceptance and a same-key update check precede separate publication of the public release artifacts;
+neither CI nor the finalize helper publishes a GitHub release. See `apps/android/README.md` for custody
+and installation constraints.
 
 ## The one rule
 

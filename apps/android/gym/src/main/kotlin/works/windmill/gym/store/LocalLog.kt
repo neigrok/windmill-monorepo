@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import works.windmill.gym.domain.ClaimBatch
@@ -112,7 +113,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
         val next = transfer(batch, owner)
         if (next == held) return
         try {
-            persistClaimConsent(file, diskJson.encodeToString(Held.serializer(), next))
+            AtomicDocument.write(file, diskJson.encodeToString(Held.serializer(), next))
         } catch (failure: Exception) {
             transferFailed = true
             throw failure

@@ -57,11 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
@@ -82,12 +79,9 @@ import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.Deletion
-import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
@@ -117,10 +111,16 @@ import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.ThreadScreen
 import works.windmill.gym.ui.ThreadsScreen
 import works.windmill.gym.ui.askThreadSaver
+import works.windmill.gym.notification.WorkoutNotifications
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import works.windmill.gym.ui.routineDraftSaver
 import works.windmill.platform.you.YouDestination
 import works.windmill.platform.Account
-import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.AccountActions
 import works.windmill.platform.ProductModule
@@ -128,7 +128,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
 // Gym's one seam into the superapp.
-class GymModule : ProductModule {
+class GymModule(private val store: TrainingStore, private val notifications: WorkoutNotifications? = null) : ProductModule {
     override val id = "gym"
     override val label = "Gym"
 
@@ -139,7 +139,7 @@ class GymModule : ProductModule {
 
     @Composable
     override fun Room(account: Account) {
-        GymRoom(account)
+        GymRoom(account, store, notifications)
     }
 }
 
@@ -243,28 +243,6 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 // A room's state dies when you leave it, store included: the queue is on disk after every tap and
 // leaving flushes, or a set is refused once the session closes.
 
-// The store the room runs over, on this device's own files and in a scope that dies with the room.
-// Its own factory because it is the room's one collaborator: a test stands the room over a store it
-// can reach and a log it can refuse with, which is the only way the transient's own rules — a
-// refusal is SAID, a way back is retired — can be pinned at all.
-@Composable
-internal fun rememberDeviceStore(): TrainingStore {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    return remember {
-        // Read off the session store, never off `account`: this room mounts before /v1/me resolves.
-        val deviceOwner = PrefsSessions(context).user()?.id
-        TrainingStore(
-            SetQueue(File(context.filesDir, SetQueue.fileName), deviceOwner),
-            DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
-            LocalLog(File(context.filesDir, LocalLog.fileName), deviceOwner),
-            LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
-            LocalBodyweight(File(context.filesDir, LocalBodyweight.fileName), deviceOwner),
-            scope,
-        )
-    }
-}
-
 private val awaySaver = Saver<List<Away>, String>(
     save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
     restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }.getOrDefault(emptyList()) },
@@ -279,11 +257,15 @@ private val finishedSaver = Saver<FinishedSession?, String>(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
+fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null) {
     val skin = LocalGymColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shell = LocalShellActions.current
+    val notificationPrefs = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notifications?.refreshCapabilities()
+    }
 
     // The committed detail survives process replacement after the queue closes.
     var finished by rememberSaveable(stateSaver = finishedSaver) { mutableStateOf<FinishedSession?>(null) }
@@ -436,7 +418,14 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
     SideEffect { shell.present(accountActions) }
 
-    LaunchedEffect(account.user?.id, account.verified, account.resolved) {
+    LaunchedEffect(store.workoutOpenRequest) {
+        if (store.workoutOpenRequest > 0 && store.session != null) {
+            away = emptyList()
+            tab = Tab.Routines
+        }
+    }
+
+    LaunchedEffect(account.user?.id, account.verified, account.resolved, account.identityRevision) {
         if (!account.resolved) return@LaunchedEffect
         // A conversation belongs to the seat it was had on. A bare `standing != seat` would be
         // wrong: this effect runs first at composition, when `account.user` is null for everybody.
@@ -467,7 +456,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
     // tab change and sheet; the clock that closes a window is the store's own, one per act, so a
-    // screen going away settles nothing. Only the room unmounting for good flushes early, below.
+    // screen going away settles nothing; the application owns queued delivery.
     //
     // ONE transient, ONE owner. Two different things can have a way back open at the same moment — a
     // delete being withheld, and a set just logged, which used to be a text button inside the logger's
@@ -538,19 +527,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
 
     // ON_STOP is the second net behind ON_PAUSE. The dispose flush is launched UNSTRUCTURED: the
-    // composition scope dies with the room and the drain it owes the log may not.
-    //
-    // THE WINDOW LIVES ONLY WHILE THE ROOM IS ON SCREEN. Leaving it — the app going to the
-    // background, the room going away for good, or the process dying — abandons everything the room
-    // was holding, a set's delete with the rest: the rows come back, nothing goes on the wire and
-    // nothing is said on the next open, because nothing happened. Sending instead would make
-    // `swipe · switch apps · come back` an unrecoverable delete reached by two ordinary actions,
-    // which is the exact hazard the withheld window exists to prevent. Nothing is written to disk,
-    // so a process death abandons on its own. What leaves this room unstructured is the QUEUE's
-    // drain — sets already logged, on disk, retried — and no delete rides out with it.
-    //
-    // ON_STOP and not ON_PAUSE: a dialog or a permission sheet over the room is still the room on
-    // screen, and a window that closed for those would be a way back lost to a system prompt.
+    // Held deletes are screen-local; logged sets retain their durable delivery window.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
@@ -567,10 +544,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
             store.abandonWithheld()
-            // The owed sets and nothing else: a set that never landed is refused forever once its
-            // session closes, so its drain outlives the room on purpose. The window does not — it
-            // was abandoned whole a line ago.
-            CoroutineScope(Dispatchers.Main.immediate).launch { store.flushPendingSets(force = true) }
+
         }
     }
 
@@ -598,6 +572,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 }
                 away = emptyList()
                 tab = Tab.Routines
+                if (notifications != null && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                    !notificationPrefs.getBoolean("requested", false)) {
+                    notificationPrefs.edit().putBoolean("requested", true).apply()
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 val movement = LiveOrder.resume(store.order, store.sets) ?: return@launch
                 store.choose(movement)
             } finally {
@@ -983,6 +963,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                             onBack = { back() },
                         )
                         standing is Away.Settings -> SettingsScreen(
+                            notifications = notifications,
                             store = store,
                             isSignedIn = account.isSignedIn,
                             backTo = beneath,

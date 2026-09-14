@@ -196,8 +196,8 @@ class TrainingStoreTests {
     @Test
     fun testASetIdAlreadySpentIsMintedAgainAndLands() = runTest {
         val server = FakeTraining()
-        val ids = mutableListOf("set_first", "set_second")
-        val store = liveStore(server, mintSet = { ids.removeAt(0) })
+        var nextId = 0
+        val store = liveStore(server, mintSet = { "set_${++nextId}" })
 
         var spent = false
         server.refuse = {
@@ -208,9 +208,9 @@ class TrainingStoreTests {
         }
         store.logSet(weightKg = 100.0, reps = 3)
 
-        assertEquals(listOf("set_first", "set_second"), server.appended.map { it.id })
-        assertEquals(listOf("set_second"), server.sets.getValue("ses_1").map { it.id })
-        assertEquals(listOf("set_second"), store.sets.map { it.id })
+        assertEquals(listOf("set_2", "set_4"), server.appended.map { it.id })
+        assertEquals(listOf("set_4"), server.sets.getValue("ses_1").map { it.id })
+        assertEquals(listOf("set_4"), store.sets.map { it.id })
         assertEquals(SaveState.OnTheLog, store.saveState)
         assertTrue("a repaired collision is not a loss and must not be said",
             store.refusals.isEmpty())
@@ -765,9 +765,9 @@ class TrainingStoreTests {
         val opened = (store.start() as GymResult.Ok).value
         assertEquals("a start during the scheduled re-claim composes on the device", "ses_b", opened.id)
         store.choose("back-squat")
-        store.logSet(weightKg = 999.0, reps = 1)
+        store.logSet(weightKg = 199.0, reps = 1)
         assertTrue("and its sets are parked, never filed into the replay",
-            server.appended.none { it.weightKg == 999.0 })
+            server.appended.none { it.weightKg == 199.0 })
 
         server.onFinish = {}
         gate.complete(Unit)
@@ -777,7 +777,7 @@ class TrainingStoreTests {
         assertFalse(server.stored.getValue("ses_a").isOpen)
         assertTrue("the shelf let go once the log confirmed", shelfOnDisk().finished.isEmpty())
         assertEquals("the re-claim landed the device-composed workout too, without any remount",
-            listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+            listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
         assertTrue(server.stored.getValue("ses_b").isOpen)
         assertEquals("the room stands in its claimed workout", "ses_b", store.session?.id)
     }
@@ -795,7 +795,7 @@ class TrainingStoreTests {
         store.finish()
         store.start()
         store.choose("back-squat")
-        store.logSet(weightKg = 999.0, reps = 1)
+        store.logSet(weightKg = 199.0, reps = 1)
 
         server.online = false
         val batch = checkNotNull(store.localDataBatch)
@@ -850,7 +850,7 @@ class TrainingStoreTests {
         assertFalse(server.stored.getValue("ses_a").isOpen)
         assertFalse(server.stored.getValue("ses_b").isOpen)
         assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+        assertEquals(listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
         assertTrue("the shelf let go of both", shelfOnDisk().finished.isEmpty())
         assertEquals("and the eventual log read lands clean — both workouts listed, neither open",
             setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
@@ -871,7 +871,7 @@ class TrainingStoreTests {
         store.finish()
         store.start()
         store.choose("back-squat")
-        store.logSet(weightKg = 999.0, reps = 1)
+        store.logSet(weightKg = 199.0, reps = 1)
 
         val gate = CompletableDeferred<Unit>()
         server.onFinish = { if (server.finished.last().first == "ses_a") gate.await() }
@@ -899,7 +899,7 @@ class TrainingStoreTests {
             listOf("ses_a", "ses_b"), server.started.map { it.id })
         assertFalse(server.stored.getValue("ses_a").isOpen)
         assertFalse(server.stored.getValue("ses_b").isOpen)
-        assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+        assertEquals(listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
         assertTrue(shelfOnDisk().finished.isEmpty())
         assertNull(store.session)
         assertTrue(store.refusals.isEmpty())
@@ -1274,18 +1274,18 @@ class TrainingStoreTests {
         val opened = (store.start() as GymResult.Ok).value
         assertEquals("the start composed on the device, not on the log", "ses_b", opened.id)
         store.choose("back-squat")
-        store.logSet(weightKg = 999.0, reps = 1)
+        store.logSet(weightKg = 199.0, reps = 1)
         assertEquals("nothing was filed into the replayed workout",
             listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
         assertTrue("and nothing went out for the new one while it is unclaimed",
-            server.appended.none { it.weightKg == 999.0 })
+            server.appended.none { it.weightKg == 199.0 })
         assertEquals("saved on this device", store.saveState.line)
 
         gate.complete(Unit)
         connecting.join()
 
         assertEquals("the claim landed the device-composed session once the replay was over",
-            listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+            listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
         assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
         assertFalse("yesterday's workout closed as the shelf recorded it",
             server.stored.getValue("ses_a").isOpen)

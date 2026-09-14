@@ -20,14 +20,15 @@ sealed class AuthStatus {
 
     data object Unknown : AuthStatus()      // /v1/me not asked yet
     data object SignedOut : AuthStatus()
+    data class Unresolved(override val user: User? = null) : AuthStatus()
     // `verified` false: signed in, standing on the device's last-known user.
     data class SignedIn(override val user: User, val verified: Boolean = true) : AuthStatus()
 }
 
 class AuthStore(
-    baseUrl: HttpUrl,
+    private val baseUrl: HttpUrl,
     private val sessions: SessionStore,
-    client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = OkHttpClient(),
 ) {
     var status: AuthStatus by mutableStateOf(AuthStatus.Unknown)
         private set
@@ -35,13 +36,24 @@ class AuthStore(
         private set
 
     val api = WindmillApi(baseUrl, sessions::read, client)
+    val localSession: LocalSession get() = sessions.localSession
     private var generation = 0L
+    var identityRevision by mutableStateOf(0L)
+        private set
+
+    fun accountApi(user: User?): WindmillApi {
+        val secret = sessions.read()
+        return WindmillApi(baseUrl, credential = {
+            val local = sessions.localSession
+            if (user != null && local is LocalSession.Owned && local.user.id == user.id && sessions.read() == secret) secret else null
+        }, client = client)
+    }
 
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
     suspend fun restore() {
         val attempt = generation
         if (sessions.read() == null) {
-            status = AuthStatus.SignedOut
+            status = if (sessions.localSession == LocalSession.Absent) AuthStatus.SignedOut else AuthStatus.Unresolved(sessions.localSession.user)
             return
         }
         try {
@@ -53,14 +65,24 @@ class AuthStore(
             if (attempt != generation) return
             if (unanswered.isUnauthorized) {
                 sessions.clear()
+                identityRevision += 1
                 status = AuthStatus.SignedOut
             } else {
-                status = sessions.user()?.let { AuthStatus.SignedIn(it, verified = false) } ?: AuthStatus.SignedOut
+                status = when (val local = sessions.localSession) {
+                    LocalSession.Absent -> AuthStatus.SignedOut
+                    is LocalSession.Owned -> AuthStatus.SignedIn(local.user, verified = false)
+                    is LocalSession.Unresolved -> AuthStatus.Unresolved(local.user)
+                }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (attempt == generation) status = AuthStatus.Unresolved(sessions.user())
         }
     }
 
     suspend fun reverify() {
+        if (status is AuthStatus.Unresolved) { restore(); return }
         val standing = status as? AuthStatus.SignedIn ?: return
         if (standing.verified) return
         restore()
@@ -101,8 +123,13 @@ class AuthStore(
     private fun signedIn(answer: Captured<UserResponse>) {
         val session = answer.session
         if (session.isNullOrEmpty()) throw MagicLink.unreadable
-        sessions.write(session)
-        sessions.remember(answer.reply.user)
+        try { sessions.commit(session, answer.reply.user) }
+        catch (failure: Exception) {
+            identityRevision += 1
+            status = AuthStatus.Unresolved(status.user)
+            throw failure
+        }
+        identityRevision += 1
         linkSentTo = null
         status = AuthStatus.SignedIn(answer.reply.user)
     }
@@ -116,6 +143,7 @@ class AuthStore(
         }
         if (attempt != generation) return
         sessions.clear()
+        identityRevision += 1
         linkSentTo = null
         status = AuthStatus.SignedOut
     }
@@ -158,7 +186,26 @@ object MagicLink {
     }
 }
 
+sealed interface LocalSession {
+    val user: User? get() = null
+    data object Absent : LocalSession
+    data class Owned(override val user: User) : LocalSession
+    data class Unresolved(override val user: User? = null) : LocalSession
+}
+
+@Serializable
+private data class SavedSession(val secret: String, val user: User, val version: Int = 1) {
+    init { require(version == 1 && secret.isNotBlank() && user.id.isNotBlank()) }
+}
+
 interface SessionStore {
+    val localSession: LocalSession get() {
+        val secret = read()
+        val user = user()
+        if (secret == null && user == null) return LocalSession.Absent
+        return if (!secret.isNullOrBlank() && user != null) LocalSession.Owned(user) else LocalSession.Unresolved(user)
+    }
+    fun commit(secret: String, user: User) { write(secret); remember(user) }
     fun read(): String?
     fun write(secret: String)
     fun user(): User?
@@ -174,39 +221,71 @@ class PrefsSessions(
     constructor(context: Context, vault: SecretVault = SecretVault.onThisDevice()) :
         this(SharedPrefsValues(context), vault)
 
-    override fun read(): String? = kept(secretKey)
+    private var unavailable = false
 
-    override fun write(secret: String) {
-        seal(secretKey, secret)
+    override val localSession: LocalSession get() {
+        if (unavailable) return LocalSession.Unresolved()
+        if (prefs.read(bundleKey) != null) return saved()?.let { LocalSession.Owned(it.user) } ?: LocalSession.Unresolved()
+        val present = listOf(secretKey, secretKey + sealed, userKey, userKey + sealed).any { prefs.read(it) != null }
+        val known = (prefs.read(userKey) ?: prefs.read(userKey + sealed)?.let(vault::open))
+            ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
+        return if (present) LocalSession.Unresolved(known) else LocalSession.Absent
     }
 
-    override fun user(): User? = kept(userKey)
+    private fun persist(values: Map<String, String?>) {
+        check(!unavailable) { "Restart the app to recover the saved account." }
+        try { prefs.write(values) }
+        catch (failure: Exception) { unavailable = true; throw failure }
+    }
+
+    private fun saved(): SavedSession? = prefs.read(bundleKey)?.let { encoded ->
+        vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }.getOrNull() }
+    }
+
+    override fun commit(secret: String, user: User) {
+        val value = WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(secret, user))
+        val encoded = vault.seal(value) ?: throw java.io.IOException("The session could not be sealed.")
+        persist(mapOf(bundleKey to encoded, secretKey to null, secretKey + sealed to null,
+            userKey to null, userKey + sealed to null))
+    }
+
+    override fun read(): String? = if (unavailable) null else if (prefs.read(bundleKey) != null) saved()?.secret else kept(secretKey)
+
+    override fun write(secret: String) {
+        val encoded = vault.seal(secret) ?: return
+        persist(mapOf(secretKey + sealed to encoded, secretKey to null, bundleKey to null))
+    }
+
+    override fun user(): User? = if (unavailable) null else if (prefs.read(bundleKey) != null) saved()?.user else kept(userKey)
         ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
 
     override fun remember(user: User) {
+        val secret = read()
+        if (secret != null) { commit(secret, user); return }
         seal(userKey, WindmillJson.encodeToString(User.serializer(), user))
     }
 
     override fun clear() {
-        prefs.write(mapOf(
-            secretKey to null, secretKey + sealed to null,
+        persist(mapOf(
+            bundleKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
     private fun seal(key: String, plain: String) {
         val wrapped = vault.seal(plain) ?: return
-        prefs.write(mapOf(key + sealed to wrapped, key to null))
+        persist(mapOf(key + sealed to wrapped, key to null))
     }
 
     private fun kept(key: String): String? {
         prefs.read(key)?.let { fromBefore ->
-            seal(key, fromBefore)
+            try { seal(key, fromBefore) } catch (_: Exception) { return null }
             return fromBefore
         }
         return prefs.read(key + sealed)?.let { vault.open(it) }
     }
 
     private companion object {
+        const val bundleKey = "wm_identity.sealed"
         const val secretKey = "wm_session"
         const val userKey = "wm_user"
         const val sealed = ".sealed"
@@ -230,7 +309,7 @@ private class SharedPrefsValues(context: Context) : KeptValues {
         for ((key, value) in values) {
             if (value == null) edit.remove(key) else edit.putString(key, value)
         }
-        edit.apply()
+        if (!edit.commit()) throw java.io.IOException("The session could not be saved.")
     }
 }
 

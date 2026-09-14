@@ -25,7 +25,7 @@ interface ProductModule {
 }
 
 // An unresolved account is still restoring credentials; an unverified user stands on the device copy.
-class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true, val resolved: Boolean = true) {
+class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true, val resolved: Boolean = true, val locallyTrusted: Boolean = true, val identityRevision: Long = 0) {
     val isSignedIn: Boolean
         get() = user != null
 }

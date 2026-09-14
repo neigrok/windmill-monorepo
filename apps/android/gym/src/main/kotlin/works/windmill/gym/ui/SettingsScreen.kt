@@ -29,6 +29,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import android.Manifest
+import android.app.Activity
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.gym.notification.WorkoutNotifications
+import works.windmill.gym.domain.WorkoutChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,11 +83,13 @@ fun SettingsScreen(
     accountEmail: String? = null,
     onAccount: () -> Unit = {},
     onClaimSignIn: (String) -> Unit = {},
+    notifications: WorkoutNotifications? = null,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
-    var restOpen by remember { mutableStateOf(false) }
+    var restOpen by rememberSaveable { mutableStateOf(false) }
+    val workout by store.notification.collectAsState()
 
     LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
     ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
@@ -99,6 +112,15 @@ fun SettingsScreen(
             SettingsRow("Rest timer", preferences.restSeconds?.let { Readout.clock(it * 1000L) } ?: "Off") {
                 restOpen = true
             }
+            if (workout?.hidden == true) {
+                SettingsRow("Workout hidden", "Show workout") {
+                    val key = workout?.key ?: return@SettingsRow
+                    val result = store.showWorkout(key, false)
+                    if (result is WorkoutChange.Unavailable) say(result.reason)
+                }
+                Text("Rest alerts are paused for this workout.", style = WindmillFont.body(14), color = skin.inkDim)
+            }
+            store.workoutFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
             HorizontalDivider(color = skin.line)
             SettingsRow(Notes.title, "what you write for Coach", onNotes)
             SettingsRow(ConnectedLog.title, store.connectedLog.settingsMeta, onConnectedLog)
@@ -111,6 +133,11 @@ fun SettingsScreen(
     if (restOpen) {
         RestTimerSheet(
             seconds = preferences.restSeconds,
+            alerts = {
+                if (notifications != null && (store.planEntry?.restSeconds ?: preferences.restSeconds ?: 0) > 0) {
+                    RestAlerts(store, notifications, say)
+                }
+            },
             onDismiss = { restOpen = false },
             onSave = {
                 write(preferences.copy(restSeconds = it))
@@ -172,9 +199,9 @@ private fun SettingsRow(title: String, meta: String, onOpen: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) -> Unit) {
+private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) -> Unit, alerts: @Composable () -> Unit = {}) {
     val skin = LocalGymColors.current
-    var text by remember { mutableStateOf(seconds?.toString().orEmpty()) }
+    var text by rememberSaveable { mutableStateOf(seconds?.toString().orEmpty()) }
     val value = text.toIntOrNull()
     val valid = value != null && value in 15..900
     ModalBottomSheet(
@@ -200,6 +227,7 @@ private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) 
                 colors = gymFieldColours(),
                 modifier = Modifier.fillMaxWidth(),
             )
+            alerts()
             Button(
                 onClick = { onSave(value) }, enabled = valid,
                 shape = RoundedCornerShape(WindmillRadius.lg),
@@ -210,6 +238,74 @@ private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) 
             }
         }
     }
+}
+
+@Composable
+private fun RestAlerts(store: TrainingStore, notifications: WorkoutNotifications, say: (String?) -> Unit) {
+    val context = LocalContext.current
+    val skin = LocalGymColors.current
+    val scope = rememberCoroutineScope()
+    val capabilities by notifications.capabilities.collectAsState()
+    val prompt = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
+    var explainAlarm by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    val enabled = store.preferences.restSound
+    val gates = capabilities
+    val posting = gates?.let { it.postGranted && it.appEnabled && it.channelEnabled } == true
+    val state = when {
+        !enabled -> "Off"
+        !posting -> "Needs setup"
+        gates?.channelAudible != true -> "Muted"
+        gates.exactAlarms -> "On"
+        else -> "Needs setup"
+    }
+    fun settings(alarm: Boolean) {
+        try { context.startActivity(if (alarm) notifications.alarmSettings() else notifications.notificationSettings()) }
+        catch (_: Exception) { say("Android settings could not be opened.") }
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notifications.refreshCapabilities()
+        if (granted && notifications.capabilities.value?.exactAlarms != true) explainAlarm = true
+    }
+    fun setup() {
+        val current = notifications.capabilities.value ?: return
+        if (!current.postGranted && Build.VERSION.SDK_INT >= 33) {
+            val activity = context as? Activity
+            if (prompt.getBoolean("requested", false) && activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == false) {
+                settings(false)
+                return
+            }
+            prompt.edit().putBoolean("requested", true).apply()
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        if (!current.appEnabled || !current.channelEnabled || !current.channelAudible) { settings(false); return }
+        if (!current.exactAlarms) explainAlarm = true
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Rest alerts · $state", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+        Text("Uses your notification sound. Android may delay alerts while idle.",
+            style = WindmillFont.body(14), color = skin.inkDim)
+        TextButton(enabled = !busy && gates != null, onClick = {
+            if (!enabled || state == "On") {
+                busy = true
+                val owner = store.accountKey
+                scope.launch {
+                    try {
+                        store.savePreferences(store.preferences.copy(restSound = !enabled))?.let { say(it.line("that setting stayed on this device")) }
+                        if (store.accountKey == owner && store.preferences.restSound && !enabled) setup()
+                    } finally { busy = false }
+                }
+            } else setup()
+        }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(when { busy -> "Saving…"; !enabled -> "Enable"; state == "On" -> "Turn off alerts"; state == "Muted" -> "Sound settings"; else -> "Set up" })
+        }
+    }
+    if (explainAlarm) AlertDialog(onDismissRequest = { explainAlarm = false },
+        title = { Text("Allow rest alerts") },
+        text = { Text("Android needs alarm access to schedule a rest alert. Android may delay it while idle.") },
+        confirmButton = { TextButton(onClick = { explainAlarm = false; settings(true) }) { Text("Open settings") } },
+        dismissButton = { TextButton(onClick = { explainAlarm = false }) { Text("Not now") } })
 }
 
 // What this phone is holding for nobody: a shelf with no name on it, neither handed over nor deleted.

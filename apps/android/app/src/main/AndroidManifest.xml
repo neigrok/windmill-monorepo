@@ -2,9 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Nothing this app holds may ride a backup: cloud backup, adb and device transfer are all closed. -->
     <application
+        android:name=".WindmillApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -14,14 +18,12 @@
         android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true">
 
-        <!-- Recreation mid-flush would put two offline queues on one file. -->
         <!-- `adjustResize` is the other half of `enableEdgeToEdge`: without it the framework PANS the
              window for the keyboard while the room's own `imePadding()` insets for it too, and every
              field the keyboard covers is moved twice. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|locale|layoutDirection|fontScale|density"
             android:windowSoftInputMode="adjustResize"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -29,5 +31,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver android:name="works.windmill.gym.notification.WorkoutNotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

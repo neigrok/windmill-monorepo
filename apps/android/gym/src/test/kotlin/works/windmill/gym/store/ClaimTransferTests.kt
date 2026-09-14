@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.storage.AtomicDocument
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -133,7 +134,7 @@ class ClaimTransferTests {
         var failWrite = true
         val factory = { LocalClaimConsent(journalFile) { target, text ->
             if (failWrite) throw IOException("Disk is full")
-            persistClaimConsent(target, text)
+            AtomicDocument.write(target, text)
         } }
         val store = TrainingStore(SetQueue(File(tmp.root, "queue")), DeviceCopy(File(tmp.root, "device")), log,
             LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "weight")), backgroundScope,

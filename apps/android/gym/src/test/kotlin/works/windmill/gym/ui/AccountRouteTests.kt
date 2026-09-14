@@ -118,7 +118,7 @@ class AccountRouteTests {
     }
 
     @Test
-    fun moduleDefaultStoreKeepsDestinationsAfterAConnectedLogRoundTrip() {
+    fun moduleOwnedStoreKeepsDestinationsAfterAConnectedLogRoundTrip() {
         val auth = auth(signedIn = true)
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, null) { shell = it } }
@@ -256,7 +256,15 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore?, onShell: (ShellA
         ShellActions(openYou = { signIn = false; authFlow = null; youUp = true },
             openSignIn = { flow -> signIn = true; authFlow = flow; youUp = true })
     }
-    val module = remember { GymModule() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ownedStore = store ?: remember {
+        TrainingStore(SetQueue(File(context.filesDir, SetQueue.fileName)),
+            DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
+            LocalLog(File(context.filesDir, LocalLog.fileName)),
+            LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
+            LocalBodyweight(File(context.filesDir, LocalBodyweight.fileName)), scope)
+    }
+    val module = remember(ownedStore) { GymModule(ownedStore) }
     val standing = auth.status
     val account = Account(auth.api, standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,

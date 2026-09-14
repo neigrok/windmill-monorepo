@@ -73,7 +73,7 @@ class AuthStoreTest {
         val sessions = MemorySessions("s3cret")
         val auth = store(sessions)
         auth.restore()
-        assertEquals(AuthStatus.SignedOut, auth.status)
+        assertEquals(AuthStatus.Unresolved(), auth.status)
         assertEquals("s3cret", sessions.read())
     }
 
@@ -83,7 +83,7 @@ class AuthStoreTest {
         val auth = store(sessions)
         server.shutdown()
         auth.restore()
-        assertEquals(AuthStatus.SignedOut, auth.status)
+        assertEquals(AuthStatus.Unresolved(), auth.status)
         assertEquals("s3cret", sessions.read())
     }
 
@@ -459,4 +459,112 @@ class AuthStoreTest {
         assertEquals("secret-B", sessions.read())
         assertEquals(User("B", "b@b.c", "Bea"), sessions.user())
     }
+    @Test
+    fun accountTransportNeverBorrowsTheCredentialCommittedByALaterSignIn() = runTest {
+        val ana = User("A", "a@example.com")
+        val sessions = MemorySessions("secret-A", ana)
+        val auth = store(sessions)
+        val accountA = auth.accountApi(ana)
+        val arrived = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path == "/old-read") {
+                    arrived.complete(Unit)
+                    check(release.await(5, TimeUnit.SECONDS))
+                }
+                if (request.path == "/v1/auth/verify-code") return MockResponse()
+                    .setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
+                    .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly")
+                return MockResponse().setBody("{}")
+            }
+        }
+        val old = async { accountA.get<Unit>("/old-read"); accountA.get<Unit>("/old-next") }
+        arrived.await()
+        try { auth.completeCode("b@example.com", "222222") } finally { release.countDown() }
+        old.await()
+        auth.accountApi(User("B", "b@example.com")).get<Unit>("/new-read")
+        val requests = List(4) { server.takeRequest() }
+        assertEquals(listOf("/old-read", "/v1/auth/verify-code", "/old-next", "/new-read"), requests.map { it.path })
+        assertEquals(listOf("Bearer secret-A", "Bearer secret-A", null, "Bearer secret-B"),
+            requests.map { it.getHeader("Authorization") })
+        assertEquals(AuthStatus.SignedIn(User("B", "b@example.com")), auth.status)
+        assertEquals(LocalSession.Owned(User("B", "b@example.com")), sessions.localSession)
+    }
+
+    @Test
+    fun appliedThenFailedCredentialCommitCannotAuthorizeEitherAccountUntilDiskRecovery() = runTest {
+        val held = mutableMapOf<String, String>()
+        var fail = false
+        val values = object : KeptValues {
+            override fun read(key: String) = held[key]
+            override fun write(values: Map<String, String?>) {
+                for ((key, value) in values) if (value == null) held.remove(key) else held[key] = value
+                if (fail) throw IOException("commit failed after memory changed")
+            }
+        }
+        val key = javax.crypto.KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val vault = SecretVault { key }
+        val sessions = PrefsSessions(values, vault)
+        val ana = User("A", "a@example.com")
+        sessions.commit("secret-A", ana)
+        val auth = store(sessions)
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
+        auth.restore()
+        val accountA = auth.accountApi(ana)
+        val original = held.toMap()
+        fail = true
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
+            .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly"))
+        assertEquals(IOException::class.java, runCatching { auth.completeCode("b@example.com", "222222") }.exceptionOrNull()?.javaClass)
+        assertTrue(original != held)
+        assertEquals(AuthStatus.Unresolved(ana), auth.status)
+        assertEquals(LocalSession.Unresolved(), sessions.localSession)
+        assertNull(sessions.read())
+        assertNull(sessions.user())
+        server.enqueue(MockResponse().setBody("{}"))
+        accountA.get<Unit>("/old-retry")
+        server.enqueue(MockResponse().setBody("{}"))
+        auth.accountApi(User("B", "b@example.com")).get<Unit>("/new-retry")
+        assertEquals(listOf("Bearer secret-A", "Bearer secret-A", null, null),
+            List(4) { server.takeRequest().getHeader("Authorization") })
+        val recovered = PrefsSessions(values, vault)
+        assertEquals(LocalSession.Owned(User("B", "b@example.com")), recovered.localSession)
+        assertEquals("secret-B", recovered.read())
+    }
+
+    @Test
+    fun legacyIdentityWaitsForTheActualMeReplyAndThenSupportsColdOfflineOwnership() = runTest {
+        val held = mutableMapOf("wm_session" to "legacy-A", "wm_user" to """{"id":"A","email":"a@example.com"}""")
+        val values = object : KeptValues {
+            override fun read(key: String) = held[key]
+            override fun write(values: Map<String, String?>) {
+                for ((key, value) in values) if (value == null) held.remove(key) else held[key] = value
+            }
+        }
+        val key = javax.crypto.KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val vault = SecretVault { key }
+        val sessions = PrefsSessions(values, vault)
+        val ana = User("A", "a@example.com")
+        assertEquals(LocalSession.Unresolved(ana), sessions.localSession)
+        val auth = store(sessions)
+        server.enqueue(MockResponse().setResponseCode(503).setBody("{}"))
+        auth.restore()
+        assertEquals(AuthStatus.Unresolved(ana), auth.status)
+        assertEquals(LocalSession.Unresolved(ana), sessions.localSession)
+        assertEquals("legacy-A", sessions.read())
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
+        auth.restore()
+        assertEquals(AuthStatus.SignedIn(ana), auth.status)
+        assertEquals(setOf("wm_identity.sealed"), held.keys)
+        val cold = store(PrefsSessions(values, vault))
+        assertEquals(LocalSession.Owned(ana), cold.localSession)
+        server.enqueue(MockResponse().setResponseCode(503).setBody("{}"))
+        cold.restore()
+        assertEquals(AuthStatus.SignedIn(ana, verified = false), cold.status)
+        assertEquals(LocalSession.Owned(ana), cold.localSession)
+        assertEquals(listOf("Bearer legacy-A", "Bearer legacy-A", "Bearer legacy-A"),
+            List(3) { server.takeRequest().getHeader("Authorization") })
+    }
+
 }

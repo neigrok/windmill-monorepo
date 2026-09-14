@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -41,8 +42,8 @@ class LocalPreferences(private val file: File) {
     fun adopt(owner: String?) { seat = Seat.of(owner) }
 
     fun save(document: GymPreferences) {
-        revisions[seat] = revision + 1
         hold(Shelf(document, owed = true))
+        revisions[seat] = revision + 1
     }
     fun landed(stored: GymPreferences) = hold(Shelf(stored))
 
@@ -55,8 +56,10 @@ class LocalPreferences(private val file: File) {
     private fun hold(next: Shelf) {
         check(!transferFailed) { "Restart the app to recover the local-data decision." }
         if (next == mine) return
-        held = held.copy(shelves = held.shelves + (seat to next))
-        writeAtomically(file, diskJson.encodeToString(Held.serializer(), held))
+        val saved = held.copy(shelves = held.shelves + (seat to next))
+        try { AtomicDocument.write(file, diskJson.encodeToString(Held.serializer(), saved)) }
+        catch (failure: Exception) { transferFailed = true; throw failure }
+        held = saved
     }
 
     fun claimItems(): List<ClaimItem> = ClaimSource.entries.mapNotNull { source ->
@@ -70,7 +73,7 @@ class LocalPreferences(private val file: File) {
         val next = transfer(batch, owner)
         if (next == held) return
         try {
-            persistClaimConsent(file, diskJson.encodeToString(Held.serializer(), next))
+            AtomicDocument.write(file, diskJson.encodeToString(Held.serializer(), next))
         } catch (failure: Exception) {
             transferFailed = true
             throw failure

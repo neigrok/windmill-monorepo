@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.storage.AtomicDocument
 import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Rule
@@ -82,7 +83,7 @@ class LocalClaimConsentTests {
         val file = File(tmp.root, "consent.json")
         val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Bodyweight, "2026-09-14", "a".repeat(64), "{\"kg\":80}")))
         val broken = LocalClaimConsent(file) { destination, text ->
-            persistClaimConsent(destination, text)
+            AtomicDocument.write(destination, text)
             throw IOException("process interrupted after replacement")
         }
         assertThrows(IOException::class.java) { broken.approve(batch, "A") }

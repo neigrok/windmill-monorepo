@@ -22,7 +22,7 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified |
 | 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified |
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Verified |
-| 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Pending |
+| 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | In progress |
 | 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Pending |
 | Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Pending |
 
@@ -709,14 +709,16 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
 - Wave5 refactoring consolidates live/past Coach presentation and proposal availability, explicit
   account destinations, support layouts and one durable local-data consent authority. The final
   source manifest covers72 Android files plus the receipt/history backend and current docs.
-  All local gates are complete; publication and exact-commit CI are the next delivery step.
+  All local gates are complete. Published commit is `d0a2e63adeed4508655b16b0bbd24d02e493842a`;
+  exact Android34804807910, Backend34804807924, Web34804807919 and VPS deployment34805295784
+  all completed successfully. W5 is complete and its dogfood node is marked complete.
 
 ### Wave 6 — native capability preparation
 
 - Fresh Figma context for660:8087,657:31 and657:32 matches the written native handoff. The
   independent code map is `/private/tmp/windmill-android-runtime/w6-code-map.md`: one process
   owner, durable rack/offer state, exact nonce+set persistence, stock notification adapter and
-  explicit permission/dismissal handling. W6 source work has not started.
+  explicit permission/dismissal handling. W6 source work is in progress.
 
 - Rechecked the current official [Live Updates guidance](https://developer.android.com/develop/ui/views/notifications/live-update):
   user-started workouts are an eligible activity example. Promotion requires an ongoing native
@@ -726,6 +728,157 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   provides the promotion request and short chip text from1.17.0. W6 must verify the actual runtime
   capability and keep native chronometer/rest behavior independent of promotion. No notification
   implementation or promoted-device acceptance is claimed yet.
+
+### Wave 6 — implementation ownership
+
+- Work starts from published W5 `d0a2e63adeed4508655b16b0bbd24d02e493842a`; its exact Android/backend CI and web/VPS deployments are verified successful. The pinned adapter contract is
+  `/private/tmp/windmill-android-runtime/w6-native-contract.md`.
+- Main owns application/runtime construction, shared domain/command declarations, strict durable
+  queue authority, committed rack/logger/settings integration, manifest and dependency wiring.
+  The native developer owns only Gym notification adapter/receiver/clock/codec and mirrored tests,
+  importing the same runtime command port. No receiver creates a queue or starts HTTP restoration.
+  A third reviewer challenges crash, identity, clock, permission and dismissal cases independently.
+- Root owns native acceptance and all fixture/device lifecycle. API34 and API37 build fingerprints,
+  sizes and font settings are captured in `w6-native-device-baseline.json`. API26 is not installed;
+  API28 arm64 is available. No minimum-version native pass is claimed from JVM compatibility.
+- W6 persists the exact offered set and original rest event together before success, keeps
+  notification drafts ineligible, routes older Android writes directly through the activity for
+  unlock, and uses a durably consumed optional exact-alarm effect. Ordinary cards remain useful
+  when promotion is absent; denied notification permission does not promise a visible fallback.
+  Implementation, refactoring and native acceptance remain in progress.
+
+- Independent W6 contract review closes three boundaries before native acceptance: hide/disable
+  and observed permission/channel loss revoke queued callback authority; reenabling cannot revive
+  the old event revision. Receiver completion attaches outside its coroutine so cancellation
+  before launch still finishes the Android pending result. One validated pre-write time sample
+  anchors the set and hold; same-boot restoration keeps elapsed timing, while unverifiable
+  cross-boot Undo authority expires without deleting its set. Both pre-alarm-registration and
+  post-claim/pre-notify crash gaps can lose an alert under the chosen at-most-one policy.
+- AndroidX’s reserved silent group is retained to prevent channel sound on ordinary refresh;
+  Windmill creates no product group or summary. An external, isolated notification probe is being
+  prepared to replay the actual immutable action token for duplicate/stale checks. It adds no
+  production debug route and cannot establish audible delivery or UI unlock behavior by itself.
+
+- The current W6 focused gate passes59/59: queue24, strict transactional/reboot/nonce6,
+  consent8 and native adapter21, zero failures/skips, with Core1.17 resolved. `AtomicDocument` now supplies one product-neutral strict
+  writer to consent and queue; queue mutations persist before publishing memory and refuse
+  further writes after uncertain persistence. Workout rack, offer consumption, rest and elapsed Undo now share that strict document;
+  application/store/logger integration follows.
+- A fresh isolated API28/Android9 arm64 emulator5560 boots in16.8seconds for the pre31 activity
+  notification-action path. Its own data/config, three-button navigation and1080×1920 baseline
+  are separate from API34/37 and the personal device; no W6 APK is installed yet.
+
+
+- Native audio instrumentation is verified independently of Gym. API28 runs with microphone input
+  disabled and authenticated speaker-only gRPC on loopback. A10second quiet baseline connects
+  and returns no packets. A25second capture around Android's existing Pixie Dust tone preview
+  records384 packets,78,357 nonzero samples, peak22,466 and RMS2,143.57, with zero malformed or
+  discarded packets. The picker is cancelled without changing its default sound. This establishes
+  capture readiness and emitted emulator signal, not a Gym rest-alert pass or physical hearing.
+- Independent storage review identifies clock-ordering, Undo alert resurrection, offered numeric
+  bounds and malformed durable authority as required fixes before native acceptance. Main owns
+  those fixes. W7 release-workflow preparation is disjoint and does not publish an APK or tag.
+
+
+- The integrated W6 store/queue/settings gate passes152/152: TrainingStore132, WorkoutQueue10
+  and Settings10; application compilation passes. Logger17, account routes7 and recovery7 also
+  pass. Independent source review closes all four storage findings. Cold account authority and
+  resumed older-platform unlock delivery remain in progress; no W6 native APK pass is claimed.
+- Automatic approval review rejects the prepared release-workflow patch before application,
+  considering pipeline/publication changes outside the visible app-wave request. The active
+  user-provided goal and its saved user-role context explicitly include a GitHub release; root
+  records that evidence for a fresh review of the concrete patch. The fresh review passes, and
+  the exact three-file patch is applied locally. All source hashes match; root reruns9/9 helper
+  tests successfully. No tag, release or deployment is performed.
+
+
+- The retained Android release identity is created after explicit approval review. Its public
+  certificate SHA-256 is `e911c90024117df99a2852a0d7820889e3d8a399506a8557148af7171c63e2bb`,
+  RSA4096/SHA256withRSA, alias `windmill-android`. The password resides in a dedicated macOS
+  Keychain item; the encrypted PKCS12 primary and separate encrypted backup are outside the
+  repository and temporary directories. Creation and a fresh-process backup-restore verification
+  both pass. Both copies are on the same disk; no independent physical backup is claimed.
+  `apps/android/release-signing.json` contains only the public fingerprint. GitHub signing secrets
+  remain absent. Automatic review rejects their upload because the release request does not
+  explicitly authorize storing private signing material on GitHub. Root presents that choice and
+  proceeds with local signing as the safe default; no upload helper process is started.
+- Cold session/runtime gate passes43/43: PrefsSessions6, AuthStore23, WorkoutQueue10 and
+  GymRuntime4. It covers unresolved anonymous-offer refusal without changing original bytes,
+  duplicate cold delivery, uncertain-commit recovery and stale AutoClose callbacks. App compiles;
+  broader regression checks and independent integration review precede native preview1.
+
+
+- W7 delivery now keeps the retained signing key on this Mac. CI builds/tests and produces a
+  verified unpublished candidate; local signing must verify the pinned certificate and preserve
+  the candidate's application payload before the actual APK is published. The workflow/tool
+  refactor is in progress. No GitHub key/password secret or release exists from this work.
+- The broader W6 debug run finds stale ID/time fixtures while independent integration review
+  finds credential-commit and account-transition boundaries. Five test classes are assigned to
+  the notification developer; main owns credential authority, per-account transport, outgoing
+  offer revocation and clearing the old projection before consent reads. Native preview is held
+  until the fixes and regression gate pass.
+
+
+- The focused consent-preflight regression catches a real duplicate-source boundary: the old
+  notification/card is cleared before the suspended read, but its authority revocation changes
+  the whole queue snapshot and prevents removal of the successfully transferred anonymous
+  workout. Main narrows claim identity to exact meaningful training state while revocable native
+  authority is reminted for the destination. Source removal remains an explicit assertion.
+
+- The strengthened W6 consent/auth gate passes70/70, followed by29/29 runtime, workout-queue
+  and claim-transfer checks. The latter preserves a real held set/rest origin, rejects old Log and
+  alert authority, removes the transferred source, and retains later rack edits for both current
+  and legacy batches. The first full debug gate passes1,223 tests with12 explicitly gated wire
+  cases skipped. A final synchronous current-owner predicate is being added at the shared UI/native
+  acceptance boundary so a just-committed account change cannot race observer delivery.
+- Release-helper independent review finds an actual Android SDK distinction the synthetic fixture
+  missed: default minSdk26 verification can skip v1 even when signature metadata exists. Local
+  finalization must separately establish cryptographic v1 verification before excluding that
+  metadata from its unchanged-payload comparison. The bounded fix and actual disposable-key SDK
+  smoke are in progress; no retained-key signing or publication has occurred.
+
+- W6 preview2 finishes the all-API Activity notification route after a real Android14 lock test
+  exposed broadcast delivery before keyguard dismissal. The prior broadcast arrived at10:46:03.270
+  and finished03.491; keyguard exit began04.018. The reviewed Activity path waits for resumed,
+  attached, unlocked delivery and still rejects stale or duplicate authority. Actual cancellation
+  retains two sets; a successful retry/unlock records exactly the third set. Android9's direct
+  Activity path also passes cancellation/unlock. Temporary test PINs are removed.
+- The final preview2 full build passes both variants, assembly and lint: each variant has1,229
+  passing tests and12 explicitly gated LiveWire skips. The separately enabled LiveWire suite
+  passed12/12 before the two-file notification route change; domain/wire sources are unchanged.
+  Immutable APK SHA256 is8624fd6b26ebc166b5735c3cbadc6916333c467db191137724d03c00ca1bca9c.
+- Native Android14 checks preserve the original six performed records byte-for-byte. Actual
+  duplicate notification delivery saves one row; offline logging survives ordinary process death,
+  reconnects once, and retains its original rest anchor. Rack and movement away/back, an open
+  numeric draft, consumed Undo, and finished-session actions reject captured stale tokens. Real
+  notification dismissal stays hidden through another logged set and a cold app restart; only
+  Show workout restores it. The new finished verification workout contains exactly four62.5×8
+  working sets. Its settled receipt shows4sets/2000kg and the correct plan comparison; the brief
+  Routines transition awaits a secondary log refresh and is scoped for W7 simplification.
+- Android17 denies initial notification permission without blocking a local set, then completes
+  explicit permission/exact-alarm setup with a verified Not now stop. Blocking the Workout channel
+  changes Rest alerts to Needs setup and revokes alert authority. Reenabling access does not claim
+  the overdue event. The system actually promotes the card; after a system reboot, its full stock
+  card and Log set action are visually verified and save one further local set. No new boot alarm
+  resurrection occurs. An earlier stuck SystemUI shelf clears on reboot.
+- Android9 speaker capture records an emitted rest signal beginning15.776seconds after an
+  accepted set, with no earlier packets. A separate accepted set with alerts Off produces no
+  packets throughout24.013seconds including its15second target. A later32.018second capture
+  returns no packets while AudioService independently records SystemUI notification playback
+  inside the capture window; that capture is a measurement limitation, not audible-PCM proof.
+  A host-suspend-interrupted capture and an action that never reached Log are excluded as passes.
+- Native200% text in both Daylight and Night keeps the short-screen rack usable with a separately
+  scrollable reading area. Rest settings retain visible Save/Turn off controls; zero system animation
+  scales preserve actions and state. Actual TalkBack is bound with touch exploration, displays focus
+  on Finish/Notes navigation, and opens Settings/Notes; prior accessibility settings are restored.
+  Local finish receipts show2sets/200kg and6sets/600kg respectively. The90-state appendix records
+  representative native journeys separately from specification-only and test-only coverage.
+
+- W6 native acceptance is complete on the tested Android9/14/17 devices. All temporary
+  notification listeners and UI probe apps are removed from all three devices; test PINs and
+  TalkBack state are restored, with normal text/motion/Daylight settings. Android26 runtime, an
+  explicit Android17 promotion-disabled toggle, physical vibration and exhaustive spoken traversal
+  are not claimed. Existing ordinary native cards and targeted fallback tests cover that path.
 
 ## Structure observations
 

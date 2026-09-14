@@ -29,6 +29,7 @@ class TrainingFinishTests {
         mintSession: () -> String = { "ses_mine" },
     ): TrainingStore {
         val folder = tmp.newFolder()
+        var nextSetId = 0
         return TrainingStore(
         queue = SetQueue(File(folder, "queue"), null) { testScheduler.currentTime + 1_000 },
         deviceCopy = DeviceCopy(File(folder, "catalog")),
@@ -37,7 +38,7 @@ class TrainingFinishTests {
         localBodyweight = LocalBodyweight(File(folder, "body")),
         scope = backgroundScope,
         now = { testScheduler.currentTime + 1_000 },
-        mintSession = mintSession, mintSet = { "set_mine" },
+        mintSession = mintSession, mintSet = { "set_${++nextSetId}" },
         undoWindowMs = undoMs,
         sync = { logs[it.user?.id] },
         )
@@ -92,7 +93,7 @@ class TrainingFinishTests {
         store.choose("bench-press")
         val append = launch { store.logSet(60.0, 8) }
         runCurrent()
-        val correction = async { store.fixSet("ses_mine", "set_mine", SetFix(reps = 9)) }
+        val correction = async { store.fixSet("ses_mine", "set_2", SetFix(reps = 9)) }
         runCurrent()
         assertFalse(correction.isCompleted)
         assertTrue(server.fixes.isEmpty())
@@ -117,16 +118,16 @@ class TrainingFinishTests {
         val append = launch { store.logSet(60.0, 8) }
         runCurrent()
         val fix = SetFix(reps = 9, note = "kept input")
-        val correction = async { store.fixSet("ses_mine", "set_mine", fix) }
+        val correction = async { store.fixSet("ses_mine", "set_2", fix) }
         server.refuseFix = { IOException("offline") }
         gate.complete(Unit)
         append.join()
         runCurrent()
         assertTrue(correction.await() is FixOutcome.Failed)
-        val stored = TrainingSet("set_mine", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
+        val stored = TrainingSet("set_2", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
         assertEquals(listOf(stored), store.sets)
         server.refuseFix = { null }
-        assertEquals(FixOutcome.Corrected(fix.corrected(stored)), store.fixSet("ses_mine", "set_mine", fix))
+        assertEquals(FixOutcome.Corrected(fix.corrected(stored)), store.fixSet("ses_mine", "set_2", fix))
         assertEquals(listOf(fix.corrected(stored)), store.sets)
     }
 
@@ -141,7 +142,7 @@ class TrainingFinishTests {
         store.choose("bench-press")
         val append = launch { store.logSet(60.0, 8) }
         runCurrent()
-        val correction = async { store.fixSet("ses_mine", "set_mine", SetFix(reps = 9)) }
+        val correction = async { store.fixSet("ses_mine", "set_2", SetFix(reps = 9)) }
         val arrival = launch { store.connect(account("b")) }
         runCurrent()
         gate.complete(Unit)
