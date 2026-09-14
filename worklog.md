@@ -916,6 +916,16 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   candidate must update the first on an isolated emulator while retaining actual local training data.
   Publication and downloaded-asset verification remain pending.
 
+- Dispatch66 (`34820364740`) and tag67 (`34820408197`) both pass their full CI build-and-test
+  jobs on `1b9e35076b0caf22c988d4177f831dcdf8883a95`, then fail the separate packaging job
+  because `sdkmanager` is absent from PATH. No signing input, retained-key APK or release is
+  produced by those runs. The packaging-only correction uses the runner's documented
+  `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager` with an explicit matching `--sdk_root`.
+  YAML and all seven shell blocks validate; a PATH-free check reproduces the failure and confirms
+  the quoted path handles spaces and matches the later verification tools. New candidates will
+  establish the final source/run/code identities. The superseded main push65
+  is cancelled by the deliberate dispatch and is not recorded as passing.
+
 ## Structure observations
 
 - One application-owned queue/runtime removes competing process-local writers. A confirmed finish
