@@ -23,8 +23,8 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified |
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Verified |
 | 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Verified |
-| 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Verified; release pending |
-| Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Pending |
+| 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Verified |
+| Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Signed APK verified; publication awaits approval |
 
 The [delivery contract](docs/design/gym/android-delivery.md) maps all 90 unique Figma states to
 waves, with local copies of the twelve exported icons needed for implementation. Every retained
@@ -70,7 +70,7 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
 - Current native verification uses the final W5 real-service fixture8097 through the reviewed
   proxy8095, database `windmill_android_w5`, Vite5177 and isolated emulator `emulator-5556`.
   App API override: `http://10.0.2.2:8095`. W4's8089 and its database remain preserved. An isolated
-  API37 emulator5558 and API28 emulator5560 have the verified W6 preview installed. Runtime evidence stays under
+  API37 emulator5558 has the verified signed0.8.0/code72 APK; API28 emulator5560 retains W6 preview2. Runtime evidence stays under
   `/private/tmp/windmill-android-runtime`; the existing personal device is untouched.
 
 ## Implementation log
@@ -941,6 +941,34 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   baseline has the actual local routine Release update, one20kg×5 set and a75second rest target,
   with notification permission denied; its package reports non-debuggable code69.
 
+- Final main71 (`34823642222`) and tag72 (`34823676544`) pass on release source
+  `11dfcc6dffbb2d7861a2dfd8f032978f6dbe7fc6`. The tag's full app gate passes in7m50s and
+  packaging in2m38s; the final main gate passes in8m17s. The account fixture's corrected name runs
+  in these gates. The original CI70 exception mechanism remains unproven.
+- The final locally signed APK is version0.8.0/code72, non-debuggable, SHA256
+  `0bb926b0e7bc8a440dc845346ccf06113ee5817031a3b83db3fe1ae1734e9250`, certificate SHA256
+  `e911c90024117df99a2852a0d7820889e3d8a399506a8557148af7171c63e2bb`. Signature, unchanged
+  application payload and linked CI provenance pass verification. No private signing material is
+  uploaded. The CI candidate carries a transient signer; only the locally finalized APK is ready.
+- Native Android17 updates code69→72 with `adb install -r`, preserving firstInstallTime while
+  lastUpdateTime changes. The actual Release update routine,20kg×5 saved set and75second rest
+  target survive. A confirmed force-stop/relaunch before the update also restores those facts;
+  the first unverified background-kill request is not used as process-death proof. The updated
+  elapsed rest clock continues, and Finish returns the correct1set/100kg/1movement saved receipt.
+  Evidence: `native-update-69-to-72.json`, `w7-release72-updated.json`, `w7-release72-receipt.png`.
+- Public GitHub publication is not complete. Automatic approval review rejects the exact release
+  command before execution, then rejects a retry with the existing user-provided goal/session
+  evidence because it does not treat that evidence as trusted authorization. A fresh confirmation
+  is requested in this task. The signed APK, checksum, provenance and reviewed release body are
+  prepared under `/private/tmp/windmill-android-release-preflight`; downloaded-release verification
+  remains pending until publication is authorized and succeeds.
+
+- The final signed release also opens Routines with the retained routine, Log with the actual
+ 1session/100kg record and23.3kg estimated strength, and Coach with the correct signed-out gate.
+  No Coach message or sign-in is sent. The remaining UI probe is removed from Android17; all
+  temporary native probe/listener packages are removed across the three verification devices.
+  The release app is left on Routines. Public repository visibility is independently confirmed.
+
 ## Structure observations
 
 - One application-owned queue/runtime removes competing process-local writers. A confirmed finish
@@ -964,10 +992,10 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
 ## Completion audit
 
 - [x] All 90 approved states and specification-only contracts mapped to implemented behavior and inspected evidence.
-- [ ] Every implementation wave refactored, reviewed, verified and published.
+- [x] Every implementation wave refactored, reviewed, verified, committed and pushed.
 - [x] Kind controls and sound/haptic set confirmation absent from the app, with historical data preserved.
 - [x] Local and signed-in journeys, offline recovery, partial receipts and account boundaries verified.
 - [x] Native font scaling, back/keyboard/insets, accessibility and notification behavior verified.
 - [x] Final simplification wave completed with regression checks.
-- [ ] Release APK built and installed; version/signature checked.
+- [x] Release APK built and installed; version/signature checked.
 - [ ] GitHub release, tag, successful CI and downloadable APK verified.
