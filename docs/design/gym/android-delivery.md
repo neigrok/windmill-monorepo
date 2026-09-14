@@ -485,9 +485,8 @@ set with alerts Off remains quiet through24seconds. A later capture misses audio
 OS playback; physical-device hearing and vibration are not claimed. No Kind or set-confirmation
 sound/haptic control is rendered; optional rest-target audio remains separate.
 
-Capture stems and actual server facts are recorded in [worklog.md](../../../worklog.md). The final
-simplification, complete regression gate, retained-key signing, downloaded-asset verification and
-GitHub publication remain W7/release work; the 90-state mapping alone does not complete them.
+Capture stems and actual server facts are recorded in [worklog.md](../../../worklog.md). Final simplification and the complete regression gate pass. Retained-key signing, downloaded-asset
+verification and GitHub publication remain release work; the 90-state mapping alone does not complete them.
 
 ## Verification contract
 
@@ -495,4 +494,4 @@ Wave-level screenshots should compare the exact intended state at reference geom
 
 Test meaningful invariants and user workflows, especially arbitrary Unicode/byte entry, undo clocks, identity/queue persistence, partial receipt arithmetic, failed writes, draft restoration, real permissions and data-dependent empty states. A green JVM suite alone does not verify native behavior. Release completion needs the built APK, install/smoke evidence, published GitHub release and downloaded-asset checksum/build version correspondence.
 
-Delivery status: Waves 1–6 are implemented and verified: shared foundations, Settings, approved removals, routines, targets, movement creation, planned/free training, corrections, receipts, sharing, Log/progress/bodyweight, Coach/Notes/review and explicit account ownership. W6 adds durable native notifications, explicit permission/dismissal handling and representative accessibility verification. Final simplification/release remains assigned to Wave7. See [worklog.md](../../../worklog.md) for commands, native evidence and limits. Twelve exact SVG exports are preserved; their roots, geometry and Instrument paint values were checked.
+Delivery status: Waves 1–7 are implemented and verified: shared foundations, Settings, approved removals, routines, targets, movement creation, planned/free training, corrections, receipts, sharing, Log/progress/bodyweight, Coach/Notes/review and explicit account ownership. W6 adds durable native notifications, explicit permission/dismissal handling and representative accessibility verification. W7 removes unused presentation paths and protects current workout/history identity during background reads. Release signing and publication remain pending. See [worklog.md](../../../worklog.md) for commands, native evidence and limits. Twelve exact SVG exports are preserved; their roots, geometry and Instrument paint values were checked.

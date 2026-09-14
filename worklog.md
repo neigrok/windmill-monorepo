@@ -22,8 +22,8 @@ must cover the real state transitions and data, not hardcoded copies of the exam
 | 3 | Planned/free workout logging, rest count-up, assembly, numeric entry, refusal/offline states, finish receipts, correction, sharing and save as routine | Consolidate session presentation and truthful receipt/readback data | Verified |
 | 4 | Log history, movement records/rename, bodyweight entry/correction, pagination and empty states | Share record rows and coherent loading/error/empty states | Verified |
 | 5 | Coach conversation/history/read receipts, Notes, review/apply/turn down, account/sign-in/connected log | Consolidate support-screen structure and preserve state across navigation | Verified |
-| 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | In progress |
-| 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Pending |
+| 6 | Native transitions and feedback, ongoing notification/Live Update capability and fallback, keyboard/back/insets, both themes, accessibility and end-to-end coverage | Keep workout commands and the single queue owner in `:gym`; only product-neutral adapters belong in `:platform` | Verified |
+| 7 | Final app-wide refactoring and code simplification, complete coverage audit and release validation | Remove dead paths and duplicate controls; verify dependency direction | Verified; release pending |
 | Release | Versioned GitHub release with tested APK and accurate release notes | Verify published tag, CI result, asset and signing identity | Pending |
 
 The [delivery contract](docs/design/gym/android-delivery.md) maps all 90 unique Figma states to
@@ -70,7 +70,7 @@ set-save effects. No changes to iOS or web are implied by these Android mockups.
 - Current native verification uses the final W5 real-service fixture8097 through the reviewed
   proxy8095, database `windmill_android_w5`, Vite5177 and isolated emulator `emulator-5556`.
   App API override: `http://10.0.2.2:8095`. W4's8089 and its database remain preserved. An isolated
-  API37 emulator5558 is booted for Wave6 with no app installed. Runtime evidence stays under
+  API37 emulator5558 and API28 emulator5560 have the verified W6 preview installed. Runtime evidence stays under
   `/private/tmp/windmill-android-runtime`; the existing personal device is untouched.
 
 ## Implementation log
@@ -713,7 +713,7 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   exact Android34804807910, Backend34804807924, Web34804807919 and VPS deployment34805295784
   all completed successfully. W5 is complete and its dogfood node is marked complete.
 
-### Wave 6 — native capability preparation
+### Wave 6 — durable native workout actions
 
 - Fresh Figma context for660:8087,657:31 and657:32 matches the written native handoff. The
   independent code map is `/private/tmp/windmill-android-runtime/w6-code-map.md`: one process
@@ -880,8 +880,47 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
   explicit Android17 promotion-disabled toggle, physical vibration and exhaustive spoken traversal
   are not claimed. Existing ordinary native cards and targeted fallback tests cover that path.
 
+### Wave 7 — final simplification and release
+
+- W6 is published as `4f225f069480cf18c09542f08f52acf5c289cee9`; exact Android CI run
+  `34817938598` completed successfully in10m38s. It includes the reviewed local-signing delivery foundation, whose
+  Python suite passes17/17 and actual SDK smoke verifies v1/v2 signature handling and unchanged
+  payloads using a disposable key. No private signing secrets are uploaded.
+- The final app audit confirms the product-neutral dependency direction. The scoped cleanup removes
+  the unused Finish readout/tile chain and declaration-only segmented/drag controls, with the live
+  receipt totals, Share/Keep, pending gates and saved state preserved. The finish-store
+  refactor publishes the authoritative saved receipt before the secondary history refresh.
+- Curated release notes describe the delivered screens and the verified signing transition.
+  Old published debug certificates cannot be upgraded in place to the retained release identity;
+  local unclaimed/unsynced data must be preserved before any installation change.
+
+- Final W7 source review is clear. Cleanup39/39 and receipt/recovery38/38 pass. Review adds
+  current-session identity and read-generation guards so a delayed page or joined detail cannot
+  replace a newer workout or history read. The final complete build and native smoke pass.
+
+- Final complete build passes debug and release assembly/lint with1,230 tests passing and12
+  explicitly gated LiveWire skips per variant:2,460 passed/24 gated skips/zero failures. The
+  separate W6 enabled wire run remains12/12; W7 does not claim a second enabled wire run.
+  The first full W7 gate exposed the Gone finish reread contract and a review fixture that captured
+  history before loading finished. The fix preserves the awaited refusal branch and strengthens the
+  fixture with explicit movement selection and real saved-row assertions. Final focused38/38 passes.
+- Immutable final preview `wave7-preview1.apk` has SHA256
+  `cc1f309c4d2b545644f541dc4da56e8e6fa2bde5e3f98e3a0768d25d3f49cafc`.
+  Native Android14 installs over the final W6 preview, starts Push Native, logs62.5×8, and opens
+  the saved Ended early receipt directly with1set/500kg/1movement and the correct plan readback.
+  All seven earlier performed records remain byte-for-byte equal; new session
+  `ses_d1535583374a2dd1` contains exactly the accepted working set. Evidence is
+  `w7-finish-sheet.json`, `w7-final-receipt.png` and `w5-after-w7-performed-sessions.json`.
+- The release gate uses two CI candidates from the same final source: a manual dispatch followed
+  by the version tag. Each must pass the full CI build before local retained-key signing. The second
+  candidate must update the first on an isolated emulator while retaining actual local training data.
+  Publication and downloaded-asset verification remain pending.
+
 ## Structure observations
 
+- One application-owned queue/runtime removes competing process-local writers. A confirmed finish
+  publishes its receipt before secondary history reads, whose results require current owner,
+  session and read identity.
 - Products depend on `:platform`; `:platform` must remain product-neutral.
 - The existing app already separates domain, store, network and Compose UI. Waves reuse its
   offline/claim behavior and replace presentation seams instead of cloning the application.
@@ -899,11 +938,11 @@ accessibility actions use unit/Compose tests; no physical haptic output is claim
 
 ## Completion audit
 
-- [ ] All 90 approved states and specification-only contracts mapped to implemented behavior and inspected evidence.
+- [x] All 90 approved states and specification-only contracts mapped to implemented behavior and inspected evidence.
 - [ ] Every implementation wave refactored, reviewed, verified and published.
-- [ ] Kind controls and sound/haptic set confirmation absent from the app, with historical data preserved.
-- [ ] Local and signed-in journeys, offline recovery, partial receipts and account boundaries verified.
-- [ ] Native font scaling, back/keyboard/insets, accessibility and notification behavior verified.
-- [ ] Final simplification wave completed with regression checks.
+- [x] Kind controls and sound/haptic set confirmation absent from the app, with historical data preserved.
+- [x] Local and signed-in journeys, offline recovery, partial receipts and account boundaries verified.
+- [x] Native font scaling, back/keyboard/insets, accessibility and notification behavior verified.
+- [x] Final simplification wave completed with regression checks.
 - [ ] Release APK built and installed; version/signature checked.
 - [ ] GitHub release, tag, successful CI and downloadable APK verified.

@@ -391,6 +391,7 @@ class TrainingStore(
     // a session the server has never heard of.
     var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
         private set
+    private var logReadRevision = 0L
     var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // the device's own, unclaimed
         private set
     // Both, merged on the clock, until the claim empties the shelf: everything the account and this
@@ -1159,9 +1160,14 @@ class TrainingStore(
             drawFromQueue()
             if (localLog.finished.isNotEmpty()) runClaim()
             if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-            loadLog()
-            if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-            if (detail == null) return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
+            if (detail == null) {
+                loadLog()
+                if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+                return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
+            }
+            scope.launch {
+                if (workoutAuthorized && seat == owner && gym === log) loadLog()
+            }
             invalidateProgress()
             return FinishOutcome.Closed(detail)
         } finally {
@@ -2659,8 +2665,10 @@ class TrainingStore(
         if (claiming) return
         val seat = owner
         val log = gym ?: return
+        val live = queue.session?.id
+        val read = ++logReadRevision
         val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) }
-        if (!workoutAuthorized || seat != owner || gym !== log) return
+        if (!workoutAuthorized || seat != owner || gym !== log || read != logReadRevision || live != queue.session?.id) return
         if (page == null) {
             // The foot is where a quiet log is said; the rows already in hand stay.
             older = Older.Failed
@@ -2696,12 +2704,13 @@ class TrainingStore(
         if (liveUnclaimed && open.session.id != queue.session?.id) return
         // Adopting the log's open workout is the log answering for it: its parked sets have a road.
         val answered = liveUnclaimed
-        adopt(open.session, joined = true)
+        adopt(open.session, joined = true, readRevision = read)
+        if (!workoutAuthorized || seat != owner || gym !== log || read != logReadRevision) return
         if (answered) deliver()
     }
 
-    private suspend fun adopt(opened: Session, joined: Boolean) {
-        if (!workoutAuthorized) return
+    private suspend fun adopt(opened: Session, joined: Boolean, readRevision: Long? = null) {
+        if (!workoutAuthorized || readRevision != null && readRevision != logReadRevision) return
         val seat = owner
         val log = gym
         queue.hold(opened)
@@ -2709,7 +2718,8 @@ class TrainingStore(
         // without them would draw an empty workout over a live one.
         if (joined) {
             val detail = log?.let { tried { it.session(opened.id) } }
-            if (!workoutAuthorized || seat != owner || gym !== log) return
+            if (!workoutAuthorized || seat != owner || gym !== log || queue.session?.id != opened.id ||
+                readRevision != null && readRevision != logReadRevision) return
             if (detail != null) {
                 queue.hold(detail.session)
                 for (set in detail.sets) queue.store(set, detail.session.id, needsPush = false)

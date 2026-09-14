@@ -362,13 +362,15 @@ class ReviewSheetTests {
         val (store, routine) = store(scope, server)
         val closed = runBlocking {
             assertTrue(store.start(routine.id) is GymResult.Ok)
+            store.choose("bench-press")
             store.logSet(20.0, 8, SetKind.Warmup)
             store.logSet(60.0, 5)
             (store.finish() as FinishOutcome.Closed).detail
         }
+        assertEquals(listOf(Triple(SetKind.Warmup, 20.0, 8), Triple(SetKind.Working, 60.0, 5)),
+            closed.sets.map { Triple(it.kind, it.weightKg, it.reps) })
         val sessions = server.stored.toMap()
         val sets = server.sets.mapValues { it.value.toList() }
-        val logged = store.logged
         val removal = proposal(routine, emptyList(), summary = "Remove this routine from the program.")
             .copy(intent = ProposalIntent.Remove, changeCount = 1)
         server.propose(removal)
@@ -384,6 +386,8 @@ class ReviewSheetTests {
         compose.onNode(hasText("Remove Push Day") and !hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("The whole routine is removed from your program. Every set you logged against it stays in the log.")
             .assertIsDisplayed()
+        compose.waitUntil { store.logged.any { it.id == closed.session.id } }
+        val logged = store.logged
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals(listOf(removal.copy(state = ProposalState.Applied, settledAtMs = server.settledAtMs)), decided)

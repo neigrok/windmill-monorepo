@@ -76,6 +76,180 @@ class TrainingFinishTests {
         assertNull(store.session)
     }
 
+    @Test fun aFinishedWorkoutsQueuedOrPendingRefreshCannotReadOrReplaceTheNextAccount() = runTest {
+        for (startRefresh in listOf(false, true)) {
+            val first = FakeTraining()
+            val second = FakeTraining()
+            val secondSession = Session("ses_b", startedAtMs = 500, finishedAtMs = 800)
+            val secondSet = TrainingSet("set_b", "back-squat", 1, 80.0, 5, completedAtMs = 600)
+            second.open(secondSession)
+            second.sets[secondSession.id] = mutableListOf(secondSet)
+            val gate = CompletableDeferred<Unit>()
+            var closed = false
+            var refreshes = 0
+            val log = object : TrainingSyncing by first {
+                override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session =
+                    first.finishSession(sessionId, finishedAtMs).also { closed = true }
+
+                override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+                    val rows = first.sessions(limit, before, beforeId)
+                    if (closed) { refreshes++; gate.await() }
+                    return rows
+                }
+            }
+            val store = store(mapOf("a" to log, "b" to second))
+            store.connect(account())
+            store.start()
+            store.choose("bench-press")
+            store.logSet(60.0, 8)
+            val performed = store.sets.single().copy(setNumber = 1)
+            val receipt = store.finish() as FinishOutcome.Closed
+            assertEquals(SessionDetail(first.stored.getValue("ses_mine"), listOf(performed)), receipt.detail)
+            assertEquals(receipt.detail, store.retainedSession(receipt.detail))
+            assertNull(store.session)
+            assertFalse(store.isFinishing)
+            if (startRefresh) runCurrent()
+            store.connect(account("b"))
+            val secondHistory = listOf(SessionSummary(secondSession, listOf(secondSet)))
+            assertEquals(secondHistory, store.allSessions)
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(if (startRefresh) 1 else 0, refreshes)
+            assertEquals(secondHistory, store.allSessions)
+            assertEquals(mapOf(secondSession.id to secondSession), second.stored)
+            assertEquals(mapOf(secondSession.id to listOf(secondSet)), second.sets)
+            assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session), first.stored)
+            assertEquals(mapOf(receipt.detail.session.id to listOf(performed)), first.sets)
+            assertNull(store.session)
+            assertEquals(emptyList<TrainingSet>(), store.sets)
+        }
+    }
+
+    @Test fun aDelayedFinishedPageCannotCloseTheNextWorkoutOrReplaceItsRestAndOffer() = runTest {
+        val server = FakeTraining()
+        val gate = CompletableDeferred<Unit>()
+        var holdRefresh = false
+        val log = object : TrainingSyncing by server {
+            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+                val page = server.sessions(limit, before, beforeId)
+                if (holdRefresh) { holdRefresh = false; gate.await() }
+                return page
+            }
+        }
+        val ids = mutableListOf("ses_first", "ses_next")
+        val store = store(mapOf("a" to log), mintSession = { ids.removeAt(0) })
+        store.connect(account())
+        store.start()
+        store.choose("bench-press")
+        store.logSet(60.0, 8)
+        holdRefresh = true
+        val receipt = store.finish() as FinishOutcome.Closed
+        runCurrent()
+        assertFalse(holdRefresh)
+        advanceTimeBy(1_000)
+        store.start()
+        store.choose("back-squat")
+        store.logSet(100.0, 5)
+        runCurrent()
+        val live = store.session!!
+        val rows = store.sets.toList()
+        val notification = store.notification.value!!
+        val rest = store.restStartedAtMs
+        val queueFile = tmp.root.walkTopDown().single { it.name == "queue" }
+        val queue = queueFile.readText()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals("ses_next", live.id)
+        assertEquals(live, store.session)
+        assertEquals(rows, store.sets)
+        assertEquals(notification, store.notification.value)
+        assertEquals(rest, store.restStartedAtMs)
+        assertEquals(queue, queueFile.readText())
+        assertEquals(receipt.detail, store.retainedSession(receipt.detail))
+        assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session, live.id to live), server.stored)
+        assertTrue(server.stored.getValue(live.id).isOpen)
+    }
+
+    @Test fun aNewerHistoryReadWinsOverTheDelayedPostFinishSnapshot() = runTest {
+        val server = FakeTraining()
+        val gate = CompletableDeferred<Unit>()
+        var holdRefresh = false
+        val log = object : TrainingSyncing by server {
+            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+                val page = server.sessions(limit, before, beforeId)
+                if (holdRefresh) { holdRefresh = false; gate.await() }
+                return page
+            }
+        }
+        val store = store(mapOf("a" to log))
+        store.connect(account())
+        store.start()
+        store.choose("bench-press")
+        store.logSet(60.0, 8)
+        holdRefresh = true
+        val receipt = store.finish() as FinishOutcome.Closed
+        runCurrent()
+        val later = Session("ses_later", startedAtMs = 2_000, finishedAtMs = 3_000)
+        val laterSet = TrainingSet("set_later", "back-squat", 1, 100.0, 5, completedAtMs = 2_500)
+        server.open(later)
+        server.sets[later.id] = mutableListOf(laterSet)
+        store.connect(account())
+        val expected = listOf(SessionSummary(later, listOf(laterSet)), SessionSummary(receipt.detail.session, receipt.detail.sets))
+        assertEquals(expected, store.allSessions)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(expected, store.allSessions)
+        assertEquals(Older.End, store.older)
+        assertEquals(receipt.detail, store.retainedSession(receipt.detail))
+        assertNull(store.session)
+    }
+
+    @Test fun aPostFinishOpenDetailCannotReplaceAWorkoutAdoptedByANewerRead() = runTest {
+        val server = FakeTraining()
+        val gate = CompletableDeferred<Unit>()
+        var detailPending = false
+        val log = object : TrainingSyncing by server {
+            override suspend fun session(id: String): SessionDetail? {
+                val detail = server.session(id)?.let { it.copy(sets = it.sets.toList()) }
+                if (id == "ses_remote") { detailPending = true; gate.await() }
+                return detail
+            }
+        }
+        val store = store(mapOf("a" to log))
+        store.connect(account())
+        store.start()
+        store.choose("bench-press")
+        store.logSet(60.0, 8)
+        store.finish()
+        val remote = Session("ses_remote", startedAtMs = 1_000)
+        server.open(remote)
+        server.sets[remote.id] = mutableListOf(TrainingSet("remote_set", "bench-press", 1, 80.0, 5, completedAtMs = 1_000))
+        runCurrent()
+        assertTrue(detailPending)
+        server.stored[remote.id] = remote.copy(finishedAtMs = 1_000)
+        val next = Session("ses_next", startedAtMs = 1_000)
+        val nextSet = TrainingSet("next_set", "back-squat", 1, 100.0, 5, completedAtMs = 1_000)
+        server.open(next)
+        server.sets[next.id] = mutableListOf(nextSet)
+        store.connect(account())
+        val notification = store.notification.value!!
+        val history = store.allSessions.toList()
+        val queueFile = tmp.root.walkTopDown().single { it.name == "queue" }
+        val queue = queueFile.readText()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(next, store.session)
+        assertEquals(listOf(nextSet), store.sets)
+        assertEquals(notification, store.notification.value)
+        assertEquals(history, store.allSessions)
+        assertEquals(queue, queueFile.readText())
+        assertEquals(1_000L, store.restStartedAtMs)
+        assertEquals(next, server.stored.getValue(next.id))
+        assertEquals(listOf(nextSet), server.sets.getValue(next.id))
+    }
+
     @Test fun aCorrectionWaitsForAppendAndPatchesItsCanonicalId() = runTest {
         val server = FakeTraining()
         val gate = CompletableDeferred<Unit>()

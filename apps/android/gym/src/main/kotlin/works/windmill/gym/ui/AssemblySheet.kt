@@ -10,11 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -193,25 +191,5 @@ private fun DropGround() {
     ) {
         Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
         Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
-    }
-}
-
-// Shared with the notes list, which drags the same way.
-@Composable
-internal fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
-    Column(
-        modifier.size(width = 32.dp, height = GymTap.minimum),
-        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
-    ) {
-        repeat(3) {
-            Box(
-                Modifier
-                    .width(16.dp)
-                    .height(2.dp)
-                    .clip(RoundedCornerShape(WindmillRadius.sm))
-                    .background(if (lit) skin.accent else skin.inkFaint),
-            )
-        }
     }
 }

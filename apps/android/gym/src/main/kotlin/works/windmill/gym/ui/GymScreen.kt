@@ -29,9 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
@@ -44,7 +41,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import works.windmill.gym.R
@@ -173,38 +169,6 @@ fun gymFieldColours(): TextFieldColors {
         errorPlaceholderColor = scheme.onSurfaceVariant,
         errorLabelColor = scheme.error,
     )
-}
-
-// One segmented control for every either-or in the room. `SingleChoiceSegmentedButtonRow` draws a
-// leading check on the selected item by default; none of these pickers has ever shown one and the
-// fill already says which is picked, so the icon slot is emptied rather than left to the default.
-@Composable
-fun <T> GymSegmented(
-    options: List<Pair<T, String>>,
-    picked: T,
-    modifier: Modifier = Modifier,
-    onPick: (T) -> Unit,
-) {
-    val skin = LocalGymColors.current
-    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (value, label) ->
-            SegmentedButton(
-                selected = value == picked,
-                onClick = { onPick(value) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                icon = {},
-                colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = skin.accentSoft,
-                    activeContentColor = skin.accent,
-                    activeBorderColor = skin.accent,
-                    inactiveContainerColor = Color.Transparent,
-                    inactiveContentColor = skin.inkDim,
-                    inactiveBorderColor = skin.line,
-                ),
-                label = { Text(label, style = GymType.numeral(13, FontWeight.Bold), maxLines = 1) },
-            )
-        }
-    }
 }
 
 // A top bar action whose verb has no icon worth the guess. Material's own text action, in the

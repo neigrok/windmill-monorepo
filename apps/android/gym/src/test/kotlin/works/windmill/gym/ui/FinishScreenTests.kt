@@ -46,47 +46,6 @@ private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): Li
     List(sets) { SetTarget(reps, weightKg) }
 
 class FinishTests {
-    private val started = 1_754_308_320_000L     // Tue 4 Aug 2025, 18:12 local
-    private val finished = started + 3_720_000L
-
-    @Test
-    fun aFinishedSessionIsCongratulatedAndAShortOneIsNot() {
-        val ordinary = Finish.head(startedAtMs = started, finishedAtMs = finished,
-                                   routine = "Legs", slight = false, first = false)
-        assertEquals("Well done.", ordinary.title)
-        assertEquals("Legs", ordinary.subtitle)
-        assertEquals("${Readout.day(started)} · ${Readout.time(started)} – ${Readout.time(finished)}",
-                     ordinary.at)
-
-        val short = Finish.head(startedAtMs = started, finishedAtMs = finished,
-                                routine = "Pull A", slight = true, first = false)
-        assertEquals("a congratulation on two sets would be a small lie", "Ended early.", short.title)
-        assertEquals("Pull A", short.subtitle)
-    }
-
-    @Test
-    fun aSessionWithNoRoutineIsNamedByWhetherItIsTheFirstOne() {
-        assertEquals("Your first session",
-                     Finish.head(startedAtMs = started, finishedAtMs = finished,
-                                 routine = null, slight = false, first = true).subtitle)
-        assertEquals("No routine",
-                     Finish.head(startedAtMs = started, finishedAtMs = finished,
-                                 routine = null, slight = false, first = false).subtitle)
-    }
-
-    @Test
-    fun theThreeFactsAreDurationWorkingSetsAndTopE1rm() {
-        val tiles = Finish.tiles(ReviewStats(durationMs = 3_720_000, workingSets = 16, topE1rm = 122.5))
-        assertEquals(listOf("Duration", "Working sets", "Top e1RM"), tiles.map { it.label })
-        assertEquals(listOf("1h 02m", "16", "122.5"), tiles.map { it.value })
-    }
-
-    @Test
-    fun aSessionWithNoLoadedSetShowsADashRatherThanAZero() {
-        val tiles = Finish.tiles(ReviewStats(durationMs = 660_000, workingSets = 3, topE1rm = null))
-        assertEquals(listOf("11m", "3", "—"), tiles.map { it.value })
-    }
-
     @Test
     fun noRecordDrawsNoLineAtAll() {
         assertNull(Finish.recordSentence(null, catalog))
@@ -322,9 +281,6 @@ class FinishedSessionTests {
         assertTrue(ended.slight)
         assertFalse("too slight to say anything about is too slight to keep as a routine",
                     ended.offersRoutine)
-        assertEquals("Ended early.",
-                     Finish.head(startedAtMs = 1_000, finishedAtMs = 900_000, routine = null,
-                                 slight = ended.slight, first = ended.isFirst).title)
     }
 
     @Test
@@ -407,17 +363,11 @@ class ShareWithCoachTests {
 
     // The bytes are pinned: the caption names the exact line the tap sends, so the two cannot drift.
     @Test
-    fun theFourStringsAreTheContractsBytes() {
+    fun theCoachCopyNamesTheExactQuestionItSends() {
         assertEquals("Share with Coach", FinishCoach.action)
         assertEquals("Sends Coach one line — “Check my last session.” — and opens the answer.",
                      FinishCoach.caption)
         assertEquals("Check my last session.", FinishCoach.question)
-        assertEquals("Well done.",
-                     Finish.head(startedAtMs = 1_000, finishedAtMs = 3_600_000, routine = null,
-                                 slight = false, first = false).title)
-        assertEquals("Ended early.",
-                     Finish.head(startedAtMs = 1_000, finishedAtMs = 660_000, routine = null,
-                                 slight = true, first = false).title)
     }
 
     // One primary, one caption, on BOTH branches — the short session is exactly the one worth a
@@ -468,9 +418,11 @@ class ShareWithCoachTests {
     fun theTitleCongratulatesAnOrdinarySessionAndNotAShortOne() {
         receipt()
         compose.onNodeWithText("Well done.").assertIsDisplayed()
+        compose.onNodeWithText("Free session · Workout saved").assertIsDisplayed()
 
-        show(short)
+        show(short.copy(isFirst = true))
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
+        compose.onNodeWithText("Free session · Workout saved").assertIsDisplayed()
         compose.onNodeWithText("Well done.").assertDoesNotExist()
     }
 }

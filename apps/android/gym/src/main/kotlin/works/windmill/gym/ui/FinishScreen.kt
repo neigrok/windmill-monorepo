@@ -47,7 +47,6 @@ import works.windmill.gym.domain.PersonalRecord
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -68,30 +67,9 @@ object Finish {
     // the whole of the answer.
     fun keptAs(name: String) = "Kept as ${name.trim()}."
 
-    data class Head(val title: String, val subtitle: String, val at: String)
-
-    data class Tile(val value: String, val label: String)
-
     data class Row(val id: String, val movement: String, val detail: String)
 
     data class Comparison(val title: String, val rows: List<Row>)
-
-    fun head(startedAtMs: Long, finishedAtMs: Long, routine: String?, slight: Boolean, first: Boolean): Head =
-        Head(
-            // A congratulation on two sets would be a small lie, so a slight session keeps its
-            // plain title.
-            title = if (slight) "Ended early." else "Well done.",
-            subtitle = routine ?: if (first) "Your first session" else "No routine",
-            at = "${Readout.day(startedAtMs)} · ${Readout.time(startedAtMs)} – ${Readout.time(finishedAtMs)}",
-        )
-
-    // A session with no LOADED working set has no honest one-rep estimate, so the tile says nothing
-    // with a dash rather than printing a zero nobody lifted.
-    fun tiles(stats: ReviewStats): List<Tile> = listOf(
-        Tile(Readout.duration(stats.durationMs), "Duration"),
-        Tile(stats.workingSets.toString(), "Working sets"),
-        Tile(stats.topE1rm?.let(Readout::weight) ?: "—", "Top e1RM"),
-    )
 
     // A kind this build has never heard of draws NOTHING; the slot is allowed to be empty.
     fun recordSentence(record: PersonalRecord?, catalog: List<Exercise>): String? {
@@ -192,17 +170,6 @@ data class FinishedSession(
 }
 
 @Composable
-fun ReviewReadout(review: Review?, catalog: List<Exercise>) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        review?.let { Tiles(Finish.tiles(it.stats)) }
-        ReviewRemarks(review, catalog)
-    }
-}
-
-@Composable
 fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
     val skin = LocalGymColors.current
     Column(
@@ -219,33 +186,6 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
         }
         Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
         Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
-    }
-}
-
-@Composable
-private fun Tiles(tiles: List<Finish.Tile>) {
-    val skin = LocalGymColors.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
-    ) {
-        tiles.forEach { tile ->
-            Column(
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    tile.value,
-                    style = GymType.numeral(26, FontWeight.SemiBold),
-                    color = skin.ink,
-                    maxLines = 1,
-                )
-                Text(tile.label, style = GymType.numeral(11), color = skin.inkDim)
-            }
-        }
     }
 }
 
@@ -301,13 +241,6 @@ fun FinishScreen(
 ) {
     val skin = LocalGymColors.current
     BackHandler(enabled = pending) {}
-    val head = Finish.head(
-        startedAtMs = finished.session.startedAtMs,
-        finishedAtMs = finished.session.finishedAtMs ?: finished.session.startedAtMs,
-        routine = finished.routine,
-        slight = finished.slight,
-        first = finished.isFirst,
-    )
     var routineName by rememberSaveable(finished.routineCreationId) {
         mutableStateOf(Readout.weekday(finished.session.startedAtMs))
     }
@@ -324,7 +257,8 @@ fun FinishScreen(
         // The title lives in the content and not in a bar above it: `Ended early.` is the whole of
         // what a slight session has to say, and a sheet has no top bar to say it from.
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-            Text(head.title, style = WindmillFont.display(40, FontWeight.Bold).copy(lineHeight = 52.sp), color = skin.ink)
+            Text(if (finished.slight) "Ended early." else "Well done.",
+                style = WindmillFont.display(40, FontWeight.Bold).copy(lineHeight = 52.sp), color = skin.ink)
             Text("${finished.routine ?: "Free session"} · Workout saved", style = WindmillFont.body(16), color = skin.inkDim)
         }
 

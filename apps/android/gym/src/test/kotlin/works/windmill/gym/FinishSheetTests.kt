@@ -37,6 +37,9 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
+import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SessionDetail
+import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.net.TrainingSyncing
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
@@ -158,6 +161,61 @@ class FinishSheetTests {
         compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
         // A pushed screen covers the rail, before the sheet and after it.
         compose.onNodeWithText("Log").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test
+    fun committedReceiptAndRowsAreVisibleWhileTheHistoryRefreshIsStillPending() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val history = CompletableDeferred<Unit>()
+        var closed: Session? = null
+        var historyPending = false
+        val log = object : TrainingSyncing by server {
+            override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session =
+                server.finishSession(sessionId, finishedAtMs).also { closed = it }
+
+            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+                val rows = server.sessions(limit, before, beforeId)
+                if (closed != null) {
+                    historyPending = true
+                    history.await()
+                }
+                return rows
+            }
+        }
+        val store = program(scope, log)
+        runBlocking {
+            store.start(null)
+            store.choose("back-squat")
+            store.logSet(100.0, 5)
+            store.logSet(110.0, 3)
+        }
+        val performed = store.sets.mapIndexed { index, set -> set.copy(setNumber = index + 1) }
+        compose.setContent { GymMaterial { GymRoom(account, store) } }
+        compose.waitForIdle()
+        finish()
+
+        compose.runOnIdle {
+            assertTrue(historyPending)
+            assertTrue(!history.isCompleted)
+            assertEquals(null, store.session)
+            assertEquals(false, store.isFinishing)
+            assertEquals(performed, server.sets.getValue("ses_1"))
+            assertEquals(SessionDetail(closed!!, performed), store.retainedSession(SessionDetail(closed!!, emptyList())))
+        }
+        compose.onNodeWithText("Ended early.").assertIsDisplayed()
+        compose.onNodeWithText("830").assertIsDisplayed()
+        compose.onNodeWithText("Routines").assertDoesNotExist()
+        compose.runOnIdle { history.complete(Unit) }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ended early.").assertIsDisplayed()
+        compose.onNodeWithText("830").assertIsDisplayed()
+        assertEquals(listOf(SessionSummary(closed!!, performed)), store.allSessions)
+        compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("100 × 5").assertIsDisplayed()
+        compose.onNodeWithText("110 × 3").assertIsDisplayed()
+        assertEquals(SessionDetail(closed!!, performed), store.retainedSession(SessionDetail(closed!!, emptyList())))
         scope.cancel()
     }
 
