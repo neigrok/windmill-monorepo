@@ -6,6 +6,7 @@
 
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,13 +23,25 @@ struct FakeEventRepository : EventRepository {
   };
   std::vector<Batch> appended;
   std::map<std::string, int> alreadyToday;  // rows this session wrote before the request under test
+  bool failAppend = false;
 
   void append(const std::string& sessionKey, const std::optional<UserId>& user,
               const std::vector<FunnelEvent>& events) override {
+    if (failAppend) throw std::runtime_error("private event properties must not reach diagnostics");
     appended.push_back(Batch{sessionKey, user, events});
     alreadyToday[sessionKey] += static_cast<int>(events.size());
   }
   int countInLastDay(const std::string& sessionKey) override { return alreadyToday[sessionKey]; }
+};
+
+struct RecordedFailures : FailureReporter {
+  std::vector<std::string> events;
+  bool throwReport = false;
+  void report(const std::string& kind, const std::string& where,
+              const std::string& detail) override {
+    events.push_back(kind + " | " + where + " | " + detail);
+    if (throwReport) throw std::runtime_error("reporter unavailable");
+  }
 };
 
 struct Harness {
@@ -42,7 +55,8 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeEventRepository> repo = std::make_shared<FakeEventRepository>();
-  EventsApi api{repo, auth};
+  std::shared_ptr<RecordedFailures> failures = std::make_shared<RecordedFailures>();
+  EventsApi api{repo, auth, nullptr, failures};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
@@ -211,6 +225,93 @@ TEST(events_session_cookie_attributes_like_bearer) {
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   REQUIRE_EQ(h.repo->appended.size(), 1u);
   CHECK(h.repo->appended[0].user == std::optional<UserId>(user));
+}
+
+TEST(events_native_batch_keeps_the_authenticated_user_and_overrides_property_platform) {
+  Harness h;
+  const UserId user = h.signIn("s-android");
+  Json::Value events(Json::arrayValue);
+  Json::Value started = entry("gym_ask_started", 1000);
+  started["id"] = "event-1";
+  started["props"]["platform"] = "web";
+  events.append(started);
+  Json::Value outcome = entry("gym_ask_outcome", 2000);
+  outcome["id"] = "event-2";
+  outcome["props"]["outcome"] = "failed";
+  outcome["props"]["failure_kind"] = "timeout";
+  events.append(outcome);
+  Json::Value body = batch("android-session", events);
+  body["platform"] = "android";
+  body["userId"] = "forged";
+  auto request = post(body);
+  request->addHeader("authorization", "Bearer s-android");
+
+  const auto response = send(h.api, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":2})"));
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
+  const auto& stored = h.repo->appended[0];
+  CHECK_EQ(stored.sessionKey, std::string("android-session"));
+  CHECK_EQ(stored.user, std::optional<UserId>{user});
+  REQUIRE_EQ(stored.events.size(), 2u);
+  CHECK_EQ(stored.events[0].id, std::string("event-1"));
+  CHECK_EQ(stored.events[1].id, std::string("event-2"));
+  CHECK_EQ(stored.events[0].props, std::string(R"({"platform":"android"})"));
+  CHECK_EQ(stored.events[1].props,
+           std::string(R"({"failure_kind":"timeout","outcome":"failed","platform":"android"})"));
+}
+
+TEST(events_storage_failure_reports_once_without_private_properties_even_if_reporting_throws) {
+  Harness h;
+  h.repo->failAppend = true;
+  h.failures->throwReport = true;
+  Json::Value events(Json::arrayValue);
+  events.append(entry("app_started", 1000));
+
+  const auto response = send(h.api, post(batch("session-123", events)));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k500InternalServerError);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"events not recorded"})"));
+  CHECK(h.repo->appended.empty());
+  CHECK_EQ(h.failures->events, (std::vector<std::string>{
+      "telemetry | events.persist | event batch could not be delivered"}));
+}
+
+TEST(events_malformed_ids_drop_alone_and_legacy_entries_still_land) {
+  Harness h;
+  Json::Value events(Json::arrayValue);
+  for (const Json::Value& id : {Json::Value(""), Json::Value(42), Json::Value("has space"),
+                               Json::Value(std::string(65, 'x'))}) {
+    Json::Value event = entry("app_started", 1000);
+    event["id"] = id;
+    events.append(event);
+  }
+  events.append(entry("app_started", 2000));
+
+  const auto response = send(h.api, post(batch("session-123", events)));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":1})"));
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended[0].events.size(), 1u);
+  CHECK(h.repo->appended[0].events[0].id.empty());
+}
+
+TEST(events_platform_must_name_a_supported_surface) {
+  Harness h;
+  Json::Value events(Json::arrayValue);
+  events.append(entry("app_started", 1000));
+  for (const Json::Value& platform : {Json::Value("unknown"), Json::Value(42),
+                                     Json::Value(Json::objectValue), Json::Value("")}) {
+    Json::Value body = batch("native-session", events);
+    body["platform"] = platform;
+    const auto response = send(h.api, post(body));
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(response)),
+             std::string(R"({"error":"platform must be android, ios, or web"})"));
+  }
+  CHECK(h.repo->appended.empty());
 }
 
 TEST(events_malformed_body_is_rejected_whole_with_400) {

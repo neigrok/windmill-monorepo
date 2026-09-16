@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -22,7 +23,7 @@ import works.windmill.gym.domain.TrainingSet
 // Locally minted movements, local routines and FINISHED local sessions no account has claimed yet;
 // the live session is SetQueue's file. A row leaves the shelf only once the server confirms it.
 // `deviceOwner` is the account this device holds a session for at open time.
-class LocalLog(private val file: File, deviceOwner: String? = null) {
+class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None) {
     @Serializable
     data class FinishedSession(
         val session: Session,
@@ -52,6 +53,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
 
     internal val claimConsentFile: File get() = File(file.absoluteFile.parentFile, LocalClaimConsent.fileName)
 
+    private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private var migrated = false
@@ -64,7 +66,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     // An unnamed shelf is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val document = StoredDocument.tree(file) ?: return Held()
+        val document = storage.tree() ?: return Held()
         val before = shelf(document)
         if (!before.isEmpty) {
             migrated = true
@@ -80,9 +82,9 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     private fun shelf(node: JsonElement): Shelf {
         val fields = node as? JsonObject ?: return Shelf()
         return Shelf(
-            exercises = StoredDocument.each(fields["exercises"], Exercise.serializer()),
-            routines = StoredDocument.each(fields["routines"], Routine.serializer()),
-            finished = StoredDocument.each(fields["finished"], FinishedSession.serializer()),
+            exercises = storage.each(fields["exercises"], Exercise.serializer()),
+            routines = storage.each(fields["routines"], Routine.serializer()),
+            finished = storage.each(fields["finished"], FinishedSession.serializer()),
         )
     }
 
@@ -378,7 +380,6 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     }
 
     private fun flush() {
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), held) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        storage.write(held, Held.serializer())
     }
 }

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <future>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,17 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 
 namespace {
+
+struct RecordedFailures : FailureReporter {
+  std::vector<std::string> events;
+  bool throwReport = false;
+
+  void report(const std::string& kind, const std::string& where,
+              const std::string& detail) override {
+    events.push_back(kind + " | " + where + " | " + detail);
+    if (throwReport) throw std::runtime_error("reporter unavailable");
+  }
+};
 
 struct Harness {
   FakeGym repo;
@@ -36,7 +48,8 @@ struct Harness {
   GymTools gymTools{training, catalog, program, notesService, bodyweightService,
                     "https://windmill.works"};
   FakeAsk agent;
-  AskService ask{training, threadService, agent, gymTools, entitlements};
+  std::shared_ptr<RecordedFailures> failures = std::make_shared<RecordedFailures>();
+  AskService ask{training, threadService, agent, gymTools, entitlements, failures};
 
   const UserId lifter{"lifter"};
   const SessionId session{"ses_11111111"};
@@ -535,11 +548,70 @@ TEST(a_run_that_threw_answers_the_lifter_rather_than_taking_the_process_with_it)
   CHECK(thrown.refusal == AskRefusal::none);
   CHECK_FALSE(thrown.answer.ok);
   CHECK_EQ(thrown.answer.answer, std::string(""));
+  CHECK_EQ(thrown.answer.error, std::string("Coach failed at ask.run"));
+  CHECK_EQ(h.failures->events, (std::vector<std::string>{
+      "gym-ask | ask.run | unexpected exception while answering Coach"}));
 
   h.agent.throwsUp = false;
   for (int attempt = 0; attempt < 3; ++attempt)
     CHECK(h.question("how did the squats go?").refusal == AskRefusal::none);
   CHECK_EQ(h.agent.runs, 4);
+  CHECK_EQ(h.failures->events.size(), 1u);
+}
+
+TEST(coach_worker_persistence_failures_reply_and_report_once_without_private_exception_text) {
+  struct FailingThreads : FakeAskThreadRepository {
+    using FakeAskThreadRepository::FakeAskThreadRepository;
+
+    void appendTurns(const UserId&, const ThreadId&, const std::vector<ThreadTurn>&) override {
+      throw std::runtime_error("database rejected a private Coach answer");
+    }
+    void discardEmptyThread(const UserId&, const ThreadId&) override {
+      throw std::runtime_error("database rejected a private Coach question");
+    }
+  };
+  Harness h;
+  FailingThreads repo{h.repo.db};
+  ThreadService threads{repo, h.clock};
+  AskService ask{h.training, threads, h.agent, h.gymTools, h.entitlements, h.failures};
+  const auto question = [&] {
+    std::promise<AskReply> settled;
+    auto future = settled.get_future();
+    ask.ask(h.lifter, "sam@example.com", h.nextThread(), "private question",
+            [&](AskReply reply) { settled.set_value(std::move(reply)); });
+    return future.get();
+  };
+
+  const AskReply persist = question();
+  h.agent.answers = false;
+  const AskReply cleanup = question();
+  h.agent.throwsUp = true;
+  const AskReply both = question();
+
+  CHECK_FALSE(persist.answer.ok);
+  CHECK_EQ(persist.answer.answer, std::string(""));
+  CHECK_EQ(persist.answer.error, std::string("Coach failed at ask.persist"));
+  CHECK_FALSE(cleanup.answer.ok);
+  CHECK_EQ(cleanup.answer.error, std::string("Coach failed at ask.cleanup"));
+  CHECK_FALSE(both.answer.ok);
+  CHECK_EQ(h.failures->events, (std::vector<std::string>{
+      "gym-ask | ask.persist | unexpected exception while answering Coach",
+      "gym-ask | ask.cleanup | unexpected exception while answering Coach",
+      "gym-ask | ask.run | unexpected exception while answering Coach"}));
+}
+
+TEST(a_failure_reporter_cannot_prevent_coach_from_replying) {
+  Harness h;
+  h.agent.throwsUp = true;
+  h.failures->throwReport = true;
+
+  const AskReply reply = h.question("private question");
+
+  CHECK_FALSE(reply.answer.ok);
+  CHECK_EQ(reply.answer.error, std::string("Coach failed at ask.run"));
+  CHECK(h.repo.db.threadRows.empty());
+  CHECK_EQ(h.failures->events, (std::vector<std::string>{
+      "gym-ask | ask.run | unexpected exception while answering Coach"}));
 }
 
 // The question is taken AFTER every other rung, so a refusal that answered nothing costs nothing.
@@ -555,6 +627,7 @@ TEST(a_refusal_above_the_ration_costs_none_of_the_days_questions) {
   CHECK(h.question("and the bench?").refusal == AskRefusal::none);
   CHECK(h.question("what about next week?").refusal == AskRefusal::none);
   CHECK_EQ(h.agent.runs, 3);
+  CHECK(h.failures->events.empty());
 }
 
 TEST(an_account_over_its_ai_ceiling_is_refused_before_the_question_travels) {

@@ -107,6 +107,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <typeinfo>
 
 namespace {
 // A retention window in days. Unset or unreadable keeps the built-in default; 0 or less means keep
@@ -245,19 +246,32 @@ int main() {
                                                      ownerEmailsEnv ? ownerEmailsEnv : "",
                                                      std::vector<std::string>{"echo.segment", "echo.curate"});
 
+  // An empty SENTRY_DSN leaves a no-op client.
+  auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
+  const char* sentryDsn = std::getenv("SENTRY_DSN");
+  const char* sentryEnv = std::getenv("SENTRY_ENVIRONMENT");
+  const char* sentryRelease = std::getenv("SENTRY_RELEASE");
+  auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "",
+                                               sentryEnv ? sentryEnv : "production",
+                                               sentryRelease ? sentryRelease : "");
+
+  // Every LOG_* line teed to Sentry, installed before anything else logs so a failure during the
+  // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
+  installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
+
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
   const char* amplitudeKey = std::getenv("AMPLITUDE_API_KEY");
   const char* amplitudeHost = std::getenv("AMPLITUDE_HOST");
   auto amplitude = std::make_shared<AmplitudeClient>(
       amplitudeKey ? amplitudeKey : "",
-      (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
+      (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com", sentry);  // set-but-empty → default
   // What every LLM adapter is handed: the ledger, written first, mirrored to Amplitude.
   std::shared_ptr<UsageSink> aiSpendSink =
       std::make_shared<AmplitudeUsageSink>(aiUsageRepo, amplitude);
 
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
-  auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
+  auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
 
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
@@ -274,19 +288,6 @@ int main() {
   auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
                                                  paddleWebhookSecret ? paddleWebhookSecret : "",
                                                  paddleClient, paddlePriceId ? paddlePriceId : "");
-
-  // An empty SENTRY_DSN leaves a no-op client.
-  auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
-  const char* sentryDsn = std::getenv("SENTRY_DSN");
-  const char* sentryEnv = std::getenv("SENTRY_ENVIRONMENT");
-  const char* sentryRelease = std::getenv("SENTRY_RELEASE");
-  auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "",
-                                               sentryEnv ? sentryEnv : "production",
-                                               sentryRelease ? sentryRelease : "");
-
-  // Every LOG_* line teed to Sentry, installed before anything else logs so a failure during the
-  // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
-  installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
 
   // The one sweep that deletes; no product table is reachable from it. 0 or less on any window
   // means keep forever.
@@ -378,7 +379,7 @@ int main() {
   std::shared_ptr<gym::AskService> gymAsk;
   if (gymAskAgent->configured())
     gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreadService, *gymAskAgent,
-                                               *gymTools, *entitlements);
+                                               *gymTools, *entitlements, sentry);
 
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
@@ -427,30 +428,24 @@ int main() {
   // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
 
-  // Every sink here is guarded — this handler must never throw — and e.what() never reaches the
-  // body, which can carry internals.
+  // Exception messages may contain SQL values or user content; only their type reaches diagnostics.
   app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
                                                  std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
     const std::string method = loggableField(req->getMethodString());
-    // Redacted: this path reaches stdout, a retained server_errors column and Sentry, and some
-    // paths carry a live credential.
-    const std::string path = loggableField(redactedPath(req->getPath()));
-    std::string message = e.what();
-    if (message.size() > 500) {                            // bound the column, cutting on a UTF-8 boundary
-      std::size_t cut = 500;
-      while (cut > 0 && (static_cast<unsigned char>(message[cut]) & 0xC0) == 0x80) --cut;
-      message.resize(cut);
-    }
+    const std::string path = loggableField(req->matchedPathPattern().empty()
+        ? redactedPath(req->getPath()) : std::string(req->matchedPathPattern()));
+    const std::string message = "unexpected request exception; type=" +
+                                loggableField(typeid(e).name());
     LOG_ERROR << "uncaught exception on " << method << " " << path << ": " << message;
     try {
       serverErrors->insert(method, path, 500, message);
-    } catch (const std::exception& sink) {
-      LOG_ERROR << "server_errors insert dropped: " << sink.what();
+    } catch (const std::exception&) {
+      LOG_ERROR << "server_errors insert dropped";
     }
     try {
       sentry->captureException("uncaught", method, path, message);
-    } catch (const std::exception& sink) {
-      LOG_ERROR << "sentry capture dropped: " << sink.what();
+    } catch (const std::exception&) {
+      LOG_ERROR << "sentry capture dropped";
     }
     Json::Value body(Json::objectValue);
     body["error"] = "internal error";

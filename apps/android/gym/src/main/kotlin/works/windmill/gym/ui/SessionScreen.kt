@@ -72,6 +72,8 @@ import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -164,10 +166,11 @@ object Performed {
     private fun planLine(entry: PlanEntry): String = "Plan ${Readout.targetWithUnit(entry.sets)}"
 }
 
-private val sessionDetailSaver = Saver<SessionDetail?, String>(
+private fun sessionDetailSaver(telemetry: Telemetry) = Saver<SessionDetail?, String>(
     save = { it?.let { detail -> WindmillJson.encodeToString(SessionDetail.serializer(), detail) } ?: "" },
     restore = { raw -> raw.takeIf(String::isNotEmpty)?.let {
-        runCatching { WindmillJson.decodeFromString(SessionDetail.serializer(), it) }.getOrNull()
+        runCatching { WindmillJson.decodeFromString(SessionDetail.serializer(), it) }
+            .onFailure { telemetry.failure("gym.restoreSessionDetail", it) }.getOrNull()
     } },
 )
 
@@ -186,7 +189,8 @@ fun SessionScreen(
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    var detail by rememberSaveable(summary.id, stateSaver = sessionDetailSaver) { mutableStateOf<SessionDetail?>(seed) }
+    val telemetry = LocalTelemetry.current
+    var detail by rememberSaveable(summary.id, stateSaver = remember(telemetry) { sessionDetailSaver(telemetry) }) { mutableStateOf<SessionDetail?>(seed) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
     var read by remember(summary.id) { mutableStateOf(false) }

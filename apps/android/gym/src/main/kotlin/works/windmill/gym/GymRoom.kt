@@ -120,6 +120,8 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import works.windmill.gym.ui.routineDraftSaver
 import works.windmill.platform.you.YouDestination
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.AccountActions
@@ -240,24 +242,26 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 //
 // A live session takes the whole screen, rail included; a pushed screen covers the rail too.
 //
-// A room's state dies when you leave it, store included: the queue is on disk after every tap and
-// leaving flushes, or a set is refused once the session closes.
+// The application owns the store; this room owns only navigation and transient UI state.
 
-private val awaySaver = Saver<List<Away>, String>(
+private fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
     save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
-    restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }.getOrDefault(emptyList()) },
+    restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }
+        .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
 )
 
-private val finishedSaver = Saver<FinishedSession?, String>(
+private fun finishedSaver(telemetry: Telemetry) = Saver<FinishedSession?, String>(
     save = { it?.let { value -> WindmillJson.encodeToString(FinishedSession.serializer(), value) } ?: "" },
     restore = { raw -> raw.takeIf { it.isNotEmpty() }?.let {
-        runCatching { WindmillJson.decodeFromString(FinishedSession.serializer(), it) }.getOrNull()
+        runCatching { WindmillJson.decodeFromString(FinishedSession.serializer(), it) }
+            .onFailure { telemetry.failure("gym.restoreFinishedSession", it) }.getOrNull()
     } },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null) {
+    val telemetry = LocalTelemetry.current
     val skin = LocalGymColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -268,7 +272,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     // The committed detail survives process replacement after the queue closes.
-    var finished by rememberSaveable(stateSaver = finishedSaver) { mutableStateOf<FinishedSession?>(null) }
+    var finished by rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
     val currentAccount by rememberUpdatedState(account)
     var finishFailure by remember { mutableStateOf<String?>(null) }
     val finishStates = rememberSaveableStateHolder()
@@ -277,7 +281,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         confirmValueChange = { !keepingRoutine })
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     var closingFinish by remember { mutableStateOf(false) }
-    var away by rememberSaveable(stateSaver = awaySaver) { mutableStateOf<List<Away>>(emptyList()) }
+    var away by rememberSaveable(stateSaver = remember(telemetry) { awaySaver(telemetry) }) { mutableStateOf<List<Away>>(emptyList()) }
     var keptRoutine by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
@@ -297,12 +301,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
     // the turns but not the receipt, the tools or a question that failed with no reply.
-    var conversation by rememberSaveable(stateSaver = askThreadSaver) {
+    var conversation by rememberSaveable(stateSaver = remember(telemetry) { askThreadSaver(telemetry) }) {
         mutableStateOf(emptyList<AskExchange>())
     }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
     // drawn off it.
-    var building by rememberSaveable(stateSaver = routineDraftSaver) {
+    var building by rememberSaveable(stateSaver = remember(telemetry) { routineDraftSaver(telemetry) }) {
         mutableStateOf<RoutineDraft?>(null)
     }
     // Which conversation the next question lands in; minted by this phone, empty until somebody asks.
@@ -391,6 +395,28 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     val live = store.session != null
+    val screen = when {
+        reviewing != null -> "proposal"
+        finished != null -> "finish"
+        building != null -> "routine_editor"
+        away.isNotEmpty() -> when (away.last()) {
+            is Away.Session -> "session"
+            is Away.Movement -> "movement"
+            is Away.Program -> "routine"
+            is Away.Coach -> "coach"
+            Away.Threads -> "threads"
+            is Away.Thread -> "thread"
+            Away.Settings -> "settings"
+            Away.Connections -> "connections"
+            Away.Notes -> "notes"
+            is Away.NoteEditor -> "note_editor"
+            Away.Bodyweight -> "bodyweight"
+        }
+        live -> "workout"
+        else -> tab.name.lowercase()
+    }
+    LaunchedEffect(screen) { telemetry.event("gym_screen_viewed", mapOf("screen" to screen)) }
+
     val means = backMeans(live, building != null, away.size, tab)
     BackHandler(enabled = means != BackMeans.LeaveTheApp) {
         when (means) {

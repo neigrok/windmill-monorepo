@@ -50,21 +50,26 @@ bool isSessionKey(const std::string& key) {
 
 // One beacon entry, or nullopt for a malformed one — a bad entry drops alone, never its siblings.
 // Props must stay a flat object within the 1KB budget.
-std::optional<FunnelEvent> eventOf(const Json::Value& entry) {
+std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& platform) {
   if (!entry.isObject()) return std::nullopt;
   const Json::Value& name = entry["name"];
   const Json::Value& clientMs = entry["clientMs"];
   const Json::Value& props = entry["props"];
+  const Json::Value& id = entry["id"];
   if (!name.isString() || !isSnakeName(name.asString())) return std::nullopt;
   if (!clientMs.isNumeric()) return std::nullopt;
   const double ms = clientMs.asDouble();
   if (!std::isfinite(ms) || ms < 0 || ms > 4.0e12) return std::nullopt;  // a sane epoch-ms, not inf/garbage
   if (!props.isNull() && !isFlatProps(props)) return std::nullopt;
+  if (!id.isNull() && (!id.isString() || !isSessionKey(id.asString()))) return std::nullopt;
 
   FunnelEvent event;
   event.name = name.asString();
+  event.id = id.asString();
   event.clientMs = static_cast<std::int64_t>(ms);
-  event.props = props.isNull() ? "{}" : dump(props);
+  Json::Value attributed = props.isNull() ? Json::Value(Json::objectValue) : props;
+  if (!platform.empty()) attributed["platform"] = platform;
+  event.props = dump(attributed);
   if (event.props.size() > kMaxPropsBytes) return std::nullopt;
   // Postgres jsonb rejects a NUL inside a string value. It would poison the whole single-txn batch,
   // so the entry drops alone here.
@@ -74,8 +79,10 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry) {
 }
 
 EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,
-                     std::shared_ptr<AmplitudeClient> amplitude)
-    : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)) {}
+                     std::shared_ptr<AmplitudeClient> amplitude,
+                     std::shared_ptr<FailureReporter> failures)
+    : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)),
+      failures_(std::move(failures)) {}
 
 void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // The user is only ever the session's verdict — a body-supplied identity is never read.
@@ -91,24 +98,40 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     callback(error(drogon::k400BadRequest, "a beacon batch is {sessionKey, events: [...]}"));
     return;
   }
+  const Json::Value& platform = root["platform"];
+  if (!platform.isNull() && (!platform.isString() ||
+      (platform.asString() != "android" && platform.asString() != "ios" &&
+       platform.asString() != "web"))) {
+    callback(error(drogon::k400BadRequest, "platform must be android, ios, or web"));
+    return;
+  }
 
   std::optional<UserId> caller = callerOf(req, *auth_);
 
   std::vector<FunnelEvent> accepted;
   for (const Json::Value& entry : entries) {
     if (accepted.size() == kMaxEventsPerCall) break;
-    std::optional<FunnelEvent> event = eventOf(entry);
+    std::optional<FunnelEvent> event = eventOf(entry, platform.asString());
     if (event) accepted.push_back(std::move(*event));
   }
   if (!accepted.empty()) {
+    const auto reportFailure = [&](const std::string& where) {
+      LOG_ERROR << "event batch failed at " << where;
+      if (!failures_) return;
+      try {
+        failures_->report("telemetry", where, "event batch could not be delivered");
+      } catch (const std::exception&) {
+        LOG_ERROR << "event failure report dropped";
+      }
+    };
     try {
       if (events_->countInLastDay(sessionKey.asString()) >= kMaxEventsPerSessionDay) {
         callback(error(drogon::k429TooManyRequests, "this session has beaconed enough for today"));
         return;
       }
       events_->append(sessionKey.asString(), caller, accepted);
-    } catch (const std::exception& e) {
-      LOG_ERROR << "event batch dropped at storage: " << e.what();
+    } catch (const std::exception&) {
+      reportFailure("events.persist");
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
@@ -116,8 +139,8 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     if (amplitude_) {
       try {
         amplitude_->forward(sessionKey.asString(), caller, accepted);
-      } catch (const std::exception& e) {
-        LOG_ERROR << "amplitude forward dropped: " << e.what();
+      } catch (const std::exception&) {
+        reportFailure("amplitude.forward");
       }
     }
   }

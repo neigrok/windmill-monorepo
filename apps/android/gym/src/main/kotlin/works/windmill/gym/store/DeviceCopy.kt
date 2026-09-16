@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import works.windmill.gym.domain.Exercise
@@ -8,7 +9,7 @@ import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Routine
 
 // Scoped to the account that read it: a copy whose owner does not match reads empty.
-class DeviceCopy(private val file: File) {
+class DeviceCopy(private val file: File, telemetry: Telemetry = Telemetry.None) {
     companion object {
         const val fileName = "windmill-gym-catalog.json"
     }
@@ -23,16 +24,17 @@ class DeviceCopy(private val file: File) {
         val lastSets: List<LastSet>? = null,
     )
 
+    private val storage = StoredDocument(file, telemetry)
     private var held: Held = open()
 
     // Row by row, so one routine this build cannot read never empties the copy.
     private fun open(): Held {
-        val document = StoredDocument.tree(file) ?: return Held()
+        val document = storage.tree() ?: return Held()
         return Held(
-            owner = StoredDocument.one(document["owner"], String.serializer()),
-            movements = StoredDocument.each(document["movements"], Exercise.serializer()).orEmpty(),
-            routines = StoredDocument.each(document["routines"], Routine.serializer()).orEmpty(),
-            lastSets = StoredDocument.each(document["lastSets"], LastSet.serializer()),
+            owner = storage.one(document["owner"], String.serializer()),
+            movements = storage.each(document["movements"], Exercise.serializer()).orEmpty(),
+            routines = storage.each(document["routines"], Routine.serializer()).orEmpty(),
+            lastSets = storage.each(document["lastSets"], LastSet.serializer()),
         )
     }
 
@@ -62,7 +64,6 @@ class DeviceCopy(private val file: File) {
     private fun hold(next: Held) {
         if (next == held) return
         held = next
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), next) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        storage.write(next, Held.serializer())
     }
 }

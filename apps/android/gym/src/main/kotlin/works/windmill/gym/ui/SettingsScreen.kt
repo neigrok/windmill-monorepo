@@ -66,6 +66,7 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -242,6 +243,7 @@ private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) 
 
 @Composable
 private fun RestAlerts(store: TrainingStore, notifications: WorkoutNotifications, say: (String?) -> Unit) {
+    val telemetry = LocalTelemetry.current
     val context = LocalContext.current
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -261,7 +263,10 @@ private fun RestAlerts(store: TrainingStore, notifications: WorkoutNotifications
     }
     fun settings(alarm: Boolean) {
         try { context.startActivity(if (alarm) notifications.alarmSettings() else notifications.notificationSettings()) }
-        catch (_: Exception) { say("Android settings could not be opened.") }
+        catch (error: Exception) {
+            telemetry.failure("gym.openAndroidSettings", error)
+            say("Android settings could not be opened.")
+        }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notifications.refreshCapabilities()

@@ -25,6 +25,7 @@ import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.ConnectedLogState
 import works.windmill.gym.domain.LogLevel
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +41,7 @@ fun ConnectedLogScreen(
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
+    val telemetry = LocalTelemetry.current
     val owner = store.accountKey
     var open by rememberSaveable(owner) { mutableStateOf(false) }
     var refreshing by remember(owner) { mutableStateOf(false) }
@@ -61,6 +63,7 @@ fun ConnectedLogScreen(
             Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Button(onClick = {
                     if (isSignedIn) runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                .onFailure { telemetry.failure("gym.openConnections", it) }
                     else onSignIn()
                 }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent)) {
@@ -103,6 +106,7 @@ fun ConnectedLogScreen(
                 if (isSignedIn && connected != null) item("manage") {
                     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) {
                         runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
+                            .onFailure { telemetry.failure("gym.openConnections", it) }
                     }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(ConnectedLog.manage, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),

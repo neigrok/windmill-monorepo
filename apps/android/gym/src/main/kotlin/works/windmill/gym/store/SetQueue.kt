@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -44,12 +45,13 @@ class SetQueue private constructor(
     deviceOwner: String?,
     private val clock: () -> Long,
     private val write: (File, String) -> Unit,
+    private val telemetry: Telemetry,
 ) {
-    constructor(file: File, deviceOwner: String? = null, clock: () -> Long = System::currentTimeMillis) :
-        this(file, deviceOwner, clock, AtomicDocument::write)
+    constructor(file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None,
+        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, AtomicDocument::write, telemetry)
 
     internal constructor(file: File, deviceOwner: String? = null, write: (File, String) -> Unit,
-        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, write)
+        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, write, Telemetry.None)
 
     // The key the server numbers sets under.
     data class Lane(val sessionId: String, val exerciseId: String)
@@ -118,6 +120,7 @@ class SetQueue private constructor(
     @Serializable
     private data class Held(val queues: Map<String, Queued> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private var migrated = false
@@ -133,7 +136,7 @@ class SetQueue private constructor(
     // An unnamed queue is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val document = StoredDocument.tree(file) ?: run {
+        val document = storage.tree() ?: run {
             if (file.exists()) unreadable = true
             return Held()
         }
@@ -147,7 +150,7 @@ class SetQueue private constructor(
         return Held(queues.mapValues { queued(it.value) },
             document["claims"]?.let {
                 try { diskJson.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }
-                catch (_: Exception) { unreadable = true; emptyMap() }
+                catch (error: Exception) { telemetry.failure("gym.storage.decode", error); unreadable = true; emptyMap() }
             }.orEmpty())
     }
 
@@ -158,19 +161,20 @@ class SetQueue private constructor(
             try {
                 val authority = Json { explicitNulls = false }.decodeFromJsonElement(WorkoutState.serializer(), fields.getValue("workout"))
                 return diskJson.decodeFromJsonElement(Queued.serializer(), fields).copy(workout = authority)
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                telemetry.failure("gym.storage.decode", error)
                 unreadable = true
             }
         }
         return Queued(
-            session = StoredDocument.one(fields["session"], Session.serializer()),
-            entries = StoredDocument.keyed(fields["entries"], Entry.serializer()),
-            order = StoredDocument.each(fields["order"], String.serializer()),
-            unclaimed = StoredDocument.one(fields["unclaimed"], Boolean.serializer()),
-            chosenMovement = StoredDocument.one(fields["chosenMovement"], String.serializer()),
+            session = storage.one(fields["session"], Session.serializer()),
+            entries = storage.keyed(fields["entries"], Entry.serializer()),
+            order = storage.each(fields["order"], String.serializer()),
+            unclaimed = storage.one(fields["unclaimed"], Boolean.serializer()),
+            chosenMovement = storage.one(fields["chosenMovement"], String.serializer()),
             workout = fields["workout"]?.let {
                 try { diskJson.decodeFromJsonElement(WorkoutState.serializer(), it) }
-                catch (_: Exception) { unreadable = true; null }
+                catch (error: Exception) { telemetry.failure("gym.storage.decode", error); unreadable = true; null }
             },
         )
     }

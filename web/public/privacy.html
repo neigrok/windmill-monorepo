@@ -77,13 +77,13 @@
     <main class="wrap" id="content">
       <article class="doc">
         <h1>Privacy</h1>
-        <div class="upd">Updated August 2026</div>
+        <div class="upd">Updated September 2026</div>
         <p class="lede">The short version: signed out, your trees and journal pages live on your device — the one exception is text you paste into the birth canvas and ask us to shape. Signing in syncs them to your account so they follow you — and that’s the main reason we store anything.</p>
 
         <h2>What we store</h2>
         <ul>
-          <li><strong>Signed out:</strong> your trees and your journal pages stay in this browser, on this device. The one thing that leaves is text you paste into the birth canvas and ask us to shape into a tree: that goes to us and on to Anthropic, because shaping it is the thing you asked for. What we do keep is anonymous usage events under a random per-browser key, so we can tell what’s working. No names, no content.</li>
-          <li><strong>Signed in:</strong> your email address; the trees you sync; the journal pages you sync, the passages they’re cut into and the vectors we compute from those to find echoes; your training log — every set, session, routine and movement you add, the notes you write for Coach, plus any workout-share link you’ve minted; your active sessions; and any AI-tool connections you’ve granted — plus those same usage events, now tied to your account. That’s the list we hold. Some of it also travels: your journal pages go to an outside company as you write them, and <a href="#processors">who processes it with us</a> says exactly what goes where.</li>
+          <li><strong>Signed out:</strong> your trees and your journal pages stay in this browser, on this device. Text you paste into the birth canvas and ask us to shape into a tree goes to us and on to Anthropic, because shaping it is the thing you asked for. We also collect usage events under random browser or app identifiers, and error diagnostics, so we can tell what’s working. Signed-out usage events are not linked to an account.</li>
+          <li><strong>Signed in:</strong> your email address; the trees you sync; the journal pages you sync, the passages they’re cut into and the vectors we compute from those to find echoes; your training log — every set, session, routine and movement you add, the notes you write for Coach, plus any workout-share link you’ve minted; your active sessions; and any AI-tool connections you’ve granted — plus those same usage events, now tied to your account, and error diagnostics. That’s the list we hold. Some of it also travels: your journal pages go to an outside company as you write them, and <a href="#processors">who processes it with us</a> says exactly what goes where.</li>
         </ul>
 
         <h2>Signing in</h2>
@@ -96,17 +96,19 @@
         <p>A share link makes that tree’s page visible to anyone holding the link, and anyone holding it can fork their own copy — progress cleared.</p>
 
         <h2>Measurement</h2>
-        <p>We look at product usage in aggregate to understand what’s working. No ad trackers, no selling data, no third-party profiles.</p>
+        <p>We use product events to understand feature use and outcomes, and error diagnostics to investigate failures. Usage events can be linked to your account when you are signed in. Android telemetry includes technical metadata such as the app version, platform, operation and outcome; it excludes your writing, training details, Coach questions and answers, and credentials. We do not use advertising trackers or sell your data.</p>
 
         <h2 id="processors">Who processes it with us</h2>
         <p>A few outside companies each handle a specific job, and only ever see the data that job needs:</p>
         <ul>
           <li><strong>Paddle</strong> — our seller of record for Windmill One. If you subscribe, Paddle takes the payment and handles tax; your billing details go to them, and we never see your card.</li>
           <li><strong>Resend</strong> — delivers the sign-in emails you ask for. It receives your email address to send the link or code, and nothing else.</li>
+          <li><strong>Amplitude</strong> — helps us understand product use, feature outcomes and AI usage. It receives usage events with their timestamps, technical metadata and random browser or app identifiers. Signed-in events also include your Windmill account ID.</li>
+          <li><strong>Sentry</strong> — helps us diagnose errors and crashes. It receives error reports and technical context. On Android this includes exception types, stack traces, app version, device and operating-system information, and the operation that failed; exception messages, request bodies, screenshots and user content are excluded.</li>
           <li><strong>Anthropic</strong> — the AI in all three rooms, and they do not work alike. In the roadmap it powers AI assistance, which plants and reshapes a tree: when you ask for help, that tree and your instruction are sent to Anthropic to generate the edit — only when you ask for one. In the journal it is how echoes are found, and there you don’t ask. Saving a page whose text changed sends that text to Anthropic to be cut into passages; then passages from that page and from your earlier pages, each with the day it was written, are sent to judge which pairs are about the same thing. That happens on its own, usually a few seconds after you save — and again later if we change how the pipeline works, which re-reads pages you have not touched. In the gym, asking Coach a question sends that question, your training log and the notes you wrote for Coach — again only when you ask.</li>
           <li><strong>OpenAI</strong> — turns a journal Talk recording into text. When you use Talk, the audio of that take is sent to OpenAI to be transcribed; nothing else in the journal goes there, and we do not keep the recording. Talk is part of Windmill One, so it only happens on an account that has it.</li>
         </ul>
-        <p>The matching itself stays with us: the vectors behind echoes are computed on our own server and never leave it, and the search you run in the journal builds its own vectors — the model, the index and your query — on your device. None of them profile you, and none of them receive your data to sell it on.</p>
+        <p>The matching itself stays with us: the vectors behind echoes are computed on our own server and never leave it, and the search you run in the journal builds its own vectors — the model, the index and your query — on your device. We do not send your data to these companies for advertising.</p>
 
         <h2>Your data is portable</h2>
         <p>Export every tree as a zip of Markdown from <a href="/#/settings">account settings</a> — the same format you can paste back to replant. Closing your account there signs out every device and cuts off every connected tool immediately, and it closes the whole account rather than one room. What it does not do is erase: the copies you’ve synced stay on our servers, and signing in again is the undo — at any time, bringing the account back whole. Trees on your devices always stay yours.</p>

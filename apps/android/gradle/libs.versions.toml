@@ -10,6 +10,7 @@ kotlinxCoroutines = "1.10.2"
 okhttp = "4.12.0"
 junit = "4.13.2"
 robolectric = "4.15.1"
+sentry = "8.56.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -30,6 +31,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+sentry-android = { group = "io.sentry", name = "sentry-android", version.ref = "sentry" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

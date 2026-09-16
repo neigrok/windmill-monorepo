@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -15,7 +16,7 @@ import works.windmill.gym.domain.WeighIn
 // like a set: a weigh-in lands here before the log is consulted and is owed to the server until the
 // server answers for it. The date is the row's identity, so a second write to the same day replaces
 // the first; the newer `recordedAt` wins, on this phone as on the server.
-class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
+class LocalBodyweight(private val file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None) {
     companion object {
         const val fileName = "windmill-gym-bodyweight.json"
     }
@@ -34,12 +35,11 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     @Serializable
     private data class Held(val shelves: Map<String, Shelf> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private val revisions = mutableMapOf<Pair<String, String>, Long>()
-    private var held: Held = runCatching {
-        diskJson.decodeFromString(Held.serializer(), file.readText())
-    }.getOrElse { Held() }
+    private var held: Held = storage.one(storage.tree(), Held.serializer()) ?: Held()
 
     private val mine: Shelf get() = held.shelves[seat] ?: Shelf()
 
@@ -171,7 +171,6 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     }
 
     private fun flush() {
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), held) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        storage.write(held, Held.serializer())
     }
 }

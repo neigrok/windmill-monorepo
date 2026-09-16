@@ -1,11 +1,25 @@
 package works.windmill.gym.net
 
+import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.util.concurrent.TimeUnit
+import works.windmill.gym.domain.AskQuestion
+import works.windmill.platform.net.WindmillApi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Test
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.domain.NoteWrite
+import works.windmill.gym.domain.SetWrite
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
@@ -15,6 +29,71 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
 class GymHttpTests {
+    @Test
+    fun failedRequestsIdentifyTheirActionWithoutIdsQueriesOrContent() = runBlocking {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                assertEquals(503, (error as WindmillApiException.Refused).status)
+                failures += operation to properties
+            }
+        }
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(503).message("Unavailable")
+                .body("""{"error":"private diagnostic"}""".toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { "private-bearer" }, client, telemetry))
+        val requests = listOf<suspend () -> Any?>(
+            { gym.sessions(50, 100, "private-cursor") },
+            { gym.session("private-session") },
+            { gym.startSession(SessionStart("private-session", 100)) },
+            { gym.appendSet("private-session", SetWrite("private-set", "private-movement", 92.5, 6, SetKind.Working, 200)) },
+            { gym.finishSession("private-session", 300) },
+            { gym.routine("private-routine") },
+            { gym.writeNote("private-note", NoteWrite("private-title", "private training notes")) },
+            { gym.ask(AskQuestion("private-thread", "private question")) },
+        )
+        for (request in requests) {
+            try {
+                request()
+                fail("the server refused the request")
+            } catch (error: WindmillApiException.Refused) {
+                assertEquals(503, error.status)
+            }
+        }
+        val actions = listOf(
+            "gym_sessions" to "GET", "gym_session" to "GET", "gym_start_session" to "POST",
+            "gym_append_set" to "POST", "gym_finish_session" to "POST", "gym_routine" to "GET",
+            "gym_write_note" to "PUT", "gym_ask" to "POST",
+        )
+        val expected = actions.map { (operation, method) -> operation to mapOf(
+            "method" to method, "route" to "/v1/gym", "failure_kind" to "http", "operation" to operation, "status" to "503",
+        ) }
+        assertEquals(expected.map { "api_request_failed" to it.second }, events)
+        assertEquals(expected, failures)
+    }
+
+    @Test
+    fun coachReceivesItsBoundedModelBudgetWhileOrdinaryRequestsKeepTheirTimeout() = runBlocking {
+        val timeouts = mutableListOf<Triple<String, Int, Long>>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            timeouts += Triple(chain.request().url.encodedPath, chain.readTimeoutMillis(),
+                TimeUnit.NANOSECONDS.toSeconds(chain.call().timeout().timeoutNanos()))
+            val body = if (chain.request().url.encodedPath == "/v1/gym/ask")
+                """{"answer":"An answer","read":{}}""" else """{"exercises":[]}"""
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(200).message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
+        assertEquals("An answer", gym.ask(AskQuestion("thread", "question")).answer)
+        assertEquals(emptyList<works.windmill.gym.domain.Exercise>(), gym.exercises())
+        assertEquals(listOf(Triple("/v1/gym/ask", 660_000, 660L),
+            Triple("/v1/gym/exercises", 10_000, 0L)), timeouts)
+    }
+
     @Test
     fun testAStorageFailureAndATransportFailureAreBothRetries() {
         assertEquals(RefusalFacts(offline = true), RefusalFacts(WindmillApiException.Offline))

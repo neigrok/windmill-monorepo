@@ -28,7 +28,7 @@ the dependency does not exist in any product's build file.
 
 ```sh
 export JAVA_HOME=…    # JDK 17+; Android Studio's bundled JBR works, CI uses temurin 21
-./gradlew build       # assembles every module and runs the JVM unit suite
+SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build  # local verification only
 ```
 
 - `local.properties` names the SDK (`sdk.dir=…`); Android Studio writes it on first open.
@@ -41,6 +41,18 @@ export JAVA_HOME=…    # JDK 17+; Android Studio's bundled JBR works, CI uses t
   so the very first `build` wants a network.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` points a build at the local backend; `10.0.2.2` is the
   emulator's mapping to the host loopback. Empty (the default) means the production host.
+
+## Observability
+
+Release builds initialize Sentry before local account and workout storage. The shared HTTP boundary
+reports unexpected handled failures, including timeouts and malformed replies; product stores report
+handled local failures. Behavioral events persist in an account-isolated queue and reach Amplitude
+through `/v1/events`. Coach events include outcome and numeric latency without question or answer
+content. Release assembly requires `SENTRY_DSN`; signing-input CI consumes the existing repository
+secret. Debug telemetry is disabled by default and can be enabled with `-Pwindmill.debugTelemetry=true`.
+See [`docs/ANDROID_OBSERVABILITY.md`](../../docs/ANDROID_OBSERVABILITY.md) for event names, privacy,
+delivery limits and collector tests. The placeholder DSN in the local build command is for validation
+only; a distributable release requires the configured project DSN.
 
 ## Sign-in
 
@@ -183,7 +195,8 @@ authoritative. Logging itself has no confirmation sound or vibration.
 versioned `workflow_dispatch` also produces an unpublished signing-input artifact containing a
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
-configuration. `versionCode` equals the workflow run number and must exceed the published code56.
+configuration. `versionCode` equals the workflow run number and must exceed the published
+`android-v0.8.0` version code 72.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`

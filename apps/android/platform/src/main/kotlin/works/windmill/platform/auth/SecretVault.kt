@@ -2,6 +2,7 @@ package works.windmill.platform.auth
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import works.windmill.platform.telemetry.Telemetry
 import java.security.KeyStore
 import java.util.Base64
 import javax.crypto.Cipher
@@ -10,7 +11,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 // AES-GCM under a key minted in the Android Keystore and never readable out of it.
-class SecretVault(private val key: () -> SecretKey?) {
+class SecretVault(private val telemetry: Telemetry = Telemetry.None, private val key: () -> SecretKey?) {
+    constructor(key: () -> SecretKey?) : this(Telemetry.None, key)
     // Sealed as `iv || ciphertext||tag`, base64.
     fun seal(plain: String): String? {
         val secret = key() ?: return null
@@ -19,19 +21,19 @@ class SecretVault(private val key: () -> SecretKey?) {
             cipher.init(Cipher.ENCRYPT_MODE, secret)
             val sealed = cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
             Base64.getEncoder().encodeToString(sealed)
-        }.getOrNull()
+        }.onFailure { telemetry.failure("session_seal", it) }.getOrNull()
     }
 
     fun open(sealed: String): String? {
         val secret = key() ?: return null
         return runCatching {
             val bytes = Base64.getDecoder().decode(sealed)
-            if (bytes.size <= ivBytes) return null
+            require(bytes.size > ivBytes) { "Sealed session is incomplete" }
             val cipher = Cipher.getInstance(transformation)
             cipher.init(Cipher.DECRYPT_MODE, secret,
                 GCMParameterSpec(tagBits, bytes, 0, ivBytes))
             String(cipher.doFinal(bytes, ivBytes, bytes.size - ivBytes), Charsets.UTF_8)
-        }.getOrNull()
+        }.onFailure { telemetry.failure("session_open", it) }.getOrNull()
     }
 
     companion object {
@@ -41,7 +43,7 @@ class SecretVault(private val key: () -> SecretKey?) {
         private const val ivBytes = 12
         private const val tagBits = 128
 
-        fun onThisDevice(): SecretVault = SecretVault {
+        fun onThisDevice(telemetry: Telemetry = Telemetry.None): SecretVault = SecretVault(telemetry) {
             runCatching {
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 (store.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.secretKey
@@ -54,7 +56,7 @@ class SecretVault(private val key: () -> SecretKey?) {
                                 .build())
                         }
                         .generateKey()
-            }.getOrNull()
+            }.onFailure { telemetry.failure("session_key", it) }.getOrNull()
         }
     }
 }

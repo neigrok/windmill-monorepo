@@ -102,6 +102,7 @@ fun SignInDoor(
             } catch (refused: WindmillApiException) {
                 if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused, ofCode = code != null)
             } catch (failed: Exception) {
+                auth.telemetry.failure("auth_sign_in", failed)
                 if (active && currentIdentity === identity) refusal = "Sign-in could not be completed. Try again."
             } finally {
                 if (active && currentIdentity === identity) { pending = null; busyCallback(false) }

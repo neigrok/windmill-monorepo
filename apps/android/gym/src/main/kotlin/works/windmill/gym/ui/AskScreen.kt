@@ -72,6 +72,8 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -320,11 +322,13 @@ private fun Opening(origin: String, onConnections: (() -> Unit)?) {
 private fun ConnectDoor(origin: String, onConnections: (() -> Unit)?, label: String = "Connected log") {
     val skin = LocalGymColors.current
     val web = LocalUriHandler.current
+    val telemetry = LocalTelemetry.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) {
             if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                .onFailure { telemetry.failure("gym.openConnections", it) }
         }.padding(vertical = 12.dp),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -452,10 +456,10 @@ private const val savedThreadBytes = 32_000
 
 // The live thread through an activity recreation, as JSON: the TAIL that fits, and a failed save or
 // restore is EMPTY rather than a crash.
-val askThreadSaver: Saver<List<AskExchange>, String> =
-    Saver(save = { savedThread(it) }, restore = { readThread(it) })
+fun askThreadSaver(telemetry: Telemetry): Saver<List<AskExchange>, String> =
+    Saver(save = { savedThread(it, telemetry) }, restore = { readThread(it, telemetry) })
 
-internal fun savedThread(thread: List<AskExchange>): String? = runCatching {
+internal fun savedThread(thread: List<AskExchange>, telemetry: Telemetry = Telemetry.None): String? = runCatching {
     var kept = thread
     var written = WindmillJson.encodeToString(ListSerializer(AskExchange.serializer()), kept)
     while (kept.size > 1 && written.toByteArray(Charsets.UTF_8).size > savedThreadBytes) {
@@ -463,8 +467,8 @@ internal fun savedThread(thread: List<AskExchange>): String? = runCatching {
         written = WindmillJson.encodeToString(ListSerializer(AskExchange.serializer()), kept)
     }
     written
-}.getOrNull()
+}.onFailure { telemetry.failure("gym.saveConversation", it) }.getOrNull()
 
-internal fun readThread(written: String): List<AskExchange> = runCatching {
+internal fun readThread(written: String, telemetry: Telemetry = Telemetry.None): List<AskExchange> = runCatching {
     WindmillJson.decodeFromString(ListSerializer(AskExchange.serializer()), written)
-}.getOrDefault(emptyList())
+}.onFailure { telemetry.failure("gym.restoreConversation", it) }.getOrDefault(emptyList())

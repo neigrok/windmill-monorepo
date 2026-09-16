@@ -14,6 +14,7 @@ struct FunnelEvent {
   std::string name;
   std::int64_t clientMs = 0;
   std::string props = "{}";
+  std::string id;
 };
 
 // Append-only telemetry sink; nullopt user means a ghost session.

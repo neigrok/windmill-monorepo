@@ -110,6 +110,7 @@ import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -118,11 +119,13 @@ import works.windmill.platform.net.WindmillJson
 // Save enables when the draft is savable — named and holding at least one movement — and for an edit
 // only once something actually changed: a Save that rewrote a document with itself would move the
 // revision and supersede a pending proposal for nothing.
-val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
-    save = { draft -> draft?.let { runCatching { WindmillJson.encodeToString(RoutineDraft.serializer(), it) }.getOrNull() } ?: "" },
+fun routineDraftSaver(telemetry: Telemetry): Saver<RoutineDraft?, String> = Saver(
+    save = { draft -> draft?.let { runCatching { WindmillJson.encodeToString(RoutineDraft.serializer(), it) }
+        .onFailure { telemetry.failure("gym.saveRoutineDraft", it) }.getOrNull() } ?: "" },
     restore = { written ->
         if (written.isEmpty()) null
-        else runCatching { WindmillJson.decodeFromString(RoutineDraft.serializer(), written) }.getOrNull()
+        else runCatching { WindmillJson.decodeFromString(RoutineDraft.serializer(), written) }
+            .onFailure { telemetry.failure("gym.restoreRoutineDraft", it) }.getOrNull()
     },
 )
 

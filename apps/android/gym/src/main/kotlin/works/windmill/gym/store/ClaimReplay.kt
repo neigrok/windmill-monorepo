@@ -18,6 +18,7 @@ import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
+import works.windmill.platform.telemetry.Telemetry
 
 // Turns what was made signed out into the account's. Runs on sign-in, on every connect while the
 // shelf holds a backlog, and on the deliver cadence while the last pass stopped retryably.
@@ -53,7 +54,13 @@ class ClaimReplay(
     private val onChange: (Change) -> Unit = {},
     private val bodyweightWrite: Mutex = Mutex(),
     private val preferencesWrite: Mutex = Mutex(),
+    private val telemetry: Telemetry = Telemetry.None,
 ) {
+    private fun reportFailure(operation: String, error: Exception) {
+        if (error is WindmillApiException || error is CancellationException) return
+        telemetry.failure(operation, error)
+    }
+
     sealed interface Change {
         data class SessionMoved(val oldId: String, val session: Session) : Change
         data class SetChanged(val sessionId: String, val oldId: String, val set: TrainingSet?) : Change
@@ -117,6 +124,7 @@ class ClaimReplay(
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
+            reportFailure("gym.claimPreferences", refusing)
             if (revision != preferences.revision) return@withLock
             val facts = RefusalFacts(refusing)
             if (Verdict.refusing(facts) is Verdict.Retry) return@withLock
@@ -138,6 +146,7 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
+                    reportFailure("gym.claimExercises", refusing)
                     val facts = RefusalFacts(refusing)
                     if (facts.code == "exercise-id-taken" && remints < SetQueue.maxRemints) {
                         val fresh = mintExercise()
@@ -171,6 +180,7 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
+                    reportFailure("gym.claimRoutines", refusing)
                     val facts = RefusalFacts(refusing)
                     if (facts.code == "routine-id-taken" && remints < SetQueue.maxRemints) {
                         val fresh = mintRoutine()
@@ -219,6 +229,7 @@ class ClaimReplay(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                reportFailure("gym.claimFinished", refusing)
                 val facts = RefusalFacts(refusing)
                 if (facts.code == "session-id-taken" && remints < SetQueue.maxRemints) {
                     val fresh = mintSession()
@@ -282,6 +293,7 @@ class ClaimReplay(
                     } catch (interrupted: CancellationException) {
                         throw interrupted
                     } catch (refusing: Exception) {
+                        reportFailure("gym.claimFinished", refusing)
                         val facts = RefusalFacts(refusing)
                         if (facts.code == "set-id-taken" && repairs < SetQueue.maxRemints) {
                             if (localLog.row(session.id)?.sets?.none { it.id == set.id } != false) {
@@ -330,6 +342,7 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
+                    reportFailure("gym.claimFinished", refusing)
                     val verdict = FixVerdict.refusing(RefusalFacts(refusing))
                     if (verdict is FixVerdict.Retry) return Halt.Retry
                     if (verdict is FixVerdict.Gone) {
@@ -358,6 +371,7 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
+                    reportFailure("gym.claimFinished", refusing)
                     return Halt.Retry
                 }
             }
@@ -373,6 +387,7 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
+                    reportFailure("gym.claimFinished", refusing)
                     val facts = RefusalFacts(refusing)
                     if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
                     // A 404 is the workout gone; anything else leaves the session standing open for
@@ -426,6 +441,7 @@ class ClaimReplay(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                reportFailure("gym.claimLive", refusing)
                 val facts = RefusalFacts(refusing)
                 if (facts.code == "session-id-taken" && remints < SetQueue.maxRemints) {
                     live = moveSession(live.id, mintSession()) ?: return null
@@ -465,6 +481,7 @@ class ClaimReplay(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                reportFailure("gym.claimBodyweight", refusing)
                 if (!isCurrent()) throw SeatChanged()
                 val facts = RefusalFacts(refusing)
                 if (Verdict.refusing(facts) is Verdict.Retry) return false
@@ -484,6 +501,7 @@ class ClaimReplay(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
+                reportFailure("gym.claimBodyweight", refusing)
                 if (!isCurrent()) throw SeatChanged()
                 return false
             }

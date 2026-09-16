@@ -137,8 +137,10 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
 }
 
 AskService::AskService(TrainingService& training, ThreadService& threads, AskAgent& agent,
-                       GymTools& gymTools, Entitlements& entitlements)
-    : training_(training), threads_(threads), agent_(agent), gymTools_(gymTools), entitlements_(entitlements) {
+                       GymTools& gymTools, Entitlements& entitlements,
+                       std::shared_ptr<FailureReporter> failures)
+    : training_(training), threads_(threads), agent_(agent), gymTools_(gymTools),
+      entitlements_(entitlements), failures_(std::move(failures)) {
   workers_.start();
 }
 
@@ -218,15 +220,27 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
                                                   {"gym", Access::del}})};
         AskTools hands(gymTools_, thread);
         AskReply reply;
+        bool reported = false;
+        const auto fail = [&](const std::string& where) {
+          reply.answer.ok = false;
+          reply.answer.answer.clear();
+          reply.answer.error = "Coach failed at " + where;
+          if (reported) return;
+          reported = true;
+          LOG_ERROR << reply.answer.error;
+          if (!failures_) return;
+          try {
+            failures_->report("gym-ask", where, "unexpected exception while answering Coach");
+          } catch (const std::exception&) {
+            LOG_ERROR << "gym ask failure report dropped";
+          }
+        };
         try {
           reply.answer = agent_.answer(turns, actor, hands);
         } catch (const std::bad_alloc&) {
           throw;  // not an answer that failed: an exhausted process must die loudly (GymTools.cpp)
-        } catch (const std::exception& failed) {
-          // Nothing sits above a worker loop: an exception leaving this lambda takes the process
-          // down.
-          LOG_ERROR << "gym ask run threw: " << failed.what();
-          reply.answer = AskAnswer{false, "", failed.what(), {}};
+        } catch (const std::exception&) {
+          fail("ask.run");
         }
         // The test is whether the run COST anything, never whether it answered: `modelTurns == 0`
         // gives the question back. A failure that spent turns is charged. A run that THREW is given
@@ -237,15 +251,21 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
         // The conversation is written only once it has an answer, both halves together, so a failed
         // ask leaves the thread as it found it. A proposal the dead run minted keeps its row and
         // loses its thread link.
-        if (!reply.answer.ok) {
-          threads_.discardEmptyThread(caller, thread);
-          done(std::move(reply));
-          return;
+        const std::string persistence = reply.answer.ok ? "ask.persist" : "ask.cleanup";
+        try {
+          if (reply.answer.ok) {
+            reply.receipt = AnswerReceipt{1, reply.read, hands.steps(), reply.proposals,
+                                           hands.read().observations()};
+            threads_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
+                                                ThreadTurn{false, reply.answer.answer, 0, reply.receipt}});
+          } else {
+            threads_.discardEmptyThread(caller, thread);
+          }
+        } catch (const std::bad_alloc&) {
+          throw;
+        } catch (const std::exception&) {
+          fail(persistence);
         }
-        reply.receipt = AnswerReceipt{1, reply.read, hands.steps(), reply.proposals,
-                                       hands.read().observations()};
-        threads_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
-                                          ThreadTurn{false, reply.answer.answer, 0, reply.receipt}});
         done(std::move(reply));
       });
 }

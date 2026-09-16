@@ -17,6 +17,7 @@
         android:theme="@style/Theme.Windmill"
         android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true">
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
 
         <!-- `adjustResize` is the other half of `enableEdgeToEdge`: without it the framework PANS the
              window for the keyboard while the room's own `imePadding()` insets for it too, and every

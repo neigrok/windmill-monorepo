@@ -2,6 +2,7 @@
 
 #include "platform/application/Entitlements.h"
 #include "platform/domain/Ids.h"
+#include "platform/ports/FailureReporter.h"
 #include "platform/ports/ToolHost.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/application/ThreadService.h"
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -109,7 +111,8 @@ class AskService {
 public:
   // The log answers "is a workout running"; the threads keep what was asked and answered.
   AskService(TrainingService& training, ThreadService& threads, AskAgent& agent,
-             GymTools& gymTools, Entitlements& entitlements);
+             GymTools& gymTools, Entitlements& entitlements,
+             std::shared_ptr<FailureReporter> failures = nullptr);
 
   // Whether this deployment can answer at all; main.cpp reads it to decide whether the route exists.
   bool configured() const;
@@ -124,6 +127,7 @@ private:
   AskAgent& agent_;
   GymTools& gymTools_;
   Entitlements& entitlements_;
+  std::shared_ptr<FailureReporter> failures_;
   // One bucket carries the day's cap and the anti-hammer brake together.
   AskRation perAccount_;
   trantor::EventLoopThreadPool workers_{2};

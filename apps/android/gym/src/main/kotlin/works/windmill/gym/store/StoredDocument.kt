@@ -1,9 +1,13 @@
 package works.windmill.gym.store
 
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.SerializationException
+import works.windmill.platform.telemetry.Telemetry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -22,11 +26,34 @@ internal val diskJson = Json {
 // rewritten into this one's, then one item at a time — so a row this build cannot read costs that
 // row and never the shelf, the queue or the copy around it. The rewritten document is not written
 // back here; the next flush writes it in this version's shape.
-internal object StoredDocument {
-    fun tree(file: File): JsonObject? {
-        val text = runCatching { file.readText() }.getOrNull() ?: return null
-        val parsed = runCatching { diskJson.parseToJsonElement(text) }.getOrNull()
-        return (parsed as? JsonObject)?.let { migrated(it) as JsonObject }
+internal class StoredDocument(private val file: File, private val telemetry: Telemetry) {
+    fun tree(): JsonObject? {
+        if (!file.exists()) return null
+        return try {
+            val parsed = diskJson.parseToJsonElement(file.readText()) as? JsonObject
+                ?: throw SerializationException("Stored document must be an object")
+            migrated(parsed) as JsonObject
+        } catch (error: Exception) {
+            telemetry.failure("gym.storage.read", error)
+            null
+        }
+    }
+
+    fun <T> write(value: T, strategy: SerializationStrategy<T>) {
+        try {
+            val text = diskJson.encodeToString(strategy, value)
+            file.parentFile?.mkdirs()
+            val temporary = File(file.parentFile, file.name + ".tmp")
+            temporary.writeText(text)
+            try {
+                Files.move(temporary.toPath(), file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (unsupported: AtomicMoveNotSupportedException) {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } catch (error: Exception) {
+            telemetry.failure("gym.storage.write", error)
+        }
     }
 
     // One row of a list, or nothing where the file has no such list; a row that will not decode is
@@ -43,7 +70,12 @@ internal object StoredDocument {
 
     fun <T> one(node: JsonElement?, strategy: DeserializationStrategy<T>): T? {
         if (node == null || node is JsonNull) return null
-        return runCatching { diskJson.decodeFromJsonElement(strategy, node) }.getOrNull()
+        return try {
+            diskJson.decodeFromJsonElement(strategy, node)
+        } catch (error: Exception) {
+            telemetry.failure("gym.storage.decode", error)
+            null
+        }
     }
 
     // The previous version wrote a routine entry's target as the `targetSets · targetReps ·
@@ -82,21 +114,5 @@ internal object StoredDocument {
             (load as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { put("weightKg", it) }
         })
         return kept + ("sets" to JsonArray(List(sets) { set }))
-    }
-}
-
-// Temp file renamed over the old copy, so a crash mid-write leaves the last good file on disk.
-// Failures are swallowed: the memory copy is the truth.
-internal fun writeAtomically(file: File, text: String) {
-    runCatching {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(text)
-        try {
-            Files.move(tmp.toPath(), file.toPath(),
-                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: Exception) {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
     }
 }

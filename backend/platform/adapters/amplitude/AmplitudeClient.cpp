@@ -8,6 +8,8 @@
 
 #include <json/json.h>
 
+#include <algorithm>
+#include <charconv>
 #include <memory>
 #include <utility>
 
@@ -25,22 +27,50 @@ Json::Value propsObject(const std::string& props) {
     return parsed;
   return Json::Value(Json::objectValue);
 }
+
+void sendBatch(const drogon::HttpClientPtr& client, const drogon::HttpRequestPtr& request,
+                const std::shared_ptr<FailureReporter>& failures, int attemptsLeft) {
+  VendorCall call("amplitude", "forward");
+  client->sendRequest(request,
+      [client, request, failures, attemptsLeft, call](drogon::ReqResult result,
+                                                    const drogon::HttpResponsePtr& response) mutable {
+        if (call.succeeded(result, response)) return;
+        const int status = response ? static_cast<int>(response->getStatusCode()) : 0;
+        const bool transient = result != drogon::ReqResult::Ok || !response ||
+                               status == 429 || status >= 500;
+        if (transient && attemptsLeft > 1) {
+          double delay = 4 - attemptsLeft;
+          if (response) {
+            const std::string& header = response->getHeader("retry-after");
+            int seconds = 0;
+            const auto parsed = std::from_chars(header.data(), header.data() + header.size(), seconds);
+            if (parsed.ec == std::errc{} && parsed.ptr == header.data() + header.size() && seconds >= 0)
+              delay = std::min(seconds, 30);
+          }
+          client->getLoop()->runAfter(delay, [client, request, failures, attemptsLeft] {
+            sendBatch(client, request, failures, attemptsLeft - 1);
+          });
+          return;
+        }
+        if (!failures) return;
+        try {
+          failures->report("telemetry", "amplitude.forward",
+                           "Amplitude delivery failed; status=" + std::to_string(status));
+        } catch (const std::exception&) {
+          LOG_ERROR << "amplitude failure report dropped";
+        }
+      }, 10.0);
+}
 }
 
-AmplitudeClient::AmplitudeClient(std::string apiKey, std::string host)
-    : apiKey_(std::move(apiKey)), host_(std::move(host)) {
+AmplitudeClient::AmplitudeClient(std::string apiKey, std::string host,
+                                  std::shared_ptr<FailureReporter> failures)
+    : apiKey_(std::move(apiKey)), host_(std::move(host)), failures_(std::move(failures)) {
   loop_.run();
 }
 
-void AmplitudeClient::forward(const std::string& sessionKey, const std::optional<UserId>& user,
-                              const std::vector<FunnelEvent>& events, const std::string& idSeed) {
-  if (apiKey_.empty() || events.empty()) return;
-
-  Json::Value payload(Json::objectValue);
-  payload["api_key"] = apiKey_;
-  // The session key is the device_id; the beacon allows keys shorter than Amplitude's default
-  // 5-char floor, so lower it — else a short key would 400 the whole batch.
-  payload["options"]["min_id_length"] = 1;
+Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<UserId>& user,
+                            const std::vector<FunnelEvent>& events, const std::string& idSeed) {
   Json::Value out(Json::arrayValue);
   int index = 0;
   for (const FunnelEvent& event : events) {
@@ -50,13 +80,28 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
     item["event_type"] = event.name;
     item["time"] = static_cast<Json::Int64>(event.clientMs);
     item["event_properties"] = propsObject(event.props);
+    const Json::Value platform = item["event_properties"].get("platform", Json::Value());
+    if (platform == "android") item["platform"] = "Android";
+    if (platform == "ios") item["platform"] = "iOS";
+    if (platform == "web") item["platform"] = "Web";
     // A stable insert_id lets Amplitude drop a retried batch as a duplicate. Name + batch index keep
     // two events sharing a session and a millisecond from colliding.
     item["insert_id"] = sessionKey + ":" + idSeed + ":" + std::to_string(event.clientMs) + ":" +
                         event.name + ":" + std::to_string(index++);
+    if (!event.id.empty()) item["insert_id"] = sessionKey + ":" + event.id;
     out.append(std::move(item));
   }
-  payload["events"] = std::move(out);
+  return out;
+}
+
+void AmplitudeClient::forward(const std::string& sessionKey, const std::optional<UserId>& user,
+                              const std::vector<FunnelEvent>& events, const std::string& idSeed) {
+  if (apiKey_.empty() || events.empty()) return;
+
+  Json::Value payload(Json::objectValue);
+  payload["api_key"] = apiKey_;
+  payload["options"]["min_id_length"] = 1;
+  payload["events"] = amplitudeEvents(sessionKey, user, events, idSeed);
 
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
@@ -69,13 +114,7 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
 
-  VendorCall call("amplitude", "forward");
-  client->sendRequest(
-      req,
-      [client, call](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
-        call.succeeded(result, resp);
-      },
-      10.0);
+  sendBatch(client, req, failures_, 3);
 }
 
 }

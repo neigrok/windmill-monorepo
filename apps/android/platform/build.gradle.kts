@@ -41,6 +41,7 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.sentry.android)
     // api: HttpUrl is in this module's public signatures.
     api(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)

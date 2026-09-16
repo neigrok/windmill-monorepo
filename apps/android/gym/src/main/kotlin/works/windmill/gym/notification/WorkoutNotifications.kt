@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.R
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.RestAlertCommand
@@ -59,13 +60,14 @@ sealed interface WorkoutRoute {
     data class Log(val command: LogSetCommand) : WorkoutRoute
 }
 
-class AndroidWorkoutClock(context: Context) : WorkoutClock {
+class AndroidWorkoutClock(context: Context, private val telemetry: Telemetry = Telemetry.None) : WorkoutClock {
     private val resolver = context.applicationContext.contentResolver
 
     override fun now(): WorkoutMoment {
         val boot = try {
             "boot:${Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT)}"
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            telemetry.failure("gym.workoutClock", error)
             processBoot
         }
         return WorkoutMoment(System.currentTimeMillis(), SystemClock.elapsedRealtime(), boot)
@@ -85,6 +87,7 @@ class WorkoutNotifications(
     private val notificationManager: NotificationManager,
     private val alarmManager: AlarmManager,
     private val keyguardManager: KeyguardManager,
+    private val telemetry: Telemetry = Telemetry.None,
 ) {
     private val context = context.applicationContext
     private val receiver = ComponentName(this.context, WorkoutNotificationReceiver::class.java)
@@ -134,8 +137,8 @@ class WorkoutNotifications(
                 receive(intent)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                // A receiver cannot turn a refused local operation into another write.
+            } catch (error: Exception) {
+                telemetry.failure("gym.notification.receive", error)
             }
         }.invokeOnCompletion { onComplete() }
     }
@@ -207,7 +210,7 @@ class WorkoutNotifications(
         val channel = notificationManager.getNotificationChannel(CHANNEL)
         val active = if (Build.VERSION.SDK_INT >= 36) runCatching {
             notificationManager.activeNotifications.firstOrNull { it.tag == CHANNEL && it.id == ID }
-        }.getOrNull() else null
+        }.onFailure { telemetry.failure("gym.notification.capabilities", it) }.getOrNull() else null
         val result = WorkoutCapabilities(
             postGranted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
                 context, Manifest.permission.POST_NOTIFICATIONS,
@@ -216,13 +219,14 @@ class WorkoutNotifications(
             channelEnabled = channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE,
             channelAudible = channel != null && channel.importance >= NotificationManager.IMPORTANCE_DEFAULT &&
                 channel.sound != null,
-            exactAlarms = Build.VERSION.SDK_INT < 31 || runCatching { alarmManager.canScheduleExactAlarms() }.getOrDefault(false),
+            exactAlarms = Build.VERSION.SDK_INT < 31 || runCatching { alarmManager.canScheduleExactAlarms() }
+                .onFailure { telemetry.failure("gym.notification.alarmAccess", it) }.getOrDefault(false),
             promotionAllowed = if (Build.VERSION.SDK_INT >= 36) runCatching {
                 notificationManager.canPostPromotedNotifications()
-            }.getOrNull() else null,
+            }.onFailure { telemetry.failure("gym.notification.capabilities", it) }.getOrNull() else null,
             promotable = if (Build.VERSION.SDK_INT >= 36) runCatching {
                 (candidate ?: active?.notification)?.hasPromotableCharacteristics()
-            }.getOrNull() else null,
+            }.onFailure { telemetry.failure("gym.notification.capabilities", it) }.getOrNull() else null,
             promoted = if (Build.VERSION.SDK_INT >= 36) active?.notification?.let {
                 it.flags and Notification.FLAG_PROMOTED_ONGOING != 0
             } else null,
@@ -259,7 +263,8 @@ class WorkoutNotifications(
         try {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, due, pending(Command.Rest(command)))
             alarm = command
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            telemetry.failure("gym.notification.schedule", error)
             measure()
         }
     }
@@ -326,7 +331,8 @@ class WorkoutNotifications(
             if (rendered?.key != card.key) notificationManager.cancel(CHANNEL, ID)
             notificationManager.notify(CHANNEL, ID, notification)
             rendered = card
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            telemetry.failure("gym.notification.post", error)
             rendered = null
         }
         measure(notification)

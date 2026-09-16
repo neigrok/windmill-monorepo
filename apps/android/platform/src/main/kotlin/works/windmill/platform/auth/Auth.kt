@@ -14,6 +14,7 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
+import works.windmill.platform.telemetry.Telemetry
 
 sealed class AuthStatus {
     open val user: User? get() = null
@@ -29,13 +30,14 @@ class AuthStore(
     private val baseUrl: HttpUrl,
     private val sessions: SessionStore,
     private val client: OkHttpClient = OkHttpClient(),
+    val telemetry: Telemetry = Telemetry.None,
 ) {
     var status: AuthStatus by mutableStateOf(AuthStatus.Unknown)
         private set
     var linkSentTo: String? by mutableStateOf(null)
         private set
 
-    val api = WindmillApi(baseUrl, sessions::read, client)
+    val api = WindmillApi(baseUrl, sessions::read, client, telemetry)
     val localSession: LocalSession get() = sessions.localSession
     private var generation = 0L
     var identityRevision by mutableStateOf(0L)
@@ -46,7 +48,7 @@ class AuthStore(
         return WindmillApi(baseUrl, credential = {
             val local = sessions.localSession
             if (user != null && local is LocalSession.Owned && local.user.id == user.id && sessions.read() == secret) secret else null
-        }, client = client)
+        }, client = client, telemetry = telemetry)
     }
 
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
@@ -54,6 +56,9 @@ class AuthStore(
         val attempt = generation
         if (sessions.read() == null) {
             status = if (sessions.localSession == LocalSession.Absent) AuthStatus.SignedOut else AuthStatus.Unresolved(sessions.localSession.user)
+            telemetry.identity(status.user?.id)
+            telemetry.event("auth_restore", mapOf("outcome" to if (status == AuthStatus.SignedOut) "signed_out" else "unresolved"))
+            if (status is AuthStatus.Unresolved) telemetry.failure("auth_local_identity", IllegalStateException("Saved account unavailable"))
             return
         }
         try {
@@ -61,12 +66,15 @@ class AuthStore(
             if (attempt != generation) return
             sessions.remember(user)
             status = AuthStatus.SignedIn(user)
+            telemetry.identity(user.id)
+            telemetry.event("auth_restore", mapOf("outcome" to "verified"))
         } catch (unanswered: WindmillApiException) {
             if (attempt != generation) return
             if (unanswered.isUnauthorized) {
                 sessions.clear()
                 identityRevision += 1
                 status = AuthStatus.SignedOut
+                telemetry.identity(null)
             } else {
                 status = when (val local = sessions.localSession) {
                     LocalSession.Absent -> AuthStatus.SignedOut
@@ -74,9 +82,11 @@ class AuthStore(
                     is LocalSession.Unresolved -> AuthStatus.Unresolved(local.user)
                 }
             }
+            telemetry.event("auth_restore", mapOf("outcome" to if (unanswered.isUnauthorized) "expired" else "unverified"))
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            telemetry.failure("auth_restore", failure)
             if (attempt == generation) status = AuthStatus.Unresolved(sessions.user())
         }
     }
@@ -90,14 +100,17 @@ class AuthStore(
 
     // `door: "app"` makes the mail carry a 6-digit code rather than a link.
     suspend fun requestLink(email: String) {
+        telemetry.event("auth_code_requested")
         val attempt = generation
         val address = email.trim()
         api.send<Unit>("POST", "/v1/auth/magic-link", MagicLinkRequest(address, door = "app"))
         if (attempt != generation) throw CancellationException("Authentication changed.")
         linkSentTo = address
+        telemetry.event("auth_code_sent")
     }
 
     suspend fun completeCode(email: String, code: String, beforeCommit: (User) -> Unit = {}) {
+        telemetry.event("auth_sign_in_started", mapOf("method" to "code"))
         val attempt = ++generation
         val answer = api.sendCapturingSession<UserResponse>(
             "POST", "/v1/auth/verify-code", CodeRequest(email.trim(), code.trim()))
@@ -110,6 +123,7 @@ class AuthStore(
 
     // Accepts either the whole magic-link URL or the bare token.
     suspend fun completeLink(pasted: String, beforeCommit: (User) -> Unit = {}) {
+        telemetry.event("auth_sign_in_started", mapOf("method" to "link"))
         val attempt = ++generation
         val token = MagicLink.token(pasted) ?: throw MagicLink.unreadable
         val answer = api.sendCapturingSession<UserResponse>("POST", "/v1/auth/verify", TokenRequest(token))
@@ -132,6 +146,8 @@ class AuthStore(
         identityRevision += 1
         linkSentTo = null
         status = AuthStatus.SignedIn(answer.reply.user)
+        telemetry.identity(answer.reply.user.id)
+        telemetry.event("auth_signed_in")
     }
 
     suspend fun signOut() {
@@ -146,6 +162,8 @@ class AuthStore(
         identityRevision += 1
         linkSentTo = null
         status = AuthStatus.SignedOut
+        telemetry.identity(null)
+        telemetry.event("auth_signed_out")
     }
 }
 
@@ -217,9 +235,10 @@ interface SessionStore {
 class PrefsSessions(
     private val prefs: KeptValues,
     private val vault: SecretVault = SecretVault.onThisDevice(),
+    private val telemetry: Telemetry = Telemetry.None,
 ) : SessionStore {
-    constructor(context: Context, vault: SecretVault = SecretVault.onThisDevice()) :
-        this(SharedPrefsValues(context), vault)
+    constructor(context: Context, vault: SecretVault? = null, telemetry: Telemetry = Telemetry.None) :
+        this(SharedPrefsValues(context), vault ?: SecretVault.onThisDevice(telemetry), telemetry)
 
     private var unavailable = false
 
@@ -228,7 +247,7 @@ class PrefsSessions(
         if (prefs.read(bundleKey) != null) return saved()?.let { LocalSession.Owned(it.user) } ?: LocalSession.Unresolved()
         val present = listOf(secretKey, secretKey + sealed, userKey, userKey + sealed).any { prefs.read(it) != null }
         val known = (prefs.read(userKey) ?: prefs.read(userKey + sealed)?.let(vault::open))
-            ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
+            ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.onFailure { telemetry.failure("session_user_decode", it) }.getOrNull() }
         return if (present) LocalSession.Unresolved(known) else LocalSession.Absent
     }
 
@@ -239,7 +258,7 @@ class PrefsSessions(
     }
 
     private fun saved(): SavedSession? = prefs.read(bundleKey)?.let { encoded ->
-        vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }.getOrNull() }
+        vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }.onFailure { telemetry.failure("session_decode", it) }.getOrNull() }
     }
 
     override fun commit(secret: String, user: User) {
@@ -257,7 +276,7 @@ class PrefsSessions(
     }
 
     override fun user(): User? = if (unavailable) null else if (prefs.read(bundleKey) != null) saved()?.user else kept(userKey)
-        ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
+        ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.onFailure { telemetry.failure("session_user_decode", it) }.getOrNull() }
 
     override fun remember(user: User) {
         val secret = read()
@@ -278,7 +297,7 @@ class PrefsSessions(
 
     private fun kept(key: String): String? {
         prefs.read(key)?.let { fromBefore ->
-            try { seal(key, fromBefore) } catch (_: Exception) { return null }
+            try { seal(key, fromBefore) } catch (failure: Exception) { telemetry.failure("session_migrate", failure); return null }
             return fromBefore
         }
         return prefs.read(key + sealed)?.let { vault.open(it) }

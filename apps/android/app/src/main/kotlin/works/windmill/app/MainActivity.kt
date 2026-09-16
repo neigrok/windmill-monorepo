@@ -46,6 +46,7 @@ import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillMaterial
 import works.windmill.platform.you.YouSheet
+import works.windmill.platform.telemetry.LocalTelemetry
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +73,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        (application as WindmillApplication).telemetry.event("app_foregrounded")
         (application as WindmillApplication).workoutNotifications.refreshCapabilities()
+    }
+
+    override fun onStop() {
+        (application as WindmillApplication).telemetry.event("app_backgrounded")
+        super.onStop()
     }
 
     private fun route(intent: Intent) {
@@ -131,13 +138,14 @@ private fun Root(runtime: WindmillApplication) {
     val account = Account(accountApi, standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
         resolved = standing != AuthStatus.Unknown && standing !is AuthStatus.Unresolved,
-        locallyTrusted = auth.localSession !is works.windmill.platform.auth.LocalSession.Unresolved, identityRevision = auth.identityRevision)
+        locallyTrusted = auth.localSession !is works.windmill.platform.auth.LocalSession.Unresolved, identityRevision = auth.identityRevision,
+        telemetry = runtime.telemetry)
 
     // WindmillMaterial wraps everything Material draws; the room's Skin wraps the room AND the
     // shell's sheet, so the sheet borrows the hosting room's colours — in gym the brand's gold
     // would read as a personal record. When roadmap and journal mount, each brings its own Skin
     // and the same door takes it.
-    CompositionLocalProvider(LocalShellActions provides shell) {
+    CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides runtime.telemetry) {
         WindmillMaterial {
             gym.Skin {
                 Box {

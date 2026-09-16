@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.storage.AtomicDocument
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -12,7 +13,7 @@ import works.windmill.gym.domain.ClaimKind
 import works.windmill.gym.domain.ClaimSource
 import works.windmill.gym.domain.GymPreferences
 
-class LocalPreferences(private val file: File) {
+class LocalPreferences(private val file: File, telemetry: Telemetry = Telemetry.None) {
     companion object { const val fileName = "windmill-gym-preferences.json" }
 
     @Serializable
@@ -21,6 +22,7 @@ class LocalPreferences(private val file: File) {
     @Serializable
     private data class Held(val shelves: Map<String, Shelf> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.anonymous
     private val revisions = mutableMapOf<String, Long>()
@@ -31,7 +33,7 @@ class LocalPreferences(private val file: File) {
     val owed: Boolean get() = mine.owed
 
     private fun open(): Held {
-        val node = StoredDocument.tree(file) ?: return Held()
+        val node = storage.tree() ?: return Held()
         if (node["shelves"] is JsonObject || node["claims"] != null) return diskJson.decodeFromJsonElement(Held.serializer(), node)
         val owner = node["owner"]?.jsonPrimitive?.contentOrNull
         val shelf = diskJson.decodeFromJsonElement(Shelf.serializer(), node)

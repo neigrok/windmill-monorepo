@@ -387,6 +387,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/paddle/PaddleSignatureTest.cpp
     test/platform/adapters/paddle/BillingApiTest.cpp
     test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp
+    test/platform/adapters/amplitude/AmplitudeClientTest.cpp
     test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
     test/platform/adapters/postgres/PgPoolTest.cpp
     test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
