@@ -89,10 +89,11 @@ If both telemetry destinations are unreachable, local persistence cannot itself 
 
 ## Verification and structural observations
 
-Run the shared boundary and local collector tests with:
+Run the release-tool suite, shared boundary and local collector tests with:
 
 ```sh
 cd apps/android
+python3 -m unittest discover -s tools/tests -v
 ./gradlew :platform:testDebugUnitTest
 ```
 
@@ -102,6 +103,11 @@ release/environment attribution, repeated singleton errors, persisted event IDs 
 latency. `EventQueueTest` checks retry identity, restart recovery, account isolation and storage and
 delivery failure reporting. HTTP tests distinguish server/malformed failures, expected refusals and
 timeouts. The gym suite checks product outcomes and handled-error ownership.
+
+The 18 release-tool tests cover signing custody, provenance, private build logs and missing telemetry
+configuration. Release configuration checks cover both the Gradle DSN gate and the signing-input
+workflow: missing or invalid DSNs fail Gradle validation, and the workflow refuses a missing DSN
+before starting the build while keeping private signing configuration out of CI.
 
 The shared boundary keeps vendor APIs out of product code and makes missed outcomes testable with a
 recording `Telemetry`. A remaining performance consideration is the small synchronous preference

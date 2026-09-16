@@ -1,20 +1,23 @@
-# Windmill Gym for Android 0.8.0
+# Windmill Gym for Android 0.8.2
 
-The Android app now follows the refined Gym designs across Routines, training, Log and Coach.
+This update adds Sentry reporting for Android crashes, ANRs and handled failures, plus app, account, Coach and training events sent through Windmill to Amplitude.
 
-- Create movements from a routine or a workout. Build per-set targets, fill a progression, reorder movements and keep drafts when a save is refused.
-- Log planned or free workouts with editable numbers, an elapsed rest clock, independent Undo and recovery for sets saved offline.
-- Read saved workout receipts, correct sets, explore movement records and bodyweight, and save a workout as a routine.
-- Use Coach conversations, saved read details, Notes and explicit proposal decisions. Account changes preserve ownership of local training.
-- Use the native workout notification to return to the logger and log the current set after unlocking. Dismissal stays respected; optional rest alerts use Android's notification controls.
-- Switch between Daylight and Night, use larger text and native navigation/accessibility controls. Kind controls and set-confirmation sound or vibration are removed; historical classification remains intact.
+- Errors identify the app build, operation and failure category. Coach timeouts are distinct from offline failures, with a longer bounded request budget.
+- Product events cover screen use, Coach attempts and outcomes, workout starts/finishes, logged sets, routine saves and proposal decisions. Events queue on the device and retain stable IDs across retries.
+- Unexpected Coach worker and telemetry delivery failures create Sentry Issues on the backend. Temporary Amplitude failures are retried.
+- Telemetry excludes conversation text, training values, email addresses, credentials and response bodies. The privacy notice names the diagnostic and analytics processors.
 
-This release also consolidates the application-owned workout runtime, atomic local storage, shared Coach presentation, receipt data and unused UI controls. Rest alerts depend on system notification and exact-alarm access; Android can suppress them, and a process failure can lose an alert. Training remains saved independently of the alert.
+The reported customer incident could not be reconstructed without incident details. This update adds instrumentation for future failures; it cannot recover telemetry from earlier versions.
+
+Validation includes both Android test variants, live API round trips, the real Sentry SDK against a local HTTP collector, and backend delivery tests against local HTTPS collectors. Delivery remains bounded best effort; an app update is required to enable the new client instrumentation.
 
 ## Installing over an older APK
 
-This release starts using a retained release signing identity. Earlier published APKs used different debug certificates, so Android cannot install this release over those installations.
+Version 0.8.2 uses the same retained signing identity as 0.8.0 and supports Android’s normal in-place
+update. Keep the app installed and install the new APK over it to preserve local training.
 
-Keep the old installation until every record you need is verified from another signed-in Windmill surface. Use the sync and ownership controls available in that version. If you cannot verify the records elsewhere, keep the old installation and do not uninstall it. Uninstalling an Android app removes its local data, including unclaimed or unsynced training; this release does not migrate that data across a certificate change.
-
-Future APKs signed with this retained identity can use Android's normal update path. The release includes its SHA-256 and provenance, with public certificate SHA-256 `e911c90024117df99a2852a0d7820889e3d8a399506a8557148af7171c63e2bb`. Private signing material stays on the release machine.
+APKs signed with older, different certificates cannot update in place. Keep the old installation
+until every record you need is verified from another signed-in Windmill surface. If you cannot
+verify those records elsewhere, keep the old installation and do not uninstall it: uninstalling
+removes local data, including unclaimed or unsynced training. This release does not migrate data
+across a certificate change.
