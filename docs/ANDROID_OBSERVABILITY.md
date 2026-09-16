@@ -109,6 +109,27 @@ configuration. Release configuration checks cover both the Gradle DSN gate and t
 workflow: missing or invalid DSNs fail Gradle validation, and the workflow refuses a missing DSN
 before starting the build while keeping private signing configuration out of CI.
 
+Native acceptance passed for the published
+[0.8.2 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.2) (version code 76, source
+`70447953e7797a397c198439bdb66873aabe00bc`). It updated in place over 0.8.0 on API 37;
+`firstInstallTime` remained `2026-09-14 12:26:15`. Cold startup and a controlled fatal crash followed
+by restart passed. The published APK has SHA-256
+`ebc9005e22bf0cf9017f4bad3171fb3d65f668b76a5a0886a803b829d240a688`.
+
+[Sentry issue BACKEND-5](https://none-gcb.sentry.io/issues/147501864/) confirms native fatal-event receipt.
+An accepted event reports Android 14, release `android-0.8.2-70447953e779`, environment `production` and
+distribution `76`, with exception type and stack retained. The
+[Amplitude native profile](https://app.amplitude.com/analytics/windmill/project/597958/search/amplitude_id%3D1715052031188/activity)
+records native behavioral events, including queued events from before the crash and reboot, with
+`app_version=0.8.2`, `build=76`, `platform=android`, `environment=production` and
+`release=android-0.8.2-70447953e779`.
+
+API 37 had broken DNS during acceptance, so its delivery used a temporary localhost CONNECT proxy
+that preserved TLS. Proxy settings were restored and the proxy was stopped. A separate fresh API 34
+emulator with direct DNS and network access also produced a native fatal event; that temporary
+emulator was stopped. These checks establish native vendor receipt for the tested paths. They do
+not establish offline fatal-event persistence or delivery of every exception.
+
 The shared boundary keeps vendor APIs out of product code and makes missed outcomes testable with a
 recording `Telemetry`. A remaining performance consideration is the small synchronous preference
 commit made for every queued event. Native end-to-end acceptance and a live vendor receipt remain

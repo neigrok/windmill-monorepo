@@ -196,7 +196,7 @@ versioned `workflow_dispatch` also produces an unpublished signing-input artifac
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
 configuration. `versionCode` equals the workflow run number and must exceed the published
-`android-v0.8.0` version code 72.
+[`android-v0.8.2`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.2) version code 76.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
