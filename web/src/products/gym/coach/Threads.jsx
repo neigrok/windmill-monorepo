@@ -2,19 +2,35 @@ import React, { useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
-import { COACH_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
+import { COACH_HREF, proposalHref, THREADS_HREF, threadHref } from '../log.js';
 import { changeLabel, isPending, receiptLine, stateChip, STILL_WAITING } from '../proposals.js';
 import { ProposalReview } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
+import { CoachRoom } from './CoachRoom.jsx';
+import { forgetCoachDraft } from './useCoachConversation.js';
 import {
-  askedLabel, conversationsLine, DELETE_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
+  askedLabel, DELETE_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
   THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure,
   THREADS_FAILED, THREADS_TITLE,
 } from './threads.js';
 
-export function ThreadsList({ log }) {
-  const view = useGymRead(() => gymApi.threads(), []);
+export function ThreadsList({ log, accountId }) {
+  const view = useGymRead(() => gymApi.threads({ limit: 50 }), []);
+  const [pages, setPages] = useState([]);
+  const [more, setMore] = useState({ busy: false, note: '' });
+  const nextCursor = pages.length ? pages[pages.length - 1].nextCursor : view.data?.nextCursor;
+  const loadMore = async () => {
+    if (!nextCursor || more.busy) return;
+    setMore({ busy: true, note: '' });
+    try {
+      const page = await gymApi.threads({ limit: 50, cursor: nextCursor });
+      setPages((held) => [...held, page]);
+      setMore({ busy: false, note: '' });
+    } catch {
+      setMore({ busy: false, note: 'Earlier conversations didn’t load. Try again.' });
+    }
+  };
 
   // A conversation the window is holding is off this list for the length of its window — the room's
   // transient is the only place it still exists, and the only way back — and off it for good once
@@ -39,7 +55,8 @@ export function ThreadsList({ log }) {
   }
 
   // The read, answered TWICE: the account's conversations, and the rows the window leaves.
-  const conversations = (view.data ?? []).filter((thread) => !settled.has(thread.id));
+  const unique = new Map([...(view.data?.threads ?? []), ...pages.flatMap((page) => page.threads)].map((thread) => [thread.id, thread]));
+  const conversations = [...unique.values()].filter((thread) => !settled.has(thread.id));
   const threads = conversations.filter((thread) => !withheld.has(thread.id));
 
   return (
@@ -47,8 +64,6 @@ export function ThreadsList({ log }) {
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-threads-head">
         <h1 className="gym-title">{THREADS_TITLE}</h1>
-        {/* The rows', not the account's: it counts the list under it, and gates nothing. */}
-        {threads.length > 0 && <p className="gym-threads-count">{conversationsLine(threads.length)}</p>}
       </header>
 
       {/* Off the ACCOUNT: an account holding one conversation the window has taken off the list is
@@ -64,7 +79,11 @@ export function ThreadsList({ log }) {
         </section>
       ))}
 
-      <a className="gym-threads-new" href={COACH_HREF}>{NEW_THREAD_VERB}</a>
+      {more.note && <p className="gym-coach-note" role="status">{more.note}</p>}
+      {nextCursor && <button type="button" className="gym-coach-older" disabled={more.busy} onClick={loadMore}>
+        {more.busy ? 'Loading…' : 'Earlier conversations'}
+      </button>}
+      <a className="gym-threads-new" href={COACH_HREF} onClick={() => forgetCoachDraft(accountId)}>{NEW_THREAD_VERB}</a>
     </section>
   );
 }
@@ -85,8 +104,8 @@ function ThreadRow({ thread }) {
   );
 }
 
-export function ThreadDetail({ id, log }) {
-  const view = useGymRead(() => gymApi.thread(id), [id]);
+export function ThreadDetail({ id, log, accountId }) {
+  const view = useGymRead(() => gymApi.thread(id, { limit: 50 }), [id]);
   const [reviewing, setReviewing] = useState(null);
   // Receipts by proposal id, held for this visit only: the thread's stored shape carries no
   // settled-at, so on reopening they are gone and nothing pretends otherwise.
@@ -127,26 +146,11 @@ export function ThreadDetail({ id, log }) {
   const thread = view.data;
   return (
     <section className="gym-thread">
-      <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
-      <header className="gym-thread-head">
-        <h1 className="gym-thread-name">{thread.title}</h1>
-        <Outcome outcome={thread.outcome} />
-      </header>
+      <h2 className="gym-thread-name gym-visually-hidden">{thread.title}</h2>
 
-      <ol className="gym-coach-thread">
-        {/* `from` is the wire's enum; anything that is not the lifter is drawn as the room's turn. */}
-        {thread.turns?.map((turn, index) => (
-          <li
-            className={turn.from === 'lifter' ? 'gym-coach-turn is-lifter' : 'gym-coach-turn is-coach'}
-            key={`${turn.from}-${index}`}
-          >
-            <p className="gym-coach-text">{turn.text}</p>
-            <p className="gym-thread-said">{whenLabel(turn.at)}</p>
-          </li>
-        ))}
-      </ol>
+      <CoachRoom key={thread.id} log={log} accountId={accountId} initialThread={thread} />
 
-      {thread.proposals?.length > 0 && (
+      {thread.proposals?.length > 0 && !thread.turns?.some((turn) => turn.receipt?.proposals?.length) && (
         <section className="gym-thread-proposals">
           <h2 className="gym-history-head">What it proposed</h2>
           <ul className="gym-history-rows">
@@ -184,23 +188,8 @@ export function ThreadDetail({ id, log }) {
         />
       )}
 
-      <DeleteThread id={thread.id} log={log} />
+      <DeleteThread id={thread.id} log={log} accountId={accountId} />
     </section>
-  );
-}
-
-function Outcome({ outcome }) {
-  const chip = outcomeChip(outcome);
-  const line = outcomeLine(outcome);
-  if (!chip && !line) return null;
-  return (
-    <p className="gym-thread-outcome-line">
-      {chip && <span className={`gym-thread-chip is-${outcome.kind}`}>{chip}</span>}
-      {line && <span className="gym-thread-outcome">{line}</span>}
-      {outcome?.routineId && (
-        <a className="gym-thread-routine-door" href={routineHref(outcome.routineId)}>Open the routine ›</a>
-      )}
-    </p>
   );
 }
 
@@ -212,14 +201,14 @@ function Outcome({ outcome }) {
 //
 // What the delete leaves behind rides the window as its `detail`, so it is read at the moment of the
 // act rather than standing over the button on every visit.
-function DeleteThread({ id, log }) {
+function DeleteThread({ id, log, accountId }) {
   const remove = () => {
     log.withhold({
       kind: 'thread',
       id,
       line: THREAD_DELETED,
       detail: THREAD_DELETE_DETAIL,
-      send: () => gymApi.deleteThread(id),
+      send: async () => { await gymApi.deleteThread(id); forgetCoachDraft(accountId, id); },
       refused: (error) => log.say(threadDeleteFailure(error)),
     });
     window.location.hash = THREADS_HREF;

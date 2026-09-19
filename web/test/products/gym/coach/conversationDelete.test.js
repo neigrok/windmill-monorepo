@@ -40,7 +40,7 @@ function threadsOnTheWire({ deleteStatus = 204 } = {}) {
   const wire = [];
   const deleted = new Set();
   global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const path = url.slice(`${API_BASE}/v1/gym`.length).split('?')[0];
     const method = options.method ?? 'GET';
     wire.push(`${method} ${path}`);
     if (path === '/threads') {
@@ -177,7 +177,7 @@ test('the row is off the list at once, and the window runs the full nine seconds
   await settle();
 
   assert.deepEqual(titles(room.list()), ['Heavier bench?', 'More rows?'], 'the row left the list at once');
-  assert.equal(textOf(findByClass(room.list(), 'gym-threads-count')[0]), '2 conversations · yours to delete');
+  assert.equal(findByClass(room.list(), 'gym-threads-count').length, 0);
 
   t.mock.timers.tick(UNDO_MS - 1);
   await settle();

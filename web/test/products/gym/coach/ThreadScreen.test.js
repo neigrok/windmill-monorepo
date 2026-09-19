@@ -29,7 +29,7 @@ function thread(over = {}) {
 
 function threadOnTheWire(stored) {
   global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
+    const path = url.slice(`${API_BASE}/v1/gym`.length).split('?')[0];
     const method = options.method ?? 'GET';
     if (path === '/threads/thr_1' && method === 'GET') return { ok: true, status: 200, json: async () => stored };
     throw new Error(`unexpected ${method} ${path}`);
@@ -70,4 +70,28 @@ test('a settled proposal row reads its state, in the chip’s words', async (t) 
     '2 changes to Push A · applied',
     '1 change to Push A · turned down',
   ]);
+});
+
+test('history pages beyond 200 conversations using the server cursor and retains row identity', async (t) => {
+  browserWith();
+  const all = Array.from({ length: 251 }, (_, index) => ({ id: `thr_${index}`, title: `Question ${index}`, askedAt: 1_755_000_000_000 - index }));
+  const requests = [];
+  global.fetch = async (url) => {
+    const page = new URL(url).searchParams;
+    const cursor = Number(page.get('cursor') ?? 0);
+    requests.push({ limit: page.get('limit'), cursor: page.get('cursor') });
+    const end = cursor + 50;
+    return { ok: true, status: 200, json: async () => ({ threads: all.slice(cursor, end), nextCursor: end < all.length ? String(end) : null }) };
+  };
+  const { ThreadsList } = await loadScreen('products/gym/coach/Threads.jsx');
+  const screen = renderHook(t, () => ThreadsList({ log: roomLog() }));
+  await settle();
+  for (let page = 0; page < 5; page += 1) {
+    await findByClass(screen.tree, 'gym-coach-older')[0].props.onClick();
+  }
+  const { elementsOf } = await import('../harness.mjs');
+  const rows = elementsOf(screen.tree).filter((element) => element.type?.name === 'ThreadRow');
+  assert.deepEqual(rows.map((row) => row.props.thread), all);
+  assert.deepEqual(requests, [null, '50', '100', '150', '200', '250'].map((cursor) => ({ limit: '50', cursor })));
+  assert.equal(findByClass(screen.tree, 'gym-coach-older').length, 0);
 });

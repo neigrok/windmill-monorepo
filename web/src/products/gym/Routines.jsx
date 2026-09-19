@@ -90,8 +90,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
           offered over a program that still has one. Between the two stances the home draws neither. */}
       {view.phase === 'ready' && program.length === 0 && (
         <>
-          <p className="gym-quiet">No routines yet.</p>
-          <p className="gym-quiet">One training day, written down.</p>
+          <p className="gym-quiet">Write your first training day.</p>
           <Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>
         </>
       )}

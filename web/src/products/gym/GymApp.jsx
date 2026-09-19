@@ -96,7 +96,7 @@ function SignInPitch({ onSignIn }) {
 }
 
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
-  const { refresh } = useAuth();
+  const { refresh, account } = useAuth();
   // One instance only: a second doubles the boot read and the poll.
   const log = useTrainingLog({ onSignedOut: refresh });
   const screen = screenOf(hash);
@@ -104,7 +104,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   return (
     <>
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
-      <main className="gym-column">
+      <main className={`gym-column${screen === 'coach' || screen === 'thread' ? ' has-coach' : ''}`}>
         {/* An external link's proposal is the home's to open: its dialog settles into the home's own read. */}
         {tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
         {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
@@ -114,9 +114,9 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill log={log} />}
-        {screen === 'coach' && <CoachRoom log={log} />}
-        {screen === 'threads' && <ThreadsList log={log} />}
-        {screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}
+        {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
+        {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
+        {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
         {screen === 'notes' && <Notes log={log} />}
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}

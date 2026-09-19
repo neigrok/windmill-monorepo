@@ -47,15 +47,8 @@
 //   GET   /v1/gym/shared/:token -> {startedAt, finishedAt?, routine?, sets: [{exercise, setNumber,
 //         weightKg, reps, kind, rpe?, note, completedAt}]}, or null on 404. The one unauthenticated
 //         read; revoked, expired and never-minted answer the same byte.
-//   POST  /v1/gym/ask -> {thread, question} in, the thread id client-minted ('thr_<hex>', a fresh one
-//         opening a conversation); {answer, steps: [{tool, failed}], read: {sets, sessions, weeks},
-//         proposals: [id…], thread} out. `steps` is the tools the model asked for, in call order;
-//         `read` is server-counted and may not be summed or inferred here; `proposals` is the ids
-//         minted during the exchange, in mint order. A bare 404 means no Coach on this
-//         deployment. 429 `ask-daily-limit` and `ask-out-of-budget`; 409 `ask-session-open`,
-//         `ask-thread-taken`, `ask-thread-full` at eight stored turns; 400 for a malformed thread id,
-//         a blank question or one over 1000 bytes. A 502 stored nothing. The `ask-*` codes and the
-//         route are machine tokens and keep their spelling; the room is Coach.
+//   POST /v1/gym/ask accepts {thread, question, requestId}; 202 is a pending generation.
+//   Generation identity, terminal messages, receipts and retry behavior: docs/gym-coach-contract.md.
 //   GET   /v1/gym/notes -> {notes: [{id, position, title, body, updatedAt}]}, position ascending and
 //         contiguous from 0; an account with none is served {notes: []}.
 //   PUT   /v1/gym/notes/:id -> {title, body} in, {note} out; an upsert on the client-minted id
@@ -75,7 +68,7 @@
 //         the store's sentence for a date that is not one, a weight outside 20–400 kg, or a body it
 //         cannot read. Kilograms only, two decimals.
 //   DELETE /v1/gym/bodyweight/:dateLocal -> 204, for a date with no row alike.
-//   GET   /v1/gym/threads -> {threads: [Thread…]}, newest `askedAt` first, at most 200.
+//   GET   /v1/gym/threads?limit=&cursor= -> {threads, nextCursor}, newest activity first.
 //   GET   /v1/gym/threads/:id -> one Thread carrying `turns`, the only read that does, or null on 404.
 //   DELETE /v1/gym/threads/:id -> 204. A proposal it minted keeps `source.door: 'ask'` and loses
 //         `source.thread`.
@@ -108,9 +101,10 @@
 // refusals are 409 `proposal-superseded`, 409 `proposal-settled` and a bare 404.
 // A Thread is {id, title, createdAt, askedAt, outcome, proposals: [head-ish…], turns?}. `title` is the
 // lifter's first message verbatim; no surface may summarise it. `outcome` is server-derived
-// {kind: 'read-only'|'proposed'|'applied'|'dismissed'|'superseded'|'unknown', changes, routineId?, routine?},
+// {kind: 'read-only'|'created'|'proposed'|'applied'|'dismissed'|'superseded'|'unknown', changes, routineId?, routine?},
 // where the routine pair is omitted together when the changes spanned more than one. A `proposals` row
-// is {id, state, changeCount, routineId, routine, createdAt}; a turn is {from: 'lifter'|'ask', text, at}.
+// is {id, state, changeCount, routineId, routine, createdAt}; turns carry position, from, text, at,
+// optional generationId/requestId and immutable receipt/results; assistant status defaults to completed.
 // Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms numbers,
 // weights are kg, and ids are client-minted ('ses_<hex>' / 'set_<hex>' / 'rt_<hex>', 'ex_<hex>' for a
 // lifter's own movement — the catalog's are slugs). A proposal's id ('prop_<hex>') is never minted here.
@@ -129,6 +123,7 @@
 // is omitted when it has no value, never null.
 
 import { API_BASE } from '../../shell/apiBase.js';
+import { readCoachStream } from './coach/stream.js';
 
 const base = `${API_BASE}/v1/gym`;
 
@@ -145,7 +140,7 @@ async function json(response) {
   if (response.status === 204) return null;
   if (response.ok) return response.json();
   const body = await response.json().catch(() => null);
-  throw new GymError(response.status, body?.error ?? '', body?.code ?? '');
+  throw new GymError(response.status, body?.error ?? '', body?.code ?? '', body);
 }
 
 // Recovers the machine code from the sentence, for servers that send only the sentence.
@@ -168,11 +163,13 @@ const codeForSentence = new Map([
 // setNotFound — drop the pending edit and read the session again; proposalSuperseded and
 // proposalSettled — re-read.
 export class GymError extends Error {
-  constructor(status, detail = '', code = '') {
+  constructor(status, detail = '', code = '', body = null) {
     super(detail || `gym request failed: ${status}`);
     this.name = 'GymError';
     this.status = status;
     this.detail = detail;
+    this.generation = body?.generation;
+    this.results = body?.results;
     this.code = code || codeForSentence.get(detail) || '';
     this.terminal = status === 400 || status === 409;
     this.retryable = status >= 500;
@@ -354,16 +351,76 @@ export const gymApi = {
     return json(response);
   },
 
-  async ask(thread, question) {
-    return json(await call('/ask', { method: 'POST', body: JSON.stringify({ thread, question }) }));
+  async ask(thread, question, requestId, { attachmentIds } = {}) {
+    const response = await call('/ask', {
+      method: 'POST', body: JSON.stringify({ thread, question, ...(requestId ? { requestId } : {}), ...(attachmentIds?.length ? { attachmentIds } : {}) }),
+    });
+    const reply = await json(response);
+    return { ...reply, pending: response.status === 202 };
   },
 
-  async threads() {
-    return (await json(await call('/threads'))).threads;
+  async askStream(thread, question, requestId, { attachmentIds, signal, onSnapshot } = {}) {
+    const response = await call('/ask', {
+      method: 'POST', signal,
+      body: JSON.stringify({ thread, question, requestId, stream: true, ...(attachmentIds?.length ? { attachmentIds } : {}) }),
+    });
+    if (!response.ok) return json(response);
+    if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+      const reply = await json(response);
+      return { ...reply, pending: response.status === 202 };
+    }
+    return readCoachStream(response, (snapshot) => {
+      if (snapshot.thread !== thread || snapshot.generation.requestId !== requestId) throw new Error('Response interrupted.');
+      onSnapshot(snapshot);
+    }, (body) => new GymError(body.status ?? 500, body.error ?? 'Response interrupted.', body.code ?? '', body));
   },
 
-  async thread(id) {
-    const response = await call(`/threads/${encodeURIComponent(id)}`);
+  async stopCoach(thread, requestId) {
+    return json(await call(`/threads/${encodeURIComponent(thread)}/generations/${encodeURIComponent(requestId)}/stop`, { method: 'POST' }));
+  },
+
+  async uploadCoachPhoto(thread, id, blob, { signal, onProgress } = {}) {
+    return new Promise((resolve, reject) => {
+      const upload = new XMLHttpRequest();
+      const abort = () => upload.abort();
+      const finish = (run) => { signal?.removeEventListener('abort', abort); run(); };
+      upload.open('PUT', `${base}/threads/${encodeURIComponent(thread)}/attachments/${encodeURIComponent(id)}`);
+      upload.withCredentials = true;
+      upload.setRequestHeader('content-type', blob.type);
+      upload.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total); };
+      upload.onload = () => finish(() => {
+        let body;
+        try { body = JSON.parse(upload.responseText); } catch { reject(new Error('Photo didn’t upload.')); return; }
+        if (upload.status >= 200 && upload.status < 300) {
+          if (body.attachment?.id !== id) { reject(new Error('Photo didn’t upload.')); return; }
+          resolve(body.attachment);
+          return;
+        }
+        reject(new GymError(upload.status, body.error ?? 'Photo didn’t upload.', body.code ?? '', body));
+      });
+      upload.onerror = () => finish(() => reject(new Error('Photo didn’t upload.')));
+      upload.onabort = () => finish(() => reject(new DOMException('Upload canceled.', 'AbortError')));
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) { finish(() => reject(new DOMException('Upload canceled.', 'AbortError'))); return; }
+      upload.send(blob);
+    });
+  },
+
+  async coachPhoto(thread, id, { signal } = {}) {
+    const response = await call(`/threads/${encodeURIComponent(thread)}/attachments/${encodeURIComponent(id)}`, { signal });
+    if (!response.ok) return json(response);
+    return response.blob();
+  },
+
+  async threads(page) {
+    const query = new URLSearchParams(page ?? {});
+    const reply = await json(await call(`/threads${page ? `?${query}` : ''}`));
+    return page ? reply : reply.threads;
+  },
+
+  async thread(id, page) {
+    const query = new URLSearchParams(page ?? {});
+    const response = await call(`/threads/${encodeURIComponent(id)}${page ? `?${query}` : ''}`);
     if (response.status === 404) return null;
     return json(response);
   },
