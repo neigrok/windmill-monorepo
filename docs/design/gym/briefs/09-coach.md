@@ -8,19 +8,16 @@ The room's name matches the paid line, which has always called it the coach.
 
 ## What the name does not buy
 
-**Windmill authors no personality. The lifter may author one for their own instrument.**
+Coach should be friendly and helpful. The user’s exact replacement system-prompt text is pending; this brief does not invent it. Notes remain the lifter’s own instructions.
 
 - **It does not speak first.** No greeting, no daily check-in, no "how did that feel?".
 - **No unread badge, no count, no notification, nothing waiting.** Pinned by
   `../../guidelines/superapp-shell.md`.
-- **No encouragement, no grade, no streak.** One genuine PR still gets one line and no more.
-- **The model proposes, the human applies.** There is no apply tool at any grant level, and this
-  wave does not add one.
+- **No grade or streak.** Keep factual progress distinct from supportive conversation.
+- **Existing routine changes are proposed; the human applies.** Requested routine creation has its own truthful creation receipt. There is no apply tool at any grant level.
 - **It is refused mid-workout.** The room reads a log that is still being written.
 
-The one personality in the room is the lifter's own, written in `10-notes.md`. That creates a trust
-boundary this wave must draw, because it puts two free-text fields on adjacent screens with opposite
-trust: a **set note is a record** and the prompt treats lifter-typed text as data, never instruction;
+The lifter’s Notes are written in `10-notes.md`. The trust boundary distinguishes two fields: a **set note is a record** and the prompt treats lifter-typed text as data, never instruction;
 a **note is directive**, and Coach follows it. The Notes screen says so. The set-note field says
 nothing, because it is a record.
 
@@ -221,19 +218,14 @@ deferred programme (`../BUILD.md`, B12); the boards state the receipt is ephemer
 
 ## The verbs
 
-Three, and **Coach never creates**.
+Coach can create a routine when the lifter requests it. Read relevant goals, constraints and the movement catalog; ask only for materially missing context. Creation carries a stable operation/routine identity and a factual receipt with Open routine. Retry must recover the same result, never create a duplicate. Changes to existing routines retain the current proposal and human Apply path.
 
-| Verb | What the lifter previews |
-|---|---|
-| change a routine | the entry diff — added, removed, retargeted, and kept as a collapsed count |
-| remove a routine | the routine, its movement count, and how many logged sets it keeps |
-| edit a note | the note, before and after, per line |
-
-**Creating belongs to the lifter.** A proposal is anchored to a routine that already exists and to a
-revision it is atomic against; a create has neither, and the domain asserts at compile time that
-bringing a program into being is a *record* rather than an intent. So the first-run path is: the
-lifter taps **New routine**, which mints an empty one, and Coach fills it with an ordinary change
-proposal — previewed as an all-green diff. Nothing in the domain moves.
+| Verb | What the lifter receives |
+| --- | --- |
+| create a routine | A saved routine, truthful creation receipt and Open routine |
+| change a routine | The existing proposal review and human Apply |
+| remove a routine | The existing review including retained logged sets |
+| edit a note | The note, before and after |
 
 **Never proposable, at any grant level, this wave or later:** logging a set, fixing a set, deleting a
 set, finishing a workout, discarding a session, writing a bodyweight.
@@ -262,82 +254,11 @@ no rows says nothing at all rather than "read 0 sets".
 
 ## The limits, said on screen
 
-The daily allowance and the back-to-back limit are stated in the room, never hidden behind a quietly
-weaker answer. **In the room** means on the Coach screen itself, in one line — *"Ten questions a day,
-three back to back."* — not in a paragraph explaining why the cap exists, not only on the board that
-draws the cap being hit, **and not only on the empty state.** A lifter who has asked one question is
-still in the room; putting the promise only where there is nothing to read means it is seen once,
-by someone who has not yet spent any of it, which is the least useful moment of all.
+Limits are contextual. The empty room leads directly to its composer without a standing allowance paragraph. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. A daily allowance, burst limit and account AI ceiling are distinct states. New chat does not reset an account limit and must not be presented as a way around one.
 
-**And it sits immediately above the composer, on every surface.** The composer is where a question is
-spent, so that is where the allowance belongs — the same *moment of consequence* logic that put the
-ceiling on the Add row. Not in the head, which is where the room's standing facts live, and not below
-the composer, which reads as a footnote to the keyboard.
+A retained conversation has no lifetime question cap. History opens that same editable conversation, including after the fifth question. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
-**And it is not drawn under the account's 30-day ceiling — that is the one exception, and it is the
-brand rule rather than a carve-out.** *"Ten questions a day, three back to back."* is a promise about
-the **daily bucket**. Printed above the sentence saying the account has spent thirty days of AI it
-reads as the rule that stopped this question, which it is not — the promise becomes the one lie in
-the room. A fact is drawn in the state where it is true, so the **daily** cap-reached state keeps the
-line above the doors and the **ceiling** variant draws the server's sentence and the doors alone. All
-three surfaces (`coach/CoachRoom.jsx`, `AskScreen.swift`, `ui/AskScreen.kt`), each conditional on the
-refusal's ceiling and not on its words.
-
-**The cap-reached state says what to do next, not the rule again**, and for the daily bucket that is:
-
-> **The next question frees up in a couple of hours.**
-
-True rather than approximate: the allowance is ten a day on a bucket that refills steadily, so a
-question comes back roughly every two and a half hours. It carries the same *connect your own agent*
-door the empty room does, because that is the one path that is not rationed.
-
-**Two refusals reach that state, and the second one is the account's 30-day AI ceiling.** A ceiling
-with a live composer is a dead end that fails the same way on the next question, and the connect
-door is unrationed under either refusal, which is what makes it one state. What is **not** shared is
-the sentence: every surface renders the server's own words where the reply carries them, and the
-local constant is the **wordless fallback, chosen on the refusal's code** — `ask-daily-limit` or
-`ask-out-of-budget` — so a ceiling never borrows the daily line's *couple of hours*. Both fallbacks
-are one string in three files: the daily *The next question frees up in a couple of hours.* and the
-ceiling's *This account has reached its AI ceiling for the last 30 days. Coach will answer again as
-that window rolls on.*, which names the ceiling that stopped the lifter rather than echoing the
-daily line's shape (ledger `4h`, closed 2026-08-31).
-
-**Under the ceiling the connect door is the primary and *Ask something new* sits beneath it.** A new
-conversation there cannot take a question either, so it is a way out of this one rather than a way
-to an answer. The daily variant keeps the other order, and the two are told apart on the **code**
-the refusal arrived with, never on the sentence it printed — the server's own words are what the
-state now says, so the words cannot also be what selects the layout.
-
-**Where the sentence sits is a phone question, and the phones answer it differently.** On both, the
-two doors stand where the composer stood, below the allowance line where it is drawn at all — the
-daily variant — and outside the scroller; the web
-has no unscrollable region at all and draws the whole state in the column's flow. iOS keeps the
-sentence with the doors, and a simulator run says it can afford to: the ceiling variant leaves the
-thread 585pt of 844. **Android reads it at the end of the thread, inside the scroller**, because
-pinned with the doors a 21-word refusal starves the conversation at the largest font scale — a
-refusal that eats the answer it is refusing to add to is worse than one that scrolls — and the
-arrangement it shipped keeps 283.5dp of thread at fontScale 2.0, measured with the real text engine
-on the ceiling variant, where the allowance line is not drawn at all.
-Ledger `4g` holds both halves and the question of whether the phones should agree at all.
-
-Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
-says what to do next rather than restating the rule. A room that drew neither would not have trimmed
-the cap, it would have deleted it.
-
-**There is no clock on the cap-reached state.** It replaces the composer's input and send control for
-the rest of that visit to the room, with the allowance line still drawn above the doors that take
-the composer's place **in the daily variant**, so the promise and the moment it bit stay in one band,
-and it carries an
-*Ask something new* door: the composer returns when the
-lifter opens a new conversation or re-enters the room, and a question sent while still capped meets
-the 429 again. The sentence is never on one screen twice — the exchange's own refusal card is not
-drawn while the state is.
-
-The thread ceiling is **four questions** — the copy says four, because the code counts a question
-and its answer as two turns against a ceiling of eight. The server's 409 sentence is shown verbatim;
-when it arrives without one, every surface falls back to *"This conversation holds four questions.
-Start a new one."* Nothing a lifter reads says eight. Hitting the internal iteration cap is a
-**failure**, not a truncation to be dressed up.
+The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The replacement prompt text remains pending.
 
 ## The two stances, pinned
 
@@ -363,13 +284,13 @@ connected agent reads notes whether or not this Windmill carries Coach.
 
 ## Threads
 
-**The title is the first message, verbatim**, written once. Nothing in this product summarises what a
+**The title is the first text message, verbatim**, written once. An attachment-only first message uses **Photo**, never its filename. Nothing in this product summarises what a
 lifter typed — no auto-title, no folders, no pinning. The outcome chip is derived, never stored.
 The finish receipt's `Share with Coach` is one such first message: it opens a fresh conversation and
 sends *Check my last session.* through the send path a typed question takes, so that sentence is the
 thread's title verbatim and the receipt's caption promises exactly what the title will read
 (`16-the-workout.md`). The lifter's tap sent it, so Coach has still not spoken first.
-Deleting a conversation deletes the conversation and not its consequence: a change that was applied
+History opens a retained conversation with an active composer and the same identity. Copy works for either speaker, including partial text; attachment-only messages offer no empty text copy. Deleting a conversation deletes the conversation and not its consequence: a change that was applied
 still says it came from Coach.
 
 ## Open

@@ -2335,3 +2335,6 @@ Android public-sharing disclosure matches the backend payload in Figma `672:9676
 “Includes set notes and effort.” Public workout dates/name and set facts are shared; account IDs
 and the frozen plan are excluded. Native loopback verification covers a synthetic link's creation,
 copy feedback and revoked404; the final disclosure is readable at320dp/200% text.
+
+
+**Gym feedback · quiet screens and conversation continuity** → implementation and native verification owned by the feedback delivery tasks. [feedback-contract.md](gym/feedback-contract.md) pins 68 dp routine rows/4 dp gaps, readable workout/since-set clocks, contextual Coach chrome, copy, retained-thread continuation, images and streaming. Figma masters and representative Android states are updated. [Android design verification](gym/feedback-verification.md) records inspected native Instrument/Daylight captures, 320/411 dp large-text checks, quiet history outcomes and the bounded surrounding-screen source review; no unresolved layout issue was found in those final captured states. It does not claim the full runtime matrix. Existing optional Android rest-alert preferences/notifications and current human Apply flows remain. The exact replacement prompt is pending.

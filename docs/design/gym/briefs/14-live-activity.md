@@ -53,17 +53,9 @@ prints. Three reasons, and the API constraint is the least of them:
    product would come to nagging. A filling bar says *you are there* without giving an instruction.
 3. **A countdown has a mode to flip**, and a suspended app cannot flip it.
 
-### And the room's rest row changes to match
+### The in-app reading
 
-This would otherwise leave two readings of one clock on one device, which is exactly the drift this
-wave exists to stop.
-
-> **Ruling: the room adopts the count-up reading and keeps the bar.**
-
-Built on all three surfaces: the room's rest row counts up throughout — time since the last set —
-and keeps the bar against the target, with no flip at the target. The optional sound at the target
-still fires: that is the event, and it stays opt-in. All three surfaces read one clock the same way,
-and gym has one sentence about rest instead of two.
+The logger’s two count-up clocks follow [feedback-contract.md](../feedback-contract.md): elapsed workout and elapsed since the latest valid set, falling back to workout start. The logger pair does not draw a target bar. Existing native activity/notification rest-target presentation and optional Android alert behavior are separate, retained contracts.
 
 ## The one button
 

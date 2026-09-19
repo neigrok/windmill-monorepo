@@ -141,11 +141,11 @@ delete in the room is held for, puts the transient's *Undo* beside it, and sends
 clock closes — so no confirmation dialog and no *There is no undoing it.* exist on any surface. A
 question in front of an act that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
 
-## The rest reading counts up
+## The two clock readings
 
-Ruled in `14-live-activity.md` and built on all three surfaces: the room's rest row counts up —
-time since the last set — and keeps the bar against the target; the optional chime at the target
-still fires. One reading of one clock, on the room and on the lock screen alike.
+The logger displays workout elapsed and time since the latest valid set together, counting up. Before any set both use the session start. The compact icon-and-number pair has no visible labels or target bar; spoken names remain. Persisted timestamps, accepted offline sets, deletion/Undo and relaunch semantics are fixed in [feedback-contract.md](../feedback-contract.md).
+
+Existing optional Android rest-alert preferences and notification behavior remain independent of the displayed pair. This UI change introduces no rest feature and removes no existing alert runtime.
 
 ## The set kind gets a control that costs no trip
 
@@ -188,12 +188,7 @@ against `LoggerScreen.kt`, top to bottom:
   other routine, every set) and its menu dials any of those sets. With no history **nothing is
   drawn** — no chip, no row, no reserved height. A read that missed draws a disabled chip reading
   *didn’t load*, because a failed read must never draw as no history.
-- **The rest is two numerals and a ring, and it still says the old words.** From the first landed
-  set of a movement: the time since, counting up, beside a ring filling toward the target and the
-  target's numeral — a check at overrun. The row is one node whose description keeps the bytes the
-  label used to draw, `resting · target 1:30 · from the routine  ·  0:03`, and tapping it clears the
-  rest. When the routine's own rest is in force the caption *from the routine* is drawn under the
-  clocks and hidden from the reader, which the merged node already told.
+- **Two elapsed readings.** A quiet clock/stopwatch pair follows movement identity. Workout time runs from session start; since-set runs from the latest valid session-wide set or start. No target card or rest caption is drawn. Accessible names carry the meaning without live-announcing every tick.
 - **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
   keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs. This is the only
   prose on the screen, and it exists only while something is wrong.

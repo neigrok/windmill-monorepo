@@ -14,7 +14,7 @@ the wider native behavior audit remain assigned to later delivery waves.
 
 ## Screen library
 
-The library contains 90 phone screens and states in eight named sections. Routines, Log and Coach
+The base library contains 90 phone screens and states in eight named sections; the feedback section adds eight representative interaction/theme specimens. Routines, Log and Coach
 are together at the top; Create movement has its own section immediately below.
 
 | Section | States | Coverage |
@@ -87,8 +87,7 @@ example contains four sets of eight at 60, 60, 57.5 and 55 kg: 1,860 kg in total
 - Routine deletion has a nine-second Undo. Multiple deletions retain independent Undo windows;
   another deletion does not settle the first. A visible More menu and Duplicate are design proposals.
 - Coach starts quietly with an empty composer. Sharing the complete receipt sends one line,
-  “Check my last session.”, and opens the corresponding answer. History opens a read-only past
-  conversation. Notes disclose that any connected agent can read them; limits are ten notes,
+  “Check my last session.”, and opens the corresponding answer. History opens the same retained conversation with an active composer. Notes disclose that any connected agent can read them; limits are ten notes,
   60 code points per title and 500 UTF-8 bytes per body.
 - Review displays all four proposed changes before Apply. Applied and turned-down states have
   matching readbacks. The specifications cover availability, allowance, pending replies, notes
