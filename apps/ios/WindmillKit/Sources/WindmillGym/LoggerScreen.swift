@@ -60,9 +60,11 @@ struct LoggerScreen: View {
                         onDismiss: { store.clearRefusals() })
 
             if store.exerciseId == nil {
+                clocks
                 assembling
             } else {
                 movementHead
+                clocks
                 Spacer(minLength: 0)
                 slotColumn
                 value
@@ -100,17 +102,16 @@ struct LoggerScreen: View {
     // MARK: - the session
 
     private var header: some View {
+        Text(store.session.map(Readout.routine) ?? Readout.noRoutine)
+            .font(WindmillFont.body(15, .semibold))
+            .foregroundStyle(skin.ink)
+            .lineLimit(1)
+    }
+
+    private var clocks: some View {
         TimelineView(.periodic(from: .now, by: 1)) { beat in
-            HStack(spacing: WindmillSpace.x3) {
-                Circle().fill(skin.accent).frame(width: 8, height: 8)
-                Text(store.session.map(Readout.routine) ?? Readout.noRoutine)
-                    .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(skin.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(Readout.clock(stamp(beat.date) - (store.session?.startedAtMs ?? 0)))
-                    .font(GymType.numeral(14))
-                    .foregroundStyle(skin.inkDim)
+            if let session = store.session {
+                WorkoutClockPair(clocks: WorkoutClocks(session: session, sets: store.sets, nowMs: stamp(beat.date)))
             }
         }
     }
@@ -696,5 +697,39 @@ struct RefusalRows: View {
         case .claim(let claim):
             return "“\(claim.name)” couldn’t be claimed"
         }
+    }
+}
+
+struct WorkoutClockPair: View {
+    let clocks: WorkoutClocks
+    @Environment(\.gymSkin) private var skin
+    @ScaledMetric(relativeTo: .subheadline) private var fontSize = 14.0
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { workout; sinceSet }
+            VStack(alignment: .leading, spacing: 6) { workout; sinceSet }
+        }
+        .foregroundStyle(skin.inkDim)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var workout: some View {
+        metric("clock", value: clocks.workoutMs, label: "Workout time")
+    }
+
+    private var sinceSet: some View {
+        metric("stopwatch", value: clocks.sinceSetMs, label: clocks.hasSet ? "Since last set" : "Since start")
+    }
+
+    private func metric(_ symbol: String, value: Int64, label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 16)).accessibilityHidden(true)
+            Text(WorkoutClocks.text(value)).font(.system(size: fontSize, design: .monospaced))
+                .monospacedDigit().fixedSize()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(WorkoutClocks.spoken(value))
     }
 }

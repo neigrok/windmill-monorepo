@@ -46,7 +46,7 @@ public protocol TrainingSyncing {
     func deleteBodyweight(on dateLocal: String) async throws
 }
 
-public struct GymApi: TrainingSyncing {
+public struct GymApi: TrainingSyncing, CoachServing {
     private let api: WindmillApi
 
     public init(api: WindmillApi) {
@@ -233,22 +233,19 @@ public struct GymApi: TrainingSyncing {
         try await api.send("DELETE", "/v1/gym/bodyweight/\(dateLocal)")
     }
 
-    // The server keeps the conversation, so this sends the question and its thread id and never a
-    // turns array: a fresh id opens a conversation, a known one continues it.
-    public func ask(_ question: String, in threadId: String) async throws -> AskAnswer {
-        try await api.send("POST", "/v1/gym/ask",
-                           body: AskRequest(thread: threadId, question: question), as: AskAnswer.self)
+    public func threadPage(cursor: String? = nil) async throws -> CoachThreadPage {
+        var query = URLComponents()
+        query.queryItems = [URLQueryItem(name: "limit", value: "50")]
+        if let cursor { query.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await api.get("/v1/gym/threads?\(query.percentEncodedQuery ?? "")", as: CoachThreadPage.self)
     }
 
-    // Newest-asked first. The server serves at most one page and sends no total, so nothing here
-    // can count the account.
-    public func threads() async throws -> [AskThread] {
-        try await api.get("/v1/gym/threads", as: ThreadList.self).threads
-    }
-
-    public func thread(_ id: String) async throws -> AskThread? {
+    public func thread(_ id: String, before: String? = nil) async throws -> AskThread? {
+        var query = URLComponents()
+        query.queryItems = [URLQueryItem(name: "limit", value: "50")]
+        if let before { query.queryItems?.append(URLQueryItem(name: "before", value: before)) }
         do {
-            return try await api.get("/v1/gym/threads/\(id)", as: AskThread.self)
+            return try await api.get("/v1/gym/threads/\(id)?\(query.percentEncodedQuery ?? "")", as: AskThread.self)
         } catch let error as WindmillApiError {
             if case .refused(404, _) = error { return nil }
             throw error
@@ -289,8 +286,6 @@ public struct GymApi: TrainingSyncing {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
     }
 
-    private struct AskRequest: Encodable { let thread: String; let question: String }
-    private struct ThreadList: Decodable { let threads: [AskThread] }
     private struct NoteList: Decodable { let notes: [Note] }
     private struct SavedNote: Decodable { let note: Note }
     private struct NoteOrder: Encodable { let order: [String] }
@@ -302,4 +297,51 @@ public struct GymApi: TrainingSyncing {
     private struct Settled: Decodable { let proposal: Proposal }
     private struct BodyweightSeries: Decodable { let entries: [BodyweightEntry] }
     private struct StoredBodyweight: Decodable { let entry: BodyweightEntry }
+}
+
+extension GymApi {
+    func streamCoach(_ request: CoachRequest,
+                     receive: @escaping @MainActor (CoachGeneration) throws -> Void) async throws -> CoachGeneration {
+        struct StreamIn: Encodable {
+            let thread: String
+            let question: String
+            let requestId: String
+            let attachmentIds: [String]?
+            let stream = true
+        }
+        let body = StreamIn(thread: request.thread, question: request.question, requestId: request.requestId,
+                            attachmentIds: request.attachmentIds)
+        var parser = CoachStreamParser()
+        let lines = try api.lines("POST", "/v1/gym/ask", body: body, accept: "text/event-stream")
+        for try await line in lines {
+            guard let event = try parser.consume(line) else { continue }
+            switch event {
+            case .snapshot(let thread, let generation):
+                guard thread == request.thread, generation.requestId == request.requestId else { throw WindmillApiError.malformed }
+                try await receive(generation)
+                if generation.terminal { return generation }
+            case .refusal(let why, let generation):
+                if let generation, generation.requestId == request.requestId { try await receive(generation) }
+                throw why
+            }
+        }
+        throw WindmillApiError.offline
+    }
+
+    func stopCoach(_ request: CoachRequest) async throws -> CoachGeneration {
+        try await api.send("POST", "/v1/gym/threads/\(request.thread)/generations/\(request.requestId)/stop",
+                           as: CoachResponse.self).generation
+    }
+
+    func uploadCoachPhoto(_ photo: CoachPhotoDraft, data: Data, thread: String,
+                          progress: @escaping @Sendable (Double) -> Void) async throws -> CoachAttachment {
+        struct PhotoOut: Decodable { let attachment: CoachAttachment }
+        let body = try await api.data("PUT", "/v1/gym/threads/\(thread)/attachments/\(photo.id)", body: data,
+                                      contentType: photo.mediaType, accept: "application/json", progress: progress)
+        return try JSONDecoder().decode(PhotoOut.self, from: body).attachment
+    }
+
+    func coachPhoto(_ id: String, thread: String) async throws -> Data {
+        try await api.data("GET", "/v1/gym/threads/\(thread)/attachments/\(id)", accept: "image/jpeg, image/png")
+    }
 }

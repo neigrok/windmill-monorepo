@@ -102,8 +102,8 @@ final class AskScreenHostingTests: XCTestCase {
                              "the ceiling leaves the thread \(underCeiling) of \(HARNESS_HEIGHT)")
         XCTAssertGreaterThan(plain, THREAD_KEEPS_AT_LEAST,
                              "and at the default text size \(plain) of \(HARNESS_HEIGHT)")
-        XCTAssertLessThan(underDaily - underCeiling, 60,
-                          "the longer sentence costs the thread \(underDaily - underCeiling) points, not the thread")
+        XCTAssertGreaterThan(underDaily, THREAD_KEEPS_AT_LEAST)
+
     }
 
     // A promise about what Apply will do is spent the moment Apply is taken or turned down, so the

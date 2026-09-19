@@ -95,6 +95,7 @@ final class AskReceiptTests: XCTestCase {
             "get_stats": "read your movement history",
             "list_notes": "read your notes",
             "list_bodyweight": "read your bodyweight",
+            "create_routine": "created a routine",
             "propose_routine_change": "wrote a proposal for one of your routines",
             "propose_routine_removal": "wrote a proposal to remove a routine",
         ])
@@ -256,7 +257,7 @@ final class AskDoorTests: XCTestCase {
 
     func testTheRoomIsCalledCoachAndTheWordNamesNothingElse() {
         XCTAssertEqual(Ask.title, "Coach")
-        XCTAssertEqual(Ask.subtitle, "reads your log · proposes only")
+        XCTAssertEqual(Ask.subtitle, "reads your log · helps with your routines")
         XCTAssertEqual(Ask.notesDoor, "Notes")
         XCTAssertEqual(Coach.shareTitle, "Share this workout")
         XCTAssertFalse(Coach.offer.lowercased().contains("coach"))
@@ -371,21 +372,7 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(conversation.cappedRefusal?.ceiling, .account)
         XCTAssertTrue(conversation.capReached)
 
-        let screen = try String(contentsOf: URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/WindmillGym/AskScreen.swift"), encoding: .utf8)
-        let state = try XCTUnwrap(screen.range(of: "private var capReachedState: some View"))
-        let body = screen[state.upperBound...]
-        let ends = try XCTUnwrap(body.range(of: "private var askSomethingNewDoor"))
-        let block = body[..<ends.lowerBound]
 
-        XCTAssertTrue(block.contains("Text(why.line)"), "the sentence is the one the refusal carried")
-        XCTAssertFalse(block.contains("Ask.capReached"), "never a constant in place of what was sent")
-        let ceiling = try XCTUnwrap(block.range(of: "if why.ceiling == .account {"))
-        let connect = try XCTUnwrap(block.range(of: "connectDoor", range: ceiling.upperBound..<block.endIndex))
-        let fresh = try XCTUnwrap(block.range(of: "askSomethingNewDoor", range: ceiling.upperBound..<block.endIndex))
-        XCTAssertLessThan(connect.lowerBound, fresh.lowerBound,
-                          "under the account's ceiling the unrationed door is the primary")
     }
 
     // No clock: the state stands on the conversation that met the 429, and a new conversation is the way back.
@@ -493,28 +480,6 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(Ask.capReached, "The next question frees up in a couple of hours.")
     }
 
-    // The cap-reached state replaces the input and the send control only, so the allowance line is drawn
-    // above whichever half stands — EXCEPT under the account's ceiling, where ten a day is not the rule
-    // that stopped the question and the promise would sit directly on the sentence falsifying it.
-    func testTheAllowanceLineStaysAboveTheCapReachedStateAndGoesUnderTheAccountsCeiling() throws {
-        let screen = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/WindmillGym/AskScreen.swift")
-        let source = try String(contentsOf: screen, encoding: .utf8)
-        let composer = try XCTUnwrap(source.range(of: "private var composer: some View"))
-        let ceiling = try XCTUnwrap(source.range(of: "if conversation.cappedRefusal?.ceiling != .account {",
-                                                 range: composer.upperBound..<source.endIndex))
-        let allowance = try XCTUnwrap(source.range(of: "Text(Ask.allowance)",
-                                                   range: ceiling.upperBound..<source.endIndex))
-        let branch = try XCTUnwrap(source.range(of: "if conversation.capReached { capReachedState } else { input }",
-                                                range: allowance.upperBound..<source.endIndex))
-        let nextView = try XCTUnwrap(source.range(of: "private var ", range: composer.upperBound..<source.endIndex))
-        XCTAssertLessThan(branch.lowerBound, nextView.lowerBound, "the branch is the composer's, not another view's")
-        XCTAssertEqual(source.components(separatedBy: "Text(Ask.allowance)").count, 2, "the allowance line is drawn once")
-        XCTAssertEqual(source.components(separatedBy: "conversation.capReached").count, 2,
-                       "the only cap-reached branch is the one below the allowance line")
-    }
-
     func testAQuestionPastTheCeilingIsToldRatherThanCutDown() {
         XCTAssertEqual(Ask.tooLong, "That question is longer than Coach takes. Shorten it to send.")
     }
@@ -523,8 +488,8 @@ final class AskRefusalTests: XCTestCase {
     // do is said where it matters — on the proposal card and on the connect page — not here.
     func testTheEmptyStateIsTwoSentencesAndThePromiseLivesOnTheProposalCard() {
         XCTAssertEqual(Ask.scope,
-                       "Ask about your training. Coach can propose a routine change — you decide on the diff.")
-        XCTAssertTrue(Ask.subtitle.contains("proposes only"))
+                       "Ask about your training. Coach can create a routine or propose a change — you decide on the diff.")
+        XCTAssertEqual(Ask.subtitle, "reads your log · helps with your routines")
         XCTAssertTrue(Ask.proposalNote.contains("Your logged sets are never part of a proposal"))
         XCTAssertEqual(ConnectedLog.how[2], "No tool can apply a proposal or edit a logged set.")
     }

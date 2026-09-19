@@ -11,15 +11,31 @@ public struct AskTurn: Equatable, Decodable, Sendable {
     public let from: Voice
     public let text: String
     public let atMs: Int64
+    public let position: Int?
+    public let requestId: String?
+    public let generationId: String?
+    public let status: String
+    public let receipt: CoachReceipt?
+    public let results: [CoachResult]
+    public let attachments: [CoachAttachment]
 
-    public init(from: Voice, text: String, atMs: Int64 = 0) {
+    public init(from: Voice, text: String, atMs: Int64 = 0, position: Int? = nil, requestId: String? = nil,
+                generationId: String? = nil, status: String = "completed",
+                receipt: CoachReceipt? = nil, results: [CoachResult] = [], attachments: [CoachAttachment] = []) {
         self.from = from
         self.text = text
         self.atMs = atMs
+        self.position = position
+        self.requestId = requestId
+        self.generationId = generationId
+        self.status = status
+        self.receipt = receipt
+        self.results = results
+        self.attachments = attachments
     }
 
     enum CodingKeys: String, CodingKey {
-        case from, text
+        case from, text, position, requestId, generationId, status, receipt, results, attachments
         case atMs = "at"
     }
 
@@ -29,6 +45,13 @@ public struct AskTurn: Equatable, Decodable, Sendable {
         from = voice.flatMap(Voice.init(rawValue:)) ?? .unknown
         text = try fields.decode(String.self, forKey: .text)
         atMs = try fields.decodeIfPresent(Int64.self, forKey: .atMs) ?? 0
+        position = try fields.decodeIfPresent(Int.self, forKey: .position)
+        requestId = try fields.decodeIfPresent(String.self, forKey: .requestId)
+        generationId = try fields.decodeIfPresent(String.self, forKey: .generationId)
+        status = try fields.decodeIfPresent(String.self, forKey: .status) ?? "completed"
+        receipt = try fields.decodeIfPresent(CoachReceipt.self, forKey: .receipt)
+        results = try fields.decodeIfPresent([CoachResult].self, forKey: .results) ?? []
+        attachments = try fields.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
     }
 
     public var isDrawn: Bool { from != .unknown }
@@ -38,6 +61,7 @@ public struct ThreadOutcome: Equatable, Decodable, Sendable {
     public enum Kind: String, Decodable, CaseIterable, Sendable {
         case readOnly = "read-only"
         case proposed
+        case created
         case applied
         case dismissed
         case superseded
@@ -61,6 +85,8 @@ public struct ThreadOutcome: Equatable, Decodable, Sendable {
         switch kind {
         case .readOnly:
             return "no changes proposed"
+        case .created:
+            return routine.map { "Routine created · \($0)" } ?? "\(changes) routines created"
         case .applied:
             guard let routine, !routine.isEmpty else { return Readout.changeCount(changes) }
             return "\(Readout.changeCount(changes)) → \(routine)"
@@ -80,13 +106,14 @@ public struct ThreadOutcome: Equatable, Decodable, Sendable {
         case .readOnly: return "read only"
         case .proposed: return "waiting"
         case .applied: return "applied"
+        case .created: return "created"
         case .dismissed: return "turned down"
         case .superseded: return "set aside"
         case .unknown: return nil
         }
     }
 
-    public var changedTheProgram: Bool { kind == .applied }
+    public var changedTheProgram: Bool { kind == .applied || kind == .created }
 
     enum CodingKeys: String, CodingKey {
         case kind, changes, routineId, routine
@@ -145,10 +172,12 @@ public struct AskThread: Equatable, Decodable, Sendable, Identifiable {
     public let outcome: ThreadOutcome
     public let proposals: [ThreadProposal]
     public let turns: [AskTurn]?
+    public let nextCursor: String?
+    public let generation: CoachGeneration?
 
     public init(id: String, title: String, createdAtMs: Int64, askedAtMs: Int64,
                 outcome: ThreadOutcome, proposals: [ThreadProposal] = [],
-                turns: [AskTurn]? = nil) {
+                turns: [AskTurn]? = nil, nextCursor: String? = nil, generation: CoachGeneration? = nil) {
         self.id = id
         self.title = title
         self.createdAtMs = createdAtMs
@@ -156,10 +185,12 @@ public struct AskThread: Equatable, Decodable, Sendable, Identifiable {
         self.outcome = outcome
         self.proposals = proposals
         self.turns = turns
+        self.nextCursor = nextCursor
+        self.generation = generation
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, outcome, proposals, turns
+        case id, title, outcome, proposals, turns, nextCursor, generation
         case createdAtMs = "createdAt"
         case askedAtMs = "askedAt"
     }
@@ -173,6 +204,8 @@ public struct AskThread: Equatable, Decodable, Sendable, Identifiable {
         outcome = try fields.decode(ThreadOutcome.self, forKey: .outcome)
         proposals = try fields.decodeIfPresent([ThreadProposal].self, forKey: .proposals) ?? []
         turns = try fields.decodeIfPresent([AskTurn].self, forKey: .turns)
+        nextCursor = try fields.decodeIfPresent(String.self, forKey: .nextCursor)
+        generation = try fields.decodeIfPresent(CoachGeneration.self, forKey: .generation)
     }
 }
 
@@ -185,8 +218,8 @@ public struct ThreadMonth: Equatable, Sendable, Identifiable {
 }
 
 public enum AskThreads {
-    public static let title = "Threads"
-    public static let door = "Threads"
+    public static let title = "History"
+    public static let door = "History"
     public static let askSomethingNew = "Ask something new"
 
     // The list read is capped and carries no total: a full page prints `200+`.

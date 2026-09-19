@@ -70,9 +70,10 @@ because signed out there is no catalog read to make.
 Its containers are the platform's. A `TabView` carries Routines · The log · Coach, each tab holding
 its own `NavigationStack` whose path the room owns (`GymRoom.paths`) — so a screen pushed in one tab
 is that tab's, and a session opening or closing unwinds all three rather than leaving a stack
-standing behind a live logger. Every root seats the capsule leading and the You seat trailing in its
-own toolbar; the logger does too, with Finish beside the seat, because a live session replaces the
-tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
+standing behind a live logger. Routines and Log seat the capsule leading and the You seat trailing in their
+own toolbars. Coach keeps History and More in its toolbar; More contains Notes, Connected log,
+Account and New chat. The logger keeps the capsule and You, with Finish beside the seat, because a
+live session replaces the tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
 that the session is closed, so dismissing it leaves the lifter in the workout they finished.
 Dismissing writes nothing — the session was saved before the sheet appeared — so the one way out is a
 toolbar `Done`, drawn in every state. The receipt's one primary is `Share with Coach`, drawn only when
@@ -203,6 +204,19 @@ Active AI requests require an account. Roadmap AI assistance is being redesigned
 (`docs/design/roadmap/guidelines/auth.md` §2). Gym's `Connect a tool` reads `Sign in first` while signed
 out and opens You; nothing resumes after the sign-in (see Known gaps).
 
+Coach uses one editable renderer for fresh and reopened conversations. History and message pages
+load older rows explicitly. Before sending, the device atomically saves the question and request ID
+under the signed-in account; retries retain that identity through timeouts and refusals. Replies
+stream as authoritative revisions. Stop preserves partial text and completed actions; a new message
+continues after a stopped reply. Reading earlier messages pauses automatic scrolling and exposes
+Jump to latest. Long press either speaker’s text for Copy; accessibility services expose the same action.
+
+Coach accepts one photo with an optional caption. The native picker normalizes images to JPEG, at
+most 4096 pixels on either edge and 5 MiB. A private device copy and upload ID stay with that account’s
+conversation draft through cancellation, failure and retry. Sent images reopen through authenticated
+storage. Photo uploads offer progress, Cancel upload, Retry upload and Remove photo. Durable routine
+creation results remain visible even when an answer fails or is stopped.
+
 ## Universal links
 
 The repo half is written; the domain half is not in this repo, so a tapped link does not reach the
@@ -251,9 +265,10 @@ be tested without the file on the domain and a signed build.
   Gym's `Sign in first` opens You — one tap longer than the design.
 - **Choosing `lb` changes nothing this app draws.** The setting is account-level and gym stores
   kilograms either way, but the ladder and keypad here are kilogram instruments. The row says so.
-- **No rest timer.** The web keeps its rest timer and dial; this app draws none and carries the
-  settings document's `restSeconds` and `restSound` through untouched. This product sends no
-  notifications.
+- **Workout clocks count up.** The logger shows elapsed workout time and time since the latest
+  retained set, or since start before the first set. They derive from persisted timestamps,
+  including offline sets, and freeze at finish. This product sends no rest notifications and carries
+  the settings document’s `restSeconds` and `restSound` through untouched.
 - **The connected-log grant is made and ended on the web** — `Connect a tool` and
   `Manage connections` are browser doors; the screen itself reads the grants and keys and draws
   the state (`docs/design/gym/briefs/19-connected-log.md`).
@@ -265,12 +280,10 @@ be tested without the file on the domain and a signed build.
   driven on a simulator by `WindmillUITests`: the shell's edge-swipe home, the set row's
   swipe-to-delete and its refusal of a full swipe, the logger's horizontal walk between movements,
   and the log row's long press.
-- **Dynamic Type does nothing in gym, so the room is MIXED at accessibility sizes.** Every size the
-  room paints is a literal point value and does not move; the containers the platform paints do —
-  the navigation bar, the tab bar, the keyboard, and `List` section headers and footers. At
-  AccessibilityXXXL the routine editor is the visible case: `Movements` and its footer grow several
-  times over while the name field beside them stays where it was. Photographed both ways through
-  `UITests/RoomFramesUITests.swift`; the conversion to text styles is its own wave.
+- **Dynamic Type coverage is partial.** Routine list names and metadata, workout clocks and the
+  contextual Coach ceiling use scalable type. The workout clock pair wraps vertically when needed.
+  Other gym text still uses fixed point sizes, including the routine editor, so the room remains
+  mixed at accessibility sizes.
 - **The gym tab bar's selected state is the system's, not the room's.** On iOS 26 the tab bar paints
   its own labels — measured #FFFFFF selected against #F6F3FA unselected, **1.10:1** — and ignores
   `.tint`, `UITabBarAppearance` and `unselectedItemTintColor` alike. What separates the selected tab

@@ -355,14 +355,13 @@ final class FinishCoachTests: XCTestCase {
         XCTAssertLessThan(reset.lowerBound, send.lowerBound)
 
         let fresh = try XCTUnwrap(room.range(of: "private func askSomethingNew() {"))
-        for line in ["conversation = AskConversation()", "paths[.ask] = []", "tab = .ask"] {
+        for line in ["coach.newChat()", "paths[.ask] = []", "tab = .ask"] {
             XCTAssertNotNil(room.range(of: line, range: fresh.upperBound..<send.lowerBound),
                             "the reset the receipt reuses no longer \(line)")
         }
 
-        XCTAssertEqual(room.components(separatedBy: "gym.ask(").count, 2,
-                       "the wire is reached from exactly one place in the room")
-        XCTAssertFalse(try gymSource("AskScreen.swift").contains("gym.ask("),
+        XCTAssertTrue(room.contains("coach.ask(asked, replacing: id)"))
+        XCTAssertFalse(try gymSource("AskScreen.swift").contains("gym.sendCoach("),
                        "the screen sends nothing of its own; it asks the room to")
         XCTAssertFalse(try gymSource("AskScreen.swift").contains("closesTheDoor"),
                        "refusal handling lives on the one send path, not in the screen too")
@@ -378,7 +377,7 @@ final class FinishCoachTests: XCTestCase {
                                    range: sheet.upperBound..<room.endIndex))
 
         let tab = try XCTUnwrap(room.range(of: "case .ask:\n                if coachReachable {\n"))
-        XCTAssertNotNil(room.range(of: "AskScreen(store: store, conversation: $conversation",
+        XCTAssertNotNil(room.range(of: "AskScreen(store: store, conversation: $coach.conversation",
                                    range: tab.upperBound..<room.endIndex))
         XCTAssertNotNil(room.range(of: "private var coachReachable: Bool {\n        account.isSignedIn && askOnThisDeployment\n    }"))
     }

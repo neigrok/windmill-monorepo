@@ -24,13 +24,10 @@ struct RoutinesScreen: View {
 
     // Every section carries it, empty state included: the room's margin is one number, and a section
     // that leaves it out draws its content 3pt off the cards above it.
-    private let rowInsets = EdgeInsets(top: GymLayout.cardGap / 2, leading: GymLayout.gutter,
-                                       bottom: GymLayout.cardGap / 2, trailing: GymLayout.gutter)
+    private let rowInsets = EdgeInsets(top: 2, leading: GymLayout.gutter,
+                                       bottom: 2, trailing: GymLayout.gutter)
 
-    // What the ACCOUNT holds decides the state — the empty stance and the two acts it offers, the
-    // reach band; the window decides which rows are drawn, and the count captioning them is one of
-    // them. Deleting the only routine may not put `Build a routine` over a store that still holds one
-    // (`13-gestures.md`).
+    // Empty and start states use the account’s routines; visible rows follow the Undo window.
     var body: some View {
         List {
             head
@@ -54,15 +51,6 @@ struct RoutinesScreen: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                    }
-                } header: {
-                    // The rows', not the account's: a count captioning rows a reader can count for
-                    // themselves follows the window, and gates nothing. With no rows under it there
-                    // is nothing to caption, so it says nothing rather than a zero.
-                    if !store.routines.isEmpty {
-                        Text(Readout.routineCount(store.routines.count))
-                            .font(GymType.numeral(11.5))
-                            .foregroundStyle(skin.inkFaint)
                     }
                 }
                 .listRowBackground(Color.clear)
@@ -97,8 +85,10 @@ struct RoutinesScreen: View {
     @ViewBuilder
     private var head: some View {
         Section {
-            RefusalRows(refusals: store.refusals, catalog: store.catalog,
-                        onDismiss: { store.clearRefusals() })
+            if !store.refusals.isEmpty {
+                RefusalRows(refusals: store.refusals, catalog: store.catalog,
+                            onDismiss: { store.clearRefusals() })
+            }
             waiting
             if !isSignedIn { claimOffer }
         }
@@ -209,21 +199,18 @@ struct RoutinesScreen: View {
         let pending = store.pending(of: routine.id)
         return VStack(alignment: .leading, spacing: GymLayout.blockGap) {
             Button { onOpen(routine.id) } label: {
-                HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                    Text(routine.name)
-                        .font(WindmillFont.body(17, .bold))
-                        .foregroundStyle(skin.ink)
-                    if routine.isUntested {
-                        Text("untested")
-                            .font(GymType.numeral(10))
-                            .tracking(0.5)
-                            .textCase(.uppercase)
-                            .foregroundStyle(skin.inkFaint)
+                HStack(spacing: WindmillSpace.x3) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(routine.name)
+                            .font(.headline)
+                            .foregroundStyle(skin.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text([routine.isUntested ? "untested" : nil, meta(routine)].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(skin.inkDim)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    Text(meta(routine))
-                        .font(GymType.numeral(11.5))
-                        .foregroundStyle(skin.inkFaint)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(skin.inkFaint)
