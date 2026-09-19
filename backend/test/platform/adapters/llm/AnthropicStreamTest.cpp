@@ -112,3 +112,49 @@ TEST(anthropic_stream_rejects_unclosed_tool_json_malformed_events_and_resource_o
   CHECK_FALSE(completed.feed(std::string(4 * 1024 * 1024, 'x')));
   CHECK_EQ((*completed.finish())["stop_reason"].asString(), std::string("transport_error"));
 }
+
+TEST(anthropic_stream_ignores_unknown_events_before_and_after_message_start) {
+  AnthropicMessageStream parser;
+  REQUIRE(parser.feed(events({R"({"type":"future_event","private":"not diagnostic content"})",
+      R"({"type":"message_start","message":{"content":[],"usage":{"input_tokens":2}}})",
+      R"({"type":"future_event","private":"not diagnostic content"})",
+      R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}})",
+      R"({"type":"message_stop"})"})));
+  CHECK_EQ(*parser.finish(), parse(R"({"content":[],"usage":{"input_tokens":2,"output_tokens":3},"stop_reason":"end_turn"})"));
+  CHECK_EQ(parser.diagnostic(200, 0), parse(R"({"httpStatus":200,"curlCode":0,"messageStarted":true,"messageComplete":true,"cancelled":false,"callbackFailed":false,"parserFailure":"none","providerError":"none"})"));
+}
+
+TEST(anthropic_stream_diagnostics_distinguish_pre_start_provider_errors_http_errors_and_invalid_events) {
+  AnthropicMessageStream overloaded;
+  CHECK_FALSE(overloaded.feed(events({R"({"type":"error","error":{"type":"overloaded_error","message":"PRIVATE provider detail"},"request_id":"PRIVATE request"})"})));
+  CHECK_FALSE(overloaded.finish().has_value());
+  CHECK_EQ(overloaded.diagnostic(200, 23), parse(R"({"httpStatus":200,"curlCode":23,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"provider_error","providerError":"overloaded_error"})"));
+
+  AnthropicMessageStream rejected;
+  REQUIRE(rejected.feed("{\n\"type\":\"error\",\n\"error\":{\"type\":\"rate_limit_error\",\"message\":\"PRIVATE key and prompt\"}}"));
+  CHECK_FALSE(rejected.finish().has_value());
+  CHECK_EQ(rejected.diagnostic(429, 0), parse(R"({"httpStatus":429,"curlCode":0,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"missing_message_start","providerError":"rate_limit_error"})"));
+
+  AnthropicMessageStream invalidJson;
+  CHECK_FALSE(invalidJson.feed("data: {PRIVATE malformed body}\n\n"));
+  CHECK_EQ(invalidJson.diagnostic(200, 23), parse(R"({"httpStatus":200,"curlCode":23,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"invalid_json","providerError":"none"})"));
+
+  AnthropicMessageStream invalidEvent;
+  CHECK_FALSE(invalidEvent.feed(events({R"({"type":"message_start","message":"PRIVATE wrong shape"})"})));
+  CHECK_EQ(invalidEvent.diagnostic(200, 23), parse(R"({"httpStatus":200,"curlCode":23,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"invalid_event","providerError":"none"})"));
+}
+
+TEST(anthropic_stream_diagnostics_never_copy_unknown_error_types_or_private_content) {
+  for (const auto& body : {
+      R"({"type":"error","error":{"type":"PRIVATE unknown error type","message":"PRIVATE response"}})",
+      R"({"type":"error","error":{"type":{"PRIVATE":"malformed type"},"message":"PRIVATE response"}})"}) {
+    AnthropicMessageStream parser;
+    CHECK_FALSE(parser.feed(events({body})));
+    CHECK_EQ(parser.diagnostic(200, 23), parse(R"({"httpStatus":200,"curlCode":23,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"provider_error","providerError":"unknown"})"));
+  }
+  AnthropicMessageStream interrupted;
+  REQUIRE(interrupted.feed(events({R"({"type":"message_start","message":{"content":[],"usage":{"input_tokens":2}}})"})));
+  CHECK_EQ(interrupted.diagnostic(200, 42, true), parse(R"({"httpStatus":200,"curlCode":42,"messageStarted":true,"messageComplete":false,"cancelled":true,"callbackFailed":false,"parserFailure":"missing_message_stop","providerError":"none"})"));
+  AnthropicMessageStream empty;
+  CHECK_EQ(empty.diagnostic(0, 7), parse(R"({"httpStatus":0,"curlCode":7,"messageStarted":false,"messageComplete":false,"cancelled":false,"callbackFailed":false,"parserFailure":"missing_message_start","providerError":"none"})"));
+}

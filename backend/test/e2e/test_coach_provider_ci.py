@@ -29,6 +29,7 @@ class CoachProviderBootstrapTest(unittest.TestCase):
         self.commands = []
         self.fail_command = None
         self.harness_exit = 0
+        self.logs = ""
         self.usage = {"generations": 3, "routines": 1, "usage": [{
             "runId": "synthetic-provider-run", "model": "claude-opus-5", "outcome": "ok", "iteration": 0,
             "inputTokens": 100, "outputTokens": 20, "cacheReadTokens": 50, "cacheWriteTokens": 10,
@@ -53,6 +54,9 @@ class CoachProviderBootstrapTest(unittest.TestCase):
                 text = ("2" if "--publish" in command else "1") * 64 + "\n"
             elif command[0] == "port":
                 text = "127.0.0.1:18188\n"
+            elif command[0] == "logs":
+                self.assertEqual(command, ["logs", "--tail", "500", "2" * 64])
+                text = self.logs
             elif command[0] == "exec" and "json_build_object" in (options.get("input") or ""):
                 text = json.dumps(self.usage)
         else:
@@ -85,6 +89,7 @@ class CoachProviderBootstrapTest(unittest.TestCase):
             "expectedModel": "claude-opus-5", "syntheticDataOnly": True, "maxNewRequests": 3,
             "status": "passed", "stage": "complete", "imageId": "sha256:" + "d" * 64,
             "resourcesRemoved": True, "modelRuns": 1, **self.usage,
+            "streamDiagnostics": [],
         })
         with_key = [(args, options) for args, options in self.commands if "ANTHROPIC_API_KEY" in options["env"]]
         self.assertEqual(len(with_key), 1)
@@ -156,6 +161,42 @@ class CoachProviderBootstrapTest(unittest.TestCase):
         self.assertEqual(run.report["status"], "inconclusive")
         self.assertEqual(run.report["stage"], "acceptance_inconclusive")
         self.assertEqual(run.report["resourcesRemoved"], True)
+
+    def test_diagnostics_retain_only_allowlisted_fields_and_discard_all_other_logs(self):
+        diagnostic = {"httpStatus": 200, "curlCode": 23, "messageStarted": False, "messageComplete": False,
+                      "cancelled": False, "callbackFailed": False,
+                      "parserFailure": "provider_error", "providerError": "overloaded_error"}
+        private = self.environment["ANTHROPIC_API_KEY"] + " PRIVATE prompt response thinking header"
+        self.logs = (private + "\n2026 INFO anthropic_stream_diagnostic=" + json.dumps(diagnostic)
+                     + " - AnthropicStream.cpp:200\n" + private)
+        run = CoachProviderRun(self.environment, self.execute)
+        self.assertEqual(run.run(), 0)
+        self.assertEqual(run.report["streamDiagnostics"], [diagnostic])
+        evidence = (run.evidence / "coach-provider-run.json").read_text()
+        for value in (private, "PRIVATE", "AnthropicStream.cpp", "2026 INFO"):
+            self.assertNotIn(value, evidence)
+        commands = [args[3:] for args, _ in self.commands if args[0] == "docker"]
+        self.assertLess(commands.index(["stop", "--time", "5", "2" * 64]), commands.index(["logs", "--tail", "500", "2" * 64]))
+        self.assertLess(commands.index(["logs", "--tail", "500", "2" * 64]), commands.index(["rm", "--force", "2" * 64]))
+
+    def test_private_unknown_or_excess_diagnostics_fail_closed_and_resources_are_removed(self):
+        diagnostic = {"httpStatus": 429, "curlCode": 0, "messageStarted": False, "messageComplete": False,
+                      "cancelled": False, "callbackFailed": False,
+                      "parserFailure": "missing_message_start", "providerError": "rate_limit_error"}
+        for suffix, row, count in (
+                ("extra_field", dict(diagnostic, body="PRIVATE body"), 1),
+                ("unknown_type", dict(diagnostic, providerError="PRIVATE error type"), 1),
+                ("wrong_number", dict(diagnostic, curlCode=True), 1),
+                ("too_many", diagnostic, 25)):
+            with self.subTest(case=suffix):
+                self.logs = ("anthropic_stream_diagnostic=" + json.dumps(row) + "\n") * count
+                run = CoachProviderRun(self.environment, self.execute)
+                run.evidence = Path(self.private.name) / suffix
+                self.assertEqual(run.run(), 1)
+                self.assertEqual(run.report["stage"], "stream_diagnostics_validation")
+                self.assertEqual(run.report["streamDiagnostics"], [])
+                self.assertTrue(run.report["resourcesRemoved"])
+                self.assertNotIn("PRIVATE", (run.evidence / "coach-provider-run.json").read_text())
 
 
 class CoachProviderWorkflowTest(unittest.TestCase):

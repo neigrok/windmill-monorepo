@@ -131,6 +131,13 @@ provider model and observed token/cache/cost usage. Credentials, headers, image 
 reasoning and raw provider payloads are excluded. An interrupted call can have incomplete observed
 usage. Inspect both the checks and the synthetic answers before treating a run as acceptance.
 
+The run JSON also includes bounded stream diagnostics: HTTP status, numeric libcurl result,
+message-start/completion flags, parser failure category, known provider error type and
+cancellation/callback-failure flags. The runner extracts only that fixed record from the candidate's
+in-memory logs before removing it; other log text is discarded. Provider error messages, unknown
+error-type values and response bodies are never retained. An HTTP 200 can still carry an SSE error;
+zero observed tokens on an interrupted call do not prove that the provider billed nothing.
+
 Run the bootstrap and harness tests without a provider key from the repository root:
 
 ```sh

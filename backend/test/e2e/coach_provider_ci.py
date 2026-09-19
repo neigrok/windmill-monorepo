@@ -63,6 +63,7 @@ class CoachProviderRun:
             "status": "failed",
             "stage": "preflight",
             "usage": [],
+            "streamDiagnostics": [],
         }
 
     def command(self, stage, arguments, *, data=None, timeout=90, provider_key=False, allow_failure=False):
@@ -223,6 +224,41 @@ class CoachProviderRun:
                 clean = False
         return clean
 
+    def collect_stream_diagnostics(self):
+        logs = self.docker("stream_diagnostics_read", "logs", "--tail", "500", self.server, timeout=15)
+        text = logs.stdout + "\n" + logs.stderr
+        if len(text) > 2 * 1024 * 1024:
+            raise VerificationFailure("stream_diagnostics_size")
+        records = []
+        booleans = {"messageStarted", "messageComplete", "cancelled", "callbackFailed"}
+        failures = {"none", "invalid_json", "invalid_event", "body_limit", "event_limit", "provider_error",
+                    "missing_message_start", "missing_message_stop"}
+        errors = {"none", "unknown", "invalid_request_error", "authentication_error", "billing_error", "permission_error",
+                  "not_found_error", "conflict_error", "request_too_large", "rate_limit_error", "api_error",
+                  "timeout_error", "overloaded_error"}
+        for line in text.splitlines():
+            before, marker, payload = line.partition("anthropic_stream_diagnostic=")
+            if not marker:
+                continue
+            try:
+                row, end = json.JSONDecoder().raw_decode(payload)
+            except (ValueError, TypeError):
+                raise VerificationFailure("stream_diagnostics_shape") from None
+            if not isinstance(row, dict) or set(row) != booleans | {"httpStatus", "curlCode", "parserFailure", "providerError"}:
+                raise VerificationFailure("stream_diagnostics_shape")
+            if any(type(row[field]) is not bool for field in booleans):
+                raise VerificationFailure("stream_diagnostics_shape")
+            if type(row["httpStatus"]) is not int or not (row["httpStatus"] == 0 or 100 <= row["httpStatus"] <= 599):
+                raise VerificationFailure("stream_diagnostics_shape")
+            if type(row["curlCode"]) is not int or not 0 <= row["curlCode"] <= 999:
+                raise VerificationFailure("stream_diagnostics_shape")
+            if row["parserFailure"] not in failures or row["providerError"] not in errors:
+                raise VerificationFailure("stream_diagnostics_shape")
+            records.append(row)
+            if len(records) > 24:
+                raise VerificationFailure("stream_diagnostics_bound")
+        self.report["streamDiagnostics"] = records
+
     def run(self):
         self.evidence.mkdir(mode=0o700, exist_ok=False)
         try:
@@ -255,6 +291,10 @@ class CoachProviderRun:
                     self.docker("candidate_stop", "stop", "--time", "5", self.server, timeout=15)
                 except VerificationFailure:
                     self.report.update(status="failed", stage="candidate_stop")
+                try:
+                    self.collect_stream_diagnostics()
+                except Exception:
+                    self.report.update(status="failed", stage="stream_diagnostics_validation")
             if self.database_ready:
                 try:
                     self.collect_usage()

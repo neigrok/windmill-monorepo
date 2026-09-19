@@ -9,8 +9,20 @@
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <trantor/utils/Logger.h>
 
 namespace wm {
+
+namespace {
+const char* knownProviderError(const Json::Value& error) {
+  if (!error.isObject() || !error["type"].isString()) return "unknown";
+  for (const char* type : {"invalid_request_error", "authentication_error", "billing_error", "permission_error",
+                           "not_found_error", "conflict_error", "request_too_large", "rate_limit_error",
+                           "api_error", "timeout_error", "overloaded_error"})
+    if (error["type"].asString() == type) return type;
+  return "unknown";
+}
+}
 
 AnthropicMessageStream::AnthropicMessageStream(std::function<void(const std::string&)> text)
     : text_(std::move(text)) {}
@@ -18,8 +30,11 @@ AnthropicMessageStream::AnthropicMessageStream(std::function<void(const std::str
 bool AnthropicMessageStream::feed(std::string_view bytes) {
   if (invalid_) return false;
   bytes_ += bytes.size();
-  if (bytes_ > 4 * 1024 * 1024 || buffer_.size() + bytes.size() > 256 * 1024) { invalid_ = true; return false; }
+  if (bytes_ > 4 * 1024 * 1024) { failure_ = "body_limit"; invalid_ = true; return false; }
+  if (buffer_.size() + bytes.size() > 256 * 1024) { failure_ = "event_limit"; invalid_ = true; return false; }
   if (complete_) return true;
+  if (!message_.isObject() && prefix_.size() < 16 * 1024)
+    prefix_.append(bytes.substr(0, 16 * 1024 - prefix_.size()));
   buffer_.append(bytes);
   std::size_t end;
   while ((end = buffer_.find('\n')) != std::string::npos) {
@@ -27,12 +42,16 @@ bool AnthropicMessageStream::feed(std::string_view bytes) {
     buffer_.erase(0, end + 1);
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.empty()) {
-      if (!data_.empty() && !event(data_)) { invalid_ = true; return false; }
+      if (!data_.empty() && !event(data_)) {
+        if (std::string_view(failure_) == "none") failure_ = "invalid_event";
+        invalid_ = true;
+        return false;
+      }
       data_.clear();
     } else if (line.rfind("data:", 0) == 0) {
       if (!data_.empty()) data_ += '\n';
       data_ += line.substr(line.size() > 5 && line[5] == ' ' ? 6 : 5);
-      if (data_.size() > 256 * 1024) { invalid_ = true; return false; }
+      if (data_.size() > 256 * 1024) { failure_ = "event_limit"; invalid_ = true; return false; }
     }
   }
   return true;
@@ -43,18 +62,26 @@ bool AnthropicMessageStream::event(const std::string& data) {
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   Json::Value event;
   std::string errors;
-  if (!reader->parse(data.data(), data.data() + data.size(), &event, &errors) || !event.isObject()) return false;
+  if (!reader->parse(data.data(), data.data() + data.size(), &event, &errors)) { failure_ = "invalid_json"; return false; }
+  if (!event.isObject()) return false;
   if (!event["type"].isString()) return false;
   const std::string type = event["type"].asString();
   if (type == "ping") return true;
-  if (type == "error") return false;
+  if (type == "error") {
+    failure_ = "provider_error";
+    providerError_ = knownProviderError(event["error"]);
+    return false;
+  }
   if (type == "message_start") {
     if (message_.isObject() || !event["message"].isObject()) return false;
     if (!event["message"]["usage"].isNull() && !event["message"]["usage"].isObject()) return false;
     message_ = event["message"];
     message_["content"] = Json::Value(Json::arrayValue);
+    prefix_.clear();
     return true;
   }
+  if (type != "message_delta" && type != "message_stop" && type != "content_block_start"
+      && type != "content_block_delta" && type != "content_block_stop") return true;
   if (!message_.isObject()) return false;
   if (type == "message_delta") {
     if (!event["delta"].isObject()) return false;
@@ -67,7 +94,6 @@ bool AnthropicMessageStream::event(const std::string& data) {
     complete_ = message_["stop_reason"].isString() && std::all_of(blockClosed_.begin(), blockClosed_.end(), [](bool closed) { return closed; });
     return complete_;
   }
-  if (type != "content_block_start" && type != "content_block_delta" && type != "content_block_stop") return true;
   if (!event["index"].isUInt() || event["index"].asUInt() >= 256) return false;
   const auto index = event["index"].asUInt();
   if (type == "content_block_start") {
@@ -120,10 +146,30 @@ std::optional<Json::Value> AnthropicMessageStream::finish(const std::string& int
   return message_;
 }
 
+Json::Value AnthropicMessageStream::diagnostic(int httpStatus, int curlCode, bool cancelled, bool callbackFailed) const {
+  Json::Value result(Json::objectValue);
+  result["httpStatus"] = httpStatus;
+  result["curlCode"] = curlCode;
+  result["messageStarted"] = message_.isObject();
+  result["messageComplete"] = complete_;
+  result["cancelled"] = cancelled;
+  result["callbackFailed"] = callbackFailed;
+  result["parserFailure"] = std::string_view(failure_) != "none" ? failure_
+      : complete_ ? "none" : message_.isObject() ? "missing_message_stop" : "missing_message_start";
+  result["providerError"] = providerError_;
+  if ((httpStatus < 200 || httpStatus >= 300) && std::string_view(providerError_) == "none") {
+    const auto error = parse(prefix_);
+    if (error.isObject() && error["type"].isString() && error["type"].asString() == "error")
+      result["providerError"] = knownProviderError(error["error"]);
+  }
+  return result;
+}
+
 std::optional<Json::Value> streamAnthropicMessage(
     const std::string& apiKey, const std::string& baseUrl, const Json::Value& request,
     const std::function<void(const std::string&)>& text,
-    const std::function<bool()>& continueRun) {
+    const std::function<bool()>& continueRun,
+    const std::function<void(const Json::Value&)>& diagnostic) {
   static const int initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (initialized != CURLE_OK) throw std::runtime_error("HTTP transport unavailable");
   if (baseUrl.rfind("https://", 0) != 0 && baseUrl.rfind("http://127.0.0.1:", 0) != 0 && baseUrl.rfind("http://localhost:", 0) != 0)
@@ -173,6 +219,10 @@ std::optional<Json::Value> streamAnthropicMessage(
   curl_easy_getinfo(client.get(), CURLINFO_RESPONSE_CODE, &status);
   if (result != CURLE_OK && !transfer.stopped) vendor.lost(result == CURLE_OPERATION_TIMEDOUT ? VendorFault::timeout : VendorFault::network);
   else vendor.answered(static_cast<int>(status));
+  const auto details = transfer.parser.diagnostic(static_cast<int>(status), static_cast<int>(result),
+                                                  transfer.stopped, static_cast<bool>(transfer.failure));
+  LOG_INFO << "anthropic_stream_diagnostic=" << dump(details);
+  if (diagnostic) diagnostic(details);
   if (transfer.failure) std::rethrow_exception(transfer.failure);
   auto message = transfer.parser.finish(transfer.stopped ? "cancelled" : "transport_error");
   if (message && (result != CURLE_OK || status < 200 || status >= 300))
