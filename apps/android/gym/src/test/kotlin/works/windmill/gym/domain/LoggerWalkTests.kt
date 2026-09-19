@@ -32,12 +32,23 @@ class LoggerWalkTests {
     }
 
     @Test
+    fun intentIsDecidedAtNativeSlopWithoutTurningADiagonalIntoNavigation() {
+        assertEquals(LoggerWalk.Intent.Undecided, LoggerWalk.intent(-7f, 6f, 8f))
+        assertEquals(LoggerWalk.Intent.Horizontal, LoggerWalk.intent(-8f, 2f, 8f))
+        assertEquals(LoggerWalk.Intent.Other, LoggerWalk.intent(3f, 8f, 8f))
+        assertEquals(LoggerWalk.Intent.Other, LoggerWalk.intent(-8f, 7f, 8f))
+        assertFalse(LoggerWalk.horizontal(0f, 0f, 8f))
+    }
+
+    @Test
     fun aStrokeThatBeginsInTheEdgeStripIsNotTheWalks() {
         assertTrue(LoggerWalk.startsInTheEdge(x = 4f, width = 1080f, edgePx = edge))
         assertTrue(LoggerWalk.startsInTheEdge(x = 1076f, width = 1080f, edgePx = edge))
         assertFalse(LoggerWalk.startsInTheEdge(x = 540f, width = 1080f, edgePx = edge))
         assertFalse("a frame before the first layout has no edges to speak of",
             LoggerWalk.startsInTheEdge(x = 540f, width = 0f, edgePx = edge))
+        assertTrue(LoggerWalk.startsInTheEdge(x = 980f, width = 1080f, edgePx = 64f, rightEdgePx = 120f))
+        assertFalse(LoggerWalk.startsInTheEdge(x = 100f, width = 1080f, edgePx = 64f, rightEdgePx = 120f))
     }
 
     @Test

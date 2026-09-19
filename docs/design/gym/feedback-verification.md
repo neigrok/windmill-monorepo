@@ -1,6 +1,6 @@
 # Gym feedback · Android design verification
 
-19 September 2026. The reported feedback came from an Android user. This review checks the Android implementation against [feedback-contract.md](feedback-contract.md), with a bounded source audit of the surrounding screens. It does not certify every skin, device, interaction or model response. Native interaction evidence belongs to the delivery worklog; Figma specimens remain design references.
+19 September 2026. The reported feedback came from an Android user. This review checks the Android implementation against [feedback-contract.md](feedback-contract.md) and [interaction-polish.md](interaction-polish.md), with a bounded source audit of the surrounding screens. It does not certify every skin, device, interaction or model response. The [interaction worklog](../../gym-interaction-polish-log.md) records implementation and test results; Figma specimens remain design references.
 
 ## Captured layout
 
@@ -23,17 +23,33 @@ Local evidence is in `/private/tmp/windmill-feedback-runtime/`. Captures are Day
 
 Source confirms Account remains discoverable in Coach’s More menu (`AskScreen.kt`, `AskScreen`) alongside Notes and Connected log. The simplified header does not remove the account destination.
 
+## Interaction polish · native evidence
+
+Evidence for this phase is in `/private/tmp/windmill-interaction-polish/` on the retained Android emulator. These checks use the integrated debug build and synthetic local data.
+
+| Surface | Inspected evidence | Assessment |
+| --- | --- | --- |
+| Routine detail · normal type | `detail-before.txt/png`, `detail-after.txt/png` | Movement-name row pitch measures 216 px at density 3, or 72 dp, matching Home. The comparison capture measures 336 px, or 112 dp. Routine identity, targets, History and Start/Edit retain their hierarchy. |
+| Routine detail · 320 dp / 200% type | `detail-large-dark.png`, `detail-large-light.png`, `detail-large-scrolled.txt` | Targets wrap and rows grow in Instrument. Start workout and Edit routine remain reachable; vertical scrolling reveals the full History entry. Both image files show the dark skin despite the second filename, so these captures do not verify large-type Daylight. |
+| Workout · body swipes | `swipes-after.txt` | Deliberate horizontal swipes over weight, clocks, blank space, Log set, history and title navigate in both directions across the sequence. First/last movement bounds hold. Set 1 of 3 remains unchanged throughout, and both clocks continue advancing. |
+| Workout · controls and modal ownership | `modal-swipe-after.txt` and delivery observation | A normal Weight tap opens its sheet; a swipe with the sheet open leaves Bench Press selected. A subsequent deliberate Log set and Finish save one set of 8 × 50 kg, totaling 400 kg. |
+| Coach · partial text and Copy | `observe-result.json`, `observe-after-menu1.json`, `observe-after-menu2.json`, `observe-after-menu-dismissed.json` | The final debug APK shows partial text by 2.05 seconds, a polling upper bound. Copy remains open across incoming text updates and can be dismissed while Stop remains visible. |
+| Coach · reader position | `observe-after-anchor1.json`, `observe-after-anchor2.json`, `anchor1.png`, `anchor2.png` | After the reader pauses following, the screenshots are byte-identical across 4.21 seconds while the answer grows from 2,496 to 3,312 characters. Stop and Jump to latest remain visible in both states. |
+| Coach · completed answer and Jump | `observe-final.txt`, `observe-after-jump.txt` | All 18 Unicode paragraphs of the long local fixture complete. Jump to latest after completion reaches the final paragraph and disappears. This check does not establish Jump behavior during an active stream. |
+
+A new Coach draft also survives the APK update. Deterministic regression and full-suite results are recorded in the [interaction worklog](../../gym-interaction-polish-log.md#verification). These native checks use local fixtures, not an actual provider; observed timings are not production performance measurements. No spoken TalkBack run was performed.
+
 ## Verification limits
 
-No unresolved layout issue was found in the final captured states. The review covers normal-size native Instrument and Daylight plus the listed large-text Daylight states. It does not extend the screenshots to unpictured skin/font/IME combinations. Touch-target bounds for the scrolled Add movement action were measured by Android delivery; this audit inspected the resulting capture and source.
+No unresolved layout issue was found in the changed routine-detail and Coach states inspected here. The existing 320 dp / 200% bottom-navigation label clipping remains tracked in the [consistency ledger](../consistency.md). Coverage is limited to the named normal and large-type captures and the listed Coach interactions. Screenshots do not verify unpictured skin/font/IME combinations. Touch-target bounds for the scrolled Add movement action were measured by Android delivery; this audit inspected the resulting capture and source.
 
 ## Bounded overall review
 
-These are source findings, not new native screenshot or gesture checks. The review does not call for a global spacing reduction or unrelated flow changes.
+The routine-detail finding includes the native evidence above; the other rows are source findings. The review does not call for a global spacing reduction or unrelated flow changes.
 
 | Area and source | Current hierarchy and decision |
 | --- | --- |
-| Routine detail · `RoutinesScreen.kt`, `RoutineScreen` / `EntryRow` | Routine identity and one summary precede movement targets; Start workout is primary and Edit routine secondary. Movement rows also carry optional rest preferences, so the home list’s 68 dp two-line rule should not be copied blindly to these rows. History and pending proposals carry actual state. Retain this structure. |
+| Routine detail · `RoutinesScreen.kt`, `RoutineScreen` / `EntryRow` | Routine identity and one summary precede compact movement targets. Native normal-type row pitch matches Home at 72 dp; the 68 dp minimum row grows for wrapped targets or optional rest preferences. Start workout and Edit routine keep 56 dp and 48 dp minimum targets. History and pending proposals retain actual state. |
 | Routine editor · `RoutineBuilder.kt`, `BuildStep` / `TargetSheet` | Name, ordered movements and targets are separate editable groups. 72 dp movement rows use compact name/target text; reorder/delete use gestures and accessibility actions. Target fields adapt at large text or narrow width. Preserve labels, validation and Save; no additional persistent instructions are needed. |
 | Movement picker · `MovementPicker.kt`, `MovementPicker` / `MovementRow` | Search leads to grouped results, then one Create movement action. Name, equipment and last-use facts support selection; alias/loading/error text is conditional. 64 dp minimum rows grow with actual content. Retain the contextual metadata and native sheet instead of collapsing distinct facts into icons. |
 | Coach history · `ThreadsScreen.kt`, `ThreadRow`; `Thread.kt`, `ThreadOutcome` | Ordinary conversations show the date without Read only/no changes proposed. A creation adds one named/count fact; proposal outcomes remain. The History title has no duplicate Your conversations caption. Conversation receipts keep full action details. |

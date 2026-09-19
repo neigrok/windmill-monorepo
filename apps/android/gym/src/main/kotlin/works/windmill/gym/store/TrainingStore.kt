@@ -1642,6 +1642,7 @@ class TrainingStore(
 
     fun saveCoachDraft(key: String, draft: CoachDraft) {
         val seat = owner ?: return
+        if (coachDraft(key) == draft && (coachDrafts[seat to key] ?: CoachDraft()) == draft) return
         localCoach?.saveDraft(seat, key, draft)
         coachDrafts[seat to key] = draft
         coachDraftVersion++
@@ -1678,9 +1679,11 @@ class TrainingStore(
         val log = gym ?: error(askWantsAnAccount)
         val generation = log.stop(threadId, requestId)
         check(seat == owner && log === gym) { accountChanged }
-        localCoach?.record(seat, generation)
+        withContext(Dispatchers.IO) { localCoach?.record(seat, generation) }
+        check(seat == owner && log === gym) { accountChanged }
         val current = localCoach?.snapshot(seat, requestId) ?: generation
-        if (current.status in listOf("completed", "stopped")) localCoach?.clear(seat, threadId, requestId)
+        if (current.status in listOf("completed", "stopped")) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
+        check(seat == owner && log === gym) { accountChanged }
         return current
     }
 
@@ -1731,7 +1734,8 @@ class TrainingStore(
             val request = saved ?: AskQuestion(thread = threadId, question = question, requestId = requestId,
                 attachmentIds = listOfNotNull(photo?.id))
             require(request.thread == threadId && request.question == question) { "A retry must keep the original message." }
-            if (seat != null) localCoach?.keep(seat, request)
+            if (seat != null) withContext(Dispatchers.IO) { localCoach?.keep(seat, request) }
+            if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
             if (photo != null && seat != null && snapshot == null) {
                 val file = localCoach?.photoFile(seat, photo.id)
                 if (file?.isFile == true) {
@@ -1745,15 +1749,17 @@ class TrainingStore(
                 }
             }
             onUpload(null)
-            val accept: (AskGeneration) -> Unit = { next ->
-                if (seat == owner && gym === log && (snapshot == null || next.revision >= snapshot!!.revision)) {
-                    snapshot = next
-                    if (seat != null) localCoach?.record(seat, next)
-                    onSnapshot(next)
+            val accept: suspend (AskGeneration) -> Unit = { next ->
+                if (seat == owner && gym === log && snapshot != next && (snapshot == null || next.revision >= snapshot!!.revision)) {
+                    if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, next) }
+                    if (seat == owner && gym === log) {
+                        snapshot = next
+                        onSnapshot(next)
+                    }
                 }
             }
             var answered = if (stream) log.stream(request, accept) else log.ask(request)
-            answered.generation?.let(accept)
+            answered.generation?.let { accept(it) }
             var pause = 1_000L
             while (answered.generation?.status == "running") {
                 if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
@@ -1761,13 +1767,14 @@ class TrainingStore(
                 if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
                 pause = (pause * 2).coerceAtMost(10_000)
                 answered = if (stream) log.stream(request, accept) else log.ask(request)
-                answered.generation?.let(accept)
+                answered.generation?.let { accept(it) }
             }
             if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
             if (answered.proposals.isNotEmpty() || answered.results.isNotEmpty()) reread()
             if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
             if (answered.generation?.status == "failed") return complete(AskOutcome.Failed(Ask.interrupted, snapshot))
-            if (seat != null) localCoach?.clear(seat, threadId, requestId)
+            if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
+            if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged))
             complete(AskOutcome.Answered(answered))
         } catch (interrupted: CancellationException) {
             telemetry.event("gym_ask_outcome", mapOf("outcome" to "cancelled",
@@ -1782,10 +1789,12 @@ class TrainingStore(
             if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged), refusing)
             if (authoritative != null && (snapshot == null || authoritative.revision >= snapshot!!.revision)) {
                 snapshot = authoritative
-                if (seat != null) localCoach?.record(seat, authoritative)
+                if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, authoritative) }
+                if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged), refusing)
             }
             if (snapshot?.status in listOf("completed", "stopped")) {
-                if (seat != null) localCoach?.clear(seat, threadId, requestId)
+                if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
+                if (seat != owner || gym !== log) return complete(AskOutcome.Refused(accountChanged), refusing)
                 return complete(AskOutcome.Answered(requireNotNull(snapshot).response()))
             }
             if (photoUpload) return complete(AskOutcome.Failed("Photo didn’t upload. Retry to send this photo.", snapshot), refusing)
