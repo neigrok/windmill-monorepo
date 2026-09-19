@@ -49,3 +49,10 @@ suite and admission regressions for more simultaneous requests than model worker
 admission across completion, conflicting payloads discovered on lease reread, and two independent
 services contending on a real Postgres lease. `git diff --check` is clean. Local HTTP protocol-fixture checks are recorded separately by
 the orchestration task.
+
+The deployment smoke mode pins the running image before creating a synthetic account and shares
+the deployment concurrency guard. Its 27 combined offline tests pass. Generated cleanup SQL was
+exercised against isolated PostgreSQL: an active Coach lease rolled deletion back; releasing it
+permitted only the owned fixture cleanup while retaining usage accounting. The public run remains
+a rollout gate. Reusing the same bounded acceptance harness keeps isolated and deployed evidence
+comparable without adding a product testing endpoint.

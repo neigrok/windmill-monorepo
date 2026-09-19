@@ -8,7 +8,7 @@ The room's name matches the paid line, which has always called it the coach.
 
 ## What the name does not buy
 
-Coach should be friendly and helpful. The user’s exact replacement system-prompt text is pending; this brief does not invent it. Notes remain the lifter’s own instructions.
+Coach uses the owner’s supplied system prompt: friendly, informal, direct and grounded in the lifter’s records. It reads user data before deciding, asks when needed and saves useful user-provided insights to Notes. It limits its questions to wellbeing and general health. Notes retain the lifter’s instructions and stated context.
 
 - **It does not speak first.** No greeting, no daily check-in, no "how did that feel?".
 - **No unread badge, no count, no notification, nothing waiting.** Pinned by
@@ -225,7 +225,7 @@ Coach can create a routine when the lifter requests it. Read relevant goals, con
 | create a routine | A saved routine, truthful creation receipt and Open routine |
 | change a routine | The existing proposal review and human Apply |
 | remove a routine | The existing review including retained logged sets |
-| edit a note | The note, before and after |
+| save a useful insight | An appended note and a truthful saved-note step; the lifter controls later edits/deletion |
 
 **Never proposable, at any grant level, this wave or later:** logging a set, fixing a set, deleting a
 set, finishing a workout, discarding a session, writing a bodyweight.
@@ -258,7 +258,7 @@ Limits are contextual. The empty room leads directly to its composer without a s
 
 A retained conversation has no lifetime question cap. History opens that same editable conversation, including after the fifth question. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
-The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The replacement prompt text remains pending.
+The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The owner’s exact replacement prompt is installed; live-model tone acceptance is recorded separately in the execution log.
 
 ## The two stances, pinned
 

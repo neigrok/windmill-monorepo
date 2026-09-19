@@ -137,6 +137,33 @@ Run the bootstrap and harness tests without a provider key from the repository r
 python3 -m unittest discover -s backend/test/e2e -p 'test_coach_provider_*.py' -v
 ```
 
+## Deployed Coach smoke check
+
+The Deploy workflow's manual `verify_coach_only=true` mode verifies the running release without
+deploying. `image_tag` must be its full 40-character published commit SHA; `latest` is refused.
+The mode shares the `deploy-vps` concurrency guard with normal deployments and never changes
+images, services, routes or configuration. Its verifier checkout SHA is recorded separately.
+
+`test/e2e/coach_provider_deployed.py` uses the existing Actions SSH credentials on a hosted runner
+to inspect the server's exact image tag, image ID, registry digest and container health before any
+database write, then checks them again after the smoke test. It creates one fresh random account
+and hashed session through `~/windmill`'s compose Postgres service, with no email delivery. The
+existing bounded acceptance harness uses that session against `https://windmill.works`, so its
+incremental-delivery evidence includes the public proxy. The provider key stays on the server.
+
+Cleanup first proves the account UUID, synthetic email and per-run marker, stops its unfinished
+generations, and checks quiescence. A transaction locks the owner and its conversation leases,
+refuses unexpected sessions or active generations, and removes only that newly created fixture.
+Provider usage rows remain intact. If creation, ownership or quiescence cannot be proved, the
+runner revokes only its new session and reports the retained fixture for review. A runner killed
+before cleanup can leave the fixture; its session expires after 30 minutes.
+
+Artifacts are limited to `coach-provider-deployed.json` and `coach-provider-acceptance.json`:
+release/run identity, synthetic visible responses and receipts, observed usage, check outcomes and
+cleanup status. SSH details, credentials, headers, image bytes and raw provider payloads are
+excluded. Exit 3 means streaming timing was inconclusive; it is not a passing acceptance result.
+The same offline script-test command above covers deployment gating and cleanup guards.
+
 ## Roadmap tree endpoints
 
 The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys, reminders, the
