@@ -58,11 +58,46 @@ exploration is manual and local only with a user-provided local key; it is not a
 or deployment gate. Production provider configuration remains separate from test infrastructure.
 
 All four surface/backend CI checks passed at `a3c3c811`; merge
-`e0d43e690b0bd25718a0ca096e4f64845f94fec8` has the same tested tree. Main backend run
-`35452461058` and deployment `35452985601` succeeded. Public read-only checks passed at 16:10:31 UTC
-with zero model requests; they establish reachability and signed-out boundaries, not public
-streaming. Web Deploy is held pending restoration; Android 0.9.0 signing, installation acceptance
-and publication remain last.
+`e0d43e690b0bd25718a0ca096e4f64845f94fec8` has the same tested tree. The automation cleanup is
+pushed as `a21a4fd92a6722b170e2345949059e2ed01b36af`; backend CI `35454307366` and deployment
+`35454800506` passed, with deployment completed at 16:24:02 UTC. Final public read-only checks
+passed at 16:55:27 UTC: `/` returned 200 and `/v1/me`, `/v1/gym/threads?limit=1` and
+`/v1/gym/exercises` returned 401, with normal TLS verification and zero model requests. Evidence:
+`public-no-model-http-final.json`. These post-deployment checks establish reachability and
+signed-out boundaries, not authenticated streaming or the running binary's identity; the source
+identity comes from the successful deployment run. Web Deploy is active,
+run `35454314667` passed, and public assets carry the `a21a4fd` stamp (`web-public-assets.json`).
+The deployment checks made no model requests. Android publication and public-asset verification passed.
+
+Android 0.9.0 tag run `35454444192` uses code85. Attempt1 failed one account restoration test with
+`NoSuchFileException`; its fixture is unchanged from the pre-feedback baseline and the failure
+mechanism remains unproven. The unchanged local Gym suite reported 1,198 tests: 1,186 passed,
+12 skipped, zero failures. Attempt2 succeeded for tag `android-v0.9.0` at
+`a21a4fd92a6722b170e2345949059e2ed01b36af`; the code85 signing input is independently verified.
+No fixture fix is claimed. The follow-up node `android-account-restoration-test-flake` records the
+intermittent test. The final non-debuggable APK is signed with the retained certificate and has
+SHA256 `ba7f2fd6de5fd15ba8b5808d810a817e23d138e794197b8e18a0207d7f2c94ed`.
+
+The exact APK passed bounded API34 clean-install and 0.8.2/code76 in-place upgrade acceptance.
+Clean installation verified anonymous Coach's sign-in boundary, routine/set persistence, both
+clocks across movement/background/restart, finished history, and reachable controls at 320dp/200%
+text in dark mode. Upgrade snapshots retained the routine, finished plan/three sets, active
+session/queued set, IDs, wall timestamps and preferences before the four-hour deadline; native
+hour clocks and settings survived restart. Both devices retained notification denial. Evidence:
+`release-acceptance/clean-acceptance.json` and `release-acceptance/upgrade-090/result.json`.
+
+The upgrade emulator's cold boot consistently rebased live monotonic origins by −12,881,843ms,
+preserving wall timestamps and the 94,063ms start-to-set interval. Independent source/evidence
+review confirmed existing behavior; no product or fixture change was needed. The runtime checker
+keeps strict defaults and permits only a consistently rebased, independently observed new boot.
+Twelve positive/negative helper checks passed. Final signed authenticated Coach, TalkBack and
+offline queue claim/delivery were not exercised. A truncated Routines tab label at 200% text is a
+bounded design follow-up. The [Android 0.9.0 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0)
+was published at 17:03:51 UTC, last in the delivery sequence. All three downloaded public assets
+match the signed local files byte-for-byte; full APK verification passed for code85, commit
+`a21a4fd`, attempt2, retained certificate, payload and digest. No delivery gate remains. The
+unproven intermittent restoration-test mechanism and large-text navigation label are nonblocking
+follow-ups.
 
 Catalog metadata is deliberately small and does not describe every exercise variant or setup.
 Coach states actual movement-pattern coverage and material gaps, names relevant variants, and asks

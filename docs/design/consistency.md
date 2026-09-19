@@ -2337,4 +2337,15 @@ and the frozen plan are excluded. Native loopback verification covers a syntheti
 copy feedback and revoked404; the final disclosure is readable at320dp/200% text.
 
 
-**Gym feedback · quiet screens and conversation continuity** → implementation and native verification owned by the feedback delivery tasks. [feedback-contract.md](gym/feedback-contract.md) pins 68 dp routine rows/4 dp gaps, readable workout/since-set clocks, contextual Coach chrome, copy, retained-thread continuation, images and streaming. Figma masters and representative Android states are updated. [Android design verification](gym/feedback-verification.md) records inspected native Instrument/Daylight captures, 320/411 dp large-text checks, quiet history outcomes and the bounded surrounding-screen source review; no unresolved layout issue was found in those final captured states. It does not claim the full runtime matrix. Existing optional Android rest-alert preferences/notifications and current human Apply flows remain. The owner’s exact replacement prompt is installed with durable note saves; live-model acceptance remains separate.
+**Gym feedback · quiet screens and conversation continuity** → implementation and native verification owned by the feedback delivery tasks. [feedback-contract.md](gym/feedback-contract.md) pins 68 dp routine rows/4 dp gaps, readable workout/since-set clocks, contextual Coach chrome, copy, retained-thread continuation, images and streaming. Figma masters and representative Android states are updated. [Android design verification](gym/feedback-verification.md) records inspected native Instrument/Daylight captures, 320/411 dp large-text checks, quiet history outcomes and the bounded surrounding-screen source review. Signed 0.9.0/code85 acceptance adds the narrow tab-label issue below; verification does not cover the full runtime matrix. Existing optional Android rest-alert preferences/notifications and current human Apply flows remain. The owner’s exact replacement prompt is installed with durable note saves; actual-model exploration is manual and local only.
+
+**Gym feedback · Routines tab clips at narrow large text** → open, nonblocking Android layout follow-up.
+On the published [0.9.0/code85 APK](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) at 320 dp width, 200% text and dark theme, the bottom tab label
+visually reads “Routine”: its final “s” is clipped. The full Routines heading and accessible tab
+name remain intact, and the tab and primary controls remain reachable. Evidence:
+`release-acceptance/clean-routines-small-large-dark.png` in the feedback runtime evidence directory.
+The Android navigation layout should retain the complete visible label at this size without
+reducing the accessible text size or touch target. This observation does not invalidate the verified
+workout clocks, routine editor, logging and finish flows, and does not establish a complete
+large-text or TalkBack traversal pass.
+Tracking node: `android-gym-large-text-tab-label` (prerequisite: `android-gym-room`).

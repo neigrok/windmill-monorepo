@@ -209,7 +209,7 @@ versioned `workflow_dispatch` also produces an unpublished signing-input artifac
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
 configuration. `versionCode` equals the workflow run number and must exceed the published
-[`android-v0.8.2`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.2) version code 76.
+[`android-v0.9.0`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) version code 85.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
@@ -218,6 +218,16 @@ downloaded input, receives the password through stdin, and verifies the final ce
 unchanged application contents. Its output includes the APK, digest and provenance linked to the
 exact input bytes. It does not publish. Native acceptance and a same-key update check precede
 uploading the public artifacts to the matching GitHub release.
+
+The published [0.9.0/code85 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) uses tag `android-v0.9.0` at
+`a21a4fd92a6722b170e2345949059e2ed01b36af`, Actions run `35454444192`, attempt2. Its retained
+signature, unchanged application payload, bounded Android 14 clean-install checks and offline
+0.8.2 upgrade preservation after restart are verified. All three public assets match the accepted
+local files; the downloaded APK passes signature, version, digest and provenance checks.
+Its SHA-256 is `ba7f2fd6de5fd15ba8b5808d810a817e23d138e794197b8e18a0207d7f2c94ed`.
+Final-APK authenticated Coach, network replay of the offline fixture and spoken TalkBack traversal
+were not exercised. The narrow 320 dp/200% text Routines tab-label clipping remains a tracked
+layout follow-up. Current evidence is recorded in [the feedback execution log](../../docs/gym-feedback-execution.md).
 
 Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
 identity. The historical published APKs through0.7.1 used different debug certificates; the
