@@ -31,6 +31,26 @@ class CoachAnswerTests {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun anOpenCopyMenuAndExpandedReceiptSurviveReplacementText() {
+        lateinit var clipboard: ClipboardManager
+        val initial = "Café\n東京"
+        val final = "Café\n東京 — 🏋🏽‍♀️ e\u0301\nFinal words."
+        val text = androidx.compose.runtime.mutableStateOf(initial)
+        val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes")))
+        compose.setContent { GymMaterial {
+            clipboard = LocalClipboardManager.current
+            CoachAnswer(text.value, receipt, emptyList(), 0)
+        } }
+        compose.onNodeWithText("Read nothing from your log").performClick()
+        compose.onNodeWithText("Read your notes").assertIsDisplayed()
+        compose.onNodeWithText(initial).performTouchInput { longClick() }
+        compose.runOnIdle { text.value = final }
+        compose.onNodeWithText("Copy").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(final, clipboard.getText()?.text) }
+        compose.onNodeWithText("Read your notes").assertIsDisplayed()
+    }
+
+    @Test
     fun bothSpeakersCopyExactMultilineTextThroughLongPressAndAccessibleActions() {
         lateinit var clipboard: ClipboardManager
         val question = "My question.\nSecond line with 2 × 5."

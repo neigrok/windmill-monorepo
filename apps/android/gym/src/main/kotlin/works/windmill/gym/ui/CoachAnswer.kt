@@ -109,7 +109,7 @@ internal fun CoachAnswer(
             val phrases = Ask.steps(evidence?.steps ?: legacySteps)
             val observations = evidence?.observed.orEmpty()
             val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
-            var expanded by rememberSaveable(text) { mutableStateOf(false) }
+            var expanded by rememberSaveable { mutableStateOf(false) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -147,7 +147,7 @@ internal fun CoachAnswer(
 private fun CoachMessageText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboardManager.current
     val skin = LocalGymColors.current
-    var menu by rememberSaveable(text) { mutableStateOf(false) }
+    var menu by rememberSaveable { mutableStateOf(false) }
     val copy = { clipboard.setText(AnnotatedString(text)); menu = false }
     Box {
         Text(text, style = style, color = color, modifier = modifier.then(
