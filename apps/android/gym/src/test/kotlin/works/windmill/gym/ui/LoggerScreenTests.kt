@@ -256,7 +256,7 @@ class LoggerScreenTests {
         logger(scope, lastTime = history)
 
         compose.onNodeWithText("Log set").assertIsDisplayed()
-        compose.onNodeWithText("No sets yet").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("No sets yet").assertDoesNotExist()
         scope.cancel()
     }
 
@@ -347,7 +347,7 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope)
 
-        compose.onNodeWithText("No sets yet").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("No sets yet").assertDoesNotExist()
         compose.onAllNodes(hasContentDescription("First time", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasContentDescription("no history", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasText("First time logging this")).assertCountEquals(0)
@@ -485,11 +485,13 @@ class LoggerScreenTests {
 
     // The elapsed clock and the target are distinct, without a reset action.
     @Test
-    fun aLandedSetShowsRestWithoutAResetAction() {
+    fun aLandedSetShowsBothQuietClocksWithoutAResetAction() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, logged = true)
 
-        compose.onNodeWithText("Rest").assertIsDisplayed()
+        compose.onNodeWithText("Rest").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Workout time,", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Since last set,", substring = true)).assertIsDisplayed()
         compose.onNodeWithText("Rest target").assertDoesNotExist()
         compose.onNode(hasContentDescription("clear the rest", substring = true)).assertDoesNotExist()
         scope.cancel()

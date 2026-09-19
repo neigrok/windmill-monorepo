@@ -140,7 +140,7 @@ class RoutinesScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         home(scope, mutableListOf(), mutableListOf())
 
-        compose.onNodeWithText("1 routine").assertIsDisplayed()
+        compose.onNodeWithText("1 routine").assertDoesNotExist()
         compose.onNodeWithText("nothing running", substring = true).assertDoesNotExist()
         scope.cancel()
     }
@@ -176,7 +176,7 @@ class RoutinesScreenTests {
         home(scope, mutableListOf(), mutableListOf())
 
         val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
-        assertEquals(80.dp, bounds.height)
+        assertEquals(68.dp, bounds.height)
         scope.cancel()
     }
 

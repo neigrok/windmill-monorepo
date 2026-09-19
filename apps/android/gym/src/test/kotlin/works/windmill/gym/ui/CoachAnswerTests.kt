@@ -5,12 +5,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performSemanticsAction
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +29,29 @@ import works.windmill.gym.domain.*
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class CoachAnswerTests {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun bothSpeakersCopyExactMultilineTextThroughLongPressAndAccessibleActions() {
+        lateinit var clipboard: ClipboardManager
+        val question = "My question.\nSecond line with 2 × 5."
+        val answer = "First paragraph.\n\nSecond paragraph — exact text."
+        compose.setContent { GymMaterial {
+            clipboard = LocalClipboardManager.current
+            Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
+        } }
+        compose.onNodeWithText(question).performTouchInput { longClick() }
+        compose.onNodeWithText("Copy").performClick()
+        compose.runOnIdle { assertEquals(question, clipboard.getText()?.text) }
+        val actions = compose.onNodeWithText(answer).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        compose.runOnIdle {
+            assertEquals(listOf("Copy"), actions.map { it.label })
+            actions.single().action()
+        }
+        compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
+        compose.onNodeWithText(answer).performTouchInput { longClick() }
+        compose.onNodeWithText("Copy").performClick()
+        compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
+    }
 
     @Test
     fun summariesStayInTheDisclosureWhileTheFullSessionCardIsExplicitlyScoped() {

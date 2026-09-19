@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -84,11 +87,21 @@ fun RoutinesScreen(
     // ACT offered over a program that still has one. Between the two the room draws neither.
     val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
+    val compactAction = LocalDensity.current.fontScale > 1.3f
 
     GymScreen(
         title = "Routines",
         actions = {
-            TopAction("New routine") { onBuild(RoutineDraft(position = store.allRoutines.size)) }
+            if (compactAction) {
+                IconButton(
+                    onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(Icons.Default.Add, "New routine", tint = skin.accent)
+                }
+            } else {
+                TopAction("New routine") { onBuild(RoutineDraft(position = store.allRoutines.size)) }
+            }
             YouSeat(seat)
         },
     ) {
@@ -98,22 +111,12 @@ fun RoutinesScreen(
                 contentPadding = PaddingValues(
                     start = GymLayout.gutter,
                     end = GymLayout.gutter,
-                    top = 16.dp,
+                    top = 8.dp,
                     bottom = GymLayout.scrollTailBand,
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (routines.isNotEmpty()) {
-                    item("count") {
-                        Text(
-                            Readout.routineCount(routines.size),
-                            style = WindmillFont.body(14),
-                            color = skin.inkDim,
-                        )
-                    }
-                }
-
-                item("refusals") {
+                if (store.refusals.isNotEmpty()) item("refusals") {
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
                 }
 
@@ -217,7 +220,7 @@ private fun RoutineRow(
     val skin = LocalGymColors.current
     val waiting = routine.pendingProposal
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 80.dp)
+    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
         .background(skin.canvas)
         .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
         .semantics { customActions = listOf(

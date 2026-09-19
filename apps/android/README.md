@@ -90,14 +90,22 @@ or the active workout’s gear. It contains units, rest timer, Notes,
 Connected log and Account. There is no Kind or set-confirmation sound/haptic control. Selecting lb
 retains the explicit notice that this phone still displays kg.
 
-Coach's live and past answers share `CoachAnswer`: complete prose, versioned saved evidence and
-scoped read details. A single directly read full workout can provide a metric card; summary-only
-and multiple-session observations remain in the disclosure. Historical receipts are stored with
-the answer, so later training edits cannot change what that answer says it read. Four successful
-questions end a conversation; Ask new opens a new draft without sending it. Proposal reads distinguish
-available, missing and failed: failed reads offer retry; confirmed missing proposals show a terminal
-availability message. An immediate decision uses its actual response. A cold conversation cannot
-reconstruct a deleted proposal ledger from the answer text.
+Coach's current and retained conversations share `AskScreen`, `CoachComposer` and `CoachAnswer`.
+History is editable and paged. Long press or the accessibility Copy action copies either speaker's
+text, including partial answers. Server-sent generation snapshots replace visible text in revision
+order; Stop, interruption and retry preserve partial words and completed routine receipts. Readers
+who scroll back keep their place and can jump to the latest message.
+
+The native photo picker accepts one image with an optional caption. `CoachPhotos` applies orientation
+and encodes JPEG/PNG within 4096 pixels per edge and 5 MiB. Attachment uploads and retained-image reads
+use authenticated HTTP bodies, without credentials in URLs. `LocalCoach` keeps account-scoped drafts,
+photo bytes, request IDs and partial generations across process death. Retry retains the original
+request and attachment IDs; terminal completion or conversation deletion clears pending storage.
+Factual read receipts remain attached to the answer, and creation receipts open the actual routine.
+New chat abandons the local draft and pending request; server history and completed actions remain.
+Routine edits still require human Apply. Notes, Connected log, New chat and Account live in More;
+account limits appear only when they refuse an action.
+
 
 **The room opens and works signed out**: sessions, routines, movements, weigh-ins and gym's own
 settings live on the device in `LocalLog` + `SetQueue` + `LocalBodyweight` + `LocalPreferences`. The six barbell movements —
@@ -170,6 +178,11 @@ once, so no later launch decides it differently. Gym's settings section is the o
 requires the local-data decision; a signed-out decision opens its bound sign-in flow. iOS attributes legacy files using its Keychain session.
 
 ## Native workout surface
+
+The logger displays workout elapsed and time since the latest retained set, with session start as the
+second anchor before any set. The two quiet icon clocks use persisted timestamps across movements,
+accepted offline sets, edits and relaunch; deletion and Undo recalculate the second anchor. Their
+readings freeze at session finish. The pair wraps when large text needs more width.
 
 The application owns one local workout runtime. Notification receivers restore that same runtime
 without starting HTTP authentication. The queue commits the exact offered set, consumed action,

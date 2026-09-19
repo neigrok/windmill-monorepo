@@ -184,7 +184,7 @@ class StanceReadsTheAccountTests {
                 onDelete = {}, onAskNew = {})
         }
         compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-        compose.onNodeWithText("Your conversations").assertIsDisplayed()
+        compose.onNodeWithText("Your conversations").assertDoesNotExist()
 
         compose.runOnIdle { store.withhold(Deletion.Thread("thr_1")) }
 

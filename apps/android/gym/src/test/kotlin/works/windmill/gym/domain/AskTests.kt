@@ -19,14 +19,14 @@ class AskTests {
     fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
         assertEquals("Ten questions a day, three back to back.", Ask.allowance)
         assertEquals("The next question frees up in a couple of hours.", Ask.capReached)
-        assertEquals("the ceiling says four, never eight",
-            "This conversation holds four questions. Start a new one.", Ask.threadFull)
+        assertEquals("an unavailable conversation has a recovery",
+            "This conversation is unavailable. Start a new one.", Ask.threadFull)
     }
 
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", Ask.title)
-        assertEquals("reads your log · proposes only", Ask.subtitle)
+        assertEquals("reads your log · helps with your routines", Ask.subtitle)
         assertEquals("Coach reads your log, so it needs you signed in.", Ask.signedOut)
         assertEquals("Coach isn’t part of this Windmill. Your log is still yours to read.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",

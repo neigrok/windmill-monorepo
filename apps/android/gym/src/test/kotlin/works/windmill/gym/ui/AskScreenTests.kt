@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import java.io.File
@@ -38,6 +39,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Ask
+import works.windmill.gym.domain.AskGeneration
+import works.windmill.gym.domain.CoachAttachment
+import works.windmill.gym.domain.CoachDraft
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskCap
 import works.windmill.gym.domain.AskExchange
@@ -126,13 +130,78 @@ class AskScreenTests {
     }
 
     @Test
-    fun theAllowanceIsOneLineAboveTheComposerAndTheParagraphIsGone() {
+    fun partialWordsReplaceInPlaceAndStopKeepsThemWithTruthfulStatus() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "First words", revision = 1))
+        var busy by mutableStateOf(true)
+        compose.setContent {
+            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), busy, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a",
+                onStop = { generation = generation.copy(status = "stopped", revision = 3); busy = false })
+        }
+        compose.onNodeWithText("First words").assertIsDisplayed()
+        compose.onNodeWithText("Jump to latest").assertDoesNotExist()
+        compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+        compose.runOnIdle { generation = generation.copy(answer = "First words, then more.", revision = 2) }
+        compose.onNodeWithText("First words").assertDoesNotExist()
+        compose.onNodeWithText("First words, then more.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Stop response").performClick()
+        compose.onNodeWithText("First words, then more.").assertIsDisplayed()
+        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun aPhotoOnlyDraftCanBeSentAndRemovedWithoutAnEmptyMessageCopyAction() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
+        store.saveCoachDraft("new", CoachDraft(photo = photo))
+        val sent = mutableListOf<Pair<String, CoachAttachment?>>()
+        compose.setContent {
+            AskScreen(store, emptyList(), emptyList(), emptySet(), false, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, onPhotoAsk = { text, attachment -> sent += text to attachment })
+        }
+        compose.onNodeWithContentDescription("Add photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.runOnIdle { assertEquals(listOf("" to photo), sent) }
+        compose.onNodeWithText("Remove photo").performClick()
+        compose.runOnIdle { assertEquals(CoachDraft(), store.coachDraft("new")) }
+        scope.cancel()
+    }
+
+    @Test
+    fun streamingPreservesTheReadersEarlierPositionUntilJumpToLatest() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        val earlier = (1..12).map { AskExchange("Question $it", AskAnswer("Answer $it.\n".repeat(8), ReadTally()), requestId = "request-$it") }
+        var generation by mutableStateOf(AskGeneration("generation-new", "request-new", "Newest", "running", "Partial", revision = 1))
+        compose.setContent {
+            AskScreen(store, earlier + generation.exchange(), emptyList(), emptySet(), true, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+        }
+        compose.onNodeWithText("Question 1").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { generation = generation.copy(answer = "New streamed words.\n".repeat(20), revision = 2) }
+        compose.onNodeWithText("Question 1").assertIsDisplayed()
+        compose.onNodeWithText("Jump to latest").performClick()
+        compose.onNodeWithText("Question 1").assertIsNotDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun theEmptyRoomLeadsDirectlyToTheComposer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         room(store(scope), thread = emptyList(), cap = null, doors = mutableListOf())
 
         compose.onNodeWithText(Ask.title).assertIsDisplayed()
         compose.onNodeWithText(Ask.subtitle).assertDoesNotExist()
-        compose.onNodeWithText("Ten questions a day, three back to back.").assertIsDisplayed()
+        compose.onNodeWithText("Ten questions a day, three back to back.").assertDoesNotExist()
         compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
         compose.onNodeWithText("There is nothing to buy here.", substring = true).assertDoesNotExist()
         scope.cancel()
@@ -156,7 +225,7 @@ class AskScreenTests {
         )
         room(store(scope), thread = listOf(answered), cap = null, doors = mutableListOf())
 
-        compose.onNodeWithText(Ask.allowance).assertIsDisplayed()
+        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
         val receipt = compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).performScrollTo()
         receipt.assertIsDisplayed()
         receipt.assert(hasStateDescription("collapsed"))
@@ -194,7 +263,7 @@ class AskScreenTests {
         compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
         // A10: the promise is pinned with the doors, below the moment it ran out — which reads at
         // the end of the thread and scrolls with it.
-        compose.onNodeWithText(Ask.allowance).assertIsDisplayed()
+        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
 
         // T3's other direction: under the DAY's ten a new conversation is the way back to a
@@ -396,11 +465,13 @@ class AskScreenTests {
     }
 
     @Test
-    fun theNotesDoorIsARowInTheRoomAndOpensTheNotes() {
+    fun theQuietRoomKeepsNotesInMoreAndHistoryInTheBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
         room(store(scope), thread = emptyList(), cap = null, doors = doors)
 
+        compose.onNodeWithText("Notes").assertDoesNotExist()
+        compose.onNode(hasContentDescription("More")).performClick()
         compose.onNodeWithText("Notes").performClick()
         compose.onNodeWithText("History").performClick()
         compose.runOnIdle { assertEquals(listOf("notes", "threads"), doors) }
@@ -503,11 +574,12 @@ class AskScreenTests {
                     conversation = "new-thread"
                     val answer = if (thread.isEmpty()) "A much longer training history. ".repeat(60) else "The new answer is here."
                     thread = thread + AskExchange(it, AskAnswer(answer, ReadTally(0, 0, 0)))
-                }, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                }, onRetry = {}, onAskNew = { conversation = ""; thread = emptyList() }, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onNotes = {}, onReview = {}, conversationId = conversation,
                 onNewDraft = { conversation = ""; thread = emptyList() })
         }
-        compose.onNodeWithText("Ask new").performClick()
+        compose.onNode(hasContentDescription("More")).performClick()
+        compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithContentDescription("Question").performTextReplacement("New first question")
         compose.onNodeWithContentDescription("Send").performClick()
         compose.onNodeWithContentDescription("Question").performTextReplacement("New second question")
