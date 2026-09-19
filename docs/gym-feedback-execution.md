@@ -39,6 +39,8 @@ The design audit distinguishes captured native layouts from source-only findings
 
 These model exchanges use a local Anthropic-protocol fixture. They establish application and transport behavior, not live model output quality or vision understanding. The chosen JPEG/PNG transport is supported by the [provider’s vision contract](https://platform.claude.com/docs/en/build-with-claude/vision); actual provider acceptance remains separate.
 
+Remote CI passed at [12503893](https://github.com/neigrok/windmill-monorepo/commit/12503893c5199790973113762a86b386b8a39fc2): [Android](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077292) in 8m 2s, [iOS](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077317) in 5m 41s, [Web](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077310) in 50s, and [backend](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077326) in 8m 26s. [PR #3](https://github.com/neigrok/windmill-monorepo/pull/3) remains draft.
+
 ## Review and simplification
 
 Independent review and subsequent live testing produced corrections for request identity after a retry refusal, deleted-thread resurrection, completed-context selection after failed exchanges, web Stop racing a failed stream, expired unlinked photo drafts, and model-worker scheduling of overlapping requests. Regression tests cover those cases.
@@ -51,7 +53,7 @@ Native review also corrected over-wide photo controls, short-message Jump visibi
 
 1. Apply and review the owner’s exact friendly/helpful Coach prompt. No substitute text has been invented.
 2. Verify actual provider output and vision with a configured local key or an agreed deployed test path. No real local Anthropic key is configured.
-3. Complete remote checks and compatible backend rollout; verify deployed streaming/proxy behavior.
+3. Complete compatible backend rollout; verify deployed streaming/proxy behavior.
 4. Build the Android signing input, verify source/run provenance, sign with the retained key, test clean installation and supported in-place upgrade, then publish and verify public assets. Android release is last.
 
 Release preflight passed: public Android 0.8.2 digest/certificate match the retained public pin, the local encrypted key opens through its dedicated Keychain item, and the encrypted backup matches. No candidate has been signed or published.
