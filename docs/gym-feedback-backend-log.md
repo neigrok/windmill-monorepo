@@ -39,8 +39,10 @@ The protocol fixture verifies transport and persistence through the real service
 evidence of a live Anthropic model response. The final Notes wave passed 967 domain, 272 MCP and
 1,003 Postgres adapter cases with zero failures/skips. A local HTTP check through Caddy saved a
 note and routine, interrupted output, preserved a later note edit on retry and replayed completion
-without a new model call. The isolated Actions provider lane has 15 passing offline tests and
-publishes only bounded, sanitized acceptance evidence. Actual-provider text/vision/streaming, routine/Note persistence and replay passed on `3df4a889`; the final catalog-grounding wording awaits live acceptance.
+without a new model call. Historical actual-provider observation passed at `a3c3c811`: five calls across three
+generations, one saved routine, accurate quadrant-image interpretation and text visible 7.20079
+seconds before completion. Completed replay made no additional call or write. This run chose no
+note; faithful note creation and replay remain established by the live `3df4a889` run.
 
 Validation: the optimized `RelWithDebInfo` build completed with `-j4`; the current schema applied
 successfully twice to the isolated feedback database. `WM_PG_TEST=1 ctest --test-dir backend/build
@@ -50,11 +52,23 @@ admission across completion, conflicting payloads discovered on lease reread, an
 services contending on a real Postgres lease. `git diff --check` is clean. Local HTTP protocol-fixture checks are recorded separately by
 the orchestration task.
 
-The deployment smoke mode pins the running image before creating a synthetic account and shares
-the deployment concurrency guard. Its 27 combined offline tests pass. Generated cleanup SQL was
-exercised against isolated PostgreSQL: an active Coach lease rolled deletion back; releasing it
-permitted only the owned fixture cleanup while retaining usage accounting. The public run remains
-a rollout gate. Reusing the same bounded acceptance harness keeps isolated and deployed evidence
-comparable without adding a product testing endpoint.
+Tests and automation use deterministic LLM fakes/fixtures only. Committed adapter/service tests
+cover parser, tool, retry and persistence behavior without provider credentials. Actual-model
+exploration is manual and local only with a user-provided local key; it is not a scripted acceptance
+or deployment gate. Production provider configuration remains separate from test infrastructure.
 
-Catalog metadata is deliberately small and does not describe every exercise variant or setup. Coach states actual movement-pattern coverage and material gaps, names relevant variants, and asks only for missing material setup details. Internal IDs remain tool references rather than ordinary answer copy. This semantic correction leaves the supplied persona and persistence contracts unchanged; the optimized build, 13 focused Coach tests and independent review passed.
+All four surface/backend CI checks passed at `a3c3c811`; merge
+`e0d43e690b0bd25718a0ca096e4f64845f94fec8` has the same tested tree. Main backend run
+`35452461058` and deployment `35452985601` succeeded. Public read-only checks passed at 16:10:31 UTC
+with zero model requests; they establish reachability and signed-out boundaries, not public
+streaming. Web Deploy is held pending restoration; Android 0.9.0 signing, installation acceptance
+and publication remain last.
+
+Catalog metadata is deliberately small and does not describe every exercise variant or setup.
+Coach states actual movement-pattern coverage and material gaps, names relevant variants, and asks
+only for missing material setup details. Internal IDs remain tool references rather than ordinary
+answer copy. The supplied persona and persistence contracts are unchanged; the optimized build,
+13 focused Coach tests and independent review passed. Final live review accepted the explicit
+variants and missing pulling coverage. A brief catalog preamble and the photo answer’s empty-log
+aside remain minor copy observations. Persistence receipts establish what was saved; semantic
+review separately establishes whether the explanation is faithful and useful.

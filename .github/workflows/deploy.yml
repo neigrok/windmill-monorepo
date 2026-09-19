@@ -12,12 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Image tag to deploy, or full expected deployed SHA for verification only
+        description: Image tag to deploy
         default: latest
-      verify_coach_only:
-        description: 'Verify the deployed Coach using one new synthetic account; do not deploy'
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy-vps
@@ -28,7 +24,7 @@ jobs:
     # The push clause matters: a pull_request run of Backend CI/CD skips build-and-push, so its
     # success describes a tag that was never published.
     if: >-
-      (github.event_name == 'workflow_dispatch' && !inputs.verify_coach_only) ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.event == 'push')
@@ -181,34 +177,3 @@ jobs:
           rm -f .env.bak
           echo "deployed: .env rendered (DB password preserved), image pulled, stack up + caddy reloaded"
           REMOTE
-
-  verify-deployed-coach:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify_coach_only
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-      - name: Test deployed verification guards
-        run: python3 -m unittest discover -s backend/test/e2e -p 'test_coach_provider_*.py' -v
-      - uses: docker/setup-buildx-action@v4
-      - name: Verify the deployed image and public Coach stream
-        env:
-          COACH_VERIFY_DEPLOYED: ${{ inputs.verify_coach_only }}
-          EXPECTED_IMAGE_SHA: ${{ inputs.image_tag }}
-          SSH_KEY: ${{ secrets.SSH_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-        run: python3 backend/test/e2e/coach_provider_deployed.py
-      - name: Upload sanitized deployed Coach evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coach-deployed-${{ inputs.image_tag }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/coach-deployed-evidence/coach-provider-deployed.json
-            ${{ runner.temp }}/coach-deployed-evidence/coach-provider-acceptance.json
-          if-no-files-found: warn
-          retention-days: 14

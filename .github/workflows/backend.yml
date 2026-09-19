@@ -16,14 +16,9 @@ on:
       - 'services/embedder/**'
       - '.github/workflows/backend.yml'
   workflow_dispatch:
-    inputs:
-      verify_coach_provider:
-        description: 'Verify Coach against Anthropic with disposable runner data; publish nothing'
-        type: boolean
-        default: false
 
 concurrency:
-  group: backend-cicd-${{ github.ref }}-${{ inputs.verify_coach_provider && 'coach-verification' || 'build' }}
+  group: backend-cicd-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -34,12 +29,8 @@ jobs:
   # The builder stage compiles everything and runs ctest, so a red suite fails here.
   test:
     runs-on: ubuntu-latest
-    env:
-      DOCKER_BUILD_RECORD_UPLOAD: ${{ inputs.verify_coach_provider && 'false' || 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - name: Test isolated Coach verification bootstrap
-        run: python3 -m unittest discover -s backend/test/e2e -p 'test_coach_provider_*.py' -v
       - uses: docker/setup-buildx-action@v4
       - name: Build + test (builder stage)
         uses: docker/build-push-action@v7
@@ -52,7 +43,7 @@ jobs:
 
   build-and-push:
     needs: test
-    if: github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.verify_coach_provider)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,41 +76,3 @@ jobs:
             ${{ env.IMAGE }}:embedder-latest
           cache-from: type=gha,scope=embedder
           cache-to: type=gha,mode=max,scope=embedder
-
-  verify-coach-provider:
-    needs: test
-    if: github.event_name == 'workflow_dispatch' && inputs.verify_coach_provider
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      DOCKER_BUILD_RECORD_UPLOAD: "false"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v4
-      - name: Build the unpublished candidate runtime
-        uses: docker/build-push-action@v7
-        with:
-          context: backend
-          target: runtime
-          push: false
-          load: true
-          tags: windmill-coach-verify:${{ github.sha }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-      - name: Verify Coach with disposable runner data
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          COACH_VERIFY_PROVIDER: ${{ inputs.verify_coach_provider }}
-        run: python3 backend/test/e2e/coach_provider_ci.py
-      - name: Upload sanitized Coach acceptance evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coach-provider-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/coach-provider-evidence/coach-provider-run.json
-            ${{ runner.temp }}/coach-provider-evidence/coach-provider-acceptance.json
-          if-no-files-found: warn
-          retention-days: 14
