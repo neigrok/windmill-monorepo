@@ -209,7 +209,7 @@ versioned `workflow_dispatch` also produces an unpublished signing-input artifac
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
 configuration. `versionCode` equals the workflow run number and must exceed the published
-[`android-v0.9.0`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) version code 85.
+[`android-v0.9.1`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.1) version code 89.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
@@ -219,15 +219,23 @@ unchanged application contents. Its output includes the APK, digest and provenan
 exact input bytes. It does not publish. Native acceptance and a same-key update check precede
 uploading the public artifacts to the matching GitHub release.
 
-The published [0.9.0/code85 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) uses tag `android-v0.9.0` at
-`a21a4fd92a6722b170e2345949059e2ed01b36af`, Actions run `35454444192`, attempt2. Its retained
-signature, unchanged application payload, bounded Android 14 clean-install checks and offline
-0.8.2 upgrade preservation after restart are verified. All three public assets match the accepted
-local files; the downloaded APK passes signature, version, digest and provenance checks.
-Its SHA-256 is `ba7f2fd6de5fd15ba8b5808d810a817e23d138e794197b8e18a0207d7f2c94ed`.
-Final-APK authenticated Coach, network replay of the offline fixture and spoken TalkBack traversal
-were not exercised. The narrow 320 dp/200% text Routines tab-label clipping remains a tracked
-layout follow-up. Current evidence is recorded in [the feedback execution log](../../docs/gym-feedback-execution.md).
+The published [0.9.1/code89 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.1) uses tag `android-v0.9.1` at
+`7010c3e04b9e0668e55b06baa9805ed99fc5fe3b`, [Actions run 35463302150](https://github.com/neigrok/windmill-monorepo/actions/runs/35463302150), attempt 1, from a tag push.
+The retained signature, non-debuggable package, unchanged application payload and linked provenance
+are verified. All three anonymously downloaded public assets match the accepted signed files and
+GitHub's SHA-256 digests; the downloaded APK passes full verification.
+Its SHA-256 is `3e7c9cafe0a2d6773fcd0964efc73f42b948487f40687d16e67363f2ee82416f`.
+
+Bounded final-APK checks on Android 14 verified an in-place 0.9.0 update preserving the existing
+routine and 20kg×5 workout through restart, plus an independent clean install with routine creation,
+workout-body swipes and a saved 20kg×5 session retained after restart. Notifications stayed denied;
+Coach's account door was checked without a model call. The retained signing identity permits
+in-place updates from 0.8.2 and 0.9.0; direct 0.8.2→0.9.1 preservation was not exercised in this release.
+Authenticated Coach streaming was verified on the debug build with deterministic local fixtures,
+not on the final signed APK. Spoken TalkBack remains unexercised, and the narrow 320dp/200% text
+Routines tab-label clipping remains a tracked follow-up. Current release evidence and frame-time
+limits are in [the interaction worklog](../../docs/gym-interaction-polish-log.md#android-091-release);
+[the feedback execution log](../../docs/gym-feedback-execution.md) retains the 0.9.0 verification.
 
 Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
 identity. The historical published APKs through0.7.1 used different debug certificates; the

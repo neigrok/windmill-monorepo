@@ -79,6 +79,8 @@ Final signed authenticated Coach and TalkBack navigation remain unexercised. Upg
 
 The [Android 0.9.0 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) was published at 17:03:51 UTC, last in the delivery sequence. All three downloaded public assets are byte-identical to the signed local files in `android-090-public/`. Full APK verification passed for code85, commit `a21a4fd`, attempt2, retained certificate, application payload and digest. An anonymous APK HEAD request followed the public redirect to HTTP 200 (`android-090-public/anonymous-download-headers.txt`). The intermittent restoration test and large-text navigation label remain nonblocking follow-ups; no delivery gate remains. Automated Coach smoke uses deterministic fixtures; any actual-model exploration remains manual and local only.
 
+The follow-up [Android 0.9.1/code89 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.1) adds compact routine detail, steadier Coach presentation and workout-body swipes. Its final signed native checks and public-artifact verification are recorded in [the interaction worklog](gym-interaction-polish-log.md#android-091-release).
+
 ## Test-data cleanup
 
 Automatic approval review rejected deleting empty audit workout `ses_4bb4e2b97db1100c` from the isolated synthetic account because that specific deletion lacked explicit authorization. It has zero sets and remains intact; permission is optional and does not block delivery. No retry or workaround was attempted.
