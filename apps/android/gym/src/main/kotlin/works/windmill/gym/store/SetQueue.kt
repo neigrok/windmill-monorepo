@@ -614,6 +614,7 @@ sealed class AskVerdict {
             if (facts.code == "ask-out-of-budget") {
                 return Capped(facts.sentence ?: AskCap.Ceiling.wordless, AskCap.Ceiling)
             }
+            if (facts.code == "ask-generation-active") return Again(facts.sentence ?: "Coach is answering another message. Try again when it finishes.")
             // Both are answered by opening a new thread; nothing is re-sent on its own.
             if (facts.code == "ask-thread-full" || facts.code == "ask-thread-taken") {
                 return Fresh(facts.sentence ?: Ask.threadFull)

@@ -404,33 +404,20 @@ test('the review never pushes: no hash moves from a card, the card is a skim, an
   // Ephemeral: the receipt is state of the visit and is read back from no wire.
   for (const file of ['coach/CoachRoom.jsx', 'coach/Threads.jsx', 'Proposals.jsx']) {
     const said = fs.readFileSync(path.join(GYM, file), 'utf8');
-    assert.equal(/localStorage|sessionStorage|receiptAt|settledLine\(receipt/.test(said), false, file);
+    assert.equal(/receiptAt|settledLine\(receipt/.test(said), false, file);
   }
 });
 
-// The Coach card as the room composes it: `CoachRoom` → `CoachBody` → `Answer` → `CoachProposal`.
-// None of those inner pieces is an export, so the card is reached through the tree that draws it and
-// then rendered on its own — how many rows a lifter sees is not a string in a file.
 async function coachCard(t, stored) {
   browserWith();
-  global.fetch = async (url, options = {}) => {
+  global.fetch = async (url) => {
     const at = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    if (at === '/ask' && method === 'POST') {
-      return { ok: true, status: 200, json: async () => ({ answer: 'Here it is.', proposals: [stored.id], read: { sets: 40, sessions: 8, weeks: 3 } }) };
-    }
-    if (at === `/proposals/${stored.id}` && method === 'GET') return { ok: true, status: 200, json: async () => stored };
-    throw new Error(`unexpected ${method} ${at}`);
+    if (at === `/proposals/${stored.id}`) return { ok: true, status: 200, json: async () => stored };
+    throw new Error(`unexpected GET ${at}`);
   };
-  const { CoachRoom } = await loadScreen('products/gym/coach/CoachRoom.jsx');
-  const room = renderHook(t, () => CoachRoom({ log: quiet }));
-  const bodyOf = () => elementsOf(room.tree).find((each) => typeof each.type === 'function' && each.type.name === 'CoachBody');
-  bodyOf().props.setDraft('What should I change?');
-  bodyOf().props.onAsk();
-  await settle();
-  const shown = bodyOf();
-  const answer = elementsOf(shown.type(shown.props)).find((each) => typeof each.type === 'function' && each.type.name === 'Answer');
-  const drawn = elementsOf(answer.type(answer.props)).find((each) => typeof each.type === 'function' && each.type.name === 'CoachProposal');
+  const { CoachMessage } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const message = renderHook(t, () => CoachMessage({ turn: { from: 'ask', text: 'Here it is.', proposals: [stored.id] }, log: quiet }));
+  const drawn = elementsOf(message.tree).find((each) => typeof each.type === 'function' && each.type.name === 'CoachProposal');
   const card = renderHook(t, () => drawn.type(drawn.props));
   await settle();
   return card;

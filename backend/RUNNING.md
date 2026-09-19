@@ -108,6 +108,69 @@ Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` in
 builder stage with no database beside it, so those cases are proven on a developer's machine and
 nowhere else. Run them before pushing a change to a Pg repository or the tables it reads.
 
+## Coach provider acceptance in CI
+
+The Backend CI/CD workflow has a manual `verify_coach_provider` input, defaulting to false. Set it
+to true on the reviewed candidate ref to build/test that exact checkout and run Coach against
+`https://api.anthropic.com`. This mode skips image publication and cannot trigger production deploy.
+It uses the existing `ANTHROPIC_API_KEY` Actions secret only in the candidate container environment;
+it reads no production database, deployment configuration, SSH credentials or developer `.env`.
+
+`test/e2e/coach_provider_ci.py` creates a separate runner Docker network, a tmpfs Postgres instance,
+and a candidate exposed only on loopback. The database has no published port and uses trust auth
+only inside that disposable network. A synthetic account/session and the schema's exercise catalog
+are the entire initial data set. Mail, telemetry forwarding and background integrations are disabled.
+The harness makes at most three new Coach requests and one identical completed replay, with 180-second
+request and 600-second harness limits; the ordinary backend iteration and spend limits still apply.
+The launcher removes its containers, network and private session file on exit. No host deployment or
+registry publication is part of verification.
+
+The artifact contains only `coach-provider-acceptance.json` and `coach-provider-run.json`: allowlisted
+synthetic visible answers/receipts/results, check outcomes, source SHA, GitHub run identity, image ID,
+provider model and observed token/cache/cost usage. Credentials, headers, image bytes, internal
+reasoning and raw provider payloads are excluded. An interrupted call can have incomplete observed
+usage. Inspect both the checks and the synthetic answers before treating a run as acceptance.
+
+The run JSON also includes bounded stream diagnostics: HTTP status, numeric libcurl result,
+message-start/completion flags, parser failure category, known provider error type and
+cancellation/callback-failure flags. The runner extracts only that fixed record from the candidate's
+in-memory logs before removing it; other log text is discarded. Provider error messages, unknown
+error-type values and response bodies are never retained. An HTTP 200 can still carry an SSE error;
+zero observed tokens on an interrupted call do not prove that the provider billed nothing.
+
+Run the bootstrap and harness tests without a provider key from the repository root:
+
+```sh
+python3 -m unittest discover -s backend/test/e2e -p 'test_coach_provider_*.py' -v
+```
+
+## Deployed Coach smoke check
+
+The Deploy workflow's manual `verify_coach_only=true` mode verifies the running release without
+deploying. `image_tag` must be its full 40-character published commit SHA; `latest` is refused.
+The mode shares the `deploy-vps` concurrency guard with normal deployments and never changes
+images, services, routes or configuration. Its verifier checkout SHA is recorded separately.
+
+`test/e2e/coach_provider_deployed.py` uses the existing Actions SSH credentials on a hosted runner
+to inspect the server's exact image tag, image ID, registry digest and container health before any
+database write, then checks them again after the smoke test. It creates one fresh random account
+and hashed session through `~/windmill`'s compose Postgres service, with no email delivery. The
+existing bounded acceptance harness uses that session against `https://windmill.works`, so its
+incremental-delivery evidence includes the public proxy. The provider key stays on the server.
+
+Cleanup first proves the account UUID, synthetic email and per-run marker, stops its unfinished
+generations, and checks quiescence. A transaction locks the owner and its conversation leases,
+refuses unexpected sessions or active generations, and removes only that newly created fixture.
+Provider usage rows remain intact. If creation, ownership or quiescence cannot be proved, the
+runner revokes only its new session and reports the retained fixture for review. A runner killed
+before cleanup can leave the fixture; its session expires after 30 minutes.
+
+Artifacts are limited to `coach-provider-deployed.json` and `coach-provider-acceptance.json`:
+release/run identity, synthetic visible responses and receipts, observed usage, check outcomes and
+cleanup status. SSH details, credentials, headers, image bytes and raw provider payloads are
+excluded. Exit 3 means streaming timing was inconclusive; it is not a passing acceptance result.
+The same offline script-test command above covers deployment gating and cleanup guards.
+
 ## Roadmap tree endpoints
 
 The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys, reminders, the

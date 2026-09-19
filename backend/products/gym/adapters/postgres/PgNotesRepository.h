@@ -18,6 +18,8 @@ public:
 
   std::vector<Note> notes(const UserId& user) override;
   NoteWriteOutcome saveNote(const Note& incoming, std::uint64_t nowMs) override;
+  NoteWriteOutcome saveInsight(const Note& incoming, std::uint64_t nowMs) override;
+  std::optional<Note> noteSave(const UserId& user, const NoteId& id) override;
   void deleteNote(const UserId& user, const NoteId& id) override;
   NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order) override;
 

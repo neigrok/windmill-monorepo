@@ -30,6 +30,33 @@ import works.windmill.platform.net.WindmillJson
 
 class GymHttpTests {
     @Test
+    fun coachKeepsPendingSeparateFromCompletedRepliesAndEncodesOpaquePageCursors() = runBlocking {
+        val paths = mutableListOf<String>()
+        val bodies = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            paths += request.url.encodedPath + request.url.encodedQuery?.let { "?$it" }.orEmpty()
+            request.body?.let { body -> val buffer = okio.Buffer(); body.writeTo(buffer); bodies += buffer.readUtf8() }
+            val reply = when (request.url.encodedPath) {
+                "/v1/gym/ask" -> """{"generation":{"id":"generation-a","requestId":"request-a","question":"Question","status":"running"}}"""
+                "/v1/gym/threads" -> """{"threads":[{"id":"thread-old","title":"Old question"}],"nextCursor":"older+/="}"""
+                else -> """{"id":"thread-old","turns":[{"from":"lifter","text":"Question","position":1,"generationId":"generation-a","requestId":"request-a"},{"from":"coach","text":"Answer","position":2,"generationId":"generation-a","requestId":"request-a"}],"nextCursor":"before+/="}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                .code(if (request.url.encodedPath == "/v1/gym/ask") 202 else 200).message("OK")
+                .body(reply.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
+        val pending = gym.ask(AskQuestion("thread-old", "Question", "request-a"))
+        assertEquals("running", pending.generation?.status)
+        assertEquals("", pending.answer)
+        assertEquals("older+/=", gym.threadsPage("old+/=").nextCursor)
+        assertEquals("before+/=", gym.threadPage("thread-old", "old+/=")?.nextCursor)
+        assertEquals(listOf("""{"thread":"thread-old","question":"Question","requestId":"request-a"}"""), bodies)
+        assertEquals(listOf("/v1/gym/ask", "/v1/gym/threads?limit=50&cursor=old%2B%2F%3D", "/v1/gym/threads/thread-old?limit=50&before=old%2B%2F%3D"), paths)
+    }
+
+    @Test
     fun failedRequestsIdentifyTheirActionWithoutIdsQueriesOrContent() = runBlocking {
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<Pair<String, Map<String, String>>>()

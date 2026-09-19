@@ -16,6 +16,7 @@ class PgProgramRepository : public ProgramRepository {
 public:
   explicit PgProgramRepository(std::shared_ptr<PgPool> pool);
 
+  std::optional<Routine> routineCreation(const UserId& user, const RoutineId& id) override;
   std::vector<Routine> routines(const UserId& user) override;
   std::optional<Routine> routine(const UserId& user, const RoutineId& id) override;
   std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) override;

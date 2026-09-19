@@ -2,14 +2,18 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +21,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -24,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.AnswerReceipt
+import works.windmill.gym.domain.CoachResult
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskStep
 import works.windmill.gym.domain.Exercise
@@ -35,7 +46,7 @@ import works.windmill.platform.design.WindmillFont
 internal fun CoachQuestion(question: String) {
     val skin = LocalGymColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Text(
+        CoachMessageText(
             question,
             style = WindmillFont.body(17).copy(lineHeight = 24.sp),
             color = skin.ink,
@@ -53,11 +64,21 @@ internal fun CoachAnswer(
     nowMs: Long,
     legacyRead: ReadTally? = null,
     legacySteps: List<AskStep> = emptyList(),
+    results: List<CoachResult> = emptyList(),
+    onOpenRoutine: ((String) -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
     val evidence = receipt?.takeIf { it.supported }
     Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(text, style = WindmillFont.body(19).copy(lineHeight = 27.sp), color = skin.ink)
+        if (text.isNotEmpty()) CoachMessageText(text, style = WindmillFont.body(19).copy(lineHeight = 27.sp), color = skin.ink)
+        results.filter { it.kind == "routine-created" }.distinctBy { it.operationId }.forEach { result ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp)) {
+                Text("Routine created", style = WindmillFont.body(14), color = skin.inkDim)
+                Text(result.routineName, style = WindmillFont.body(18, FontWeight.Bold), color = skin.ink)
+                onOpenRoutine?.let { open -> CoachAction("Open routine", { open(result.routineId) }) }
+            }
+        }
         val focus = evidence?.workouts?.singleOrNull()
         if (focus != null) Text("From your log", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim)
         listOfNotNull(focus).forEach { observation ->
@@ -118,6 +139,29 @@ internal fun CoachAnswer(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CoachMessageText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    val clipboard = LocalClipboardManager.current
+    val skin = LocalGymColors.current
+    var menu by rememberSaveable(text) { mutableStateOf(false) }
+    val copy = { clipboard.setText(AnnotatedString(text)); menu = false }
+    Box {
+        Text(text, style = style, color = color, modifier = modifier.then(
+            if (text.isEmpty()) Modifier else Modifier.combinedClickable(
+                onClickLabel = "Message actions",
+                onClick = { menu = true },
+                onLongClickLabel = "Message actions",
+                onLongClick = { menu = true },
+            ).semantics {
+                customActions = listOf(CustomAccessibilityAction("Copy") { copy(); true })
+            },
+        ))
+        DropdownMenu(expanded = menu && text.isNotEmpty(), onDismissRequest = { menu = false }, containerColor = skin.raised) {
+            DropdownMenuItem(text = { Text("Copy") }, onClick = copy)
         }
     }
 }

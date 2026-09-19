@@ -63,6 +63,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskCap
+import works.windmill.gym.domain.CoachAttachment
+import works.windmill.gym.domain.CoachDraft
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Coach
@@ -300,7 +302,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // from the server's apply reply and vanishes with the screen, and nothing pretends otherwise.
     var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
-    // the turns but not the receipt, the tools or a question that failed with no reply.
+    // the turns and receipts; unanswered submissions also live in the account’s local journal.
     var conversation by rememberSaveable(stateSaver = remember(telemetry) { askThreadSaver(telemetry) }) {
         mutableStateOf(emptyList<AskExchange>())
     }
@@ -478,6 +480,20 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         // with nothing coming.
         conversation = Ask.settled(conversation)
         store.connect(account)
+        if (conversationId.isEmpty() && standing != null) {
+            try {
+                store.pendingQuestions().lastOrNull()?.let { pending ->
+                    conversationId = pending.thread
+                    val read = store.thread(pending.thread)
+                    conversation = if (read is GymResult.Ok) read.value.exchanges() else emptyList()
+                    if (read !is GymResult.Ok || read.value.generation?.requestId != pending.requestId) {
+                        conversation = conversation + store.pendingExchange(pending)
+                    }
+                    conversation = Ask.settled(conversation)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
+        }
     }
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
@@ -661,51 +677,83 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     // Asked from the room, not from the screen that draws it, so the coroutine and the answer outlive
     // a lifter walking away mid-wait. The door closes on the way IN, or two taps are two spends.
-    fun ask(from: List<AskExchange>, question: String) {
-        if (asking || Ask.needsNew(from) || !Ask.sendable(question)) return
+    var coachJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var coachUpload by remember { mutableStateOf<Float?>(null) }
+    var stopPending by remember { mutableStateOf(false) }
+    fun ask(from: List<AskExchange>, question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
+        if (asking || Ask.needsNew(from) || (!Ask.sendable(question) && (photo == null || question.toByteArray().size > Ask.maxTurnBytes))) return
         val askingOwner = currentAccount.user?.id
         val asked = question.trim()
         // Minted before the send and kept whatever comes back, so a retry continues the same
-        // conversation. It names the CONVERSATION and is not per-question idempotency, so nothing
-        // here is ever re-sent on its own.
+        // conversation. Each question also retains its own request ID for retries.
         val into = conversationId.ifEmpty { Ids.thread().also { conversationId = it } }
+        val previous = conversation.lastOrNull()?.takeIf { it.requestId == requestId }
+        val attachments = previous?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
+        val pending = AskExchange(question = asked, requestId = requestId, generation = previous?.generation, attachments = attachments)
+        try {
+            store.saveCoachDraft(into, CoachDraft(asked, attachments.firstOrNull()))
+            store.saveCoachDraft("new", CoachDraft())
+        } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
+        cap = null
         asking = true
-        conversation = from + AskExchange(question = asked)
+        coachUpload = if (attachments.isNotEmpty() && previous?.generation == null) 0f else null
+        conversation = from + pending
+        coachJob = scope.launch {
+            try {
+                val outcome = store.ask(into, asked, requestId, attachments.firstOrNull(), stream = true,
+                    onSnapshot = { snapshot ->
+                        if (askingOwner == currentAccount.user?.id && conversationId == into) {
+                            conversation = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
+                            store.saveCoachDraft(into, CoachDraft())
+                        }
+                    }, onUpload = { coachUpload = it })
+                if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
+                conversation = from + outcome.exchange(pending)
+                if (outcome is AskOutcome.Capped) cap = outcome.cap
+                if (outcome is AskOutcome.Absent) askAbsent = true
+                if (outcome is AskOutcome.Answered) store.saveCoachDraft(into, CoachDraft())
+            } finally {
+                if (askingOwner == currentAccount.user?.id && conversationId == into) { asking = false; coachUpload = null; stopPending = false }
+            }
+        }
+    }
+
+    fun stopCoach() {
+        if (stopPending) return
+        val last = conversation.lastOrNull() ?: return
+        if (coachUpload != null) {
+            coachJob?.cancel()
+            conversation = conversation.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true)
+            return
+        }
+        val into = conversationId
+        val askingOwner = currentAccount.user?.id
+        stopPending = true
         scope.launch {
             try {
-                val outcome = store.ask(into, asked)
-                if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
-                when (outcome) {
-                    is AskOutcome.Answered ->
-                        conversation = from + AskExchange(question = asked, answer = outcome.answer)
-                    is AskOutcome.Refused ->
-                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
-                    is AskOutcome.Capped -> {
-                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
-                        cap = outcome.cap
-                    }
-                    is AskOutcome.Failed ->
-                        conversation = from + AskExchange(
-                            question = asked, trouble = outcome.said, again = true)
-                    // The conversation is over and the question is fine: let go of the id and offer
-                    // the tap, which opens a new conversation with the same question.
-                    is AskOutcome.Fresh -> {
-                        conversation = from + AskExchange(
-                            question = asked, trouble = outcome.said, needsNew = true)
-                    }
-                    AskOutcome.Absent -> {
-                        conversation = from + AskExchange(question = asked, trouble = Ask.notHere)
-                        askAbsent = true
-                    }
+                val snapshot = store.stopAsk(into, last.requestId)
+                if (askingOwner == currentAccount.user?.id && conversationId == into) {
+                    conversation = conversation.dropLast(1) + snapshot.exchange()
+                    if (snapshot.terminal) { store.saveCoachDraft(into, CoachDraft()); coachJob?.cancel(); asking = false }
                 }
-            } finally {
-                if (askingOwner == currentAccount.user?.id && conversationId == into) asking = false
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { note = "The stop request didn’t reach Coach. Try again." }
+            finally { stopPending = false }
+        }
+    }
+
+    LaunchedEffect(conversationId, conversation.lastOrNull()?.generation?.id) {
+        val last = conversation.lastOrNull()
+        if (!asking && last?.generation?.status == "running") {
+            ask(conversation.dropLast(1), last.question, last.requestId, last.attachments.firstOrNull())
         }
     }
 
     // The live thread and its id are let go of; what was asked is on the log.
     fun askSomethingNew(draft: String = "") {
+        if (asking) return
+        try { store.abandonCoach(conversationId.ifEmpty { "new" }) }
+        catch (_: Exception) { note = "Your draft couldn’t be cleared. Try again."; return }
         conversationSeed = draft
         conversation = emptyList()
         conversationId = ""
@@ -1067,15 +1115,18 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             thread = conversation,
                             conversationId = conversationId,
+                            onOpenRoutine = { look(Away.Program(it)) },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
                             cap = cap,
                             onAsk = { asked -> ask(conversation, asked) },
+                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onStop = ::stopCoach, upload = coachUpload,
                             // Only the newest question is ever asked again: a retry further up would drop
                             // everything asked since.
                             onRetry = {
-                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
+                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },
                             onAskNew = { askSomethingNew() },
                             seed = conversationSeed.ifEmpty { standing.seed },
@@ -1098,7 +1149,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         )
                         standing is Away.Thread -> ThreadScreen(
                             threadId = standing.threadId,
-                            onAskNew = { askSomethingNew() },                            store = store,
+                            onAskNew = { askSomethingNew() },
+                            store = store,
+                            origin = origin,
+                            onThreads = { look(Away.Threads) },
+                            onNotes = { look(Away.Notes) },
+                            onConnections = { look(Away.Connections) },
+                            onOpenRoutine = { look(Away.Program(it)) },
                             receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
                             lookedAt = lookedAtIds,
                             backTo = beneath,
@@ -1124,13 +1181,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             thread = conversation,
                             conversationId = conversationId,
+                            onOpenRoutine = { look(Away.Program(it)) },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
                             cap = cap,
                             onAsk = { asked -> ask(conversation, asked) },
+                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onStop = ::stopCoach, upload = coachUpload,
                             onRetry = {
-                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
+                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },
                             onAskNew = { askSomethingNew() },
                             seed = conversationSeed,

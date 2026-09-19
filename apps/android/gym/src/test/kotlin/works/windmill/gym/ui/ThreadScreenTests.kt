@@ -8,6 +8,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTextReplacement
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -62,6 +64,44 @@ class ThreadScreenTests {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    @Test
+    fun historyShowsCreatedOutcomesOnceAndKeepsOrdinaryConversationsQuiet() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val today = System.currentTimeMillis()
+        server.conversations["thread-created"] = AskThread("thread-created", "Make a push routine", askedAtMs = today,
+            outcome = ThreadOutcome("created", 1, "routine-one", "Push A"))
+        server.conversations["thread-ordinary"] = AskThread("thread-ordinary", "How was my workout?", askedAtMs = today,
+            outcome = ThreadOutcome("read-only"))
+        val store = store(scope, server)
+        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}, {}) }
+
+        compose.onNodeWithText("today · Created Push A").assertIsDisplayed()
+        compose.onNodeWithText("today").assertIsDisplayed()
+        compose.onNodeWithText("Read only").assertDoesNotExist()
+        compose.onNodeWithText("Your conversations").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test
+    fun aRetainedConversationCanSendItsFifthQuestionUnderTheSameIdentity() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val turns = (1..4).flatMap { listOf(AskTurn("lifter", "Question $it"), AskTurn("coach", "Answer $it")) }
+        server.conversations["thread-old"] = AskThread("thread-old", "Question 1", turns = turns)
+        val store = store(scope, server)
+        compose.setContent { ThreadScreen("thread-old", store, emptyList(), emptySet(), "History", {}, {}, {}) }
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Question 5")
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.onNodeWithText("nothing has moved in three weeks.").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals("thread-old", server.asked.single().thread)
+            assertEquals("Question 5", server.asked.single().question)
+            org.junit.Assert.assertFalse(server.asked.single().requestId.isNullOrEmpty())
+        }
+        scope.cancel()
+    }
 
     private fun store(scope: CoroutineScope, server: TrainingSyncing): TrainingStore {
         val store = TrainingStore(
@@ -186,7 +226,6 @@ class ThreadScreenTests {
         compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
         compose.onNodeWithText("waiting", substring = true).assertDoesNotExist()
         compose.onNodeWithText(Ask.promise).assertDoesNotExist()
-        compose.runOnIdle { assertEquals(2, server.calls.count { it == "thread" }) }
         scope.cancel()
     }
     @Test

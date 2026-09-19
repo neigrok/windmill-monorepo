@@ -83,6 +83,7 @@ struct ProposalSettleOutcome {
 // row that is stored; replaceRoutine is idempotent by shape, the whole document.
 struct ProgramRepository {
   virtual ~ProgramRepository() = default;
+  virtual std::optional<Routine> routineCreation(const UserId& user, const RoutineId& id) = 0;
 
   // Both reads carry lastTrainedAtMs, an aggregate over the log rather than a column; its absence is
   // the whole of `untested`.

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Clock3, Timer } from 'lucide-react';
 import {
-  clockOf, fmt, FROM_THE_ROUTINE, nameOfMovement, planReadingOf, recordHref, restInForce, routineNameOf, slotRows,
+  clockOf, fmt, nameOfMovement, planReadingOf, recordHref, routineNameOf, slotRows, workoutClocks,
 } from './log.js';
 import { LogNotOpen } from './Log.jsx';
-import { restLabel } from './settings/preferences.js';
 
 // The mirror's charter (ledger 0t): it never offers a Finish, it says "Not training now." in words
 // rather than as a greyed control, and every clock on it counts up. Nothing here can drive the
@@ -24,7 +24,6 @@ export function LiveMirror({ log, onSignIn }) {
       session={log.session}
       sets={log.sets}
       catalog={log.catalog}
-      restSeconds={log.preferences.restSeconds}
     />
   );
 }
@@ -32,19 +31,18 @@ export function LiveMirror({ log, onSignIn }) {
 const BEAT_MS = 500;
 
 // The beat is this component's own state, so the list under it does not re-render on it.
-function TrainingNow({ session, sets, catalog, restSeconds }) {
+function TrainingNow({ session, sets, catalog }) {
   const [, setBeat] = useState(0);
   useEffect(() => {
     const beat = setInterval(() => setBeat((count) => count + 1), BEAT_MS);
     return () => clearInterval(beat);
   }, []);
 
-  const now = Date.now();
+  const clocks = workoutClocks(session, sets, Date.now());
   const routine = routineNameOf(session);
   const newest = sets.length === 0
     ? null
     : sets.reduce((late, set) => (set.completedAt >= late.completedAt ? set : late));
-  const rest = newest === null ? null : restInForce(session, newest.exerciseId, restSeconds);
   const walked = newest === null
     ? []
     : sets.filter((set) => set.exerciseId === newest.exerciseId)
@@ -58,7 +56,7 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
     <section className="gym-mirror">
       <p className="gym-mirror-head">
         <span className="gym-live-dot" aria-hidden="true" />
-        {`Training now${routine ? ` · ${routine}` : ''}  ·  ${clockOf(now - session.startedAt)}`}
+        {`Training now${routine ? ` · ${routine}` : ''}`}
       </p>
       {newest && (
         <>
@@ -67,10 +65,18 @@ function TrainingNow({ session, sets, catalog, restSeconds }) {
               {nameOfMovement(catalog, newest.exerciseId)}
             </a>
             {` — set ${newest.setNumber}`
-              + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`
-              + `  ·  last set ${clockOf(now - newest.completedAt)} ago`
-              + (rest === null ? '' : `  ·  target ${restLabel(rest.seconds)}${rest.fromRoutine ? FROM_THE_ROUTINE : ''}`)}
+              + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`}
           </p>
+        </>
+      )}
+      <div className="gym-workout-clocks" aria-live="off">
+        {clocks.map((clock, index) => <span className="gym-workout-clock" key={clock.label}
+          role="group" tabIndex={0} aria-label={`${clock.label}: ${clock.spoken}`}>
+          {index === 0 ? <Clock3 size={16} aria-hidden="true" /> : <Timer size={16} aria-hidden="true" />}
+          <span aria-hidden="true">{clockOf(clock.elapsed)}</span>
+        </span>)}
+      </div>
+      {newest && (<>
           {reading.kind === 'planned' && <p className="gym-mirror-plan">{reading.line}</p>}
           <ul className="gym-mirror-slots">
             {rows.map((row) => (

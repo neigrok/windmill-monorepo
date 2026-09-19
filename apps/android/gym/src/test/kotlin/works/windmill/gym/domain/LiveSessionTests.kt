@@ -16,16 +16,30 @@ private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
 
 class LiveOrderTests {
     @Test
-    fun restCountUpIsSeparateFromTheFrozenTargetAndNeverInventsAnOrigin() {
-        val prefs = GymPreferences(restSeconds = 90)
-        val plan = PlanEntry("bench", restSeconds = 120)
-        assertEquals(RestReading(null, 120), RestReading(null, plan, prefs))
-        assertEquals(null, RestReading(null, plan, prefs).elapsedMs(90_000))
-        assertEquals("2:00", RestReading(null, plan, prefs).target)
-        assertEquals(RestReading(10_000, 90), RestReading(10_000, null, prefs))
-        assertEquals(65_000L, RestReading(10_000, plan, prefs).elapsedMs(75_000))
-        assertEquals(0L, RestReading(10_000, plan, prefs).elapsedMs(5_000))
-        assertEquals("Off", RestReading(null, null, prefs.copy(restSeconds = null)).target)
+    fun workoutClocksUseEveryAcceptedSetAndRecomputeAfterDeleteUndoAndEdits() {
+        val session = Session("workout", 10_000)
+        val first = TrainingSet("first", "bench", weightKg = 60.0, reps = 5, completedAtMs = 25_000)
+        val latest = TrainingSet("latest", "row", weightKg = 20.0, reps = 8, kind = SetKind.Warmup, completedAtMs = 40_000)
+        val before = WorkoutClocks(session, emptyList(), 70_000)
+        assertEquals(listOf(60_000L, 60_000L), listOf(before.workoutMs, before.sinceSetMs))
+        assertEquals("Since start", before.sinceSetName)
+        val accepted = WorkoutClocks(session, listOf(latest, first), 70_000)
+        assertEquals(listOf(60_000L, 30_000L), listOf(accepted.workoutMs, accepted.sinceSetMs))
+        assertEquals("Since last set", accepted.sinceSetName)
+        assertEquals(45_000L, WorkoutClocks(session, listOf(first), 70_000).sinceSetMs)
+        assertEquals(30_000L, WorkoutClocks(session, listOf(first, latest.copy(weightKg = 22.5, reps = 9)), 70_000).sinceSetMs)
+        assertEquals(60_000L, WorkoutClocks(session, listOf(first, latest), 100_000).sinceSetMs)
+    }
+
+    @Test
+    fun finishedWorkoutClocksFreezeAndClockSkewCannotMakeNegativeReadings() {
+        val session = Session("workout", 10_000, finishedAtMs = 70_000)
+        val set = TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 40_000)
+        val frozen = WorkoutClocks(session, listOf(set), 900_000)
+        assertEquals(listOf(60_000L, 30_000L), listOf(frozen.workoutMs, frozen.sinceSetMs))
+        val skew = WorkoutClocks(session.copy(finishedAtMs = null), listOf(set), 5_000)
+        assertEquals(listOf(0L, 0L), listOf(skew.workoutMs, skew.sinceSetMs))
+        assertEquals(40_000L, skew.latestSetAtMs)
     }
 
     @Test

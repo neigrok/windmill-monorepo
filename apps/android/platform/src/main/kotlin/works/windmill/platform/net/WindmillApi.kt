@@ -22,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import works.windmill.platform.telemetry.Telemetry
@@ -79,29 +80,51 @@ class WindmillApi(
         if (TelemetryPolicy.report(error)) telemetry.failure(operation, error, properties)
     }
 
+    suspend fun <Reply> consume(
+        method: String,
+        path: String,
+        body: RequestBody? = null,
+        accept: String = "application/json",
+        timeoutSeconds: Long? = null,
+        operation: String = "http_request",
+        read: (Response) -> Reply,
+    ): Reply = try {
+        execute(method, path, body, accept, timeoutSeconds, read)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        val failure = when (error) {
+            is WindmillApiException -> error
+            is SerializationException -> WindmillApiException.Malformed
+            else -> WindmillApiException.Unexpected(error)
+        }
+        report(method, path, operation, failure)
+        throw failure
+    }
+
     @PublishedApi
-    internal suspend fun perform(method: String, path: String, json: String?, timeoutSeconds: Long? = null): Answer {
-        // Resolve as a whole relative reference: appending segments percent-encodes `?` and `&`.
+    internal suspend fun perform(method: String, path: String, json: String?, timeoutSeconds: Long? = null): Answer =
+        execute(method, path, json?.toRequestBody("application/json".toMediaType()), "application/json", timeoutSeconds) {
+            Answer(it.code, it.body?.string().orEmpty(), it.headers)
+        }
+
+    private suspend fun <Reply> execute(
+        method: String,
+        path: String,
+        body: RequestBody?,
+        accept: String,
+        timeoutSeconds: Long?,
+        read: (Response) -> Reply,
+    ): Reply {
         val url = baseUrl.resolve(path) ?: throw WindmillApiException.Malformed
-        val request = Request.Builder()
-            .url(url)
-            .header("Accept", "application/json")
+        val request = Request.Builder().url(url).header("Accept", accept)
             .apply { credential()?.let { header("Authorization", "Bearer $it") } }
-            // OkHttp refuses to build a bodiless POST, so a write with no JSON carries an empty body.
-            .method(
-                method,
-                when {
-                    json != null -> json.toRequestBody("application/json".toMediaType())
-                    method == "POST" || method == "PUT" || method == "PATCH" -> ByteArray(0).toRequestBody()
-                    else -> null
-                },
-            )
+            .method(method, body ?: if (method == "POST" || method == "PUT" || method == "PATCH") ByteArray(0).toRequestBody() else null)
             .build()
-        val answer = try {
+        return try {
             val transport = if (timeoutSeconds == null) client else client.newBuilder()
-                .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
-                .callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
-            suspendCancellableCoroutine<Answer> { continuation ->
+                .readTimeout(timeoutSeconds, TimeUnit.SECONDS).callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
+            suspendCancellableCoroutine { continuation ->
                 val call = transport.newCall(request)
                 continuation.invokeOnCancellation { call.cancel() }
                 call.enqueue(object : Callback {
@@ -110,7 +133,11 @@ class WindmillApi(
                     }
                     override fun onResponse(call: Call, response: Response) {
                         continuation.resumeWith(runCatching {
-                            response.use { Answer(it.code, it.body?.string().orEmpty(), it.headers) }
+                            response.use {
+                                if (!it.isSuccessful) throw WindmillApiException.Refused(it.code,
+                                    runCatching { WindmillJson.decodeFromString<Refusal>(it.body?.string().orEmpty()) }.getOrDefault(Refusal()))
+                                read(it)
+                            }
                         })
                     }
                 })
@@ -124,13 +151,6 @@ class WindmillApi(
         } catch (transport: IOException) {
             throw WindmillApiException.Transport(transport)
         }
-        if (answer.code !in 200..299) {
-            throw WindmillApiException.Refused(
-                answer.code,
-                runCatching { WindmillJson.decodeFromString<Refusal>(answer.body) }.getOrDefault(Refusal()),
-            )
-        }
-        return answer
     }
 
     @Suppress("UNCHECKED_CAST")

@@ -327,6 +327,25 @@ ToolResult listNotes(NotesService& notes, const UserId& caller) {
   return ToolResult::json(out);
 }
 
+ToolResult noteReceipt(const Note& note) {
+  Json::Value out(Json::objectValue);
+  out["saved"] = true;
+  out["note"] = toJson(note);
+  return ToolResult::json(out);
+}
+
+ToolResult saveNote(NotesService& notes, const UserId& caller, const Json::Value& args) {
+  std::string id;
+  if (auto bad = idArgument(args, "id", "Use one stable id for this note save.", id))
+    return ToolResult::failure(*bad);
+  const auto outcome = notes.saveInsight(parseNoteWrite(args, NoteId{id}, caller));
+  if (outcome.error == NoteWriteError::full)
+    return ToolResult::failure("Notes already holds ten notes. Nothing was saved; the user can make room in Notes.");
+  if (outcome.error == NoteWriteError::idTaken)
+    return ToolResult::failure("This note save id is unavailable for that insight. Nothing was changed.");
+  return noteReceipt(*outcome.note);
+}
+
 // Day ascending, the wire's shape minus the device instant an agent has no use for. No receipt:
 // a weigh-in is not a log row. A bound that is not a calendar day is refused before the store is
 // asked, in the sentence the schema's description already gives.
@@ -424,6 +443,9 @@ ToolResult createRoutine(ProgramService& program, const UserId& caller, const Js
                          ProposalDoor door) {
   static_assert(classify(Subject::program, Standing::fresh) == Mutation::record);
   const RoutineWrite incoming = parseRoutineWrite(args);
+  if (door == ProposalDoor::ask)
+    if (const auto creation = program.routineCreation(caller, incoming.id))
+      return ToolResult::json(toJson(*creation));
   if (std::optional<Routine> standing = program.routine(caller, incoming.id)) {
     const Routine sent{incoming.id, caller, incoming.name, incoming.position, incoming.entries};
     if (standing->name == sent.name && standing->position == sent.position &&
@@ -505,6 +527,10 @@ ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& ap
 ToolResult proposeRoutineChange(ProgramService& program, const UserId& caller, const Json::Value& args,
                                 const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
+  if (source.door == ProposalDoor::ask && args["id"].isString())
+    if (const auto proposal = program.proposal(caller, ProposalId{args["id"].asString()}))
+      return proposalReceipt(*proposal, appBaseUrl);
+
   return mintOutcome(program.propose(caller, parseProposalWrite(args, source)), appBaseUrl);
 }
 
@@ -557,6 +583,10 @@ ToolResult discardSession(TrainingService& training, const UserId& caller, const
 ToolResult proposeRoutineRemoval(ProgramService& program, const UserId& caller, const Json::Value& args,
                                  const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
+  if (source.door == ProposalDoor::ask && args["id"].isString())
+    if (const auto proposal = program.proposal(caller, ProposalId{args["id"].asString()}))
+      return proposalReceipt(*proposal, appBaseUrl);
+
   std::string id;
   if (std::optional<std::string> bad =
           idArgument(args, "id", "Mint one for this proposal — `prop_` + hex is the house shape.",
@@ -591,6 +621,18 @@ ToolResult revokeShare(TrainingService& training, const UserId& caller, const Js
 }
 
 }  // namespace
+
+std::optional<ToolResult> GymTools::completedAction(const UserId& user, const std::string& name, const std::string& id) {
+  if (name == "create_routine") {
+    if (const auto routine = program_.routineCreation(user, RoutineId{id})) return ToolResult::json(toJson(*routine));
+    return std::nullopt;
+  }
+  if (name == "save_note")
+    if (const auto note = notes_.noteSave(user, NoteId{id})) return noteReceipt(*note);
+  if (mintsProposal(name))
+    if (const auto proposal = program_.proposal(user, ProposalId{id})) return proposalReceipt(*proposal, appBaseUrl_);
+  return std::nullopt;
+}
 
 GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
                    NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl)
@@ -685,6 +727,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
   if (name == "get_stats")       return getStats(training_, caller, arguments, served);
   if (name == "list_notes")      return listNotes(notes_, caller);
+  if (name == "save_note")       return saveNote(notes_, caller, arguments);
   if (name == "list_bodyweight") return listBodyweight(bodyweight_, caller, arguments);
 
   if (name == "start_session")   return startSession(training_, caller, arguments);

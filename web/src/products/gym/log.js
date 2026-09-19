@@ -192,6 +192,21 @@ export function clockOf(ms) {
   return `${head}:${String(seconds).padStart(2, '0')}`;
 }
 
+export function workoutClocks(session, sets, now) {
+  const end = session.finishedAt ?? now;
+  const latest = sets.length ? Math.max(...sets.map((set) => set.completedAt)) : session.startedAt;
+  return [
+    { label: 'Workout time', anchor: session.startedAt },
+    { label: sets.length ? 'Since last set' : 'Since start', anchor: latest },
+  ].map(({ label, anchor }) => {
+    const elapsed = Math.max(0, end - anchor);
+    const total = Math.floor(elapsed / 1000);
+    const parts = [[Math.floor(total / 3600), 'hour'], [Math.floor(total % 3600 / 60), 'minute'], [total % 60, 'second']];
+    const spoken = parts.filter(([count]) => count > 0).map(([count, unit]) => `${count} ${unit}${count === 1 ? '' : 's'}`).join(' ') || '0 seconds';
+    return { label, elapsed, spoken };
+  });
+}
+
 export function durLabel(ms) {
   const minutes = Math.max(1, Math.floor(ms / 60000));
   if (minutes < 60) return `${minutes}m`;

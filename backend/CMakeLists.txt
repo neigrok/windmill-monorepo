@@ -206,6 +206,9 @@ add_test(NAME domain COMMAND windmill_domain_tests)
 # through Drogon. The adapters are folded straight into windmill_platform / windmill_roadmap, so a
 # product stays one library whether or not the vendor edges are present.
 if(Drogon_FOUND AND libpqxx_FOUND)
+  find_package(CURL REQUIRED)
+  find_package(ZLIB REQUIRED)
+  target_link_libraries(windmill_gym PUBLIC ZLIB::ZLIB)
   # Platform adapters: the vendor edges + the MCP transport engine (McpServer/McpHttpEndpoint) —
   # transport-agnostic, product-neutral. Resources rides here because the engine reads its catalog.
   target_sources(windmill_platform PRIVATE
@@ -232,6 +235,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/email/ResendClient.cpp
     platform/adapters/llm/AnthropicClient.cpp
     platform/adapters/llm/AgentLoop.cpp
+    platform/adapters/llm/AnthropicStream.cpp
     platform/adapters/email/ResendEmailSender.cpp
     platform/adapters/email/ResendSignature.cpp
     platform/adapters/email/ResendWebhookApi.cpp
@@ -250,7 +254,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/mcp/McpServer.cpp
     platform/adapters/mcp/McpHttpEndpoint.cpp
     platform/adapters/mcp/CompositeToolHost.cpp)
-  target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
+  target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto CURL::libcurl)
 
   # Roadmap adapters: the roadmap tools an AI agent drives (RoadmapTools), the sync/room socket,
   # the LLM edges, the JSON boundary, and the roadmap postgres/http surfaces. They reach the vendor
@@ -329,6 +333,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/gym/adapters/http/NotesApi.cpp
     products/gym/adapters/http/BodyweightApi.cpp
     products/gym/adapters/http/ThreadsApi.cpp
+    products/gym/adapters/http/CoachImage.cpp
     products/gym/adapters/http/AskApi.cpp
     products/gym/adapters/llm/AnthropicAsk.cpp
     products/gym/adapters/mcp/GymTools.cpp
@@ -406,6 +411,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/roadmap/adapters/http/RemindersApiTest.cpp
     test/products/roadmap/adapters/ws/CollabTest.cpp
     test/platform/adapters/llm/AgentLoopTest.cpp
+    test/platform/adapters/llm/AnthropicStreamTest.cpp
     test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
     test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
     test/products/journal/adapters/http/JournalApiTest.cpp

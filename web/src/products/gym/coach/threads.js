@@ -7,19 +7,11 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export const THREADS_TITLE = 'Threads';
-
-// The server bounds the list and sends no total, so at the ceiling a count would be a floor.
-export const THREAD_LIST_CEILING = 200;
-
-export function conversationsLine(count) {
-  if (count >= THREAD_LIST_CEILING) return 'yours to delete';
-  const list = count === 1 ? '1 conversation' : `${count} conversations`;
-  return `${list} · yours to delete`;
-}
+export const THREADS_TITLE = 'History';
 
 const OUTCOME_CHIPS = {
   applied: 'applied',
+  created: 'routine created',
   'read-only': 'read only',
   proposed: 'proposed',
   dismissed: 'turned down',
@@ -31,6 +23,7 @@ export function outcomeChip(outcome) {
 }
 
 export function outcomeLine(outcome) {
+  if (outcome?.kind === 'created') return outcome.routine ?? (outcome.changes === 1 ? '1 routine created' : `${outcome.changes} routines created`);
   if (outcome?.kind === 'read-only') return 'no changes proposed';
   if (typeof outcome?.changes !== 'number') return null;
   const changes = changeLabel(outcome.changes);

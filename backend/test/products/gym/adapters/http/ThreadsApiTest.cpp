@@ -1,3 +1,7 @@
+#include <future>
+#include <zlib.h>
+#include "products/gym/adapters/http/CoachImage.h"
+#include <drogon/utils/Utilities.h>
 #include "test/products/gym/adapters/http/GymApiFixture.h"
 
 #include <cstdint>
@@ -180,4 +184,65 @@ TEST(gym_thread_reads_admit_only_supported_complete_typed_receipts) {
     CHECK_EQ(h.repo.db.threadRows[0].turns.back().receipt, std::optional<AnswerReceipt>{receipt});
     CHECK_EQ(h.repo.db.threadRows[1].turns.back().receipt, std::optional<AnswerReceipt>{valid});
   }
+}
+
+TEST(coach_picture_decode_rejects_truncation_wrong_format_and_large_dimensions) {
+  const auto png = drogon::utils::base64Decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNoaGgAAAMEAYFL09IQAAAAAElFTkSuQmCC");
+  const auto decoded = decodeCoachImage("img_decode01", "image/png", png);
+  REQUIRE(decoded.has_value());
+  CHECK_EQ(decoded->attachment, (CoachAttachment{"img_decode01", "image/png", 1, 1, png.size()}));
+  CHECK_EQ(decoded->data, png);
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/jpeg", png).has_value());
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/gif", png).has_value());
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/png", png.substr(0, png.size() - 1)).has_value());
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/png", std::string(kMaxCoachImageBytes + 1, 'x')).has_value());
+  auto wide = png;
+  wide[18] = 0x10;
+  wide[19] = 0x01;
+  const auto headerCrc = crc32(0, reinterpret_cast<const Bytef*>(wide.data() + 12), 17);
+  for (unsigned index = 0; index < 4; ++index) wide[29 + index] = static_cast<char>(headerCrc >> (24 - index * 8));
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/png", wide).has_value());
+  auto corrupt = png;
+  corrupt.replace(41, 6, "broken");
+  const auto dataLength = corrupt.size() - 57;
+  const auto dataCrc = crc32(0, reinterpret_cast<const Bytef*>(corrupt.data() + 37), dataLength + 4);
+  for (unsigned index = 0; index < 4; ++index) corrupt[41 + dataLength + index] = static_cast<char>(dataCrc >> (24 - index * 8));
+  CHECK_FALSE(decodeCoachImage("img_decode01", "image/png", corrupt).has_value());
+}
+
+TEST(coach_jpeg_decode_checks_pixels_and_refuses_truncated_data) {
+  const auto jpeg = drogon::utils::base64Decode("/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAACKADAAQAAAABAAAACAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgACAAIAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8AKKKKAP/Z");
+  const auto decoded = decodeCoachImage("img_jpeg0001", "image/jpeg", jpeg);
+  REQUIRE(decoded.has_value());
+  CHECK_EQ(decoded->attachment, (CoachAttachment{"img_jpeg0001", "image/jpeg", 8, 8, jpeg.size()}));
+  CHECK_EQ(decoded->data, jpeg);
+  CHECK_FALSE(decodeCoachImage("img_jpeg0001", "image/jpeg", jpeg.substr(0, jpeg.size()-2)).has_value());
+  auto corrupt = jpeg;
+  corrupt.erase(8, jpeg.size()/2);
+  CHECK_FALSE(decodeCoachImage("img_jpeg0001", "image/jpeg", corrupt).has_value());
+}
+
+TEST(coach_upload_http_preserves_binary_and_metadata_without_creating_a_conversation) {
+  Harness h;
+  const auto owner = h.signIn("s-live");
+  const auto png = drogon::utils::base64Decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNoaGgAAAMEAYFL09IQAAAAAElFTkSuQmCC");
+  const auto request = getRequest("/v1/gym/threads/thr_photo001/attachments/img_photo001", "s-live");
+  request->setMethod(drogon::Put);
+  request->addHeader("content-type", "image/png");
+  request->setBody(png);
+  std::promise<drogon::HttpResponsePtr> reply;
+  auto future = reply.get_future();
+  h.threads.putImage(request, [&](const drogon::HttpResponsePtr& response) { reply.set_value(response); }, "thr_photo001", "img_photo001");
+  const auto response = future.get();
+  REQUIRE_EQ(response->getStatusCode(), drogon::k200OK);
+  Json::Value expected(Json::objectValue);
+  expected["attachment"] = toJson(CoachAttachment{"img_photo001", "image/png", 1, 1, png.size()});
+  CHECK_EQ(bodyOf(response), expected);
+  CHECK(h.threadService->threads(owner).empty());
+  const auto read = send(h.threads, &ThreadsApi::getImage, getRequest("/", "s-live"), "thr_photo001", "img_photo001");
+  CHECK_EQ(read->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(std::string(read->getBody()), png);
+  CHECK_EQ(read->getHeader("cache-control"), std::string("private, no-store"));
+  CHECK_EQ(send(h.threads, &ThreadsApi::getImage, getRequest("/"), "thr_photo001", "img_photo001")->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(send(h.threads, &ThreadsApi::getImage, getRequest("/", "s-live"), "thr_photo002", "img_photo001")->getStatusCode(), drogon::k404NotFound);
 }

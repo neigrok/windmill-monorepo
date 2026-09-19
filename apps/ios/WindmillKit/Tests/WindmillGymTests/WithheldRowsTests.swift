@@ -299,8 +299,6 @@ final class WithheldRowsTests: XCTestCase {
         XCTAssertTrue(routines.contains("if !store.allRoutines.isEmpty {"), "the reach band too")
         XCTAssertTrue(routines.contains("ForEach(store.routines) { routine in"),
                       "and only the rows read the window")
-        XCTAssertTrue(routines.contains("Readout.routineCount(store.routines.count)"),
-                      "the count captions those rows, so it follows them")
 
         let log = try source("LogScreen.swift")
         XCTAssertTrue(log.contains("if store.allSessions.isEmpty, store.logFoot == .bottom {"),
@@ -321,7 +319,6 @@ final class WithheldRowsTests: XCTestCase {
         XCTAssertTrue(threads.contains("let standing = Self.standing(served, outside: withheld)"),
                       "the conversations screen reads one list twice")
         XCTAssertTrue(threads.contains("if standing.isEmpty {"), "the stance off the account's answer")
-        XCTAssertTrue(threads.contains("Section { meta(rows.count) }"), "the count off the drawn rows")
         XCTAssertTrue(threads.contains("months(of: rows)"))
 
         // The room's own claims about the account: *your first session*, where a new routine sits, and

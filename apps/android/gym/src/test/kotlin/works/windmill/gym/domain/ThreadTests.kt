@@ -36,11 +36,24 @@ class ThreadTests {
             ThreadOutcome("applied", changes = 4, routineId = "rt_1", routine = "Push A").detail)
         assertEquals("6 changes",
             ThreadOutcome("applied", changes = 6).detail)
-        assertEquals("no changes proposed", ThreadOutcome("read-only").detail)
+        assertNull(ThreadOutcome("read-only").detail)
         assertEquals("4 changes waiting", ThreadOutcome("proposed", changes = 4).detail)
         assertEquals("3 changes superseded", ThreadOutcome("superseded", changes = 3).detail)
         assertEquals("one change is counted as one", "1 change → Legs",
             ThreadOutcome("applied", changes = 1, routine = "Legs").detail)
+    }
+
+    @Test
+    fun createdOutcomesNameASoleRoutineAndCountMultipleRoutines() {
+        val read = WindmillJson.decodeFromString(ThreadOutcome.serializer(),
+            """{"kind":"created","changes":1,"routineId":"routine-one","routine":"Push A"}""")
+
+        assertEquals("created", read.label)
+        assertEquals("created Push A", read.detail)
+        assertEquals("1 routine created", read.copy(routine = null).detail)
+        assertEquals("1 routine created", read.copy(routine = "").detail)
+        assertEquals("2 routines created", read.copy(changes = 2, routine = null).detail)
+        assertNull(ThreadOutcome("read-only").label)
     }
 
     @Test
@@ -60,15 +73,15 @@ class ThreadTests {
     }
 
     @Test
-    fun aReadOnlyConversationSaysNothingWasProposedRatherThanNothingAtAll() {
+    fun anOrdinaryConversationOmitsAnOutcome() {
         val read = WindmillJson.decodeFromString(
             AskThread.serializer(),
             """{"id":"thr_2","title":"Is my squat volume too low?","outcome":{"kind":"read-only","changes":0}}""",
         )
 
-        assertEquals("no changes proposed", read.outcome.detail)
+        assertNull(read.outcome.detail)
         assertEquals(0, read.outcome.changes)
-        assertEquals("read only", read.outcome.label)
+        assertNull(read.outcome.label)
     }
 
     @Test

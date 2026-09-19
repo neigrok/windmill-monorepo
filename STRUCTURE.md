@@ -62,15 +62,17 @@ tools/       one-shot scripts, never a product surface
 docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS · design/ (the written
              canon — guidelines, briefs, the consistency ledger; the drawings live in five Figma
              files) · LAUNCH · per-topic design and exploration notes
-.github/     backend.yml (context backend/ — test, build, push the image) · web.yml (workdir web/ —
+.github/     backend.yml (context backend/ — test, build, push the image; optional manual Coach
+             provider verification uses disposable runner data and publishes nothing) · web.yml (workdir web/ —
              test, build, rsync dist/ to the VPS) · ios.yml (build + test only) · android.yml
              (build + test on push/PR; android-v* tags and versioned dispatches produce unpublished
-             signing inputs) · deploy.yml (manual: renders ~/windmill/.env on the VPS from GitHub secrets
+             signing inputs) · deploy.yml (successful backend main push or manual: renders ~/windmill/.env on the VPS from GitHub secrets
              and variables, then compose up) · embedder.yml · tools.yml
 .attic/      pre-restructure repos, kept as a local recovery net (gitignored)
 ```
 
-A backend push publishes an image; it does not deploy. On a fresh host the web deploy must land
+A successful backend push to main publishes its image and automatically deploys that tested SHA.
+Manual Coach provider verification neither publishes nor deploys. On a fresh host the web deploy must land
 before the backend one — the embedder bind-mounts its model weights out of the served web directory
 (`services/embedder/README.md`).
 

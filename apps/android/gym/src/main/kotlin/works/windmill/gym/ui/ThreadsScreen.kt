@@ -1,25 +1,22 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -28,34 +25,33 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import works.windmill.gym.domain.Ask
+import works.windmill.gym.domain.Ids
+import works.windmill.gym.domain.AskCap
+import works.windmill.gym.domain.CoachAttachment
+import works.windmill.gym.domain.CoachDraft
+import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.AskTurn
-import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ThreadProposal
 import works.windmill.gym.domain.Threads
+import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
+import kotlinx.coroutines.launch
 
 // Not an inbox: no unread count, no badge, no notification, no search and no folders — and a list that
 // could not be read is not an empty one.
@@ -75,6 +71,7 @@ fun ThreadsScreen(
     var outOfReach by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Read on the way in, into the STORE: an outcome moves when a proposal does, and a list this
     // screen held itself would draw a deleted conversation back the moment its window settled.
@@ -114,18 +111,6 @@ fun ThreadsScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
             ) {
-                // The count captions the rows below it, so it is drawn where there are rows. Between
-                // the two stances — rows held by a window over an account that still has them — the
-                // room draws neither line.
-                if (held.isNotEmpty()) {
-                    item("counted") {
-                        Text(
-                            "Your conversations",
-                            style = WindmillFont.body(14).copy(lineHeight = 20.sp),
-                            color = skin.inkDim,
-                        )
-                    }
-                }
                 if (outOfReach) {
                     item("outOfReach") {
                         Text(Threads.outOfReach, style = GymType.numeral(12), color = skin.inkDim)
@@ -143,6 +128,15 @@ fun ThreadsScreen(
                 items(held, key = { it.id }) { thread ->
                     SwipeableThreadRow(thread, nowMs, { onOpen(thread.id) }, { onDelete(thread.id) })
                 }
+                store.nextThreadCursor?.let { cursor -> item("older") {
+                    CoachAction(if (loading) "Reading conversations…" else "Earlier conversations", enabled = !loading, onClick = {
+                        loading = true
+                        scope.launch {
+                            outOfReach = store.readThreads(cursor) is GymResult.Failed
+                            loading = false
+                        }
+                    })
+                } }
             }
             }
             Box(
@@ -191,7 +185,6 @@ private fun SwipeableThreadRow(
     }
 }
 
-// A row whose outcome this build cannot name draws the title alone.
 @Composable
 private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
     val skin = LocalGymColors.current
@@ -202,8 +195,7 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(thread.title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
-            val outcome = if (thread.outcome.kind == works.windmill.gym.domain.ThreadOutcome.readOnly) "Read only"
-                else thread.outcome.detail?.replaceFirstChar { it.uppercase() }
+            val outcome = thread.outcome.detail?.replaceFirstChar { it.uppercase() }
             val metadata = listOfNotNull(thread.day(nowMs), outcome).joinToString(" · ")
             if (metadata.isNotEmpty()) Text(metadata, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
         }
@@ -211,12 +203,10 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
     }
 }
 
-// READ-ONLY: there is no composer, because a thread is titled by its first message.
 @Composable
 fun ThreadScreen(
     threadId: String,
     store: TrainingStore,
-    // Ephemeral lines from the server's apply reply, alive only while this screen stands.
     receipts: List<String>,
     lookedAt: Set<String>,
     backTo: String,
@@ -224,110 +214,129 @@ fun ThreadScreen(
     onReview: (ThreadProposal) -> Unit,
     say: (String?) -> Unit,
     onAskNew: () -> Unit = onBack,
+    origin: String = "https://windmill.works",
+    onThreads: () -> Unit = onBack,
+    onNotes: () -> Unit = {},
+    onConnections: (() -> Unit)? = null,
+    onOpenRoutine: ((String) -> Unit)? = null,
 ) {
-    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = System.currentTimeMillis()
-    var thread by remember(threadId) { mutableStateOf<AskThread?>(null) }
-    var failure by remember(threadId) { mutableStateOf<String?>(null) }
-    var attempt by remember(threadId) { mutableStateOf(0) }
-    // Failed reads keep the counted fallback; confirmed missing proposals have no review action.
-    var proposals by remember(threadId) { mutableStateOf<Map<String, ProposalRead>>(emptyMap()) }
+    var history by remember(threadId, store.accountKey) { mutableStateOf<AskThread?>(null) }
+    var conversation by remember(threadId, store.accountKey) { mutableStateOf(emptyList<AskExchange>()) }
+    var failure by remember(threadId, store.accountKey) { mutableStateOf<String?>(null) }
+    var attempt by remember(threadId) { mutableIntStateOf(0) }
+    var asking by remember(threadId) { mutableStateOf(false) }
+    var olderBusy by remember(threadId) { mutableStateOf(false) }
+    var cap by remember(threadId) { mutableStateOf<AskCap?>(null) }
 
-    // Read on the way in, and again when a receipt lands: the rows' states and the outcome are the
-    // server's, so a decision taken here is read back rather than crossed in by this screen.
-    LaunchedEffect(threadId, receipts, attempt) {
+    var coachJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var upload by remember { mutableStateOf<Float?>(null) }
+    var stopPending by remember { mutableStateOf(false) }
+    fun ask(question: String, requestId: String = Ids.thread(), retry: Boolean = false, photo: CoachAttachment? = null) {
+        if (asking) return
+        val owner = store.accountKey
+        val previous = if (retry) conversation.dropLast(1) else conversation
+        cap = null
+        val last = conversation.lastOrNull()?.takeIf { it.requestId == requestId }
+        val attachments = last?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
+        val pending = AskExchange(question, requestId = requestId, generation = last?.generation, attachments = attachments)
+        try { store.saveCoachDraft(threadId, CoachDraft(question, attachments.firstOrNull())) }
+        catch (_: Exception) { say("Your message couldn’t be saved. Try again."); return }
+        asking = true
+        upload = if (attachments.isNotEmpty() && last?.generation == null) 0f else null
+        conversation = previous + pending
+        coachJob = scope.launch {
+            try {
+                val outcome = store.ask(threadId, question, requestId, attachments.firstOrNull(), stream = true,
+                    onSnapshot = { snapshot ->
+                        if (store.accountKey == owner) {
+                            conversation = previous + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
+                            store.saveCoachDraft(threadId, CoachDraft())
+                        }
+                    }, onUpload = { upload = it })
+                if (store.accountKey != owner) return@launch
+                conversation = previous + outcome.exchange(pending)
+                if (outcome is AskOutcome.Capped) cap = outcome.cap
+                if (outcome is AskOutcome.Answered) store.saveCoachDraft(threadId, CoachDraft())
+            } finally { if (store.accountKey == owner) { asking = false; upload = null; stopPending = false } }
+        }
+    }
+
+    fun stop() {
+        if (stopPending) return
+        val last = conversation.lastOrNull() ?: return
+        if (upload != null) {
+            coachJob?.cancel()
+            conversation = conversation.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true)
+            return
+        }
+        val owner = store.accountKey
+        stopPending = true
+        scope.launch {
+            try {
+                val snapshot = store.stopAsk(threadId, last.requestId)
+                if (store.accountKey == owner) {
+                    conversation = conversation.dropLast(1) + snapshot.exchange()
+                    if (snapshot.terminal) { store.saveCoachDraft(threadId, CoachDraft()); coachJob?.cancel(); asking = false }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { say("The stop request didn’t reach Coach. Try again.") }
+            finally { stopPending = false }
+        }
+    }
+
+    LaunchedEffect(threadId, store.accountKey, attempt) {
         failure = null
         when (val read = store.thread(threadId)) {
             is GymResult.Ok -> {
-                thread = read.value
-                val ids = (read.value.proposals.map { it.id } +
-                    read.value.turns.flatMap { it.receipt?.takeIf { receipt -> receipt.supported }?.proposals.orEmpty() }).distinct()
-                proposals = ids.associateWith { store.proposal(it) }
+                history = read.value
+                conversation = read.value.exchanges()
+                val pending = store.pendingQuestions().firstOrNull { it.thread == threadId }
+                if (pending != null && read.value.generation?.requestId != pending.requestId) {
+                    conversation = conversation + store.pendingExchange(pending)
+                }
+                read.value.generation?.takeIf { it.status == "running" }?.let { ask(it.question, it.requestId, retry = true) }
             }
-            // A thread that could not be read and one with nothing in it are two different evenings;
-            // a re-read that missed leaves what is held.
             is GymResult.Failed -> failure = read.why.line("that conversation didn’t open")
         }
     }
 
-    val held = thread
-    // VERBATIM in the bar as it is in the list: a conversation's title is the lifter's first message.
-    GymScreen(title = Threads.conversation, onBack = onBack, backTo = backTo) {
-        Column(Modifier.fillMaxSize()) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
-        ) {
-            failure?.let { line ->
-                Text(line, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-                CoachAction("Try again", onClick = { attempt += 1 })
+    if (history == null) {
+        GymScreen(title = Threads.conversation, onBack = onBack, backTo = backTo) {
+            Column(Modifier.padding(GymLayout.gutter)) {
+                Text(failure ?: "Reading conversation…", color = LocalGymColors.current.inkDim)
+                if (failure != null) CoachAction("Try again", { attempt++ })
             }
-            if (held == null) {
-                if (failure == null) Text("Reading conversation…", style = WindmillFont.body(14), color = skin.inkDim)
-                return@Column
-            }
-            Text(Threads.past, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-            held.turns.forEach { turn ->
-                if (turn.fromLifter) CoachQuestion(turn.text)
-                else CoachAnswer(turn.text, turn.receipt, store.catalog, nowMs)
-            }
-            (held.proposals.map { it.id } + proposals.keys).distinct().forEach { id ->
-                val header = held.proposals.firstOrNull { it.id == id }
-                when (val read = proposals[id]) {
-                    is ProposalRead.Found -> {
-                        val row = header ?: read.proposal.let {
-                            ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)
+        }
+        return
+    }
+    AskScreen(
+        store = store, thread = conversation, conversationId = threadId,
+        receipts = receipts, lookedAt = lookedAt, asking = asking, cap = cap,
+        onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) }, onStop = ::stop, upload = upload,
+        onRetry = { conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, retry = true, photo = it.attachments.firstOrNull()) } },
+        onAskNew = onAskNew, seed = "", origin = origin, backTo = backTo, onBack = onBack,
+        onThreads = onThreads, onNotes = onNotes, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
+        onReview = { onReview(ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)) },
+        onOlder = history?.nextCursor?.let { cursor -> {
+            if (!olderBusy) {
+                olderBusy = true
+                scope.launch {
+                    when (val read = store.thread(threadId, cursor)) {
+                        is GymResult.Ok -> {
+                            val old = requireNotNull(history)
+                            val page = old.copy(turns = (read.value.turns + old.turns).distinctBy { it.position }, nextCursor = read.value.nextCursor)
+                            history = page
+                            conversation = read.value.copy(generation = null).exchanges() + conversation
+                            failure = null
                         }
-                        Minted(row, read.proposal, nowMs, stillWaiting = id in lookedAt) { onReview(row) }
+                        is GymResult.Failed -> failure = read.why.line("Earlier messages didn’t open.")
                     }
-                    ProposalRead.Gone -> Text(ProposalRead.Gone.line,
-                        style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
-                    is ProposalRead.Failed -> {
-                        if (header != null) Minted(header, null, nowMs, stillWaiting = id in lookedAt) { onReview(header) }
-                        else {
-                            Text(read.why.line("the proposal wasn’t read"),
-                                style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
-                            CoachAction("Try again", onClick = { attempt += 1 })
-                        }
-                    }
-                    null -> header?.let { Minted(it, null, nowMs, stillWaiting = id in lookedAt) { onReview(it) } }
+                    olderBusy = false
                 }
             }
-            val shown = proposals.values.mapNotNull { (it as? ProposalRead.Found)?.proposal?.receipt }.toSet()
-            receipts.filterNot { it in shown }.forEach { ReceiptLine(it) }
-            // The delete and everything said about it are off this screen: the list's own row carries
-            // the swipe and the overflow-free custom action, and what the delete keeps is said by the
-            // room's transient at the moment of the act — where somebody is actually standing.
-        }
-        CoachAction(Threads.open, onAskNew, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-        }
-    }
-}
-
-// The card, as the Coach room draws it: the summary, the counted line dated by when the proposal was
-// written, and one affordance, Review. Nothing on it decides anything.
-@Composable
-private fun Minted(
-    proposal: ThreadProposal,
-    read: Proposal?,
-    nowMs: Long,
-    stillWaiting: Boolean,
-    onReview: () -> Unit,
-) {
-    val skin = LocalGymColors.current
-    val routineName = proposal.routine.ifBlank { read?.routineName ?: "this routine" }
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        CoachProposalCard(routineName, read?.summaryLine(routineName) ?: proposal.summaryLine,
-            proposal.counted + if (stillWaiting && proposal.state == works.windmill.gym.domain.ProposalState.Pending) " · ${Proposal.stillWaiting}" else "", onReview)
-        if (read?.isPending ?: (proposal.state == works.windmill.gym.domain.ProposalState.Pending)) {
-            Text(Ask.promise, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-        }
-        read?.receipt?.let { ReceiptLine(it) }
-    }
+        } },
+        olderBusy = olderBusy, historyFailure = failure,
+        proposalIds = history?.proposals.orEmpty().map { it.id },
+    )
 }

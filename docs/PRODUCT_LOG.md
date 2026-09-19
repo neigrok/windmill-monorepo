@@ -173,15 +173,15 @@ Three tabs on every surface — **Routines · The log · Coach** — and the sam
 has no separate Today. The live-session mirror sits at the head of Routines home, because that is
 already where the product says whether anything is running.
 
-**Coach is a loop, not a hand-off.** It answers, and if it minted something a card follows carrying
-one affordance: Review. Review opens the diff *over* the conversation, Apply is atomic, and a receipt
-line lands back in the thread saying what changed. Closing the sheet decides nothing; turning a
-proposal down is a separate, confirmed act. Coach may propose three things — change a routine, remove
-one, edit a note — and may never log a set, fix one, finish a workout, or write a bodyweight.
+**Coach keeps the conversation and its actions together.** Retained conversations remain editable.
+Coach can create a new routine when requested, after reading the lifter’s Notes and movement
+catalogue. The creation lands with a durable receipt and Open routine; retrying the same request
+recovers that result without creating another routine.
 
-**Coach cannot create a routine**, and that is a domain fact rather than a policy: a proposal is
-anchored to a routine that exists and to a revision it is atomic against. The lifter taps New routine
-and Coach fills it.
+Changes to an existing routine, routine removal and note edits remain proposals. Review opens the
+diff over the conversation, Apply is atomic, and a receipt records the result. Closing the sheet
+decides nothing; turning a proposal down is a separate, confirmed act. Coach may never log a set,
+fix one, finish a workout or write a bodyweight.
 
 **Notes** are the one place a lifter instructs their own instrument — title-and-text pairs Coach
 reads, bounded and ordered by precedence. Windmill authors no personality; the lifter may author one.
@@ -195,11 +195,9 @@ a truncated axis, gaps left empty, and no goal line, projection or estimate over
 us.
 
 **Native beats house style.** Where the platform has a control, the platform's control wins; where it
-does not, Windmill's vocabulary is identical everywhere. The two phones were one custom drawing at
-two sizes; they now differ on purpose — a TabView and navigation stacks on iOS, a Scaffold with the
-platform's bars on Android, the shared design system on the web. Gym still owes the other half of
-that rule: it stops being dark-only, because a room that ignores the system Appearance is not a
-native room.
+does not, Windmill's vocabulary is identical everywhere. iOS uses TabView and navigation stacks; Android uses Scaffold and platform bars; web uses the
+shared design system. Android supports Instrument and Daylight, including the Coach composer,
+routine list and workout clocks.
 
 ## What gym gets from the platform
 

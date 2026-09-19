@@ -5,6 +5,7 @@
 #include "products/gym/domain/ReadReceipt.h"
 
 #include <string>
+#include <functional>
 #include <vector>
 
 namespace wm::gym {
@@ -12,9 +13,20 @@ namespace wm::gym {
 // `answer` blocks until the loop settles — one vendor round trip per iteration on the calling
 // thread; call it from AskService's worker, never from a request thread.
 
+struct AskImage {
+  std::string mediaType;
+  std::string data;
+};
+
+struct AskControl {
+  std::function<void(const std::string&)> text;
+  std::function<bool()> continueRun;
+};
+
 struct AskTurn {
   bool fromLifter = true;  // false = an answer Ask gave earlier, echoed back for context
   std::string text;
+  std::vector<AskImage> images;
 };
 
 struct AskAnswer {
@@ -31,6 +43,10 @@ struct AskAgent {
   virtual bool configured() const = 0;
   virtual AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
                            ToolHost& tools) = 0;
+  virtual AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
+                           ToolHost& tools, const AskControl& control) {
+    return answer(turns, caller, tools);
+  }
 };
 
 }

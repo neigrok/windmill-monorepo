@@ -29,16 +29,17 @@ struct AskHarness {
                     *h.bodyweightService, "https://windmill.works"};
   FakeAsk agent;
   std::shared_ptr<AskService> askService = std::make_shared<AskService>(
-      *h.trainingService, *h.threadService, agent, gymTools, entitlements);
+      *h.trainingService, h.repo.threads, h.clock, agent, gymTools, entitlements);
   AskApi api{askService, h.auth};
   UserId lifter = h.signIn("s-live");
 
   // The answer lands on a worker thread when the model runs and inline when the door refuses.
   drogon::HttpResponsePtr ask(const std::string& thread, const std::string& question,
-                              const std::string& cookie = "s-live") {
+                              const std::string& cookie = "s-live", const std::string& requestId = "") {
     Json::Value body(Json::objectValue);
     body["thread"] = thread;
     body["question"] = question;
+    if (!requestId.empty()) body["requestId"] = requestId;
     std::promise<drogon::HttpResponsePtr> settled;
     std::future<drogon::HttpResponsePtr> reply = settled.get_future();
     api.ask(postRequest("/v1/gym/ask", body, cookie),
@@ -68,7 +69,7 @@ struct Refusal {
 
 Refusal refusalOf(const drogon::HttpResponsePtr& response) {
   const Json::Value body = bodyOf(response);
-  CHECK_EQ(body.getMemberNames().size(), body.isMember("code") ? 2u : 1u);
+  CHECK_EQ(body.getMemberNames().size(), body.isMember("generation") ? (body.isMember("code") ? 5u : 4u) : body.isMember("code") ? 2u : 1u);
   return {response->getStatusCode(), body["error"].asString(), body["code"].asString()};
 }
 
@@ -80,11 +81,20 @@ TEST(gym_ask_answers_with_the_servers_own_read_line_and_no_steps_it_did_not_take
   const drogon::HttpResponsePtr response = a.ask("thr_00000001", "how did the squats go?");
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"answer":"You squatted 100 for five.","proposals":[],)"
-                       R"("read":{"sessions":0,"sets":0,"weeks":0},)"
-                       R"("receipt":{"observations":[],"proposals":[],"read":{"sessions":0,"sets":0,"weeks":0},"steps":[],"version":1},"steps":[],)"
-                       R"("thread":"thr_00000001"})"));
+  const Json::Value actual = bodyOf(response);
+  REQUIRE(wellFormedId(actual["generation"]["id"].asString()));
+  REQUIRE(wellFormedId(actual["generation"]["requestId"].asString()));
+  Json::Value expected = parse(R"({"answer":"You squatted 100 for five.","proposals":[],"results":[],
+      "read":{"sessions":0,"sets":0,"weeks":0},"receipt":{"observations":[],"proposals":[],
+      "read":{"sessions":0,"sets":0,"weeks":0},"steps":[],"version":1},"steps":[],"thread":"thr_00000001"})");
+  expected["generation"] = parse(R"({"question":"how did the squats go?","status":"completed",
+      "answer":"You squatted 100 for five.","steps":[],"results":[]})");
+  expected["generation"]["id"] = actual["generation"]["id"];
+  expected["generation"]["requestId"] = actual["generation"]["requestId"];
+  expected["generation"]["revision"] = Json::UInt64(2);
+  expected["generation"]["at"] = Json::UInt64(a.h.clock.now);
+  expected["generation"]["receipt"] = expected["receipt"];
+  CHECK_EQ(actual, expected);
   CHECK_EQ(a.agent.runs, 1);
 }
 
@@ -122,6 +132,14 @@ TEST(gym_live_and_reopened_answer_evidence_is_exact_even_after_the_log_changes) 
 
   const auto live = a.ask("thr_evidence1", "What did I train?");
   REQUIRE_EQ(live->getStatusCode(), drogon::k200OK);
+  expected["results"] = Json::Value(Json::arrayValue);
+  expected["generation"] = parse(R"({"question":"What did I train?","status":"completed","answer":"You squatted 100 for five.","results":[]})");
+  expected["generation"]["id"] = bodyOf(live)["generation"]["id"];
+  expected["generation"]["requestId"] = bodyOf(live)["generation"]["requestId"];
+  expected["generation"]["revision"] = Json::UInt64(2);
+  expected["generation"]["at"] = Json::UInt64(a.h.clock.now);
+  expected["generation"]["steps"] = receipt["steps"];
+  expected["generation"]["receipt"] = receipt;
   CHECK_EQ(dump(bodyOf(live)), dump(expected));
   a.h.repo.db.sets.clear();
   a.h.repo.db.sessions.clear();
@@ -137,6 +155,13 @@ TEST(gym_live_and_reopened_answer_evidence_is_exact_even_after_the_log_changes) 
   stored["turns"][0]["at"] = Json::UInt64(a.h.clock.now);
   stored["turns"][1]["at"] = Json::UInt64(a.h.clock.now);
   stored["turns"][1]["receipt"] = receipt;
+  stored["generation"] = expected["generation"];
+  for (Json::ArrayIndex i = 0; i < 2; ++i) {
+    stored["turns"][i]["position"] = Json::UInt64(i + 1);
+    stored["turns"][i]["generationId"] = expected["generation"]["id"];
+    stored["turns"][i]["requestId"] = expected["generation"]["requestId"];
+    stored["turns"][i]["status"] = "completed";
+  }
   CHECK_EQ(history->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(history)), dump(stored));
   CHECK_EQ(receiptFrom(receipt), a.h.repo.db.threadRows[0].turns[1].receipt);
@@ -223,7 +248,7 @@ TEST(gym_ask_400s_say_what_coach_cannot_take) {
 TEST(gym_ask_409s_name_the_taken_id_the_full_conversation_and_the_open_workout) {
   AskHarness a;
   a.seedThread(UserId{"stranger"}, "thr_00000002", 2);
-  a.seedThread(a.lifter, "thr_00000003", kMaxThreadTurns);
+  a.seedThread(a.lifter, "thr_00000003", kMaxContextTurns);
 
   const drogon::HttpResponsePtr taken = a.ask("thr_00000002", "and mine?");
   const drogon::HttpResponsePtr full = a.ask("thr_00000003", "once more");
@@ -235,15 +260,12 @@ TEST(gym_ask_409s_name_the_taken_id_the_full_conversation_and_the_open_workout) 
            (Refusal{drogon::k409Conflict,
                     "that conversation id is already in use — start a new one",
                     "ask-thread-taken"}));
-  CHECK_EQ(refusalOf(full),
-           (Refusal{drogon::k409Conflict,
-                    "this conversation holds four questions — start a new one",
-                    "ask-thread-full"}));
+  CHECK_EQ(full->getStatusCode(), drogon::k200OK);
   CHECK_EQ(refusalOf(open),
            (Refusal{drogon::k409Conflict,
                     "finish your workout first — Coach reads a log that has stopped moving",
                     "ask-session-open"}));
-  CHECK_EQ(a.agent.runs, 0);
+  CHECK_EQ(a.agent.runs, 1);
 }
 
 // The 429 says what to do next and never the allowance: the clients draw the numbers above the
@@ -285,5 +307,55 @@ TEST(gym_ask_503_names_the_absent_room_and_502_names_the_answer_that_never_came)
   CHECK_EQ(refusalOf(silent),
            (Refusal{drogon::k502BadGateway, "Coach didn’t answer. Try again in a moment", ""}));
   CHECK_EQ(a.agent.runs, 1);
-  CHECK_EQ(a.h.threadService->threads(a.lifter).size(), 0u);   // nothing stored for either
+  CHECK_EQ(a.h.threadService->threads(a.lifter).size(), 1u);
+  CHECK_EQ(bodyOf(silent)["generation"]["status"].asString(), std::string("failed"));
+}
+
+TEST(gym_ask_pending_json_reuses_generation_and_completed_replay_is_byte_identical) {
+  AskHarness a;
+  const ThreadId thread{"thr_pending01"};
+  a.h.threadService->openThread(a.lifter, thread, "Question");
+  AskGeneration generation{"gen_pending01", "req_pending01", "Question"};
+  generation.atMs = a.h.clock.now;
+  a.h.repo.threads.saveGeneration(a.lifter, thread, generation);
+  auto lease = a.h.repo.threads.tryLease(a.lifter, thread);
+  const auto pending = a.ask(thread.str(), "Question", "s-live", "req_pending01");
+  CHECK_EQ(pending->getStatusCode(), drogon::k202Accepted);
+  Json::Value expected(Json::objectValue);
+  expected["thread"] = thread.str();
+  expected["generation"] = toJson(generation);
+  expected["results"] = Json::Value(Json::arrayValue);
+  CHECK_EQ(bodyOf(pending), expected);
+  CHECK_EQ(a.agent.runs, 0);
+  CHECK_EQ(refusalOf(a.ask(thread.str(), "Another question", "s-live", "req_another01")),
+           (Refusal{drogon::k409Conflict, "Coach is still answering in this conversation", "ask-generation-active"}));
+  lease.reset();
+  const auto complete = a.ask(thread.str(), "Question", "s-live", "req_pending01");
+  REQUIRE_EQ(complete->getStatusCode(), drogon::k200OK);
+  a.h.clock.now += 1000;
+  const auto replay = a.ask(thread.str(), "Question", "s-live", "req_pending01");
+  CHECK_EQ(replay->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(replay->getBody(), complete->getBody());
+  CHECK_EQ(a.agent.runs, 1);
+  CHECK_EQ(a.h.threadService->thread(a.lifter, thread)->turns.size(), 2u);
+}
+
+TEST(gym_known_generation_refusal_retains_the_durable_identity_and_routine_result) {
+  AskHarness a;
+  const ThreadId thread{"thr_known001"};
+  a.h.repo.threads.openThread(a.lifter, thread, "Create a routine", a.h.clock.now);
+  AskGeneration generation{"gen_known001", "req_known001", "Create a routine"};
+  generation.atMs = a.h.clock.now;
+  generation.status = "failed";
+  generation.results = {{"op_known001", "rt_known001", "Upper body"}};
+  a.h.repo.threads.saveGeneration(a.lifter, thread, generation);
+  a.usage.spentByProduct[""] = kProMonthlyAiNanos;
+  const auto reply = a.ask(thread.str(), generation.question, "s-live", generation.requestId);
+  CHECK_EQ(reply->getStatusCode(), drogon::k429TooManyRequests);
+  auto expected = parse(R"({"error":"this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on","code":"ask-out-of-budget"})");
+  expected["thread"] = thread.str();
+  expected["generation"] = toJson(generation);
+  expected["results"] = toJson(generation.results);
+  CHECK_EQ(bodyOf(reply), expected);
+  CHECK_EQ(a.agent.runs, 0);
 }

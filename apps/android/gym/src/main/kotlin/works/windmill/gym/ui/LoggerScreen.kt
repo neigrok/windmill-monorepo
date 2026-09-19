@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,7 +76,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.R
-import works.windmill.gym.domain.RestReading
+import works.windmill.gym.domain.WorkoutClocks
 import works.windmill.platform.design.WindmillFont
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -264,8 +265,12 @@ fun LoggerScreen(
         },
     ) {
       Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
+        val clocks = store.session?.let { session ->
+            WorkoutClocks(session, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, nowMs)
+        }
         val movement = store.exerciseId
         if (movement == null) {
+            clocks?.let { WorkoutClockRow(it) }
             Column(
                 Modifier.fillMaxWidth().padding(top = GymLayout.contentTop),
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -330,23 +335,10 @@ fun LoggerScreen(
                         onMove = { move(it) },
                         onOpenSession = { sheet = LoggerSheet.Assembly },
                     )
+                    clocks?.let { WorkoutClockRow(it) }
                     val shown = history?.sets?.let { LiveLines.lastTimeSet(it, workingToday) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        LastTimeChip(history, historyCard, shown, reading = history == null && !store.lastTimeFailed,
-                            onDial = { store.editRack(it.weightKg, it.reps) }, modifier = Modifier.weight(1f))
-                        val rest = RestReading(store.restStartedAtMs, store.planEntry, store.preferences)
-                        Column(Modifier.weight(1f).heightIn(min = 72.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (rest.startedAtMs == null) "Rest target" else "Rest", style = WindmillFont.body(12), color = skin.inkDim)
-                            Text(remember(nowMs, store.restStartedAtMs) { store.restElapsedMs() }?.let(Readout::clock) ?: rest.target,
-                                style = GymType.numeral(24, FontWeight.Bold), color = skin.ink)
-                            if (rest.startedAtMs != null && rest.targetSeconds != null) {
-                                Text("Target ${rest.target}", style = WindmillFont.body(12), color = skin.inkDim)
-                            }
-                        }
-                    }
+                    LastTimeChip(history, historyCard, shown, reading = history == null && !store.lastTimeFailed,
+                        onDial = { store.editRack(it.weightKg, it.reps) }, modifier = Modifier.fillMaxWidth())
                     StrandedBand(store.strandedCount, store.strandedBy)
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
                     if (slots.isNotEmpty()) {
@@ -361,9 +353,9 @@ fun LoggerScreen(
                     )
                 }
                 // Scroll after layout so the latest set and movement walk stay reachable.
-                LaunchedEffect(landed) {
+                LaunchedEffect(movement, landed) {
                     withFrameNanos {}
-                    reading.animateScrollTo(reading.maxValue)
+                    if (landed > 0) reading.animateScrollTo(reading.maxValue) else reading.scrollTo(0)
                 }
             }
             transient?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter)) }
@@ -491,6 +483,26 @@ fun LoggerScreen(
     }
 }
 
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+internal fun WorkoutClockRow(clocks: WorkoutClocks) {
+    val skin = LocalGymColors.current
+    FlowRow(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            Triple("Workout time", R.drawable.gym_clock, clocks.workoutMs),
+            Triple(clocks.sinceSetName, R.drawable.gym_stopwatch, clocks.sinceSetMs),
+        ).forEach { (name, icon, duration) ->
+            val value = Readout.clock(duration)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.clearAndSetSemantics { contentDescription = "$name, $value" }) {
+                Icon(painterResource(icon), contentDescription = null, tint = skin.inkDim, modifier = Modifier.size(16.dp))
+                Text(value, style = GymType.numeral(14), color = skin.inkDim)
+            }
+        }
+    }
+}
+
 // The walk is a horizontal stroke on the head, attached ABOVE the name, which is a full-width tap
 // target; it claims a gesture only once `LoggerWalk` says the stroke is the walk's — the region
 // beneath scrolls vertically and the strip at either edge belongs to the system.
@@ -577,6 +589,7 @@ private fun LastTimeChip(
     onDial: (TrainingSet) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (!reading && shown == null && card == null) return
     val skin = LocalGymColors.current
     var open by remember { mutableStateOf(false) }
     Box(modifier) {

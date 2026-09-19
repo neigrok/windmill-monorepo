@@ -97,6 +97,12 @@ elsewhere and win where they disagree: `SPEC.md`, `AUTH.md`, `AUTHZ.md`, `db/sch
 - Auth's single-use guarantee lives at the row: `UPDATE … WHERE consumed_ms IS NULL` reporting
   `affected_rows == 1`. Any check-then-act on a shared row wants the act to be the check.
 
+## Build context
+
+- Docker excludes Python bytecode and `__pycache__` directories as well as CMake outputs. Running
+  the offline Python checks leaves the same source context as a clean checkout, so the test and
+  runtime jobs can reuse the same C++ build layer.
+
 ## Open items
 
 - **Scale-out breaks single-authority.** A second `windmill_server` replica reintroduces the

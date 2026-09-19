@@ -64,7 +64,7 @@ class TelemetryTests {
             Triple(WindmillApiException.Refused(404, Refusal()), AskOutcome.Absent,
                 mapOf("outcome" to "absent", "failure_kind" to "http", "status" to "404")),
             Triple(WindmillApiException.Refused(409, Refusal(code = "ask-thread-full")),
-                AskOutcome.Fresh("This conversation holds four questions. Start a new one."),
+                AskOutcome.Fresh("This conversation is unavailable. Start a new one."),
                 mapOf("outcome" to "fresh", "failure_kind" to "http", "status" to "409")),
             Triple(WindmillApiException.Refused(503, Refusal()),
                 AskOutcome.Failed("Coach didn’t answer. Try again in a moment"),

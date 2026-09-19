@@ -244,10 +244,9 @@ object LiveLines {
 }
 
 
-data class RestReading(val startedAtMs: Long?, val targetSeconds: Int?) {
-    constructor(startedAtMs: Long?, entry: PlanEntry?, preferences: GymPreferences) :
-        this(startedAtMs, entry?.restSeconds ?: preferences.restSeconds)
-
-    fun elapsedMs(nowMs: Long): Long? = startedAtMs?.let { (nowMs - it).coerceAtLeast(0) }
-    val target: String get() = targetSeconds?.let { Readout.clock(it * 1_000L) } ?: "Off"
+class WorkoutClocks(session: Session, sets: List<TrainingSet>, nowMs: Long) {
+    val latestSetAtMs: Long? = sets.maxOfOrNull { it.completedAtMs }
+    val workoutMs: Long = ((session.finishedAtMs ?: nowMs) - session.startedAtMs).coerceAtLeast(0)
+    val sinceSetMs: Long = ((session.finishedAtMs ?: nowMs) - (latestSetAtMs ?: session.startedAtMs)).coerceAtLeast(0)
+    val sinceSetName: String = if (latestSetAtMs == null) "Since start" else "Since last set"
 }

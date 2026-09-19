@@ -71,6 +71,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
+            localCoach = works.windmill.gym.store.LocalCoach(File(filesDir, works.windmill.gym.store.LocalCoach.fileName)),
         )
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },
             authorityAvailable = { sessions.localSession !is LocalSession.Unresolved },

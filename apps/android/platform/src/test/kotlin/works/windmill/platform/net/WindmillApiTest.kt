@@ -1,7 +1,9 @@
 package works.windmill.platform.net
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
 import kotlinx.serialization.Serializable
+import okio.buffer
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -32,6 +34,38 @@ class WindmillApiTest {
     }
 
     private fun api(credential: () -> String? = { null }) = WindmillApi(server.url("/"), credential)
+
+    @Test
+    fun rawConsumptionClosesTheResponseAndCancellationStopsAnIncompleteBody() = kotlinx.coroutines.runBlocking {
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        server.enqueue(MockResponse().setBody("first\nlast\n").throttleBody(6, 2, TimeUnit.SECONDS))
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            val original = requireNotNull(response.body)
+            val source = object : okio.ForwardingSource(original.source()) {
+                override fun close() { try { super.close() } finally { closed.complete(Unit) } }
+            }.buffer()
+            response.newBuilder().body(object : okhttp3.ResponseBody() {
+                override fun contentType() = original.contentType()
+                override fun contentLength() = original.contentLength()
+                override fun source() = source
+            }).build()
+        }.build()
+        val request = async {
+            WindmillApi(server.url("/"), { "private" }, client).consume("GET", "/v1/raw", accept = "text/plain") { response ->
+                assertEquals("first", response.body!!.source().readUtf8Line())
+                entered.complete(Unit)
+                response.body!!.source().readUtf8Line()
+            }
+        }
+        entered.await()
+        request.cancel()
+        request.join()
+        kotlinx.coroutines.withTimeout(2_000) { closed.await() }
+        assertTrue(request.isCancelled)
+        assertEquals("Bearer private", server.takeRequest().getHeader("Authorization"))
+    }
 
     @Test
     fun malformedAndServerFailuresAreReportedOnceWithoutResponseContent() = runTest {

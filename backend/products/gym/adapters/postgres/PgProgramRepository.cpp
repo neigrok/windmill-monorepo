@@ -397,6 +397,16 @@ std::vector<RoutineEvent> PgProgramRepository::routineHistory(const UserId& user
   return history;
 }
 
+std::optional<Routine> PgProgramRepository::routineCreation(const UserId& user, const RoutineId& id) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params("SELECT routine::text FROM gym_routine_creations WHERE routine_id=$1 AND user_id=$2::uuid",
+                                    id.str(), user.str());
+  if (rows.empty()) return std::nullopt;
+  const auto document = parseRoutineWrite(parse(rows[0][0].as<std::string>()));
+  return Routine{document.id, user, document.name, document.position, document.entries};
+}
+
 RoutineWriteOutcome PgProgramRepository::insertRoutine(const Routine& incoming,
                                                         std::optional<ProposalDoor> byAgent,
                                                         std::uint64_t nowMs) {
@@ -425,6 +435,9 @@ RoutineWriteOutcome PgProgramRepository::insertRoutine(const Routine& incoming,
     if (inserted.affected_rows() == 1 && !insertEntries(txn, incoming))
       return {std::nullopt, RoutineWriteError::unknownExercise};
     stored = loadRoutine(txn, incoming.user, incoming.id);
+    if (inserted.affected_rows() == 1 && byAgent == ProposalDoor::ask)
+      txn.exec_params("INSERT INTO gym_routine_creations(routine_id,user_id,routine) VALUES ($1,$2::uuid,$3::jsonb) ON CONFLICT DO NOTHING",
+                      incoming.id.str(), incoming.user.str(), dump(toJson(*stored)));
     txn.commit();
   }
   if (!stored) return {std::nullopt, RoutineWriteError::idTaken};

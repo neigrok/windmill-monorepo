@@ -3,7 +3,7 @@ package works.windmill.gym.domain
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// POST /v1/gym/ask, owner-scoped: { thread, question } → { answer, steps, read, proposals, thread }.
+// Coach requests retain their identity across retries; generations record durable actions.
 // The wire still says `ask` and its verdict codes stay `ask-*`; the room a lifter sees is Coach.
 // No outgoing field may carry a default: encodeDefaults is off, so a defaulted field travels absent.
 
@@ -13,6 +13,7 @@ import kotlinx.serialization.Serializable
 data class AskStep(val tool: String, val failed: Boolean = false) {
     val phrase: String?
         get() {
+            if (tool == "save_note" && failed) return "could not confirm a note save"
             val said = Ask.phrases[tool] ?: return null
             return if (failed) "$said (nothing came back)" else said
         }
@@ -31,7 +32,47 @@ data class AskAnswer(
     val steps: List<AskStep> = emptyList(),
     val proposals: List<String> = emptyList(),
     val receipt: AnswerReceipt? = null,
+    val generation: AskGeneration? = null,
+    val results: List<CoachResult> = emptyList(),
 )
+
+@Serializable
+data class CoachResult(val kind: String, val operationId: String, val routineId: String, val routineName: String)
+
+@Serializable
+data class CoachAttachment(val id: String, val mediaType: String, val width: Int, val height: Int, val bytes: Long)
+
+@Serializable
+data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null)
+
+@Serializable
+data class AskGeneration(
+    val id: String,
+    val requestId: String,
+    val question: String,
+    val status: String,
+    val answer: String = "",
+    @SerialName("at") val atMs: Long = 0,
+    val steps: List<AskStep> = emptyList(),
+    val receipt: AnswerReceipt? = null,
+    val results: List<CoachResult> = emptyList(),
+    val revision: Long = 0,
+    val stopRequested: Boolean = false,
+    val attachments: List<CoachAttachment> = emptyList(),
+) {
+    val terminal: Boolean get() = status in setOf("completed", "failed", "stopped")
+    fun response(): AskAnswer = AskAnswer(answer, receipt?.read ?: ReadTally(), steps, receipt?.proposals.orEmpty(), receipt, this, results)
+
+    fun exchange(): AskExchange = AskExchange(
+        question = question,
+        requestId = requestId,
+        generation = this,
+        answer = if (status == "completed") response() else null,
+        trouble = when (status) { "failed" -> Ask.interrupted; "stopped" -> Ask.stopped; else -> null },
+        again = status == "failed",
+        attachments = attachments,
+    )
+}
 
 @Serializable
 data class WorkoutObservation(
@@ -94,13 +135,16 @@ data class AskExchange(
     val trouble: String? = null,
     val again: Boolean = false,
     val needsNew: Boolean = false,
+    val requestId: String = "",
+    val generation: AskGeneration? = null,
+    val attachments: List<CoachAttachment> = emptyList(),
 ) {
     val pending: Boolean get() = answer == null && trouble == null
 }
 
 object Ask {
     const val title = "Coach"
-    const val subtitle = "reads your log · proposes only"
+    const val subtitle = "reads your log · helps with your routines"
     const val placeholder = "Ask about your training"
 
     // The server's own ceiling on one turn.
@@ -110,10 +154,8 @@ object Ask {
 
     // The rest is said where it counts: the subtitle says what Coach reads, `promise` on every
     // proposal card says what it cannot touch.
-    const val whatItIs = "Ask about your training. Coach can propose a routine change — you decide on the diff."
+    const val whatItIs = "Ask about your training. Coach can create routines and propose changes — you decide on the diff."
 
-    // The promise, immediately above the composer and always drawn; the cap-reached state is the
-    // moment the promise runs out, and it replaces the composer rather than restating the rule.
     const val allowance = "Ten questions a day, three back to back."
     const val capReached = "The next question frees up in a couple of hours."
 
@@ -123,10 +165,9 @@ object Ask {
         "This account has reached its AI ceiling for the last 30 days. Coach will answer again as " +
             "that window rolls on."
 
-    fun needsNew(thread: List<AskExchange>): Boolean = thread.count { it.answer != null } >= 4 || thread.lastOrNull()?.needsNew == true
+    fun needsNew(thread: List<AskExchange>): Boolean = thread.lastOrNull()?.needsNew == true
 
-    // The ceiling is four questions: the server counts a question and its answer as two turns.
-    const val threadFull = "This conversation holds four questions. Start a new one."
+    const val threadFull = "This conversation is unavailable. Start a new one."
 
     const val kept = "Every conversation is kept so you can read it back, and yours to delete."
 
@@ -143,10 +184,8 @@ object Ask {
 
     const val waiting = "reading your log…"
 
-    const val interrupted =
-        "Coach didn’t finish that one. The log heard the question, so it may have counted against " +
-            "today’s — and anything it proposed is on the routine either way. If it did answer, " +
-            "the conversation is in History."
+    const val interrupted = "Response interrupted. Retry to continue this response."
+    const val stopped = "Response stopped."
 
     const val signedOut = "Coach reads your log, so it needs you signed in."
 
@@ -164,6 +203,7 @@ object Ask {
         "list_routines" to "read your program",
         "get_stats" to "read your movement history",
         "list_notes" to "read your notes",
+        "save_note" to "saved a note",
         "list_bodyweight" to "read your bodyweight",
         "propose_routine_change" to "wrote a proposal for one of your routines",
         "propose_routine_removal" to "wrote a proposal to remove a routine",

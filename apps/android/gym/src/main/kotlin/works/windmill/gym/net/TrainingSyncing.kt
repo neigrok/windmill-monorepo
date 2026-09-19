@@ -1,7 +1,10 @@
 package works.windmill.gym.net
 
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskGeneration
+import works.windmill.gym.domain.CoachAttachment
 import works.windmill.gym.domain.AskQuestion
+import works.windmill.gym.domain.ThreadPage
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
@@ -106,10 +109,24 @@ interface TrainingSyncing {
     // The thread id is the client's: a fresh one opens a conversation, a spent one continues it.
     suspend fun ask(question: AskQuestion): AskAnswer
 
+    suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer =
+        ask(question).also { it.generation?.let(onSnapshot) }
+
+    suspend fun stop(threadId: String, requestId: String): AskGeneration = throw UnsupportedOperationException()
+
+    suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment = throw UnsupportedOperationException()
+
+    suspend fun photo(threadId: String, attachmentId: String): ByteArray = throw UnsupportedOperationException()
+
     // Carries no turns; the detail read adds them. Newest question first.
     suspend fun threads(): List<AskThread>
 
     suspend fun thread(id: String): AskThread?
+
+    suspend fun threadPage(id: String, before: String? = null): AskThread? = thread(id)
+
+    suspend fun threadsPage(cursor: String? = null): ThreadPage =
+        ThreadPage(threads())
 
     suspend fun deleteThread(id: String)
 

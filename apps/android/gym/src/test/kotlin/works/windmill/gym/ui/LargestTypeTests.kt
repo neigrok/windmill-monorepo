@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performScrollTo
@@ -86,6 +87,31 @@ class LargestTypeTests {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    @Test
+    fun bothHourClocksStayReadableAtTwoHundredPercentOnANarrowScreen() {
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GymMaterial {
+                    Box(Modifier.width(320.dp).padding(horizontal = 20.dp)) {
+                        WorkoutClockRow(works.windmill.gym.domain.WorkoutClocks(
+                            works.windmill.gym.domain.Session("session", 0),
+                            listOf(works.windmill.gym.domain.TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 3_600_000)),
+                            36_123_000,
+                        ))
+                    }
+                }
+            }
+        }
+        val workout = compose.onNode(hasContentDescription("Workout time, 10:02:03")).assertIsDisplayed().getBoundsInRoot()
+        val sinceSet = compose.onNode(hasContentDescription("Since last set, 9:02:03")).assertIsDisplayed().getBoundsInRoot()
+        listOf(workout, sinceSet).forEach { bounds ->
+            assertTrue("clock fits in280dp content: $bounds", bounds.left >= 20.dp && bounds.right <= 300.dp)
+            assertTrue("clock keeps readable height: $bounds", bounds.height >= 28.dp)
+        }
+        assertTrue("clock pair wraps without overlap", sinceSet.top >= workout.bottom)
+    }
 
     // What is left for the region the block is pinned against. Below this a lifter reads a thread —
     // or a diff they are about to be held to — through a slot.
