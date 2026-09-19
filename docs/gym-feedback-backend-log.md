@@ -40,7 +40,7 @@ evidence of a live Anthropic model response. The final Notes wave passed 967 dom
 1,003 Postgres adapter cases with zero failures/skips. A local HTTP check through Caddy saved a
 note and routine, interrupted output, preserved a later note edit on retry and replayed completion
 without a new model call. The isolated Actions provider lane has 15 passing offline tests and
-publishes only bounded, sanitized acceptance evidence. Actual-provider acceptance remains pending.
+publishes only bounded, sanitized acceptance evidence. Actual-provider text/vision/streaming, routine/Note persistence and replay passed on `3df4a889`; the final catalog-grounding wording awaits live acceptance.
 
 Validation: the optimized `RelWithDebInfo` build completed with `-j4`; the current schema applied
 successfully twice to the isolated feedback database. `WM_PG_TEST=1 ctest --test-dir backend/build
@@ -56,3 +56,5 @@ exercised against isolated PostgreSQL: an active Coach lease rolled deletion bac
 permitted only the owned fixture cleanup while retaining usage accounting. The public run remains
 a rollout gate. Reusing the same bounded acceptance harness keeps isolated and deployed evidence
 comparable without adding a product testing endpoint.
+
+Catalog metadata is deliberately small and does not describe every exercise variant or setup. Coach states actual movement-pattern coverage and material gaps, names relevant variants, and asks only for missing material setup details. Internal IDs remain tool references rather than ordinary answer copy. This semantic correction leaves the supplied persona and persistence contracts unchanged; the optimized build, 13 focused Coach tests and independent review passed.
