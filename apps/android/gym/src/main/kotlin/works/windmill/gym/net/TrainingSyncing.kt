@@ -109,8 +109,8 @@ interface TrainingSyncing {
     // The thread id is the client's: a fresh one opens a conversation, a spent one continues it.
     suspend fun ask(question: AskQuestion): AskAnswer
 
-    suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer =
-        ask(question).also { it.generation?.let(onSnapshot) }
+    suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer =
+        ask(question).also { it.generation?.let { generation -> onSnapshot(generation) } }
 
     suspend fun stop(threadId: String, requestId: String): AskGeneration = throw UnsupportedOperationException()
 

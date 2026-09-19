@@ -7,6 +7,10 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
@@ -170,15 +174,28 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
             reply.steps, reply.proposals, reply.receipt, reply.generation, reply.results)
     }
 
-    override suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer {
-        val caller = currentCoroutineContext()
-        val callbackContext = caller.minusKey(Job)
+    override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
         val requestId = requireNotNull(question.requestId)
         val body = WindmillJson.encodeToString(CoachStreamIn.serializer(), CoachStreamIn(question.thread, question.question,
             requestId, question.attachmentIds, true)).toRequestBody("application/json".toMediaType())
-        return api.consume("POST", "/v1/gym/ask", body, "text/event-stream", 660, "gym_ask") { response ->
-            if (response.header("Content-Type")?.substringBefore(';') != "text/event-stream") throw WindmillApiException.Malformed
-            CoachEvents.read(response.body?.source() ?: throw WindmillApiException.Malformed, question.thread, requestId) { snapshot -> runBlocking(callbackContext) { caller.ensureActive(); onSnapshot(snapshot) } }.response()
+        return coroutineScope {
+            val snapshots = Channel<AskGeneration>(Channel.CONFLATED)
+            val response = async {
+                try {
+                    Result.success(api.consume("POST", "/v1/gym/ask", body, "text/event-stream", 660, "gym_ask") { response ->
+                        if (response.header("Content-Type")?.substringBefore(';') != "text/event-stream") throw WindmillApiException.Malformed
+                        CoachEvents.read(response.body?.source() ?: throw WindmillApiException.Malformed, question.thread, requestId) {
+                            snapshots.trySend(it)
+                        }.response()
+                    })
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Result.failure(failure)
+                } finally { snapshots.close() }
+            }
+            for (snapshot in snapshots) onSnapshot(snapshot)
+            response.await().getOrThrow()
         }
     }
 

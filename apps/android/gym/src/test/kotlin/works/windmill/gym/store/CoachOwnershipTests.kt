@@ -30,6 +30,81 @@ class CoachOwnershipTests {
         now = { 1_800_000_000_000 + testScheduler.currentTime }, sync = { logs[it.user?.id] }, localCoach = localCoach)
 
     @Test
+    fun streamSnapshotsAreDurableOffTheCallerThreadBeforePublicationAndLateStoppedWritesStayCleared() = runTest {
+        val caller = Thread.currentThread()
+        val writes = java.util.Collections.synchronizedList(mutableListOf<Thread>())
+        val file = File(tmp.root, "coach-thread")
+        val disk = LocalCoach(file) { target, text ->
+            writes += Thread.currentThread()
+            works.windmill.platform.storage.AtomicDocument.write(target, text)
+        }
+        val partial = AskGeneration("generation-a", "request-a", "Question", "running", "Café\n東京", revision = 1)
+        val stopped = partial.copy(status = "stopped", revision = 2)
+        val server = object : TrainingSyncing by FakeTraining() {
+            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
+                onSnapshot(partial)
+                onSnapshot(stopped)
+                return stopped.response()
+            }
+        }
+        val store = store(mapOf("a" to server), disk)
+        store.connect(account("a"))
+        store.saveCoachDraft("thread-a", CoachDraft("Question"))
+        assertEquals(1, store.coachDraftVersion)
+        writes.clear()
+        val shown = mutableListOf<AskGeneration>()
+        val result = store.ask("thread-a", "Question", "request-a", stream = true, onSnapshot = {
+            assertSame(caller, Thread.currentThread())
+            assertEquals(it, LocalCoach(file).snapshot("a", "request-a"))
+            store.saveCoachDraft("thread-a", CoachDraft())
+            assertEquals(2, store.coachDraftVersion)
+            shown += it
+        })
+        assertEquals(AskOutcome.Answered(stopped.response()), result)
+        assertEquals(listOf(partial, stopped), shown)
+        assertEquals(4, writes.size)
+        assertTrue(writes.all { it !== caller })
+        disk.saveDraft("a", "thread-a", CoachDraft("Next question"))
+        disk.record("a", partial)
+        assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("a"))
+        assertNull(LocalCoach(file).snapshot("a", "request-a"))
+        assertEquals(CoachDraft("Next question"), LocalCoach(file).draft("a", "thread-a"))
+        assertEquals(5, writes.size)
+    }
+
+    @Test
+    fun accountSwitchDuringFinalDiskFlushCannotReturnThePreviousAccountsAnswer() = runTest {
+        for (recover in listOf(false, true)) {
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            val file = File(tmp.root, "coach-final-$recover")
+            val disk = LocalCoach(file) { target, text ->
+                if (text == "{}") {
+                    entered.complete(Unit)
+                    check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                }
+                works.windmill.platform.storage.AtomicDocument.write(target, text)
+            }
+            val done = AskGeneration("generation-a", "request-a", "Question", "completed", "Private answer", revision = 2)
+            val server = object : TrainingSyncing by FakeTraining() {
+                override suspend fun ask(question: AskQuestion): AskAnswer {
+                    if (recover) throw WindmillApiException.Transport(java.io.IOException("interrupted"))
+                    return done.response()
+                }
+                override suspend fun thread(id: String): AskThread = AskThread(id, "Question", generation = done)
+            }
+            val store = store(mapOf("a" to server, "b" to FakeTraining()), disk)
+            store.connect(account("a"))
+            val outcome = async { store.ask("thread-a", "Question", "request-a") }
+            entered.await()
+            try { store.connect(account("b")) } finally { release.countDown() }
+            assertEquals(AskOutcome.Refused("The account changed. Open this again."), outcome.await())
+            assertNull(LocalCoach(file).snapshot("b", "request-a"))
+            assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("a"))
+        }
+    }
+
+    @Test
     fun expiredUnlinkedPhotoIsReuploadedFromRetainedBytesWithTheSameRequestAfterRestart() = runTest {
         val file = File(tmp.root, "coach-expired")
         val disk = LocalCoach(file)
@@ -44,7 +119,7 @@ class CoachOwnershipTests {
             override suspend fun uploadPhoto(threadId: String, value: CoachAttachment, body: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
                 assertArrayEquals(bytes, body); uploads += value.id; return value
             }
-            override suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer {
+            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
                 requests += question
                 if (requests.size == 1) throw WindmillApiException.Refused(400, Refusal("Photo expired", code = "ask-attachment-invalid"))
                 return AskGeneration("generation-expired", "request-expired", "Caption", "completed", "Photo received", attachments = listOf(photo)).response()
@@ -80,7 +155,7 @@ class CoachOwnershipTests {
             override suspend fun uploadPhoto(threadId: String, value: CoachAttachment, body: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
                 assertEquals(photo, value); assertArrayEquals(bytes, body); uploads++; onProgress(1f); return value
             }
-            override suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer {
+            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
                 seen += question
                 onSnapshot(partial)
                 if (seen.size == 1) throw WindmillApiException.Transport(java.io.IOException("lost"))
@@ -115,7 +190,7 @@ class CoachOwnershipTests {
         val release = CompletableDeferred<Unit>()
         val partial = AskGeneration("generation-a", "request-a", "Question", "completed", "Private", revision = 1)
         val boundary = object : TrainingSyncing by FakeTraining() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: (AskGeneration) -> Unit): AskAnswer {
+            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
                 release.await(); onSnapshot(partial); return partial.response()
             }
         }

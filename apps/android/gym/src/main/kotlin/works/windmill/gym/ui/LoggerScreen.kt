@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -60,13 +62,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,10 +87,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -186,6 +187,12 @@ fun LoggerScreen(
     val sheetStates = rememberSaveableStateHolder()
     val strip = rememberLazyListState()
     val reading = rememberScrollState()
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val edgePx = with(density) { LoggerWalk.edgeDp.dp.toPx() }
+    val distancePx = with(density) { LoggerWalk.distanceDp.dp.toPx() }
+    val leftEdge = maxOf(edgePx, WindowInsets.systemGestures.getLeft(density, direction).toFloat())
+    val rightEdge = maxOf(edgePx, WindowInsets.systemGestures.getRight(density, direction).toFloat())
 
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     fun close() {
@@ -264,7 +271,42 @@ fun LoggerScreen(
             }
         },
     ) {
-      Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
+      Column(Modifier.fillMaxSize()
+          .pointerInput(store.accountKey, store.session?.id, store.exerciseId, store.order, sheet, goingTo, pendingDeviation, leftEdge, rightEdge, distancePx) {
+              if (sheet != null || goingTo != null || pendingDeviation != null || store.exerciseId == null) return@pointerInput
+              val at = store.order.indexOf(store.exerciseId)
+              val previous = store.order.getOrNull(at - 1)
+              val next = if (at < 0) null else store.order.getOrNull(at + 1)
+              val slop = viewConfiguration.touchSlop
+              awaitEachGesture {
+                  val down = awaitFirstDown(requireUnconsumed = false)
+                  if (LoggerWalk.startsInTheEdge(down.position.x, size.width.toFloat(), leftEdge, rightEdge)) return@awaitEachGesture
+                  var dx = 0f
+                  var dy = 0f
+                  var walking = false
+                  while (true) {
+                      val event = awaitPointerEvent(PointerEventPass.Main)
+                      if (event.changes.size != 1) break
+                      val change = event.changes.single()
+                      if (change.id != down.id || change.isConsumed) break
+                      if (!change.pressed) {
+                          if (walking && LoggerWalk.horizontal(dx, dy, distancePx)) LoggerWalk.to(dx, previous, next)?.let { move(it) }
+                          break
+                      }
+                      dx += change.positionChange().x
+                      dy += change.positionChange().y
+                      if (!walking) {
+                          when (LoggerWalk.intent(dx, dy, slop)) {
+                              LoggerWalk.Intent.Undecided -> continue
+                              LoggerWalk.Intent.Other -> break
+                              LoggerWalk.Intent.Horizontal -> walking = true
+                          }
+                      }
+                      change.consume()
+                  }
+              }
+          }
+          .padding(horizontal = GymLayout.gutter)) {
         val clocks = store.session?.let { session ->
             WorkoutClocks(session, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, nowMs)
         }
@@ -503,13 +545,6 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
     }
 }
 
-// The walk is a horizontal stroke on the head, attached ABOVE the name, which is a full-width tap
-// target; it claims a gesture only once `LoggerWalk` says the stroke is the walk's — the region
-// beneath scrolls vertically and the strip at either edge belongs to the system.
-//
-// LAW 1, and this is the row where forgetting it would cost the most: TalkBack sees a drag, so the
-// two verbs are declared again BY HAND, on the node that already has a label.
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MovementHead(
     name: String,
@@ -520,10 +555,6 @@ private fun MovementHead(
     onOpenSession: () -> Unit,
 ) {
     val skin = LocalGymColors.current
-    val density = LocalDensity.current
-    val slopPx = with(density) { LoggerWalk.slopDp.dp.toPx() }
-    val edgePx = with(density) { LoggerWalk.edgeDp.dp.toPx() }
-    var width by remember { mutableFloatStateOf(0f) }
     val steps = remember(previous, next, onMove) {
         buildList {
             previous?.let { add(CustomAccessibilityAction("Previous movement") { onMove(it); true }) }
@@ -531,32 +562,7 @@ private fun MovementHead(
         }
     }
     Column(
-        Modifier
-            .fillMaxWidth()
-            .onSizeChanged { width = it.width.toFloat() }
-            .pointerInput(previous, next, slopPx, edgePx) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    if (LoggerWalk.startsInTheEdge(down.position.x, width, edgePx)) {
-                        return@awaitEachGesture
-                    }
-                    var dx = 0f
-                    var dy = 0f
-                    var walking = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        dx += change.positionChange().x
-                        dy += change.positionChange().y
-                        if (!walking) walking = LoggerWalk.horizontal(dx, dy, slopPx)
-                        // Claimed only once it is ours, so a vertical stroke still reaches the
-                        // scroll beneath and a tap still reaches the name.
-                        if (walking) change.consume()
-                        if (!change.pressed) break
-                    }
-                    if (walking) LoggerWalk.to(dx, previous, next)?.let(onMove)
-                }
-            },
+        Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
     ) {

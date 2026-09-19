@@ -51,24 +51,23 @@ object AutoClose {
 // account's session lapsed (401).
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
-// The logger's horizontal walk between movements, which took the two chevron buttons off the screen
-// a lifter looks at with a bar in their hands.
-//
-// Three collisions, all answered here rather than in the composable: the today column under the
-// stroke is a nested vertical scroll, so the walk claims a stroke only once it is clearly
-// HORIZONTAL; the title is a full-width tap target, so the stroke is attached above it; and a stroke
-// that begins in the strip the system takes for back is not the walk's at all — mid-workout back
-// already means STAY IN THE WORKOUT, and one stroke may not carry two meanings (Law 3).
 object LoggerWalk {
     const val edgeDp = 24
-    const val slopDp = 36
+    const val distanceDp = 36
     const val dominance = 1.6f
+    enum class Intent { Undecided, Horizontal, Other }
 
-    fun startsInTheEdge(x: Float, width: Float, edgePx: Float): Boolean =
-        x <= edgePx || (width > 0f && x >= width - edgePx)
+    fun startsInTheEdge(x: Float, width: Float, edgePx: Float, rightEdgePx: Float = edgePx): Boolean =
+        x <= edgePx || (width > 0f && x >= width - rightEdgePx)
 
     fun horizontal(dx: Float, dy: Float, slopPx: Float): Boolean =
         kotlin.math.abs(dx) >= slopPx && kotlin.math.abs(dx) > kotlin.math.abs(dy) * dominance
+
+    fun intent(dx: Float, dy: Float, slopPx: Float): Intent {
+        if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) < slopPx) return Intent.Undecided
+        if (horizontal(dx, dy, slopPx)) return Intent.Horizontal
+        return Intent.Other
+    }
 
     // Left walks to the NEXT movement: the page moves the way the thumb does.
     fun to(dx: Float, previous: String?, next: String?): String? = if (dx < 0) next else previous

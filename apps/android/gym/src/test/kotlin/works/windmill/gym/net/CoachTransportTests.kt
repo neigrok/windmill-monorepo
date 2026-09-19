@@ -100,6 +100,52 @@ class CoachTransportTests {
     }
 
     @Test
+    fun aBurstKeepsOnlyTheNewestSnapshotWhileTheConsumerSavesAndDrainsItBeforeEofFailure() = runBlocking {
+        for (terminal in listOf(true, false)) {
+            val first = AskGeneration("generation-a", "request-a", "Question", "running", "First", revision = 1)
+            val generations = (2..100).map { revision -> first.copy(revision = revision.toLong(),
+                answer = "Café 東京 مرحبًا 🏋🏽‍♀️ e\u0301\n".repeat(revision),
+                status = if (terminal && revision == 100) "completed" else "running",
+                results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Routine"))) }
+            fun event(value: AskGeneration) = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", value))}\n\n"
+            val beginning = Buffer().writeUtf8(event(first))
+            val remainder = Buffer().writeUtf8(generations.joinToString("") { event(it) })
+            val consumer = java.util.concurrent.CountDownLatch(1)
+            val parsed = CompletableDeferred<Unit>()
+            val source = object : Source {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    if (beginning.size > 0) return beginning.read(sink, byteCount)
+                    check(consumer.await(5, TimeUnit.SECONDS))
+                    return remainder.read(sink, byteCount)
+                }
+                override fun timeout() = Timeout.NONE
+                override fun close() { parsed.complete(Unit) }
+            }.buffer()
+            val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+                okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+                    .header("Content-Type", "text/event-stream").body(object : okhttp3.ResponseBody() {
+                        override fun contentType() = null
+                        override fun contentLength() = -1L
+                        override fun source() = source
+                    }).build()
+            }.build()
+            val gym = GymHttp(WindmillApi(okhttp3.HttpUrl.Builder().scheme("http").host("localhost").build(), { null }, client))
+            val seen = mutableListOf<AskGeneration>()
+            val result = runCatching {
+                kotlinx.coroutines.withTimeout(5_000) {
+                    gym.stream(AskQuestion("thread-a", "Question", "request-a")) {
+                        seen += it
+                        if (it.revision == 1L) { consumer.countDown(); parsed.await() }
+                    }
+                }
+            }
+            assertEquals(listOf(first, generations.last()), seen)
+            if (terminal) assertEquals(generations.last().response(), result.getOrThrow())
+            else assertTrue(result.exceptionOrNull() is WindmillApiException.Transport)
+        }
+    }
+
+    @Test
     fun stopUsesTheOriginalRequestIdentityAndReturnsTheAuthoritativeSnapshot() = runBlocking {
         val server = MockWebServer()
         server.start()

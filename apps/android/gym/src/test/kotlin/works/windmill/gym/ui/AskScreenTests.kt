@@ -195,6 +195,44 @@ class AskScreenTests {
     }
 
     @Test
+    fun loadingOlderMessagesPreservesTheVisibleMessageAndItsOffset() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        var thread by mutableStateOf((5..14).map { AskExchange("Question $it", AskAnswer("Answer $it.\n".repeat(8), ReadTally()), requestId = "request-$it") })
+        compose.setContent {
+            AskScreen(store, thread, emptyList(), emptySet(), false, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+        }
+        compose.onNodeWithText("Question 7").performScrollTo().assertIsDisplayed()
+        val before = compose.onNodeWithText("Question 7").getUnclippedBoundsInRoot().top
+        compose.runOnIdle {
+            thread = (1..4).map { AskExchange("Question $it", AskAnswer("Older answer.\n".repeat(8), ReadTally()), requestId = "request-$it") } + thread
+        }
+        compose.onNodeWithText("Question 7").assertIsDisplayed()
+        assertEquals(before, compose.onNodeWithText("Question 7").getUnclippedBoundsInRoot().top)
+        scope.cancel()
+    }
+
+    @Test
+    fun partialToCompletedKeepsTheSameOpenMessageMenu() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Partial café", revision = 1))
+        compose.setContent {
+            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+        }
+        compose.onNodeWithText("Partial café").performClick()
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+        compose.runOnIdle { generation = generation.copy(status = "completed", answer = "Final café 東京 🏋🏽‍♀️", revision = 3) }
+        compose.onNodeWithText("Copy").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Final café 東京 🏋🏽‍♀️").assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
     fun theEmptyRoomLeadsDirectlyToTheComposer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         room(store(scope), thread = emptyList(), cap = null, doors = mutableListOf())

@@ -272,17 +272,17 @@ private fun ClaimCard(onSignIn: () -> Unit) {
 @Composable
 private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: (String) -> Unit) {
     val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 112.dp)
+    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
         .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(entry.exerciseId) }
-        .padding(20.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(32.dp).background(skin.raised, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
             Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(Readout.movement(entry.exerciseId, store.catalog), style = WindmillFont.body(19, FontWeight.Bold), color = skin.ink)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(Readout.movement(entry.exerciseId, store.catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
             val target = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg" else ""
-            Text(target, style = GymType.numeral(15), color = skin.inkDim)
+            Text(target, style = GymType.numeral(13), color = skin.inkDim)
             (entry.restSeconds ?: store.preferences.restSeconds)?.let {
                 Text("Rest ${Readout.clock(it * 1000L)}", style = WindmillFont.body(13), color = skin.inkDim)
             }
@@ -330,7 +330,7 @@ fun RoutineScreen(
                 Column(Modifier.fillMaxWidth().background(skin.canvas).padding(horizontal = 20.dp)
                     .padding(top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onStart(routine.id) }, shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
                     }
                     TextButton(onClick = { onBuild(RoutineDraft.of(routine)) },
@@ -342,12 +342,12 @@ fun RoutineScreen(
         },
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = GymLayout.gutter)
-                .padding(top = 20.dp, bottom = GymLayout.scrollTailBand),
+                .padding(top = 8.dp, bottom = GymLayout.scrollTailBand),
         ) {
             if (routine == null) {
                 Text(
@@ -359,10 +359,10 @@ fun RoutineScreen(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(routine.name, style = WindmillFont.display(40), color = skin.ink)
+                Text(routine.name, style = WindmillFont.display(28), color = skin.ink)
                 val targets = routine.entries.sumOf { it.sets.size }
                 val summary = listOf(Program.movements(routine.entries.size), Readout.setCount(targets)).joinToString(" · ")
-                Text(summary, style = WindmillFont.body(16), color = skin.inkDim)
+                Text(summary, style = WindmillFont.body(14), color = skin.inkDim)
                 routine.lastTrainedAtMs?.let {
                     Text("Last trained ${Readout.date(it)}", style = WindmillFont.body(14), color = skin.inkDim)
                 }
@@ -373,7 +373,8 @@ fun RoutineScreen(
                     onReview = { onReview(waiting) })
             }
 
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 routine.entries.sortedBy { it.position }.forEach { entry ->
                     EntryRow(entry, store, onOpenMovement)
                 }
@@ -401,7 +402,7 @@ private fun History(
     if (drawn.isEmpty() && unread == null) return
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Text("History", style = GymType.numeral(11), color = skin.inkDim)
         if (unread != null) {

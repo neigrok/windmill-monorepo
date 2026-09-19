@@ -11,7 +11,8 @@ import works.windmill.gym.domain.AskGeneration
 import works.windmill.gym.domain.CoachDraft
 import works.windmill.platform.storage.AtomicDocument
 
-class LocalCoach(private val file: File) {
+class LocalCoach internal constructor(private val file: File, private val write: (File, String) -> Unit) {
+    constructor(file: File) : this(file, AtomicDocument::write)
     companion object { const val fileName = "windmill-gym-coach.json" }
 
     @Serializable
@@ -38,7 +39,7 @@ class LocalCoach(private val file: File) {
         require(original == null || original == question) { "A retry must keep the original message." }
         val next = document.copy(pending = document.pending +
             (owner to (document.pending[owner].orEmpty() + (requireNotNull(question.requestId) to question))))
-        AtomicDocument.write(file, diskJson.encodeToString(Document.serializer(), next))
+        write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
     }
 
@@ -46,11 +47,17 @@ class LocalCoach(private val file: File) {
 
     @Synchronized fun record(owner: String, generation: AskGeneration) {
         restored.getOrThrow()
+        val request = document.pending[owner]?.get(generation.requestId) ?: return
         val current = snapshot(owner, generation.requestId)
         if (current == generation || (current != null && current.id == generation.id && current.revision > generation.revision)) return
-        val next = document.copy(snapshots = document.snapshots +
-            (owner to (document.snapshots[owner].orEmpty() + (generation.requestId to generation))))
-        AtomicDocument.write(file, diskJson.encodeToString(Document.serializer(), next))
+        val draft = document.drafts[owner]?.get(request.thread)
+        val sentDraft = draft?.text == request.question && listOfNotNull(draft?.photo?.id) == request.attachmentIds
+        val next = document.copy(
+            snapshots = document.snapshots + (owner to (document.snapshots[owner].orEmpty() + (generation.requestId to generation))),
+            drafts = if (sentDraft) (document.drafts + (owner to (document.drafts[owner].orEmpty() - request.thread)))
+                .filterValues { it.isNotEmpty() } else document.drafts,
+        )
+        write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
     }
 
@@ -63,7 +70,7 @@ class LocalCoach(private val file: File) {
         val next = document.copy(pending = (document.pending + (owner to kept)).filterValues { it.isNotEmpty() },
             snapshots = (document.snapshots + (owner to (document.snapshots[owner].orEmpty() - removed))).filterValues { it.isNotEmpty() },
             drafts = if (requestId == null) document.drafts + (owner to (document.drafts[owner].orEmpty() - threadId)) else document.drafts)
-        AtomicDocument.write(file, diskJson.encodeToString(Document.serializer(), next))
+        write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
         discardUnusedPhotos(owner)
     }
@@ -72,9 +79,10 @@ class LocalCoach(private val file: File) {
 
     @Synchronized fun saveDraft(owner: String, key: String, draft: CoachDraft) {
         restored.getOrThrow()
+        if ((document.drafts[owner]?.get(key) ?: CoachDraft()) == draft) return
         val mine = document.drafts[owner].orEmpty() + (key to draft)
         val next = document.copy(drafts = document.drafts + (owner to mine.filterValues { it.text.isNotEmpty() || it.photo != null }))
-        AtomicDocument.write(file, diskJson.encodeToString(Document.serializer(), next))
+        write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
         discardUnusedPhotos(owner)
     }
