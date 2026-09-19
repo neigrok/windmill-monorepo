@@ -1,15 +1,13 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 
-#include "platform/adapters/http/VendorCall.h"
+#include "platform/adapters/llm/AnthropicStream.h"
+#include <drogon/utils/Utilities.h>
 #include "platform/adapters/llm/AnthropicClient.h"
 
-#include <drogon/HttpClient.h>
-#include <drogon/HttpRequest.h>
-#include <drogon/HttpResponse.h>
 
 #include <trantor/utils/Logger.h>
 
-#include <future>
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,6 +28,10 @@ constexpr const char* kSystemPrompt =
     "and the notes they wrote for you. The newest page of the log and their notes are given to you "
     "below; call the other reads when the question needs them. Do not guess a number you could have read, and do not read the "
     "whole log when one movement was asked about.\n"
+    "- CREATE a new routine with create_routine when requested. Read their Notes for goals and constraints "
+    "and list_exercises for catalog movement IDs first. Ask a question only when a materially missing "
+    "constraint prevents a useful routine; use already supplied context. Creation saves the new routine "
+    "immediately. Report creation only when the tool succeeds and use its returned ID.\n"
     "- PROPOSE a change to a day of the program with propose_routine_change, or propose taking one "
     "out with propose_routine_removal. Both CHANGE NOTHING: they hand the lifter a typed diff that "
     "sits in their app until they open it and tap Apply, and nothing on this connection can tap it "
@@ -44,8 +46,8 @@ constexpr const char* kSystemPrompt =
     "send an empty list. To move one set, send the scheme with that one item changed.\n"
     "- Nothing else. You cannot edit or delete a set they logged, start or finish a workout, discard "
     "one, change what a finished workout's plan said, or mint a link — those tools are not yours and "
-    "asking for them is refused. Never say or imply that you have changed anything, and never "
-    "promise to.\n"
+    "asking for them is refused. Apart from a confirmed newly created routine, never claim an "
+    "existing routine or workout has changed.\n"
     "\n"
     "When they ask you to fix something you cannot fix — a set they mistyped, a workout they want "
     "gone — say so in one sentence, hand the job back, and name the workout and the movement so they "
@@ -72,6 +74,7 @@ constexpr const char* kSystemPrompt =
     "counted.\n"
     "- Loads are kilograms and negative loads are band-assisted work, not errors. Only WORKING sets "
     "count toward anything; warmups, drops and failures do not.\n"
+    "- Only the recent conversation context is provided. Do not claim to recall older messages that are absent.\n"
     "- If the log does not say, say that it does not say. Never estimate a bodyweight, an RPE, a "
     "calorie or a one-rep max the tools did not give you.\n"
     "- You are not a doctor or a physiotherapist. If the question is about pain, injury, illness or "
@@ -86,13 +89,23 @@ constexpr int kMaxTokens = 8000;
 // Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
 
-constexpr double kRequestTimeoutSeconds = 75.0;
 
 Json::Value textMessage(const char* role, const std::string& text) {
   Json::Value message(Json::objectValue);
   message["role"] = role;
   message["content"] = text;
   return message;
+}
+
+void appendToolRoundText(std::string& transcript, const Json::Value& message) {
+  if (!message["stop_reason"].isString() || message["stop_reason"].asString() != "tool_use" || !message["content"].isArray()) return;
+  std::string text;
+  for (const auto& block : message["content"])
+    if (block.isObject() && block["type"].isString() && block["type"].asString() == "text" && block["text"].isString()) {
+      if (!text.empty()) text += "\n";
+      text += block["text"].asString();
+    }
+  if (!text.empty()) transcript += text + "\n\n";
 }
 
 }  // namespace
@@ -113,15 +126,32 @@ Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::str
                       "\n\nHere is the newest page of my training log, exactly as list_sessions "
                       "returns it:\n" +
                       logDocument + "\n\n" + turn.text));
-      continue;
+    } else {
+      messages.append(textMessage(turn.fromLifter ? "user" : "assistant", turn.text));
     }
-    messages.append(textMessage(turn.fromLifter ? "user" : "assistant", turn.text));
+    if (!turn.images.empty()) {
+      auto& message = messages[messages.size() - 1];
+      Json::Value blocks(Json::arrayValue);
+      for (const auto& image : turn.images) {
+        Json::Value block(Json::objectValue);
+        block["type"] = "image";
+        block["source"]["type"] = "base64";
+        block["source"]["media_type"] = image.mediaType;
+        block["source"]["data"] = drogon::utils::base64Encode(image.data);
+        blocks.append(block);
+      }
+      Json::Value text(Json::objectValue);
+      text["type"] = "text";
+      text["text"] = message["content"].isString() ? message["content"] : message["content"][0]["text"];
+      blocks.append(text);
+      message["content"] = blocks;
+    }
   }
   return messages;
 }
 
 AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools,
-                   const AskCall& call, const AgentReport& report) {
+                   const AskCall& call, const AgentReport& report, const AskControl& control) {
   AskAnswer outcome;
   if (turns.empty()) {
     outcome.error = "Coach was given no question to answer";
@@ -155,10 +185,17 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   spec.system = kSystemPrompt;
   spec.messages = askOpeningMessages(turns, agentToolText(notes), agentToolText(opening));
   spec.where = "ask.run";
+  spec.continueRun = control.continueRun;
 
-  const AgentLoopOutcome ran = driveAgentLoop(spec, tools, caller, call, report);
+  std::string transcript;
+  const AskCall collect = [&](const Json::Value& request) {
+    auto reply = call(request);
+    if (reply) appendToolRoundText(transcript, *reply);
+    return reply;
+  };
+  const AgentLoopOutcome ran = driveAgentLoop(spec, tools, caller, collect, report);
   outcome.ok = ran.ok;
-  outcome.answer = ran.text;
+  outcome.answer = ran.ok ? transcript + ran.text : "";
   outcome.error = ran.error;
   outcome.modelTurns = ran.modelTurns;
   outcome.steps.push_back(AskStep{"list_notes", false});
@@ -167,18 +204,21 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
 }
 
 AnthropicAsk::AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {
-  loop_.run();
-}
+      usage_(std::move(usage)), baseUrl_(std::move(baseUrl)) {}
 
 bool AnthropicAsk::configured() const { return !apiKey_.empty(); }
 
 AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
                                ToolHost& tools) {
+  return answer(turns, caller, tools, {});
+}
+
+AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
+                               ToolHost& tools, const AskControl& control) {
   const AgentReport report = [failures = failures_](const std::string& where,
                                                     const std::string& detail) {
     LOG_ERROR << where << ": " << detail;
@@ -192,44 +232,13 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
     return out;
   }
 
-  const std::string apiKey = apiKey_;
-  trantor::EventLoop* loop = loop_.getLoop();
-  const AskCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
-    auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
-    std::future<std::optional<Json::Value>> future = promise->get_future();
-    // Trantor forbids driving a loop from any thread but its own: marshal every client and loop
-    // touch onto the loop thread and block the worker on the future.
-    loop->queueInLoop([apiKey, loop, request, promise]() {
-      auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
-      auto req = drogon::HttpRequest::newHttpRequest();
-      req->setMethod(drogon::Post);
-      req->setPath("/v1/messages");
-      applyAnthropicHeaders(req, apiKey);
-      req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-      Json::StreamWriterBuilder builder;
-      builder["indentation"] = "";
-      req->setBody(Json::writeString(builder, request));
-      // The lifter's question and their sets reach no log.
-      VendorCall vendor("anthropic", "gym-ask");
-      client->sendRequest(
-          req,
-          [client, vendor, promise](drogon::ReqResult result,
-                                    const drogon::HttpResponsePtr& resp) mutable {
-            if (!vendor.succeeded(result, resp)) {
-              promise->set_value(std::nullopt);
-              return;
-            }
-            std::shared_ptr<Json::Value> reply = resp->getJsonObject();
-            if (!reply) {
-              LOG_ERROR << "gym ask upstream sent an unreadable reply";
-              promise->set_value(std::nullopt);
-              return;
-            }
-            promise->set_value(*reply);
-          },
-          kRequestTimeoutSeconds);
-    });
-    return future.get();
+  std::string transcript;
+  const AskCall call = [this, &control, &transcript](const Json::Value& request) {
+    auto reply = streamAnthropicMessage(apiKey_, baseUrl_, request, [&](const std::string& text) {
+      if (control.text) control.text(transcript + text);
+    }, control.continueRun);
+    if (reply) appendToolRoundText(transcript, *reply);
+    return reply;
   };
 
   // One row per turn, one run id across the exchange.
@@ -240,7 +249,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   frame.model = kModel;
   frame.runId = newRunId("ask");
 
-  return driveAsk(turns, caller, tools, metered(call, frame, fuse_, usage_, report), report);
+  return driveAsk(turns, caller, tools, metered(call, frame, fuse_, usage_, report), report, control);
 }
 
 }

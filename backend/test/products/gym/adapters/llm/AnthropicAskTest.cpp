@@ -367,3 +367,32 @@ TEST(anthropic_ask_with_a_key_reports_configured) {
   AnthropicAsk ask{"sk-ant-test"};
   CHECK(ask.configured());
 }
+
+TEST(coach_keeps_visible_text_before_a_tool_round_in_the_final_answer) {
+  FakeToolHost host;
+  host.catalog = {declared("list_exercises", "Read catalog")};
+  FakeModel model;
+  auto first = textReply("tool_use", "I will build an upper body routine.");
+  first["content"].append(toolUseReply("list_exercises", "tool1")["content"][0]);
+  model.replies = {first, textReply("end_turn", "Your routine is ready.")};
+  Recorder reports;
+  const auto answer = driveAsk(question("Make my routine"), asked(), host, model.asCall(), reports.report());
+  REQUIRE(answer.ok);
+  CHECK_EQ(answer.answer, std::string("I will build an upper body routine.\n\nYour routine is ready."));
+  CHECK_EQ(answer.modelTurns, 2);
+  CHECK(reports.failures.empty());
+}
+
+TEST(coach_opening_image_is_a_base64_content_block_before_the_question) {
+  const std::vector<AskTurn> turns{{true, "What do you see?", {{"image/png", "png"}}}};
+  const auto messages = askOpeningMessages(turns, "notes", "log");
+  REQUIRE_EQ(messages.size(), 1u);
+  REQUIRE_EQ(messages[0]["content"].size(), 2u);
+  Json::Value image(Json::objectValue);
+  image["type"] = "image";
+  image["source"]["type"] = "base64";
+  image["source"]["media_type"] = "image/png";
+  image["source"]["data"] = "cG5n";
+  CHECK_EQ(messages[0]["content"][0], image);
+  CHECK_EQ(messages[0]["content"][1]["type"].asString(), std::string("text"));
+}

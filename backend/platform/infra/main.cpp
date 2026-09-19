@@ -182,6 +182,10 @@ int main() {
                 {"gym_proposals", "user_id"},         // gym
                 {"gym_proposal_changes", "user_id"},  // gym
                 {"gym_session_shares", "user_id"},    // gym
+                {"gym_ask_generations", "user_id"},
+                {"gym_ask_attachments", "user_id"},
+                {"gym_ask_deleted_threads", "user_id"},
+                {"gym_routine_creations", "user_id"},
                 {"gym_ask_threads", "user_id"},       // gym
                 {"gym_ask_turns", "user_id"},         // gym
                 {"gym_notes", "user_id"},             // gym
@@ -374,11 +378,10 @@ int main() {
                                                   *gymProgramService, *gymNotesService,
                                                   *gymBodyweightService, appBaseUrl);
 
-  // With no ANTHROPIC_API_KEY there is no AskService, so gym::registerRoutes never mounts the path.
-  auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
-  std::shared_ptr<gym::AskService> gymAsk;
-  if (gymAskAgent->configured())
-    gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreadService, *gymAskAgent,
+  // AskService retains Stop/recovery without a vendor key; only new asks require configuration.
+  auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink,
+      std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl);
+  auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
 
   // Every product's module behind one host, filtered by the grant the credential carries. A

@@ -138,6 +138,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
   Json::Value messages = spec.messages;
 
   for (int iteration = 0; iteration < spec.maxIterations; ++iteration) {
+    if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
     markAgentCachePoint(messages);  // the growing prefix is written once and read after
     const std::optional<Json::Value> reply = call(messagesRequest(spec, catalog, messages));
     if (!reply) {
@@ -182,6 +183,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
     Json::Value results(Json::arrayValue);
     for (const Json::Value& block : content) {
       if (block["type"].asString() != "tool_use") continue;
+      if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
       const std::string name = block["name"].asString();
       const ToolResult result = tools.callTool(name, block["input"], caller);
       results.append(agentToolResult(block["id"].asString(), result));

@@ -31,6 +31,9 @@ inline void reset() {
          "ON CONFLICT (id) DO NOTHING");
   w.exec("INSERT INTO users (id, email) VALUES ('" + kOther + "', 'gym-pgtest-b@example.com') "
          "ON CONFLICT (id) DO NOTHING");
+  w.exec("DELETE FROM gym_ask_attachments WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_ask_deleted_threads WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_routine_creations WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_write_receipts WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   // FK order, and the routines before the exercises: an entry references a movement.
   w.exec("DELETE FROM gym_set_revisions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");

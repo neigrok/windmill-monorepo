@@ -47,6 +47,7 @@ struct AgentLoopSpec {
   // Whether a final turn carrying no text is a failure.
   bool answerRequired = true;
   std::string where = "agent.run";
+  std::function<bool()> continueRun;
 };
 
 // One tool the model reached for, in call order.

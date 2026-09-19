@@ -10,6 +10,8 @@
 #include "products/gym/ports/ProgramRepository.h"
 
 #include <algorithm>
+#include <mutex>
+#include <set>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -90,6 +92,7 @@ struct FakeGymStore {
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
   // gym_proposals + gym_proposal_changes as one value: the rows are one document (domain/Proposal.h).
   std::vector<RoutineProposal> proposalRows;
+  std::vector<Routine> routineCreations;
   std::vector<AskThread> threadRows;   // Ask's conversations; `minted` is derived on every read
   bool loseThreadRace = false;         // stage the concurrent-mint race `openThread` explains
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
@@ -897,6 +900,11 @@ private:
 
 class FakeProgramRepository : public ProgramRepository {
 public:
+  std::optional<Routine> routineCreation(const UserId& user, const RoutineId& id) override {
+    for (const auto& row : db.routineCreations) if (row.user == user && row.id == id) return row;
+    return std::nullopt;
+  }
+
   explicit FakeProgramRepository(FakeGymStore& db) : db(db) {}
 
   FakeGymStore& db;
@@ -958,6 +966,7 @@ public:
       if (!db.visibleTo(incoming.user, entry.exercise))
         return {std::nullopt, RoutineWriteError::unknownExercise};
     db.routineRows.push_back(incoming);
+    if (byAgent == ProposalDoor::ask) db.routineCreations.push_back(incoming);
     db.createdRoutines[incoming.id.str()] =
         FakeGymStore::Created{nowMs, byAgent, static_cast<int>(incoming.entries.size())};
     return {db.readRoutine(incoming), RoutineWriteError::none};
@@ -1176,6 +1185,120 @@ private:
 class FakeAskThreadRepository : public AskThreadRepository {
 public:
   explicit FakeAskThreadRepository(FakeGymStore& db) : db(db) {}
+  std::vector<ThreadId> deletedThreads;
+  struct GenerationRow {
+    UserId user;
+    ThreadId thread;
+    AskGeneration generation;
+    std::optional<CoachOperation> operation;
+  };
+  std::vector<GenerationRow> generations;
+  struct ImageRow { UserId user; ThreadId thread; CoachImage image; };
+  std::vector<ImageRow> images;
+  std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id) override {
+    for (const auto& row : images)
+      if (row.user == user && row.thread == thread && row.image.attachment.id == id) return row.image;
+    return std::nullopt;
+  }
+  ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image) override {
+    for (const auto& held : db.threadRows)
+      if (held.id == thread && held.user != user) return ImageWriteError::notFound;
+    for (const auto& row : images)
+      if (row.image.attachment.id == image.attachment.id)
+        return row.user == user && row.thread == thread && row.image.data == image.data ? ImageWriteError::none : ImageWriteError::idTaken;
+    images.push_back({user, thread, image});
+    return ImageWriteError::none;
+  }
+  std::optional<AskGeneration> stopGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId) override {
+    for (auto& row : generations)
+      if (row.user == user && row.thread == thread && row.generation.requestId == requestId && row.generation.status == "running")
+        row.generation.stopRequested = true;
+    return generation(user, thread, requestId);
+  }
+  std::set<std::string> active;
+  std::mutex mutex;
+
+  struct Lease : ThreadLease {
+    FakeAskThreadRepository& repository;
+    std::string id;
+    Lease(FakeAskThreadRepository& repository, std::string id) : repository(repository), id(std::move(id)) {}
+    ~Lease() override { std::lock_guard lock(repository.mutex); repository.active.erase(id); }
+  };
+  bool threadAvailable(const UserId& user, const ThreadId& id) override {
+    if (std::find(deletedThreads.begin(), deletedThreads.end(), id) != deletedThreads.end()) return false;
+    for (const auto& row : db.threadRows) if (row.id == id && row.user != user) return false;
+    return true;
+  }
+  std::unique_ptr<ThreadLease> tryLease(const UserId&, const ThreadId& id) override {
+    std::lock_guard lock(mutex);
+    if (!active.insert(id.str()).second) return nullptr;
+    return std::make_unique<Lease>(*this, id.str());
+  }
+  std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override {
+    std::vector<AskThread> result;
+    for (const auto& held : db.threadRows)
+      if (held.user == user && (!cursor.beforeMs || std::pair(held.askedAtMs, held.id.str()) < std::pair(cursor.beforeMs, cursor.beforeId)))
+        result.push_back(withMinted(held, false));
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+      return std::pair(a.askedAtMs, a.id.str()) > std::pair(b.askedAtMs, b.id.str());
+    });
+    if (result.size() > static_cast<std::size_t>(cursor.limit)) result.resize(cursor.limit);
+    return result;
+  }
+  std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id, std::uint64_t before, int limit) override {
+    auto result = thread(user, id);
+    if (!result) return result;
+    std::erase_if(result->turns, [&](const auto& turn) { return before && turn.position >= before; });
+    if (result->turns.size() > static_cast<std::size_t>(limit)) {
+      result->turns.erase(result->turns.begin(), result->turns.end() - limit);
+      result->nextCursor = std::to_string(result->turns.front().position);
+    }
+    return result;
+  }
+  std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread, const std::string& requestId) override {
+    for (const auto& row : generations)
+      if (row.user == user && row.thread == thread && row.generation.requestId == requestId) return row.generation;
+    return std::nullopt;
+  }
+  void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation) override {
+    auto prior = this->generation(user, thread, generation.requestId);
+    if (prior && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
+    generation.revision = prior ? prior->revision + 1 : 1;
+    generation.stopRequested = prior && prior->stopRequested;
+    bool found = false;
+    for (auto& row : generations)
+      if (row.user == user && row.thread == thread && row.generation.requestId == generation.requestId) {
+        row.generation = generation; found = true;
+      }
+    if (!found) generations.push_back({user, thread, generation});
+    if (generation.status != "running") {
+      bool replaced = false;
+      for (auto& held : db.threadRows)
+        if (held.id == thread && held.user == user)
+          for (auto& turn : held.turns)
+            if (turn.generationId == generation.id) {
+              turn.text = turn.fromLifter ? generation.question : generation.answer;
+              turn.receipt = turn.fromLifter ? std::nullopt : generation.receipt;
+              turn.results = turn.fromLifter ? std::vector<CoachResult>{} : generation.results;
+              turn.status = generation.status;
+              replaced = true;
+            }
+      if (!replaced) appendTurns(user, thread, {{true, generation.question, generation.atMs, {}, 0, generation.id, {}, generation.requestId, generation.status, generation.attachments},
+        {false, generation.answer, generation.atMs, generation.receipt, 0, generation.id, generation.results, generation.requestId, generation.status}});
+    }
+    for (auto& held : db.threadRows)
+      if (held.user == user && held.id == thread) { held.generation = generation; held.askedAtMs = generation.atMs; }
+  }
+  std::optional<CoachOperation> operation(const UserId& user, const ThreadId& thread, const std::string& generationId) override {
+    for (const auto& row : generations)
+      if (row.user == user && row.thread == thread && row.generation.id == generationId) return row.operation;
+    return std::nullopt;
+  }
+  void saveOperation(const UserId& user, const ThreadId& thread, const std::string& generationId, const CoachOperation& operation) override {
+    for (auto& row : generations)
+      if (row.user == user && row.thread == thread && row.generation.id == generationId) row.operation = operation;
+  }
+
 
   FakeGymStore& db;
 
@@ -1201,6 +1324,7 @@ public:
                                std::uint64_t nowMs) override {
     // The store's race, made reachable: the loser's insert loses to ON CONFLICT DO NOTHING and reads back empty.
     if (db.loseThreadRace) return {std::nullopt, ThreadOpenError::none};
+    if (std::find(deletedThreads.begin(), deletedThreads.end(), id) != deletedThreads.end()) return {std::nullopt, ThreadOpenError::idTaken};
     for (const AskThread& held : db.threadRows) {
       if (!(held.id == id)) continue;
       if (!(held.user == user)) return {std::nullopt, ThreadOpenError::idTaken};
@@ -1215,7 +1339,10 @@ public:
                    const std::vector<ThreadTurn>& turns) override {
     for (AskThread& held : db.threadRows) {
       if (!(held.id == id) || !(held.user == user)) continue;
-      for (const ThreadTurn& turn : turns) held.turns.push_back(turn);
+      for (ThreadTurn turn : turns) {
+        turn.position = held.turns.size() + 1;
+        held.turns.push_back(turn);
+      }
       if (!turns.empty()) held.askedAtMs = turns.back().atMs;
       return;
     }
@@ -1223,15 +1350,21 @@ public:
 
   void discardEmptyThread(const UserId& user, const ThreadId& id) override {
     std::erase_if(db.threadRows, [&](const AskThread& held) {
-      return held.id == id && held.user == user && held.turns.empty();
+      return held.id == id && held.user == user && held.turns.empty() && !held.generation;
     });
   }
 
   bool deleteThread(const UserId& user, const ThreadId& id) override {
+    if (!thread(user, id)) return false;
+    auto lease = tryLease(user, id);
+    if (!lease) throw ThreadBusy{};
     const std::size_t before = db.threadRows.size();
     std::erase_if(db.threadRows,
                   [&](const AskThread& held) { return held.id == id && held.user == user; });
     if (db.threadRows.size() == before) return false;
+    deletedThreads.push_back(id);
+    std::erase_if(images, [&](const auto& row) { return row.thread == id && row.user == user; });
+    std::erase_if(generations, [&](const auto& row) { return row.thread == id && row.user == user; });
     // `on delete set null`: every proposal the conversation minted keeps its row and loses only the link.
     for (RoutineProposal& held : db.proposalRows)
       if (held.head.source.thread == id) held.head.source.thread.reset();
@@ -1242,6 +1375,10 @@ private:
   // What this conversation minted, in mint order, each carrying the routine's name AS IT NOW STANDS.
   AskThread withMinted(const AskThread& held, bool withTurns) const {
     AskThread out = held;
+    out.results.clear();
+    for (const auto& row : generations)
+      if (row.user == held.user && row.thread == held.id)
+        out.results.insert(out.results.end(), row.generation.results.begin(), row.generation.results.end());
     out.referencedProposals.clear();
     for (ThreadTurn& turn : out.turns) {
       if (turn.fromLifter || (turn.receipt && !turn.receipt->valid())) turn.receipt.reset();

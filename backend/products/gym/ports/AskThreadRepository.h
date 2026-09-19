@@ -1,9 +1,11 @@
 #pragma once
 
 #include "products/gym/domain/Thread.h"
+#include "platform/ports/ToolHost.h"
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,11 +23,46 @@ struct ThreadOpenOutcome {
   ThreadOpenError error;
 };
 
+struct CoachImage {
+  CoachAttachment attachment;
+  std::string data;
+};
+
+enum class ImageWriteError { none, notFound, idTaken, dailyLimit };
+
+struct ThreadLease {
+  virtual ~ThreadLease() = default;
+};
+
+struct CoachOperation {
+  std::string id;
+  std::string name;
+  Json::Value arguments;
+  std::optional<ToolResult> result;
+};
+
 // Ask's door to gym storage: the threads and their turns. A thread's proposals are the program's
 // rows, read onto the thread through `thread_id`. Every read and write is owner-scoped by the UserId
 // it carries; absent is byte-identical to forbidden, except where openThread says otherwise.
 struct AskThreadRepository {
   virtual ~AskThreadRepository() = default;
+  virtual std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id) = 0;
+  virtual ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image) = 0;
+  virtual std::optional<AskGeneration> stopGeneration(const UserId& user, const ThreadId& thread,
+                                                     const std::string& requestId) = 0;
+  virtual bool threadAvailable(const UserId& user, const ThreadId& id) = 0;
+  virtual std::unique_ptr<ThreadLease> tryLease(const UserId& user, const ThreadId& id) = 0;
+  virtual std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) = 0;
+  virtual std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id,
+                                              std::uint64_t before, int limit) = 0;
+  virtual std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread,
+                                                 const std::string& requestId) = 0;
+  virtual void saveGeneration(const UserId& user, const ThreadId& thread,
+                              AskGeneration& generation) = 0;
+  virtual std::optional<CoachOperation> operation(const UserId& user, const ThreadId& thread,
+                                                const std::string& generationId) = 0;
+  virtual void saveOperation(const UserId& user, const ThreadId& thread,
+                             const std::string& generationId, const CoachOperation& operation) = 0;
 
   // `threads` carries every thread's proposals and none of its turns; `thread` is the conversation
   // whole.
@@ -35,12 +72,10 @@ struct AskThreadRepository {
   // written once on the insert; a later ask into the same thread passes it and it is ignored.
   virtual ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id,
                                        const std::string& title, std::uint64_t nowMs) = 0;
-  // Appended only once an answer has landed, and `asked_at` moves with them; a failed run calls
-  // discardEmptyThread instead and leaves this table as it found it.
+  // Legacy append path; durable Coach requests use saveGeneration for atomic terminal persistence.
   virtual void appendTurns(const UserId& user, const ThreadId& id,
                            const std::vector<ThreadTurn>& turns) = 0;
-  // Reverses an `openThread` whose run never answered: removes the row only while it holds no turns.
-  // A proposal the dead run minted keeps its row and loses its thread link.
+  // Removes only a thread with neither messages nor a generation.
   virtual void discardEmptyThread(const UserId& user, const ThreadId& id) = 0;
   // The turns cascade; the proposals do not — the schema sets their `thread_id` null.
   virtual bool deleteThread(const UserId& user, const ThreadId& id) = 0;   // false = nothing to remove

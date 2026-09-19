@@ -4,6 +4,7 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/application/AskService.h"
+#include "products/gym/application/ThreadService.h"
 #include "test/platform/Fakes.h"
 
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
@@ -40,10 +41,10 @@ TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent
   CHECK_EQ(held->createdAtMs, kNow);
   CHECK_EQ(held->askedAtMs, kNow + 1'000);
   REQUIRE_EQ(held->turns.size(), 4u);
-  CHECK_EQ(held->turns[0], (ThreadTurn{true, typed, kNow}));
-  CHECK_EQ(held->turns[1], (ThreadTurn{false, "Your top set has not moved.", kNow}));
-  CHECK_EQ(held->turns[2], (ThreadTurn{true, "and the squat?", kNow + 1'000}));
-  CHECK_EQ(held->turns[3], (ThreadTurn{false, "That one is moving.", kNow + 1'000}));
+  CHECK_EQ(held->turns[0], (ThreadTurn{true, typed, kNow, {}, 1}));
+  CHECK_EQ(held->turns[1], (ThreadTurn{false, "Your top set has not moved.", kNow, {}, 2}));
+  CHECK_EQ(held->turns[2], (ThreadTurn{true, "and the squat?", kNow + 1'000, {}, 3}));
+  CHECK_EQ(held->turns[3], (ThreadTurn{false, "That one is moving.", kNow + 1'000, {}, 4}));
 }
 
 // The id is a primary key across every account: one somebody else holds is refused, never appended to.
@@ -164,7 +165,7 @@ TEST(pg_coach_evidence_survives_corrections_renames_and_deletion_of_its_source) 
   ThreadService conversations{threads, clock};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
   fake::FakeAsk agent;
-  AskService ask{training, conversations, agent, tools, entitlements};
+  AskService ask{training, threads, clock, agent, tools, entitlements};
   const wm::UserId owner{kUser};
   const ThreadId thread{"thr_evidence1"};
   const Session session{SessionId{"ses_evidence1"}, owner, kNow - 9000, kNow,
@@ -220,8 +221,12 @@ TEST(pg_coach_evidence_survives_corrections_renames_and_deletion_of_its_source) 
       [&failed](AskReply reply) { failed.set_value(std::move(reply)); });
   const AskReply noAnswer = failure.get();
   CHECK_FALSE(noAnswer.answer.ok);
-  CHECK_FALSE(noAnswer.receipt.has_value());
-  CHECK_EQ(threads.thread(owner, thread), std::optional<AskThread>{before});
+  CHECK(noAnswer.receipt.has_value());
+  const auto failedHistory = threads.thread(owner, thread);
+  REQUIRE_EQ(failedHistory->turns.size(), 4u);
+  CHECK_EQ(failedHistory->turns[0], before.turns[0]);
+  CHECK_EQ(failedHistory->turns[1], before.turns[1]);
+  CHECK_EQ(failedHistory->turns[3].status, std::string("failed"));
 }
 
 TEST(pg_coach_receipts_are_nullable_for_old_turns_and_never_attach_to_lifter_turns) {
@@ -235,9 +240,9 @@ TEST(pg_coach_receipts_are_nullable_for_old_turns_and_never_attach_to_lifter_tur
   repo.appendTurns(owner, thread, {{true, "Again", kNow + 1000, AnswerReceipt{}},
                                   {false, "New answer", kNow + 1000, AnswerReceipt{}}});
   const AskThread held = *repo.thread(owner, thread);
-  CHECK_EQ(held.turns, (std::vector<ThreadTurn>{{true, "First", kNow},
-      {false, "Old answer", kNow}, {true, "Again", kNow + 1000},
-      {false, "New answer", kNow + 1000, AnswerReceipt{}}}));
+  CHECK_EQ(held.turns, (std::vector<ThreadTurn>{{true, "First", kNow, {}, 1},
+      {false, "Old answer", kNow, {}, 2}, {true, "Again", kNow + 1000, {}, 3},
+      {false, "New answer", kNow + 1000, AnswerReceipt{}, 4}}));
   const Json::Value wire = toJson(held);
   CHECK_FALSE(wire["turns"][0].isMember("receipt"));
   CHECK_FALSE(wire["turns"][1].isMember("receipt"));
@@ -267,8 +272,8 @@ TEST(pg_coach_question_answer_receipt_and_asked_time_roll_back_together) {
                                  {false, "Answer", kNow + 2000, AnswerReceipt{}}});
   const AskThread after = *repo.thread(owner, thread);
   CHECK_EQ(after.askedAtMs, kNow + 2000);
-  CHECK_EQ(after.turns, (std::vector<ThreadTurn>{{true, "Retry", kNow + 2000},
-      {false, "Answer", kNow + 2000, AnswerReceipt{}}}));
+  CHECK_EQ(after.turns, (std::vector<ThreadTurn>{{true, "Retry", kNow + 2000, {}, 1},
+      {false, "Answer", kNow + 2000, AnswerReceipt{}, 2}}));
 }
 
 TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_detail_and_history) {
@@ -291,7 +296,7 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   ThreadService conversations{threads, clock};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
   fake::FakeAsk agent;
-  AskService ask{training, conversations, agent, tools, entitlements};
+  AskService ask{training, threads, clock, agent, tools, entitlements};
   const wm::UserId owner{kUser};
   const ThreadId thread{"thr_removal01"};
   inserted(routines, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
@@ -338,6 +343,7 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   CHECK_EQ(detail.minted, (std::vector<ThreadProposal>{before.minted[1]}));
   AskThread summary = detail;
   summary.turns.clear();
+  summary.generation.reset();
   CHECK_EQ(listed[0], summary);
   CHECK_EQ(outcomeOf(detail), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
   CHECK_EQ(toJson(detail)["outcome"], wm::parse(R"({"kind":"unknown","changes":0})"));
@@ -466,4 +472,308 @@ TEST(pg_coach_history_ignores_malformed_receipts_without_changing_valid_evidence
   CHECK_EQ(recovered.turns[3].receipt, std::optional<AnswerReceipt>{unavailable});
   CHECK_EQ(outcomeOf(recovered), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
   CHECK(threads.threads(wm::UserId{kOther}).empty());
+}
+
+TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_terminal_history) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository threads{wm::pgTestPool()};
+  PgProgramRepository routines{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
+  fake::FakeGym other;
+  other.db.seed(fake::benchPress());
+  wm::fake::FakeClock clock;
+  wm::fake::FakeTokens tokens;
+  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeAiUsageRepository usage;
+  wm::Entitlements entitlements{subscriptions, usage};
+  TrainingService training{log, routines, clock, tokens};
+  CatalogService catalog{other.catalog};
+  ProgramService program{routines, clock};
+  NotesService notes{other.notes, clock};
+  BodyweightService bodyweight{other.bodyweight};
+  GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
+  fake::FakeAsk agent;
+  AskService service{training, threads, clock, agent, tools, entitlements};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_durable01"};
+  const auto ask = [&](const wm::UserId& user, const std::string& question, const std::string& request) {
+    std::promise<AskReply> promise;
+    auto future = promise.get_future();
+    service.ask(user, "gym-pgtest@example.com", thread, question,
+                [&](AskReply reply) { promise.set_value(std::move(reply)); }, request);
+    return future.get();
+  };
+  agent.plan = {{"list_notes", Json::Value(Json::objectValue)}, {"list_exercises", Json::Value(Json::objectValue)},
+      {"create_routine", wm::parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
+  agent.answers = false;
+  const auto failed = ask(owner, "Create my upper body routine", "req_durable01");
+  REQUIRE(failed.generation.has_value());
+  REQUIRE_EQ(failed.generation->results.size(), 1u);
+  const auto result = failed.generation->results.front();
+  CHECK_EQ(routines.routines(owner).size(), 1u);
+  CHECK_FALSE(threads.generation(wm::UserId{kOther}, thread, "req_durable01").has_value());
+  CHECK_FALSE(threads.operation(wm::UserId{kOther}, thread, failed.generation->id).has_value());
+  CHECK_FALSE(threads.messagePage(wm::UserId{kOther}, thread, 0, 50).has_value());
+  CHECK(ask(wm::UserId{kOther}, "Create my upper body routine", "req_durable01").refusal == AskRefusal::threadTaken);
+  auto uncertain = *threads.operation(owner, thread, failed.generation->id);
+  uncertain.result.reset();
+  threads.saveOperation(owner, thread, failed.generation->id, uncertain);
+  CHECK(program.deleteRoutine(owner, RoutineId{result.routineId}));
+  agent.answers = true;
+  const auto recovered = ask(owner, "Create my upper body routine", "req_durable01");
+  REQUIRE(recovered.answer.ok);
+  CHECK_EQ(recovered.generation->results, (std::vector<CoachResult>{result}));
+  CHECK(routines.routines(owner).empty());
+  const auto history = threads.messagePage(owner, thread, 0, 50);
+  REQUIRE(history.has_value());
+  REQUIRE_EQ(history->turns.size(), 2u);
+  CHECK_EQ(history->turns[0].position, 1u);
+  CHECK_EQ(history->turns[1].position, 2u);
+  CHECK_EQ(history->turns[1].status, std::string("completed"));
+  CHECK_EQ(history->turns[1].results, recovered.generation->results);
+  CHECK_EQ(history->turns[1].requestId, std::string("req_durable01"));
+  CHECK(outcomeOf(*history).kind == ThreadOutcomeKind::created);
+  const auto replay = ask(owner, "Create my upper body routine", "req_durable01");
+  CHECK_EQ(replay.generation, recovered.generation);
+  CHECK_EQ(agent.runs, 2);
+  CHECK(ask(owner, "A changed question", "req_durable01").refusal == AskRefusal::requestConflict);
+  CHECK(threads.deleteThread(owner, thread));
+  CHECK(ask(owner, "Create my upper body routine", "req_durable01").refusal == AskRefusal::threadTaken);
+  CHECK_EQ(agent.runs, 2);
+  CHECK(routines.routines(owner).empty());
+  CHECK_FALSE(threads.thread(owner, thread).has_value());
+}
+
+TEST(pg_coach_cursor_pages_reach_old_threads_and_keep_all_messages_and_owner_scope) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  for (int index = 0; index < 205; ++index)
+    repository.openThread(owner, ThreadId{"thr_page" + std::to_string(1000 + index)}, "Question", kNow + index);
+  const auto first = repository.threadPage(owner, ThreadCursor{0, "", 200});
+  REQUIRE_EQ(first.size(), 200u);
+  const auto second = repository.threadPage(owner, ThreadCursor{first.back().askedAtMs, first.back().id.str(), 200});
+  REQUIRE_EQ(second.size(), 5u);
+  CHECK_EQ(second.back().id.str(), std::string("thr_page1000"));
+  CHECK(repository.threadPage(wm::UserId{kOther}, ThreadCursor{}).empty());
+  const ThreadId thread{"thr_page1000"};
+  std::vector<ThreadTurn> turns;
+  for (int index = 0; index < 220; ++index) {
+    turns.push_back({true, "Question " + std::to_string(index), kNow});
+    turns.push_back({false, "Answer " + std::to_string(index), kNow});
+  }
+  repository.appendTurns(owner, thread, turns);
+  std::uint64_t before = 0;
+  std::vector<ThreadTurn> all;
+  do {
+    const auto page = repository.messagePage(owner, thread, before, 50);
+    REQUIRE(page.has_value());
+    REQUIRE(!page->turns.empty());
+    CHECK(page->turns.front().fromLifter);
+    CHECK_FALSE(page->turns.back().fromLifter);
+    all.insert(all.begin(), page->turns.begin(), page->turns.end());
+    before = page->nextCursor.empty() ? 0 : std::stoull(page->nextCursor);
+  } while (before);
+  REQUIRE_EQ(all.size(), turns.size());
+  for (std::size_t index = 0; index < turns.size(); ++index) turns[index].position = index + 1;
+  CHECK_EQ(all, turns);
+}
+
+TEST(pg_coach_conversation_lease_is_exclusive_and_deletion_cannot_race_a_tool_effect) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository first{wm::pgTestPool()};
+  PgAskThreadRepository second{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_lock0001"};
+  first.openThread(owner, thread, "Question", kNow);
+  auto lease = first.tryLease(owner, thread);
+  REQUIRE(lease != nullptr);
+  CHECK(second.tryLease(owner, thread) == nullptr);
+  bool refused = false;
+  try { second.deleteThread(owner, thread); }
+  catch (const ThreadBusy&) { refused = true; }
+  CHECK(refused);
+  CHECK_FALSE(second.deleteThread(wm::UserId{kOther}, thread));
+  lease.reset();
+  CHECK(second.deleteThread(owner, thread));
+}
+
+TEST(pg_coach_failed_exchanges_do_not_evict_completed_model_context) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_context01"};
+  repository.openThread(owner, thread, "My goal", kNow);
+  repository.appendTurns(owner, thread, {{true, "My goal is strength", kNow}, {false, "We can plan for strength", kNow}});
+  for (int index = 0; index < 12; ++index) {
+    AskGeneration failed{"gen_failure" + std::to_string(index), "req_failure" + std::to_string(index), "Try again"};
+    failed.atMs = kNow + index + 1;
+    failed.status = "failed";
+    repository.saveGeneration(owner, thread, failed);
+  }
+  const auto opened = repository.openThread(owner, thread, "Next question", kNow + 100);
+  REQUIRE(opened.thread.has_value());
+  const auto context = contextOf(opened.thread->turns);
+  CHECK_EQ(context, (std::vector<ThreadTurn>{{true, "My goal is strength", kNow, {}, 1}, {false, "We can plan for strength", kNow, {}, 2}}));
+  CHECK_EQ(repository.thread(owner, thread)->turns.size(), 26u);
+}
+
+TEST(pg_coach_images_stay_private_and_drafts_do_not_create_history) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_picture01"};
+  const CoachImage image{{"img_picture01", "image/png", 1, 1, 3}, "png"};
+  CHECK(repository.putImage(owner, thread, image) == ImageWriteError::none);
+  CHECK(repository.putImage(owner, thread, image) == ImageWriteError::none);
+  CHECK(repository.threads(owner).empty());
+  CHECK_FALSE(repository.image(wm::UserId{kOther}, thread, image.attachment.id).has_value());
+  CHECK_FALSE(repository.image(owner, ThreadId{"thr_picture02"}, image.attachment.id).has_value());
+  REQUIRE(repository.image(owner, thread, image.attachment.id).has_value());
+  CHECK_EQ(repository.image(owner, thread, image.attachment.id)->data, std::string("png"));
+  auto changed = image;
+  changed.data = "other";
+  CHECK(repository.putImage(owner, thread, changed) == ImageWriteError::idTaken);
+  repository.openThread(owner, thread, "Photo", kNow);
+  AskGeneration generation{"gen_picture01", "req_picture01", ""};
+  generation.atMs = kNow;
+  generation.attachments = {image.attachment};
+  repository.saveGeneration(owner, thread, generation);
+  CHECK_FALSE(repository.stopGeneration(wm::UserId{kOther}, thread, generation.requestId).has_value());
+  REQUIRE(repository.stopGeneration(owner, thread, generation.requestId)->stopRequested);
+  generation.answer = "Partial answer";
+  repository.saveGeneration(owner, thread, generation);
+  CHECK(repository.generation(owner, thread, generation.requestId)->stopRequested);
+  generation.status = "stopped";
+  repository.saveGeneration(owner, thread, generation);
+  CHECK_EQ(generation.revision, 3u);
+  const auto turns = repository.thread(owner, thread)->turns;
+  REQUIRE_EQ(turns.size(), 2u);
+  CHECK_EQ(turns[0].attachments, (std::vector<CoachAttachment>{image.attachment}));
+  CHECK_EQ(turns[1].text, std::string("Partial answer"));
+  CHECK_EQ(turns[1].status, std::string("stopped"));
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work tx{*conn};
+    tx.exec("UPDATE gym_ask_attachments SET created_at=now()-interval '2 days'");
+    tx.commit();
+  }
+  CHECK(repository.putImage(owner, ThreadId{"thr_picture02"}, CoachImage{{"img_picture02", "image/png", 1, 1, 3}, "new"}) == ImageWriteError::none);
+  CHECK(repository.image(owner, thread, image.attachment.id).has_value());
+  CHECK(repository.deleteThread(owner, thread));
+  CHECK_FALSE(repository.image(owner, thread, image.attachment.id).has_value());
+  CHECK(repository.openThread(owner, thread, "Delayed retry", kNow).error == ThreadOpenError::idTaken);
+  CHECK(repository.openThread(wm::UserId{kOther}, thread, "Delayed retry", kNow).error == ThreadOpenError::idTaken);
+  CHECK(repository.putImage(owner, thread, image) == ImageWriteError::notFound);
+}
+
+TEST(pg_coach_upload_limits_expiry_and_account_cascade_cover_unlinked_images) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kOther};
+  const ThreadId thread{"thr_upload01"};
+  for (int index = 0; index < 30; ++index) {
+    const CoachImage image{{"img_upload" + std::to_string(1000 + index), "image/png", 1, 1, 3}, "png"};
+    CHECK(repository.putImage(owner, thread, image) == ImageWriteError::none);
+  }
+  const CoachImage extra{{"img_upload1030", "image/png", 1, 1, 3}, "png"};
+  CHECK(repository.putImage(owner, thread, extra) == ImageWriteError::dailyLimit);
+  CHECK(repository.putImage(owner, thread, CoachImage{{"img_upload1000", "image/png", 1, 1, 3}, "png"}) == ImageWriteError::none);
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work tx{*conn};
+    tx.exec_params("UPDATE gym_ask_attachments SET created_at=now()-interval '2 days' WHERE user_id=$1::uuid", owner.str());
+    tx.commit();
+  }
+  CHECK_FALSE(repository.image(owner, thread, "img_upload1000").has_value());
+  CHECK(repository.putImage(owner, thread, extra) == ImageWriteError::none);
+  repository.openThread(owner, thread, "Question", kNow);
+  CHECK(repository.deleteThread(owner, thread));
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work tx{*conn};
+    CHECK_EQ(tx.exec_params("SELECT count(*) FROM gym_ask_attachments WHERE user_id=$1::uuid", owner.str())[0][0].as<int>(), 1);
+    tx.exec_params("DELETE FROM users WHERE id=$1::uuid", owner.str());
+    CHECK_EQ(tx.exec_params("SELECT count(*) FROM gym_ask_attachments WHERE user_id=$1::uuid", owner.str())[0][0].as<int>(), 0);
+    CHECK_EQ(tx.exec_params("SELECT count(*) FROM gym_ask_deleted_threads WHERE user_id=$1::uuid", owner.str())[0][0].as<int>(), 0);
+    tx.commit();
+  }
+}
+
+TEST(pg_coach_two_services_classify_replays_and_conflicts_while_one_model_holds_the_lease) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository firstRepository{wm::pgTestPool()};
+  PgAskThreadRepository secondRepository{wm::pgTestPool()};
+  PgProgramRepository routines{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
+  fake::FakeGym other;
+  wm::fake::FakeClock clock;
+  wm::fake::FakeTokens tokens;
+  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeAiUsageRepository usage;
+  wm::Entitlements entitlements{subscriptions, usage};
+  TrainingService training{log, routines, clock, tokens};
+  CatalogService catalog{other.catalog};
+  ProgramService program{routines, clock};
+  NotesService notes{other.notes, clock};
+  BodyweightService bodyweight{other.bodyweight};
+  GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
+  struct BlockingAgent : fake::FakeAsk {
+    std::promise<void> entered;
+    std::promise<void> release;
+    AskAnswer answer(const std::vector<AskTurn>& turns, const wm::ToolCaller& caller, wm::ToolHost& tools) override {
+      entered.set_value();
+      release.get_future().wait();
+      return FakeAsk::answer(turns, caller, tools);
+    }
+  } firstAgent;
+  fake::FakeAsk secondAgent;
+  AskService first{training, firstRepository, clock, firstAgent, tools, entitlements};
+  AskService second{training, secondRepository, clock, secondAgent, tools, entitlements};
+  struct Release {
+    std::promise<void>& gate;
+    ~Release() { try { gate.set_value(); } catch (const std::future_error&) {} }
+  } release{firstAgent.release};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_pg_busy1"};
+  const auto submit = [&](AskService& service, const wm::UserId& user, const std::string& question, const std::string& id) {
+    const auto reply = std::make_shared<std::promise<AskReply>>();
+    auto future = reply->get_future();
+    service.ask(user, "gym-pgtest@example.com", thread, question,
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, id);
+    return future;
+  };
+  auto original = submit(first, owner, "Question", "req_pg_busy1");
+  firstAgent.entered.get_future().wait();
+  std::vector<std::future<AskReply>> overlaps;
+  for (int index = 0; index < 6; ++index)
+    overlaps.push_back(submit(second, owner, index % 2 ? "Another" : "Question",
+        index % 2 ? "req_pg_other" + std::to_string(index) : "req_pg_busy1"));
+  for (std::size_t index = 0; index < overlaps.size(); ++index) {
+    REQUIRE(overlaps[index].wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    const auto reply = overlaps[index].get();
+    if (index % 2) CHECK(reply.refusal == AskRefusal::generationActive);
+    else {
+      CHECK(reply.refusal == AskRefusal::none);
+      REQUIRE(reply.generation.has_value());
+      CHECK_EQ(reply.generation->status, std::string("running"));
+    }
+  }
+  const auto foreign = submit(second, wm::UserId{kOther}, "Question", "req_pg_busy1").get();
+  CHECK(foreign.refusal == AskRefusal::threadTaken);
+  CHECK_FALSE(foreign.generation.has_value());
+  CHECK_EQ(secondAgent.runs, 0);
+  firstAgent.release.set_value();
+  const auto completed = original.get();
+  REQUIRE(completed.answer.ok);
+  CHECK_EQ(submit(second, owner, "Question", "req_pg_busy1").get().generation, completed.generation);
+  CHECK_EQ(secondAgent.runs, 0);
+  CHECK_EQ(firstRepository.thread(owner, thread)->turns.size(), 2u);
 }

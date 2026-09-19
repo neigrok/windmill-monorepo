@@ -194,6 +194,12 @@ Json::Value toJson(const RoutineProposal& proposal);
 Json::Value toJson(const std::vector<ProposalHead>& heads);
 // The outcome is computed here rather than stored.
 Json::Value toJson(const ThreadOutcome& outcome);
+Json::Value toJson(const std::vector<CoachResult>& results);
+std::vector<CoachResult> coachResultsFrom(const Json::Value& results);
+Json::Value toJson(const CoachAttachment& attachment);
+std::vector<CoachAttachment> coachAttachmentsFrom(const Json::Value& attachments);
+Json::Value toJson(const AskGeneration& generation);
+AskGeneration generationFrom(const Json::Value& body);
 Json::Value toJson(const AskThread& thread);
 Json::Value toJson(const std::vector<AskThread>& threads);
 // Composed onto the single-routine read by the handler; the list read must not carry it.

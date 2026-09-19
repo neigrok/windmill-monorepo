@@ -5,8 +5,6 @@
 #include "platform/ports/FailureReporter.h"
 #include "products/gym/ports/AskAgent.h"
 
-#include <trantor/net/EventLoopThread.h>
-
 #include <json/json.h>
 
 #include <memory>
@@ -29,27 +27,28 @@ using AskCall = ModelCall;
 // the cap is hit. The cap is a failure, never a success. The notes read is the first step of every
 // answer; the log read is accounted for by the read receipt instead.
 AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools,
-                   const AskCall& call, const AgentReport& report);
+                   const AskCall& call, const AgentReport& report, const AskControl& control = {});
 
-// Owns a private event-loop thread carrying the outbound HTTPS calls; the calling worker blocks on a
-// future rather than driving a trantor loop it does not own.
+// Streams vendor messages on the service worker, preserving usage and tool blocks.
 class AnthropicAsk : public AskAgent {
 public:
   // Reporter, fuse and sink are all optional; null reports nowhere.
   explicit AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                         std::shared_ptr<AiFuse> fuse = nullptr,
-                        std::shared_ptr<UsageSink> usage = nullptr);
+                        std::shared_ptr<UsageSink> usage = nullptr, std::string baseUrl = kAnthropicBaseUrl);
 
   bool configured() const override;
   AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
                    ToolHost& tools) override;
+  AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
+                   ToolHost& tools, const AskControl& control) override;
 
 private:
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
-  trantor::EventLoopThread loop_;
+  std::string baseUrl_;
 };
 
 }

@@ -16,6 +16,23 @@ class PgAskThreadRepository : public AskThreadRepository {
 public:
   explicit PgAskThreadRepository(std::shared_ptr<PgPool> pool);
 
+  std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id) override;
+  ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image) override;
+  std::optional<AskGeneration> stopGeneration(const UserId& user, const ThreadId& thread,
+                                             const std::string& requestId) override;
+  bool threadAvailable(const UserId& user, const ThreadId& id) override;
+  std::unique_ptr<ThreadLease> tryLease(const UserId& user, const ThreadId& id) override;
+  std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override;
+  std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id,
+                                      std::uint64_t before, int limit) override;
+  std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread,
+                                         const std::string& requestId) override;
+  void saveGeneration(const UserId& user, const ThreadId& thread,
+                      AskGeneration& generation) override;
+  std::optional<CoachOperation> operation(const UserId& user, const ThreadId& thread,
+                                        const std::string& generationId) override;
+  void saveOperation(const UserId& user, const ThreadId& thread,
+                     const std::string& generationId, const CoachOperation& operation) override;
   std::vector<AskThread> threads(const UserId& user) override;
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id) override;
   ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title,

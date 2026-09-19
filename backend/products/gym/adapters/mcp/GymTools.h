@@ -30,6 +30,8 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller, const ProposalSource& source, ReadReceipt& run);
 
+  std::optional<ToolResult> completedAction(const UserId& user, const std::string& name, const std::string& id);
+
 private:
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller,
                       const ProposalSource& source, ReadReceipt& served);

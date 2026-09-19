@@ -1,4 +1,5 @@
 #include "products/gym/application/AskService.h"
+#include "products/gym/application/ThreadService.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -49,7 +50,7 @@ struct Harness {
                     "https://windmill.works"};
   FakeAsk agent;
   std::shared_ptr<RecordedFailures> failures = std::make_shared<RecordedFailures>();
-  AskService ask{training, threadService, agent, gymTools, entitlements, failures};
+  AskService ask{training, repo.threads, clock, agent, gymTools, entitlements, failures};
 
   const UserId lifter{"lifter"};
   const SessionId session{"ses_11111111"};
@@ -71,11 +72,11 @@ struct Harness {
   }
 
   // ask() answers on a worker thread when it runs and inline when it refuses; both land here.
-  AskReply question(const ThreadId& thread, const std::string& text, const UserId& caller) {
+  AskReply question(const ThreadId& thread, const std::string& text, const UserId& caller, const std::string& requestId = "") {
     std::promise<AskReply> settled;
     std::future<AskReply> reply = settled.get_future();
     ask.ask(caller, "sam@example.com", thread, text,
-            [&settled](AskReply answer) { settled.set_value(std::move(answer)); });
+            [&settled](AskReply answer) { settled.set_value(std::move(answer)); }, requestId);
     return reply.get();
   }
 
@@ -385,7 +386,7 @@ TEST(the_run_is_handed_gyms_three_levels_and_no_other_product) {
   // What the model can SEE is narrower than the grant: the reads plus the two mints.
   std::size_t allowed = 0;
   for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.access == Access::read || mintsProposal(tool.name())) ++allowed;
+    if (tool.access == Access::read || mintsProposal(tool.name()) || tool.name() == "create_routine") ++allowed;
   CHECK_EQ(h.agent.seenCatalog.size(), allowed);
 }
 
@@ -478,19 +479,20 @@ TEST(a_question_the_store_cannot_hold_is_refused_before_a_thread_is_opened) {
 }
 
 // The cap bites on the pair this ask would add, so a conversation is never capped halfway through.
-TEST(a_conversation_as_long_as_ask_holds_refuses_the_next_question) {
+TEST(a_long_conversation_keeps_history_and_bounds_only_model_context) {
   Harness h;
   const ThreadId thread = h.nextThread();
 
   std::vector<ThreadTurn> said;
-  for (std::size_t at = 0; at < kMaxThreadTurns; ++at)
+  for (std::size_t at = 0; at < kMaxContextTurns; ++at)
     said.push_back(ThreadTurn{at % 2 == 0, "a", 1'700'000'000'000});
   h.repo.db.threadRows.push_back(
       AskThread{thread, h.lifter, "a", 1'700'000'000'000, 1'700'000'000'000, said, {}});
 
-  CHECK(h.question(thread, "once more", h.lifter).refusal == AskRefusal::tooManyTurns);
-  CHECK_EQ(h.agent.runs, 0);
-  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), kMaxThreadTurns);
+  CHECK(h.question(thread, "once more", h.lifter).refusal == AskRefusal::none);
+  CHECK_EQ(h.agent.runs, 1);
+  CHECK_EQ(h.agent.seenTurns.size(), kMaxContextTurns + 1);
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), kMaxContextTurns + 2);
 }
 
 // The daily limit, one bucket saying both halves: three back to back, about ten a day.
@@ -573,7 +575,7 @@ TEST(coach_worker_persistence_failures_reply_and_report_once_without_private_exc
   Harness h;
   FailingThreads repo{h.repo.db};
   ThreadService threads{repo, h.clock};
-  AskService ask{h.training, threads, h.agent, h.gymTools, h.entitlements, h.failures};
+  AskService ask{h.training, repo, h.clock, h.agent, h.gymTools, h.entitlements, h.failures};
   const auto question = [&] {
     std::promise<AskReply> settled;
     auto future = settled.get_future();
@@ -589,14 +591,14 @@ TEST(coach_worker_persistence_failures_reply_and_report_once_without_private_exc
   const AskReply both = question();
 
   CHECK_FALSE(persist.answer.ok);
-  CHECK_EQ(persist.answer.answer, std::string(""));
+  CHECK_EQ(persist.answer.answer, std::string("You squatted 100 for five."));
   CHECK_EQ(persist.answer.error, std::string("Coach failed at ask.persist"));
   CHECK_FALSE(cleanup.answer.ok);
-  CHECK_EQ(cleanup.answer.error, std::string("Coach failed at ask.cleanup"));
+  CHECK_EQ(cleanup.answer.error, std::string("Coach failed at ask.persist"));
   CHECK_FALSE(both.answer.ok);
   CHECK_EQ(h.failures->events, (std::vector<std::string>{
       "gym-ask | ask.persist | unexpected exception while answering Coach",
-      "gym-ask | ask.cleanup | unexpected exception while answering Coach",
+      "gym-ask | ask.persist | unexpected exception while answering Coach",
       "gym-ask | ask.run | unexpected exception while answering Coach"}));
 }
 
@@ -609,7 +611,8 @@ TEST(a_failure_reporter_cannot_prevent_coach_from_replying) {
 
   CHECK_FALSE(reply.answer.ok);
   CHECK_EQ(reply.answer.error, std::string("Coach failed at ask.run"));
-  CHECK(h.repo.db.threadRows.empty());
+  REQUIRE_EQ(h.repo.db.threadRows.size(), 1u);
+  CHECK_EQ(h.repo.db.threadRows.front().generation->status, std::string("failed"));
   CHECK_EQ(h.failures->events, (std::vector<std::string>{
       "gym-ask | ask.run | unexpected exception while answering Coach"}));
 }
@@ -747,22 +750,22 @@ TEST(a_second_question_is_answered_against_the_stored_conversation) {
   CHECK_EQ(held->turns.size(), 4u);
 }
 
-TEST(a_run_that_never_answered_stores_no_turns_and_leaves_no_empty_thread) {
+TEST(a_failed_generation_preserves_its_question_and_retry_completes_the_same_pair) {
   Harness h;
   h.agent.answers = false;
   h.agent.turnsSpent = 0;
   h.agent.plan = {{"get_session", sessionArgs(h.session)}};
   const ThreadId thread = h.nextThread();
 
-  const AskReply failed = h.question(thread, "how did the squats go?", h.lifter);
+  const AskReply failed = h.question(thread, "how did the squats go?", h.lifter, "req_retry0001");
   CHECK_FALSE(failed.answer.ok);
-  CHECK_FALSE(failed.receipt.has_value());
+  CHECK(failed.receipt.has_value());
   CHECK_EQ(failed.read, (ReadTally{1, 1, 1}));
-  CHECK_FALSE(h.threadService.thread(h.lifter, thread).has_value());
-  CHECK(h.threadService.threads(h.lifter).empty());
+  REQUIRE(h.threadService.thread(h.lifter, thread).has_value());
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), 2u);
 
   h.agent.answers = true;
-  CHECK(h.question(thread, "how did the squats go?", h.lifter).refusal == AskRefusal::none);
+  CHECK(h.question(thread, "how did the squats go?", h.lifter, "req_retry0001").refusal == AskRefusal::none);
   const std::optional<AskThread> landed = h.threadService.thread(h.lifter, thread);
   REQUIRE(landed.has_value());
   CHECK_EQ(landed->turns.size(), 2u);
@@ -807,7 +810,9 @@ TEST(a_failed_follow_up_leaves_the_conversation_that_already_happened_alone) {
 
   const std::optional<AskThread> held = h.threadService.thread(h.lifter, thread);
   REQUIRE(held.has_value());
-  CHECK_EQ(held->turns.size(), 2u);
+  REQUIRE_EQ(held->turns.size(), 4u);
+  CHECK_EQ(held->turns[1].text, std::string("You squatted 100 for five."));
+  CHECK_EQ(held->turns[3].status, std::string("failed"));
 }
 
 TEST(a_proposal_minted_in_a_conversation_carries_that_conversation) {
@@ -863,4 +868,392 @@ TEST(a_proposal_from_the_mcp_door_carries_no_conversation) {
   REQUIRE(minted.has_value());
   CHECK(minted->head.source.door == ProposalDoor::mcp);
   CHECK_FALSE(minted->head.source.thread.has_value());
+}
+
+TEST(coach_request_replays_completed_answer_without_spend_and_refuses_changed_question) {
+  Harness h;
+  const ThreadId thread{"thr_request01"};
+  const auto first = h.question(thread, "how did it go?", h.lifter, "req_request01");
+  REQUIRE(first.answer.ok);
+  h.usage.spentByProduct[""] = kProMonthlyAiNanos;
+  const auto replay = h.question(thread, "how did it go?", h.lifter, "req_request01");
+  CHECK(replay.answer.ok);
+  CHECK_EQ(replay.generation, first.generation);
+  CHECK_EQ(replay.receipt, first.receipt);
+  CHECK_EQ(h.agent.runs, 1);
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), 2u);
+  CHECK(h.question(thread, "different", h.lifter, "req_request01").refusal == AskRefusal::requestConflict);
+  CHECK_FALSE(h.repo.threads.generation(UserId{"other"}, thread, "req_request01").has_value());
+}
+
+TEST(coach_creation_recovers_after_failure_and_never_recreates_a_deleted_routine) {
+  Harness h;
+  const ThreadId thread{"thr_creation1"};
+  Json::Value create = parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})");
+  h.agent.plan = {{"list_notes", Json::Value(Json::objectValue)},
+                  {"list_exercises", Json::Value(Json::objectValue)}, {"create_routine", create}};
+  h.agent.answers = false;
+  const auto failed = h.question(thread, "create an upper-body routine using my bench", h.lifter, "req_creation1");
+  REQUIRE(failed.generation.has_value());
+  REQUIRE_EQ(failed.generation->results.size(), 1u);
+  const CoachResult created = failed.generation->results.front();
+  CHECK(created.routineId != "rt_model0001");
+  CHECK_EQ(h.repo.db.routineRows.size(), 1u);
+  REQUIRE_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), 2u);
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.back().status, std::string("failed"));
+  CHECK(outcomeOf(*h.threadService.thread(h.lifter, thread)).kind == ThreadOutcomeKind::created);
+  CHECK(h.program.deleteRoutine(h.lifter, RoutineId{created.routineId}));
+  // A crash may happen after the routine transaction commits but before operation result persistence.
+  h.repo.threads.generations.front().operation->result.reset();
+  h.repo.threads.generations.front().generation.results.clear();
+  h.agent.answers = true;
+  const auto recovered = h.question(thread, "create an upper-body routine using my bench", h.lifter, "req_creation1");
+  REQUIRE(recovered.answer.ok);
+  CHECK_EQ(recovered.generation->results, (std::vector<CoachResult>{created}));
+  CHECK(h.repo.db.routineRows.empty());
+  const auto history = h.threadService.thread(h.lifter, thread);
+  REQUIRE_EQ(history->turns.size(), 2u);
+  CHECK_EQ(history->turns.back().status, std::string("completed"));
+  CHECK_EQ(history->turns.back().requestId, std::string("req_creation1"));
+  CHECK_EQ(history->turns.back().results, (std::vector<CoachResult>{created}));
+  CHECK_EQ(h.question(thread, "create an upper-body routine using my bench", h.lifter, "req_creation1").generation, recovered.generation);
+  CHECK_EQ(h.agent.runs, 2);
+}
+
+TEST(coach_requires_notes_and_catalog_before_creating_and_corrects_invalid_movements_in_place) {
+  Harness h;
+  Json::Value create = parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"missing-movement","sets":[{"reps":8}]}]})");
+  Json::Value valid = create;
+  valid["entries"][0]["exerciseId"] = "bench-press";
+  h.agent.plan = {{"create_routine", valid}, {"list_notes", Json::Value(Json::objectValue)},
+      {"list_exercises", Json::Value(Json::objectValue)}, {"create_routine", create}, {"create_routine", valid}, {"create_routine", valid}};
+  const auto answer = h.question(ThreadId{"thr_catalog01"}, "Create my routine", h.lifter, "req_catalog01");
+  REQUIRE(answer.answer.ok);
+  CHECK_EQ(answer.answer.steps, (std::vector<AskStep>{{"create_routine", true}, {"list_notes", false},
+      {"list_exercises", false}, {"create_routine", true}, {"create_routine", false}, {"create_routine", false}}));
+  CHECK_EQ(h.repo.db.routineRows.size(), 1u);
+  CHECK_EQ(answer.generation->results.size(), 1u);
+}
+
+TEST(coach_active_generation_replays_pending_identity_and_guards_conversation_deletion) {
+  Harness h;
+  struct BlockingAgent : FakeAsk {
+    std::promise<void> entered;
+    std::promise<void> release;
+    AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools) override {
+      entered.set_value();
+      release.get_future().wait();
+      return FakeAsk::answer(turns, caller, tools);
+    }
+  } agent;
+  AskService service{h.training, h.repo.threads, h.clock, agent, h.gymTools, h.entitlements};
+  std::promise<AskReply> first;
+  service.ask(h.lifter, "sam@example.com", ThreadId{"thr_active01"}, "one", [&](AskReply reply) { first.set_value(reply); }, "req_active01");
+  agent.entered.get_future().wait();
+  std::promise<AskReply> duplicate;
+  service.ask(h.lifter, "sam@example.com", ThreadId{"thr_active01"}, "one", [&](AskReply reply) { duplicate.set_value(reply); }, "req_active01");
+  const auto pending = duplicate.get_future().get();
+  REQUIRE(pending.generation.has_value());
+  CHECK_EQ(pending.generation->status, std::string("running"));
+  CHECK_FALSE(pending.answer.ok);
+  bool refused = false;
+  try { h.threadService.deleteThread(h.lifter, ThreadId{"thr_active01"}); }
+  catch (const ThreadBusy&) { refused = true; }
+  CHECK(refused);
+  CHECK_FALSE(h.threadService.deleteThread(UserId{"other"}, ThreadId{"thr_active01"}));
+  agent.release.set_value();
+  CHECK(first.get_future().get().answer.ok);
+  CHECK_EQ(agent.runs, 1);
+}
+
+TEST(coach_stop_preserves_partial_text_and_created_routine_and_replays_without_a_new_run) {
+  Harness h;
+  const ThreadId thread{"thr_stop0001"};
+  struct PartialAgent : FakeAsk {
+    std::function<void()> stop;
+    AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools,
+                     const AskControl& control) override {
+      const auto completed = FakeAsk::answer(turns, caller, tools);
+      control.text("Your new routine is ready. Next");
+      stop();
+      CHECK_FALSE(control.continueRun());
+      AskAnswer partial;
+      partial.modelTurns = completed.modelTurns;
+      partial.steps = completed.steps;
+      return partial;
+    }
+  } agent;
+  agent.plan = {{"list_notes", parse("{}")}, {"list_exercises", parse("{}")},
+      {"create_routine", parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
+  agent.stop = [&] { REQUIRE(h.repo.threads.stopGeneration(h.lifter, thread, "req_stop0001").has_value()); };
+  AskService service{h.training, h.repo.threads, h.clock, agent, h.gymTools, h.entitlements};
+  const auto ask = [&] {
+    std::promise<AskReply> reply;
+    auto future = reply.get_future();
+    service.ask(h.lifter, "sam@example.com", thread, "Create my routine", [&](AskReply answer) { reply.set_value(answer); }, "req_stop0001");
+    return future.get();
+  };
+  const auto stopped = ask();
+  REQUIRE(stopped.generation.has_value());
+  CHECK_EQ(stopped.generation->status, std::string("stopped"));
+  CHECK_EQ(stopped.generation->answer, std::string("Your new routine is ready. Next"));
+  REQUIRE_EQ(stopped.generation->results.size(), 1u);
+  CHECK_EQ(h.repo.db.routineRows.size(), 1u);
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.back().status, std::string("stopped"));
+  CHECK_EQ(ask().generation, stopped.generation);
+  CHECK_EQ(agent.runs, 1);
+}
+
+TEST(coach_image_only_question_has_a_photo_title_and_an_immutable_owner_scoped_attachment) {
+  Harness h;
+  const ThreadId thread{"thr_image001"};
+  const CoachImage photo{{"img_image001", "image/png", 1, 1, 3}, "png"};
+  REQUIRE(h.repo.threads.putImage(h.lifter, thread, photo) == ImageWriteError::none);
+  const auto ask = [&](const UserId& user, std::vector<std::string> images) {
+    std::promise<AskReply> reply;
+    auto future = reply.get_future();
+    h.ask.ask(user, "sam@example.com", thread, "", [&](AskReply answer) { reply.set_value(answer); }, "req_image001", images);
+    return future.get();
+  };
+  CHECK(ask(UserId{"other"}, {photo.attachment.id}).refusal == AskRefusal::attachmentInvalid);
+  const auto answer = ask(h.lifter, {photo.attachment.id});
+  REQUIRE(answer.answer.ok);
+  REQUIRE(answer.generation.has_value());
+  CHECK_EQ(answer.generation->attachments, (std::vector<CoachAttachment>{photo.attachment}));
+  const auto held = h.threadService.thread(h.lifter, thread);
+  REQUIRE(held.has_value());
+  CHECK_EQ(held->title, std::string("Photo"));
+  CHECK_EQ(held->turns.front().attachments, answer.generation->attachments);
+  REQUIRE_EQ(h.agent.seenTurns.back().images.size(), 1u);
+  CHECK_EQ(h.agent.seenTurns.back().images.front().data, photo.data);
+  CHECK(ask(h.lifter, {"img_different"}).refusal == AskRefusal::requestConflict);
+  CHECK_EQ(ask(h.lifter, {photo.attachment.id}).generation, answer.generation);
+  CHECK_EQ(h.agent.runs, 1);
+}
+
+TEST(coach_stop_after_restart_reconciles_committed_creation_without_executing_a_pending_write) {
+  Harness h;
+  const ThreadId thread{"thr_restart1"};
+  h.repo.threads.openThread(h.lifter, thread, "Create routine", h.clock.now);
+  AskGeneration generation{"gen_restart1", "req_restart1", "Create routine"};
+  generation.atMs = h.clock.now;
+  generation.answer = "I have started";
+  h.repo.threads.saveGeneration(h.lifter, thread, generation);
+  CoachOperation operation{"op_restart1", "create_routine", parse(R"({"id":"rt_restart01","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")};
+  h.repo.threads.saveOperation(h.lifter, thread, generation.id, operation);
+  const auto stopped = h.ask.stop(h.lifter, thread, generation.requestId);
+  REQUIRE(stopped.has_value());
+  CHECK_EQ(stopped->status, std::string("stopped"));
+  CHECK_EQ(stopped->answer, std::string("I have started"));
+  CHECK(stopped->results.empty());
+  CHECK(h.repo.db.routineRows.empty());
+  CHECK_EQ(h.agent.runs, 0);
+
+  const ThreadId committedThread{"thr_restart2"};
+  h.repo.threads.openThread(h.lifter, committedThread, "Create routine", h.clock.now);
+  AskGeneration committed{"gen_restart2", "req_restart2", "Create routine"};
+  committed.atMs = h.clock.now;
+  h.repo.threads.saveGeneration(h.lifter, committedThread, committed);
+  operation.id = "op_restart2";
+  h.repo.threads.saveOperation(h.lifter, committedThread, committed.id, operation);
+  ReadReceipt receipt;
+  const ToolCaller caller{h.lifter, ToolScope::everything()};
+  REQUIRE(!h.gymTools.callTool("create_routine", operation.arguments, caller,
+      ProposalSource{ProposalDoor::ask, "", "", committedThread}, receipt).isError);
+  CHECK(h.program.deleteRoutine(h.lifter, RoutineId{"rt_restart01"}));
+  const auto recovered = h.ask.stop(h.lifter, committedThread, committed.requestId);
+  REQUIRE(recovered.has_value());
+  CHECK_EQ(recovered->status, std::string("stopped"));
+  CHECK_EQ(recovered->results, (std::vector<CoachResult>{{"op_restart2", "rt_restart01", "Upper body"}}));
+  CHECK(h.repo.db.routineRows.empty());
+  CHECK_EQ(h.agent.runs, 0);
+}
+
+TEST(coach_admission_classifies_more_requests_than_model_workers_without_waiting_for_the_model) {
+  Harness h;
+  struct BlockingAgent : AskAgent {
+    std::atomic<int> runs{0};
+    std::promise<void> first;
+    std::promise<void> second;
+    std::promise<void> releaseFirst;
+    std::promise<void> releaseSecond;
+    std::shared_future<void> firstGate = releaseFirst.get_future().share();
+    std::shared_future<void> secondGate = releaseSecond.get_future().share();
+    bool configured() const override { return true; }
+    AskAnswer answer(const std::vector<AskTurn>&, const ToolCaller&, ToolHost&) override {
+      const int index = runs.fetch_add(1);
+      if (index == 0) first.set_value();
+      if (index == 1) second.set_value();
+      if (index == 0) firstGate.wait();
+      if (index == 1) secondGate.wait();
+      AskAnswer reply;
+      reply.ok = true;
+      reply.answer = "Finished";
+      reply.modelTurns = 1;
+      return reply;
+    }
+  } agent;
+  const ThreadId heldThread{"thr_held0001"};
+  h.repo.threads.openThread(h.lifter, heldThread, "Earlier question", h.clock.now);
+  AskGeneration held{"gen_held0001", "req_held0001", "Earlier question"};
+  held.status = "failed";
+  held.atMs = h.clock.now;
+  held.results = {{"op_held0001", "rt_held0001", "Upper body"}};
+  h.repo.threads.saveGeneration(h.lifter, heldThread, held);
+  const ThreadId completeThread{"thr_done0001"};
+  h.repo.threads.openThread(h.lifter, completeThread, "Already answered", h.clock.now);
+  AskGeneration complete{"gen_done0001", "req_done0001", "Already answered"};
+  complete.status = "completed";
+  complete.answer = "Earlier answer";
+  complete.atMs = h.clock.now;
+  h.repo.threads.saveGeneration(h.lifter, completeThread, complete);
+  const ThreadId deleted{"thr_gone0001"};
+  h.repo.threads.openThread(h.lifter, deleted, "Deleted", h.clock.now);
+  h.repo.threads.deleteThread(h.lifter, deleted);
+  AskService service{h.training, h.repo.threads, h.clock, agent, h.gymTools, h.entitlements};
+  struct Release {
+    std::promise<void>& first;
+    std::promise<void>& second;
+    ~Release() {
+      try { first.set_value(); } catch (const std::future_error&) {}
+      try { second.set_value(); } catch (const std::future_error&) {}
+    }
+  } release{agent.releaseFirst, agent.releaseSecond};
+  const auto submit = [&](const UserId& owner, const ThreadId& thread, const std::string& question, const std::string& id) {
+    const auto reply = std::make_shared<std::promise<AskReply>>();
+    auto future = reply->get_future();
+    service.ask(owner, "sam@example.com", thread, question,
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, id);
+    return future;
+  };
+  const ThreadId firstThread{"thr_busy0001"};
+  const ThreadId secondThread{"thr_busy0002"};
+  auto first = submit(h.lifter, firstThread, "First", "req_busy0001");
+  agent.first.get_future().wait();
+  auto second = submit(h.lifter, secondThread, "Second", "req_busy0002");
+  agent.second.get_future().wait();
+  std::vector<std::future<AskReply>> overlaps;
+  for (int index = 0; index < 6; ++index)
+    overlaps.push_back(submit(h.lifter, firstThread, index % 2 ? "Different" : "First",
+        index % 2 ? "req_other00" + std::to_string(index) : "req_busy0001"));
+  auto fresh = submit(h.lifter, ThreadId{"thr_busy0003"}, "New", "req_busy0003");
+  auto failed = submit(h.lifter, heldThread, held.question, held.requestId);
+  auto replay = submit(h.lifter, completeThread, complete.question, complete.requestId);
+  auto foreign = submit(UserId{"other"}, firstThread, "First", "req_busy0001");
+  auto gone = submit(h.lifter, deleted, "Deleted", "req_gone0001");
+  for (std::size_t index = 0; index < overlaps.size(); ++index) {
+    REQUIRE(overlaps[index].wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    const auto reply = overlaps[index].get();
+    if (index % 2) {
+      CHECK(reply.refusal == AskRefusal::generationActive);
+      CHECK_FALSE(reply.generation.has_value());
+    } else {
+      CHECK(reply.refusal == AskRefusal::none);
+      REQUIRE(reply.generation.has_value());
+      CHECK_EQ(reply.generation->status, std::string("running"));
+      CHECK_EQ(reply.generation->requestId, std::string("req_busy0001"));
+    }
+  }
+  REQUIRE(fresh.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+  CHECK(fresh.get().refusal == AskRefusal::busy);
+  const auto retained = failed.get();
+  CHECK(retained.refusal == AskRefusal::busy);
+  CHECK_EQ(retained.generation, std::optional<AskGeneration>{held});
+  CHECK_EQ(replay.get().generation, std::optional<AskGeneration>{complete});
+  CHECK(foreign.get().refusal == AskRefusal::threadTaken);
+  CHECK(gone.get().refusal == AskRefusal::threadTaken);
+  CHECK_FALSE(h.repo.threads.thread(h.lifter, ThreadId{"thr_busy0003"}).has_value());
+  REQUIRE(service.stop(h.lifter, firstThread, "req_busy0001")->stopRequested);
+  agent.releaseFirst.set_value();
+  CHECK_EQ(first.get().generation->status, std::string("stopped"));
+  agent.releaseSecond.set_value();
+  CHECK_EQ(second.get().generation->status, std::string("completed"));
+  CHECK_EQ(agent.runs.load(), 2);
+  CHECK_EQ(h.repo.threads.thread(h.lifter, firstThread)->turns.size(), 2u);
+}
+
+TEST(coach_overlap_at_arrival_stays_refused_when_database_admission_is_delayed_past_completion) {
+  Harness h;
+  struct DelayedRepository : FakeAskThreadRepository {
+    using FakeAskThreadRepository::FakeAskThreadRepository;
+    std::promise<void> entered;
+    std::promise<void> release;
+    bool threadAvailable(const UserId& user, const ThreadId& thread) override {
+      if (thread.str() == "thr_delay002") { entered.set_value(); release.get_future().wait(); }
+      return FakeAskThreadRepository::threadAvailable(user, thread);
+    }
+  } repository{h.repo.db};
+  struct BlockingAgent : FakeAsk {
+    std::promise<void> entered;
+    std::promise<void> release;
+    AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools) override {
+      if (runs == 0) { entered.set_value(); release.get_future().wait(); }
+      return FakeAsk::answer(turns, caller, tools);
+    }
+  } agent;
+  AskService service{h.training, repository, h.clock, agent, h.gymTools, h.entitlements};
+  struct Release {
+    std::promise<void>& model;
+    std::promise<void>& database;
+    ~Release() {
+      try { model.set_value(); } catch (const std::future_error&) {}
+      try { database.set_value(); } catch (const std::future_error&) {}
+    }
+  } release{agent.release, repository.release};
+  const auto submit = [&](const std::string& thread, const std::string& request) {
+    const auto reply = std::make_shared<std::promise<AskReply>>();
+    auto future = reply->get_future();
+    service.ask(h.lifter, "sam@example.com", ThreadId{thread}, "Question",
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, request);
+    return future;
+  };
+  auto first = submit("thr_delay001", "req_delay001");
+  agent.entered.get_future().wait();
+  auto database = submit("thr_delay002", "req_delay002");
+  repository.entered.get_future().wait();
+  auto overlap = submit("thr_delay001", "req_overlap1");
+  agent.release.set_value();
+  REQUIRE(first.get().answer.ok);
+  repository.release.set_value();
+  REQUIRE(overlap.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+  CHECK(overlap.get().refusal == AskRefusal::generationActive);
+  CHECK(database.get().answer.ok);
+  CHECK_EQ(agent.runs, 2);
+  CHECK_EQ(repository.thread(h.lifter, ThreadId{"thr_delay001"})->turns.size(), 2u);
+}
+
+TEST(coach_failed_lease_reread_revalidates_the_immutable_request_payload) {
+  Harness h;
+  struct RaceRepository : FakeAskThreadRepository {
+    using FakeAskThreadRepository::FakeAskThreadRepository;
+    bool armed = false;
+    unsigned reads = 0;
+    std::unique_ptr<ThreadLease> tryLease(const UserId&, const ThreadId&) override { return nullptr; }
+    std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread, const std::string& request) override {
+      if (armed && reads++ == 0) return std::nullopt;
+      return FakeAskThreadRepository::generation(user, thread, request);
+    }
+  } repository{h.repo.db};
+  const ThreadId thread{"thr_race0001"};
+  repository.openThread(h.lifter, thread, "Original", h.clock.now);
+  AskGeneration held{"gen_race0001", "req_race0001", "Original"};
+  held.atMs = h.clock.now;
+  repository.saveGeneration(h.lifter, thread, held);
+  AskService service{h.training, repository, h.clock, h.agent, h.gymTools, h.entitlements};
+  for (const bool imageConflict : {false, true}) {
+    repository.armed = false;
+    held.question = imageConflict ? "Question" : "Original";
+    if (imageConflict) held.attachments = {{"img_race0001", "image/png", 1, 1, 3}};
+    repository.saveGeneration(h.lifter, thread, held);
+    repository.reads = 0;
+    repository.armed = true;
+    std::promise<AskReply> reply;
+    auto future = reply.get_future();
+    service.ask(h.lifter, "sam@example.com", thread, "Question",
+        [&](AskReply answer) { reply.set_value(std::move(answer)); }, held.requestId);
+    const auto conflict = future.get();
+    CHECK(conflict.refusal == AskRefusal::requestConflict);
+    CHECK_EQ(conflict.generation, std::optional<AskGeneration>{held});
+  }
+  CHECK_EQ(h.agent.runs, 0);
 }

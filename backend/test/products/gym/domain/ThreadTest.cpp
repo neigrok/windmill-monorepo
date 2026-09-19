@@ -173,3 +173,26 @@ TEST(every_outcome_has_one_stored_word_and_they_do_not_collide) {
   CHECK_EQ(toString(ThreadOutcomeKind::superseded), std::string("superseded"));
   CHECK_EQ(toString(ThreadOutcomeKind::unknown), std::string("unknown"));
 }
+
+TEST(coach_context_preserves_complete_recent_exchanges_and_excludes_failed_attempts) {
+  std::vector<ThreadTurn> history;
+  for (int index = 0; index < 20; ++index) {
+    history.push_back({true, "Question " + std::to_string(index)});
+    history.push_back({false, "Answer " + std::to_string(index)});
+  }
+  ThreadTurn failedQuestion{true, "Failed question"};
+  failedQuestion.status = "failed";
+  ThreadTurn failedAnswer{false, "Partial answer"};
+  failedAnswer.status = "failed";
+  history.push_back(failedQuestion);
+  history.push_back(failedAnswer);
+  const auto context = contextOf(history);
+  CHECK_EQ(context, (std::vector<ThreadTurn>{history.begin() + 16, history.begin() + 40}));
+  CHECK_EQ(history.size(), 42u);
+}
+
+TEST(coach_context_byte_limit_never_splits_a_message_or_starts_with_an_answer) {
+  const std::vector<ThreadTurn> history{{true, "Early question"},
+      {false, std::string(kMaxContextBytes, 'a')}, {true, "Recent question"}, {false, "Recent answer"}};
+  CHECK_EQ(contextOf(history), (std::vector<ThreadTurn>{{true, "Recent question"}, {false, "Recent answer"}}));
+}

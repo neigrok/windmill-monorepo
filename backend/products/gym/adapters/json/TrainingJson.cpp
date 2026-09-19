@@ -481,6 +481,82 @@ Json::Value toJson(const ThreadOutcome& outcome) {
   return body;
 }
 
+Json::Value toJson(const CoachAttachment& attachment) {
+  Json::Value body(Json::objectValue);
+  body["id"] = attachment.id;
+  body["mediaType"] = attachment.mediaType;
+  body["width"] = attachment.width;
+  body["height"] = attachment.height;
+  body["bytes"] = Json::UInt64(attachment.bytes);
+  return body;
+}
+
+std::vector<CoachAttachment> coachAttachmentsFrom(const Json::Value& attachments) {
+  std::vector<CoachAttachment> result;
+  for (const auto& item : attachments)
+    result.push_back({item["id"].asString(), item["mediaType"].asString(), item["width"].asInt(),
+                      item["height"].asInt(), item["bytes"].asUInt64()});
+  return result;
+}
+
+Json::Value toJson(const std::vector<CoachResult>& results) {
+  Json::Value body(Json::arrayValue);
+  for (const auto& result : results) {
+    Json::Value item(Json::objectValue);
+    item["kind"] = "routine-created";
+    item["operationId"] = result.operationId;
+    item["routineId"] = result.routineId;
+    item["routineName"] = result.routineName;
+    body.append(item);
+  }
+  return body;
+}
+
+std::vector<CoachResult> coachResultsFrom(const Json::Value& results) {
+  std::vector<CoachResult> out;
+  for (const auto& result : results)
+    out.push_back({result["operationId"].asString(), result["routineId"].asString(), result["routineName"].asString()});
+  return out;
+}
+
+Json::Value toJson(const AskGeneration& generation) {
+  Json::Value body(Json::objectValue);
+  body["id"] = generation.id;
+  body["requestId"] = generation.requestId;
+  body["question"] = generation.question;
+  body["status"] = generation.status;
+  body["answer"] = generation.answer;
+  body["at"] = Json::UInt64(generation.atMs);
+  body["steps"] = toJson(generation.steps);
+  body["results"] = toJson(generation.results);
+  body["revision"] = Json::UInt64(generation.revision);
+  if (generation.stopRequested) body["stopRequested"] = true;
+  if (!generation.attachments.empty()) {
+    body["attachments"] = Json::Value(Json::arrayValue);
+    for (const auto& attachment : generation.attachments) body["attachments"].append(toJson(attachment));
+  }
+  if (generation.receipt) body["receipt"] = toJson(*generation.receipt);
+  return body;
+}
+
+AskGeneration generationFrom(const Json::Value& body) {
+  AskGeneration generation;
+  generation.id = body["id"].asString();
+  generation.requestId = body["requestId"].asString();
+  generation.question = body["question"].asString();
+  generation.status = body["status"].asString();
+  generation.answer = body.get("answer", "").asString();
+  generation.atMs = body.get("at", Json::UInt64(0)).asUInt64();
+  generation.receipt = receiptFrom(body["receipt"]);
+  for (const Json::Value& step : body["steps"])
+    generation.steps.push_back({step["tool"].asString(), step["failed"].asBool()});
+  generation.results = coachResultsFrom(body["results"]);
+  generation.attachments = coachAttachmentsFrom(body["attachments"]);
+  generation.revision = body.get("revision", Json::UInt64(0)).asUInt64();
+  generation.stopRequested = body.get("stopRequested", false).asBool();
+  return generation;
+}
+
 Json::Value toJson(const AskThread& thread) {
   Json::Value body(Json::objectValue);
   body["id"] = thread.id.str();
@@ -488,6 +564,8 @@ Json::Value toJson(const AskThread& thread) {
   body["createdAt"] = Json::Value::UInt64(thread.createdAtMs);
   body["askedAt"] = Json::Value::UInt64(thread.askedAtMs);
   body["outcome"] = toJson(outcomeOf(thread));
+  if (thread.generation) body["generation"] = toJson(*thread.generation);
+  if (!thread.nextCursor.empty()) body["nextCursor"] = thread.nextCursor;
   Json::Value proposals(Json::arrayValue);
   for (const ThreadProposal& minted : thread.minted) {
     Json::Value line(Json::objectValue);
@@ -507,6 +585,17 @@ Json::Value toJson(const AskThread& thread) {
       turn["from"] = said.fromLifter ? "lifter" : "ask";
       turn["text"] = said.text;
       turn["at"] = Json::Value::UInt64(said.atMs);
+      if (said.position) turn["position"] = Json::UInt64(said.position);
+      if (!said.generationId.empty()) {
+        turn["generationId"] = said.generationId;
+        turn["requestId"] = said.requestId;
+        turn["status"] = said.status;
+      }
+      if (!said.results.empty()) turn["results"] = toJson(said.results);
+      if (!said.attachments.empty()) {
+        turn["attachments"] = Json::Value(Json::arrayValue);
+        for (const auto& attachment : said.attachments) turn["attachments"].append(toJson(attachment));
+      }
       if (!said.fromLifter && said.receipt) turn["receipt"] = toJson(*said.receipt);
       turns.append(turn);
     }
