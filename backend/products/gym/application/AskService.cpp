@@ -81,31 +81,34 @@ AskTools::AskTools(GymTools& inner, ThreadId thread, AskThreadRepository* reposi
                    AskGeneration* generation)
     : inner_(inner), repository_(repository), generation_(generation), thread_(std::move(thread)) {}
 
-void AskTools::observe(const ToolResult& result, const std::string& name) {
+void AskTools::observe(const ToolResult& result, const std::string& name, const std::string& operationId) {
   if (result.isError) return;
   if (result.payload["proposal"]["id"].isString()) {
     const auto id = result.payload["proposal"]["id"].asString();
     if (std::find(proposals_.begin(), proposals_.end(), id) == proposals_.end()) proposals_.push_back(id);
   }
   if (name == "create_routine" && generation_ && generation_->results.empty())
-    generation_->results.push_back({operation_->id, result.payload["id"].asString(), result.payload["name"].asString()});
+    generation_->results.push_back({operationId, result.payload["id"].asString(), result.payload["name"].asString()});
 }
 
 void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
   if (!repository_) return;
-  operation_ = repository_->operation(caller.user, thread_, generation_->id);
-  if (!operation_) return;
-  if (!operation_->result && !allowWrite) {
-    operation_->result = inner_.completedAction(caller.user, operation_->name, operation_->arguments["id"].asString());
-    if (!operation_->result) return;
-    repository_->saveOperation(caller.user, thread_, generation_->id, *operation_);
+  operations_ = repository_->operations(caller.user, thread_, generation_->id);
+  if (operations_.empty()) return;
+  for (auto& operation : operations_) {
+    if (!operation.result && !allowWrite) {
+      operation.result = inner_.completedAction(caller.user, operation.name, operation.arguments["id"].asString());
+      if (!operation.result) continue;
+      repository_->saveOperation(caller.user, thread_, generation_->id, operation);
+    }
+    if (!operation.result) {
+      operation.result = inner_.callTool(operation.name, operation.arguments, caller,
+          ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+      repository_->saveOperation(caller.user, thread_, generation_->id, operation);
+    }
+    observe(*operation.result, operation.name, operation.id);
+    if (operation.name == "save_note") steps_.push_back({operation.name, operation.result->isError});
   }
-  if (!operation_->result) {
-    operation_->result = inner_.callTool(operation_->name, operation_->arguments, caller,
-        ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
-    repository_->saveOperation(caller.user, thread_, generation_->id, *operation_);
-  }
-  observe(*operation_->result, operation_->name);
   repository_->saveGeneration(caller.user, thread_, *generation_);
 }
 
@@ -113,7 +116,7 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
   std::vector<ToolDeclaration> offered;
   for (ToolDeclaration& declaration : inner_.declareTools())
     if (declaration.access == Access::read || mintsProposal(declaration.name()) ||
-        (repository_ && declaration.name() == "create_routine"))
+        (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note")))
       offered.push_back(std::move(declaration));
   return offered;
 }
@@ -142,7 +145,7 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
     return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
   }
   if (declared->access != Access::read && !mintsProposal(name) &&
-      !(repository_ && name == "create_routine"))
+      !(repository_ && (name == "create_routine" || name == "save_note")))
     // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
     // every grant.
     return ToolResult::failure(name +
@@ -165,30 +168,43 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
                                       "one document");
 
   Json::Value input = arguments;
-  const bool write = mintsProposal(name) || name == "create_routine";
+  const bool write = mintsProposal(name) || name == "create_routine" || name == "save_note";
+  CoachOperation* operation = nullptr;
   if (write && repository_) {
-    if (operation_ && operation_->name != name)
-      return ToolResult::failure("this turn already has an action; finish that action before starting another");
-    if (operation_ && operation_->result && !operation_->result->isError) return *operation_->result;
-    if (name == "create_routine") {
-      for (const std::string required : {"list_notes", "list_exercises"})
-        if (std::none_of(steps_.begin(), steps_.end(), [&](const AskStep& step) {
-              return step.tool == required && !step.failed;
-            }))
-          return ToolResult::failure("read the lifter's notes and movement catalog before creating a routine; ask only for materially missing goals or constraints");
+    const auto held = std::find_if(operations_.begin(), operations_.end(), [&](const CoachOperation& candidate) {
+      return (candidate.name == "save_note") == (name == "save_note");
+    });
+    if (held != operations_.end()) {
+      if (held->name != name)
+        return ToolResult::failure("this turn already has a routine action; finish that action before starting another");
+      if (held->result && !held->result->isError) return *held->result;
+      operation = &*held;
     }
-    input["id"] = operation_ ? operation_->arguments["id"] :
+    const std::vector<std::string> reads = name == "create_routine" ? std::vector<std::string>{"list_notes", "list_exercises"}
+        : name == "save_note" ? std::vector<std::string>{"list_notes"} : std::vector<std::string>{};
+    for (const auto& required : reads) {
+      if (std::none_of(steps_.begin(), steps_.end(), [&](const AskStep& step) {
+            return step.tool == required && !step.failed;
+          }))
+        return ToolResult::failure("read the lifter's notes before saving an insight, and the movement catalog before creating a routine");
+    }
+    input["id"] = operation ? operation->arguments["id"] : name == "save_note" ? Json::Value("note_" + generation_->id) :
         name == "create_routine" ? Json::Value("rt_" + generation_->id) : arguments["id"];
-    operation_ = CoachOperation{"op_" + generation_->id, name, input};
-    repository_->saveOperation(caller.user, thread_, generation_->id, *operation_);
+    if (!operation) {
+      operations_.push_back({(name == "save_note" ? "op_note_" : "op_") + generation_->id, name, input});
+      operation = &operations_.back();
+    }
+    operation->arguments = input;
+    operation->result.reset();
+    repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
   }
   const ToolResult outcome = inner_.callTool(
       name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
-  if (write && repository_) {
-    operation_->result = outcome;
-    repository_->saveOperation(caller.user, thread_, generation_->id, *operation_);
+  if (operation) {
+    operation->result = outcome;
+    repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
   }
-  observe(outcome, name);
+  observe(outcome, name, operation ? operation->id : "");
   if (write && repository_) repository_->saveGeneration(caller.user, thread_, *generation_);
   return outcome;
 }
@@ -227,9 +243,18 @@ std::optional<AskGeneration> AskService::stop(const UserId& user, const ThreadId
   tools.recover(caller, false);
   generation->status = "stopped";
   generation->stopRequested = true;
-  if (!tools.proposals().empty()) {
+  if (!tools.steps().empty() || !tools.proposals().empty()) {
     if (!generation->receipt) generation->receipt = AnswerReceipt{};
-    generation->receipt->proposals = tools.proposals();
+    for (const auto& step : tools.steps()) {
+      if (std::find(generation->steps.begin(), generation->steps.end(), step) == generation->steps.end())
+        generation->steps.push_back(step);
+      auto& steps = generation->receipt->steps;
+      if (std::find(steps.begin(), steps.end(), step) == steps.end()) steps.push_back(step);
+    }
+    for (const auto& proposal : tools.proposals()) {
+      auto& proposals = generation->receipt->proposals;
+      if (std::find(proposals.begin(), proposals.end(), proposal) == proposals.end()) proposals.push_back(proposal);
+    }
   }
   threads_.saveGeneration(user, thread, *generation);
   return generation;
@@ -414,6 +439,10 @@ void AskService::run(const std::shared_ptr<Job>& job) {
     }
     if (!hands.proposals().empty())
       current += "\n\nServer-observed proposal already exists for this request: " + hands.proposals().front() + ". Do not mint another.";
+    for (const auto& operation : repository.operations(caller, thread, generation->id))
+      if (operation.name == "save_note" && operation.result && !operation.result->isError)
+        current += "\n\nServer-observed note save already completed for this request: " + dump(operation.result->payload) +
+                   ". This is the original save receipt, not a claim that a later user edit or deletion was reversed. Do not save it again.";
     turns.push_back({true, current.empty() ? "Please help me with this photo." : current});
     for (auto& image : images) turns.back().images.push_back({image.attachment.mediaType, std::move(image.data)});
     bool stopped = generation->stopRequested;

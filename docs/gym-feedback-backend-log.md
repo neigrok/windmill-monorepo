@@ -29,8 +29,18 @@ The simplification pass consolidated result/attachment JSON shapes, removed the 
 transport and its private HTTP event loop, grouped schema additions by feature, projected stored
 results without loading old answers, and corrected stale lifecycle/limit comments.
 
-The user-supplied friendly prompt is still pending. The protocol fixture verifies transport and
-persistence through the real service stack; it is not evidence of a live Anthropic model response.
+The owner’s exact prompt is installed. Its note-taking workflow uses an append-only `save_note`
+operation and an immutable receipt, with one note and one routine/proposal operation per generation.
+Recovered receipts describe historical saves; they never restore a user-deleted note or overwrite
+a later edit. Orphaned Stop preserves recovered save steps in its receipt. A corrected failed write
+clears its old failure result before execution so a lost acknowledgement remains reconcilable.
+
+The protocol fixture verifies transport and persistence through the real service stack; it is not
+evidence of a live Anthropic model response. The final Notes wave passed 967 domain, 272 MCP and
+1,003 Postgres adapter cases with zero failures/skips. A local HTTP check through Caddy saved a
+note and routine, interrupted output, preserved a later note edit on retry and replayed completion
+without a new model call. The isolated Actions provider lane has 15 passing offline tests and
+publishes only bounded, sanitized acceptance evidence. Actual-provider acceptance remains pending.
 
 Validation: the optimized `RelWithDebInfo` build completed with `-j4`; the current schema applied
 successfully twice to the isolated feedback database. `WM_PG_TEST=1 ctest --test-dir backend/build

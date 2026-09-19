@@ -1,6 +1,6 @@
 # Gym feedback execution
 
-19 September 2026. The feedback comes from an Android app user. Android is the primary acceptance target. Implementation, independent review, simplification and local verification are complete for feedback 1–4 and 6–11. The exact replacement Coach prompt is pending. Android release remains the final step, after the remaining delivery gates below.
+19 September 2026. The feedback comes from an Android app user. Android is the primary acceptance target. Implementation, independent review, simplification and local verification are complete for feedback 1–11. The owner’s exact Coach prompt is applied, including durable note saves for useful user insights. Live model acceptance remains pending. Android release remains the final step, after the remaining delivery gates below.
 
 The [plan](gym-feedback-plan.md), [Coach wire contract](gym-coach-contract.md), [design contract](design/gym/feedback-contract.md) and [Android visual audit](design/gym/feedback-verification.md) define the scope and current behavior.
 
@@ -20,6 +20,7 @@ The [plan](gym-feedback-plan.md), [Coach wire contract](gym-coach-contract.md), 
 | 2 · Copy | Long-press Copy works for both speakers in retained conversations; pasting preserves the exact message text. Current and historical messages share the renderer and accessible action. |
 | 3 · Continue history | Retained conversations reopen with an editable composer and durable request identity. HTTP retrieved 205 unique conversations and 60 paged messages; browser reached the oldest retained page. Android continuation and reopened stopped history passed. |
 | 4 · Streaming | Native incremental text and Stop preserving partial output passed. Proxy tests passed reconnect, terminal replay, failure recovery and concurrent-request exclusion. Real-provider and deployed-proxy acceptance remain pending. |
+| 5 · Coach prompt | The exact supplied prompt is installed. Coach reads training records and Notes before responding and can append one useful note alongside a routine action. Note receipts survive retries, user edits/deletion and Stop. Live-model tone and task acceptance remain pending. |
 | 6 · Create routines | The normal backend tool loop created a persisted routine with a durable receipt during native and HTTP fixture tests. Interrupted output followed by the same request produced exactly one routine. Android history shows one named/count creation outcome. |
 | 7 · Routine density | Compact rows retain touch targets and grow for large text. Full header title fits at 320 and 411 dp with 200% text through the accessible Add action. |
 | 8 · Two clocks | Both clocks start together; a set resets only the since-set reading. Process restart, deletion of the only set and immediate Undo preserve/recompute the correct anchors. |
@@ -31,6 +32,8 @@ The design audit distinguishes captured native layouts from source-only findings
 
 - **Android:** full gym run 1,195 tests, 12 skips, zero failures; platform 85 tests, zero skips/failures. Later lifecycle/recovery checks passed 58 focused tests; final header/history checks passed 49. The reviewed debug APK was installed against 8188 with SHA256 `b9cbea8db7f157a8952a615d56eacc1acf82695fa2a46140983cfa0daaf1fa75`. It is a local test build, not the release artifact.
 - **Backend:** optimized build passed; `WM_PG_TEST=1` suites passed 3/3 in 5.75 seconds, including four final admission/concurrency regressions. Schema applied twice. Valid PNG/JPEG decoding, PNG CRC checks and bounded image workers are included.
+- **Prompt and Notes:** the final optimized backend passed 967 domain, 272 MCP and 1,003 Postgres adapter cases, with no skips or failures. Focused client receipt tests passed: Android 14, iOS 7 and web 7. The isolated provider harness/bootstrap passed 15 offline tests.
+- **Notes through Caddy:** a fixture-backed HTTP run saved a note and routine, interrupted the response, edited the note and retried the same request. It completed with exactly one note and routine, preserved the edit, retained the save receipt in history and made no provider call on completed replay. Evidence: `notes-http.json`.
 - **Web:** 1,760 tests passed; production build and landing-shell generation passed. Browser acceptance covered complete paged history, exact Copy, the native workout mirror, Android’s private photo and retained routine receipts. The browser picker upload itself was not established by the attempted chooser run.
 - **iOS:** full gym 795 and platform 64 tests passed; later expiry/refusal recovery checks passed 36 focused tests, in addition to cancellation/transport checks. Simulator builds passed. An installed update preserved its local workout and both clocks. Authenticated native picker/Coach acceptance remains unverified; it is separate from Android release.
 - **Final HTTP through Caddy:** six creation snapshots, first visible text at 5.01 seconds and terminal completion at 8.40 seconds. Same-ID replay made no new provider call. Deleting a conversation prevented delayed resurrection while preserving its routine. Stop preserved partial text; stopped replay made no model call. Interrupted creation retry retained exactly one routine.
@@ -39,7 +42,7 @@ The design audit distinguishes captured native layouts from source-only findings
 
 These model exchanges use a local Anthropic-protocol fixture. They establish application and transport behavior, not live model output quality or vision understanding. The chosen JPEG/PNG transport is supported by the [provider’s vision contract](https://platform.claude.com/docs/en/build-with-claude/vision); actual provider acceptance remains separate.
 
-Remote CI passed at [12503893](https://github.com/neigrok/windmill-monorepo/commit/12503893c5199790973113762a86b386b8a39fc2): [Android](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077292) in 8m 2s, [iOS](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077317) in 5m 41s, [Web](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077310) in 50s, and [backend](https://github.com/neigrok/windmill-monorepo/actions/runs/35441077326) in 8m 26s. [PR #3](https://github.com/neigrok/windmill-monorepo/pull/3) remains draft.
+Remote CI passed at [1bf997da](https://github.com/neigrok/windmill-monorepo/commit/1bf997da832dcf2f55fdc7633845059ae836535b): [Android](https://github.com/neigrok/windmill-monorepo/actions/runs/35441547667), [iOS](https://github.com/neigrok/windmill-monorepo/actions/runs/35441547659), [Web](https://github.com/neigrok/windmill-monorepo/actions/runs/35441547661), and [backend](https://github.com/neigrok/windmill-monorepo/actions/runs/35441547687). The supplied-prompt/Notes follow-up is locally verified and awaits its own CI. [PR #3](https://github.com/neigrok/windmill-monorepo/pull/3) remains draft.
 
 ## Review and simplification
 
@@ -51,12 +54,11 @@ Native review also corrected over-wide photo controls, short-message Jump visibi
 
 ## Remaining delivery gates
 
-1. Apply and review the owner’s exact friendly/helpful Coach prompt. No substitute text has been invented.
-2. Verify actual provider output and vision with a configured local key or an agreed deployed test path. No real local Anthropic key is configured.
-3. Complete compatible backend rollout; verify deployed streaming/proxy behavior.
-4. Build the Android signing input, verify source/run provenance, sign with the retained key, test clean installation and supported in-place upgrade, then publish and verify public assets. Android release is last.
+1. Run the isolated Actions provider check against the exact reviewed candidate, using the existing Actions secret and disposable synthetic data. Review actual answers, vision, streaming timing, routine creation and replay evidence. No real local Anthropic key is configured.
+2. Complete compatible backend rollout; verify deployed streaming/proxy behavior.
+3. Build the Android signing input, verify source/run provenance, sign with the retained key, test clean installation and supported in-place upgrade, then publish and verify public assets. Android release is last.
 
-Release preflight passed: public Android 0.8.2 digest/certificate match the retained public pin, the local encrypted key opens through its dedicated Keychain item, and the encrypted backup matches. No candidate has been signed or published.
+Release preflight passed: public Android 0.8.2 digest/certificate match the retained public pin, the local encrypted key opens through its dedicated Keychain item, and the encrypted backup matches. No candidate has been signed or published. A dedicated offline emulator (5564) runs the public 0.8.2 APK with a routine, finished workout, settings and a queued offline set. Its identities and timestamps survived relaunch and are recorded in `upgrade-082/expectations.json`; the final APK must preserve them through an in-place update.
 
 ## Test-data cleanup
 

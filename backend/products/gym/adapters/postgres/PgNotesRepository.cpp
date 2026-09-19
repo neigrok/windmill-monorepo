@@ -2,9 +2,12 @@
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
+#include "products/gym/adapters/json/TrainingJson.h"
+#include "platform/adapters/json/JsonText.h"
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -27,6 +30,12 @@ Note noteFrom(const Row& row) {
               row["body"].template as<std::string>(),
               row["position"].template as<int>(),
               instantFrom(row["updated_ms"])};
+}
+
+Note savedNote(const std::string& json, const UserId& user) {
+  const auto value = parse(json);
+  return Note{NoteId{value["id"].asString()}, user, value["title"].asString(), value["body"].asString(),
+              value["position"].asInt(), value["updatedAt"].asUInt64()};
 }
 
 // Position ascending, under the caller's own transaction.
@@ -99,6 +108,57 @@ NoteWriteOutcome PgNotesRepository::saveNote(const Note& incoming, std::uint64_t
   const Note answer = noteFrom(inserted[0]);
   txn.commit();
   return {answer, NoteWriteError::none};
+}
+
+std::optional<Note> PgNotesRepository::noteSave(const UserId& user, const NoteId& id) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params("SELECT note::text FROM gym_note_saves WHERE id=$1 AND user_id=$2::uuid",
+                                    id.str(), user.str());
+  if (rows.empty()) return std::nullopt;
+  return savedNote(rows[0][0].as<std::string>(), user);
+}
+
+NoteWriteOutcome PgNotesRepository::saveInsight(const Note& incoming, std::uint64_t nowMs) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  lockAccount(txn, incoming.user);
+  const auto receipts = txn.exec_params("SELECT note::text,user_id=$2::uuid AS mine FROM gym_note_saves WHERE id=$1",
+                                        incoming.id.str(), incoming.user.str());
+  if (!receipts.empty()) {
+    if (!receipts[0]["mine"].as<bool>()) return {std::nullopt, NoteWriteError::idTaken};
+    const auto saved = savedNote(receipts[0]["note"].as<std::string>(), incoming.user);
+    if (saved.title != incoming.title || saved.body != incoming.body) return {std::nullopt, NoteWriteError::idTaken};
+    return {saved, NoteWriteError::none};
+  }
+  const auto held = txn.exec_params("SELECT title,body,user_id=$2::uuid AS mine FROM gym_notes WHERE id=$1",
+                                    incoming.id.str(), incoming.user.str());
+  if (!held.empty() && (!held[0]["mine"].as<bool>() || held[0]["title"].as<std::string>() != incoming.title ||
+                         held[0]["body"].as<std::string>() != incoming.body))
+    return {std::nullopt, NoteWriteError::idTaken};
+  const auto standing = notesOf(txn, incoming.user);
+  const auto same = std::find_if(standing.begin(), standing.end(), [&](const Note& note) {
+    return note.title == incoming.title && note.body == incoming.body;
+  });
+  std::optional<Note> saved;
+  if (same != standing.end()) saved = *same;
+  else {
+    if (standing.size() >= kMaxNotes) return {std::nullopt, NoteWriteError::full};
+    const auto inserted = txn.exec_params(
+        "INSERT INTO gym_notes(id,user_id,position,title,body,created_at,updated_at) "
+        "VALUES($1,$2::uuid,$3,$4,$5,to_timestamp($6::bigint/1000.0),to_timestamp($6::bigint/1000.0)) "
+        "ON CONFLICT (id) DO NOTHING RETURNING " + std::string(kNoteColumns),
+        incoming.id.str(), incoming.user.str(), static_cast<int>(standing.size()), incoming.title,
+        incoming.body, static_cast<long long>(nowMs));
+    if (inserted.empty()) return {std::nullopt, NoteWriteError::idTaken};
+    saved = noteFrom(inserted[0]);
+  }
+  const auto receipt = txn.exec_params("INSERT INTO gym_note_saves(id,user_id,note) VALUES($1,$2::uuid,$3::jsonb) "
+                                       "ON CONFLICT DO NOTHING RETURNING id",
+                                       incoming.id.str(), incoming.user.str(), dump(toJson(*saved)));
+  if (receipt.empty()) return {std::nullopt, NoteWriteError::idTaken};
+  txn.commit();
+  return {saved, NoteWriteError::none};
 }
 
 void PgNotesRepository::deleteNote(const UserId& user, const NoteId& id) {

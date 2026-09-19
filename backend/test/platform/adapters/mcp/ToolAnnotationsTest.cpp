@@ -66,6 +66,7 @@ const std::vector<Row> kGym = {
     {"list_bodyweight", "Gym · List bodyweight", true, false, true},
     {"get_sessions", "Gym · Get sessions", true, false, true},
     {"get_last_times", "Gym · Get last times", true, false, true},
+    {"save_note", "Gym · Save note", false, false, true},
     {"start_session", "Gym · Start session", false, false, true},
     {"log_set", "Gym · Log set", false, false, true},
     {"finish_session", "Gym · Finish session", false, false, true},

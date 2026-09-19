@@ -48,6 +48,7 @@ inline void reset() {
   w.exec("DELETE FROM gym_exercise_aliases WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercises WHERE created_by IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_preferences WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_note_saves WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_notes WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_bodyweight WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.commit();

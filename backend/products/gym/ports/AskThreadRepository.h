@@ -59,7 +59,7 @@ struct AskThreadRepository {
                                                  const std::string& requestId) = 0;
   virtual void saveGeneration(const UserId& user, const ThreadId& thread,
                               AskGeneration& generation) = 0;
-  virtual std::optional<CoachOperation> operation(const UserId& user, const ThreadId& thread,
+  virtual std::vector<CoachOperation> operations(const UserId& user, const ThreadId& thread,
                                                 const std::string& generationId) = 0;
   virtual void saveOperation(const UserId& user, const ThreadId& thread,
                              const std::string& generationId, const CoachOperation& operation) = 0;

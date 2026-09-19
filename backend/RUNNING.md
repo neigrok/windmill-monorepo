@@ -108,6 +108,35 @@ Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` in
 builder stage with no database beside it, so those cases are proven on a developer's machine and
 nowhere else. Run them before pushing a change to a Pg repository or the tables it reads.
 
+## Coach provider acceptance in CI
+
+The Backend CI/CD workflow has a manual `verify_coach_provider` input, defaulting to false. Set it
+to true on the reviewed candidate ref to build/test that exact checkout and run Coach against
+`https://api.anthropic.com`. This mode skips image publication and cannot trigger production deploy.
+It uses the existing `ANTHROPIC_API_KEY` Actions secret only in the candidate container environment;
+it reads no production database, deployment configuration, SSH credentials or developer `.env`.
+
+`test/e2e/coach_provider_ci.py` creates a separate runner Docker network, a tmpfs Postgres instance,
+and a candidate exposed only on loopback. The database has no published port and uses trust auth
+only inside that disposable network. A synthetic account/session and the schema's exercise catalog
+are the entire initial data set. Mail, telemetry forwarding and background integrations are disabled.
+The harness makes at most three new Coach requests and one identical completed replay, with 180-second
+request and 600-second harness limits; the ordinary backend iteration and spend limits still apply.
+The launcher removes its containers, network and private session file on exit. No host deployment or
+registry publication is part of verification.
+
+The artifact contains only `coach-provider-acceptance.json` and `coach-provider-run.json`: allowlisted
+synthetic visible answers/receipts/results, check outcomes, source SHA, GitHub run identity, image ID,
+provider model and observed token/cache/cost usage. Credentials, headers, image bytes, internal
+reasoning and raw provider payloads are excluded. An interrupted call can have incomplete observed
+usage. Inspect both the checks and the synthetic answers before treating a run as acceptance.
+
+Run the bootstrap and harness tests without a provider key from the repository root:
+
+```sh
+python3 -m unittest discover -s backend/test/e2e -p 'test_coach_provider_*.py' -v
+```
+
 ## Roadmap tree endpoints
 
 The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys, reminders, the

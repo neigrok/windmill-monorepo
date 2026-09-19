@@ -13,6 +13,7 @@ import kotlinx.serialization.Serializable
 data class AskStep(val tool: String, val failed: Boolean = false) {
     val phrase: String?
         get() {
+            if (tool == "save_note" && failed) return "could not confirm a note save"
             val said = Ask.phrases[tool] ?: return null
             return if (failed) "$said (nothing came back)" else said
         }
@@ -202,6 +203,7 @@ object Ask {
         "list_routines" to "read your program",
         "get_stats" to "read your movement history",
         "list_notes" to "read your notes",
+        "save_note" to "saved a note",
         "list_bodyweight" to "read your bodyweight",
         "propose_routine_change" to "wrote a proposal for one of your routines",
         "propose_routine_removal" to "wrote a proposal to remove a routine",

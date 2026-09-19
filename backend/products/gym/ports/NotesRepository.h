@@ -36,6 +36,9 @@ struct NotesRepository {
   // carrying the same text replays the stored row untouched; carrying different text it is an edit
   // stamped `nowMs`. Another account's id is `idTaken`.
   virtual NoteWriteOutcome saveNote(const Note& incoming, std::uint64_t nowMs) = 0;
+  // Append-only insight save: exact text deduplicates; a durable receipt survives edits and deletion.
+  virtual NoteWriteOutcome saveInsight(const Note& incoming, std::uint64_t nowMs) = 0;
+  virtual std::optional<Note> noteSave(const UserId& user, const NoteId& id) = 0;
   // Absent and already gone are one answer; the notes after it move up one.
   virtual void deleteNote(const UserId& user, const NoteId& id) = 0;
   // Whole-order replace: refused unless `order` names every note exactly once. Precedence is not the

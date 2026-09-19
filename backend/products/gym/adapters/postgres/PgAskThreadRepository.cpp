@@ -379,25 +379,30 @@ void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& t
   txn.commit();
 }
 
-std::optional<CoachOperation> PgAskThreadRepository::operation(const UserId& user, const ThreadId& thread,
-                                                              const std::string& generationId) {
+std::vector<CoachOperation> PgAskThreadRepository::operations(const UserId& user, const ThreadId& thread,
+                                                             const std::string& generationId) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   const auto rows = txn.exec_params(
       "SELECT operation::text FROM gym_ask_generations WHERE id=$1 AND user_id=$2::uuid AND thread_id=$3",
       generationId, user.str(), thread.str());
-  if (rows.empty() || rows[0][0].is_null()) return std::nullopt;
-  const auto body = parse(rows[0][0].as<std::string>());
-  CoachOperation operation{body["id"].asString(), body["name"].asString(), body["arguments"]};
-  if (body.isMember("result")) {
-    ToolResult result;
-    result.content = body["result"]["content"];
-    result.payload = body["result"]["payload"];
-    result.structured = body["result"]["structured"];
-    result.isError = body["result"]["isError"].asBool();
-    operation.result = result;
+  if (rows.empty() || rows[0][0].is_null()) return {};
+  auto bodies = parse(rows[0][0].as<std::string>());
+  if (bodies.isObject()) { Json::Value list(Json::arrayValue); list.append(bodies); bodies = std::move(list); }
+  std::vector<CoachOperation> operations;
+  for (const auto& body : bodies) {
+    CoachOperation operation{body["id"].asString(), body["name"].asString(), body["arguments"]};
+    if (body.isMember("result")) {
+      ToolResult result;
+      result.content = body["result"]["content"];
+      result.payload = body["result"]["payload"];
+      result.structured = body["result"]["structured"];
+      result.isError = body["result"]["isError"].asBool();
+      operation.result = result;
+    }
+    operations.push_back(std::move(operation));
   }
-  return operation;
+  return operations;
 }
 
 void PgAskThreadRepository::saveOperation(const UserId& user, const ThreadId& thread,
@@ -415,9 +420,17 @@ void PgAskThreadRepository::saveOperation(const UserId& user, const ThreadId& th
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   const auto rows = txn.exec_params(
-      "UPDATE gym_ask_generations SET operation=$4::jsonb WHERE id=$1 AND user_id=$2::uuid AND thread_id=$3 RETURNING id",
-      generationId, user.str(), thread.str(), dump(body));
+      "SELECT operation::text FROM gym_ask_generations WHERE id=$1 AND user_id=$2::uuid AND thread_id=$3 FOR UPDATE",
+      generationId, user.str(), thread.str());
   if (rows.empty()) throw std::runtime_error("conversation generation absent");
+  auto bodies = rows[0][0].is_null() ? Json::Value(Json::arrayValue) : parse(rows[0][0].as<std::string>());
+  if (bodies.isObject()) { Json::Value list(Json::arrayValue); list.append(bodies); bodies = std::move(list); }
+  bool replaced = false;
+  for (auto& stored : bodies)
+    if (stored["id"] == body["id"]) { stored = body; replaced = true; break; }
+  if (!replaced) bodies.append(body);
+  txn.exec_params("UPDATE gym_ask_generations SET operation=$4::jsonb WHERE id=$1 AND user_id=$2::uuid AND thread_id=$3",
+                   generationId, user.str(), thread.str(), dump(bodies));
   txn.commit();
 }
 

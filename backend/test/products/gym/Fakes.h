@@ -97,6 +97,7 @@ struct FakeGymStore {
   bool loseThreadRace = false;         // stage the concurrent-mint race `openThread` explains
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
+  std::map<std::string, Note> noteSaves;
   std::vector<Note> noteRows;                   // gym_notes: dense on position per account
   std::vector<Bodyweight> bodyweightRows;       // gym_bodyweight: one per (account, local day)
   // gym_proposals.superseded_by: the id of the proposal that took a pending one's slot, by the
@@ -1190,7 +1191,7 @@ public:
     UserId user;
     ThreadId thread;
     AskGeneration generation;
-    std::optional<CoachOperation> operation;
+    std::vector<CoachOperation> operations;
   };
   std::vector<GenerationRow> generations;
   struct ImageRow { UserId user; ThreadId thread; CoachImage image; };
@@ -1289,15 +1290,21 @@ public:
     for (auto& held : db.threadRows)
       if (held.user == user && held.id == thread) { held.generation = generation; held.askedAtMs = generation.atMs; }
   }
-  std::optional<CoachOperation> operation(const UserId& user, const ThreadId& thread, const std::string& generationId) override {
+  std::vector<CoachOperation> operations(const UserId& user, const ThreadId& thread, const std::string& generationId) override {
     for (const auto& row : generations)
-      if (row.user == user && row.thread == thread && row.generation.id == generationId) return row.operation;
-    return std::nullopt;
+      if (row.user == user && row.thread == thread && row.generation.id == generationId) return row.operations;
+    return {};
   }
   void saveOperation(const UserId& user, const ThreadId& thread, const std::string& generationId, const CoachOperation& operation) override {
-    for (auto& row : generations)
-      if (row.user == user && row.thread == thread && row.generation.id == generationId) row.operation = operation;
+    for (auto& row : generations) {
+      if (row.user != user || row.thread != thread || row.generation.id != generationId) continue;
+      for (auto& stored : row.operations)
+        if (stored.id == operation.id) { stored = operation; return; }
+      row.operations.push_back(operation);
+      return;
+    }
   }
+
 
 
   FakeGymStore& db;
@@ -1473,6 +1480,32 @@ public:
     db.noteRows.push_back(Note{incoming.id, incoming.user, incoming.title, incoming.body,
                                static_cast<int>(standing.size()), nowMs});
     return {db.noteRows.back(), NoteWriteError::none};
+  }
+
+  std::optional<Note> noteSave(const UserId& user, const NoteId& id) override {
+    const auto saved = db.noteSaves.find(id.str());
+    if (saved == db.noteSaves.end() || saved->second.user != user) return std::nullopt;
+    return saved->second;
+  }
+
+  NoteWriteOutcome saveInsight(const Note& incoming, std::uint64_t nowMs) override {
+    const auto saved = db.noteSaves.find(incoming.id.str());
+    if (saved != db.noteSaves.end()) {
+      if (saved->second.user != incoming.user || saved->second.title != incoming.title || saved->second.body != incoming.body)
+        return {std::nullopt, NoteWriteError::idTaken};
+      return {saved->second, NoteWriteError::none};
+    }
+    for (const auto& note : db.noteRows)
+      if (note.id == incoming.id && (note.user != incoming.user || note.title != incoming.title || note.body != incoming.body))
+        return {std::nullopt, NoteWriteError::idTaken};
+    for (const auto& note : notes(incoming.user))
+      if (note.title == incoming.title && note.body == incoming.body) {
+        db.noteSaves.emplace(incoming.id.str(), note);
+        return {note, NoteWriteError::none};
+      }
+    const auto outcome = saveNote(incoming, nowMs);
+    if (outcome.note) db.noteSaves.emplace(incoming.id.str(), *outcome.note);
+    return outcome;
   }
 
   // Absent and another account's are one no-op; the rows after the gap move up one.

@@ -386,7 +386,7 @@ TEST(the_run_is_handed_gyms_three_levels_and_no_other_product) {
   // What the model can SEE is narrower than the grant: the reads plus the two mints.
   std::size_t allowed = 0;
   for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.access == Access::read || mintsProposal(tool.name()) || tool.name() == "create_routine") ++allowed;
+    if (tool.access == Access::read || mintsProposal(tool.name()) || (tool.name() == "create_routine" || tool.name() == "save_note")) ++allowed;
   CHECK_EQ(h.agent.seenCatalog.size(), allowed);
 }
 
@@ -904,7 +904,7 @@ TEST(coach_creation_recovers_after_failure_and_never_recreates_a_deleted_routine
   CHECK(outcomeOf(*h.threadService.thread(h.lifter, thread)).kind == ThreadOutcomeKind::created);
   CHECK(h.program.deleteRoutine(h.lifter, RoutineId{created.routineId}));
   // A crash may happen after the routine transaction commits but before operation result persistence.
-  h.repo.threads.generations.front().operation->result.reset();
+  h.repo.threads.generations.front().operations.front().result.reset();
   h.repo.threads.generations.front().generation.results.clear();
   h.agent.answers = true;
   const auto recovered = h.question(thread, "create an upper-body routine using my bench", h.lifter, "req_creation1");
@@ -1255,5 +1255,127 @@ TEST(coach_failed_lease_reread_revalidates_the_immutable_request_payload) {
     CHECK(conflict.refusal == AskRefusal::requestConflict);
     CHECK_EQ(conflict.generation, std::optional<AskGeneration>{held});
   }
+  CHECK_EQ(h.agent.runs, 0);
+}
+
+TEST(coach_saves_one_user_insight_alongside_a_routine_and_recovers_both_without_duplicate_writes) {
+  Harness h;
+  const auto insight = parse(R"({"id":"note_model001","title":"Schedule","body":"I train on Monday and Thursday."})");
+  const auto routine = parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})");
+  h.agent.plan = {{"save_note", insight}, {"list_notes", parse("{}")}, {"save_note", insight},
+                  {"list_exercises", parse("{}")}, {"create_routine", routine}};
+  h.agent.answers = false;
+  const ThreadId thread{"thr_note0001"};
+  const auto first = h.question(thread, "I train on Monday and Thursday. Make a routine.", h.lifter, "req_note0001");
+  REQUIRE(first.generation.has_value());
+  CHECK_FALSE(first.answer.ok);
+  REQUIRE_EQ(h.repo.db.noteRows.size(), 1u);
+  REQUIRE_EQ(h.repo.db.routineRows.size(), 1u);
+  CHECK_EQ(first.answer.steps.front(), (AskStep{"save_note", true}));
+  const auto note = h.repo.db.noteRows.front();
+  CHECK_EQ(note.id.str(), "note_" + first.generation->id);
+  CHECK_EQ(note.body, insight["body"].asString());
+  const auto operations = h.repo.threads.operations(h.lifter, thread, first.generation->id);
+  REQUIRE_EQ(operations.size(), 2u);
+  for (auto operation : operations) {
+    REQUIRE(operation.result.has_value());
+    CHECK_FALSE(operation.result->isError);
+    operation.result.reset();
+    h.repo.threads.saveOperation(h.lifter, thread, first.generation->id, operation);
+  }
+  h.notesService.deleteNote(h.lifter, note.id);
+  h.agent.answers = true;
+  const auto retried = h.question(thread, first.generation->question, h.lifter, "req_note0001");
+  REQUIRE(retried.answer.ok);
+  CHECK(h.repo.db.noteRows.empty());
+  CHECK_EQ(h.repo.db.routineRows.size(), 1u);
+  CHECK_EQ(retried.generation->results, first.generation->results);
+  CHECK(h.agent.seenTurns.back().text.find("Server-observed note save already completed") != std::string::npos);
+  const auto completed = h.question(thread, first.generation->question, h.lifter, "req_note0001");
+  CHECK_EQ(completed.generation, retried.generation);
+  CHECK_EQ(h.agent.runs, 2);
+}
+
+TEST(coach_stopped_note_operation_reconciles_a_saved_note_but_never_executes_an_unsaved_one) {
+  Harness h;
+  const ThreadId thread{"thr_note_stop1"};
+  h.repo.threads.openThread(h.lifter, thread, "Remember my schedule", h.clock.now);
+  AskGeneration generation{"gen_note_stop1", "req_note_stop1", "Remember my schedule"};
+  generation.atMs = h.clock.now;
+  const auto session = *h.repo.log.session(h.lifter, h.session);
+  const AnswerReceipt prior{1, {1, 1, 0}, {{"list_sessions", false}}, {"prop_prior001"},
+      {SessionObservation{"get_session", session, ReadCoverage::session, 1, WorkoutObservation{session, 1, 500}}}};
+  REQUIRE(prior.valid());
+  generation.receipt = prior;
+  generation.steps = prior.steps;
+  h.repo.threads.saveGeneration(h.lifter, thread, generation);
+  CoachOperation operation{"op_note_stop1", "save_note", parse(R"({"id":"note_stop001","title":"Schedule","body":"I train on Monday."})")};
+  h.repo.threads.saveOperation(h.lifter, thread, generation.id, operation);
+  AskTools pending(h.gymTools, thread, &h.repo.threads, &generation);
+  pending.recover(ToolCaller{h.lifter, ToolScope::everything()}, false);
+  CHECK(h.repo.db.noteRows.empty());
+  ReadReceipt read;
+  REQUIRE(!h.gymTools.callTool("save_note", operation.arguments, ToolCaller{h.lifter, ToolScope::everything()},
+      ProposalSource{ProposalDoor::ask, "", "", thread}, read).isError);
+  h.notesService.deleteNote(h.lifter, NoteId{"note_stop001"});
+  const auto stopped = h.ask.stop(h.lifter, thread, generation.requestId);
+  REQUIRE(stopped.has_value());
+  CHECK_EQ(stopped->status, std::string("stopped"));
+  REQUIRE(stopped->receipt.has_value());
+  auto expected = prior;
+  expected.steps.push_back({"save_note", false});
+  CHECK_EQ(stopped->steps, expected.steps);
+  CHECK_EQ(stopped->receipt, std::optional<AnswerReceipt>{expected});
+  CHECK_EQ(h.repo.threads.generation(h.lifter, thread, generation.requestId), stopped);
+  CHECK_EQ(h.repo.threads.thread(h.lifter, thread)->turns.back().receipt, stopped->receipt);
+  CHECK(h.repo.db.noteRows.empty());
+  const auto recovered = h.repo.threads.operations(h.lifter, thread, generation.id);
+  REQUIRE_EQ(recovered.size(), 1u);
+  REQUIRE(recovered[0].result.has_value());
+  CHECK_EQ(recovered[0].result->payload["saved"], Json::Value(true));
+  CHECK_EQ(h.agent.runs, 0);
+}
+
+TEST(coach_corrected_note_attempt_clears_its_prior_error_before_the_write_can_commit) {
+  Harness h;
+  struct LostAck : FakeAskThreadRepository {
+    explicit LostAck(FakeGymStore& db) : FakeAskThreadRepository(db) {}
+    bool loseResult = false;
+    void saveOperation(const UserId& user, const ThreadId& thread, const std::string& generation,
+                       const CoachOperation& operation) override {
+      if (loseResult && operation.result && !operation.result->isError)
+        throw std::runtime_error("simulated process loss before operation result persistence");
+      FakeAskThreadRepository::saveOperation(user, thread, generation, operation);
+    }
+  } threads{h.repo.db};
+  const ThreadId thread{"thr_correct1"};
+  threads.openThread(h.lifter, thread, "Remember my schedule", h.clock.now);
+  AskGeneration generation{"gen_correct1", "req_correct1", "Remember my schedule"};
+  generation.atMs = h.clock.now;
+  threads.saveGeneration(h.lifter, thread, generation);
+  AskTools hands(h.gymTools, thread, &threads, &generation);
+  const ToolCaller caller{h.lifter, ToolScope::everything()};
+  REQUIRE(!hands.callTool("list_notes", parse("{}"), caller).isError);
+  auto input = parse(R"({"id":"note_model001","title":"Schedule","body":"I train on Monday."})");
+  auto invalid = input;
+  invalid["body"] = std::string(501, 'x');
+  REQUIRE(hands.callTool("save_note", invalid, caller).isError);
+  REQUIRE(threads.operations(h.lifter, thread, generation.id).front().result->isError);
+  threads.loseResult = true;
+  bool lost = false;
+  try { hands.callTool("save_note", input, caller); }
+  catch (const std::runtime_error&) { lost = true; }
+  REQUIRE(lost);
+  CHECK_FALSE(threads.operations(h.lifter, thread, generation.id).front().result.has_value());
+  REQUIRE_EQ(h.repo.db.noteRows.size(), 1u);
+  h.notesService.deleteNote(h.lifter, h.repo.db.noteRows.front().id);
+  threads.loseResult = false;
+  AskService service{h.training, threads, h.clock, h.agent, h.gymTools, h.entitlements};
+  const auto stopped = service.stop(h.lifter, thread, generation.requestId);
+  REQUIRE(stopped.has_value());
+  REQUIRE(stopped->receipt.has_value());
+  CHECK_EQ(stopped->steps, (std::vector<AskStep>{{"save_note", false}}));
+  CHECK_EQ(stopped->receipt->steps, stopped->steps);
+  CHECK(h.repo.db.noteRows.empty());
   CHECK_EQ(h.agent.runs, 0);
 }

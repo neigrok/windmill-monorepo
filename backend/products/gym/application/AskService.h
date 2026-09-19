@@ -26,7 +26,7 @@
 
 namespace wm::gym {
 
-// Coach exposes reads, proposals and durable new-routine creation.
+// Coach exposes reads, one routine action and one durable insight save per generation.
 class AskTools : public ToolHost {
 public:
   // The thread is carried, not looked up: every proposal this run mints is stamped with the
@@ -48,8 +48,8 @@ private:
   GymTools& inner_;
   AskThreadRepository* repository_;
   AskGeneration* generation_;
-  std::optional<CoachOperation> operation_;
-  void observe(const ToolResult& result, const std::string& name);
+  std::vector<CoachOperation> operations_;
+  void observe(const ToolResult& result, const std::string& name, const std::string& operationId = "");
   ThreadId thread_;
   ReadReceipt read_;
   std::vector<std::string> proposals_;

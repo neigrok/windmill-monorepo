@@ -1250,6 +1250,15 @@ create table if not exists gym_notes (
   unique (user_id, position) deferrable initially deferred
 );
 
+-- Immutable Coach save receipts survive note edits and deletion.
+create table if not exists gym_note_saves (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  note jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists gym_note_saves_owner on gym_note_saves(user_id);
+
 -- A lifter's weigh-ins: one row per LOCAL calendar day, kilograms to two decimals, and the identity
 -- is the day — a second write to the same day is a correction, never a second row. `recorded_at`
 -- is the device's clock at the save and decides ONLY which of two writes to one day is newer: the

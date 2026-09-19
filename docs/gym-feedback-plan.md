@@ -16,7 +16,7 @@ The feedback comes from an Android app user. Android is the primary implementati
 | 7, 9, 10, 11 | Implement and audit quieter gym screens | P1 / wave 2 | `gym-feedback-quiet-ui` |
 | 4 | Stream Coach answers | P2 / wave 3 | `gym-coach-streaming` |
 | 1 | Send pictures to Coach | P2 / wave 3 | `gym-coach-picture-messages` |
-| 5 | Apply the supplied friendly, helpful prompt | Independent, awaiting text | `gym-coach-friendly-prompt` |
+| 5 | Apply the supplied friendly, helpful prompt | Implemented; live acceptance pending | `gym-coach-friendly-prompt` |
 | Final delivery | Android release | Final / wave 4 | `gym-feedback-android-release` |
 
 P1 addresses blocked or confusing core use; P2 can ship alongside its prerequisite work when ready. Streaming and pictures depend on durable conversation turns. The two UI implementation tasks depend on the design contract. The prompt has no dependency on the other implementation tasks and does not block them; it precedes the final Android release unless the user explicitly defers it. Android release is the last item in the work sequence.
@@ -75,7 +75,7 @@ Acceptance: a supported image can be previewed, removed, sent, understood by the
 
 ### Independent: the supplied Coach prompt
 
-Apply the user's exact supplied text when available. Reconcile it with the existing no-authored-personality canon and actual tool capabilities, preserving accurate action receipts and the boundary between training records and instructions. Exercise representative help, clarification, routine-creation and refusal conversations. The user reviews the resulting tone; do not invent the requested replacement text.
+The owner’s exact supplied text is installed, with compatible tool and data-boundary instructions. Coach reads user records before responding and can append a useful note through a durable, idempotent operation; it cannot edit, delete or reorder existing Notes. Exercise representative help, clarification, routine-creation and refusal conversations with the actual provider. The user can review the resulting tone.
 
 ### Wave 4: Android release
 
@@ -104,6 +104,6 @@ Update current-state docs and the consistency ledger as the behavior lands. Anno
 - [Coach wire contract](gym-coach-contract.md) defines durable requests/results, paged history, generation snapshots, streaming, Stop and private attachments. Backend and client implementation/verification status lives in [the execution log](gym-feedback-execution.md).
 - [Feedback design contract](design/gym/feedback-contract.md) pins compact routines, the two clocks, quiet Coach navigation and image/streaming states. Its Figma links reference the updated drawings. Runtime acceptance remains separate from design completion.
 - Full retained history and bounded successful-exchange model context are distinct. Adversarial review requires stable request identity through retry refusals and retained deletion records to prevent delayed requests from recreating deleted conversations.
-- The user's replacement Coach prompt remains pending. It does not block other implementation, but precedes the final Android release unless explicitly deferred.
+- The owner’s replacement Coach prompt and durable note-save capability are implemented and locally verified. Actual-provider output and tone acceptance precede the final Android release.
 - Local backend verification uses an isolated database. A deterministic Anthropic-protocol fixture exercises real application/transport paths; it does not establish live provider output quality or vision behavior. Live-provider verification and deployed proxy checks remain release gates.
 - The supported Android 0.8.2 public artifact's digest and certificate match the retained public pin. Final source/run provenance, local signing, clean installation, in-place upgrade and public download verification remain required for the new release.

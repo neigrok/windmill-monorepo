@@ -17,6 +17,8 @@ test('tool descriptions are ordered, deduplicated and bounded to known facts', (
   assert.equal(stepsLine([
     { tool: 'list_notes' }, { tool: 'list_notes' }, { tool: 'list_exercises', failed: true }, { tool: 'create_routine' },
   ]), 'It read your notes, then read your movement list (nothing came back), then created a routine.');
+  assert.equal(stepsLine([{ tool: 'save_note' }, { tool: 'save_note' }]), 'It saved a note.');
+  assert.equal(stepsLine([{ tool: 'save_note', failed: true }]), 'It could not confirm a note save.');
   assert.equal(stepsLine([{ tool: 'new_tool' }]), null);
   assert.equal(stepsLine([]), 'Answered from your recent workouts alone.');
 });

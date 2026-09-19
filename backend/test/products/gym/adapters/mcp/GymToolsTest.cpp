@@ -167,7 +167,8 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
            (std::vector<std::string>{
                "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "list_notes gym:read", "list_bodyweight gym:read", "get_sessions gym:read", "get_last_times gym:read", "start_session gym:write",
+               "list_notes gym:read", "list_bodyweight gym:read", "get_sessions gym:read", "get_last_times gym:read",
+               "save_note gym:write", "start_session gym:write",
                "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
                "create_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
@@ -228,9 +229,7 @@ TEST(gym_publishes_no_propose_routine_create_at_any_level) {
   CHECK_FALSE(h.tools.retirement("propose_routine_create").has_value());
 }
 
-// The notes read: every agent holding gym:read sees them, in precedence order, and no agent writes
-// one — the Notes screen's honesty line rests on the first half, the "proposes only" line on the
-// second.
+// Notes are visible in precedence order; only the append tool may write an insight.
 TEST(gym_list_notes_answers_in_precedence_order_and_claims_no_log_rows) {
   Harness h;
   h.notes.saveNote(Note{NoteId{"note_00000001"}, uid(), "How I want to be talked to", "Blunt."});
@@ -256,7 +255,7 @@ TEST(gym_list_notes_answers_in_precedence_order_and_claims_no_log_rows) {
   const std::vector<std::string> everything =
       namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
   for (const std::string& name : everything) {
-    CHECK(name != "save_note");
+
     CHECK(name != "create_note");
     CHECK(name != "write_note");
     CHECK(name != "delete_note");
@@ -466,7 +465,7 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
                                        "last_time",      "list_routines", "get_stats",
                                        "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
-  const std::vector<std::string> writes{"start_session",  "log_set",
+  const std::vector<std::string> writes{"save_note", "start_session",  "log_set",
                                         "finish_session", "create_routine",
                                         "propose_routine_change", "create_exercise",
                                         "share_session", "log_sets", "import_session"};
@@ -1889,4 +1888,30 @@ TEST(gym_equal_start_times_keep_distinct_session_evidence_in_requested_order) {
   const SessionObservation b{"get_sessions", second, ReadCoverage::session, 0,
                               WorkoutObservation{second, 0, 0}};
   CHECK_EQ(hands.read().observations(), (std::vector<SessionObservation>{b, a, b, a}));
+}
+
+TEST(gym_save_note_is_append_only_owner_scoped_and_granted_as_a_write) {
+  Harness h;
+  const auto input = parse(R"({"id":"note_save001","title":"Schedule","body":"I train on Monday and Thursday."})");
+  h.notes.saveNote(Note{NoteId{"note_hand001"}, uid(), "Priority", "Keep this first."});
+  CompositeToolHost host({ToolModule{h.tools, "Gym tools"}});
+  const auto denied = host.callTool("save_note", input, ToolCaller{uid(), ToolScope({{"gym", Access::read}})});
+  CHECK(denied.isError);
+  CHECK_EQ(h.repo.db.noteRows.size(), 1u);
+  const auto saved = h.call("save_note", input);
+  REQUIRE(!saved.isError);
+  Json::Value expected(Json::objectValue);
+  expected["saved"] = true;
+  expected["note"] = toJson(Note{NoteId{"note_save001"}, uid(), "Schedule", "I train on Monday and Thursday.", 1, h.clock.now});
+  CHECK_EQ(body(saved), expected);
+  CHECK_EQ(body(h.call("save_note", input)), expected);
+  CHECK(h.call("save_note", input, "u2").isError);
+  auto changed = input;
+  changed["body"] = "A different idea.";
+  CHECK(h.call("save_note", changed).isError);
+  CHECK_EQ(h.repo.db.noteRows.size(), 2u);
+  CHECK_EQ(h.repo.db.noteRows[0].body, std::string("Keep this first."));
+  h.notes.deleteNote(uid(), NoteId{"note_save001"});
+  CHECK_EQ(body(h.call("save_note", input)), expected);
+  CHECK_EQ(h.repo.db.noteRows.size(), 1u);
 }

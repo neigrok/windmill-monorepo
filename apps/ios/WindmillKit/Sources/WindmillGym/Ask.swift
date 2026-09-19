@@ -34,6 +34,7 @@ public struct AskStep: Equatable, Decodable, Sendable {
     }
 
     public var line: String? {
+        if tool == "save_note", failed { return "could not confirm a note save" }
         guard let phrase = Ask.phrase[tool] else { return nil }
         return failed ? phrase + " (nothing came back)" : phrase
     }
@@ -259,6 +260,7 @@ public enum Ask {
         "list_routines": "read your program",
         "get_stats": "read your movement history",
         "list_notes": "read your notes",
+        "save_note": "saved a note",
         "list_bodyweight": "read your bodyweight",
         "create_routine": "created a routine",
         "propose_routine_change": "wrote a proposal for one of your routines",

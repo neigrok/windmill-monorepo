@@ -73,6 +73,8 @@ class AskTests {
         assertEquals("read your recent workouts", AskStep("list_sessions").phrase)
         assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase)
         assertEquals("read your notes", AskStep("list_notes").phrase)
+        assertEquals("saved a note", AskStep("save_note").phrase)
+        assertEquals("could not confirm a note save", AskStep("save_note", failed = true).phrase)
         assertEquals("read your bodyweight", AskStep("list_bodyweight").phrase)
     }
 
@@ -87,7 +89,7 @@ class AskTests {
         )
         assertEquals("the same table the web draws from, plus the notes and bodyweight reads",
             setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines",
-                "get_stats", "list_notes", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
+                "get_stats", "list_notes", "save_note", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
             Ask.phrases.keys)
     }
 

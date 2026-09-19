@@ -70,6 +70,8 @@ final class AskReceiptTests: XCTestCase {
         XCTAssertEqual(AskStep(tool: "get_stats", failed: true).line,
                        "read your movement history (nothing came back)")
         XCTAssertEqual(AskStep(tool: "list_notes").line, "read your notes")
+        XCTAssertEqual(AskStep(tool: "save_note").line, "saved a note")
+        XCTAssertEqual(AskStep(tool: "save_note", failed: true).line, "could not confirm a note save")
     }
 
     func testAToolThisBuildHasNoPhraseForPrintsNothingAndTheReceiptStays() throws {
@@ -94,6 +96,7 @@ final class AskReceiptTests: XCTestCase {
             "list_routines": "read your program",
             "get_stats": "read your movement history",
             "list_notes": "read your notes",
+            "save_note": "saved a note",
             "list_bodyweight": "read your bodyweight",
             "create_routine": "created a routine",
             "propose_routine_change": "wrote a proposal for one of your routines",

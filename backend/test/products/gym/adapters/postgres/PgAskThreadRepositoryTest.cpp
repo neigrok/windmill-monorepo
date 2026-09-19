@@ -1,5 +1,6 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
+#include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymTools.h"
@@ -160,7 +161,8 @@ TEST(pg_coach_evidence_survives_corrections_renames_and_deletion_of_its_source) 
   TrainingService training{log, other.program, clock, tokens};
   CatalogService catalog{other.catalog};
   ProgramService program{other.program, clock};
-  NotesService notes{other.notes, clock};
+  PgNotesRepository noteStore{wm::pgTestPool()};
+  NotesService notes{noteStore, clock};
   BodyweightService bodyweight{other.bodyweight};
   ThreadService conversations{threads, clock};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
@@ -291,7 +293,8 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   TrainingService training{log, routines, clock, tokens};
   CatalogService catalog{other.catalog};
   ProgramService program{routines, clock};
-  NotesService notes{other.notes, clock};
+  PgNotesRepository noteStore{wm::pgTestPool()};
+  NotesService notes{noteStore, clock};
   BodyweightService bodyweight{other.bodyweight};
   ThreadService conversations{threads, clock};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
@@ -490,7 +493,8 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
   TrainingService training{log, routines, clock, tokens};
   CatalogService catalog{other.catalog};
   ProgramService program{routines, clock};
-  NotesService notes{other.notes, clock};
+  PgNotesRepository noteStore{wm::pgTestPool()};
+  NotesService notes{noteStore, clock};
   BodyweightService bodyweight{other.bodyweight};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
   fake::FakeAsk agent;
@@ -504,7 +508,9 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
                 [&](AskReply reply) { promise.set_value(std::move(reply)); }, request);
     return future.get();
   };
-  agent.plan = {{"list_notes", Json::Value(Json::objectValue)}, {"list_exercises", Json::Value(Json::objectValue)},
+  agent.plan = {{"list_notes", Json::Value(Json::objectValue)},
+      {"save_note", wm::parse(R"({"id":"note_model001","title":"Schedule","body":"I train on Monday and Thursday."})")},
+      {"list_exercises", Json::Value(Json::objectValue)},
       {"create_routine", wm::parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
   agent.answers = false;
   const auto failed = ask(owner, "Create my upper body routine", "req_durable01");
@@ -513,18 +519,25 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
   const auto result = failed.generation->results.front();
   CHECK_EQ(routines.routines(owner).size(), 1u);
   CHECK_FALSE(threads.generation(wm::UserId{kOther}, thread, "req_durable01").has_value());
-  CHECK_FALSE(threads.operation(wm::UserId{kOther}, thread, failed.generation->id).has_value());
+  CHECK(threads.operations(wm::UserId{kOther}, thread, failed.generation->id).empty());
   CHECK_FALSE(threads.messagePage(wm::UserId{kOther}, thread, 0, 50).has_value());
   CHECK(ask(wm::UserId{kOther}, "Create my upper body routine", "req_durable01").refusal == AskRefusal::threadTaken);
-  auto uncertain = *threads.operation(owner, thread, failed.generation->id);
-  uncertain.result.reset();
-  threads.saveOperation(owner, thread, failed.generation->id, uncertain);
+  const auto operations = threads.operations(owner, thread, failed.generation->id);
+  REQUIRE_EQ(operations.size(), 2u);
+  for (auto uncertain : operations) {
+    uncertain.result.reset();
+    threads.saveOperation(owner, thread, failed.generation->id, uncertain);
+  }
+  REQUIRE_EQ(noteStore.notes(owner).size(), 1u);
+  noteStore.deleteNote(owner, noteStore.notes(owner).front().id);
   CHECK(program.deleteRoutine(owner, RoutineId{result.routineId}));
   agent.answers = true;
   const auto recovered = ask(owner, "Create my upper body routine", "req_durable01");
   REQUIRE(recovered.answer.ok);
   CHECK_EQ(recovered.generation->results, (std::vector<CoachResult>{result}));
   CHECK(routines.routines(owner).empty());
+  CHECK(noteStore.notes(owner).empty());
+  CHECK(agent.seenTurns.back().text.find("Server-observed note save already completed") != std::string::npos);
   const auto history = threads.messagePage(owner, thread, 0, 50);
   REQUIRE(history.has_value());
   REQUIRE_EQ(history->turns.size(), 2u);
@@ -722,7 +735,8 @@ TEST(pg_coach_two_services_classify_replays_and_conflicts_while_one_model_holds_
   TrainingService training{log, routines, clock, tokens};
   CatalogService catalog{other.catalog};
   ProgramService program{routines, clock};
-  NotesService notes{other.notes, clock};
+  PgNotesRepository noteStore{wm::pgTestPool()};
+  NotesService notes{noteStore, clock};
   BodyweightService bodyweight{other.bodyweight};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
   struct BlockingAgent : fake::FakeAsk {
@@ -776,4 +790,45 @@ TEST(pg_coach_two_services_classify_replays_and_conflicts_while_one_model_holds_
   CHECK_EQ(submit(second, owner, "Question", "req_pg_busy1").get().generation, completed.generation);
   CHECK_EQ(secondAgent.runs, 0);
   CHECK_EQ(firstRepository.thread(owner, thread)->turns.size(), 2u);
+}
+
+TEST(pg_coach_operation_collection_reads_legacy_single_action_and_preserves_both_actions) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repo{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_ops00001"};
+  openedAt(repo, thread.str(), "Remember my schedule and create a routine");
+  AskGeneration generation{"gen_ops00001", "req_ops00001", "Remember my schedule and create a routine"};
+  generation.atMs = kNow;
+  repo.saveGeneration(owner, thread, generation);
+  CoachOperation routine{"op_routine01", "create_routine", wm::parse(R"({"id":"rt_ops00001"})")};
+  repo.saveOperation(owner, thread, generation.id, routine);
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("UPDATE gym_ask_generations SET operation=operation->0 WHERE id=$1", generation.id);
+    txn.commit();
+  }
+  auto loaded = repo.operations(owner, thread, generation.id);
+  REQUIRE_EQ(loaded.size(), 1u);
+  CHECK_EQ(loaded.front().id, routine.id);
+  CHECK_EQ(loaded.front().arguments, routine.arguments);
+  CoachOperation note{"op_note0001", "save_note", wm::parse(R"({"id":"note_ops001","title":"Schedule","body":"Monday and Thursday."})")};
+  repo.saveOperation(owner, thread, generation.id, note);
+  note.result = wm::ToolResult::json(wm::parse(R"({"saved":true,"note":{"id":"note_ops001"}})"));
+  repo.saveOperation(owner, thread, generation.id, note);
+  loaded = repo.operations(owner, thread, generation.id);
+  REQUIRE_EQ(loaded.size(), 2u);
+  CHECK_EQ(loaded[0].arguments, routine.arguments);
+  CHECK_EQ(loaded[1].arguments, note.arguments);
+  REQUIRE(loaded[1].result.has_value());
+  CHECK_EQ(loaded[1].result->payload, note.result->payload);
+  CHECK(repo.operations(wm::UserId{kOther}, thread, generation.id).empty());
+  bool refused = false;
+  try { repo.saveOperation(wm::UserId{kOther}, thread, generation.id, note); }
+  catch (const std::runtime_error&) { refused = true; }
+  CHECK(refused);
+  CHECK_EQ(repo.operations(owner, thread, generation.id).size(), 2u);
+  reset();
 }

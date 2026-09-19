@@ -20,7 +20,7 @@ session. One backend serves all three.
 surfaces. What that means in practice:
 
 - **Notes is built end to end.** A `gym_notes` table, four owner-scoped routes under
-  `/v1/gym/notes` (`routes.cpp:235-258`: list, reorder, save, delete), a read-level `list_notes` tool
+  `/v1/gym/notes` (`routes.cpp:235-258`: list, reorder, save, delete), a read-level `list_notes` tool and append-only write-level `save_note` tool
   that opens every Coach conversation, the account footprint, and a Notes screen on all three
   surfaces. No CSV: the export is out of the product on every surface (`19-connected-log.md`).
 - **Bodyweight is built end to end** (`11-bodyweight.md`). A `gym_bodyweight` table keyed
@@ -1792,3 +1792,17 @@ costs.
 
 Everything else this section states is read off the tree at the symbols it names, in the same way as
 the rest of this document.
+
+## Coach prompt and Notes persistence
+
+The product prompt preserves the owner's main/style/workflow/boundaries text verbatim, with factual
+tool and privacy rules separated. Coach reads sessions and Notes before each model run. `save_note`
+can append one useful new user-provided insight alongside a routine creation/proposal, using durable
+operation identities and immutable save receipts. Exact text deduplicates; edits and deletions by
+the user are never undone by retry. No client result kind changes. New note saves share the existing
+Notes limits and appear at bottom precedence. The optimized backend build and Postgres-enabled ctest
+pass: 967 domain, 272 MCP and 1003 adapter cases, with no skips. New coverage includes immutable
+receipts after edits/deletion, cross-owner refusals, duplicate/cap/concurrent saves, old single-operation
+records, routine-plus-note retry recovery, corrected-write lost acknowledgements and recovered Stop
+receipts that preserve prior evidence. Focused note-receipt phrase tests pass on Android (14), iOS (7)
+and web (7). No live provider behavior is claimed by these tests.

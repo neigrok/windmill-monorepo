@@ -231,7 +231,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // preferences document, which is a whole-row replace that would discard one of two open screens.
   // The id is the client's to mint, the write is an upsert on it, and the list's order is
   // precedence — replaced whole by the PUT on the collection, never nudged one row at a time.
-  // Coach and every connected agent read these through `list_notes`; nothing writes them but a hand.
+  // Coach and connected agents read Notes; save_note appends insights without changing existing notes.
   app.registerHandler(
       "/v1/gym/notes",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

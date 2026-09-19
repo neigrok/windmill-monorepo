@@ -9,6 +9,7 @@ export const TOOL_PHRASE = {
   list_routines: 'read your program',
   get_stats: 'read your movement history',
   list_notes: 'read your notes',
+  save_note: 'saved a note',
   list_bodyweight: 'read your bodyweight',
   create_routine: 'created a routine',
   propose_routine_change: 'wrote a proposal for one of your routines',
@@ -26,7 +27,9 @@ export function stepsLine(steps) {
   for (const step of steps) {
     const phrase = TOOL_PHRASE[step.tool];
     if (!phrase) continue;
-    const said = phrase + (step.failed ? ' (nothing came back)' : '');
+    const said = step.tool === 'save_note' && step.failed
+      ? 'could not confirm a note save'
+      : phrase + (step.failed ? ' (nothing came back)' : '');
     if (!seen.includes(said)) seen.push(said);
   }
   if (seen.length === 0) return null;
