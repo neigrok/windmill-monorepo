@@ -24,18 +24,19 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onKeep: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     AlertDialog(
         onDismissRequest = onKeep,
-        containerColor = GymSkin.surface,
-        titleContentColor = GymSkin.ink,
-        textContentColor = GymSkin.inkDim,
+        containerColor = skin.surface,
+        titleContentColor = skin.ink,
+        textContentColor = skin.inkDim,
         title = { Text(title, style = WindmillFont.display(19)) },
         text = body?.let { { Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp)) } },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = if (destructive) GymSkin.alarmInk else GymSkin.accent,
+                    contentColor = if (destructive) skin.alarmInk else skin.accent,
                 ),
             ) {
                 Text(confirm, style = WindmillFont.body(15, FontWeight.Bold))
@@ -44,7 +45,7 @@ fun ConfirmDialog(
         dismissButton = {
             TextButton(
                 onClick = onKeep,
-                colors = ButtonDefaults.textButtonColors(contentColor = GymSkin.inkDim),
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim),
             ) {
                 Text(keep, style = WindmillFont.body(15, FontWeight.SemiBold))
             }

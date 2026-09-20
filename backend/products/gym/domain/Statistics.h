@@ -90,4 +90,56 @@ struct Statistics {
 // Stored nowhere.
 Statistics statistics(const TrainingLog& log);
 
+struct PerformedFact {
+  SetId set;
+  double weightKg;
+  int reps;
+  std::optional<double> rpe;
+
+  bool operator==(const PerformedFact&) const = default;
+};
+
+struct EstimatedFact {
+  PerformedFact performed;
+  double e1rm;
+
+  bool operator==(const EstimatedFact&) const = default;
+};
+
+struct MovementSessionFact {
+  ExerciseId exercise;
+  int workingSetCount;
+  PerformedFact heaviest;
+  std::optional<EstimatedFact> estimate;
+
+  bool operator==(const MovementSessionFact&) const = default;
+};
+
+struct ProgressSession {
+  SessionId session;
+  std::uint64_t startedAtMs;
+  std::vector<MovementSessionFact> movements;
+
+  bool operator==(const ProgressSession&) const = default;
+};
+
+struct StatsProgress {
+  std::uint64_t asOfMs;
+  std::vector<ProgressSession> sessions;
+
+  bool operator==(const StatsProgress&) const = default;
+};
+
+// Raw working sets of finished sessions, ordered by (startedAtMs, session, exercise, set).
+struct ProgressSet {
+  SessionId session;
+  std::uint64_t startedAtMs;
+  ExerciseId exercise;
+  PerformedFact performed;
+
+  bool operator==(const ProgressSet&) const = default;
+};
+
+StatsProgress statsProgress(const std::vector<ProgressSet>& history, std::uint64_t asOfMs);
+
 }

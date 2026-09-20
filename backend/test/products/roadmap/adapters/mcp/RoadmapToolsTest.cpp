@@ -797,7 +797,7 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   h.call("connect", toGhost);
 
   h.call("set_progress", mark("a", "complete"));
-  h.call("set_progress", mark("b", "active"));
+  h.call("set_progress", mark("b", "complete"));
   h.call("delete_node", with("id", "b"));
 
   ToolResult result = h.call("prune", kNoArgs);
@@ -810,7 +810,7 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   CHECK(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
   const Json::Value prog = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(prog["completed"].size(), 1u);
-  CHECK(prog["inProgress"].empty());
+  CHECK_FALSE(prog.isMember("inProgress"));
 }
 
 // --- The read projections (adapters/mcp/ReadShape.h) ---------------------------------------
@@ -842,7 +842,7 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("a", "none"));
   const Json::Value progress = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(keys(progress), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
+  CHECK_EQ(keys(progress), (std::vector<std::string>{"completed", "outOfOrder"}));
 }
 
 TEST(mcp_fields_round_trips_every_field_of_a_node) {
@@ -889,7 +889,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["prerequisites"][0].asString(), std::string("a"));
   CHECK_EQ(b["position"]["x"].asDouble(), 12.0);
   CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
-  CHECK_EQ(b["seedStatus"].asString(), std::string("active"));
+  CHECK_EQ(b["seedStatus"].asString(), std::string("none"));
   CHECK_EQ(b["status"].asString(), std::string("none"));
   CHECK_EQ(b["state"].asString(), std::string("locked"));
   CHECK_EQ(b["description"].asString(), std::string("the whole annotation"));
@@ -992,14 +992,14 @@ TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   h.call("set_progress", mark("b", "none"));
 
   const Json::Value lean = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
+  CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "outOfOrder"}));
   REQUIRE_EQ(lean["completed"].size(), 1u);
   CHECK_EQ(lean["completed"][0].asString(), std::string("a"));
 
   Json::Value args(Json::objectValue);
-  args["fields"] = list({"completed", "inProgress", "cleared"});
+  args["fields"] = list({"completed", "cleared"});
   const Json::Value whole = body(h.call("get_progress", args));
-  CHECK_EQ(keys(whole), (std::vector<std::string>{"cleared", "completed", "inProgress"}));
+  CHECK_EQ(keys(whole), (std::vector<std::string>{"cleared", "completed"}));
   REQUIRE_EQ(whole["cleared"].size(), 1u);
   CHECK_EQ(whole["cleared"][0].asString(), std::string("b"));
 }
@@ -1028,7 +1028,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult wrongProgress = h.call("get_progress", progressArgs);
   CHECK(wrongProgress.isError);
   CHECK_EQ(message(wrongProgress),
-           std::string("get_progress: fields[0] \"nodes\" is not one of {completed, inProgress, cleared, outOfOrder}"));
+           std::string("get_progress: fields[0] \"nodes\" is not one of {completed, cleared, outOfOrder}"));
 }
 
 TEST(mcp_limit_and_cursor_walk_the_whole_set_exactly_once) {
@@ -1112,13 +1112,13 @@ TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
   const Json::Value tree = body(h.call("get_tree", args))["tree"]["nodes"];
   CHECK_EQ(ids(tree), (std::vector<std::string>{"doing", "done", "untouched"}));
   CHECK_EQ(keys(tree[0]), (std::vector<std::string>{"id", "status"}));
-  CHECK_EQ(tree[0]["status"].asString(), std::string("active"));
+  CHECK_EQ(tree[0]["status"].asString(), std::string("none"));
   CHECK_EQ(tree[1]["status"].asString(), std::string("complete"));
   CHECK_EQ(tree[2]["status"].asString(), std::string("none"));
 
   const Json::Value found = body(h.call("find_nodes", args))["nodes"];
   CHECK_EQ(ids(found), (std::vector<std::string>{"doing", "done", "untouched"}));
-  CHECK_EQ(found[0]["status"].asString(), std::string("active"));
+  CHECK_EQ(found[0]["status"].asString(), std::string("none"));
   CHECK_EQ(found[1]["status"].asString(), std::string("complete"));
   CHECK_EQ(found[2]["status"].asString(), std::string("none"));
 
@@ -1180,8 +1180,8 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   h.call("set_progress", mark("b", "active"));
   Json::Value found = body(h.call("find_nodes", args))["nodes"];
   CHECK_EQ(ids(found), (std::vector<std::string>{"a", "b", "c"}));
-  CHECK_EQ(found[1]["state"].asString(), std::string("active"));
-  CHECK_EQ(found[1]["status"].asString(), std::string("active"));
+  CHECK_EQ(found[1]["state"].asString(), std::string("available"));
+  CHECK_EQ(found[1]["status"].asString(), std::string("none"));
   CHECK_EQ(found[2]["state"].asString(), std::string("locked"));
 
   h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
@@ -1233,7 +1233,7 @@ TEST(mcp_find_nodes_by_state_is_the_frontier_in_one_call) {
   const ToolResult bogus = h.call("find_nodes", with("state", "bogus"));
   CHECK(bogus.isError);
   CHECK_EQ(message(bogus),
-           std::string("find_nodes: state \"bogus\" is not one of {locked, available, active, complete}"));
+           std::string("find_nodes: state \"bogus\" is not one of {locked, available, complete}"));
 }
 
 TEST(mcp_state_still_answers_on_an_untidy_tree) {
@@ -1285,7 +1285,7 @@ TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {
   h.call("set_progress", mark("shipped", "active"));
   const Json::Value marked = body(h.call("find_nodes", args))["nodes"][0];
   CHECK_EQ(marked["seedStatus"].asString(), std::string("complete"));
-  CHECK_EQ(marked["status"].asString(), std::string("active"));
+  CHECK_EQ(marked["status"].asString(), std::string("none"));
 }
 
 TEST(mcp_a_query_matches_a_node_by_its_own_id_and_ranks_the_exact_one_first) {
@@ -1394,7 +1394,7 @@ Json::Value edge(const char* from, const char* to) {
   return e;
 }
 
-// a -> b -> c -> d, with the caller's marks a complete, b complete, c active.
+// a -> b -> c -> d, with the caller's marks a complete, b complete, c cleared.
 void chain(Harness& h) {
   for (const char* id : {"a", "b", "c", "d"}) h.call("create_node", node(id, id));
   h.call("connect", edge("a", "b"));
@@ -1462,7 +1462,7 @@ TEST(mcp_delete_node_prune_drops_the_edges_it_dangles_and_the_callers_marks_in_o
   CHECK_EQ(receipt["seq"].asInt64(), before + 1);
   CHECK_EQ(receipt["ids"], list({"b", "c"}));
   CHECK_EQ(receipt["pruned"]["edges"].asInt(), 3);
-  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 2);
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 1);
   CHECK_FALSE(receipt["diagnosticsClean"].asBool());  // a -> ghost was there before
   CHECK_EQ(introduced(receipt), std::vector<std::string>{});
 
@@ -1474,7 +1474,7 @@ TEST(mcp_delete_node_prune_drops_the_edges_it_dangles_and_the_callers_marks_in_o
   CHECK_EQ(dangling[0]["to"].asString(), std::string("ghost"));
   const Json::Value progress = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(progress["completed"], list({"a"}));
-  CHECK(progress["inProgress"].empty());
+  CHECK_FALSE(progress.isMember("inProgress"));
 
   // Nothing left to prune once the delete carried its own cleanup; the tree's old dirt is prune's.
   const Json::Value swept = body(h.call("prune", kNoArgs));
@@ -2054,7 +2054,7 @@ TEST(mcp_import_subgraph_dry_run_echoes_the_tombstones_and_kept_edges_and_change
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(ids(got["tree"]["nodes"]), (std::vector<std::string>{"a", "b", "c", "n"}));
   CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"a", "c"}));
-  CHECK_EQ(strings(body(h.call("get_progress", kNoArgs))["inProgress"]), (std::vector<std::string>{"b"}));
+  CHECK_EQ(strings(body(h.call("get_progress", kNoArgs))["completed"]), (std::vector<std::string>{}));
 }
 
 TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
@@ -2451,7 +2451,7 @@ TEST(mcp_set_progress_out_of_order_is_acknowledged_kept_and_shown) {
   CHECK_EQ(body(receipt)["status"].asString(), std::string("complete"));
 
   Json::Value overlay = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(keys(overlay), (std::vector<std::string>{"completed", "inProgress", "outOfOrder"}));
+  CHECK_EQ(keys(overlay), (std::vector<std::string>{"completed", "outOfOrder"}));
   REQUIRE_EQ(overlay["outOfOrder"].size(), 1u);
   CHECK_EQ(overlay["outOfOrder"][0].asString(), std::string("b"));
   REQUIRE_EQ(overlay["completed"].size(), 1u);
@@ -2516,7 +2516,7 @@ TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing)
   active["outOfOrder"] = true;
   CHECK_EQ(message(h.call("set_progress", active)),
            std::string("set_progress: argument \"outOfOrder\" acknowledges completing a node before its "
-                       "prerequisites, so it rides status \"complete\" only, got \"active\""));
+                       "prerequisites, so it rides status \"complete\" only, got \"none\""));
 
   Json::Value typed = markArgs("b", "complete");
   typed["outOfOrder"] = "yes";
@@ -2596,7 +2596,7 @@ TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag)
     if (tool.name() != "get_progress") continue;
     CHECK_EQ(tool.descriptor["description"].asString(),
              std::string("The caller's private progress overlay for a roadmap: the node ids that are "
-                         "completed, those in progress, and outOfOrder — the subset of completed whose "
+                         "completed, and outOfOrder — the subset of completed whose "
                          "set_progress carried outOfOrder:true. Per-user, separate from the shared "
                          "structure."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
@@ -2864,4 +2864,22 @@ TEST(mcp_get_nodes_is_bounded_and_private_and_uses_exact_ids) {
   CHECK_EQ(message(h.call("get_nodes", parse(R"({"nodeIds":["n0"]})"))), std::string("get_nodes: no such tree \"t\""));
   CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"n0","label":"No"}]})"))), std::string("patch_nodes: no such tree \"t\""));
   CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"n0","to":"n1"}]})"))), std::string("change_edges: no such tree \"t\""));
+}
+
+TEST(mcp_legacy_progress_aliases_clear_without_completing_prerequisites) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  h.call("connect", edge("a", "b"));
+  h.call("set_progress", mark("a", "complete"));
+  CHECK_FALSE(h.call("set_progress", mark("a", "active")).isError);
+  CHECK_FALSE(h.call("set_progress", mark("b", "inProgress")).isError);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"completed", "cleared", "outOfOrder"});
+  CHECK_EQ(body(h.call("get_progress", args)),
+           parse(R"({"completed":[],"cleared":["a","b"],"outOfOrder":[]})"));
+  args["fields"] = list({"id", "state"});
+  CHECK_EQ(body(h.call("get_tree", args))["tree"]["nodes"],
+           parse(R"([{"id":"a","state":"available"},{"id":"b","state":"locked"}])"));
 }

@@ -1714,6 +1714,73 @@ TEST(gym_stats_of_an_untrained_account_is_two_empty_lists) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[],"weeks":[]})"));
 }
 
+TEST(gym_stats_progress_requires_a_signed_in_owner) {
+  Harness h;
+  const auto request = getRequest("/v1/gym/stats");
+  request->setParameter("projection", "progress");
+
+  const auto response = send(h.training, &TrainingApi::stats, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to open your training log"})"));
+}
+
+TEST(gym_stats_progress_answers_the_complete_qualified_identity_and_effort_contract) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  h.repo.db.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'060'000});
+  h.repo.db.sets = {
+      {setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"}, 1,
+       100, 1, SetKind::working, std::nullopt, "private note", 1'700'000'010'000},
+      {setId("set_11111112"), sid("ses_11111111"), ExerciseId{"bench-press"}, 2,
+       90, 10, SetKind::working, 6.5, "", 1'700'000'020'000},
+      {setId("set_11111113"), sid("ses_11111111"), ExerciseId{"bench-press"}, 3,
+       90, 8, SetKind::working, 7.5, "", 1'700'000'030'000},
+      {setId("set_11111114"), sid("ses_11111111"), ExerciseId{"chin-up"}, 1,
+       -10, 8, SetKind::working, 8, "", 1'700'000'040'000}};
+  const auto request = getRequest("/v1/gym/stats", "s-live");
+  request->setParameter("projection", "progress");
+
+  const auto response = send(h.training, &TrainingApi::stats, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(
+      R"({"asOf":1700000000000,"sessions":[{"movements":[)"
+      R"({"estimate":{"e1rm":114.0,"reps":8,"rpe":7.5,"setId":"set_11111113","weightKg":90.0},)"
+      R"("exerciseId":"bench-press","heaviest":{"reps":1,"setId":"set_11111111","weightKg":100.0},)"
+      R"("workingSetCount":3},)"
+      R"({"exerciseId":"chin-up","heaviest":{"reps":8,"rpe":8.0,"setId":"set_11111114","weightKg":-10.0},)"
+      R"("workingSetCount":1}],"sessionId":"ses_11111111","startedAt":1700000000000}]})"));
+}
+
+TEST(gym_stats_progress_empty_is_explicit_and_another_owner_has_no_rows) {
+  Harness h;
+  h.signIn("s-live");
+  h.repo.db.sessions.push_back(Session{sid("ses_11111111"), uid("other"),
+                                      1'700'000'000'000, 1'700'000'060'000});
+  h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"),
+      ExerciseId{"bench-press"}, 1, 100, 1, SetKind::working, 8, "", 1'700'000'030'000});
+  const auto request = getRequest("/v1/gym/stats", "s-live");
+  request->setParameter("projection", "progress");
+
+  const auto response = send(h.training, &TrainingApi::stats, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"asOf":1700000000000,"sessions":[]})"));
+}
+
+TEST(gym_stats_only_opts_into_the_progress_projection_by_its_exact_name) {
+  Harness h;
+  h.signIn("s-live");
+  const auto request = getRequest("/v1/gym/stats", "s-live");
+  request->setParameter("projection", "unknown");
+
+  const auto response = send(h.training, &TrainingApi::stats, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[],"weeks":[]})"));
+}
+
 TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one) {
   Harness h;
   h.signIn("s-live");

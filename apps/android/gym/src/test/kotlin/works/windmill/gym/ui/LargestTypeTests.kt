@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import org.junit.Assert.assertEquals
@@ -85,6 +87,31 @@ class LargestTypeTests {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    @Test
+    fun bothHourClocksStayReadableAtTwoHundredPercentOnANarrowScreen() {
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GymMaterial {
+                    Box(Modifier.width(320.dp).padding(horizontal = 20.dp)) {
+                        WorkoutClockRow(works.windmill.gym.domain.WorkoutClocks(
+                            works.windmill.gym.domain.Session("session", 0),
+                            listOf(works.windmill.gym.domain.TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 3_600_000)),
+                            36_123_000,
+                        ))
+                    }
+                }
+            }
+        }
+        val workout = compose.onNode(hasContentDescription("Workout time, 10:02:03")).assertIsDisplayed().getBoundsInRoot()
+        val sinceSet = compose.onNode(hasContentDescription("Since last set, 9:02:03")).assertIsDisplayed().getBoundsInRoot()
+        listOf(workout, sinceSet).forEach { bounds ->
+            assertTrue("clock fits in280dp content: $bounds", bounds.left >= 20.dp && bounds.right <= 300.dp)
+            assertTrue("clock keeps readable height: $bounds", bounds.height >= 28.dp)
+        }
+        assertTrue("clock pair wraps without overlap", sinceSet.top >= workout.bottom)
+    }
 
     // What is left for the region the block is pinned against. Below this a lifter reads a thread —
     // or a diff they are about to be held to — through a slot.
@@ -182,7 +209,7 @@ class LargestTypeTests {
         val left = with(compose.density) { scroller.size.height.toDp() }
         assertTrue("the diff is $left at fontScale 2.0", left >= floor)
 
-        val apply = compose.onNodeWithText(Proposal.apply).fetchSemanticsNode()
+        val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
         val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
             .fetchSemanticsNode()
         val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
@@ -293,10 +320,10 @@ class LargestTypeTests {
             compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
         }
 
-        compose.onNodeWithText("Bench Press").assertIsDisplayed()
-        compose.onNodeWithText("Set 2").assertIsDisplayed()
-        compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
-        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
+        compose.onNodeWithText("Bench Press").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Set 2").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasContentDescription("Movement 1 of 2")).performScrollTo().assertIsDisplayed()
+        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).performScrollTo().assertIsDisplayed().getBoundsInRoot()
         val region = scroller()
         assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
         assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())

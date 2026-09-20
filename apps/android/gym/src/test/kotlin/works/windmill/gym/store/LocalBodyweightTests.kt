@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.gym.domain.ClaimBatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -91,15 +92,14 @@ class LocalBodyweightTests {
     }
 
     @Test
-    fun testTheAnonymousShelfMovesOntoAConfirmedAccountSeatAndEveryRowIsOwed() {
+    fun testExplicitConsentMovesTheAnonymousShelfAndEveryRowIsOwed() {
         val file = file()
         val shelf = LocalBodyweight(file)
         shelf.record(WeighIn("2026-08-25", 82.4, recordedAt = 1_000))
 
-        shelf.adopt("u1", confirmed = false)
-        assertTrue("an unverified seat draws its own empty room", shelf.entries.isEmpty())
-
-        shelf.adopt("u1", confirmed = true)
+        shelf.adopt("u1")
+        assertTrue("selecting an account does not claim a reading", shelf.entries.isEmpty())
+        shelf.complete(ClaimBatch("weigh-in-approval", shelf.claimItems()), "u1")
         assertEquals(listOf("2026-08-25"), shelf.entries.map { it.dateLocal })
         assertEquals(listOf("2026-08-25"), shelf.owed.map { it.dateLocal })
 
@@ -133,5 +133,33 @@ class LocalBodyweightTests {
         shelf.letGo("2026-08-25")
         assertTrue(shelf.entries.isEmpty())
         assertTrue(shelf.owed.isEmpty())
+    }
+
+    @Test
+    fun aReadSettlesOnlyCanonicalNewerRowsAndKeepsNewerOrMissingLocalWritesAndDeletes() {
+        val shelf = LocalBodyweight(file(), deviceOwner = "u1")
+        val superseded = WeighIn("2026-08-20", 82.0, 2_000)
+        val newerLocal = WeighIn("2026-08-21", 81.5, 3_000)
+        val missingRemote = WeighIn("2026-08-22", 82.0, 4_000)
+        val equivalent = WeighIn("2026-08-24", 81.2, 6_000)
+        listOf(superseded, newerLocal, missingRemote, equivalent).forEach { shelf.record(it) }
+        shelf.delete("2026-08-23")
+        val revisions = (20..24).associate { day -> "2026-08-$day" to shelf.revision("2026-08-$day") }
+        val newerRemote = WeighIn("2026-08-20", 82.1, 3_000)
+        shelf.readBack(listOf(newerRemote, newerLocal.copy(weightKg = 85.0, recordedAt = 2_000),
+            WeighIn("2026-08-23", 90.0, 7_000), equivalent))
+
+        assertEquals(listOf(newerRemote, newerLocal, missingRemote, equivalent), shelf.entries)
+        assertEquals(listOf(newerLocal, missingRemote), shelf.owed)
+        assertEquals(listOf("2026-08-23"), shelf.deletions)
+        assertEquals(revisions, revisions.keys.associateWith(shelf::revision))
+        shelf.adopt("u2")
+        assertEquals(emptyList<WeighIn>(), shelf.entries)
+        shelf.record(WeighIn("2026-08-20", 70.0, 8_000))
+        shelf.delete("2026-08-20")
+        assertEquals(2L, shelf.revision("2026-08-20"))
+        shelf.adopt("u1")
+        assertEquals(revisions, revisions.keys.associateWith(shelf::revision))
+        assertEquals(listOf(newerRemote, newerLocal, missingRemote, equivalent), shelf.entries)
     }
 }

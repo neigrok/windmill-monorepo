@@ -293,7 +293,7 @@ data class RoutineEntry(
     val isOpen: Boolean get() = sets.isEmpty()
 }
 
-// `revision` is READ-ONLY on the wire; a PUT bumps it and supersedes every pending proposal.
+// Reads carry the current revision; edits may send their original revision as a stale-write guard.
 @Serializable
 data class Routine(
     val id: String,
@@ -680,15 +680,17 @@ data class RoutineWrite(
     val name: String,
     val position: Int,
     val entries: List<RoutineEntryWrite>,
+    @SerialName("revision") val expectedRevision: Int? = null,
 ) {
     // The whole document in position order: a PUT of only the changed line would delete the rest.
-    constructor(routine: Routine) : this(
+    constructor(routine: Routine, expectedRevision: Int? = null) : this(
         routine.id,
         routine.name,
         routine.position,
         routine.entries.sortedBy { it.position }.map {
             RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
         },
+        expectedRevision,
     )
 
     companion object {
@@ -768,4 +770,11 @@ object Ids {
         random.nextBytes(bytes)
         return prefix + bytes.joinToString("") { "%02x".format(it) }
     }
+}
+
+object LoggedSetLimits {
+    const val maxWeightKg = 500
+    const val maxReps = 99
+    fun permits(weightKg: Double, reps: Int): Boolean =
+        weightKg.isFinite() && kotlin.math.abs(weightKg) <= maxWeightKg && reps in 1..maxReps
 }

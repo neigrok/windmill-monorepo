@@ -87,7 +87,7 @@ class RowSwipeAccessibilityTests {
             RoutinesScreen(
                 store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
                 onJustStart = {}, onBuild = {}, onOpenRoutine = {},
-                onDeleteRoutine = { deleted += it }, onReview = {}, onOpenSettings = {}, onSignIn = {},
+                onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
             )
         }
 
@@ -95,7 +95,7 @@ class RowSwipeAccessibilityTests {
         compose.runOnIdle { assertEquals("nothing on the leading edge", emptyList<String>(), deleted) }
 
         assertEquals("the row draws no control for Delete, so the swipe's one act is declared by hand",
-            listOf("Delete Push Day"), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
+            listOf("Duplicate Push Day", "Delete Push Day"), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
 
         compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
         compose.runOnIdle {

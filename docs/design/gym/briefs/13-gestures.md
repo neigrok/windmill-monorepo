@@ -434,8 +434,8 @@ data.
 (`LoggerScreen.swift`; Android's `HorizontalPager` in `LoggerScreen.kt`). The reading region follows
 the finger on Android, revealing the adjacent movement's name, targets, sets and history. Reversing
 the drag brings the original movement back. Selection, rack prefill and any deviation question change
-only after the destination settles; a cancelled drag preserves the entered weight, reps and kind.
-The rack, progress dots and add control stay pinned. The dots describe the settled movement, and
+only after the destination settles; a cancelled drag preserves the entered weight and reps.
+The rack stays pinned; the dots and add control belong to the scrolling reading region. The dots describe the settled movement, and
 Android declares Previous movement and Next movement as custom actions on the title. There are no
 chevron buttons.
 
@@ -453,8 +453,8 @@ genuinely clear of is the *shell's* claim: it has no shell
 chrome, so there is no go-home swipe layered underneath as a simultaneous gesture. That is the iOS
 risk, and it does not exist here — where, at the logger, the room reports depth zero and the shell's
 edge still means home. Law 3's question is answered the same way on both: a stroke that starts inside
-the system's edge strip is never the room's. Android keeps the pager inside the reading region's
-horizontal gutters and adds no system-gesture exclusion.
+the system's edge strip is never the room's. Android uses one native horizontal scroll owner over
+the workout body, including clocks and rack, and adds no system-gesture exclusion.
 
 ## What does not ship, and why
 

@@ -18,9 +18,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version name for a dry-run release build (e.g. 0.2.0); the APK lands as an actions artifact, no release is created'
+        description: 'Version for an unpublished signing-input candidate (e.g. 0.8.0); local signing and acceptance are required'
         required: true
         type: string
+
+permissions:
+  contents: read
 
 concurrency:
   group: android-ci-${{ github.ref }}
@@ -43,16 +46,18 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - run: python3 -m unittest discover -s tools/tests -v
+
       # The ladder test finds packages/api-contract/gym-ladder.json by walking up from the project
       # directory, so the whole repo must be checked out.
       - run: ./gradlew build
+        env:
+          SENTRY_DSN: https://ci-placeholder@telemetry.invalid/1
 
-  release:
+  signing-input:
     if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'
     needs: build-and-test
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -62,72 +67,54 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Resolve the version
-        id: ver
+      - name: Install APK verification tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_HOME" "build-tools;36.0.0"
+
+      - name: Prepare the unpublished signing input
+        id: candidate
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            version="$DISPATCH_VERSION"
-          else
-            version="${GITHUB_REF#refs/tags/android-v}"
-          fi
-          if [ -z "$version" ]; then
-            echo "a bare android-v tag names no version" >&2
+          umask 077
+          python3 tools/release.py prepare
+
+      - name: Assemble the build candidate
+        env:
+          VERSION: ${{ steps.candidate.outputs.version }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          umask 077
+          if [ -z "$SENTRY_DSN" ]; then
+            echo "SENTRY_DSN is required for Android release observability." >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # With no keystore secrets set, app/build.gradle.kts falls back to the debug key.
-      - name: Arm signing
-        env:
-          KEYSTORE_B64: ${{ secrets.WINDMILL_ANDROID_KEYSTORE_B64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.WINDMILL_ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.WINDMILL_ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.WINDMILL_ANDROID_KEY_PASSWORD }}
-        run: |
-          present=0
-          for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            [ -n "${!v}" ] && present=$((present + 1))
-          done
-          if [ "$present" -eq 0 ]; then
-            echo "Signing: **debug key** (keystore secrets not set — sideload-ready, no store identity)" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if [ "$present" -ne 4 ]; then
-            echo "signing secrets are partially set ($present of 4) — set all four or none" >&2
-            exit 1
-          fi
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/windmill.keystore"
-          {
-            echo "WINDMILL_ANDROID_KEYSTORE=$RUNNER_TEMP/windmill.keystore"
-            echo "WINDMILL_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "WINDMILL_ANDROID_KEY_ALIAS=$KEY_ALIAS"
-            echo "WINDMILL_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
-          } >> "$GITHUB_ENV"
-          echo "Signing: **release keystore**" >> "$GITHUB_STEP_SUMMARY"
-
-      # run_number as versionCode: monotonic, so a later tag never ships a smaller code.
-      - name: Assemble the release APK
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          ./gradlew :app:assembleRelease \
+          if ! ./gradlew --no-daemon :app:assembleRelease \
             "-Pwindmill.versionName=$VERSION" \
-            "-Pwindmill.versionCode=$GITHUB_RUN_NUMBER"
-          cp app/build/outputs/apk/release/*.apk "windmill-$VERSION.apk"
+            "-Pwindmill.versionCode=$GITHUB_RUN_NUMBER" \
+            > "$RUNNER_TEMP/windmill-android-candidate-build.log" 2>&1; then
+            echo "Build candidate assembly failed; captured build output will be removed." >&2
+            exit 1
+          fi
 
-      - name: Create the GitHub Release
-        if: github.event_name == 'push'
+      - name: Remove captured build output
+        if: always()
+        run: |
+          rm -f -- "$RUNNER_TEMP/windmill-android-candidate-build.log"
+
+      - name: Verify the unpublished signing input
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: gh release create "$GITHUB_REF_NAME" "windmill-$VERSION.apk" --verify-tag --generate-notes
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          umask 077
+          python3 tools/release.py stage \
+            --apk-dir app/build/outputs/apk/release --out signing-input \
+            --build-tools "$ANDROID_HOME/build-tools/36.0.0"
 
-      - name: Upload the dry-run APK
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload the unpublished signing input
         uses: actions/upload-artifact@v5
         with:
-          name: windmill-${{ steps.ver.outputs.version }}
-          path: apps/android/windmill-*.apk
+          name: windmill-${{ steps.candidate.outputs.version }}-signing-input-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/android/signing-input/
           if-no-files-found: error

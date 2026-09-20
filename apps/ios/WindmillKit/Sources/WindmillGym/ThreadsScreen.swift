@@ -2,28 +2,23 @@ import SwiftUI
 import WindmillPlatform
 
 struct ThreadDoors {
-    let list: () async -> Result<[AskThread], AskRefusal>
-    // A success carrying nil is a conversation that is gone, not a failure.
-    let read: (String) async -> Result<AskThread?, AskRefusal>
     // Withheld: the row leaves the list and the DELETE waits out the window on the room's transient.
     let delete: (AskThread) -> Void
     let openThread: (String) -> Void
-    let openProposal: (String) -> Void
     let askSomethingNew: () -> Void
+    let page: (String?) async -> Result<CoachThreadPage, AskRefusal>
 }
 
 struct ThreadsScreen: View {
     let doors: ThreadDoors
-    // The list is read from the server and never crossed out locally, so a row whose delete is still
-    // withheld comes out of what is DRAWN — and walks straight back in when the undo lands. A
-    // conversation whose delete has LANDED leaves the store's list as well: `standing` is what the
-    // account holds and `drawn` is what the list shows, so the empty stance never reads a window and
-    // the count over the rows always does (`13-gestures.md`).
+    // Hidden rows return on Undo; settled deletes also leave the account’s visible history.
     @ObservedObject var withheld: WithheldWindow
 
     @Environment(\.gymSkin) private var skin
     @State private var served: [AskThread]?
     @State private var failure: AskRefusal?
+    @State private var nextCursor: String?
+    @State private var isLoading = false
 
     // What the ACCOUNT holds, which is what the empty stance reads. A conversation inside its window
     // is still on the log; one whose delete has LANDED is not, and the register is the only thing
@@ -46,10 +41,13 @@ struct ThreadsScreen: View {
                 if standing.isEmpty {
                     Section { empty }.modifier(ThreadRow())
                 } else {
-                    // The rows' count and not the account's, and nothing rather than a zero while
-                    // the window leaves no rows to caption.
-                    if !rows.isEmpty { Section { meta(rows.count) }.modifier(ThreadRow()) }
                     months(of: rows)
+                    if nextCursor != nil {
+                        Button("Load older conversations") { Task { await read(older: true) } }
+                            .frame(minHeight: GymTap.minimum)
+                            .disabled(isLoading)
+                    }
+                    if let failure { silence(failure.line) }
                 }
             } else if let failure {
                 Section { silence(failure.line) }.modifier(ThreadRow())
@@ -69,12 +67,6 @@ struct ThreadsScreen: View {
         .environment(\.defaultMinListRowHeight, 1)
         .safeAreaInset(edge: .bottom) { foot }
         .task { await read() }
-    }
-
-    private func meta(_ count: Int) -> some View {
-        Text(AskThreads.meta(count))
-            .font(GymType.numeral(11))
-            .foregroundStyle(skin.inkFaint)
     }
 
     private func months(of threads: [AskThread]) -> some View {
@@ -180,11 +172,18 @@ struct ThreadsScreen: View {
         .padding(.bottom, WindmillSpace.x2)
     }
 
-    private func read() async {
+    private func read(older: Bool = false) async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
         failure = nil
-        switch await doors.list() {
-        case .success(let found): served = found
-        case .failure(let why): failure = why
+        switch await doors.page(older ? nextCursor : nil) {
+            case .success(let found):
+                let retained = older ? served ?? [] : []
+                let known = Set(retained.map(\.id))
+                served = retained + found.threads.filter { !known.contains($0.id) }
+                nextCursor = found.nextCursor
+            case .failure(let why): failure = why
         }
     }
 
@@ -193,155 +192,6 @@ struct ThreadsScreen: View {
     private func hold(_ thread: AskThread) {
         GymConfirm.revealed()
         doors.delete(thread)
-    }
-
-    private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
-}
-
-// A stored turn is `{from, text, at}` and carries no accounting to print.
-struct ThreadScreen: View {
-    let threadId: String
-    let doors: ThreadDoors
-    // Receipt lines by proposal id, this visit's only; a reopened thread carries none.
-    let receipts: [String: String]
-    let undecided: Set<String>
-
-    @Environment(\.gymSkin) private var skin
-    @State private var thread: AskThread?
-    @State private var failure: String?
-    @State private var gone = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
-                if let thread {
-                    head(thread)
-                    turns(thread)
-                    ForEach(thread.proposals) { minted in
-                        proposal(minted)
-                        if let receipt = receipts[minted.id] { self.receipt(receipt) }
-                    }
-                } else if gone {
-                    Text("that conversation is gone")
-                        .font(GymType.numeral(13))
-                        .foregroundStyle(skin.inkFaint)
-                } else if let failure {
-                    silence(failure)
-                } else {
-                    ProgressView(AskThreads.reading)
-                        .font(GymType.numeral(13))
-                        .tint(skin.inkFaint)
-                        .foregroundStyle(skin.inkFaint)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, GymLayout.gutter)
-            .padding(.top, GymLayout.contentTop)
-            .padding(.bottom, GymLayout.scrollTail)
-        }
-        .task { await read() }
-        .onChange(of: receipts) { _, _ in Task { await read() } }
-        .onChange(of: undecided) { _, _ in Task { await read() } }
-    }
-
-    private func head(_ thread: AskThread) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(thread.title)
-                .font(WindmillFont.display(24))
-                .foregroundStyle(skin.ink)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-            Text([Readout.when(thread.createdAtMs, now: nowMs), thread.outcome.line]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " · "))
-                .font(GymType.numeral(11.5))
-                .foregroundStyle(skin.inkFaint)
-        }
-    }
-
-    private func turns(_ thread: AskThread) -> some View {
-        VStack(alignment: .leading, spacing: GymLayout.sectionGap) {
-            ForEach(Array((thread.turns ?? []).filter(\.isDrawn).enumerated()), id: \.offset) { _, turn in
-                if turn.from == .lifter {
-                    HStack {
-                        Spacer(minLength: WindmillSpace.x8)
-                        Text(turn.text)
-                            .font(WindmillFont.body(14.5))
-                            .foregroundStyle(skin.ink)
-                            .lineSpacing(4)
-                            .padding(WindmillSpace.x3)
-                            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                                .fill(skin.accentSoft))
-                            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                                .strokeBorder(skin.accent, lineWidth: 1))
-                    }
-                } else {
-                    Text(turn.text)
-                        .font(WindmillFont.body(14.5))
-                        .foregroundStyle(skin.ink)
-                        .lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    private func proposal(_ minted: ThreadProposal) -> some View {
-        Button { doors.openProposal(minted.id) } label: {
-            HStack(spacing: WindmillSpace.x2) {
-                Text(minted.line(undecided: undecided.contains(minted.id)))
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkDim)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(skin.inkFaint)
-            }
-            .padding(.horizontal, GymLayout.rowInset)
-            .frame(minHeight: GymTap.minimum)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                .strokeBorder(skin.line, lineWidth: 1))
-        }
-    }
-
-    private func receipt(_ line: String) -> some View {
-        Text(line)
-            .font(GymType.numeral(12.5, .bold))
-            .foregroundStyle(skin.inkDim)
-            .padding(.horizontal, GymLayout.rowInset)
-            .frame(minHeight: WindmillSpace.x8)
-            .background(Capsule().fill(skin.raised))
-    }
-
-    private func silence(_ line: String) -> some View {
-        VStack(alignment: .leading, spacing: GymLayout.blockGap) {
-            Text(line)
-                .font(GymType.numeral(13))
-                .foregroundStyle(skin.inkFaint)
-            Button { Task { await read() } } label: {
-                Text("Try again")
-                    .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                        .strokeBorder(skin.lineStrong, lineWidth: 1))
-            }
-        }
-    }
-
-    private func read() async {
-        failure = nil
-        switch await doors.read(threadId) {
-        case .success(let found):
-            thread = found
-            gone = found == nil
-        case .failure(let why):
-            failure = why.line
-        }
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

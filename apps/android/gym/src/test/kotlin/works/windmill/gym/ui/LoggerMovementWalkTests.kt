@@ -1,15 +1,25 @@
 package works.windmill.gym.ui
 
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import java.io.File
@@ -20,9 +30,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.rules.TemporaryFolder
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Exercise
@@ -51,13 +64,18 @@ class LoggerMovementWalkTests {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun logger(scope: CoroutineScope): TrainingStore {
-        val root = File(System.getProperty("java.io.tmpdir"), "walk-${System.nanoTime()}")
-        root.mkdirs()
+    @get:Rule val tmp = TemporaryFolder()
+    private val scopes = mutableListOf<CoroutineScope>()
+    @After fun stopStores() { scopes.forEach { it.cancel() } }
+
+    private fun logger(scope: CoroutineScope, threeMovements: Boolean = false, loggedSets: Int = 0): TrainingStore {
+        scopes += scope
+        val root = tmp.root
         val server = FakeTraining()
         server.catalog = listOf(
             Exercise(id = "bench-press", name = "Bench Press"),
             Exercise(id = "barbell-row", name = "Barbell Row"),
+            Exercise(id = "cable-fly", name = "Cable Fly"),
         )
         val store = TrainingStore(
             queue = SetQueue(File(root, "queue.json")),
@@ -79,7 +97,9 @@ class LoggerMovementWalkTests {
             // The walk is what the session HOLDS, in the order it was walked.
             store.choose("bench-press")
             store.choose("barbell-row")
+            if (threeMovements) store.choose("cable-fly")
             store.choose("bench-press")
+            repeat(loggedSets) { store.logSet(60.0, 5) }
         }
         compose.setContent {
             LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
@@ -148,6 +168,158 @@ class LoggerMovementWalkTests {
                 "bench-press", store.exerciseId)
         }
         scope.cancel()
+    }
+
+    @Test
+    fun swipesAcrossClocksRackAndLogButtonMoveOnceWithoutLoggingOrChangingClockAnchors() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, threeMovements = true, loggedSets = 1)
+        val session = store.session
+        val sets = store.sets.toList()
+
+        val weight = compose.onNode(hasContentDescription("Weight ", substring = true)).fetchSemanticsNode().boundsInRoot
+        compose.onRoot().performTouchInput {
+            swipe(weight.center, weight.center - Offset(width * 0.35f, 0f))
+        }
+        compose.runOnIdle { assertEquals("barbell-row", store.exerciseId) }
+        compose.onNodeWithText("Set weight").assertDoesNotExist()
+        compose.onNodeWithText("Log set").performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
+        compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
+
+        val clock = compose.onNode(hasContentDescription("Workout time,", substring = true)).fetchSemanticsNode().boundsInRoot
+        compose.onRoot().performTouchInput {
+            swipe(Offset(width * 0.8f, clock.center.y), Offset(width * 0.2f, clock.center.y))
+        }
+        compose.runOnIdle {
+            assertEquals("barbell-row", store.exerciseId)
+            assertEquals(session, store.session)
+            assertEquals(sets, store.sets)
+        }
+    }
+
+    @Test
+    fun aVerticalStartCancellationAndSystemEdgesNeverNavigate() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope)
+        title("Bench Press").performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, -70f))
+            moveTo(center + Offset(-220f, -70f))
+            up()
+        }
+        compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
+        compose.onNodeWithText("Log set").performTouchInput {
+            down(center)
+            moveTo(center + Offset(-150f, 0f))
+            cancel()
+        }
+        compose.onRoot().performTouchInput {
+            swipe(Offset(1f, height * 0.6f), Offset(width * 0.7f, height * 0.6f))
+        }
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), store.sets)
+        }
+    }
+
+    @Test
+    fun aSecondPointerCanTakeOverOneNativeSwipeWithoutLogging() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, threeMovements = true)
+        val session = store.session
+        compose.onNodeWithText("Log set").performTouchInput {
+            down(0, Offset(width * 0.9f, centerY))
+            moveTo(0, Offset(width * 0.65f, centerY), delayMillis = 300)
+            down(1, Offset(width * 0.65f, centerY))
+            up(0)
+            moveTo(1, Offset(width * 0.15f, centerY), delayMillis = 600)
+            advanceEventTime(200)
+            up(1)
+        }
+        compose.runOnIdle {
+            assertEquals("barbell-row", store.exerciseId)
+            assertEquals(session, store.session)
+            assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), store.sets)
+        }
+    }
+
+    @Test
+    fun horizontalSetStripKeepsItsDragAndDoesNotChangeMovement() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, loggedSets = 8)
+        val strip = compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
+                hasAnyAncestor(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)),
+        )
+        val before = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
+        strip.performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
+        val after = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
+        compose.runOnIdle {
+            assertTrue("the child strip actually scrolled", after < before)
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(8, store.sets.size)
+        }
+    }
+
+    @Test
+    fun aShortHorizontalButtonDragCancelsItsTapWithoutChangingMovementOrLogging() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope)
+        compose.onNodeWithText("Log set").performTouchInput {
+            down(center)
+            moveTo(center + Offset(-40f, 0f))
+            up()
+        }
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(0, store.sets.size)
+        }
+    }
+
+    @Test
+    fun aMovementChangeDuringADragCancelsTheOldNavigation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, threeMovements = true)
+        compose.onNodeWithText("Log set").performTouchInput {
+            down(center)
+            moveTo(center + Offset(-180f, 0f))
+        }
+        compose.runOnIdle { runBlocking { store.choose("barbell-row") } }
+        compose.onRoot().performTouchInput { up() }
+        compose.runOnIdle {
+            assertEquals("barbell-row", store.exerciseId)
+            assertEquals(0, store.sets.size)
+        }
+        title("Barbell Row").assertIsDisplayed()
+        compose.onNodeWithText("Log set").assertIsEnabled()
+
+        title("Barbell Row").performTouchInput {
+            swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
+        }
+        compose.runOnIdle {
+            assertEquals("cable-fly", store.exerciseId)
+            assertEquals(0, store.sets.size)
+        }
+        title("Cable Fly").assertIsDisplayed()
+        compose.onNodeWithText("Log set").assertIsEnabled()
+    }
+
+    @Test
+    fun numericEditorOwnsItsDragsAndOrdinaryButtonTapsStillWork() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope)
+        val reps = store.rack!!.reps
+        compose.onNodeWithContentDescription("one rep more").performClick()
+        compose.runOnIdle { assertEquals(reps + 1, store.rack!!.reps) }
+        compose.onNode(hasContentDescription("Weight ", substring = true)).performClick()
+        compose.onNodeWithText("Weight").assertIsDisplayed().performTouchInput {
+            swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
+        }
+        compose.onNodeWithText("Set weight").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(0, store.sets.size)
+        }
     }
 }
 

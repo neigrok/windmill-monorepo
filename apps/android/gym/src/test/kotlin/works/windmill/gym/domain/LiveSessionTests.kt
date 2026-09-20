@@ -16,6 +16,33 @@ private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
 
 class LiveOrderTests {
     @Test
+    fun workoutClocksUseEveryAcceptedSetAndRecomputeAfterDeleteUndoAndEdits() {
+        val session = Session("workout", 10_000)
+        val first = TrainingSet("first", "bench", weightKg = 60.0, reps = 5, completedAtMs = 25_000)
+        val latest = TrainingSet("latest", "row", weightKg = 20.0, reps = 8, kind = SetKind.Warmup, completedAtMs = 40_000)
+        val before = WorkoutClocks(session, emptyList(), 70_000)
+        assertEquals(listOf(60_000L, 60_000L), listOf(before.workoutMs, before.sinceSetMs))
+        assertEquals("Since start", before.sinceSetName)
+        val accepted = WorkoutClocks(session, listOf(latest, first), 70_000)
+        assertEquals(listOf(60_000L, 30_000L), listOf(accepted.workoutMs, accepted.sinceSetMs))
+        assertEquals("Since last set", accepted.sinceSetName)
+        assertEquals(45_000L, WorkoutClocks(session, listOf(first), 70_000).sinceSetMs)
+        assertEquals(30_000L, WorkoutClocks(session, listOf(first, latest.copy(weightKg = 22.5, reps = 9)), 70_000).sinceSetMs)
+        assertEquals(60_000L, WorkoutClocks(session, listOf(first, latest), 100_000).sinceSetMs)
+    }
+
+    @Test
+    fun finishedWorkoutClocksFreezeAndClockSkewCannotMakeNegativeReadings() {
+        val session = Session("workout", 10_000, finishedAtMs = 70_000)
+        val set = TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 40_000)
+        val frozen = WorkoutClocks(session, listOf(set), 900_000)
+        assertEquals(listOf(60_000L, 30_000L), listOf(frozen.workoutMs, frozen.sinceSetMs))
+        val skew = WorkoutClocks(session.copy(finishedAtMs = null), listOf(set), 5_000)
+        assertEquals(listOf(0L, 0L), listOf(skew.workoutMs, skew.sinceSetMs))
+        assertEquals(40_000L, skew.latestSetAtMs)
+    }
+
+    @Test
     fun testThePlanLeadsAndWhateverElseWasLiftedFollowsIt() {
         val order = LiveOrder.merged(
             held = emptyList(),
@@ -308,19 +335,19 @@ class LiveLinesTests {
     @Test
     fun testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {
         assertNull(LiveLines.onThisDeviceLine(0, Blocker.Offline))
-        assertEquals("1 set is saved on this device only. No signal down here — they flush when you’re back up.",
+        assertEquals("1 set is saved on this device only. They’ll sync when you’re online.",
                      LiveLines.onThisDeviceLine(1, Blocker.Offline))
-        assertEquals("3 sets are saved on this device only. No signal down here — they flush when you’re back up.",
+        assertEquals("3 sets are saved on this device only. They’ll sync when you’re online.",
                      LiveLines.onThisDeviceLine(3, Blocker.Offline))
     }
 
     @Test
     fun testTheStripNamesWhatBlockedTheSetsRatherThanAssertingNoSignal() {
-        assertEquals("2 sets are saved on this device only. The log didn’t answer — they flush when it does.",
+        assertEquals("2 sets are saved on this device only. The log didn’t answer. They’ll sync when it’s available.",
                      LiveLines.onThisDeviceLine(2, Blocker.LogFailed))
-        assertEquals("1 set is saved on this device only. Your sign-in lapsed — they flush once you sign in again.",
+        assertEquals("1 set is saved on this device only. Sign in again to sync these sets.",
                      LiveLines.onThisDeviceLine(1, Blocker.SignInLapsed))
-        assertEquals("1 set is saved on this device only. They flush when the log takes them.",
+        assertEquals("1 set is saved on this device only. They’re waiting to sync.",
                      LiveLines.onThisDeviceLine(1, null))
     }
 }

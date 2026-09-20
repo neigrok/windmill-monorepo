@@ -16,28 +16,20 @@
 
 .wm-head {
   flex: none;
-  position: relative;
   height: calc(52px + env(safe-area-inset-top, 0px));
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   padding: env(safe-area-inset-top, 0px) 16px 0;
 }
 
 .wm-head-mark {
-  position: absolute;
-  left: 16px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 19px;
-  line-height: 1;
-  color: var(--color-brand);
-  opacity: 0.66;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-a.wm-head-mark:hover {
-  color: var(--color-brand);
-  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 44px;
 }
 .wm-head-mark:focus-visible {
   outline: none;
@@ -49,6 +41,7 @@ a.wm-head-mark:hover {
 
 .wm-switch {
   display: flex;
+  justify-self: center;
   align-items: center;
   gap: 2px;
 }
@@ -84,10 +77,9 @@ a.wm-switch-btn:hover {
 /* ---- The account seat ---- */
 
 .wm-head-seat {
-  position: absolute;
-  right: 16px;
   display: flex;
   align-items: center;
+  justify-self: end;
 }
 
 /* ---- The room ---- */
@@ -204,16 +196,8 @@ a.wm-switch-btn:hover {
     padding-inline: 12px;
   }
 
-  .wm-head-mark {
-    left: 12px;
-  }
-
-  .wm-head-seat {
-    right: 12px;
-  }
-
   .wm-switch-btn {
-    padding: 0 9px;
+    padding: 0 6px;
     font-size: 12.5px;
   }
 

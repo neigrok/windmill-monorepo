@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from 'react';
+import { BrandLogo } from '../design-system';
 import AuthProvider, { useAuth } from './auth/AuthProvider.jsx';
 import EntitlementsProvider from './billing/EntitlementsProvider.jsx';
 import SignInDoorProvider, { useSignInDoor } from './auth/SignInDoor.jsx';
@@ -108,7 +109,7 @@ function useOwnNavigation() {
   }, []);
 }
 
-// mark={false} is bare ground, no wordmark.
+// mark={false} is bare ground, no logo.
 function RouteFallback({ mark = true }) {
   const [waited, setWaited] = React.useState(false);
   React.useEffect(() => {
@@ -130,14 +131,9 @@ function RouteFallback({ mark = true }) {
         alignItems: 'center',
         justifyContent: 'center',
         background: 'var(--surface-canvas)',
-        color: 'var(--text-tertiary)',
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        fontSize: 'var(--text-xl)',
-        letterSpacing: 'var(--tracking-wide)',
       }}
     >
-      <span style={{ opacity: waited ? 1 : 0, transition: 'opacity 180ms ease' }}>Windmill</span>
+      <BrandLogo style={{ opacity: waited ? 1 : 0, transition: 'opacity 180ms ease' }} />
     </div>
   );
 }

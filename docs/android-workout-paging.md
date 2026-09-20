@@ -1,46 +1,37 @@
 # Android workout paging
 
-The workout reading region uses Compose Foundation's `HorizontalPager`. Each page derives its
-name, planned targets, logged sets and previous-session history from its exercise id. The rack,
-position dots and add control stay outside the pager.
+The workout uses one native Compose horizontal scroll owner over its body, including clocks,
+blank space and rack controls. `HorizontalPager` renders the exercise reading region, while the
+rack stays fixed. Each page derives its counter, planned and logged sets, and previous-session
+history from its exercise id. Position dots and Add remain in the scrolling reading region.
 
-Selection changes after the pager settles. Reversing a gesture preserves the selected exercise,
-entered weight and reps, set kind and pending deviation eligibility. A completed change reseeds the
-rack by exercise identity as well as prefill value, including two exercises with identical defaults.
-Editing, logging and adding a movement wait until the page and selection agree.
+Selection changes after the pager settles. Reversal preserves the selected exercise, persisted
+rack draft and pending departure question. The store owns rack values across movement changes,
+notifications and restarts. Editing, logging and Add wait until the pager and selection agree.
+Android cancellation returns the page to the selected exercise. An external selection interrupts
+the active drag before aligning the page, so old pointer events cannot leave the controls disabled.
 
 ## Structure and performance observations
 
-- Gesture thresholds, direction locking, drag cancellation and snapping belong to the native pager.
-  The domain holds the refusal wording; it has no gesture recognizer or pixel thresholds.
-- Adjacent pages preload one previous-session result each through the same read/cache path as
-  selection. A preview read does not change selection or prefill, and late replies are checked
-  against the account, workout and transport before entering the cache.
-- Vertical scroll and horizontal set-strip state belong to their exercise page. The set strip
-  consumes leftover horizontal scroll and fling so reaching its end cannot change exercise.
-- Fully offscreen page semantics are cleared. A visible incoming preview stays outside TalkBack's
-  selected-page controls until it settles. The title retains Previous/Next movement actions.
-- The pager uses the existing horizontal gutters and adds no system-gesture exclusion. System Back
-  retains priority at the screen edge; the workout's existing Back handler keeps the workout open.
+- Native scrolling owns touch slop, axis arbitration, pointer transfer and snapping. The domain
+  holds refusal wording, with no pixel thresholds or gesture recognizer.
+- Adjacent pages preload through the same history cache as selection. Reads do not select or
+  redial; replies are checked against the current authority, account, workout and transport.
+- Each exercise has its own vertical and set-strip scroll state. The set strip consumes remaining
+  horizontal scroll and fling, so its edge cannot change exercise.
+- Fully offscreen semantics are cleared; incoming previews stay outside TalkBack's active controls.
+  Previous/Next movement actions remain on the selected title.
+- Workout clocks, persisted rack and notification commands retain their current ownership. Paging
+  draws no new sound, haptic, control or system-gesture exclusion.
 
 ## Verification
 
-The focused workout suite covers destination-specific previews, reversal and short-drag cancellation,
-settled selection, draft and kind preservation, deviation prompts, accessibility actions, assembly and
-picker navigation, and real vertical/set-strip scrolling.
+The Android 14 emulator check exercised a held rack-origin preview, reversal with a 22.5kg draft,
+a completed swipe to Barbell Row, and edge Back without leaving the workout. The rack remained
+fixed, no set was logged by the gesture, and the workout stayed usable at 200% font scale.
 
-An isolated Android API 34 emulator exercises a two-movement routine. A held drag shows both pages,
-reversal preserves 22.5 kg and 6 reps, a completed swipe selects Barbell Row, and an edge Back gesture
-keeps that exercise and workout open. The rack and action remain visible at font scale 2.0.
-
-The final `./gradlew build -Pwindmill.apiBase=http://10.0.2.2:8088` succeeds, including lint and
-1,021 executed tests in each of debug and release. Each normal run skips 12 opt-in live API cases.
-All six pager-specific tests pass. The final emulator build also resets a completed move from an
-edited 22.5 kg × 6 to the destination's identical initial default of 20 kg × 5, and logs the next set
-under Barbell Row.
-
-An additional opted-in live API run against the existing local server has seven passes, four failures
-and one skipped magic-link case. The unchanged network tests expect no creation history on a routine
-read and an ASCII apostrophe in the offline message; the latter assertion prevents closing a scratch
-session and causes the cursor and cleanup failures. The temporary test account is deleted in a
-finally block. Follow-up: dogfood node `gym-android-live-wire-expectations`.
+The full Android build passed for debug and release: 1,290 executed tests per variant, zero
+failures, and 12 optional live-wire cases skipped by the ordinary build. All 18 release-tool tests
+passed. The logger regressions cover held previews, reversal, equal-prefill moves, nested scrolling,
+dynamic movement insertion, cancellation past the midpoint, and external selection during a drag
+followed by enabled controls and another successful swipe.

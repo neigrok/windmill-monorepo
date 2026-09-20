@@ -12,21 +12,19 @@ import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.LogReadout
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 
-// A week's header is drawn from a label that carries no year — `week of 6 Jan` is true of 2020 and of
-// 2025 alike. That label was the LazyColumn's key, and two rows may not share one: a lifter with five
-// years of log had a list that refused to compose. The week's own Monday is the identity.
+// Monday timestamps keep similarly named weeks distinct.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class LogWeekKeyTests {
@@ -48,7 +46,7 @@ class LogWeekKeyTests {
     // Monday 6 January falls in 2020 and again in 2025.
     private val fiveYearsApart = listOf(session("s1", "2025-01-06"), session("s2", "2020-01-06"))
 
-    private fun weeks() = LogFold.weeks(fiveYearsApart, onThisDevice = emptySet(), complete = true,
+    private fun weeks() = LogReadout.weeks(fiveYearsApart, onThisDevice = emptySet(),
                                         nowMs = at("2026-08-09"))
 
     @Test
@@ -56,7 +54,7 @@ class LogWeekKeyTests {
         val folded = weeks()
 
         assertEquals(2, folded.size)
-        assertEquals("week of 6 Jan", folded[0].label)
+        assertEquals("Week of 6 Jan", folded[0].label)
         assertEquals("the label alone cannot tell them apart", folded[0].label, folded[1].label)
         assertNotEquals("the Monday can", folded[0].startMs, folded[1].startMs)
         assertEquals("so the key is unique per week", 2,
@@ -76,23 +74,7 @@ class LogWeekKeyTests {
         }
 
         compose.onAllNodesWithText("Push A").assertCountEquals(2)
-        compose.onAllNodesWithText("week of 6 Jan").assertCountEquals(2)
+        compose.onAllNodesWithText("Week of 6 Jan").assertCountEquals(2)
     }
 
-    // The proof that the old key was a defect and not a preference.
-    @Test
-    fun testKeyingAWeekByItsWordsIsWhatUsedToThrow() {
-        val folded = weeks()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            compose.setContent {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    folded.forEach { week ->
-                        item("week:${week.label}") { Text(week.label) }
-                    }
-                }
-            }
-            compose.waitForIdle()
-        }
-    }
 }

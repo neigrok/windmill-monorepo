@@ -244,3 +244,66 @@ TEST(pg_gym_notes_columns_refuse_what_the_domain_refuses) {
   CHECK_EQ(repo.notes(wm::UserId{kUser})[0].body, fiveHundred);
   reset();
 }
+
+TEST(pg_gym_insight_save_survives_lost_ack_user_edit_and_delete_without_overwrite_or_restore) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgNotesRepository repo{wm::pgTestPool()};
+  fake::FakeGym twin;
+  for (NotesRepository* store : {static_cast<NotesRepository*>(&repo), static_cast<NotesRepository*>(&twin.notes)}) {
+    const auto hand = store->saveNote(noteAt("note_hand001", "Priority", "Keep this first."), kNow);
+    REQUIRE(hand.note.has_value());
+    const auto input = noteAt("note_coach01", "Schedule", "I train on Monday and Thursday.");
+    const auto first = store->saveInsight(input, kNow + 1);
+    REQUIRE(first.note.has_value());
+    CHECK_EQ(first.note->position, 1);
+    CHECK_EQ(store->saveInsight(input, kNow + 2).note, first.note);
+    CHECK_EQ(store->notes(wm::UserId{kUser}).size(), 2u);
+    CHECK_FALSE(store->noteSave(wm::UserId{kOther}, input.id).has_value());
+    CHECK(store->saveInsight(noteAt(input.id.str(), input.title, input.body, kOther), kNow + 3).error == NoteWriteError::idTaken);
+    store->saveNote(noteAt(input.id.str(), "Schedule", "I now train on Tuesday."), kNow + 4);
+    CHECK_EQ(store->saveInsight(input, kNow + 5).note, first.note);
+    CHECK_EQ(store->notes(wm::UserId{kUser})[1].body, std::string("I now train on Tuesday."));
+    store->deleteNote(wm::UserId{kUser}, input.id);
+    CHECK_EQ(store->saveInsight(input, kNow + 6).note, first.note);
+    CHECK_EQ(store->noteSave(wm::UserId{kUser}, input.id), first.note);
+    CHECK_EQ(store->notes(wm::UserId{kUser}), std::vector<Note>{*hand.note});
+    CHECK(store->saveInsight(noteAt("note_hand001", "Changed", "Not allowed"), kNow + 7).error == NoteWriteError::idTaken);
+    CHECK_EQ(store->notes(wm::UserId{kUser}), std::vector<Note>{*hand.note});
+  }
+  reset();
+}
+
+TEST(pg_gym_insight_exact_text_deduplicates_at_capacity_and_concurrent_saves_append_once) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgNotesRepository repo{wm::pgTestPool()};
+  const auto input = noteAt("note_race001", "Schedule", "I train on Monday.");
+  std::latch ready{2};
+  std::latch start{1};
+  NoteWriteOutcome a{std::nullopt, NoteWriteError::none}, b{std::nullopt, NoteWriteError::none};
+  std::exception_ptr firstError, secondError;
+  std::thread first([&] {
+    ready.count_down(); start.wait();
+    try { a = repo.saveInsight(input, kNow); } catch (...) { firstError = std::current_exception(); }
+  });
+  std::thread second([&] {
+    ready.count_down(); start.wait();
+    try { b = repo.saveInsight(input, kNow + 1); } catch (...) { secondError = std::current_exception(); }
+  });
+  ready.wait(); start.count_down(); first.join(); second.join();
+  REQUIRE(!firstError);
+  REQUIRE(!secondError);
+  REQUIRE(a.note.has_value());
+  CHECK_EQ(a.note, b.note);
+  CHECK_EQ(repo.notes(wm::UserId{kUser}), std::vector<Note>{*a.note});
+  for (int at = 1; at < 10; ++at)
+    REQUIRE(repo.saveNote(noteAt("note_full00" + std::to_string(at), "Title " + std::to_string(at)), kNow).note.has_value());
+  const auto duplicate = repo.saveInsight(noteAt("note_dupe001", input.title, input.body), kNow + 2);
+  CHECK_EQ(duplicate.note, a.note);
+  CHECK_EQ(repo.notes(wm::UserId{kUser}).size(), 10u);
+  CHECK(repo.saveInsight(noteAt("note_new0001", "New insight", "Different."), kNow).error == NoteWriteError::full);
+  CHECK_FALSE(repo.noteSave(wm::UserId{kUser}, NoteId{"note_new0001"}).has_value());
+  CHECK(repo.saveInsight(noteAt(input.id.str(), "Different", "Changed payload."), kNow).error == NoteWriteError::idTaken);
+  reset();
+}

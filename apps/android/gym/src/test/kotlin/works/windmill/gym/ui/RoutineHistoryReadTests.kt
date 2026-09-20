@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -91,7 +92,7 @@ class RoutineHistoryReadTests {
             403, Refusal(message = "that routine is not yours to read", code = null),
         ))
 
-        compose.onNodeWithText("that routine is not yours to read").assertIsDisplayed()
+        compose.onNodeWithText("that routine is not yours to read").performScrollTo().assertIsDisplayed()
         scope.cancel()
     }
 
@@ -102,7 +103,7 @@ class RoutineHistoryReadTests {
 
         compose.onNodeWithText(
             "the log didn’t answer — this routine’s history is out of reach",
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
         scope.cancel()
     }
 }

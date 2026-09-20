@@ -288,4 +288,28 @@ class ProgramTests {
         assertNull("an open line takes no scheme from the rack — nothing is written",
             routine.retargeting(2, "barbell-row", listOf(SetTarget(10, 60.0))))
     }
+    @Test
+    fun testTheEditSnapshotAndWireGuardSurviveSerializationWithoutMakingAnUntouchedDraftDirty() {
+        val routine = Routine("rt_a", "Push", 3, revision = 7, lastTrainedAtMs = 42,
+            entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)), 90)))
+        val draft = RoutineDraft.of(routine)
+        val encoded = json.encodeToString(RoutineDraft.serializer(), draft)
+        assertEquals(draft, json.decodeFromString(RoutineDraft.serializer(), encoded))
+        assertFalse(draft.changed)
+        assertTrue(draft.named("Pull").changed)
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}],"revision":7}""",
+            json.encodeToString(RoutineWrite.serializer(), draft.original!!))
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}]}""",
+            json.encodeToString(RoutineWrite.serializer(), RoutineWrite(routine)))
+    }
+
+    @Test
+    fun testDuplicateCapsUnicodeAndCopiesOnlyOrderedPlanningData() {
+        val original = Routine("rt_a", "💪".repeat(60), 0, revision = 9, lastTrainedAtMs = 42,
+            entries = listOf(RoutineEntry(2, "squat"), RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)), 90)),
+            history = listOf(RoutineEvent(kind = "created", atMs = 2, movements = 2)))
+        assertEquals(RoutineDraft(name = "💪".repeat(55) + " copy", position = 2,
+            entries = original.entries.sortedBy { it.position }), RoutineDraft.duplicate(original, 2))
+    }
+
 }

@@ -1,9 +1,14 @@
 package works.windmill.platform
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import works.windmill.platform.you.YouDestination
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.serialization.Serializable
 import works.windmill.platform.net.WindmillApi
+import works.windmill.platform.telemetry.Telemetry
 
 // Product-neutral: nothing here may name a product.
 
@@ -20,9 +25,8 @@ interface ProductModule {
     fun Room(account: Account)
 }
 
-// `user` null means nobody is signed in; `verified` false means the seat stands on the device's
-// last-known user, unasked.
-class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true) {
+// An unresolved account is still restoring credentials; an unverified user stands on the device copy.
+class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true, val resolved: Boolean = true, val locallyTrusted: Boolean = true, val identityRevision: Long = 0, val telemetry: Telemetry = Telemetry.None) {
     val isSignedIn: Boolean
         get() = user != null
 }
@@ -30,6 +34,25 @@ class Account(val api: WindmillApi, val user: User?, val verified: Boolean = tru
 @Serializable
 data class User(val id: String, val email: String, val name: String = "")
 
-class ShellActions(val openYou: () -> Unit)
+class AccountActions(
+    val destinations: List<YouDestination>,
+    val beforeSignIn: (User, String?) -> Unit,
+    val cancelSignIn: (String?) -> Unit,
+)
+
+class ShellActions(val openYou: () -> Unit, val openSignIn: (String?) -> Unit = { openYou() }) {
+    private var product: AccountActions? by mutableStateOf(null)
+    val destinations: List<YouDestination> get() = product?.destinations.orEmpty()
+
+    fun present(actions: AccountActions) { product = actions }
+
+    fun authenticated(user: User, flowId: String?) {
+        val actions = product
+        check(flowId == null || actions != null) { "Reopen this sign-in from the screen that requested it." }
+        actions?.beforeSignIn?.invoke(user, flowId)
+    }
+
+    fun authDismissed(flowId: String?) { product?.cancelSignIn?.invoke(flowId) }
+}
 
 val LocalShellActions = staticCompositionLocalOf<ShellActions> { ShellActions(openYou = {}) }

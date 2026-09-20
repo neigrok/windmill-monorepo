@@ -3,6 +3,7 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
 #include <trantor/utils/Logger.h>
+#include <drogon/utils/Utilities.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -76,18 +77,62 @@ void AskRation::giveBack(const std::string& account) {
   ration->second.questions = std::min(kAskBackToBack, ration->second.questions + 1.0);
 }
 
-AskTools::AskTools(GymTools& inner, ThreadId thread)
-    : inner_(inner), thread_(std::move(thread)) {}
+AskTools::AskTools(GymTools& inner, ThreadId thread, AskThreadRepository* repository,
+                   AskGeneration* generation)
+    : inner_(inner), repository_(repository), generation_(generation), thread_(std::move(thread)) {}
+
+void AskTools::observe(const ToolResult& result, const std::string& name, const std::string& operationId) {
+  if (result.isError) return;
+  if (result.payload["proposal"]["id"].isString()) {
+    const auto id = result.payload["proposal"]["id"].asString();
+    if (std::find(proposals_.begin(), proposals_.end(), id) == proposals_.end()) proposals_.push_back(id);
+  }
+  if (name == "create_routine" && generation_ && generation_->results.empty())
+    generation_->results.push_back({operationId, result.payload["id"].asString(), result.payload["name"].asString()});
+}
+
+void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
+  if (!repository_) return;
+  operations_ = repository_->operations(caller.user, thread_, generation_->id);
+  if (operations_.empty()) return;
+  for (auto& operation : operations_) {
+    if (!operation.result && !allowWrite) {
+      operation.result = inner_.completedAction(caller.user, operation.name, operation.arguments["id"].asString());
+      if (!operation.result) continue;
+      repository_->saveOperation(caller.user, thread_, generation_->id, operation);
+    }
+    if (!operation.result) {
+      operation.result = inner_.callTool(operation.name, operation.arguments, caller,
+          ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+      repository_->saveOperation(caller.user, thread_, generation_->id, operation);
+    }
+    observe(*operation.result, operation.name, operation.id);
+    if (operation.name == "save_note") steps_.push_back({operation.name, operation.result->isError});
+  }
+  repository_->saveGeneration(caller.user, thread_, *generation_);
+}
 
 std::vector<ToolDeclaration> AskTools::declareTools() const {
   std::vector<ToolDeclaration> offered;
   for (ToolDeclaration& declaration : inner_.declareTools())
-    if (declaration.access == Access::read || mintsProposal(declaration.name()))
+    if (declaration.access == Access::read || mintsProposal(declaration.name()) ||
+        (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note")))
       offered.push_back(std::move(declaration));
   return offered;
 }
 
 ToolResult AskTools::callTool(const std::string& name, const Json::Value& arguments,
+                              const ToolCaller& caller) {
+  if (repository_) {
+    const auto current = repository_->generation(caller.user, thread_, generation_->requestId);
+    if (current && current->stopRequested) return ToolResult::failure("Coach was stopped before this action");
+  }
+  ToolResult outcome = dispatch(name, arguments, caller);
+  steps_.push_back(AskStep{name, outcome.isError});
+  return outcome;
+}
+
+ToolResult AskTools::dispatch(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
   std::optional<ToolDeclaration> declared;
   for (ToolDeclaration& candidate : inner_.declareTools())
@@ -99,7 +144,8 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
       return ToolResult::failure(name + ": " + retired->sentence);
     return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
   }
-  if (declared->access != Access::read && !mintsProposal(name))
+  if (declared->access != Access::read && !mintsProposal(name) &&
+      !(repository_ && (name == "create_routine" || name == "save_note")))
     // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
     // every grant.
     return ToolResult::failure(name +
@@ -121,124 +167,369 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
     return ToolResult::failure(name + ": you already wrote a proposal this turn; fold both into "
                                       "one document");
 
+  Json::Value input = arguments;
+  const bool write = mintsProposal(name) || name == "create_routine" || name == "save_note";
+  CoachOperation* operation = nullptr;
+  if (write && repository_) {
+    const auto held = std::find_if(operations_.begin(), operations_.end(), [&](const CoachOperation& candidate) {
+      return (candidate.name == "save_note") == (name == "save_note");
+    });
+    if (held != operations_.end()) {
+      if (held->name != name)
+        return ToolResult::failure("this turn already has a routine action; finish that action before starting another");
+      if (held->result && !held->result->isError) return *held->result;
+      operation = &*held;
+    }
+    const std::vector<std::string> reads = name == "create_routine" ? std::vector<std::string>{"list_notes", "list_exercises"}
+        : name == "save_note" ? std::vector<std::string>{"list_notes"} : std::vector<std::string>{};
+    for (const auto& required : reads) {
+      if (std::none_of(steps_.begin(), steps_.end(), [&](const AskStep& step) {
+            return step.tool == required && !step.failed;
+          }))
+        return ToolResult::failure("read the lifter's notes before saving an insight, and the movement catalog before creating a routine");
+    }
+    input["id"] = operation ? operation->arguments["id"] : name == "save_note" ? Json::Value("note_" + generation_->id) :
+        name == "create_routine" ? Json::Value("rt_" + generation_->id) : arguments["id"];
+    if (!operation) {
+      operations_.push_back({(name == "save_note" ? "op_note_" : "op_") + generation_->id, name, input});
+      operation = &operations_.back();
+    }
+    operation->arguments = input;
+    operation->result.reset();
+    repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
+  }
   const ToolResult outcome = inner_.callTool(
-      name, arguments, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
-  // The id is taken off the tool's own reply rather than out of the answer's prose.
-  if (!outcome.isError && outcome.payload["proposal"]["id"].isString())
-    proposals_.push_back(outcome.payload["proposal"]["id"].asString());
+      name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+  if (operation) {
+    operation->result = outcome;
+    repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
+  }
+  observe(outcome, name, operation ? operation->id : "");
+  if (write && repository_) repository_->saveGeneration(caller.user, thread_, *generation_);
   return outcome;
 }
 
-AskService::AskService(TrainingService& training, ThreadService& threads, AskAgent& agent,
-                       GymTools& gymTools, Entitlements& entitlements)
-    : training_(training), threads_(threads), agent_(agent), gymTools_(gymTools), entitlements_(entitlements) {
+AskService::AskService(TrainingService& training, AskThreadRepository& threads, Clock& clock, AskAgent& agent,
+                       GymTools& gymTools, Entitlements& entitlements,
+                       std::shared_ptr<FailureReporter> failures)
+    : training_(training), threads_(threads), clock_(clock), agent_(agent), gymTools_(gymTools),
+      entitlements_(entitlements), failures_(std::move(failures)) {
   workers_.start();
+  readers_.start();
+  admissions_.start();
 }
 
 bool AskService::configured() const { return agent_.configured(); }
 
-void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
-                     std::string question, std::function<void(AskReply)> done) {
-  // The refusal ladder, every rung of it before any spend.
-  if (!wellFormedId(thread.str())) {
-    done(AskReply{AskRefusal::threadMalformed});
-    return;
-  }
-  if (question.find_first_not_of(" \t\r\n") == std::string::npos) {
-    done(AskReply{AskRefusal::questionEmpty});
-    return;
-  }
-  if (question.size() > kMaxAskTurnBytes) {
-    done(AskReply{AskRefusal::questionTooLong});
-    return;
-  }
-  // A NUL stops a `text` column, and non-UTF-8 bytes are refused by Postgres mid-transaction;
-  // `openThread` runs outside this method's only try, so that would leave as a retryable 500 on a
-  // body that can never land. Both are wire-reachable through jsoncpp escapes.
-  if (!storableText(question)) {
-    done(AskReply{AskRefusal::questionUnstorable});
-    return;
-  }
-  if (!agent_.configured()) {
-    done(AskReply{AskRefusal::notConfigured});
-    return;
-  }
-  // Never mid-session, enforced here rather than in three clients, and above the ceilings so a
-  // lifter between sets hears that first. The read settles a stale workout on its way past.
-  if (training_.openSession(caller)) {
-    done(AskReply{AskRefusal::sessionOpen});
-    return;
-  }
-  // Our dollar ceiling over the trailing window, read before a token is spent.
-  if (!entitlements_.aiAllowanceFor(caller, email).allows()) {
-    done(AskReply{AskRefusal::outOfBudget});
-    return;
-  }
-  // Opened BEFORE the model runs, because a proposal minted mid-conversation points at the row. A
-  // run that never answers is undone below by `discardEmptyThread`. The title is this question,
-  // verbatim, and only on a thread that did not exist.
-  const ThreadOpenOutcome opened = threads_.openThread(caller, thread, question);
-  if (opened.error == ThreadOpenError::idTaken || !opened.thread) {
-    // No thread and no named error is the two-accounts-one-id race: read it as an id somebody else
-    // holds.
-    done(AskReply{AskRefusal::threadTaken});
-    return;
-  }
-  std::vector<AskTurn> turns;
-  for (const ThreadTurn& said : opened.thread->turns)
-    turns.push_back(AskTurn{said.fromLifter, said.text});
-  // The pair this ask would add — the question and the answer to come — has to fit under the cap
-  // with everything already said.
-  if (turns.size() + 2 > kMaxThreadTurns) {
-    threads_.discardEmptyThread(caller, thread);
-    done(AskReply{AskRefusal::tooManyTurns});
-    return;
-  }
-  turns.push_back(AskTurn{true, question});
-  // Taken LAST, after every refusal above it, so a refusal costs nothing.
-  if (!perAccount_.take(caller.str())) {
-    threads_.discardEmptyThread(caller, thread);
-    done(AskReply{AskRefusal::dailyLimit});
-    return;
-  }
+void AskService::readGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId,
+                                std::function<void(bool, std::optional<AskGeneration>)> done) {
+  readers_.getNextLoop()->queueInLoop([this, user, thread, requestId, done = std::move(done)] {
+    std::optional<AskGeneration> generation;
+    try { generation = threads_.generation(user, thread, requestId); }
+    catch (const std::exception&) { done(false, std::nullopt); return; }
+    done(true, generation);
+  });
+}
 
-  workers_.getNextLoop()->queueInLoop(
-      [this, caller, thread, turns = std::move(turns), done = std::move(done)]() mutable {
-        // The three levels are named one by one rather than taken as `everything()`, so a fourth
-        // level or a second product never rides along. AskTools reads this scope.
-        const ToolCaller actor{caller, ToolScope({{"gym", Access::read},
-                                                  {"gym", Access::write},
-                                                  {"gym", Access::del}})};
-        AskTools hands(gymTools_, thread);
-        AskReply reply;
-        try {
-          reply.answer = agent_.answer(turns, actor, hands);
-        } catch (const std::bad_alloc&) {
-          throw;  // not an answer that failed: an exhausted process must die loudly (GymTools.cpp)
-        } catch (const std::exception& failed) {
-          // Nothing sits above a worker loop: an exception leaving this lambda takes the process
-          // down.
-          LOG_ERROR << "gym ask run threw: " << failed.what();
-          reply.answer = AskAnswer{false, "", failed.what(), {}};
+std::optional<AskGeneration> AskService::stop(const UserId& user, const ThreadId& thread, const std::string& requestId) {
+  auto generation = threads_.stopGeneration(user, thread, requestId);
+  if (!generation || generation->status != "running") return generation;
+  auto lease = threads_.tryLease(user, thread);
+  if (!lease) return generation;
+  generation = threads_.generation(user, thread, requestId);
+  if (!generation || generation->status != "running") return generation;
+  AskTools tools(gymTools_, thread, &threads_, &*generation);
+  const ToolCaller caller{user, ToolScope({{"gym", Access::read}, {"gym", Access::write}})};
+  tools.recover(caller, false);
+  generation->status = "stopped";
+  generation->stopRequested = true;
+  if (!tools.steps().empty() || !tools.proposals().empty()) {
+    if (!generation->receipt) generation->receipt = AnswerReceipt{};
+    for (const auto& step : tools.steps()) {
+      if (std::find(generation->steps.begin(), generation->steps.end(), step) == generation->steps.end())
+        generation->steps.push_back(step);
+      auto& steps = generation->receipt->steps;
+      if (std::find(steps.begin(), steps.end(), step) == steps.end()) steps.push_back(step);
+    }
+    for (const auto& proposal : tools.proposals()) {
+      auto& proposals = generation->receipt->proposals;
+      if (std::find(proposals.begin(), proposals.end(), proposal) == proposals.end()) proposals.push_back(proposal);
+    }
+  }
+  threads_.saveGeneration(user, thread, *generation);
+  return generation;
+}
+
+struct AskService::Job {
+  UserId caller;
+  std::string email;
+  ThreadId thread;
+  std::string question;
+  std::string requestId;
+  std::vector<std::string> attachmentIds;
+  std::function<void(AskReply)> done;
+  AskReply reply;
+  std::optional<AskGeneration> generation;
+  std::unique_ptr<ThreadLease> lease;
+  std::optional<std::size_t> worker;
+  bool overlap = false;
+  bool duplicate = false;
+  bool charged = false;
+  bool reported = false;
+  std::string where = "ask.setup";
+  std::vector<CoachImage> images;
+  ThreadOpenOutcome opened{std::nullopt, ThreadOpenError::none};
+};
+
+void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
+                     std::string question, std::function<void(AskReply)> done, std::string requestId, std::vector<std::string> attachmentIds) {
+  if (!wellFormedId(thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
+  if (!requestId.empty() && !wellFormedId(requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
+  if (attachmentIds.size() > 1 || std::any_of(attachmentIds.begin(), attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
+  if (attachmentIds.empty() && question.find_first_not_of(" \t\r\n") == std::string::npos) { done(AskReply{AskRefusal::questionEmpty}); return; }
+  if (question.size() > kMaxAskTurnBytes) { done(AskReply{AskRefusal::questionTooLong}); return; }
+  if (!storableText(question)) { done(AskReply{AskRefusal::questionUnstorable}); return; }
+  if (admissionCount_.fetch_add(1) >= 64) {
+    --admissionCount_;
+    done(AskReply{AskRefusal::busy});
+    return;
+  }
+  if (requestId.empty()) requestId = drogon::utils::getUuid();
+  auto job = std::make_shared<Job>(Job{caller, email, thread, std::move(question), std::move(requestId), std::move(attachmentIds), std::move(done)});
+  std::lock_guard lock(admissionMutex_);
+  const auto active = active_.find(thread.str());
+  if (active != active_.end()) {
+    job->overlap = true;
+    job->duplicate = active->second->caller == caller && active->second->requestId == job->requestId;
+  } else {
+    for (std::size_t index = 0; index < workerBusy_.size(); ++index) {
+      if (workerBusy_[index]) continue;
+      workerBusy_[index] = true;
+      job->worker = index;
+      active_[thread.str()] = job;
+      break;
+    }
+  }
+  // Admission is queued while holding the reservation lock, so a local duplicate cannot overtake it.
+  admissions_.getNextLoop()->queueInLoop([this, job] {
+    --admissionCount_;
+    admit(job);
+  });
+}
+
+void AskService::admit(const std::shared_ptr<Job>& job) {
+  const auto& caller = job->caller;
+  const auto& email = job->email;
+  const auto& thread = job->thread;
+  const auto& question = job->question;
+  const auto& requestId = job->requestId;
+  const auto& attachmentIds = job->attachmentIds;
+  auto& generation = job->generation;
+  auto& reply = job->reply;
+  auto& charged = job->charged;
+  auto& images = job->images;
+  auto& opened = job->opened;
+  auto& repository = threads_;
+  try {
+    if (job->worker && !job->overlap) job->lease = repository.tryLease(caller, thread);
+    generation = repository.generation(caller, thread, requestId);
+    const auto replyFromStored = [&] {
+      if (!generation) return false;
+      std::vector<std::string> heldAttachments;
+      for (const auto& attachment : generation->attachments) heldAttachments.push_back(attachment.id);
+      if (generation->question != question || heldAttachments != attachmentIds) {
+        reply.refusal = AskRefusal::requestConflict; finish(job); return true;
+      }
+      if (generation->status == "completed" || generation->status == "stopped") {
+        reply.answer.ok = true; finish(job); return true;
+      }
+      return false;
+    };
+    if (replyFromStored()) return;
+    if (!repository.threadAvailable(caller, thread)) {
+      reply.refusal = AskRefusal::threadTaken; finish(job); return;
+    }
+    if (job->overlap) {
+      if (!job->duplicate || !generation) reply.refusal = AskRefusal::generationActive;
+      finish(job); return;
+    }
+    if (!job->worker) { reply.refusal = AskRefusal::busy; finish(job); return; }
+    if (!job->lease) {
+      // Re-read under the owner after the failed lease: another process may have just admitted this request.
+      generation = repository.generation(caller, thread, requestId);
+      if (replyFromStored()) return;
+      if (!repository.threadAvailable(caller, thread)) reply.refusal = AskRefusal::threadTaken;
+      else if (!generation || generation->status != "running") reply.refusal = AskRefusal::generationActive;
+      finish(job); return;
+    }
+    if (!agent_.configured()) { reply.refusal = AskRefusal::notConfigured; finish(job); return; }
+    if (training_.openSession(caller)) { reply.refusal = AskRefusal::sessionOpen; finish(job); return; }
+    if (!entitlements_.aiAllowanceFor(caller, email).allows()) {
+      reply.refusal = AskRefusal::outOfBudget; finish(job); return;
+    }
+
+    for (const auto& id : attachmentIds) {
+      auto image = repository.image(caller, thread, id);
+      if (!image) { reply.refusal = AskRefusal::attachmentInvalid; finish(job); return; }
+      images.push_back(std::move(*image));
+    }
+    opened = threads_.openThread(caller, thread, question.find_first_not_of(" \t\r\n") == std::string::npos ? "Photo" : question, clock_.nowMs());
+    if (opened.error == ThreadOpenError::idTaken || !opened.thread) {
+      reply.refusal = AskRefusal::threadTaken; finish(job); return;
+    }
+    if (!generation && opened.thread->generation && opened.thread->generation->status == "running") {
+      reply.refusal = AskRefusal::generationActive; finish(job); return;
+    }
+    if (!perAccount_.take(caller.str())) {
+      threads_.discardEmptyThread(caller, thread);
+      reply.refusal = AskRefusal::dailyLimit; finish(job); return;
+    }
+    charged = true;
+    if (!generation) {
+      generation = AskGeneration{drogon::utils::getUuid(), requestId, question};
+      generation->atMs = clock_.nowMs();
+      for (const auto& image : images) generation->attachments.push_back(image.attachment);
+    }
+    generation->status = "running";
+    repository.saveGeneration(caller, thread, *generation);
+
+    workers_.getLoop(*job->worker)->queueInLoop([this, job] { run(job); });
+  } catch (const std::bad_alloc&) { throw; }
+  catch (const std::exception&) { fail(job); finish(job); }
+}
+
+void AskService::run(const std::shared_ptr<Job>& job) {
+  const auto& caller = job->caller;
+  const auto& thread = job->thread;
+  const auto& question = job->question;
+  const auto& requestId = job->requestId;
+  auto& generation = job->generation;
+  auto& reply = job->reply;
+  auto& charged = job->charged;
+  auto& reported = job->reported;
+  auto& where = job->where;
+  auto& images = job->images;
+  auto& opened = job->opened;
+  auto& repository = threads_;
+  try {
+    const ToolCaller actor{caller, ToolScope({{"gym", Access::read}, {"gym", Access::write}, {"gym", Access::del}})};
+    if (const auto current = repository.generation(caller, thread, requestId)) generation = current;
+    AskTools hands(gymTools_, thread, &repository, &*generation);
+    where = "ask.recover";
+    hands.recover(actor, !generation->stopRequested);
+    std::vector<AskTurn> turns;
+    const auto context = contextOf(opened.thread->turns);
+    std::size_t imageCount = images.size();
+    for (auto said = context.rbegin(); said != context.rend(); ++said) {
+      AskTurn turn{said->fromLifter, said->text};
+      for (const auto& attachment : said->attachments) {
+        if (imageCount >= 3) { turn.text += "\n[An earlier photo is outside the current image context.]"; continue; }
+        if (auto image = repository.image(caller, thread, attachment.id)) {
+          turn.images.push_back({image->attachment.mediaType, std::move(image->data)});
+          ++imageCount;
         }
-        // The test is whether the run COST anything, never whether it answered: `modelTurns == 0`
-        // gives the question back. A failure that spent turns is charged. A run that THREW is given
-        // back whatever it spent, the count having died with the stack.
-        if (reply.answer.modelTurns == 0) perAccount_.giveBack(caller.str());
-        reply.read = hands.read().tally();
-        reply.proposals = hands.proposals();
-        // The conversation is written only once it has an answer, both halves together, so a failed
-        // ask leaves the thread as it found it. A proposal the dead run minted keeps its row and
-        // loses its thread link.
-        if (!reply.answer.ok) {
-          threads_.discardEmptyThread(caller, thread);
-          done(std::move(reply));
-          return;
-        }
-        threads_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
-                                          ThreadTurn{false, reply.answer.answer}});
-        done(std::move(reply));
-      });
+      }
+      turns.push_back(std::move(turn));
+    }
+    std::reverse(turns.begin(), turns.end());
+    std::string current = question;
+    if (!generation->results.empty()) {
+      current += "\n\nServer-observed action already completed for this request: routine " + generation->results.front().routineId +
+                 " was created. Do not create it again; report that result truthfully.";
+    }
+    if (!hands.proposals().empty())
+      current += "\n\nServer-observed proposal already exists for this request: " + hands.proposals().front() + ". Do not mint another.";
+    for (const auto& operation : repository.operations(caller, thread, generation->id))
+      if (operation.name == "save_note" && operation.result && !operation.result->isError)
+        current += "\n\nServer-observed note save already completed for this request: " + dump(operation.result->payload) +
+                   ". This is the original save receipt, not a claim that a later user edit or deletion was reversed. Do not save it again.";
+    turns.push_back({true, current.empty() ? "Please help me with this photo." : current});
+    for (auto& image : images) turns.back().images.push_back({image.attachment.mediaType, std::move(image.data)});
+    bool stopped = generation->stopRequested;
+    auto stopCheck = std::chrono::steady_clock::time_point{};
+    auto lastSave = std::chrono::steady_clock::time_point{};
+    AskControl control;
+    control.continueRun = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      if (now - stopCheck > std::chrono::milliseconds(100)) {
+        const auto held = repository.generation(caller, thread, requestId);
+        stopped = stopped || (held && held->stopRequested);
+        stopCheck = now;
+      }
+      return !stopped;
+    };
+    control.text = [&](const std::string& text) {
+      generation->answer = text;
+      const auto now = std::chrono::steady_clock::now();
+      if (now - lastSave < std::chrono::milliseconds(100)) return;
+      generation->steps = hands.steps();
+      repository.saveGeneration(caller, thread, *generation);
+      lastSave = now;
+    };
+    where = "ask.run";
+    try { reply.answer = agent_.answer(turns, actor, hands, control); }
+    catch (const std::bad_alloc&) { throw; }
+    catch (const std::exception&) {
+      reply.answer.error = "Coach failed at ask.run";
+      if (failures_) {
+        reported = true;
+        try { failures_->report("gym-ask", "ask.run", "unexpected exception while answering Coach"); }
+        catch (const std::exception&) { LOG_ERROR << "gym ask failure report dropped"; }
+      }
+    }
+    if (reply.answer.modelTurns == 0) { perAccount_.giveBack(caller.str()); charged = false; }
+    const auto last = repository.generation(caller, thread, requestId);
+    stopped = stopped || (last && last->stopRequested);
+    generation->stopRequested = stopped;
+    generation->status = stopped ? "stopped" : reply.answer.ok ? "completed" : "failed";
+    if (reply.answer.ok || !reply.answer.answer.empty()) generation->answer = reply.answer.answer;
+    if (stopped) reply.answer.ok = true;
+    generation->steps = reply.answer.steps;
+    generation->receipt = AnswerReceipt{1, hands.read().tally(), hands.steps(), hands.proposals(), hands.read().observations()};
+    where = "ask.persist";
+    repository.saveGeneration(caller, thread, *generation);
+
+  } catch (const std::bad_alloc&) { throw; }
+  catch (const std::exception&) { fail(job); }
+  finish(job);
+}
+
+void AskService::fail(const std::shared_ptr<Job>& job) {
+  if (job->charged && job->reply.answer.modelTurns == 0) perAccount_.giveBack(job->caller.str());
+  job->reply.answer.ok = false;
+  job->reply.answer.error = "Coach failed at " + job->where;
+  if (job->generation) {
+    job->generation->status = "failed";
+    try { threads_.saveGeneration(job->caller, job->thread, *job->generation); } catch (const std::exception&) {}
+  }
+  LOG_ERROR << job->reply.answer.error;
+  if (!job->reported && failures_) {
+    try { failures_->report("gym-ask", job->where, "unexpected exception while answering Coach"); }
+    catch (const std::exception&) { LOG_ERROR << "gym ask failure report dropped"; }
+  }
+}
+
+void AskService::finish(const std::shared_ptr<Job>& job) {
+  if (job->generation) {
+    job->reply.generation = job->generation;
+    job->reply.answer.answer = job->generation->answer;
+    job->reply.answer.steps = job->generation->steps;
+    job->reply.receipt = job->generation->receipt;
+    if (job->generation->receipt) {
+      job->reply.read = job->generation->receipt->read;
+      job->reply.proposals = job->generation->receipt->proposals;
+    }
+  }
+  // Release database exclusion before making the worker available or publishing completion.
+  job->lease.reset();
+  if (job->worker) {
+    std::lock_guard lock(admissionMutex_);
+    workerBusy_[*job->worker] = false;
+    active_.erase(job->thread.str());
+    job->worker.reset();
+  }
+  auto done = std::move(job->done);
+  if (done) done(std::move(job->reply));
 }
 
 }

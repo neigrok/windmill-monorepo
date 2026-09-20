@@ -1416,6 +1416,7 @@ test('ask — one question into one thread, and the answer with its receipt, ste
   }));
   const reply = await gymApi.ask('thr_0a1b2c3d4e5f6071', 'bench has been stuck at 82.5 for three weeks. What do you see?');
   assert.deepEqual(reply, {
+    pending: false,
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
     steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
     read: { sets: 214, sessions: 34, weeks: 12 },
@@ -1619,3 +1620,18 @@ test('deleteBodyweight — 204 for a date with a row and for one without alike',
   assert.deepEqual(wireOf(calls[0]), { path: '/v1/gym/bodyweight/2026-08-26', method: 'DELETE', credentials: 'include', contentType: 'application/json', body: undefined });
 });
 
+
+test('Coach generation status and failed action results survive the transport boundary', async () => {
+  const generation = { id: 'gen_1', requestId: 'ask_retry', status: 'running', question: 'Create Push.', answer: '', at: 10 };
+  serve({ ok: true, status: 202, json: async () => ({ thread: 'thr_1', generation, results: [] }) });
+  assert.deepEqual(await gymApi.ask('thr_1', 'Create Push.', 'ask_retry'), { thread: 'thr_1', generation, results: [], pending: true });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { thread: 'thr_1', question: 'Create Push.', requestId: 'ask_retry' });
+  const results = [{ kind: 'routine-created', operationId: 'op_1', routineId: 'rt_1', routineName: 'Push' }];
+  serve({ ok: false, status: 502, json: async () => ({ error: 'Response interrupted.', generation: { ...generation, status: 'failed', results }, results }) });
+  await assert.rejects(gymApi.ask('thr_1', 'Create Push.', 'ask_retry'), (error) => {
+    assert.equal(error.detail, 'Response interrupted.');
+    assert.deepEqual(error.generation, { ...generation, status: 'failed', results });
+    assert.deepEqual(error.results, results);
+    return true;
+  });
+});

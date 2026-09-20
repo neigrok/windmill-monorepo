@@ -27,6 +27,7 @@ object Readout {
     }
 
     fun effort(weightKg: Double, reps: Int): String = "${weight(weightKg)} × $reps"
+    fun repCount(reps: Int): String = "$reps ${if (reps == 1) "rep" else "reps"}"
 
     // A rep target a routine declines to set is `max` — never a zero and never a blank.
     fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
@@ -46,6 +47,9 @@ object Readout {
         if (sets.isEmpty()) return openTarget
         return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
     }
+
+    fun targetWithUnit(sets: List<SetTarget>): String =
+        target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
 
     // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
     fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)
@@ -88,7 +92,9 @@ object Readout {
     fun workingSets(count: Int): String = "$count working"
 
     // The server computes the e1RM; this phone only spells it.
-    fun estimate(e1rm: Double): String = "e1RM ${weight(e1rm)}"
+    fun estimatedWeight(e1rm: Double): String = weight(floor(e1rm * 10.0 + 0.5) / 10.0)
+
+    fun estimate(e1rm: Double): String = "e1RM ${estimatedWeight(e1rm)}"
 
     fun spelled(count: Int): String = names.getOrNull(count) ?: count.toString()
 

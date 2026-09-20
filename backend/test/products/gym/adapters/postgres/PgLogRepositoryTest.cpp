@@ -49,6 +49,127 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>(sessionAt("ses_pg000002", t1 + 5)));
 }
 
+TEST(pg_gym_progress_reads_raw_finished_working_sets_with_owner_and_effort_intact) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t began = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", began));
+  const std::vector<Set> sets{
+      {SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       100, 1, SetKind::working, std::nullopt, "private note", began + 1'000},
+      {SetId{"set_pg000002"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       90, 10, SetKind::working, 6.5, "", began + 2'000},
+      {SetId{"set_pg000003"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       90, 8, SetKind::working, 7, "", began + 3'000},
+      {SetId{"set_pg000004"}, SessionId{"ses_pg000001"}, ExerciseId{"chin-up"}, 0,
+       -10, 8, SetKind::working, 8.5, "", began + 4'000},
+      {SetId{"set_pg000005"}, SessionId{"ses_pg000001"}, ExerciseId{"pull-up"}, 0,
+       0, 8, SetKind::working, std::nullopt, "", began + 5'000},
+      {SetId{"set_pg000006"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       200, 8, SetKind::warmup, 8, "", began + 6'000},
+      {SetId{"set_pg000007"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       200, 8, SetKind::drop, 8, "", began + 7'000},
+      {SetId{"set_pg000008"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+       200, 8, SetKind::failure, 8, "", began + 8'000}};
+  for (const Set& set : sets) REQUIRE(repo.insertSet(set).set);
+  repo.close(SessionId{"ses_pg000001"}, began + 10'000, ClosedBy::finish);
+
+  repo.insertSession(sessionAt("ses_pg000002", began + 20'000));
+  repo.close(SessionId{"ses_pg000002"}, began + 30'000, ClosedBy::finish);
+  repo.insertSession(sessionAt("ses_pg000003", began + 40'000));
+  Set warmup = benchSet("set_pg000009", 200, began + 41'000, "ses_pg000003");
+  warmup.kind = SetKind::warmup;
+  REQUIRE(repo.insertSet(warmup).set);
+  repo.close(SessionId{"ses_pg000003"}, began + 50'000, ClosedBy::finish);
+  repo.insertSession(sessionAt("ses_pg000004", began + 60'000));
+  REQUIRE(repo.insertSet(benchSet("set_pg000010", 200, began + 61'000, "ses_pg000004")).set);
+  repo.insertSession(Session{SessionId{"ses_pg000005"}, wm::UserId{kOther}, began});
+  REQUIRE(repo.insertSet(benchSet("set_pg000011", 300, began + 1'000, "ses_pg000005")).set);
+  repo.close(SessionId{"ses_pg000005"}, began + 10'000, ClosedBy::finish);
+
+  std::vector<ProgressSet> expected;
+  for (int index = 0; index < 5; ++index)
+    expected.push_back(ProgressSet{sets[index].session, began, sets[index].exercise,
+        PerformedFact{sets[index].id, sets[index].weightKg, sets[index].reps, sets[index].rpe}});
+  const std::vector<ProgressSet> history = repo.progressHistory(wm::UserId{kUser});
+  CHECK_EQ(history, expected);
+  CHECK_EQ(repo.progressHistory(wm::UserId{kOther}), (std::vector<ProgressSet>{
+      {SessionId{"ses_pg000005"}, began, ExerciseId{"bench-press"},
+          {SetId{"set_pg000011"}, 300, 8, std::nullopt}}}));
+  CHECK_EQ(statsProgress(history, began + 70'000), (StatsProgress{began + 70'000, {
+      {SessionId{"ses_pg000001"}, began, {
+          {ExerciseId{"bench-press"}, 3, expected[0].performed, EstimatedFact{expected[2].performed, 114}},
+          {ExerciseId{"chin-up"}, 1, expected[3].performed, std::nullopt},
+          {ExerciseId{"pull-up"}, 1, expected[4].performed, std::nullopt}}}}}));
+}
+
+TEST(pg_gym_progress_preserves_tied_session_identity_and_current_corrections_and_deletions) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t began = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000002", began));
+  REQUIRE(repo.insertSet(benchSet("set_pg000002", 90, began + 2'000, "ses_pg000002")).set);
+  repo.close(SessionId{"ses_pg000002"}, began + 10'000, ClosedBy::finish);
+  repo.insertSession(sessionAt("ses_pg000001", began));
+  const auto original = repo.insertSet(benchSet("set_pg000001", 90, began + 1'000));
+  REQUIRE(original.set);
+  repo.close(SessionId{"ses_pg000001"}, began + 10'000, ClosedBy::finish);
+  std::vector<ProgressSet> expected{
+      {SessionId{"ses_pg000001"}, began, ExerciseId{"bench-press"},
+          {SetId{"set_pg000001"}, 90, 8, std::nullopt}},
+      {SessionId{"ses_pg000002"}, began, ExerciseId{"bench-press"},
+          {SetId{"set_pg000002"}, 90, 8, std::nullopt}}};
+  CHECK_EQ(repo.progressHistory(wm::UserId{kUser}), expected);
+
+  Set fix = *original.set;
+  fix.weightKg = 100;
+  fix.reps = 1;
+  fix.rpe = 6.5;
+  REQUIRE(repo.updateSet(wm::UserId{kUser}, fix));
+  expected[0].performed = PerformedFact{fix.id, 100, 1, 6.5};
+  CHECK_EQ(repo.progressHistory(wm::UserId{kUser}), expected);
+
+  repo.deleteSet(wm::UserId{kUser}, fix.session, fix.id);
+  expected.erase(expected.begin());
+  CHECK_EQ(repo.progressHistory(wm::UserId{kUser}), expected);
+  REQUIRE(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000002"}));
+  CHECK_EQ(repo.progressHistory(wm::UserId{kUser}), std::vector<ProgressSet>{});
+}
+
+TEST(pg_gym_progress_has_no_session_or_age_cap_and_keeps_each_raw_set) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::uint64_t began = 1'500'000'000'000;
+  std::vector<ProgressSet> expected;
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    for (int day = 0; day < 130; ++day) {
+      const std::string session = "ses_pg" + std::to_string(10'000'000 + day);
+      const std::uint64_t start = began + day * 86'400'000ull;
+      txn.exec_params("INSERT INTO gym_sessions (id, user_id, started_at, finished_at) "
+          "VALUES ($1, $2::uuid, to_timestamp($3::bigint / 1000.0), to_timestamp($4::bigint / 1000.0))",
+          session, kUser, start, start + 60'000);
+      for (int index = 0; index < 2; ++index) {
+        const std::string set = "set_pg" + std::to_string(10'000'000 + day * 2 + index);
+        const double weightKg = day == 0 ? 150 : 100;
+        txn.exec_params("INSERT INTO gym_sets "
+            "(id, user_id, session_id, exercise_id, set_number, weight_kg, reps, kind, completed_at) "
+            "VALUES ($1, $2::uuid, $3, 'bench-press', $4, $5, 1, 'working', to_timestamp($6::bigint / 1000.0))",
+            set, kUser, session, index + 1, weightKg, start + 1'000);
+        expected.push_back(ProgressSet{SessionId{session}, start, ExerciseId{"bench-press"},
+            PerformedFact{SetId{set}, weightKg, 1, std::nullopt}});
+      }
+    }
+    txn.commit();
+  }
+  PgLogRepository repo{wm::pgTestPool()};
+
+  CHECK_EQ(repo.progressHistory(wm::UserId{kUser}), expected);
+}
+
 TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

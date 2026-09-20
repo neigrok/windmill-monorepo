@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -10,6 +12,30 @@ val windmillVersionCode = providers.gradleProperty("windmill.versionCode").orNul
 
 // Empty means the production host; http://10.0.2.2:8088 reaches the local stack from an emulator.
 val windmillApiBase = providers.gradleProperty("windmill.apiBase").orNull ?: ""
+val windmillSentryDsn = providers.gradleProperty("windmill.sentryDsn")
+    .orElse(providers.environmentVariable("SENTRY_DSN")).orElse("")
+val windmillSourceRevision = providers.gradleProperty("windmill.sourceRevision")
+    .orElse(providers.environmentVariable("GITHUB_SHA")).orElse("local")
+val windmillDebugTelemetry = providers.gradleProperty("windmill.debugTelemetry").orElse("false")
+
+fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+abstract class ValidateReleaseTelemetry : DefaultTask() {
+    @get:Input
+    abstract val dsn: Property<String>
+
+    @TaskAction
+    fun validate() {
+        val configured = runCatching { URI(dsn.get()) }.getOrNull()
+        check(configured?.scheme == "https" && !configured.host.isNullOrBlank() && !configured.userInfo.isNullOrBlank() && configured.path.matches(Regex("/[0-9]+"))) {
+            "Release telemetry requires a valid SENTRY_DSN or -Pwindmill.sentryDsn."
+        }
+    }
+}
+val validateReleaseTelemetry by tasks.registering(ValidateReleaseTelemetry::class) {
+    dsn.set(windmillSentryDsn)
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(validateReleaseTelemetry) }
 
 android {
     namespace = "works.windmill.app"
@@ -22,6 +48,9 @@ android {
         versionCode = windmillVersionCode
         versionName = windmillVersionName
         buildConfigField("String", "WM_API_BASE_URL", "\"$windmillApiBase\"")
+        buildConfigField("String", "WM_SENTRY_DSN", quoted(windmillSentryDsn.get()))
+        buildConfigField("String", "WM_SOURCE_REVISION", quoted(windmillSourceRevision.get()))
+        buildConfigField("boolean", "WM_DEBUG_TELEMETRY", windmillDebugTelemetry.get())
     }
 
     signingConfigs {

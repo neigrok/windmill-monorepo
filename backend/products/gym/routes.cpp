@@ -31,7 +31,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       std::make_shared<CatalogApi>(deps.catalogService, deps.trainingService, deps.authService);
   auto program = std::make_shared<ProgramApi>(deps.programService, deps.authService);
   auto preferences = std::make_shared<PreferencesApi>(deps.preferencesService, deps.authService);
-  auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService);
+  auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService, deps.askService);
   auto notes = std::make_shared<NotesApi>(deps.notesService, deps.authService);
   auto bodyweight =
       std::make_shared<BodyweightApi>(deps.bodyweightService, deps.authService, *deps.clock);
@@ -231,7 +231,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // preferences document, which is a whole-row replace that would discard one of two open screens.
   // The id is the client's to mint, the write is an upsert on it, and the list's order is
   // precedence — replaced whole by the PUT on the collection, never nudged one row at a time.
-  // Coach and every connected agent read these through `list_notes`; nothing writes them but a hand.
+  // Coach and connected agents read Notes; save_note appends insights without changing existing notes.
   app.registerHandler(
       "/v1/gym/notes",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -285,8 +285,20 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       {drogon::Get});
   // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only
   // where a vendor key does. A conversation a lifter had is their data and not a feature of the model
-  // that answered it, so a deployment that loses its key keeps every one of these three doors and
+  // that answered it, so a deployment that loses its key keeps these history and media doors and
   // simply cannot be asked anything new.
+  app.registerHandler("/v1/gym/threads/{thread}/attachments/{id}",
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
+        threads->putImage(req, std::move(cb), thread, id);
+      }, {drogon::Put});
+  app.registerHandler("/v1/gym/threads/{thread}/attachments/{id}",
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
+        threads->getImage(req, std::move(cb), thread, id);
+      }, {drogon::Get});
+  app.registerHandler("/v1/gym/threads/{thread}/generations/{request}/stop",
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& request) {
+        threads->stopGeneration(req, std::move(cb), thread, request);
+      }, {drogon::Post});
   app.registerHandler(
       "/v1/gym/threads",
       [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

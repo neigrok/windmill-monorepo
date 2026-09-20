@@ -1,6 +1,7 @@
 package works.windmill.platform.auth
 
 import javax.crypto.KeyGenerator
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -86,6 +87,49 @@ class PrefsSessionsTest {
         assertEquals(emptyMap<String, String>(), values.held)
         assertNull(sessions.read())
         assertNull(sessions.user())
+    }
+
+    @Test
+    fun coldAuthorityDistinguishesNoSessionFromMissingOrUnreadableIdentity() {
+        assertEquals(LocalSession.Absent, PrefsSessions(FakeValues(), vault).localSession)
+        for (values in listOf(FakeValues("wm_session" to secret), FakeValues("wm_user.sealed" to "unreadable"),
+            FakeValues("wm_session.sealed" to "unreadable", "wm_user.sealed" to "unreadable"),
+            FakeValues("wm_identity.sealed" to "unreadable"))) {
+            assertTrue(PrefsSessions(values, vault).localSession is LocalSession.Unresolved)
+        }
+        val legacy = PrefsSessions(FakeValues("wm_session" to secret,
+            "wm_user" to """{"id":"u_1","email":"sam@example.com","name":"Sam"}"""), vault)
+        assertEquals(LocalSession.Unresolved(sam), legacy.localSession)
+        legacy.remember(sam)
+        assertEquals(LocalSession.Owned(sam), legacy.localSession)
+    }
+
+    @Test
+    fun committedIdentityIsOneSealedPairAndFailedReplacementRetainsThePreviousOwner() {
+        val values = FakeValues()
+        var fail = false
+        var writes = 0
+        val boundary = object : KeptValues {
+            override fun read(key: String): String? = values.read(key)
+            override fun write(next: Map<String, String?>) {
+                writes += 1
+                if (fail) throw java.io.IOException("storage unavailable")
+                values.write(next)
+            }
+        }
+        val sessions = PrefsSessions(boundary, vault)
+        sessions.commit(secret, sam)
+        assertEquals(1, writes)
+        assertEquals(setOf("wm_identity.sealed"), values.held.keys)
+        val before = values.held.toMap()
+        fail = true
+        assertThrows(java.io.IOException::class.java) { sessions.commit("other-secret", User("B", "b@example.com")) }
+        assertEquals(before, values.held)
+        val reopened = PrefsSessions(values, vault)
+        assertEquals(LocalSession.Owned(sam), reopened.localSession)
+        assertEquals(secret, reopened.read())
+        assertEquals(sam, reopened.user())
+        assertThrows(java.io.IOException::class.java) { PrefsSessions(FakeValues(), SecretVault { null }).commit(secret, sam) }
     }
 
     private companion object {

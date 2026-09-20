@@ -44,8 +44,9 @@ theme, so only four are real light decisions; `--set-done-glow` is **deleted** i
 dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it
 (done in `gym.css`; the Figma collection still carries it — `1w`); and `--pr-ink` needs a designer's
 value first — see F4, which puts it at 3.2:1 with no darker gold in the ramp.
-Android takes a staged version: its skin is a compile-time object read at ~560 sites,
-`LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
+Android follows system appearance through `LocalWindmillDark` and immutable Instrument/Daylight
+palettes. Shared chrome, Settings, account sheets and system icons have native verification in
+Android delivery Wave 1; the wider device/motion audit remains in Wave 6.
 
 **F6 · a focused control inside gym rings iris, not the family's terracotta** → built 2026-08-26,
 nothing owed. The room answers three shared roles for itself, one named block per skin in
@@ -547,27 +548,10 @@ on both surfaces. What is left is the actual divergence underneath: **web draws 
 for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
 so it is filed rather than settled.
 
-**1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
-§5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
-threshold. `RadialLayoutEngine.js` is the only engine in `web/src/products/roadmap/layout/`, it uses
-no fixed ring gap (`RING = NODE_SIZE * 2.8`, each ring pushed out until its tightest pair clears
-`MIN_ARC = NODE_SIZE * 1.7`), and no dagre appears anywhere in `web/src`. The contract's own Known
-gaps section records the mismatch without resolving it. Either the contract becomes radial-only and
-§5.1's numbers take the engine's, or the dagre mode is restated as a stated future need rather than
-a rendering rule.
-
-**Roadmap caption readability** → align renderer and working-camera behavior with a readable label contract.
-`roadmap/guidelines/tree-layout-contract.md` asks for upright, unscaled captions and nominal 14px
-type. `NodeOverlay.js` instead uses `56 × 0.23 × zoom` and displays captions from zoom 0.5,
-where they are 6.44px; its pool has no label collision handling. The current Fit cap permits at
-most 8.13px captions. `roadmap/readability-research.md` records the code and live-tree evidence,
-proposes readable labels, local branch compaction and focus, and identifies the overview label
-policy that still needs a design decision. These are research recommendations; the app is unchanged.
-
 **1e · the GL renderer has no available face** → an owner call.
 `tree-layout-contract.md` §3 and `SkillNode.jsx` both give available a white body
-(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js:177` sets
-`float toLit = tier == 0 ? 0.0 : 1.0`, so tiers 1–3 all paint the full base fill and ring colour:
+(`--surface-card`) with a solid 2px kind ring. `scene/NodeBatch.js` sets
+`float toLit = tier == 0 ? 0.0 : 1.0`, so available and complete both paint the full base fill and ring colour:
 on the GL canvas — which is production — an available node is saturated and differs from complete
 only by the halo. Either the shader gains an available face, or the contract and the DOM reference
 take the renderer's.
@@ -2194,10 +2178,13 @@ existing web planning/review charter. Tracking node: `gym-web-ux-review-2026-09-
 
 ### Set kind · product direction
 
-The proposed gym web screens omit set Kind at the user's direction. Removing Kind from the app
-and reconciling set classification in the domain, metrics and cross-surface specifications remain
-implementation work; the Figma revision does not change those behaviors. Past-workout design
-refinement is tracked by `gym-past-workout-figma-refinement`.
+The approved gym web and Android screens omit set Kind at the user's direction. Android entry
+and correction have no classification selector: new sets use Working, and corrections preserve
+the stored kind. Native correction of a warm-up set and new Working entry have real-backend
+verification. Stored classification, metrics and wire fields remain intact. Web implementation and
+cross-surface specification reconciliation retain their own scope. Past-workout design refinement
+is tracked by `gym-past-workout-figma-refinement`; Android delivery by
+`android-gym-implement-refined-flows`.
 
 ### Planned targets and actual sets
 
@@ -2278,15 +2265,87 @@ All eight narrow index boards clip a 506px list into roughly 410, so the end mar
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
 
+## Roadmap bubble graduation · 10 September 2026
+
+The canvas defaults to bubble with a 168px caption reserve, up to two 14px/20px lines and
+ellipsized overflow. Bubble and radial are bundled; rings and mindmap remain URL alternatives.
+The layout result names its effective engine, including fallback, for camera storage and reorder
+behavior. Bubble siblings reorder within their trunk parent's open fan; root islands stay packed.
+
+The written contract is in `roadmap/guidelines/tree-layout-contract.md`, `responsive.md`,
+`angular-reorder.md`, and `keyboard-shortcuts.md`: 52px desktop / 40px phone working bodies,
+Focus (`F`) and All steps (`0`), 44px phone camera targets, a zoom floor of half the smaller of
+fit and working zoom, and crowded-tap zoom below the working view. Captions use ranked placement
+with 200ms eligibility holds and a 150ms fade. `roadmap/bubble-graduation.md` holds the phase's
+verification status and remaining engineering concerns; `roadmap/readability-research.md` holds
+the measurement apparatus and layout comparison.
+
+**F50 · marketing drawings and the app use different tree silhouettes** → designer follow-up.
+The app uses bubble. Live gallery portraits and the minimap draw the canvas positions; quest
+thumbnails and the paste ghost use the selected page layout with the same fallback policy.
+The `Windmill · Marketing` boards (0k) and `marketing/treeScenes.js` use hand-authored radial
+compositions. The sail scene contains 17 coordinates on rings and a scripted unlock ceremony.
+A visitor who forks that tree therefore sees a different silhouette in the app.
+
+Update the Figma marketing boards to bubble while keeping the authored names, staged progress
+states, and unlock sequence legible; then update the landing scene coordinates to match those
+boards. This is a composed design pass: engine-generated coordinates alone do not specify the
+marketing framing or the ceremony. The Figma drawings and landing scenes remain the outstanding
+canon mismatch for bubble graduation.
+
 ## Android gym refactor
 
-**F46 · Android's minimum target is 46 dp; the refined design requires 48 dp** → implementation
-follow-up. `apps/android/gym/src/main/kotlin/works/windmill/gym/ui/GymSkin.kt` declares
-`GymTap.minimum = 46.dp`. The [refined Android design](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-2)
-uses a separate scoped metric so source boards remain intact. Apply the 48 dp minimum during
-implementation and verify bounds, font scaling and system insets on device.
+**F46 · Android shared controls require a 48 dp minimum** → implemented in delivery Wave 1.
+`GymTap.minimum` and the platform action minimum are 48 dp; the logger no longer overrides
+Material's interactive minimum to 32 dp. Native root, Settings, correction and last-time targets
+were measured, with normal/200% text and gesture/three-button insets. The wider touch and TalkBack
+audit remains part of Wave 6.
 
-**F47 · Android's refined flows are a design proposal** → implementation follow-up.
-The shared components, compact logger, browse hierarchy and Live Update proposal are described in
-`gym/android-refactor.md`. Figma validation does not establish app behavior. Daylight uses existing
-tokens and still carries F44. The dogfood node is `android-gym-clean-native-design-system`.
+**F47 · Android's refined flows are being delivered in waves** → implementation in progress.
+The 90 states and behavior contracts are mapped in `gym/android-delivery.md`; the running evidence
+and plan are in `../../worklog.md`. Wave 1 implements shared chrome, native navigation, system
+Instrument/Daylight palettes, Settings, and removal of Kind and set-confirmation effects. Historical
+kind and legacy preference fields are preserved, with native real-backend correction and preference
+round-trip verification. Ordinary gesture/non-set feedback remains. Shared chrome and Settings have
+native screenshot, 200% text, IME/Back and gesture/three-button inset evidence.
+
+Wave 2 implements routines, targets/fill, More/Duplicate, independent Undo and shared movement
+creation. Native real-backend checks cover saved order/targets, guarded revision refusal and
+recovery, source-preserving duplication, continuous drag scrolling and both creation contexts.
+Instrument/Daylight, 200% text, numeric/text IME and process-restored drafts have native evidence.
+Wave3 implements compact training/rest, numeric entry, correction, truthful receipts and readback,
+public sharing and save as routine. Native verification covers complete/partial/free arithmetic,
+offline delivery, actual process restoration, retained drafts, IME-first Back and keypad-only
+cancellation through Back/Cancel/scrim/drag at normal and200% text. Historical kind remains intact.
+Wave4 implements Log history, movement progress and bodyweight from a coherent server projection;
+native verification covers ranges, sparse data, correction, independent Undo and offline recovery.
+Wave5 implements shared Coach answers and recorded read evidence, Notes, review decisions, account
+destinations and explicit local-data ownership. Native acceptance covers actual approval recovery
+across failed preflight and process death, account/IME restoration, Notes limits and conversation
+reads. Whole-routine removal preserves actual performed workouts and its immutable answer receipt.
+Immediate decisions use the actual reply; cold missing proposals show terminal availability, and
+history suppresses unknown outcome details instead of claiming Read only. Supported receipt
+validation is shared across detail/list and rejects malformed stored evidence before deriving
+outcomes. Native acceptance, focused regressions and independent final review pass.
+Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
+simplification and release verification. Daylight follows the approved existing tokens and still
+carries F44. Tracking node: `android-gym-implement-refined-flows`.
+
+Android public-sharing disclosure matches the backend payload in Figma `672:9676` and the app:
+“Includes set notes and effort.” Public workout dates/name and set facts are shared; account IDs
+and the frozen plan are excluded. Native loopback verification covers a synthetic link's creation,
+copy feedback and revoked404; the final disclosure is readable at320dp/200% text.
+
+
+**Gym feedback · quiet screens and conversation continuity** → implementation and native verification owned by the feedback delivery tasks. [feedback-contract.md](gym/feedback-contract.md) pins 68 dp routine rows/4 dp gaps, readable workout/since-set clocks, contextual Coach chrome, copy, retained-thread continuation, images and streaming. Figma masters and representative Android states are updated. [Android design verification](gym/feedback-verification.md) records inspected native Instrument/Daylight captures, 320/411 dp large-text checks, quiet history outcomes and the bounded surrounding-screen source review. Signed 0.9.0/code85 acceptance adds the narrow tab-label issue below; verification does not cover the full runtime matrix. Existing optional Android rest-alert preferences/notifications and current human Apply flows remain. The owner’s exact replacement prompt is installed with durable note saves; actual-model exploration is manual and local only.
+
+**Gym feedback · Routines tab clips at narrow large text** → open, nonblocking Android layout follow-up.
+On the published [0.9.0/code85 APK](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.0) at 320 dp width, 200% text and dark theme, the bottom tab label
+visually reads “Routine”: its final “s” is clipped. The full Routines heading and accessible tab
+name remain intact, and the tab and primary controls remain reachable. Evidence:
+`release-acceptance/clean-routines-small-large-dark.png` in the feedback runtime evidence directory.
+The Android navigation layout should retain the complete visible label at this size without
+reducing the accessible text size or touch target. This observation does not invalidate the verified
+workout clocks, routine editor, logging and finish flows, and does not establish a complete
+large-text or TalkBack traversal pass.
+Tracking node: `android-gym-large-text-tab-label` (prerequisite: `android-gym-room`).

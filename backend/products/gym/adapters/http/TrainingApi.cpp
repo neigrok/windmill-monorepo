@@ -389,6 +389,10 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
+  if (req->getParameter("projection") == "progress") {
+    cb(jsonResponse(toJson(training_->progress(*caller))));
+    return;
+  }
   cb(jsonResponse(toJson(training_->statistics(*caller))));
 }
 

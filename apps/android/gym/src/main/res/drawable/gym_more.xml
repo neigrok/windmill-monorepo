@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Geometry from docs/design/gym/assets/android/more.svg; circles converted to exact arcs. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M10.4 6 A1.6 1.6 0 1 0 13.6 6 A1.6 1.6 0 1 0 10.4 6 Z" android:fillColor="#B6B5AF" />
+    <path android:pathData="M10.4 12 A1.6 1.6 0 1 0 13.6 12 A1.6 1.6 0 1 0 10.4 12 Z" android:fillColor="#B6B5AF" />
+    <path android:pathData="M10.4 18 A1.6 1.6 0 1 0 13.6 18 A1.6 1.6 0 1 0 10.4 18 Z" android:fillColor="#B6B5AF" />
+</vector>

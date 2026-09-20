@@ -2,6 +2,8 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -17,12 +19,17 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.ClaimConsent
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.OAuthGrant
@@ -30,6 +37,7 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
+import works.windmill.gym.store.LocalClaimConsent
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
@@ -74,11 +82,51 @@ class SettingsScreenTests {
                 isSignedIn = signedIn,
                 backTo = "routines",
                 onBack = {},
-                onNotes = {},
+                onNotes = { opened += "notes" },
+                accountEmail = if (signedIn) "sam@example.com" else null,
+                onAccount = { opened += "account" },
                 onConnectedLog = { opened += "connected-log" },
                 say = {},
             )
         }
+    }
+
+    @Test
+    fun coldSettingsResumesTheFrozenSignInFlowAndCancellationAllowsANewBatch() {
+        val firstScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val logFile = File(tmp.root, "local.json")
+        val before = Exercise("ex_before", "Before", custom = true)
+        val after = Exercise("ex_after", "After", custom = true)
+        LocalLog(logFile).hold(before)
+        val first = store(firstScope, FakeTraining(), signedIn = false)
+        val flow = requireNotNull(first.requestClaimSignIn())
+        val journalFile = LocalLog(logFile).claimConsentFile
+        val decision = LocalClaimConsent(journalFile).state as ClaimConsent.AwaitingSignIn
+        firstScope.cancel()
+        LocalLog(logFile).hold(after)
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val restored = store(scope, FakeTraining(), signedIn = false)
+        val opened = mutableListOf<String>()
+        compose.setContent {
+            SettingsScreen(restored, false, "routines", {}, {}, {},
+                onClaimSignIn = { opened += it }, say = {})
+        }
+        compose.onNodeWithText("These are mine").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(flow), opened)
+            assertNull(restored.consentFailure)
+            assertEquals(decision, LocalClaimConsent(journalFile).state)
+            assertEquals(listOf(before, after), LocalLog(logFile).exercises)
+            restored.cancelClaimSignIn(flow)
+            assertNull(LocalClaimConsent(journalFile).state)
+            val nextFlow = requireNotNull(restored.requestClaimSignIn())
+            assertNotEquals(flow, nextFlow)
+            val next = LocalClaimConsent(journalFile).state as ClaimConsent.AwaitingSignIn
+            assertEquals(nextFlow, next.flowId)
+            assertEquals(setOf(before.id, after.id), next.batch.items.map { it.id }.toSet())
+        }
+        scope.cancel()
     }
 
     // No export door anywhere in gym: the row went, and with it the one browser glyph this screen
@@ -147,7 +195,7 @@ class SettingsScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
 
-        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Gym settings").assertIsDisplayed()
         compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
         scope.cancel()
     }
@@ -168,14 +216,51 @@ class SettingsScreenTests {
         scope.cancel()
     }
 
-    // The rest dial is the web's: nothing on this phone draws it.
     @Test
-    fun testThereIsNoRestCard() {
+    fun restAndUnitEditsKeepLegacyConfirmationAndRestSoundPreferences() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+        val preferences = GymPreferences(restSeconds = 90, restSound = true,
+            confirmHaptic = true, confirmSound = true)
+        val server = FakeTraining().apply { settings = preferences }
+        val store = store(scope, server, signedIn = true)
+        settings(store, signedIn = true)
 
-        compose.onNodeWithText("Rest timer").assertDoesNotExist()
+        compose.onNodeWithText("Set confirmation").assertDoesNotExist()
         compose.onNodeWithText("Sound when it ends").assertDoesNotExist()
+        compose.onNodeWithText("1:30").assertIsDisplayed()
+        compose.onNodeWithText("Rest timer").performClick()
+        compose.onNodeWithText("Seconds").performTextReplacement("14")
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Seconds").performTextReplacement("901")
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Seconds").performTextReplacement("120")
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText("2:00").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(preferences.copy(restSeconds = 120), store.preferences)
+            assertEquals(store.preferences, server.settings)
+        }
+
+        compose.onNodeWithText("lb").performClick()
+        compose.onNodeWithText("Rest timer").performClick()
+        compose.onNodeWithText("Turn off").performClick()
+        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(preferences.copy(restSeconds = null, units = Units.Pounds), store.preferences)
+            assertEquals(store.preferences, server.settings)
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun theAccountRowShowsTheCurrentEmailAndOpensTheAccountSheet() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val opened = mutableListOf<String>()
+        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true, opened)
+
+        compose.onNodeWithText("sam@example.com").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Account").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf("account"), opened) }
         scope.cancel()
     }
 

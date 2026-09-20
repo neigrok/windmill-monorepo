@@ -19,7 +19,6 @@ test('deleteCostLine — many children read in the plural', () => {
 
 test('progressVerb — an unlocked, not-yet-done step marks complete', () => {
   assert.equal(progressVerb('available'), 'complete');
-  assert.equal(progressVerb('active'), 'complete');
 });
 
 test('progressVerb — a completed step offers the reversal (no chip menu on touch)', () => {

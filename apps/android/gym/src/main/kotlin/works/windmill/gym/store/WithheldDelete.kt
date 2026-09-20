@@ -103,6 +103,7 @@ data class WithheldDelete(
     val deletion: Deletion,
     val untilMs: Long,
     val sent: Boolean = false,
+    val claimBatch: works.windmill.gym.domain.ClaimBatch? = null,
 ) {
     val subjectId: String get() = deletion.subjectId
     val takeable: Boolean get() = !sent

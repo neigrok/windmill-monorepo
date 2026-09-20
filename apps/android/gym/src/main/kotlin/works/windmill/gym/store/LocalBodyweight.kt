@@ -1,6 +1,14 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.storage.AtomicDocument
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimSource
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimItem
 import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.WeighIn
 
@@ -8,7 +16,7 @@ import works.windmill.gym.domain.WeighIn
 // like a set: a weigh-in lands here before the log is consulted and is owed to the server until the
 // server answers for it. The date is the row's identity, so a second write to the same day replaces
 // the first; the newer `recordedAt` wins, on this phone as on the server.
-class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
+class LocalBodyweight(private val file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None) {
     companion object {
         const val fileName = "windmill-gym-bodyweight.json"
     }
@@ -25,40 +33,75 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     }
 
     @Serializable
-    private data class Held(val shelves: Map<String, Shelf> = emptyMap())
+    private data class Held(val shelves: Map<String, Shelf> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
+    private val storage = StoredDocument(file, telemetry)
+    private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
-    private var held: Held = runCatching {
-        diskJson.decodeFromString(Held.serializer(), file.readText())
-    }.getOrElse { Held() }
+    private val revisions = mutableMapOf<Pair<String, String>, Long>()
+    private var held: Held = storage.one(storage.tree(), Held.serializer()) ?: Held()
 
     private val mine: Shelf get() = held.shelves[seat] ?: Shelf()
 
     private fun keep(next: Shelf) {
-        held = Held((held.shelves + (seat to next)).filterValues { !it.isEmpty })
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        held = held.copy(shelves = (held.shelves + (seat to next)).filterValues { !it.isEmpty })
         flush()
     }
 
-    // The one place the seat changes hands. The anonymous shelf MOVES onto a confirmed account seat:
-    // every row on it is still owed, because nobody was signed in to send it.
-    fun adopt(owner: String?, confirmed: Boolean = true) {
-        val next = Seat.of(owner)
-        val anonymous = held.shelves[Seat.anonymous] ?: Shelf()
-        val carrying = owner != null && confirmed && !anonymous.isEmpty
-        if (next == seat && !carrying) return
-        val arriving = held.shelves[next] ?: Shelf()
-        val landed = if (!carrying) arriving else Shelf(
-            entries = arriving.entries + anonymous.entries.filterValues { mine ->
-                val theirs = arriving.entries[mine.dateLocal]
-                theirs == null || theirs.recordedAt < mine.recordedAt
-            },
-            owed = (arriving.owed + anonymous.entries.keys).distinct(),
-            deleted = arriving.deleted.filterNot { it in anonymous.entries },
-        )
-        val parked = if (carrying) held.shelves - Seat.anonymous else held.shelves
-        seat = next
-        held = Held((parked + (next to landed)).filterValues { !it.isEmpty })
-        flush()
+    // Selecting a seat never transfers training from another seat.
+    fun adopt(owner: String?) {
+        seat = Seat.of(owner)
+    }
+
+    fun claimItems(): List<ClaimItem> = ClaimSource.entries.flatMap { source ->
+        held.shelves[source.seat]?.entries.orEmpty().values.sortedBy { it.dateLocal }.map {
+            claimItem(source, ClaimKind.Bodyweight, it.dateLocal, it, WeighIn.serializer(), it.recordedAt)
+        }
+    }
+
+    fun preflight(batch: ClaimBatch, owner: String?) { transfer(batch, owner) }
+
+    fun complete(batch: ClaimBatch, owner: String?) {
+        val next = transfer(batch, owner)
+        if (next == held) return
+        try {
+            AtomicDocument.write(file, diskJson.encodeToString(Held.serializer(), next))
+        } catch (failure: Exception) {
+            transferFailed = true
+            throw failure
+        }
+        next.shelves.forEach { (key, shelf) ->
+            shelf.entries.forEach { (date, value) ->
+                if (held.shelves[key]?.entries?.get(date) != value) revisions[key to date] = (revisions[key to date] ?: 0) + 1
+            }
+        }
+        held = next
+    }
+
+    private fun transfer(batch: ClaimBatch, owner: String?): Held {
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        if (held.claims.completed(batch, owner)) return held
+        var shelves = held.shelves
+        for (item in batch.items.filter { it.kind == ClaimKind.Bodyweight }) {
+            val value = item.decode(WeighIn.serializer())
+            check(value.dateLocal == item.id)
+            if (owner != null) {
+                val target = shelves[Seat.of(owner)] ?: Shelf()
+                val existing = target.entries[item.id]
+                if (existing == null || existing.recordedAt < value.recordedAt) {
+                    shelves = shelves + (Seat.of(owner) to target.copy(entries = target.entries + (item.id to value),
+                        owed = (target.owed + item.id).distinct(), deleted = target.deleted - item.id))
+                }
+            }
+            val source = shelves[item.source.seat] ?: continue
+            val existing = source.entries[item.id] ?: continue
+            if (item.matches(existing, WeighIn.serializer())) {
+                shelves = shelves + (item.source.seat to source.copy(entries = source.entries - item.id,
+                    owed = source.owed - item.id, deleted = source.deleted - item.id))
+            }
+        }
+        return held.copy(shelves = shelves.filterValues { !it.isEmpty }, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }
 
     // Ascending by date.
@@ -70,10 +113,13 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
 
     val deletions: List<String> get() = mine.deleted.sorted()
 
+    fun revision(dateLocal: String): Long = revisions[seat to dateLocal] ?: 0L
+
     // The row that stands after the write: the newer of the two by `recordedAt`.
     fun record(weighIn: WeighIn): WeighIn {
         val standing = mine.entries[weighIn.dateLocal]
         if (standing != null && standing.recordedAt > weighIn.recordedAt) return standing
+        revisions[seat to weighIn.dateLocal] = revision(weighIn.dateLocal) + 1
         keep(mine.copy(
             entries = mine.entries + (weighIn.dateLocal to weighIn),
             owed = (mine.owed + weighIn.dateLocal).distinct(),
@@ -83,6 +129,7 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
     }
 
     fun delete(dateLocal: String) {
+        revisions[seat to dateLocal] = revision(dateLocal) + 1
         keep(mine.copy(
             entries = mine.entries - dateLocal,
             owed = mine.owed - dateLocal,
@@ -111,16 +158,19 @@ class LocalBodyweight(private val file: File, deviceOwner: String? = null) {
         keep(mine.copy(entries = mine.entries - dateLocal, owed = mine.owed - dateLocal))
     }
 
-    // The account's series replaces what this device last read, except for what the device still
-    // owes: an owed write outranks the server's older row, and a pending delete outranks its row.
+    // Pending writes survive missing or older server rows; a newer canonical row settles the date.
     fun readBack(stored: List<WeighIn>) {
-        val kept = mine.owed.mapNotNull { date -> mine.entries[date]?.let { date to it } }.toMap()
         val served = stored.filterNot { it.dateLocal in mine.deleted }.associateBy { it.dateLocal }
-        keep(mine.copy(entries = served + kept))
+        val pending = mine.owed.mapNotNull { date ->
+            val local = mine.entries[date] ?: return@mapNotNull null
+            val remote = served[date]
+            if (remote != null && remote.recordedAt >= local.recordedAt) return@mapNotNull null
+            date to local
+        }.toMap()
+        keep(mine.copy(entries = served + pending, owed = pending.keys.toList()))
     }
 
     private fun flush() {
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), held) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        storage.write(held, Held.serializer())
     }
 }

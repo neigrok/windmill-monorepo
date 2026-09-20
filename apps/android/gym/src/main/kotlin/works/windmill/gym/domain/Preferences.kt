@@ -10,9 +10,8 @@ import kotlinx.serialization.encoding.Encoder
 // Kilograms are the only thing stored: `units` is a display transform at the edge and reaches no write.
 // A PUT replaces the whole document and an omitted field takes its default, and kotlinx omits a value
 // equal to its declared default — so the defaults below must match the server's.
-// `restSeconds` and `restSound` are the web's rest dial: this phone draws neither and never clamps
-// them, only carries them through the whole-document write as read (a `restSound` of true is omitted
-// on the wire, which is the server's default for it).
+// Settings edits the rest target. Rest sound and legacy set-confirmation fields round-trip unchanged
+// when another preference is edited; their serialized defaults remain the server's defaults.
 
 @Serializable(with = UnitsSerializer::class)
 enum class Units(val wire: String) {

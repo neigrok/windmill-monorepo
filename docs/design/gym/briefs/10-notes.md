@@ -1,7 +1,7 @@
 # Notes — the context a lifter writes for Coach
 
 A gym-only screen, reached from gym settings and from Coach's own room: **title-and-text pairs the
-lifter writes and Coach reads.** A note holds anything from *keep your tone blunt* to the exact
+lifter writes and Coach reads, including useful user-provided insights Coach saves.** A note holds anything from *keep your tone blunt* to the exact
 programme they are running and the goal they are chasing.
 
 ## What the screen says out loud — one line
@@ -23,11 +23,9 @@ Under the heading, one more line, and its wording is load-bearing:
 
 > **what you write for Coach**
 
-Not *what Coach reads about you* — a note is not something the product noticed about a lifter, it is
-an instruction they addressed to their own instrument, and "about you" implies an accumulating
-profile, which is the thing this feature is not. It also weakens the honesty line: if these are things
-you wrote deliberately, *any agent you connect can read these* is a fact you can act on; if they were
-things the product noticed, it reads as a confession.
+Notes contains deliberate user instructions and useful insights explicitly supplied during Coach
+conversations. Coach may append one new insight in the user's wording; it cannot edit, delete or
+reorder existing notes. The user retains those controls on the Notes screen.
 
 ### Three lines that used to be here, and where they went
 
@@ -57,7 +55,7 @@ not read, and stacking them made the product **less** honest.
 ## The shape
 
 A note is **a title and a body**. Nothing else. No tags, no folders, no colours. Both stored
-**verbatim**, exactly as typed — nothing in this product summarises what a lifter wrote.
+**verbatim** on save. Coach uses the user's own wording for constraints and does not invent facts.
 
 **Bounded, and the bounds are one number in three places.** Ten notes per account; a title of at
 most 60 characters (Unicode code points, non-empty after trim); a body of at most 500 UTF-8 bytes
@@ -66,7 +64,10 @@ the `list_notes` tool's description, and the server refuses in three sentences e
 verbatim: *a note needs a title*, *a title runs to 60 characters*, *a note runs to 500 bytes*.
 Everything around this is bounded by name, and an unbounded free-text field feeding a prompt would
 be the one exception. A note's id is client-minted, `note_<hex>`, so a lost reply is replayed with
-the same id and never minted twice.
+the same id and never minted twice. Coach assigns its own stable note-save identity per generation;
+exact title/body matches reuse an existing note. Its immutable save receipt survives later user edits
+and deletion, so replay does not undo them. New Coach notes append at the bottom and respect the
+same cap; when full, Coach reports that nothing was saved.
 
 **The ceiling is said when it is reached, and here is where that is**, because "at the moment it
 bites" is not a location:

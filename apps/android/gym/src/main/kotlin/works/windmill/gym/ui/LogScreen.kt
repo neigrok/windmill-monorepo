@@ -1,140 +1,41 @@
 package works.windmill.gym.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import java.time.Instant
+import androidx.compose.ui.unit.sp
 import java.time.ZoneId
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.progressReading
+import works.windmill.gym.domain.progressSeries
+import works.windmill.gym.domain.LogReadout
+import works.windmill.gym.domain.MovementProgress
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheetWindow
 
-// Weeks are the CLIENT's fold and start Monday in the zone the lifter trained in, never in UTC.
-object LogFold {
-    data class Row(
-        val summary: SessionSummary,
-        val title: String,
-        val at: String,
-        val working: String?,
-        val tonnage: String?,
-        val estimate: String?,
-        val onThisDeviceOnly: Boolean,
-        val record: Boolean,
-    )
-
-    // `startMs` is the week's Monday and its identity: the label carries no year, so two Januaries
-    // five years apart print the same words, and a list may not key two rows the same.
-    data class Week(val startMs: Long, val label: String, val tonnage: String?, val rows: List<Row>)
-
-    // `complete` is whether the log has been read to its bottom; only the oldest week may be partial.
-    fun weeks(
-        sessions: List<SessionSummary>,
-        onThisDevice: Set<String>,
-        complete: Boolean,
-        nowMs: Long,
-    ): List<Week> {
-        val buckets = sessions
-            .filter { !it.session.isOpen }
-            .sortedByDescending { it.startedAtMs }
-            .groupBy { monday(it.startedAtMs) }
-        val oldest = buckets.keys.lastOrNull()
-        return buckets.map { (start, sessionsInWeek) ->
-            Week(
-                startMs = start,
-                label = Readout.weekOf(start),
-                // One session with no tonnage takes the whole week's caption rather than a short total.
-                tonnage = when {
-                    start == oldest && !complete -> null
-                    sessionsInWeek.any { it.tonnageKg == null } -> null
-                    else -> Readout.tonnes(sessionsInWeek.sumOf { it.tonnageKg ?: 0.0 })
-                },
-                rows = sessionsInWeek.map { summary ->
-                    Row(
-                        summary = summary,
-                        title = summary.plan?.routine ?: Readout.noRoutine,
-                        at = Readout.whenLogged(summary.startedAtMs, nowMs),
-                        working = summary.workingSetCount?.let(Readout::workingSets),
-                        tonnage = summary.tonnageKg?.let(Readout::tonnes),
-                        estimate = summary.topE1rm?.let(Readout::estimate),
-                        onThisDeviceOnly = summary.id in onThisDevice,
-                        record = summary.record,
-                    )
-                },
-            )
-        }
-    }
-
-    // The head over the weeks. Both halves count what is IN HAND: the wire answers pages and there
-    // is no total to ask for. `logHolds` is whether the ACCOUNT has a finished session, which is a
-    // different question from whether any row is drawn — a log whose rows a window is holding is not
-    // one still opening, and one read to its end has nothing left to count.
-    fun head(weeks: List<Week>, older: Older, logHolds: Boolean): String? {
-        if (weeks.isEmpty()) {
-            if (logHolds || older == Older.End || older == Older.Failed) return null
-            return "opening the log…"
-        }
-        val sessions = Readout.sessionCount(weeks.sumOf { it.rows.size })
-        if (weeks.size == 1) return "$sessions · 1 week loaded"
-        return "$sessions · ${weeks.size} weeks loaded"
-    }
-
-    private fun monday(ms: Long): Long {
-        val zone = ZoneId.systemDefault()
-        val date = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
-        val monday = date.minusDays(((date.dayOfWeek.value + 6) % 7).toLong())
-        return monday.atStartOfDay(zone).toInstant().toEpochMilli()
-    }
-}
-
-// The reading sits in the head with the title; the one input, the weigh-in chip, is PINNED under the
-// list in the reach band — the head scrolls away exactly when a hand reaches for it.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
@@ -144,324 +45,182 @@ fun LogScreen(
     onOpenBodyweight: () -> Unit,
     onShareSession: (String) -> Unit,
     onDiscardSession: (String) -> Unit,
+    onOpenMovement: (String) -> Unit = {},
+    now: () -> Long = System::currentTimeMillis,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = System.currentTimeMillis()
+    val nowMs = now()
+    val zone = ZoneId.systemDefault()
     val onThisDevice = store.shelved.map { it.id }.toSet()
-    val weeks = LogFold.weeks(store.recent, onThisDevice, complete = store.older == Older.End, nowMs = nowMs)
-    // The rows are the window's and the STANCE is the log's: an account holding one session the window
-    // has taken off the screen is not an empty log — the row comes back on Undo, and both the
-    // invitation and `opening the log…` would be drawn over training that is still there.
+    val weeks = LogReadout.weeks(store.recent, onThisDevice, nowMs, store.progress)
     val logHolds = store.allSessions.any { !it.session.isOpen }
     val load: () -> Unit = { scope.launch { store.loadOlder() } }
-    var weighingIn by remember { mutableStateOf(false) }
+    var weighingIn by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
-    var refused by remember { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
+    var closing by remember { mutableStateOf(false) }
+    var refused by rememberSaveable { mutableStateOf<String?>(null) }
+    val formState = rememberSaveableStateHolder()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
+    val listState = rememberLazyListState()
+    val cardState = rememberLazyListState()
+    val cards = store.progress?.recentMovements(nowMs, zone).orEmpty()
+    LaunchedEffect(store.accountKey) { store.loadProgress() }
     fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion {
-            weighingIn = false
-            refused = null
+        if (saving || closing) return
+        closing = true
+        scope.launch {
+            try { sheetState.hide(); weighingIn = false; refused = null; formState.removeState("weigh-in") }
+            finally { closing = false }
         }
     }
-
-    GymScreen(title = "The log", actions = { YouSeat(seat) }) {
+    GymScreen(title = "Log", actions = { YouSeat(seat) }) {
         Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(
-                    start = GymLayout.gutter,
-                    end = GymLayout.gutter,
-                    top = GymLayout.contentTop,
-                    bottom = GymLayout.scrollTailBand,
-                ),
-            ) {
+            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item("head") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LogReadout.head(weeks, store.older == Older.More || store.older == Older.Loading, logHolds)?.let {
+                            Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                        }
+                        store.progress?.consistencyWeeks(nowMs, zone)?.let {
+                            Text("Trained $it of the last 4 weeks", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+                        }
+                    }
+                }
+                if (store.latestWeighIn != null) item("bodyweight") {
+                    BodyweightReading(store.latestWeighIn, nowMs, onOpenBodyweight)
+                }
+                if (store.progressFailure != null) item("progress-failed") {
                     Column {
-                        LogFold.head(weeks, store.older, logHolds)?.let {
-                            Text(it, style = GymType.numeral(13), color = GymSkin.inkFaint)
-                        }
-                        BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
+                        Text("Progress unavailable", style = WindmillFont.body(16), color = skin.ink)
+                        Text(store.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
+                        TextButton(onClick = { scope.launch { store.loadProgress(force = true) } }) { Text("Try again") }
                     }
+                } else if (store.progressLoading && store.progress == null) item("progress-reading") {
+                    Text("Reading progress…", style = WindmillFont.body(14), color = skin.inkDim)
                 }
-
-                // Three silences: the log said so · the read failed · the log has not answered yet.
-                if (weeks.isEmpty()) {
-                    // Between the two stances — every row held by a window, over a log that still
-                    // holds them — the room draws neither line.
-                    when {
-                        store.older == Older.End && !logHolds -> item("empty") { Empty() }
-                        store.older == Older.Failed -> item("failed") {
-                            LogFoot(Older.Failed, first = null, onLoad = load)
-                        }
-                    }
-                    return@LazyColumn
-                }
-
-                weeks.forEach { week ->
-                    item("week:${week.startMs}") { WeekDivider(week) }
-                    items(week.rows, key = { it.summary.id }) { row ->
-                        Box(Modifier.padding(bottom = WindmillSpace.x2)) {
-                            SessionRow(
-                                row = row,
-                                onOpen = { onOpenSession(row.summary) },
-                                onShare = { onShareSession(row.summary.id) },
-                                onDiscard = { onDiscardSession(row.summary.id) },
-                            )
-                        }
-                    }
-                }
-
-                item("foot") {
-                    LogFoot(
-                        older = store.older,
-                        // The day training started is a claim about the ACCOUNT, not a caption on
-                        // the rows: a window holding the oldest row may not move it. `allSessions`
-                        // is newest first, so the last finished one is the first ever logged.
-                        first = store.allSessions.lastOrNull { !it.session.isOpen },
-                        onLoad = load,
-                    )
-                }
-            }
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WindmillSpace.x5)
-                    .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
-            ) {
-                WeighInChip(onOpen = { weighingIn = true })
-            }
-        }
-    }
-
-    if (weighingIn) {
-        ModalBottomSheet(
-            onDismissRequest = { close() },
-            sheetState = sheetState,
-            containerColor = GymSkin.surface,
-        ) {
-            WeighInSheet(
-                initial = null,
-                fixedDate = null,
-                nowMs = nowMs,
-                saving = saving,
-                refused = refused,
-                onSave = { dateLocal, weightKg ->
-                    scope.launch {
-                        if (saving) return@launch
-                        saving = true
-                        try {
-                            refused = null
-                            val failed = store.weighIn(dateLocal, weightKg)
-                            if (failed != null) {
-                                refused = failed.line("that weigh-in stayed on this device")
-                                return@launch
+                if (cards.isNotEmpty()) item("progress") {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val width = if (LocalDensity.current.fontScale >= 1.5f) maxWidth else minOf(280.dp, maxWidth)
+                        LazyRow(state = cardState, flingBehavior = rememberSnapFlingBehavior(cardState), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(cards, key = { it.exerciseId }) { card ->
+                                ProgressCard(card, Readout.movement(card.exerciseId, store.catalog), nowMs, zone,
+                                    Modifier.width(width), store.progress?.movement(card.exerciseId)?.best?.id) { onOpenMovement(card.exerciseId) }
                             }
-                            close()
-                        } finally {
-                            saving = false
                         }
                     }
-                },
-                onDelete = null,
-            )
+                }
+                if (weeks.isEmpty()) {
+                    when {
+                        store.older == Older.End && !logHolds -> item("empty") {
+                            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                Text("No sessions yet", style = WindmillFont.body(28, FontWeight.Bold).copy(lineHeight = 39.sp), color = skin.ink)
+                                Text("Your training will land here.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
+                            }
+                        }
+                        store.older == Older.Failed -> item("failed") { LogFoot(Older.Failed, null, load) }
+                    }
+                } else {
+                    weeks.forEach { week ->
+                        item("week:${week.startMs}") {
+                            Text(week.label.replaceFirstChar { it.titlecase() }, style = WindmillFont.body(14, FontWeight.Bold), color = skin.inkDim)
+                        }
+                        items(week.rows, key = { it.summary.id }) { row ->
+                            SessionRow(row, { onOpenSession(row.summary) }, { onShareSession(row.summary.id) }, { onDiscardSession(row.summary.id) })
+                        }
+                    }
+                    item("foot") { LogFoot(store.older, store.allSessions.lastOrNull { !it.session.isOpen }, load) }
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 12.dp)) {
+                WeighInChip { weighingIn = true }
+            }
+        }
+    }
+    if (weighingIn) ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false), containerColor = skin.surface, scrimColor = skin.scrim) {
+        WindmillSheetWindow()
+        formState.SaveableStateProvider("weigh-in") {
+            WindmillSheetBack(onDismiss = { close() }) {
+                BackHandler(saving || closing) {}
+                WeighInSheet(null, null, now(), saving || closing, refused,
+                    onSave = { date, kg ->
+                        if (!saving && !closing) {
+                            saving = true
+                            refused = null
+                            scope.launch {
+                                try {
+                                    val failure = store.weighIn(date, kg)
+                                    if (failure != null) refused = failure.line("That weigh-in could not be saved.")
+                                    else { saving = false; close() }
+                                } finally { saving = false }
+                            }
+                        }
+                    }, onDelete = null, draftKey = "${store.accountKey}:new")
+            }
         }
     }
 }
 
 @Composable
-private fun WeekDivider(week: LogFold.Week) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = WindmillSpace.x4, bottom = WindmillSpace.x2),
-    ) {
-        Text(
-            week.label.uppercase(),
-            style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-            color = GymSkin.inkFaint,
-        )
-        Box(
-            Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(GymSkin.line),
-        )
-        week.tonnage?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
+private fun ProgressCard(card: MovementProgress, name: String, nowMs: Long, zone: ZoneId, modifier: Modifier,
+    standingBestId: String?, onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
+    Column(modifier.background(skin.surface, RoundedCornerShape(20.dp)).clickable(role = Role.Button, onClickLabel = "Open movement record", onClick = onOpen).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("$name ›", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp), color = skin.ink)
+        if (card.hasChart(zone)) DatedPlot(progressSeries(card, nowMs, zone), standingBestId = standingBestId)
+        Text("Last 12 weeks · ${Readout.sessionCount(card.sessions.size)}", style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
+        val latest = card.latest
+        val best = card.best
+        if (latest != null && latest.id != best?.id) Text("Latest ${progressReading(latest, nowMs)}", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+        best?.let { Text("Best e1RM ${Readout.estimatedWeight(it.fact.estimate!!.e1rm)} kg · ${Readout.briefDay(it.startedAt, nowMs)}",
+            style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = if (it.id == standingBestId) skin.prInk else skin.ink) }
+        card.heaviest?.let { Text("Heaviest ${Readout.effort(it.fact.heaviest.weightKg, it.fact.heaviest.reps)} · ${Readout.briefDay(it.startedAt, nowMs)}",
+            style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
     }
 }
 
-// `record` is one bool over three rules — best e1RM, most reps at a weight, heaviest load for any
-// reps — and the wire does not say which was earned, so nothing here may colour a number gold.
-//
-// The long press draws nothing and carries BOTH acts — `Share this workout` and `Discard session`.
-// 13-gestures kept Discard out of this menu only until the withheld delete existed; it does now, so
-// discarding here withholds for nine seconds exactly as the review screen's Discard does, and the
-// review screen is the drawn door Law 1 asks for. A `⋮` on every row to carry an act the menu can
-// hold would be Law 4 backwards: a gesture earns its place by REMOVING a control.
 @Composable
-private fun SessionRow(
-    row: LogFold.Row,
-    onOpen: () -> Unit,
-    onShare: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    var menuUp by remember { mutableStateOf(false) }
+private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> Unit, onDiscard: () -> Unit) {
+    val skin = LocalGymColors.current
+    var menu by remember { mutableStateOf(false) }
     val haptics = rememberGymHaptics()
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .combinedClickable(
-                role = Role.Button,
-                onClickLabel = "open this session",
-                onLongClickLabel = "what you can do with this workout",
-                onLongClick = {
-                    haptics.revealed()
-                    menuUp = true
-                },
-                onClick = onOpen,
-            )
-            // A long press is not reachable by a screen reader, so both of its acts are declared
-            // again — this row draws no button for either of them.
-            .semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction("Share this workout") { onShare(); true },
-                    CustomAccessibilityAction(Finish.discard) { onDiscard(); true },
-                )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).background(skin.surface, RoundedCornerShape(16.dp))
+            .combinedClickable(role = Role.Button, onClickLabel = "Open session", onLongClickLabel = "Workout actions",
+                onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
+            .semantics { customActions = listOf(CustomAccessibilityAction("Share this workout") { onShare(); true },
+                CustomAccessibilityAction(Finish.discard) { onDiscard(); true }) }.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(row.title, style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp), color = skin.ink)
+                Text(row.facts, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                if (row.onThisDeviceOnly) Text("On this device", style = WindmillFont.body(14), color = skin.inkDim)
+                if (row.record) Text("Record set", style = WindmillFont.body(14), color = skin.inkDim)
             }
-            .padding(start = WindmillSpace.x4, end = WindmillSpace.x4, top = WindmillSpace.x3,
-                     bottom = WindmillSpace.x3),
-    ) {
-        DropdownMenu(
-            expanded = menuUp,
-            onDismissRequest = { menuUp = false },
-            containerColor = GymSkin.raised,
-        ) {
-            DropdownMenuItem(
-                text = { Text("Share this workout", color = GymSkin.ink) },
-                onClick = {
-                    menuUp = false
-                    onShare()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(Finish.discard, color = GymSkin.alarmInk) },
-                onClick = {
-                    menuUp = false
-                    onDiscard()
-                },
-            )
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(row.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            if (row.record) {
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .background(GymSkin.prInk, CircleShape)
-                        .semantics { contentDescription = "a record was set" },
-                )
+            Text("›", style = WindmillFont.body(24), color = skin.inkDim)
+            DropdownMenu(menu, { menu = false }, containerColor = skin.raised) {
+                DropdownMenuItem(text = { Text("Share this workout") }, onClick = { menu = false; onShare() })
+                DropdownMenuItem(text = { Text(Finish.discard) }, onClick = { menu = false; onDiscard() })
             }
-            if (row.onThisDeviceOnly) {
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .border(1.5.dp, GymSkin.unsyncedInk, CircleShape)
-                        .semantics { contentDescription = "on this device only" },
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Text(row.at, style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-            row.working?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
-            row.tonnage?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
-            row.estimate?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim) }
-        }
+        row.caption?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
     }
 }
 
 @Composable
 private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
+    val skin = LocalGymColors.current
     if (older == Older.End) {
-        if (first == null) return
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .padding(top = WindmillSpace.x3),
-        ) {
-            Text(
-                "first session · ${Readout.date(first.startedAtMs)}",
-                style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
-            )
-        }
+        if (first != null) Text("First session · ${Readout.date(first.startedAtMs)}", style = WindmillFont.body(14), color = skin.inkDim)
         return
     }
-    if (older == Older.Failed) {
-        FootBox("That read failed · retry", GymSkin.alarmInk, GymSkin.alarmInk, onLoad)
-        return
+    Button(onClick = onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
+        Text(when (older) { Older.Failed -> "Retry"; Older.Loading -> "Loading"; else -> "Load older" })
     }
-    if (older == Older.Loading) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .padding(top = WindmillSpace.x3)
-                .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-                .padding(horizontal = WindmillSpace.x4),
-        ) {
-            Spacer(Modifier.weight(1f))
-            CircularProgressIndicator(
-                color = GymSkin.inkFaint,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(14.dp),
-            )
-            Text("Loading", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
-            Spacer(Modifier.weight(1f))
-        }
-        return
-    }
-    FootBox("Load older", GymSkin.inkDim, GymSkin.lineStrong, onLoad)
-}
-
-@Composable
-private fun FootBox(label: String, ink: Color, line: Color, onTap: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .padding(top = WindmillSpace.x3)
-            .border(1.dp, line, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(role = Role.Button, onClick = onTap),
-    ) {
-        Text(label, style = WindmillFont.body(15, FontWeight.SemiBold), color = ink)
-    }
-}
-
-@Composable
-private fun Empty() {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier.padding(top = WindmillSpace.x6),
-    ) {
-        Text("No sessions yet.", style = WindmillFont.body(16), color = GymSkin.inkDim)
-    }
+    if (older == Older.Failed) Text("That read failed.", style = WindmillFont.body(14), color = skin.inkDim)
 }

@@ -16,15 +16,18 @@ class ThreadService {
 public:
   ThreadService(AskThreadRepository& threads, Clock& clock);
 
+  std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id);
+  ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image);
+  std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread, const std::string& requestId);
+  std::optional<AskGeneration> stopGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId);
   std::vector<AskThread> threads(const UserId& user);
+  std::vector<AskThread> threads(const UserId& user, const ThreadCursor& cursor);
+  std::optional<AskThread> thread(const UserId& user, const ThreadId& id, std::uint64_t before, int limit);
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id);
   // The conversation goes, the consequence stays: an applied change is still in the routine's
   // history.
   bool deleteThread(const UserId& user, const ThreadId& id);
 
-  // Ask is the only caller; a conversation is dated by the server's clock. `openThread` lands before
-  // the model runs, a proposal minted mid-conversation pointing at the row; `appendTurns` lands only
-  // once an answer has; `discardEmptyThread` takes back a thread holding no turns.
   ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title);
   void appendTurns(const UserId& user, const ThreadId& id, std::vector<ThreadTurn> turns);
   void discardEmptyThread(const UserId& user, const ThreadId& id);

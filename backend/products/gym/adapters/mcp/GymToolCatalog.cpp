@@ -272,7 +272,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   {
     // The bounds are the entity's (domain/Note.h) and the schema's; the sentence states them.
     tools.push_back(tool("list_notes", Access::read,
-        "The notes the lifter wrote FOR the agent reading their log — at most ten, each a title of "
+        "The lifter's standing instructions and useful user-provided insights saved for Coach — at most ten, each a title of "
         "up to 60 characters and a body of up to 500 bytes, stored exactly as typed. They are the "
         "lifter's own standing instructions to you (how to talk to them, what they are training "
         "for, the programme they run), and the order is precedence: the top note wins where two "
@@ -280,6 +280,19 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "Answers {notes: [{position, title, body}]} and carries no `read` block: a note is not a "
         "log row. Takes no arguments.",
         Json::Value(Json::objectValue), {}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["id"] = str("Stable id for this note save; reuse it when retrying the same insight.");
+    p["title"] = str("Concise title, at most 60 characters. Preserve the user's actual meaning.");
+    p["body"] = str("Useful NEW insight explicitly supplied by the user, in their own wording, at most 500 UTF-8 bytes. Do not turn assumptions into facts.");
+    tools.push_back(tool("save_note", Access::write,
+        "Save a useful new user-provided insight for future coaching. Read list_notes first and avoid "
+        "repeating existing information. Appends at the bottom of Notes, never edits, deletes or "
+        "reorders existing notes. Exact title/body duplicates reuse the existing note. At most ten notes. "
+        "Answers {saved:true,note:{id,position,title,body,updatedAt}} only after durable save. Reusing "
+        "the same id and text replays that original receipt without changing or restoring a note the "
+        "user later edited or deleted. Report only what the successful receipt proves.", p, {"id", "title", "body"}));
   }
   {
     // A read and nothing else: no tool at any grant level writes a weigh-in, and nothing named

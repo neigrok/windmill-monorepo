@@ -3,8 +3,10 @@
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace wm::gym {
 
@@ -23,6 +25,55 @@ struct ReadTally {
   bool operator==(const ReadTally&) const = default;
 };
 
+struct AskStep {
+  std::string tool;
+  bool failed = false;
+
+  bool operator==(const AskStep&) const = default;
+};
+
+struct WorkoutObservation {
+  int workingSetCount = 0;
+  double tonnageKg = 0;
+  std::optional<std::uint64_t> durationMs;
+
+  WorkoutObservation() = default;
+  WorkoutObservation(const Session& session, int workingSetCount, double tonnageKg);
+  WorkoutObservation(const Session& session, const std::vector<Set>& sets);
+  bool operator==(const WorkoutObservation&) const = default;
+};
+
+enum class ReadCoverage { summary, session, movement };
+
+struct SessionObservation {
+  std::string tool;
+  SessionId sessionId;
+  std::uint64_t startedAtMs = 0;
+  std::optional<std::uint64_t> finishedAtMs;
+  std::optional<std::string> routine;
+  ReadCoverage coverage = ReadCoverage::summary;
+  std::optional<ExerciseId> exerciseId;
+  int setsRead = 0;
+  std::optional<WorkoutObservation> workout;
+
+  SessionObservation() = default;
+  SessionObservation(std::string tool, const Session& session, ReadCoverage coverage,
+                     int setsRead, std::optional<WorkoutObservation> workout = std::nullopt,
+                     std::optional<ExerciseId> exerciseId = std::nullopt);
+  bool operator==(const SessionObservation&) const = default;
+};
+
+struct AnswerReceipt {
+  int version = 1;
+  ReadTally read;
+  std::vector<AskStep> steps;
+  std::vector<std::string> proposals;
+  std::vector<SessionObservation> observations;
+
+  bool valid() const;
+  bool operator==(const AnswerReceipt&) const = default;
+};
+
 // Monday 00:00 UTC of the week an instant falls in — the same boundary Postgres computes for
 // `get_stats`; if the two disagree a receipt counts one week twice.
 std::uint64_t weekStartMs(std::uint64_t atMs);
@@ -33,15 +84,18 @@ public:
   void sawSession(const SessionId& id, std::uint64_t startedAtMs);
   // `get_stats` hands over one row per week including the empty ones, and an empty week still counts.
   void sawWeek(std::uint64_t weekStartedAtMs);
-  // Merges by id, so rows several replies both carried count once.
+  void observed(SessionObservation observation);
+  // Rows deduplicate by identity; ordered observations remain separate snapshots.
   void merge(const ReadReceipt& other);
 
   ReadTally tally() const;
+  const std::vector<SessionObservation>& observations() const { return observations_; }
 
 private:
   std::set<std::string> sets_;
   std::set<std::string> sessions_;
   std::set<std::uint64_t> weeks_;
+  std::vector<SessionObservation> observations_;
 };
 
 }

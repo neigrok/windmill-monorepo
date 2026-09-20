@@ -489,6 +489,7 @@ class WithheldWindowTests {
     // gone off the log nine seconds later.
     @Test
     fun testAWeighInForAHeldDayTakesThatWindowBackInsteadOfQueueingBehindIt() = runTest {
+        clockMs = java.time.LocalDate.of(2026, 8, 31).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         val server = FakeTraining()
         val store = seated(server)
         val day = "2026-08-31"
@@ -516,6 +517,8 @@ class WithheldWindowTests {
     @Test
     fun testTheShelfsDiscardSettlesItselfAndLeavesEveryOtherWindowRunning() = runTest {
         val server = FakeTraining()
+        LocalLog(File(tmp.root, "local.json")).hold(
+            works.windmill.gym.domain.Exercise("ex_unclaimed", "Unclaimed press", custom = true))
         val store = seated(server)
         store.readNotes()
         server.writeNote("note_1", works.windmill.gym.domain.NoteWrite("Tone", "blunt"))
@@ -526,6 +529,8 @@ class WithheldWindowTests {
         assertEquals(listOf("note_1", "unattributed"), store.withheld.map { it.subjectId })
 
         store.settleWithheld(Deletion.Unattributed.subjectId)
+        assertNull(store.localDataBatch)
+        assertEquals(emptyList<works.windmill.gym.domain.Exercise>(), LocalLog(File(tmp.root, "local.json")).exercises)
         assertEquals("the note's own clock is still the lifter's",
             listOf("note_1"), store.withheld.map { it.subjectId })
 

@@ -272,7 +272,6 @@ struct FakeProgressRepository : ProgressRepository {
       ProgressDigest& digest = overlays[TreeId{k.substr(0, firstNl)}];
       NodeId node{k.substr(secondNl + 1)};
       if (entry.status == ProgressStatus::complete) digest.overlay.completed.insert(node);
-      else if (entry.status == ProgressStatus::active) digest.overlay.inProgress.insert(node);
       if (entry.at.physicalMs > digest.lastMarkedAt) digest.lastMarkedAt = entry.at.physicalMs;
     }
     return overlays;

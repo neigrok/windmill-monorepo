@@ -51,7 +51,6 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
     commitLegend(deriveLegend(treeData.nodes, treeData.kinds));
   }, [commitLegend]);
 
-  const clearLegendStore = useCallback((treeId) => legendStore.clear(treeId), []);
 
   const onRenameKind = useCallback((id, label) => {
     collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
@@ -116,7 +115,6 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
     highlightedKindIdRef,
     hydrateLegend,
     syncLegendFromTree,
-    clearLegendStore,
     clearHighlightedKind,
     onRenameKind,
     onDescribeKind,

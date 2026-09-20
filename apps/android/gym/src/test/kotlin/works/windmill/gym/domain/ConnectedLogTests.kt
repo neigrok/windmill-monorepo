@@ -58,6 +58,7 @@ class ConnectedLogTests {
         assertEquals("A connected tool", ConnectedLog.unnamedGrant)
         assertEquals("A static key", ConnectedLog.unnamedKey)
         assertEquals("Couldn’t read your connections.", ConnectedLog.unread)
+        assertEquals("Connections unavailable", ConnectedLog.unavailable)
         assertEquals("Manage connections", ConnectedLog.manage)
         assertEquals("your AI tools", ConnectedLog.settingsUnknown)
         assertEquals("nothing connected yet", ConnectedLog.settingsNone)

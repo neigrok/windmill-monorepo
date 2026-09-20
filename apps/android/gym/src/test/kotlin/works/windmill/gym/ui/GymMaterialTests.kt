@@ -1,135 +1,57 @@
 package works.windmill.gym.ui
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.platform.design.WindmillColor
 
 class GymMaterialTests {
-    private val scheme = gymColorScheme
-
     @Test
-    fun theAccentIsTheSchemesPrimaryAndTheInkOnItIsTheRoomsOwn() {
-        assertEquals(GymSkin.accent, scheme.primary)
-        assertEquals(GymSkin.onAccent, scheme.onPrimary)
-        // A tonal container Material fills for itself; the rail names it as its indicator by hand,
-        // and this wash measures 1.52:1 on the bar against border-default's 1.30:1 (ledger `1v`,
-        // pinned in GymRailTests).
-        assertEquals(GymSkin.accentSoft, scheme.secondaryContainer)
-        assertEquals(GymSkin.accent, scheme.onSecondaryContainer)
-    }
-
-    @Test
-    fun goldIsNowhereInTheScheme() {
-        val everySlot = listOf(
-            "primary" to scheme.primary, "onPrimary" to scheme.onPrimary,
-            "primaryContainer" to scheme.primaryContainer,
-            "onPrimaryContainer" to scheme.onPrimaryContainer,
-            "secondary" to scheme.secondary, "onSecondary" to scheme.onSecondary,
-            "secondaryContainer" to scheme.secondaryContainer,
-            "onSecondaryContainer" to scheme.onSecondaryContainer,
-            "tertiary" to scheme.tertiary, "onTertiary" to scheme.onTertiary,
-            "background" to scheme.background, "onBackground" to scheme.onBackground,
-            "surface" to scheme.surface, "onSurface" to scheme.onSurface,
-            "surfaceVariant" to scheme.surfaceVariant, "onSurfaceVariant" to scheme.onSurfaceVariant,
-            "surfaceContainer" to scheme.surfaceContainer,
-            "surfaceContainerHigh" to scheme.surfaceContainerHigh,
-            "surfaceContainerHighest" to scheme.surfaceContainerHighest,
-            "surfaceTint" to scheme.surfaceTint,
-            "inverseSurface" to scheme.inverseSurface, "inverseOnSurface" to scheme.inverseOnSurface,
-            "inversePrimary" to scheme.inversePrimary,
-            "outline" to scheme.outline, "outlineVariant" to scheme.outlineVariant,
-            "error" to scheme.error, "onError" to scheme.onError,
-        )
-        // Gold means a personal record in this room and is painted by hand where a PR is; a Material
-        // control taking it from the scheme would say `record` on a switch.
-        val wearingGold = everySlot.filter { (_, colour) ->
-            colour == GymSkin.prInk || colour == GymSkin.prSoft
+    fun nativeControlsAndSharedAccountChromeUseTheSamePaletteInBothModes() {
+        listOf(true to GymSkin.Instrument, false to GymSkin.Daylight).forEach { (dark, skin) ->
+            val scheme = gymColorScheme(skin, dark)
+            val palette = gymPalette(skin)
+            assertEquals(listOf(skin.accent, skin.onAccent, skin.canvas, skin.ink, skin.inkDim),
+                listOf(scheme.primary, scheme.onPrimary, scheme.background, scheme.onSurface,
+                    scheme.onSurfaceVariant))
+            assertEquals(listOf(palette.accent, palette.onAccent, palette.canvas, palette.ink, palette.inkDim),
+                listOf(scheme.primary, scheme.onPrimary, scheme.background, scheme.onSurface,
+                    scheme.onSurfaceVariant))
+            assertEquals(skin.inkDim, palette.inkFaint)
+            assertEquals(skin.raised, scheme.secondaryContainer)
+            assertEquals(skin.ink, scheme.onSecondaryContainer)
+            assertEquals(skin.alarmInk, scheme.error)
+            assertEquals(skin.scrim, scheme.scrim)
         }
-        assertEquals(emptyList<Pair<String, Color>>(), wearingGold)
-
-        val ours = setOf(
-            GymSkin.canvas, GymSkin.surface, GymSkin.raised, GymSkin.line, GymSkin.lineStrong,
-            GymSkin.accent, GymSkin.onAccent, GymSkin.accentSoft, GymSkin.ink, GymSkin.inkDim,
-            GymSkin.inkFaint, GymSkin.setDone, GymSkin.alarmInk, Color.Transparent, Color.Black,
-        )
-        val strangers = everySlot.filterNot { (_, colour) -> colour in ours }.map { it.first }
-        assertEquals("every slot a Material control reads is a colour this room already draws",
-                     emptyList<String>(), strangers)
     }
 
     @Test
-    fun everyPaletteSlotIsAColourTheRoomDrawsAndNoneIsGold() {
-        val palette = gymPalette
-        val everySlot = listOf(
-            "canvas" to palette.canvas, "surface" to palette.surface,
-            "ink" to palette.ink, "inkDim" to palette.inkDim, "inkFaint" to palette.inkFaint,
-            "line" to palette.line, "lineStrong" to palette.lineStrong,
-            "accent" to palette.accent, "onAccent" to palette.onAccent,
-            "noticeWash" to palette.noticeWash, "noticeInk" to palette.noticeInk,
-        )
-        // The shell's sheet and door are painted in these slots over the room, and gold there would
-        // read as a personal record.
-        val wearingGold = everySlot.filter { (_, colour) ->
-            colour == GymSkin.prInk || colour == GymSkin.prSoft
-        }.map { it.first }
-        assertEquals(emptyList<String>(), wearingGold)
-
-        val brand = WindmillColor.run {
-            listOf(neutral0, neutral25, neutral50, neutral100, neutral200, neutral300, neutral400,
-                   neutral500, neutral600, neutral700, neutral800, neutral900)
-        }.flatMap { listOf(it.dark, it.light) }.toSet() +
-            setOf(WindmillColor.gold400, WindmillColor.olive400, WindmillColor.olive500)
-        val brandsOwn = everySlot.filter { (_, colour) -> colour in brand }.map { it.first }
-        assertEquals("no slot of the room's palette is the brand's warm brown or gold",
-                     emptyList<String>(), brandsOwn)
-
-        val ours = setOf(
-            GymSkin.canvas, GymSkin.surface, GymSkin.raised, GymSkin.line, GymSkin.lineStrong,
-            GymSkin.accent, GymSkin.onAccent, GymSkin.accentSoft, GymSkin.ink, GymSkin.inkDim,
-            GymSkin.inkFaint,
-        )
-        val strangers = everySlot.filterNot { (_, colour) -> colour in ours }.map { it.first }
-        assertEquals("every slot the shell's chrome reads is a colour this room already draws",
-                     emptyList<String>(), strangers)
-        assertEquals(GymSkin.accent, palette.accent)
-        assertEquals(GymSkin.surface, palette.surface)
-        assertEquals(GymSkin.accentSoft, palette.noticeWash)
-    }
-
-    @Test
-    fun theDestroyHueIsBrickAndTheGroundIsTheCanvas() {
-        assertEquals(GymSkin.alarmInk, scheme.error)
-        assertEquals(GymSkin.canvas, scheme.surface)
-        assertEquals(GymSkin.canvas, scheme.background)
-        assertEquals(GymSkin.surface, scheme.surfaceVariant)
-        assertEquals(GymSkin.ink, scheme.onSurface)
-        assertEquals(GymSkin.inkFaint, scheme.onSurfaceVariant)
-        assertEquals(GymSkin.lineStrong, scheme.outline)
-        assertEquals(GymSkin.line, scheme.outlineVariant)
-    }
-
-    @Test
-    fun everyRoleIsTabularAndTakesTheRoomsOwnFaces() {
-        val roles: List<Pair<String, TextStyle>> = with(gymTypography) {
-            listOf(
-                "displayLarge" to displayLarge, "displayMedium" to displayMedium,
-                "displaySmall" to displaySmall, "headlineLarge" to headlineLarge,
-                "headlineMedium" to headlineMedium, "headlineSmall" to headlineSmall,
-                "titleLarge" to titleLarge, "titleMedium" to titleMedium, "titleSmall" to titleSmall,
-                "bodyLarge" to bodyLarge, "bodyMedium" to bodyMedium, "bodySmall" to bodySmall,
-                "labelLarge" to labelLarge, "labelMedium" to labelMedium, "labelSmall" to labelSmall,
-            )
+    fun personalRecordGoldNeverBecomesANativeControlColor() {
+        listOf(true to GymSkin.Instrument, false to GymSkin.Daylight).forEach { (dark, skin) ->
+            val scheme = gymColorScheme(skin, dark)
+            val colors = with(scheme) {
+                listOf(primary, onPrimary, primaryContainer, onPrimaryContainer,
+                    secondary, onSecondary, secondaryContainer, onSecondaryContainer,
+                    tertiary, onTertiary, tertiaryContainer, onTertiaryContainer,
+                    background, onBackground, surface, onSurface, surfaceVariant, onSurfaceVariant,
+                    surfaceContainerLowest, surfaceContainerLow, surfaceContainer,
+                    surfaceContainerHigh, surfaceContainerHighest, surfaceTint,
+                    inverseSurface, inverseOnSurface, inversePrimary, outline, outlineVariant,
+                    error, onError, errorContainer, onErrorContainer, scrim)
+            }
+            assertEquals(emptyList<Color>(), colors.filter { it == skin.prInk || it == skin.prSoft })
         }
-        val untabular = roles.filterNot { it.second.fontFeatureSettings == "tnum" }.map { it.first }
-        assertEquals("a running clock and a changing weight jitter without tabular figures",
-                     emptyList<String>(), untabular)
-        assertTrue("nothing falls back to a stock Material size",
-                   roles.all { it.second.fontSize.value > 0f })
-        assertFalse("the top bar's title is the display face, not the body one",
-                    gymTypography.titleLarge.fontWeight == gymTypography.bodyLarge.fontWeight)
+    }
+
+    @Test
+    fun everyNativeTypeRoleKeepsTabularFiguresAndTheSharedTextBudgets() {
+        val roles = with(gymTypography) {
+            listOf(displayLarge, displayMedium, displaySmall, headlineLarge, headlineMedium,
+                headlineSmall, titleLarge, titleMedium, titleSmall, bodyLarge, bodyMedium,
+                bodySmall, labelLarge, labelMedium, labelSmall)
+        }
+        assertTrue(roles.all { it.fontFeatureSettings == "tnum" && it.fontSize.value > 0f })
+        assertEquals(24f, gymTypography.titleLarge.fontSize.value)
+        assertEquals(16f, gymTypography.labelLarge.fontSize.value)
     }
 }

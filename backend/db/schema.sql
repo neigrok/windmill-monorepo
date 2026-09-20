@@ -175,6 +175,20 @@ alter table node_progress add column if not exists stamp_ms bigint not null defa
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 alter table node_progress add column if not exists out_of_order boolean not null default false;
 
+-- Roadmap completion has two values. Keep register stamps and receipt times so a migration
+-- cannot outrank later user work or make an old node appear newly touched.
+update node_progress set status = 'none', out_of_order = false
+where status in ('active', 'inProgress');
+update tree_nodes set status = 'none' where status in ('active', 'inProgress');
+update trees
+set document = jsonb_set(document, '{nodes}', (
+  select jsonb_agg(case when node->>'status' in ('active', 'inProgress')
+    then jsonb_set(node, '{status}', '"none"'::jsonb) else node end order by ordinal)
+  from jsonb_array_elements(document->'nodes') with ordinality as entries(node, ordinal)
+))
+where jsonb_typeof(document->'nodes') = 'array'
+  and jsonb_path_exists(document, '$.nodes[*] ? (@.status == "active" || @.status == "inProgress")');
+
 -- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
 
 -- Passwordless sign-in. A link is addressed by the digest of its secret; the raw token is never at
@@ -890,6 +904,13 @@ alter table gym_routines add column if not exists created_entries int;
 alter table gym_routines add column if not exists created_door text
   check (created_door in ('mcp','ask'));
 
+create table if not exists gym_routine_creations (
+  routine_id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  routine jsonb not null
+);
+create index if not exists gym_routine_creations_owner on gym_routine_creations(user_id);
+
 -- Positions are dense and 1-based; entries have no id, their key is their position, and a replace
 -- lays the whole run down again. The same movement twice is two rows. A line's target is the
 -- scheme in gym_routine_entry_sets below; a line with no set rows is OPEN, decided at the rack.
@@ -1145,8 +1166,7 @@ create table if not exists gym_ask_threads (
 );
 create index if not exists gym_ask_threads_user on gym_ask_threads (user_id, asked_at desc);
 
--- The turns, stored as sent, byte for byte. Written a pair at a time and only after an answer
--- lands, so a failed ask leaves this table exactly as it found it and the retry appends once.
+-- Terminal exchanges, including failed partial answers. A generation retry updates its same pair.
 create table if not exists gym_ask_turns (
   thread_id   text not null references gym_ask_threads(id) on delete cascade,
   position    int  not null check (position >= 1),
@@ -1156,6 +1176,47 @@ create table if not exists gym_ask_turns (
   said_at     timestamptz not null,
   primary key (thread_id, position)
 );
+alter table gym_ask_turns add column if not exists receipt jsonb;
+alter table gym_ask_turns add column if not exists generation_id text;
+alter table gym_ask_turns add column if not exists results jsonb;
+alter table gym_ask_turns add column if not exists request_id text;
+alter table gym_ask_turns add column if not exists status text not null default 'completed';
+create index if not exists gym_ask_threads_page on gym_ask_threads (user_id, asked_at desc, id desc);
+create table if not exists gym_ask_generations (
+  id text primary key,
+  thread_id text not null references gym_ask_threads(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  request_id text not null,
+  payload jsonb not null,
+  operation jsonb,
+  created_at timestamptz not null default now(),
+  unique (thread_id, request_id)
+);
+create index if not exists gym_ask_generations_thread on gym_ask_generations(thread_id, created_at desc, id desc);
+
+alter table gym_ask_turns add column if not exists attachments jsonb;
+alter table gym_ask_generations add column if not exists stop_requested boolean not null default false;
+create table if not exists gym_ask_attachments (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  thread_id text not null,
+  linked_thread_id text references gym_ask_threads(id) on delete cascade,
+  media_type text not null check (media_type in ('image/jpeg','image/png')),
+  width int not null check (width between 1 and 4096),
+  height int not null check (height between 1 and 4096),
+  data bytea not null check (octet_length(data) between 1 and 5242880),
+  created_at timestamptz not null default now()
+);
+create index if not exists gym_ask_attachments_owner on gym_ask_attachments(user_id, created_at);
+create index if not exists gym_ask_attachments_cleanup on gym_ask_attachments(created_at) where linked_thread_id is null;
+
+create table if not exists gym_ask_deleted_threads (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  deleted_at timestamptz not null default now()
+);
+create index if not exists gym_ask_deleted_threads_owner on gym_ask_deleted_threads(user_id);
+create index if not exists gym_ask_attachments_thread on gym_ask_attachments(linked_thread_id);
 
 -- Which conversation minted this proposal. Null for every MCP-door proposal and for one whose
 -- thread was deleted; both read to a client as nothing to open.
@@ -1188,6 +1249,15 @@ create table if not exists gym_notes (
   updated_at  timestamptz not null default now(),
   unique (user_id, position) deferrable initially deferred
 );
+
+-- Immutable Coach save receipts survive note edits and deletion.
+create table if not exists gym_note_saves (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  note jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists gym_note_saves_owner on gym_note_saves(user_id);
 
 -- A lifter's weigh-ins: one row per LOCAL calendar day, kilograms to two decimals, and the identity
 -- is the day — a second write to the same day is a correction, never a second row. `recorded_at`

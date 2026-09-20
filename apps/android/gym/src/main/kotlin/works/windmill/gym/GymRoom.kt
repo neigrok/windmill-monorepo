@@ -1,9 +1,13 @@
 package works.windmill.gym
 
+import works.windmill.platform.design.WindmillSheetWindow
 import android.app.Activity
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -11,13 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.List
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.outlined.DateRange
-import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -33,16 +32,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import works.windmill.platform.net.WindmillJson
+import works.windmill.gym.domain.SessionDetail
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -51,13 +57,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.io.File
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskCap
+import works.windmill.gym.domain.CoachAttachment
+import works.windmill.gym.domain.CoachDraft
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Coach
@@ -74,12 +81,9 @@ import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.Deletion
-import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
@@ -92,7 +96,7 @@ import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymMaterial
-import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
@@ -109,15 +113,26 @@ import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.ThreadScreen
 import works.windmill.gym.ui.ThreadsScreen
 import works.windmill.gym.ui.askThreadSaver
+import works.windmill.gym.notification.WorkoutNotifications
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import works.windmill.gym.ui.routineDraftSaver
+import works.windmill.platform.you.YouDestination
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.Account
-import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
+import works.windmill.platform.AccountActions
 import works.windmill.platform.ProductModule
+import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
 // Gym's one seam into the superapp.
-class GymModule : ProductModule {
+class GymModule(private val store: TrainingStore, private val notifications: WorkoutNotifications? = null) : ProductModule {
     override val id = "gym"
     override val label = "Gym"
 
@@ -128,13 +143,13 @@ class GymModule : ProductModule {
 
     @Composable
     override fun Room(account: Account) {
-        GymRoom(account)
+        GymRoom(account, store, notifications)
     }
 }
 
 internal enum class Tab(val title: String) {
     Routines("Routines"),
-    Log("The log"),
+    Log("Log"),
     Coach("Coach"),
 }
 
@@ -186,17 +201,29 @@ internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::r
 // thread travel as IDS, because what they say changes under them. `Coach` carries a DRAFT, never the
 // thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
 // not a destination at all: it is a sheet over whichever of these is standing.
+@Serializable
 private sealed interface Away {
-    data class Session(val summary: SessionSummary) : Away
+    @Serializable
+    data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
+    @Serializable
     data class Movement(val exerciseId: String) : Away
+    @Serializable
     data class Program(val routineId: String) : Away
+    @Serializable
     data class Coach(val seed: String = "") : Away
+    @Serializable
     data object Threads : Away
+    @Serializable
     data class Thread(val threadId: String) : Away
+    @Serializable
     data object Settings : Away
+    @Serializable
     data object Connections : Away
+    @Serializable
     data object Notes : Away
+    @Serializable
     data class NoteEditor(val note: Note?, val seedTitle: String) : Away
+    @Serializable
     data object Bodyweight : Away
 }
 
@@ -217,60 +244,57 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 //
 // A live session takes the whole screen, rail included; a pushed screen covers the rail too.
 //
-// A room's state dies when you leave it, store included: the queue is on disk after every tap and
-// leaving flushes, or a set is refused once the session closes.
+// The application owns the store; this room owns only navigation and transient UI state.
 
-// The store the room runs over, on this device's own files and in a scope that dies with the room.
-// Its own factory because it is the room's one collaborator: a test stands the room over a store it
-// can reach and a log it can refuse with, which is the only way the transient's own rules — a
-// refusal is SAID, a way back is retired — can be pinned at all.
-@Composable
-internal fun rememberDeviceStore(): TrainingStore {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    return remember {
-        // Read off the session store, never off `account`: this room mounts before /v1/me resolves.
-        val deviceOwner = PrefsSessions(context).user()?.id
-        TrainingStore(
-            SetQueue(File(context.filesDir, SetQueue.fileName), deviceOwner),
-            DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
-            LocalLog(File(context.filesDir, LocalLog.fileName), deviceOwner),
-            LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
-            LocalBodyweight(File(context.filesDir, LocalBodyweight.fileName), deviceOwner),
-            scope,
-        )
-    }
-}
+private fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
+    save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
+    restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }
+        .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
+)
+
+private fun finishedSaver(telemetry: Telemetry) = Saver<FinishedSession?, String>(
+    save = { it?.let { value -> WindmillJson.encodeToString(FinishedSession.serializer(), value) } ?: "" },
+    restore = { raw -> raw.takeIf { it.isNotEmpty() }?.let {
+        runCatching { WindmillJson.decodeFromString(FinishedSession.serializer(), it) }
+            .onFailure { telemetry.failure("gym.restoreFinishedSession", it) }.getOrNull()
+    } },
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
+fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null) {
+    val telemetry = LocalTelemetry.current
+    val skin = LocalGymColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val shell = LocalShellActions.current
+    val notificationPrefs = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notifications?.refreshCapabilities()
+    }
 
-    // The receipt for the session just closed, raised as a sheet over that session. NOT saved: it
-    // carries the sets the queue has already let go of. Its refusal rides beside it, because a sheet
-    // covers the room's bottom bar.
-    var finished by remember { mutableStateOf<FinishedSession?>(null) }
+    // The committed detail survives process replacement after the queue closes.
+    var finished by rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
+    val currentAccount by rememberUpdatedState(account)
     var finishFailure by remember { mutableStateOf<String?>(null) }
-    val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val finishStates = rememberSaveableStateHolder()
+    var keepingRoutine by remember { mutableStateOf(false) }
+    val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { !keepingRoutine })
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     var closingFinish by remember { mutableStateOf(false) }
-    // A stack, not a slot: one pushed screen can reach another. NOT saved, so no screen is drawn
-    // over a store that has not read the disk yet. The activity handles rotation itself
-    // (`configChanges` in the manifest), so a recreation here means the process was reclaimed.
-    var away by remember { mutableStateOf<List<Away>>(emptyList()) }
-    var keptRoutine by remember { mutableStateOf(false) }
+    var away by rememberSaveable(stateSaver = remember(telemetry) { awaySaver(telemetry) }) { mutableStateOf<List<Away>>(emptyList()) }
+    var keptRoutine by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
-    var keepingRoutine by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
     // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
     // mid-review lands back on the card, which decides nothing either.
     var reviewing by remember { mutableStateOf<Reviewing?>(null) }
-    val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var reviewBusy by remember { mutableStateOf(false) }
+    val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !reviewBusy })
     // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
     // string it is, ids joined by a space.
     var lookedAt by rememberSaveable { mutableStateOf("") }
@@ -278,17 +302,18 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // from the server's apply reply and vanishes with the screen, and nothing pretends otherwise.
     var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
-    // the turns but not the receipt, the tools or a question that failed with no reply.
-    var conversation by rememberSaveable(stateSaver = askThreadSaver) {
+    // the turns and receipts; unanswered submissions also live in the account’s local journal.
+    var conversation by rememberSaveable(stateSaver = remember(telemetry) { askThreadSaver(telemetry) }) {
         mutableStateOf(emptyList<AskExchange>())
     }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
     // drawn off it.
-    var building by rememberSaveable(stateSaver = routineDraftSaver) {
+    var building by rememberSaveable(stateSaver = remember(telemetry) { routineDraftSaver(telemetry) }) {
         mutableStateOf<RoutineDraft?>(null)
     }
     // Which conversation the next question lands in; minted by this phone, empty until somebody asks.
     var conversationId by rememberSaveable { mutableStateOf("") }
+    var conversationSeed by rememberSaveable { mutableStateOf("") }
     // Outlives the screen, because the request does.
     var asking by remember { mutableStateOf(false) }
     // Which seat the thread above belongs to; empty is the anonymous one. Saved with the thread.
@@ -296,8 +321,9 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // Whether this room has met the lifter. NOT saved: `account.user` is null until /v1/me answers,
     // so the first frame of every launch looks like nobody signed in.
     var seatRead by remember { mutableStateOf(account.user != null) }
+    val sessionStates = key(seat) { rememberSaveableStateHolder() }
     // This deployment has no Coach: a bare 404 from the route. Not remembered past the room's life.
-    var askAbsent by remember { mutableStateOf(false) }
+    var askAbsent by rememberSaveable { mutableStateOf(false) }
     // An allowance ran out — the day's ten, or the account's 30-day ceiling: the composer is down
     // until the room is entered again, and the log is the one that says whether it is back. Which
     // ceiling it was decides what is said and which door leads. Saved: a recreation is not a
@@ -332,10 +358,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // Opened over whatever is standing; the door is where the receipt will land.
     fun review(proposalId: String, routineId: String, door: String) {
+        if (store.session != null) { note = "Finish this session"; return }
         reviewing = Reviewing(proposalId, routineId, door)
     }
 
     fun closeReview() {
+        if (reviewBusy) return
         scope.launch { reviewSheet.hide() }.invokeOnCompletion { reviewing = null }
     }
 
@@ -346,11 +374,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // mutex, and a cancelled job completes too — so without both guards a double tap would run the
     // door's continuation twice, the second wiping what the first had just begun.
     fun closeFinish(then: () -> Unit = {}) {
-        if (closingFinish) return
+        if (closingFinish || keepingRoutine) return
         closingFinish = true
         scope.launch { finishSheet.hide() }.invokeOnCompletion { cause ->
             closingFinish = false
             if (cause != null) return@invokeOnCompletion
+            finished?.let { finishStates.removeState(it.routineCreationId) }
             finished = null
             finishFailure = null
             then()
@@ -368,6 +397,28 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
 
     val live = store.session != null
+    val screen = when {
+        reviewing != null -> "proposal"
+        finished != null -> "finish"
+        building != null -> "routine_editor"
+        away.isNotEmpty() -> when (away.last()) {
+            is Away.Session -> "session"
+            is Away.Movement -> "movement"
+            is Away.Program -> "routine"
+            is Away.Coach -> "coach"
+            Away.Threads -> "threads"
+            is Away.Thread -> "thread"
+            Away.Settings -> "settings"
+            Away.Connections -> "connections"
+            Away.Notes -> "notes"
+            is Away.NoteEditor -> "note_editor"
+            Away.Bodyweight -> "bodyweight"
+        }
+        live -> "workout"
+        else -> tab.name.lowercase()
+    }
+    LaunchedEffect(screen) { telemetry.event("gym_screen_viewed", mapOf("screen" to screen)) }
+
     val means = backMeans(live, building != null, away.size, tab)
     BackHandler(enabled = means != BackMeans.LeaveTheApp) {
         when (means) {
@@ -384,28 +435,70 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // `connect` drains what the device is still holding BEFORE it reads the log: a read settles a
     // stale open session at its last activity, and past four hours from that close an owed set is
     // refused for good.
-    LaunchedEffect(account.user?.id, account.verified) {
+    val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
+    val accountActions = remember(shell, store) {
+        AccountActions(
+            listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
+                YouDestination("connections", "Connected log") { openDestination(Away.Connections) }),
+            beforeSignIn = { user, flow -> store.approveSignIn(user.id, flow) },
+            cancelSignIn = store::cancelClaimSignIn,
+        )
+    }
+    SideEffect { shell.present(accountActions) }
+
+    LaunchedEffect(store.workoutOpenRequest) {
+        if (store.workoutOpenRequest > 0 && store.session != null) {
+            away = emptyList()
+            tab = Tab.Routines
+        }
+    }
+
+    LaunchedEffect(account.user?.id, account.verified, account.resolved, account.identityRevision) {
+        if (!account.resolved) return@LaunchedEffect
         // A conversation belongs to the seat it was had on. A bare `standing != seat` would be
         // wrong: this effect runs first at composition, when `account.user` is null for everybody.
         val standing = account.user?.id
-        if (Ask.handedOver(seat, standing, seatRead)) {
+        if (Ask.handedOver(seat, standing, seatRead) || (standing == null && seat.isNotEmpty())) {
             conversation = emptyList()
+            conversationSeed = ""
+            asking = false
+            cap = null
             // The id goes with the words, or the next lifter's question lands in somebody else's
             // conversation.
             conversationId = ""
             seat = standing ?: ""
             receipts = emptyMap()
+            finished = null
+            building = null
+            reviewing = null
+            finishFailure = null
+            note = null
+            away = emptyList()
         }
         if (standing != null) seatRead = true
         // The thread is saved and the request is not, so a recreation mid-answer restores a question
         // with nothing coming.
         conversation = Ask.settled(conversation)
         store.connect(account)
+        if (conversationId.isEmpty() && standing != null) {
+            try {
+                store.pendingQuestions().lastOrNull()?.let { pending ->
+                    conversationId = pending.thread
+                    val read = store.thread(pending.thread)
+                    conversation = if (read is GymResult.Ok) read.value.exchanges() else emptyList()
+                    if (read !is GymResult.Ok || read.value.generation?.requestId != pending.requestId) {
+                        conversation = conversation + store.pendingExchange(pending)
+                    }
+                    conversation = Ask.settled(conversation)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
+        }
     }
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
     // tab change and sheet; the clock that closes a window is the store's own, one per act, so a
-    // screen going away settles nothing. Only the room unmounting for good flushes early, below.
+    // screen going away settles nothing; the application owns queued delivery.
     //
     // ONE transient, ONE owner. Two different things can have a way back open at the same moment — a
     // delete being withheld, and a set just logged, which used to be a text button inside the logger's
@@ -476,19 +569,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     }
 
     // ON_STOP is the second net behind ON_PAUSE. The dispose flush is launched UNSTRUCTURED: the
-    // composition scope dies with the room and the drain it owes the log may not.
-    //
-    // THE WINDOW LIVES ONLY WHILE THE ROOM IS ON SCREEN. Leaving it — the app going to the
-    // background, the room going away for good, or the process dying — abandons everything the room
-    // was holding, a set's delete with the rest: the rows come back, nothing goes on the wire and
-    // nothing is said on the next open, because nothing happened. Sending instead would make
-    // `swipe · switch apps · come back` an unrecoverable delete reached by two ordinary actions,
-    // which is the exact hazard the withheld window exists to prevent. Nothing is written to disk,
-    // so a process death abandons on its own. What leaves this room unstructured is the QUEUE's
-    // drain — sets already logged, on disk, retried — and no delete rides out with it.
-    //
-    // ON_STOP and not ON_PAUSE: a dialog or a permission sheet over the room is still the room on
-    // screen, and a window that closed for those would be a way back lost to a system prompt.
+    // Held deletes are screen-local; logged sets retain their durable delivery window.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
@@ -505,10 +586,7 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
             store.abandonWithheld()
-            // The owed sets and nothing else: a set that never landed is refused forever once its
-            // session closes, so its drain outlives the room on purpose. The window does not — it
-            // was abandoned whole a line ago.
-            CoroutineScope(Dispatchers.Main.immediate).launch { store.flushPendingSets(force = true) }
+
         }
     }
 
@@ -536,6 +614,12 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
                 }
                 away = emptyList()
                 tab = Tab.Routines
+                if (notifications != null && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                    !notificationPrefs.getBoolean("requested", false)) {
+                    notificationPrefs.edit().putBoolean("requested", true).apply()
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 val movement = LiveOrder.resume(store.order, store.sets) ?: return@launch
                 store.choose(movement)
             } finally {
@@ -544,38 +628,39 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
         }
     }
 
-    // Take the sets BEFORE the close: the queue lets go of a delivered row the moment its session
-    // ends.
-    //
-    // The workout it closed is PUSHED before the receipt is raised, so dismissing the receipt leaves
-    // the lifter in the workout they finished (16-the-workout) rather than back on the routines home.
     fun close() {
         scope.launch {
-            val live = store.session ?: return@launch
-            val performed = store.sets
+            val owner = currentAccount.user?.id
             note = null
             when (val ended = store.finish()) {
                 is FinishOutcome.Closed -> {
+                    if (owner != currentAccount.user?.id) return@launch
                     haptics.finished()
-                    keptRoutine = false
+                    keptRoutine = null
                     finishFailure = null
-                    away = listOf(Away.Session(SessionSummary(ended.session, performed)))
+                    away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets), ended.detail))
                     pruneReceipts()
-                    finished = FinishedSession(
-                        session = ended.session,
-                        sets = performed,
-                        review = store.review(live.id),
-                        // The account's own count and never the drawn one: a session deleted a
-                        // moment ago is still on the log while its window runs, and the workout just
-                        // finished is not the first.
-                        isFirst = store.allSessions.size <= 1,
-                    )
+                    finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
+                        isFirst = store.allSessions.size <= 1, routinePosition = store.allRoutines.size, reviewRead = false)
                 }
                 is FinishOutcome.Stranded ->
                     note = "${Readout.setCount(ended.count)} still on this device — the session stays open until they land"
                 is FinishOutcome.Failed ->
                     note = ended.why.line("the session is still open")
             }
+        }
+    }
+
+    val receipt = finished?.let { store.retainedSession(SessionDetail(it.session, it.sets)) }
+    LaunchedEffect(receipt, account.resolved) {
+        if (!account.resolved || account.user?.id.orEmpty() != seat) return@LaunchedEffect
+        val detail = receipt ?: return@LaunchedEffect
+        finished = finished?.copy(session = detail.session, sets = detail.sets)
+        if (away.isEmpty()) away = listOf(Away.Session(SessionSummary(detail.session, detail.sets), detail))
+        val owner = currentAccount.user?.id
+        val review = store.review(detail.session.id)
+        if (owner == currentAccount.user?.id && receipt?.session?.id == detail.session.id) {
+            finished = finished?.copy(review = review, reviewRead = true)
         }
     }
 
@@ -592,49 +677,84 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
 
     // Asked from the room, not from the screen that draws it, so the coroutine and the answer outlive
     // a lifter walking away mid-wait. The door closes on the way IN, or two taps are two spends.
-    fun ask(from: List<AskExchange>, question: String) {
-        if (asking || !Ask.sendable(question)) return
+    var coachJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var coachUpload by remember { mutableStateOf<Float?>(null) }
+    var stopPending by remember { mutableStateOf(false) }
+    fun ask(from: List<AskExchange>, question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
+        if (asking || Ask.needsNew(from) || (!Ask.sendable(question) && (photo == null || question.toByteArray().size > Ask.maxTurnBytes))) return
+        val askingOwner = currentAccount.user?.id
         val asked = question.trim()
         // Minted before the send and kept whatever comes back, so a retry continues the same
-        // conversation. It names the CONVERSATION and is not per-question idempotency, so nothing
-        // here is ever re-sent on its own.
+        // conversation. Each question also retains its own request ID for retries.
         val into = conversationId.ifEmpty { Ids.thread().also { conversationId = it } }
+        val previous = conversation.lastOrNull()?.takeIf { it.requestId == requestId }
+        val attachments = previous?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
+        val pending = AskExchange(question = asked, requestId = requestId, generation = previous?.generation, attachments = attachments)
+        try {
+            store.saveCoachDraft(into, CoachDraft(asked, attachments.firstOrNull()))
+            store.saveCoachDraft("new", CoachDraft())
+        } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
+        cap = null
         asking = true
-        conversation = from + AskExchange(question = asked)
-        scope.launch {
+        coachUpload = if (attachments.isNotEmpty() && previous?.generation == null) 0f else null
+        conversation = from + pending
+        coachJob = scope.launch {
             try {
-                when (val outcome = store.ask(into, asked)) {
-                    is AskOutcome.Answered ->
-                        conversation = from + AskExchange(question = asked, answer = outcome.answer)
-                    is AskOutcome.Refused ->
-                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
-                    is AskOutcome.Capped -> {
-                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
-                        cap = outcome.cap
-                    }
-                    is AskOutcome.Failed ->
-                        conversation = from + AskExchange(
-                            question = asked, trouble = outcome.said, again = true)
-                    // The conversation is over and the question is fine: let go of the id and offer
-                    // the tap, which opens a new conversation with the same question.
-                    is AskOutcome.Fresh -> {
-                        conversationId = ""
-                        conversation = from + AskExchange(
-                            question = asked, trouble = outcome.said, again = true)
-                    }
-                    AskOutcome.Absent -> {
-                        conversation = from + AskExchange(question = asked, trouble = Ask.notHere)
-                        askAbsent = true
-                    }
-                }
+                val outcome = store.ask(into, asked, requestId, attachments.firstOrNull(), stream = true,
+                    onSnapshot = { snapshot ->
+                        if (askingOwner == currentAccount.user?.id && conversationId == into) {
+                            conversation = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
+                            store.saveCoachDraft(into, CoachDraft())
+                        }
+                    }, onUpload = { coachUpload = it })
+                if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
+                conversation = from + outcome.exchange(pending)
+                if (outcome is AskOutcome.Capped) cap = outcome.cap
+                if (outcome is AskOutcome.Absent) askAbsent = true
+                if (outcome is AskOutcome.Answered) store.saveCoachDraft(into, CoachDraft())
             } finally {
-                asking = false
+                if (askingOwner == currentAccount.user?.id && conversationId == into) { asking = false; coachUpload = null; stopPending = false }
             }
         }
     }
 
+    fun stopCoach() {
+        if (stopPending) return
+        val last = conversation.lastOrNull() ?: return
+        if (coachUpload != null) {
+            coachJob?.cancel()
+            conversation = conversation.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true)
+            return
+        }
+        val into = conversationId
+        val askingOwner = currentAccount.user?.id
+        stopPending = true
+        scope.launch {
+            try {
+                val snapshot = store.stopAsk(into, last.requestId)
+                if (askingOwner == currentAccount.user?.id && conversationId == into) {
+                    conversation = conversation.dropLast(1) + snapshot.exchange()
+                    if (snapshot.terminal) { store.saveCoachDraft(into, CoachDraft()); coachJob?.cancel(); asking = false }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { note = "The stop request didn’t reach Coach. Try again." }
+            finally { stopPending = false }
+        }
+    }
+
+    LaunchedEffect(conversationId, conversation.lastOrNull()?.generation?.id) {
+        val last = conversation.lastOrNull()
+        if (!asking && last?.generation?.status == "running") {
+            ask(conversation.dropLast(1), last.question, last.requestId, last.attachments.firstOrNull())
+        }
+    }
+
     // The live thread and its id are let go of; what was asked is on the log.
-    fun askSomethingNew() {
+    fun askSomethingNew(draft: String = "") {
+        if (asking) return
+        try { store.abandonCoach(conversationId.ifEmpty { "new" }) }
+        catch (_: Exception) { note = "Your draft couldn’t be cleared. Try again."; return }
+        conversationSeed = draft
         conversation = emptyList()
         conversationId = ""
         cap = null
@@ -646,12 +766,14 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // The save lives here rather than on the builder: the builder's composition dies the moment the
     // draft is let go of. The door closes while one is in flight, or two taps are two routines.
     fun write(draft: RoutineDraft) {
+        if (savingRoutine) return
+        val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = Ids.routine()) else draft
+        building = prepared
+        savingRoutine = true
         scope.launch {
-            if (savingRoutine) return@launch
-            savingRoutine = true
             try {
                 note = null
-                when (val written = store.saveRoutine(draft)) {
+                when (val written = store.saveRoutine(prepared)) {
                     is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
                     is GymResult.Ok -> {
                         haptics.saved()
@@ -682,423 +804,461 @@ fun GymRoom(account: Account, store: TrainingStore = rememberDeviceStore()) {
     // two taps are two routines. The refusal is the RECEIPT's while the receipt still stands, drawn
     // under the Save that raised it because the sheet covers the bottom bar every other refusal in
     // the room lands in; once the receipt is gone that bar is the only place left to say it.
-    fun keep(sets: List<TrainingSet>, name: String) {
+    fun keep(sets: List<TrainingSet>, name: String, creationId: String, position: Int) {
+        if (keepingRoutine) return
+        keepingRoutine = true
         scope.launch {
-            if (keepingRoutine) return@launch
-            keepingRoutine = true
+            val owner = currentAccount.user?.id
             try {
                 finishFailure = null
-                val kept = store.keep(sets, name)
+                val kept = store.keep(sets, name, creationId, position)
+                if (owner != currentAccount.user?.id) return@launch
                 if (kept is GymResult.Failed) {
                     val why = kept.why.line("the routine wasn’t kept")
                     if (finished != null) finishFailure = why else note = why
                     return@launch
                 }
                 haptics.saved()
-                keptRoutine = true
+                keptRoutine = (kept as GymResult.Ok).value.name
             } finally {
                 keepingRoutine = false
             }
         }
     }
 
-    // The origin comes from the account's own client.
-    val origin = account.api.baseUrl.toString()
-    val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
-    val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
-    val clipboard = LocalClipboardManager.current
+    key(seat) {
+        if (account.resolved && account.user?.id.orEmpty() == seat) {
+            // The origin comes from the account's own client.
+            val origin = account.api.baseUrl.toString()
+            val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
+            val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
+            val clipboard = LocalClipboardManager.current
 
-    // The log row's long press. The card inside the session mints the same link and says more about
-    // it; from the row there is nothing to draw, so the transient carries the whole answer.
-    fun shareWorkout(sessionId: String) {
-        scope.launch {
-            note = null
-            when (val minted = store.share(sessionId)) {
-                is GymResult.Ok -> {
-                    clipboard.setText(AnnotatedString(Coach.link(minted.value, origin)))
-                    transient.showSnackbar(
-                        "Link copied — anyone who has it can read this workout",
-                        duration = SnackbarDuration.Long,
+            // The log row's long press. The card inside the session mints the same link and says more about
+            // it; from the row there is nothing to draw, so the transient carries the whole answer.
+            fun shareWorkout(sessionId: String) {
+                scope.launch {
+                    note = null
+                    when (val minted = store.share(sessionId)) {
+                        is GymResult.Ok -> {
+                            clipboard.setText(AnnotatedString(Coach.link(minted.value, origin)))
+                            transient.showSnackbar(
+                                "Link copied — anyone who has it can read this workout",
+                                duration = SnackbarDuration.Long,
+                            )
+                        }
+                        is GymResult.Failed -> note = minted.why.line("the link wasn’t made")
+                    }
+                }
+            }
+
+            // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
+            // decides nothing: the proposal stays pending and its card reads `still waiting`.
+            reviewing?.let { open ->
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        if (reviewBusy) return@ModalBottomSheet
+                        reviewing = null
+                        if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
+                    },
+                    sheetState = reviewSheet,
+                    properties = androidx.compose.material3.ModalBottomSheetProperties(shouldDismissOnBackPress = !reviewBusy),
+                    containerColor = skin.surface,
+                    scrimColor = skin.scrim,
+                ) {
+                    WindmillSheetWindow()
+                    ReviewSheet(
+                        onBusy = { reviewBusy = it },
+                        proposalId = open.proposalId,
+                        routineId = open.routineId,
+                        store = store,
+                        // Offered only where Coach itself is: an account, and a deployment that has one.
+                        onAsk = if (account.isSignedIn && !askAbsent) {
+                            { about ->
+                                closeReview()
+                                look(Away.Coach("What would this change to $about do?"))
+                            }
+                        } else {
+                            null
+                        },
+                        onDecided = { settled ->
+                            settled.receipt?.let { landReceipt(open.door, it) }
+                            closeReview()
+                        },
                     )
                 }
-                is GymResult.Failed -> note = minted.why.line("the link wasn’t made")
             }
-        }
-    }
 
-    // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
-    // decides nothing: the proposal stays pending and its card reads `still waiting`.
-    reviewing?.let { open ->
-        ModalBottomSheet(
-            onDismissRequest = {
-                reviewing = null
-                if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
-            },
-            sheetState = reviewSheet,
-            containerColor = GymSkin.surface,
-        ) {
-            ReviewSheet(
-                proposalId = open.proposalId,
-                routineId = open.routineId,
-                store = store,
-                // Offered only where Coach itself is: an account, and a deployment that has one.
-                onAsk = if (account.isSignedIn && !askAbsent) {
-                    { about ->
-                        closeReview()
-                        look(Away.Coach("What would this change to $about do?"))
-                    }
-                } else {
-                    null
-                },
-                onDecided = { settled ->
-                    settled.receipt?.let { landReceipt(open.door, it) }
-                    closeReview()
-                },
-            )
-        }
-    }
-
-    // The receipt for the workout just closed, over the workout itself. Dismissing it — back, the
-    // scrim, the handle — decides nothing and writes nothing: the session was closed and saved
-    // before this rose, and what is underneath is its own detail page.
-    finished?.let { ended ->
-        ModalBottomSheet(
-            onDismissRequest = {
-                finished = null
-                finishFailure = null
-            },
-            sheetState = finishSheet,
-            containerColor = GymSkin.surface,
-        ) {
-            FinishScreen(
-                finished = ended,
-                catalog = store.catalog,
-                kept = keptRoutine,
-                onKeepRoutine = { name -> keep(ended.sets, name) },
-                // Offered only where Coach itself is: an account, and a deployment that has one.
-                // Behind the sheet's own exit, because the tab switch redraws the rail and it would
-                // come back up through a sheet still descending. Then a FRESH conversation, and the
-                // one line through the same send a typed question takes — so the thread is titled
-                // by it, the ceilings count it, and every refusal is drawn by the exchange itself.
-                // Behind an ask still in flight nothing is reset and nothing is sent: `ask` would
-                // drop the line on the floor, so the tap lands on the Coach tab where the stalled
-                // exchange is already drawn waiting.
-                onShareWithCoach = if (account.isSignedIn && !askAbsent) {
-                    {
-                        closeFinish {
-                            if (asking) {
-                                away = emptyList()
-                                tab = Tab.Coach
-                                return@closeFinish
+            // The receipt for the workout just closed, over the workout itself. Dismissing it — back, the
+            // scrim, the handle — decides nothing and writes nothing: the session was closed and saved
+            // before this rose, and what is underneath is its own detail page.
+            finished?.let { original ->
+                val canonical = store.retainedSession(SessionDetail(original.session, original.sets))
+                val ended = original.copy(session = canonical.session,
+                    sets = canonical.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets })
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        if (keepingRoutine) return@ModalBottomSheet
+                        finishStates.removeState(original.routineCreationId)
+                        finished = null
+                        finishFailure = null
+                    },
+                    sheetState = finishSheet,
+                    containerColor = skin.surface,
+                    scrimColor = skin.scrim,
+                ) {
+                    WindmillSheetWindow()
+                    finishStates.SaveableStateProvider(original.routineCreationId) {
+                    FinishScreen(
+                        finished = ended,
+                        catalog = store.catalog,
+                        keptName = keptRoutine,
+                        onKeepRoutine = { name -> keep(ended.sets, name, original.routineCreationId, original.routinePosition) },
+                        pending = keepingRoutine,
+                        // Offered only where Coach itself is: an account, and a deployment that has one.
+                        // Behind the sheet's own exit, because the tab switch redraws the rail and it would
+                        // come back up through a sheet still descending. Then a FRESH conversation, and the
+                        // one line through the same send a typed question takes — so the thread is titled
+                        // by it, the ceilings count it, and every refusal is drawn by the exchange itself.
+                        // Behind an ask still in flight nothing is reset and nothing is sent: `ask` would
+                        // drop the line on the floor, so the tap lands on the Coach tab where the stalled
+                        // exchange is already drawn waiting.
+                        onShareWithCoach = if (account.isSignedIn && !askAbsent) {
+                            {
+                                closeFinish {
+                                    if (asking) {
+                                        away = emptyList()
+                                        tab = Tab.Coach
+                                        return@closeFinish
+                                    }
+                                    askSomethingNew()
+                                    ask(from = emptyList(), question = FinishCoach.question)
+                                }
                             }
-                            askSomethingNew()
-                            ask(from = emptyList(), question = FinishCoach.question)
+                        } else {
+                            null
+                        },
+                        failure = finishFailure ?: store.retainedSessionFailure(canonical)?.line("the log couldn’t keep this workout"),
+                    )
+                    }
+                }
+            }
+
+            val standing = away.lastOrNull()
+            // What the way back leads to. Names are read off the store, so a rename moves this row too.
+            val beneath = when (val under = away.getOrNull(away.size - 2)) {
+                is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
+                is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
+                is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
+                is Away.Coach -> Ask.title
+                Away.Threads -> Threads.title
+                // The noun, not the thread's title: a title is the lifter's first message verbatim.
+                is Away.Thread -> Threads.conversation
+                Away.Settings -> "Gym settings"
+                Away.Connections -> ConnectedLog.title
+                Away.Notes -> Notes.title
+                is Away.NoteEditor -> Notes.title
+                Away.Bodyweight -> Bodyweight.title
+                null -> if (live) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+            }
+            val railUp = railStands(live, building != null, away.size)
+            val youInitial = account.user?.email?.take(1) ?: ""
+            val loggerTransient = live && standing == null
+
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = skin.canvas,
+                bottomBar = {
+                    val line = note
+                    if (railUp || line != null || !loggerTransient) {
+                        Column(Modifier.fillMaxWidth().background(skin.canvas)) {
+                            // Reserve the transient's measured height below screen-owned actions.
+                            if (!loggerTransient) SnackbarHost(transient)
+                            line?.let {
+                                Text(
+                                    it,
+                                    style = GymType.numeral(12),
+                                    color = skin.inkDim,
+                                    maxLines = 2,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = WindmillSpace.x5)
+                                        .padding(bottom = WindmillSpace.x2),
+                                )
+                            }
+                            if (railUp) {
+                                TabRail(
+                                    current = tab,
+                                    onPick = { picked ->
+                                        note = null
+                                        // Entering Coach again offers the composer; whether the allowance is
+                                        // back is the log's to say.
+                                        if (picked != tab) cap = null
+                                        tab = picked
+                                    },
+                                )
+                            } else {
+                                Box(Modifier.fillMaxWidth().navigationBarsPadding())
+                            }
                         }
                     }
-                } else {
-                    null
                 },
-                failure = finishFailure,
-            )
-        }
-    }
-
-    val standing = away.lastOrNull()
-    // What the way back leads to. Names are read off the store, so a rename moves this row too.
-    val beneath = when (val under = away.getOrNull(away.size - 2)) {
-        is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
-        is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
-        is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
-        is Away.Coach -> Ask.title
-        Away.Threads -> Threads.title
-        // The noun, not the thread's title: a title is the lifter's first message verbatim.
-        is Away.Thread -> Threads.conversation
-        Away.Settings -> "Settings"
-        Away.Connections -> ConnectedLog.title
-        Away.Notes -> Notes.title
-        is Away.NoteEditor -> Notes.title
-        Away.Bodyweight -> Bodyweight.title
-        null -> if (live) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
-    }
-    val railUp = railStands(live, building != null, away.size)
-    val youInitial = account.user?.email?.take(1) ?: ""
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = GymSkin.canvas,
-        // While the logger stands it hosts the transient itself, over its reading region and off
-        // its rack: a snackbar anywhere in the reach band would cover a dial for nine seconds every
-        // time a set landed. Everywhere else the transient sits where the platform puts it.
-        snackbarHost = { if (!(live && standing == null)) SnackbarHost(transient) },
-        bottomBar = {
-            val line = note
-            // Nothing at all when there is neither: an empty bar would take the window inset away
-            // from the content below it.
-            if (railUp || line != null) {
-                Column(Modifier.fillMaxWidth().background(GymSkin.canvas)) {
-                    line?.let {
-                        Text(
-                            it,
-                            style = GymType.numeral(12),
-                            color = GymSkin.inkDim,
-                            maxLines = 2,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = WindmillSpace.x5)
-                                .padding(bottom = WindmillSpace.x2),
+            ) { inner ->
+                // Consumed as well as applied: a screen inside that pads itself for the keyboard would
+                // otherwise count the navigation bar twice and leave a gap above the keys.
+                Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
+                    when {
+                        // A screen pushed from the logger's gear stands over the workout; the logger is what
+                        // stands while nothing is pushed.
+                        live && standing == null -> LoggerScreen(
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            say = { note = it },
+                            onFinish = { close() },
+                            // The shell's door: gym draws no sign-in of its own.
+                            onSignIn = { shell.openSignIn(null) },
+                            onSettings = { look(Away.Settings) },
+                            transient = transient,
                         )
-                    }
-                    if (railUp) {
-                        TabRail(
-                            current = tab,
-                            onPick = { picked ->
-                                note = null
-                                // Entering Coach again offers the composer; whether the allowance is
-                                // back is the log's to say.
-                                if (picked != tab) cap = null
-                                tab = picked
+                        // A day being built outranks a tab and nothing else, and it covers the rail.
+                        building != null -> RoutineBuilder(
+                            draft = building!!,
+                            store = store,
+                            saving = savingRoutine,
+                            onDraft = { building = it },
+                            onSave = { write(building!!) },
+                            onClose = { building = null },
+                            say = { note = it },
+                        )
+                        standing is Away.Movement -> RecordScreen(
+                            exerciseId = standing.exerciseId,
+                            store = store,
+                            backTo = beneath,
+                            onBack = { back() },
+                        )
+                        standing is Away.Settings -> SettingsScreen(
+                            notifications = notifications,
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onNotes = { look(Away.Notes) },
+                            onConnectedLog = { look(Away.Connections) },
+                            accountEmail = account.user?.email,
+                            onAccount = shell.openYou,
+                            onClaimSignIn = shell.openSignIn,
+                            say = { note = it },
+                        )
+                        standing is Away.Connections -> ConnectedLogScreen(
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            origin = origin,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onSignIn = { shell.openSignIn(null) },
+                        )
+                        standing is Away.Notes -> NotesScreen(
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
+                            onSignIn = { shell.openSignIn(null) },
+                            say = { note = it },
+                        )
+                        // The list beneath reads itself again on the way back: a saved note is on the list
+                        // because the log says so.
+                        standing is Away.NoteEditor -> NoteEditorScreen(
+                            note = standing.note,
+                            seedTitle = standing.seedTitle,
+                            store = store,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onDone = { back() },
+                        )
+                        standing is Away.Session -> sessionStates.SaveableStateProvider(standing.summary.id) {
+                        SessionScreen(
+                            summary = standing.summary,
+                            seed = standing.detail,
+                            store = store,
+                            coach = coach,
+                            backTo = beneath,
+                            onBack = { back() },
+                            say = { note = it },
+                            onOpenMovement = { look(Away.Movement(it)) },
+                            onDiscard = { discard(it) },
+                        )
+                        }
+                        standing is Away.Program -> RoutineScreen(
+                            routineId = standing.routineId,
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onStart = { routineId -> open(routineId) },
+                            // The page stays underneath, so saving lands back on the routine it came from.
+                            onBuild = { building = it },
+                            onOpenMovement = { look(Away.Movement(it)) },
+                            lookedAt = lookedAtIds,
+                            onReview = { review(it.id, it.routineId, Reviewing.routines) },
+                            // Drawn only where the log carries a thread id: the history row survives the
+                            // conversation's deletion.
+                            onOpenThread = { look(Away.Thread(it)) },
+                        )
+                        standing is Away.Bodyweight -> BodyweightScreen(
+                            store = store,
+                            backTo = beneath,
+                            onBack = { back() },
+                            say = { note = it },
+                        )
+                        standing is Away.Coach -> AskScreen(
+                            store = store,
+                            thread = conversation,
+                            conversationId = conversationId,
+                            onOpenRoutine = { look(Away.Program(it)) },
+                            receipts = receipts[Reviewing.coach].orEmpty(),
+                            lookedAt = lookedAtIds,
+                            asking = asking,
+                            cap = cap,
+                            onAsk = { asked -> ask(conversation, asked) },
+                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onStop = ::stopCoach, upload = coachUpload,
+                            // Only the newest question is ever asked again: a retry further up would drop
+                            // everything asked since.
+                            onRetry = {
+                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },
+                            onAskNew = { askSomethingNew() },
+                            seed = conversationSeed.ifEmpty { standing.seed },
+                            onNewDraft = { askSomethingNew(it) },
+                            onThreads = { look(Away.Threads) },
+                            onConnections = { look(Away.Connections) },
+                            onNotes = { look(Away.Notes) },
+                            origin = origin,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onReview = { review(it.id, it.routineId, Reviewing.coach) },
                         )
-                    } else {
-                        Box(Modifier.fillMaxWidth().navigationBarsPadding())
+                        standing is Away.Threads -> ThreadsScreen(
+                            store = store,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onOpen = { look(Away.Thread(it)) },
+                            onDelete = { store.withhold(Deletion.Thread(it)) },
+                            onAskNew = { askSomethingNew() },
+                        )
+                        standing is Away.Thread -> ThreadScreen(
+                            threadId = standing.threadId,
+                            onAskNew = { askSomethingNew() },
+                            store = store,
+                            origin = origin,
+                            onThreads = { look(Away.Threads) },
+                            onNotes = { look(Away.Notes) },
+                            onConnections = { look(Away.Connections) },
+                            onOpenRoutine = { look(Away.Program(it)) },
+                            receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
+                            lookedAt = lookedAtIds,
+                            backTo = beneath,
+                            onBack = { back() },
+                            onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
+                            say = { note = it },
+                        )
+                        tab == Tab.Log -> sessionStates.SaveableStateProvider("log") { LogScreen(
+                            store = store,
+                            seat = youInitial,
+                            onOpenSession = { look(Away.Session(it)) },
+                            onOpenBodyweight = { look(Away.Bodyweight) },
+                            onOpenMovement = { look(Away.Movement(it)) },
+                            onShareSession = { shareWorkout(it) },
+                            onDiscardSession = { discard(it) },
+                        ) }
+                        // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
+                        // designed stance rather than a 401.
+                        tab == Tab.Coach && !account.isSignedIn ->
+                            AskSignedOutStance(seat = youInitial, onSignIn = { shell.openSignIn(null) })
+                        tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
+                        tab == Tab.Coach -> AskScreen(
+                            store = store,
+                            thread = conversation,
+                            conversationId = conversationId,
+                            onOpenRoutine = { look(Away.Program(it)) },
+                            receipts = receipts[Reviewing.coach].orEmpty(),
+                            lookedAt = lookedAtIds,
+                            asking = asking,
+                            cap = cap,
+                            onAsk = { asked -> ask(conversation, asked) },
+                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onStop = ::stopCoach, upload = coachUpload,
+                            onRetry = {
+                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
+                            },
+                            onAskNew = { askSomethingNew() },
+                            seed = conversationSeed,
+                            onNewDraft = { askSomethingNew(it) },
+                            onThreads = { look(Away.Threads) },
+                            onConnections = { look(Away.Connections) },
+                            onNotes = { look(Away.Notes) },
+                            origin = origin,
+                            backTo = null,
+                            onBack = null,
+                            seat = youInitial,
+                            onReview = { review(it.id, it.routineId, Reviewing.coach) },
+                        )
+                        else -> RoutinesScreen(
+                            store = store,
+                            isSignedIn = account.isSignedIn,
+                            lookedAt = lookedAtIds,
+                            seat = youInitial,
+                            // The only start home offers; a routine's own start lives on its detail page.
+                            onJustStart = { open(null) },
+                            onBuild = { building = it },
+                            onOpenRoutine = { look(Away.Program(it)) },
+                            onDeleteRoutine = { destroy(it) },
+                            onReview = { review(it.id, it.routineId, Reviewing.routines) },
+                            onSignIn = { shell.openSignIn(null) },
+                        )
                     }
                 }
             }
-        },
-    ) { inner ->
-        // Consumed as well as applied: a screen inside that pads itself for the keyboard would
-        // otherwise count the navigation bar twice and leave a gap above the keys.
-        Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
-            when {
-                // A screen pushed from the logger's gear stands over the workout; the logger is what
-                // stands while nothing is pushed.
-                live && standing == null -> LoggerScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    say = { note = it },
-                    onFinish = { close() },
-                    // The shell's door: gym draws no sign-in of its own.
-                    onSignIn = LocalShellActions.current.openYou,
-                    onSettings = { look(Away.Settings) },
-                    transient = transient,
-                )
-                // A day being built outranks a tab and nothing else, and it covers the rail.
-                building != null -> RoutineBuilder(
-                    draft = building!!,
-                    store = store,
-                    saving = savingRoutine,
-                    onDraft = { building = it },
-                    onSave = { write(building!!) },
-                    onClose = { building = null },
-                    say = { note = it },
-                )
-                standing is Away.Movement -> RecordScreen(
-                    exerciseId = standing.exerciseId,
-                    store = store,
-                    backTo = beneath,
-                    onBack = { back() },
-                )
-                standing is Away.Settings -> SettingsScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onNotes = { look(Away.Notes) },
-                    onConnectedLog = { look(Away.Connections) },
-                    say = { note = it },
-                )
-                standing is Away.Connections -> ConnectedLogScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    origin = origin,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onSignIn = LocalShellActions.current.openYou,
-                )
-                standing is Away.Notes -> NotesScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
-                    onSignIn = LocalShellActions.current.openYou,
-                    say = { note = it },
-                )
-                // The list beneath reads itself again on the way back: a saved note is on the list
-                // because the log says so.
-                standing is Away.NoteEditor -> NoteEditorScreen(
-                    note = standing.note,
-                    seedTitle = standing.seedTitle,
-                    store = store,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onDone = { back() },
-                )
-                standing is Away.Session -> SessionScreen(
-                    summary = standing.summary,
-                    store = store,
-                    coach = coach,
-                    backTo = beneath,
-                    onBack = { back() },
-                    say = { note = it },
-                    onOpenMovement = { look(Away.Movement(it)) },
-                    onDiscard = { discard(standing.summary.id) },
-                )
-                standing is Away.Program -> RoutineScreen(
-                    routineId = standing.routineId,
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onStart = { routineId -> open(routineId) },
-                    // The page stays underneath, so saving lands back on the routine it came from.
-                    onBuild = { building = it },
-                    onOpenMovement = { look(Away.Movement(it)) },
-                    lookedAt = lookedAtIds,
-                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                    // Drawn only where the log carries a thread id: the history row survives the
-                    // conversation's deletion.
-                    onOpenThread = { look(Away.Thread(it)) },
-                )
-                standing is Away.Bodyweight -> BodyweightScreen(
-                    store = store,
-                    backTo = beneath,
-                    onBack = { back() },
-                    say = { note = it },
-                )
-                standing is Away.Coach -> AskScreen(
-                    store = store,
-                    thread = conversation,
-                    receipts = receipts[Reviewing.coach].orEmpty(),
-                    lookedAt = lookedAtIds,
-                    asking = asking,
-                    cap = cap,
-                    onAsk = { asked -> ask(conversation, asked) },
-                    // Only the newest question is ever asked again: a retry further up would drop
-                    // everything asked since.
-                    onRetry = {
-                        conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
-                    },
-                    onAskNew = { askSomethingNew() },
-                    seed = standing.seed,
-                    onThreads = { look(Away.Threads) },
-                    onNotes = { look(Away.Notes) },
-                    origin = origin,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onReview = { review(it.id, it.routineId, Reviewing.coach) },
-                )
-                standing is Away.Threads -> ThreadsScreen(
-                    store = store,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onOpen = { look(Away.Thread(it)) },
-                    onDelete = { store.withhold(Deletion.Thread(it)) },
-                    onAskNew = { askSomethingNew() },
-                )
-                standing is Away.Thread -> ThreadScreen(
-                    threadId = standing.threadId,
-                    store = store,
-                    receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
-                    lookedAt = lookedAtIds,
-                    backTo = beneath,
-                    onBack = { back() },
-                    onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
-                    say = { note = it },
-                )
-                tab == Tab.Log -> LogScreen(
-                    store = store,
-                    seat = youInitial,
-                    onOpenSession = { look(Away.Session(it)) },
-                    onOpenBodyweight = { look(Away.Bodyweight) },
-                    onShareSession = { shareWorkout(it) },
-                    onDiscardSession = { discard(it) },
-                )
-                // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
-                // designed stance rather than a 401.
-                tab == Tab.Coach && !account.isSignedIn ->
-                    AskSignedOutStance(seat = youInitial, onSignIn = LocalShellActions.current.openYou)
-                tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial)
-                tab == Tab.Coach -> AskScreen(
-                    store = store,
-                    thread = conversation,
-                    receipts = receipts[Reviewing.coach].orEmpty(),
-                    lookedAt = lookedAtIds,
-                    asking = asking,
-                    cap = cap,
-                    onAsk = { asked -> ask(conversation, asked) },
-                    onRetry = {
-                        conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
-                    },
-                    onAskNew = { askSomethingNew() },
-                    seed = "",
-                    onThreads = { look(Away.Threads) },
-                    onNotes = { look(Away.Notes) },
-                    origin = origin,
-                    backTo = null,
-                    onBack = null,
-                    seat = youInitial,
-                    onReview = { review(it.id, it.routineId, Reviewing.coach) },
-                )
-                else -> RoutinesScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    lookedAt = lookedAtIds,
-                    seat = youInitial,
-                    // The only start home offers; a routine's own start lives on its detail page.
-                    onJustStart = { open(null) },
-                    onBuild = { building = it },
-                    onOpenRoutine = { look(Away.Program(it)) },
-                    onDeleteRoutine = { destroy(it) },
-                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                    onOpenSettings = { look(Away.Settings) },
-                    onSignIn = LocalShellActions.current.openYou,
+        } else {
+            Box(Modifier.fillMaxSize().background(skin.canvas))
+        }
+    }
+}
+
+@Composable
+private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
+    val skin = LocalGymColors.current
+    Column(Modifier.fillMaxWidth().background(skin.surface)) {
+        NavigationBar(
+            containerColor = skin.surface,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            modifier = Modifier.height(80.dp).padding(horizontal = 12.dp),
+        ) {
+            Tab.entries.forEach { entry ->
+                NavigationBarItem(
+                    selected = entry == current,
+                    onClick = { onPick(entry) },
+                    icon = { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    label = { Text(entry.title, maxLines = 1, style = WindmillFont.body(12, FontWeight.Bold)) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = skin.accent,
+                        selectedTextColor = skin.ink,
+                        indicatorColor = skin.raised,
+                        unselectedIconColor = skin.inkDim,
+                        unselectedTextColor = skin.inkDim,
+                    ),
                 )
             }
         }
+        Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())
     }
 }
 
-// The platform's rail, three seats and no fourth: the account seat a hand-rolled rail could carry
-// past a hairline now rides each root's top bar instead.
-//
-// Selection is carried on four channels, not on one colour (ledger `1v`). The tint is the room's
-// BRIGHTEST ink, not its accent: verdigris `#5FCDB4` against the faint ink `#727771` separates by 2.37:1
-// and a lifter cannot tell which tab they are on, while `#F1F0EB` against the same faint ink is
-// 4.01:1 — the same token iOS picked, so the two phones close `1v` on one token. Beneath that: a
-// filled glyph selected against an outlined one, a bold label against a normal one, and the
-// indicator on the verdigris wash `accentSoft` (`#5FCDB4` at 20% over the bar's `#161C1D`, 1.52:1;
-// `lineStrong` `#2A3133` on the same bar would measure 1.30:1, and GymRailTests pins both).
-@Composable
-private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
-    NavigationBar(containerColor = GymSkin.surface, tonalElevation = 0.dp) {
-        Tab.entries.forEach { entry ->
-            val here = entry == current
-            NavigationBarItem(
-                selected = here,
-                onClick = { onPick(entry) },
-                icon = { Icon(railIcon(entry, here), contentDescription = null) },
-                label = {
-                    Text(
-                        entry.title,
-                        maxLines = 1,
-                        fontWeight = if (here) FontWeight.Bold else FontWeight.Normal,
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = GymSkin.ink,
-                    selectedTextColor = GymSkin.ink,
-                    indicatorColor = GymSkin.accentSoft,
-                    unselectedIconColor = GymSkin.inkFaint,
-                    unselectedTextColor = GymSkin.inkFaint,
-                ),
-            )
-        }
-    }
-}
-
-internal fun railIcon(tab: Tab, selected: Boolean): ImageVector = when (tab) {
-    Tab.Routines -> if (selected) Icons.AutoMirrored.Filled.List else Icons.AutoMirrored.Outlined.List
-    Tab.Log -> if (selected) Icons.Filled.DateRange else Icons.Outlined.DateRange
-    Tab.Coach -> if (selected) Icons.Filled.Face else Icons.Outlined.Face
+@DrawableRes
+internal fun railIcon(tab: Tab): Int = when (tab) {
+    Tab.Routines -> R.drawable.gym_nav_routines
+    Tab.Log -> R.drawable.gym_nav_log
+    Tab.Coach -> R.drawable.gym_nav_coach
 }

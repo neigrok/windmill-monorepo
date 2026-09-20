@@ -34,6 +34,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -57,8 +60,8 @@ import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
+import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
@@ -78,11 +81,13 @@ fun ReviewSheet(
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
     onAsk: ((String) -> Unit)?,
     onDecided: (Proposal) -> Unit,
+    onBusy: (Boolean) -> Unit = {},
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = System.currentTimeMillis()
     var proposal by remember(proposalId) { mutableStateOf<Proposal?>(null) }
     var failure by remember(proposalId) { mutableStateOf<WriteFailure?>(null) }
+    var gone by remember(proposalId) { mutableStateOf(false) }
     var asked by remember(proposalId) { mutableIntStateOf(0) }
     var deciding by remember(proposalId) { mutableStateOf(false) }
     var said by remember(proposalId) { mutableStateOf<String?>(null) }
@@ -90,26 +95,28 @@ fun ReviewSheet(
     // read that ANSWERED drops it.
     var overtaken by remember(proposalId) { mutableStateOf(false) }
     val scroll = rememberScrollState()
-    // Seen to its end, or fits without scrolling — of THIS document: the extent the end was last
-    // reached at. A diff arriving after the read, or a run of kept rows expanding, changes the extent,
-    // and what grew has not been seen.
-    var seenExtent by remember(proposalId) { mutableIntStateOf(-1) }
-    val atEnd = !scroll.canScrollForward
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
+    val scale = LocalDensity.current.fontScale
     val extent = scroll.maxValue
-    // The extent is the key's own value, read in the same snapshot as `atEnd`: by the time the effect
-    // runs, a diff that arrived in this composition has already been measured and the live extent
-    // would be the one nobody has seen.
-    LaunchedEffect(atEnd, extent) { if (atEnd) seenExtent = extent }
-    val seen = seenExtent == extent
+    val document = listOf(proposal, extent, viewport, scale)
+    var seenDocument by remember(proposalId) { mutableStateOf<List<Any?>?>(null) }
+    val atEnd = !scroll.canScrollForward
+    LaunchedEffect(atEnd, document) {
+        if (atEnd && proposal != null && viewport.height > 0 && extent != Int.MAX_VALUE) seenDocument = document
+    }
+    val seen = seenDocument == document
 
     LaunchedEffect(proposalId, asked) {
         failure = null
+        gone = false
+        proposal = null
         when (val read = store.proposal(proposalId)) {
-            is GymResult.Ok -> {
-                proposal = read.value
+            is ProposalRead.Found -> {
+                proposal = read.proposal
                 overtaken = false
             }
-            is GymResult.Failed -> failure = read.why
+            ProposalRead.Gone -> gone = true
+            is ProposalRead.Failed -> failure = read.why
         }
     }
 
@@ -120,19 +127,22 @@ fun ReviewSheet(
     val held = store.allRoutines.firstOrNull { it.id == routineId }
     val standing = proposal
     val superseded = standing?.supersededBy(held) == true
-    val decidable = standing != null && standing.isPending && !superseded && !overtaken
+    val decidable = standing != null && standing.isPending && !superseded && !overtaken && store.session == null
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
+        if (deciding || !decidable || (apply && !seen)) return
+        deciding = true
+        onBusy(true)
         scope.launch {
-            if (deciding) return@launch
-            deciding = true
             try {
                 said = null
                 val outcome = if (apply) store.applyProposal(open.id) else store.dismissProposal(open.id)
                 when (outcome) {
                     is ProposalOutcome.Decided -> {
                         proposal = outcome.proposal
+                        deciding = false
+                        onBusy(false)
                         onDecided(outcome.proposal)
                     }
                     is ProposalOutcome.Moved -> {
@@ -147,24 +157,26 @@ fun ReviewSheet(
                     }
                     is ProposalOutcome.Gone -> {
                         proposal = null
-                        failure = WriteFailure.Refused(outcome.said)
+                        gone = true
                     }
                     is ProposalOutcome.Failed ->
                         said = outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
                 }
             } finally {
                 deciding = false
+                onBusy(false)
             }
         }
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Head(standing, nowMs)
+        Head(standing)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
                 .weight(1f, fill = false)
                 .fillMaxWidth()
+                .onSizeChanged { viewport = it }
                 .verticalScroll(scroll)
                 .padding(horizontal = WindmillSpace.x5)
                 .padding(bottom = WindmillSpace.x4),
@@ -173,10 +185,13 @@ fun ReviewSheet(
                 Text(
                     why.line("that proposal could not be read"),
                     style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
             }
-            standing?.let { Body(it, store.catalog, nowMs, superseded) }
+            if (failure != null) CoachAction("Try again", { asked++ })
+            if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
+            if (store.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+            if (store.session == null) standing?.let { Body(it, store.catalog, superseded) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
                     Row(
@@ -184,13 +199,13 @@ fun ReviewSheet(
                         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                         modifier = Modifier
                             .heightIn(min = GymTap.minimum)
-                            .clickable(role = Role.Button) { ask(proposal.routineName) },
+                            .clickable(enabled = !deciding, role = Role.Button) { ask(proposal.routineName) },
                     ) {
-                        Text("Ask Coach about this", style = GymType.numeral(12), color = GymSkin.accent)
+                        Text("Ask Coach", style = WindmillFont.body(16, FontWeight.Bold), color = skin.accent)
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
-                            tint = GymSkin.accent,
+                            tint = skin.accent,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -202,138 +217,51 @@ fun ReviewSheet(
 }
 
 @Composable
-private fun Head(proposal: Proposal?, nowMs: Long) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x2),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-            Text(
-                proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
-                style = WindmillFont.display(19),
-                color = GymSkin.ink,
-                // The head may take a second line where the eyebrow may not: this is the screen the
-                // routine is decided on, and clipping its name hides the subject of the decision.
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            proposal?.let {
-                Text(it.byline(nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint, maxLines = 1)
-            }
-        }
-        proposal?.let { StateChip(it.state) }
-    }
+private fun Head(proposal: Proposal?) {
+    val skin = LocalGymColors.current
+    Text(proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
+        style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp))
 }
 
-@Composable
-private fun StateChip(state: ProposalState) {
-    val ink = when (state) {
-        ProposalState.Pending -> GymSkin.accent
-        ProposalState.Applied -> GymSkin.setDone
-        ProposalState.Dismissed, ProposalState.Superseded -> GymSkin.inkFaint
-    }
-    val label = when (state) {
-        ProposalState.Pending -> "Pending"
-        ProposalState.Applied -> "Applied"
-        ProposalState.Dismissed -> "Turned down"
-        ProposalState.Superseded -> "Set aside"
-    }
-    Text(
-        label,
-        style = GymType.numeral(10, FontWeight.Bold),
-        color = ink,
-        modifier = Modifier
-            .background(
-                if (state == ProposalState.Pending) GymSkin.accentSoft else GymSkin.raised,
-                RoundedCornerShape(WindmillRadius.full),
-            )
-            .padding(horizontal = WindmillSpace.x2, vertical = WindmillSpace.x1),
-    )
-}
-
-// The model's prose sits under its kicker, quoted, apart from the counted rows: two kinds of truth
-// never share one block.
 @Composable
 private fun Body(
     proposal: Proposal,
     catalog: List<Exercise>,
-    nowMs: Long,
     superseded: Boolean,
 ) {
-    if (proposal.summary.isNotBlank()) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
-                .padding(WindmillSpace.x3),
-        ) {
-            Text(proposal.kicker, style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
-            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-                Box(Modifier.width(2.dp).heightIn(min = WindmillSpace.x5).background(GymSkin.accent))
-                Text(
-                    proposal.summary,
-                    style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                    color = GymSkin.ink,
-                )
-            }
-        }
-    } else {
-        Text(
-            proposal.summaryLine(proposal.routineName),
-            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.ink,
-        )
+    val skin = LocalGymColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim)
+        Text(proposal.summaryLine(proposal.routineName), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
     }
     if (proposal.intent == ProposalIntent.Remove) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
-                .border(1.dp, GymSkin.alarmInk, RoundedCornerShape(WindmillRadius.md))
-                .padding(GymLayout.cardInset),
-        ) {
-            Text(
-                "− ${proposal.routineName}",
-                style = WindmillFont.body(15, FontWeight.Bold),
-                color = GymSkin.ink,
-            )
-            Text(
-                "Removes the routine from your program · every logged set stays.",
-                style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.inkDim,
-            )
+        ChangeCard() {
+            Text("Remove ${proposal.routineName}", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+            Text("The whole routine is removed from your program. Every set you logged against it stays in the log.",
+                style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+        }
+    } else {
+        proposal.document.forEach { row ->
+            when (row) {
+                is DocumentRow.Changed -> ChangeRow(proposal, row.change, catalog)
+                is DocumentRow.Unchanged -> KeptRun(row, catalog)
+            }
+        }
+        if (proposal.renames) ChangeCard() {
+            Text("Routine name", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+            MoveLine("", proposal.baseName, proposal.name)
         }
     }
-    // The rename is a change with no row of its own on the wire and the log counts it, so it is drawn.
-    if (proposal.renames) {
-        ChangeCard(GymSkin.line) {
-            Text("Name", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            MoveLine("routine", proposal.baseName, proposal.name)
-        }
-    }
-    proposal.document.forEach { row ->
-        when (row) {
-            is DocumentRow.Changed -> ChangeRow(proposal, row.change, catalog)
-            is DocumentRow.Unchanged -> KeptRun(row, catalog)
-        }
-    }
-    val note = proposal.settledNote(nowMs)
-        ?: if (superseded && proposal.isPending) supersededLine else null
+    val note = if (superseded && proposal.isPending) supersededLine else null
     note?.let {
         Text(
             it,
             style = WindmillFont.body(13).copy(lineHeight = 20.sp),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
+                .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
                 .padding(GymLayout.cardInset),
         )
     }
@@ -346,6 +274,7 @@ private const val supersededLine =
 // the document.
 @Composable
 private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
+    val skin = LocalGymColors.current
     var open by remember(row) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Row(
@@ -358,11 +287,11 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .clickable(role = Role.Button) { open = !open }
                 .padding(horizontal = GymLayout.rowInset),
         ) {
-            Text(row.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(row.label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
             Icon(
                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = null,
-                tint = GymSkin.inkFaint,
+                tint = skin.inkFaint,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -374,14 +303,14 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 ) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
-                        style = WindmillFont.body(14),
-                        color = GymSkin.inkDim,
+                        style = WindmillFont.body(16).copy(lineHeight = 22.sp),
+                        color = skin.inkDim,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        (change.after ?: change.before)?.let { Proposal.asks(it) } ?: Readout.openTarget,
-                        style = GymType.numeral(12),
-                        color = GymSkin.inkFaint,
+                        (change.after ?: change.before)?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget,
+                        style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                        color = skin.inkDim,
                     )
                 }
             }
@@ -391,53 +320,32 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
 
 @Composable
 private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<Exercise>) {
+    val skin = LocalGymColors.current
     val name = Readout.movement(change.exerciseId, catalog)
-    when (change.kind) {
-        ChangeKind.Added -> ChangeCard(GymSkin.setDone) {
-            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = GymSkin.setDone,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(name, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            }
-            Text(
-                change.addedLine(follows = proposal.landsAfter(change)?.let { Readout.movement(it, catalog) }),
-                style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.inkDim,
-            )
+    ChangeCard() {
+        val title = when (change.kind) {
+            ChangeKind.Added -> "Add $name"
+            ChangeKind.Removed -> "Remove $name"
+            else -> name
         }
-        ChangeKind.Removed -> ChangeCard(GymSkin.alarmInk) {
-            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-                Text("−", style = GymType.numeral(14, FontWeight.Bold), color = GymSkin.alarmInk)
-                Text(name, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+        Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+        when (change.kind) {
+            ChangeKind.Added -> {
+                val target = change.after?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget
+                val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in the routine"
+                Text("$target · $after", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
             }
-            Text(
-                change.removedLine,
-                style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.inkDim,
-            )
-        }
-        // A retarget, and everything this build cannot name, read off whichever side arrived.
-        else -> ChangeCard(GymSkin.line) {
-            Text(name, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            val before = change.before
-            val after = change.after
-            val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
-            if (moved.isEmpty()) {
-                Text(
-                    (after ?: before)?.let { Proposal.asks(it) } ?: "no targets",
-                    style = GymType.numeral(12),
-                    color = GymSkin.targetInk,
-                )
-            }
-            moved.forEach { move ->
-                if (move.label == Proposal.setsLabel && before != null && after != null) {
-                    SchemeMove(move, before.sets, after.sets, change)
-                } else {
-                    MoveLine(move.label, move.before, move.after)
+            ChangeKind.Removed -> Text(change.removedLine, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            else -> {
+                val before = change.before
+                val after = change.after
+                val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
+                if (moved.isEmpty()) Text((after ?: before)?.let { Readout.targetWithUnit(it.sets) } ?: "No targets",
+                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                moved.forEach { move ->
+                    if (move.label == Proposal.setsLabel && before != null && after != null) {
+                        SchemeMove(move.copy(before = Readout.targetWithUnit(before.sets), after = Readout.targetWithUnit(after.sets)), before.sets, after.sets, change)
+                    } else MoveLine(move.label, move.before, move.after)
                 }
             }
         }
@@ -478,44 +386,22 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
 // what is proposed. The deviation sheet draws its ladder in the same shape.
 @Composable
 internal fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.semantics(mergeDescendants = true) {},
-    ) {
-        Text(label, style = GymType.numeral(12), color = GymSkin.inkFaint)
-        Text(
-            before,
-            style = GymType.numeral(12).copy(textDecoration = TextDecoration.LineThrough),
-            color = GymSkin.inkDim,
-        )
-        Text("→", style = GymType.numeral(12), color = GymSkin.inkFaint)
-        Text(after, style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.targetInk)
-    }
+    val skin = LocalGymColors.current
+    Text((if (label.isBlank() || label == Proposal.setsLabel) "" else "$label · ") + "$before → $after",
+        style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim,
+        modifier = modifier.semantics(mergeDescendants = true) {})
 }
 
 @Composable
-private fun ChangeCard(edge: Color, content: @Composable () -> Unit) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.md))
-            .border(1.dp, edge, RoundedCornerShape(WindmillRadius.md))
-            .padding(GymLayout.cardInset),
-    ) {
-        content()
+private fun ChangeCard(content: @Composable () -> Unit) {
+    val skin = LocalGymColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().heightIn(min = 70.dp).padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
+        Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(skin.line))
     }
 }
 
-// The band holds one button, Apply, and its height never changes — the gate's sentence keeps its
-// slot open whether or not the gate is shut, because `seen` re-locks the moment a kept run unfolds
-// and Apply may not move under the finger when it does. Turning down is a text row beneath it,
-// behind its confirmation — never the left half of a pair, where a hand expects Cancel.
-//
-// It is PINNED under the diff, so what it costs is measured rather than assumed: at fontScale 2.0 it
-// stands 272dp and leaves the diff 317dp, in `LargestTypeTests`. One more row here took that to
-// 24dp, which is why the floor is pinned and not the height.
 @Composable
 private fun Foot(
     proposal: Proposal,
@@ -525,15 +411,19 @@ private fun Foot(
     said: String?,
     onDecide: (Boolean) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x6),
+            .padding(vertical = 12.dp),
     ) {
-        said?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim, maxLines = 2) }
-        if (!decidable) return@Column
+        said?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
+        if (!decidable) {
+            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.accent) }
+            return@Column
+        }
         var turningDown by remember { mutableStateOf(false) }
         if (turningDown) {
             ConfirmDialog(
@@ -555,16 +445,16 @@ private fun Foot(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
                 .alpha(if (ready) 1f else 0.4f)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
                 // that is refusing, not only in the row beneath it.
                 .semantics { if (!seen) stateDescription = Proposal.applyHint }
                 .clickable(enabled = ready, role = Role.Button) { onDecide(true) },
         ) {
             Text(
-                if (proposal.intent == ProposalIntent.Remove) proposal.applyLabel else Proposal.apply,
-                style = WindmillFont.body(17, FontWeight.Bold),
-                color = GymSkin.onAccent,
+                proposal.applyLabel,
+                style = WindmillFont.body(16, FontWeight.Bold),
+                color = skin.onAccent,
             )
         }
         // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
@@ -574,7 +464,7 @@ private fun Foot(
         Text(
             Proposal.applyHint,
             style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
+            color = skin.inkDim,
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(if (seen) 0f else 1f)
@@ -582,18 +472,18 @@ private fun Foot(
         )
         Text(
             proposal.atomicLine,
-            style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
+            style = WindmillFont.body(12).copy(lineHeight = 17.sp),
+            color = skin.inkDim,
             modifier = Modifier.fillMaxWidth(),
         )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
+                .heightIn(min = 56.dp)
                 .clickable(enabled = !deciding, role = Role.Button) { turningDown = true },
         ) {
-            Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
         }
     }
 }
@@ -607,60 +497,13 @@ fun ProposalCard(
     stillWaiting: Boolean,
     onReview: () -> Unit,
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(GymLayout.blockGap),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
-            Spacer(Modifier.size(WindmillSpace.x2))
-            Text(
-                "Proposal · $routineName",
-                style = GymType.numeral(11, FontWeight.Bold),
-                color = GymSkin.accent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                // The name is the lifter's own, so the eyebrow takes what is left of the row rather
-                // than measuring it out from under the stamp.
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.size(WindmillSpace.x2))
-            Text(
-                Readout.whenLogged(proposal.createdAtMs, nowMs),
-                style = GymType.numeral(11),
-                color = GymSkin.inkFaint,
-                maxLines = 1,
-            )
-        }
-        Text(
-            proposal.summaryLine(routineName),
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.ink,
-        )
-        Text(
-            proposal.cardLine(routineName, stillWaiting),
-            style = GymType.numeral(12),
-            color = GymSkin.inkDim,
-        )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
-                .clickable(role = Role.Button, onClick = onReview),
-        ) {
-            Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
-        }
-    }
+    CoachProposalCard(routineName, proposal.summaryLine(routineName),
+        proposal.counted + if (stillWaiting && proposal.isPending) " · ${Proposal.stillWaiting}" else "", onReview)
 }
 
 @Composable
 fun ProposalChip(onReview: () -> Unit) {
+    val skin = LocalGymColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
@@ -669,7 +512,7 @@ fun ProposalChip(onReview: () -> Unit) {
             .clickable(role = Role.Button, onClick = onReview)
             .padding(horizontal = WindmillSpace.x1),
     ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
-        Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = GymSkin.accent)
+        Box(Modifier.size(6.dp).clip(CircleShape).background(skin.accent))
+        Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = skin.accent)
     }
 }

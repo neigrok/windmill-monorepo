@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -128,7 +130,7 @@ class TargetSheetTests {
 
         compose.onNodeWithContentDescription("Sets target").performTextReplacement("0")
         compose.onNodeWithText(TargetEntry.zeroTarget).assertIsDisplayed()
-        compose.onNodeWithText("Set").assertIsNotEnabled()
+        compose.onNode(hasText("Set") and hasClickAction()).assertIsNotEnabled()
 
         compose.onNodeWithContentDescription("Sets target").performTextReplacement("21")
         compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
@@ -186,11 +188,8 @@ class TargetSheetTests {
         openTheSheet()
 
         compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(1)
-        compose.onNodeWithText("Never logged — these are your numbers.").assertIsDisplayed()
         val sentence = compose.onNodeWithText(TargetEntry.openLine).fetchSemanticsNode().positionInRoot.y
-        val neverLogged = compose.onNodeWithText("Never logged — these are your numbers.").fetchSemanticsNode().positionInRoot.y
         val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot.y
-        assertTrue("beside the never-logged line", sentence > neverLogged)
         assertTrue("and above the fields", sentence < sets)
         compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()

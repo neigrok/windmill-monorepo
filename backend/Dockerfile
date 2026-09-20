@@ -20,7 +20,7 @@ FROM drogonframework/drogon:latest AS build
 # libpqxx::pqxx target, matching the Homebrew dev environment.
 ARG LIBPQXX_VERSION=7.10.1
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates libcurl4-openssl-dev \
  && git clone --depth 1 --branch "${LIBPQXX_VERSION}" https://github.com/jtv/libpqxx /tmp/libpqxx \
  && cmake -S /tmp/libpqxx -B /tmp/libpqxx/build \
       -DCMAKE_BUILD_TYPE=Release \

@@ -7,6 +7,10 @@ namespace wm::gym {
 ProgramService::ProgramService(ProgramRepository& program, Clock& clock)
     : program_(program), clock_(clock) {}
 
+std::optional<Routine> ProgramService::routineCreation(const UserId& user, const RoutineId& id) {
+  return program_.routineCreation(user, id);
+}
+
 std::vector<Routine> ProgramService::routines(const UserId& user) {
   return program_.routines(user);
 }

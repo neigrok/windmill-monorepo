@@ -380,3 +380,22 @@ TEST(a_loop_with_no_conversation_touches_nothing) {
   CHECK_EQ(model.requests.size(), 0u);
   CHECK_EQ(outcome.error, std::string("the loop was given no conversation to run"));
 }
+
+TEST(agent_loop_cancellation_after_a_model_turn_prevents_its_tool_effect) {
+  FakeToolHost host;
+  bool active = true;
+  int calls = 0;
+  auto request = spec("Do the action");
+  request.continueRun = [&] { return active; };
+  Recorder recorder;
+  const auto outcome = driveAgentLoop(request, host, kCaller, [&](const Json::Value&) -> std::optional<Json::Value> {
+    ++calls;
+    active = false;
+    return toolUseReply("write", "tool1");
+  }, recorder.report());
+  CHECK_FALSE(outcome.ok);
+  CHECK_EQ(outcome.error, std::string("stopped"));
+  CHECK_EQ(outcome.modelTurns, 1);
+  CHECK_EQ(calls, 1);
+  CHECK(host.calls.empty());
+}

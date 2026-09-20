@@ -570,4 +570,44 @@ class ClaimReplayTests {
             liveLanded = true, retryable = false), outcome)
         assertTrue(localLog.finished.isEmpty())
     }
+    @Test fun aGoneCorrectionIsAbsentFromCanonicalDetailWhileAnUnwritableOneKeepsTheStoredBody() = runTest {
+        for (gone in listOf(false, true)) {
+            val server = FakeTraining()
+            val localLog = shelf()
+            val set = aSet("set_a", at = 1_100)
+            localLog.hold(LocalLog.FinishedSession(
+                Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000), listOf(set)))
+            server.onFinish = {
+                localLog.fixSet("ses_1", set.id, SetFix(reps = 9))
+                if (gone) server.sets.getValue("ses_1").clear()
+                else server.refuseFix = { refusal(400, "fix-unreadable", "could not read that fix") }
+            }
+            val changes = mutableListOf<ClaimReplay.Change>()
+            ClaimReplay(server, localLog, queue(), settings(), weights(), onChange = { changes += it }).run()
+            val detail = changes.filterIsInstance<ClaimReplay.Change.Closed>().single().detail
+            assertEquals(works.windmill.gym.domain.SessionDetail(server.stored.getValue("ses_1"),
+                if (gone) emptyList() else listOf(set.copy(setNumber = 1))), detail)
+            assertEquals(gone, changes.contains(ClaimReplay.Change.SetChanged("ses_1", set.id, null)))
+        }
+    }
+
+    @Test fun aSetDeletedDuringACollisionReplyIsNeverAppendedUnderANewIdentity() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        val set = aSet("set_a", at = 1_100)
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000), listOf(set)))
+        server.onAppend = { localLog.deleteSet("ses_1", it.id) }
+        server.refuse = { refusal(409, "set-id-taken", "taken") }
+        val changes = mutableListOf<ClaimReplay.Change>()
+        ClaimReplay(server, localLog, queue(), settings(), weights(), mintSet = { "set_fresh" },
+            onChange = { changes += it }).run()
+        assertEquals(listOf("set_a"), server.appended.map { it.id })
+        assertEquals(listOf("ses_1" to "set_a"), server.removed)
+        assertEquals(emptyList<TrainingSet>(), server.sets["ses_1"].orEmpty())
+        assertEquals(works.windmill.gym.domain.SessionDetail(server.stored.getValue("ses_1")),
+            changes.filterIsInstance<ClaimReplay.Change.Closed>().single().detail)
+        assertTrue(localLog.finished.isEmpty())
+    }
+
 }

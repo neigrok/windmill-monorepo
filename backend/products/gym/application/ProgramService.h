@@ -38,6 +38,7 @@ class ProgramService {
 public:
   ProgramService(ProgramRepository& program, Clock& clock);
 
+  std::optional<Routine> routineCreation(const UserId& user, const RoutineId& id);
   std::vector<Routine> routines(const UserId& user);
   std::optional<Routine> routine(const UserId& user, const RoutineId& id);
   // The routine's creation and every proposal ever minted against it, in one list.

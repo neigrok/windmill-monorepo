@@ -141,11 +141,11 @@ delete in the room is held for, puts the transient's *Undo* beside it, and sends
 clock closes — so no confirmation dialog and no *There is no undoing it.* exist on any surface. A
 question in front of an act that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
 
-## The rest reading counts up
+## The two clock readings
 
-Ruled in `14-live-activity.md` and built on all three surfaces: the room's rest row counts up —
-time since the last set — and keeps the bar against the target; the optional chime at the target
-still fires. One reading of one clock, on the room and on the lock screen alike.
+The logger displays workout elapsed and time since the latest valid set together, counting up. Before any set both use the session start. The compact icon-and-number pair has no visible labels or target bar; spoken names remain. Persisted timestamps, accepted offline sets, deletion/Undo and relaunch semantics are fixed in [feedback-contract.md](../feedback-contract.md).
+
+Existing optional Android rest-alert preferences and notification behavior remain independent of the displayed pair. This UI change introduces no rest feature and removes no existing alert runtime.
 
 ## The set kind gets a control that costs no trip
 
@@ -173,31 +173,21 @@ against `LoggerScreen.kt`, top to bottom:
   bytes the log's rows and the finish sheet draw on all three surfaces — and a settings gear
   (*Gym settings*) that opens the room's settings screen. A planning door in a top corner is what
   `../../guidelines/thumb-reach.md` §2 allows there: a destination, not an action.
-- **Two regions.** The reading region — name, set line, history, clocks, the logged strip — is the
-  only elastic part, centred while it is short and scrolling only once the largest text leaves it no
-  room; the walk's dots and the `+` sit under that scroller, pinned above a hairline. The rack —
-  `Weight`, the ladder, `Reps`, `Log set` — is pinned to the bottom, never scrolls and never shrinks.
-  Android pages the reading region with Compose's native `HorizontalPager`: the adjacent movement
-  follows the finger and a reversed drag returns to the original. Each page shows its own targets,
-  sets and history. The rack and dots update only when the destination settles, and editing and
-  logging are disabled during the transition. A cancelled drag preserves the rack's entered values.
-- **The set line is the domain's, capitalised at the draw site.** `Set 2 of 4` (`Set 2` with no
-  count) from `LiveLines.counter`, whose bytes stay `set 2 of 4`; the tail ` · target 3 @ 90` is the
-  **current slot's** — the planned set the coming working set fills (`17-set-targets.md`) — in the
-  target ink, and a slot naming nothing draws no tail — the absence says it. The kind chip shares the line and wraps under it at the
-  largest text.
-- **History is a chip, or nothing.** With a last time, an `AssistChip` reads the one matching set —
-  last time's Nth working set for the coming Nth, `LiveLines.lastTimeSet` — as `20 kg × 15`; its
-  spoken description is the whole card `LiveLines.prefillCard` builds (the day, how long ago, the
-  other routine, every set) and its menu dials any of those sets. With no history **nothing is
-  drawn** — no chip, no row, no reserved height. A read that missed draws a disabled chip reading
-  *didn’t load*, because a failed read must never draw as no history.
-- **The rest is two numerals and a ring, and it still says the old words.** From the first landed
-  set of a movement: the time since, counting up, beside a ring filling toward the target and the
-  target's numeral — a check at overrun. The row is one node whose description keeps the bytes the
-  label used to draw, `resting · target 1:30 · from the routine  ·  0:03`, and tapping it clears the
-  rest. When the routine's own rest is in force the caption *from the routine* is drawn under the
-  clocks and hidden from the reader, which the merged node already told.
+- **Two regions.** The reading region contains the name, set counter, clocks, history, set strip,
+  position dots and Add movement. It centres short content and scrolls vertically when text needs
+  more room. Compose's `HorizontalPager` translates this region with the finger while the rack —
+  `Weight`, the ladder, `Reps`, `Log set` — stays fixed. One native horizontal scroll owner covers
+  the workout body, including the rack. Reversing the drag restores the current movement and draft;
+  selection and departure prompts change only when a destination settles. Editing and logging are
+  disabled during motion.
+- **Each page belongs to its movement.** Its set counter is `Set 2 of 4` (`Set 2` without a planned
+  count). Targets appear in the planned-set strip; the counter carries no target tail or kind chip.
+  The persisted rack belongs to the selected movement and workout.
+- **History is a card when there is something to show.** The card names Last time and shows the
+  corresponding previous working set as `20 × 15`; its menu can dial a previous set into the rack.
+  Reading and failed states say `Reading…` and `Didn’t load`. No history reserves no card. Adjacent
+  pages read their own history without changing selection or rack values.
+- **Two elapsed readings.** A quiet clock/stopwatch pair follows movement identity. Workout time runs from session start; since-set runs from the latest valid session-wide set or start. No target card or rest caption is drawn. Accessible names carry the meaning without live-announcing every tick.
 - **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
   keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs. This is the only
   prose on the screen, and it exists only while something is wrong.
@@ -219,14 +209,6 @@ against `LoggerScreen.kt`, top to bottom:
   between two filled circles named *one rep fewer* / *one rep more*; and one full-width primary
   reading **`Log set`** with no echo — the two numerals stand directly above it. While a finish is
   in flight the primary is drawn disabled under the same label.
-- **What is gone from Android's screen, and where each fact went.** The first-time card (*First time
-  logging this* and its two lines): an absence, said by the absent chip and the set line's target
-  tail. *reading your log…*: the chip appears when the answer lands. The uppercase `SET N` and
-  `MOVEMENT N OF M` eyebrows: the set line and the dots' spoken name. `plan 4 × 5 @ 82.5` / *no
-  target*: the set line's tail, or nothing. The `× 5` beside the weight and the `Log set  ·  20 × 5`
-  echo: the reps numeral. The picker subtitle *the session is already running*: the title and
-  `Finish` exist only while one runs. The four-segment kind row: the chip.
-
 **The keypad's own words**, pinned here so nothing holds them by test alone: a valid load's line is
 its unit, `kg` (`WEIGHT_UNIT` in `logger/entry.js`, `KeypadEntry.weightUnit` in `KeypadSheet.swift`,
 `KeypadEntry.weightHint` in `KeypadSheet.kt`); a valid rep count's is *whole reps*; the empty-buffer

@@ -4,8 +4,8 @@ const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_TOL = 32; // screen px
 const TAP_MOVE_TOL = 10; // screen px
 const LONG_PRESS_MS = 500;
+// The double-tap ladder in multiples of the camera's working zoom: the out-level is the working zoom itself.
 const DOUBLE_TAP_ZOOM_IN = 1.6;
-const DOUBLE_TAP_ZOOM_OUT = 1;
 const DOUBLE_TAP_PIVOT = 1.3; // below -> step in, at/above -> step out
 const DOUBLE_TAP_STEP = 2; // far out: each tap steps in by this factor, capped at the out-level
 
@@ -59,9 +59,12 @@ export class InputController {
   }
 
   onDown = (event) => {
+    if (this.activePointerId !== null && event.pointerType !== 'touch') return;
+    const pos = this.localPos(event);
+    // Capture the visible step before interaction lands a layout settle at its final positions.
+    const pressed = this.context.pick?.(pos.x, pos.y, event.pointerType) ?? null;
     this.context.onInteract?.();
     if (event.pointerType === 'touch') this.context.camera.stopMotion?.();
-    const pos = this.localPos(event);
 
     if (event.pointerType === 'touch') {
       if (this.touches.size >= 2) return;
@@ -69,13 +72,12 @@ export class InputController {
       if (this.touches.size === 2) { this.beginPinch(event.pointerId); return; }
     }
 
-    const pressed = this.context.pick?.(pos.x, pos.y);
     if (pressed != null) this.context.press?.(pressed);
     this.canvas.setPointerCapture(event.pointerId);
     this.activePointerId = event.pointerId;
     this.downPos = pos;
     this.downTime = performance.now();
-    this.tool.onPointerDown(pos, event);
+    this.tool.onPointerDown(pos, event, pressed);
     // onLongPress returns true iff it armed multi-select; onUp then swallows the lift so the gesture never also taps.
     this.longPressFired = false;
     if (event.pointerType === 'touch' && this.context.onLongPress && pressed != null) {
@@ -108,9 +110,16 @@ export class InputController {
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.activePointerId = null;
     this.context.press?.(null);
+    if (event.type === 'pointercancel') {
+      this.tool.onPointerCancel();
+      this.longPressFired = false;
+      this.lastTap = null;
+      return;
+    }
     if (this.longPressFired) { this.longPressFired = false; return; } // the long-press consumed this gesture
     const pos = this.localPos(event);
-    this.tool.onPointerUp(pos, event);
+    const zoomed = this.tool.onPointerUp(pos, event) === true;
+    if (zoomed) { this.lastTap = null; return; } // the tap already zoomed; no ladder step on top of it
     if (wasTouch) this.detectDoubleTap(pos);
   };
 
@@ -160,11 +169,11 @@ export class InputController {
     if (this.downPos == null || Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y) > TAP_MOVE_TOL) { this.lastTap = null; return; }
     const now = performance.now();
     if (this.lastTap && now - this.lastTap.time < DOUBLE_TAP_MS && Math.hypot(pos.x - this.lastTap.x, pos.y - this.lastTap.y) < DOUBLE_TAP_TOL) {
-      const zoom = this.context.camera.zoom;
+      const { zoom, workingZoom } = this.context.camera;
       // Below the out-level, step one notch in, capped there; above it, toggle around the pivot.
-      const target = zoom < DOUBLE_TAP_ZOOM_OUT
-        ? Math.min(zoom * DOUBLE_TAP_STEP, DOUBLE_TAP_ZOOM_OUT)
-        : zoom < DOUBLE_TAP_PIVOT ? DOUBLE_TAP_ZOOM_IN : DOUBLE_TAP_ZOOM_OUT;
+      const target = zoom < workingZoom
+        ? Math.min(zoom * DOUBLE_TAP_STEP, workingZoom)
+        : zoom < workingZoom * DOUBLE_TAP_PIVOT ? workingZoom * DOUBLE_TAP_ZOOM_IN : workingZoom;
       this.context.camera.glideZoomAround(pos.x, pos.y, target);
       this.lastTap = null;
       return;

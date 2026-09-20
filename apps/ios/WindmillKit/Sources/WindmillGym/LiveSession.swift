@@ -199,3 +199,32 @@ public enum LiveLines {
         return "\(done) of \(planned) sets"
     }
 }
+
+public struct WorkoutClocks: Equatable, Sendable {
+    public let workoutMs: Int64
+    public let sinceSetMs: Int64
+    public let hasSet: Bool
+
+    public init(session: Session, sets: [TrainingSet], nowMs: Int64) {
+        let latest = sets.map(\.completedAtMs).max()
+        let end = session.finishedAtMs ?? nowMs
+        workoutMs = max(0, end - session.startedAtMs)
+        sinceSetMs = max(0, end - (latest ?? session.startedAtMs))
+        hasSet = latest != nil
+    }
+
+    public static func text(_ milliseconds: Int64) -> String {
+        let seconds = max(0, milliseconds / 1000)
+        if seconds < 3600 { return String(format: "%02lld:%02lld", seconds / 60, seconds % 60) }
+        return String(format: "%lld:%02lld:%02lld", seconds / 3600, seconds / 60 % 60, seconds % 60)
+    }
+
+    public static func spoken(_ milliseconds: Int64) -> String {
+        let seconds = max(0, milliseconds / 1000)
+        var parts: [String] = []
+        if seconds >= 3600 { parts.append("\(seconds / 3600) \(seconds / 3600 == 1 ? "hour" : "hours")") }
+        if seconds >= 60 { parts.append("\(seconds / 60 % 60) \(seconds / 60 % 60 == 1 ? "minute" : "minutes")") }
+        parts.append("\(seconds % 60) \(seconds % 60 == 1 ? "second" : "seconds")")
+        return parts.joined(separator: ", ")
+    }
+}

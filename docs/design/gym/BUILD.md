@@ -20,7 +20,7 @@ session. One backend serves all three.
 surfaces. What that means in practice:
 
 - **Notes is built end to end.** A `gym_notes` table, four owner-scoped routes under
-  `/v1/gym/notes` (`routes.cpp:235-258`: list, reorder, save, delete), a read-level `list_notes` tool
+  `/v1/gym/notes` (`routes.cpp:235-258`: list, reorder, save, delete), a read-level `list_notes` tool and append-only write-level `save_note` tool
   that opens every Coach conversation, the account footprint, and a Notes screen on all three
   surfaces. No CSV: the export is out of the product on every surface (`19-connected-log.md`).
 - **Bodyweight is built end to end** (`11-bodyweight.md`). A `gym_bodyweight` table keyed
@@ -442,18 +442,12 @@ comment at `ProgramService.h:34-36`. Either an application-level coordinator abo
 route composing the two — and the ledger row must not be inside the apply's transaction, because a
 failed thread write must never roll back a routine that landed.
 
-**B17 · [BLOCKED / S] Nobody has ruled whether a ledger turn is fed back to the model.**
-Every stored turn goes to the model and every stored turn counts against the cap:
-`AskService.cpp:187-189` builds the prompt from `opened.thread->turns` unconditionally; `:190-196`
-refuses when `turns.size() + 2 > kMaxThreadTurns`, which is 8 (`Thread.h:70`); `AnthropicAsk.cpp:112`
-has no third branch. `09-coach.md:180-182` fixes the lifter-visible ceiling at four questions
-precisely because a question and its answer are two turns against eight. What the briefs do not say
-— I looked — is whether a ledger row is shown to the model on the next turn.
-*Both answers are defensible and they are not equivalent.* Hidden, the model can contradict a
-receipt the lifter is looking at. Shown as an assistant message, the model reads a server-authored
-sentence as something it said. Deciding it by filtering the load in the repository is the cheapest
-implementation and the easiest to get silently wrong: `AskService.cpp:192` counts what it loads, so
-a filtered load caps the thread on fewer turns than the table holds.
+**B17 · Conversation context and recorded actions.**
+Retained conversations remain resumable; stored history has no lifetime question ceiling.
+`contextOf` bounds the model context independently of retained turns. `AskService` supplies that
+context and authenticated image content, and identifies already completed actions during request
+recovery so a retry can report them without repeating the write. Clients retain factual receipts
+and expose current server allowance refusals. See [feedback-contract.md](feedback-contract.md).
 
 ### 4.2 · iOS — `apps/ios`
 
@@ -615,23 +609,10 @@ and neither has a settled treatment there.
 
 ## 5 · Do not build these
 
-**`propose_routine_create`.** `09-coach.md:120,128-132`: three verbs, and Coach never creates.
-Creating belongs to the lifter. A proposal is anchored to a routine that already exists and to a
-revision it is atomic against; a create has neither. The domain already forbids it at compile time —
-`classify(Subject, Standing)` (`domain/Proposal.h:26-30`) returns `Mutation::record` whenever
-`standing == Standing::fresh`, and `createRoutine` asserts exactly that
-(`GymTools.cpp:296`), while the two propose tools assert the opposite pairing (`:378`, `:430`).
-Structurally a proposal cannot be built without a routine (`Proposal.cpp:55`,
-`ProgramService.cpp:51-53`).
-**And the name’s absence is pinned.** `GymToolsTest.cpp:183-200` pins `apply_proposal`,
-`apply_routine_change`, `accept_proposal`, `dismiss_proposal` and `settle_proposal`;
-`GymToolsTest.cpp:202-214` (`gym_publishes_no_propose_routine_create_at_any_level` — the catalog,
-`tools/list` at every level, the dispatcher) and `AskServiceTest.cpp:126-127` pin
-`propose_routine_create` absent. The pin matters because the `propose_` prefix is itself a grant
-(`GymToolCatalog.h:20-23`: "The prefix is the grant: any `propose_*` tool, at any access level, is
-reachable by Ask"), so a tool by that name would hand itself to Coach with no review. The
-static_assert only fires if the new path calls `classify` with the right pair; the pin is what stops
-a tool that skips it.
+**`propose_routine_create`.** Coach creates a requested new routine through `create_routine`.
+The generation owns the write identity, and retries preserve the completed routine and its factual
+receipt. Creation does not need a second proposal tool. Changes to existing routines retain their
+revision-bound proposal and human Apply flow; do not route an existing-routine edit through creation.
 
 **A bodyweight write tool of any kind.** `11-bodyweight.md`: Coach may never write a weigh-in, for
 the same reason no tool edits a logged set. The ban is structural, not a prompt sentence
@@ -1811,3 +1792,17 @@ costs.
 
 Everything else this section states is read off the tree at the symbols it names, in the same way as
 the rest of this document.
+
+## Coach prompt and Notes persistence
+
+The product prompt preserves the owner's main/style/workflow/boundaries text verbatim, with factual
+tool and privacy rules separated. Coach reads sessions and Notes before each model run. `save_note`
+can append one useful new user-provided insight alongside a routine creation/proposal, using durable
+operation identities and immutable save receipts. Exact text deduplicates; edits and deletions by
+the user are never undone by retry. No client result kind changes. New note saves share the existing
+Notes limits and appear at bottom precedence. The optimized backend build and Postgres-enabled ctest
+pass: 967 domain, 272 MCP and 1003 adapter cases, with no skips. New coverage includes immutable
+receipts after edits/deletion, cross-owner refusals, duplicate/cap/concurrent saves, old single-operation
+records, routine-plus-note retry recovery, corrected-write lost acknowledgements and recovered Stop
+receipts that preserve prior evidence. Focused note-receipt phrase tests pass on Android (14), iOS (7)
+and web (7). No live provider behavior is claimed by these tests.

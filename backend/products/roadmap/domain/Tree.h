@@ -14,10 +14,10 @@ namespace wm {
 
 enum class NodeColor { terracotta, olive, gold, brick, sky, plum };
 
-enum class NodeState { locked, available, active, complete };
+enum class NodeState { locked, available, complete };
 
 // The status a SetNodeProgress command carries; `none` clears the overlay entry.
-enum class ProgressStatus { none, active, complete };
+enum class ProgressStatus { none, complete };
 
 enum class EdgeKind { trunk, in_branch, cross_branch };
 
@@ -25,7 +25,6 @@ inline std::string_view toString(NodeState state) {
   switch (state) {
     case NodeState::locked:    return "locked";
     case NodeState::available: return "available";
-    case NodeState::active:    return "active";
     case NodeState::complete:  return "complete";
   }
   return "locked";
@@ -34,7 +33,6 @@ inline std::string_view toString(NodeState state) {
 inline std::optional<NodeState> parseNodeState(std::string_view name) {
   if (name == "locked")    return NodeState::locked;
   if (name == "available") return NodeState::available;
-  if (name == "active")    return NodeState::active;
   if (name == "complete")  return NodeState::complete;
   return std::nullopt;
 }
@@ -85,7 +83,7 @@ inline const char* nodeColorHex(NodeColor color) {
 }
 
 inline std::optional<ProgressStatus> parseProgressStatus(std::string_view name) {
-  if (name == "active")   return ProgressStatus::active;
+  if (name == "active" || name == "inProgress") return ProgressStatus::none;
   if (name == "complete") return ProgressStatus::complete;
   if (name == "none")     return ProgressStatus::none;
   return std::nullopt;
@@ -93,11 +91,15 @@ inline std::optional<ProgressStatus> parseProgressStatus(std::string_view name) 
 
 inline const char* progressStatusName(ProgressStatus status) {
   switch (status) {
-    case ProgressStatus::active:   return "active";
     case ProgressStatus::complete: return "complete";
     case ProgressStatus::none:     return "none";
   }
   return "none";
+}
+
+inline std::optional<std::string> normalizeSeedStatus(const std::optional<std::string>& status) {
+  if (status && (*status == "active" || *status == "inProgress")) return "none";
+  return status;
 }
 
 struct Vec2 {
@@ -170,16 +172,13 @@ struct ProgressMark {
 struct Progress {
   std::map<NodeId, ProgressMark> marks;
   std::set<NodeId> completed;
-  std::set<NodeId> inProgress;
   std::set<NodeId> cleared;
 
   void record(const NodeId& node, const ProgressMark& mark) {
     marks[node] = mark;
     completed.erase(node);
-    inProgress.erase(node);
     cleared.erase(node);
     if (mark.status == ProgressStatus::complete) completed.insert(node);
-    else if (mark.status == ProgressStatus::active) inProgress.insert(node);
     else cleared.insert(node);
   }
 };

@@ -217,7 +217,7 @@ test('nextUp — a multi-root tree keeps its available roots in the shelf', () =
 
 test('nextUp — no featured offer (blocked, all done, lone bud) yields an empty shelf', () => {
   const pair = tree([node('r', []), node('a', ['r'])]);
-  assert.deepEqual(nextUp(pair, new Map([['r', 'active'], ['a', 'locked']])), { entries: [], readyCount: 0 });
+  assert.deepEqual(nextUp(pair, new Map([['r', 'locked'], ['a', 'locked']])), { entries: [], readyCount: 0 });
   assert.deepEqual(nextUp(pair, new Map([['r', 'complete'], ['a', 'complete']])), { entries: [], readyCount: 0 });
   assert.deepEqual(nextUp(tree([node('r', [])]), new Map([['r', 'available']])), { entries: [], readyCount: 0 });
 });
@@ -225,7 +225,6 @@ test('nextUp — no featured offer (blocked, all done, lone bud) yields an empty
 test('treatmentOf — every state maps to its fruit treatment, unknown falls to locked', () => {
   assert.equal(treatmentOf('complete'), 'done');
   assert.equal(treatmentOf('available'), 'ready');
-  assert.equal(treatmentOf('active'), 'active');
   assert.equal(treatmentOf('locked'), 'locked');
   assert.equal(treatmentOf(undefined), 'locked');
 });

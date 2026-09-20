@@ -42,7 +42,7 @@ class AskVerdictTests {
             AskVerdict.refusing(refusal(409, code = "ask-thread-full",
                 message = "this conversation holds four questions — start a new one")),
         )
-        assertEquals(AskVerdict.Fresh("This conversation holds four questions. Start a new one."),
+        assertEquals(AskVerdict.Fresh("This conversation is unavailable. Start a new one."),
             AskVerdict.refusing(refusal(409, code = "ask-thread-full")))
         assertEquals(
             AskVerdict.Fresh("that conversation id is already in use — start a new one"),

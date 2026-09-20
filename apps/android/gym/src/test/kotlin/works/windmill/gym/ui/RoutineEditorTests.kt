@@ -1,5 +1,8 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,6 +17,8 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -40,9 +45,6 @@ import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 
-// The editor screen itself, as opposed to the target sheet it opens: the movement row's swipe and
-// its custom action (13-gestures Law 1), the name field's autofocus, the counter's threshold, and
-// the two Save refusals 15-the-routine pins for every surface.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class RoutineEditorTests {
@@ -85,19 +87,17 @@ class RoutineEditorTests {
         return row.config[SemanticsActions.CustomActions]
     }
 
-    private fun handle(name: String) = compose.onNodeWithContentDescription(name)
+    private fun handle(name: String) = compose.onNodeWithContentDescription(name, useUnmergedTree = true)
 
-    // Law 1: on Android a swipe is half-built until its custom action exists, and this row's swipe
-    // is the only way a movement leaves a routine.
     @Test
     fun testAMovementRowOffersRemoveAsACustomActionAndNotOnlyAsASwipe() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat"))
 
         val steps = actionsOn("bench-press")
-        assertEquals(listOf("Remove", "Move down"), steps.map { it.label })
+        assertEquals(listOf("Delete bench-press", "Move down"), steps.map { it.label })
 
-        compose.runOnIdle { steps.first { it.label == "Remove" }.action() }
+        compose.runOnIdle { steps.first { it.label == "Delete bench-press" }.action() }
         compose.runOnIdle {
             assertEquals("and it removes the same line the swipe would",
                 listOf("squat"), draft().entries.map { it.exerciseId })
@@ -105,9 +105,6 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // A fresh editor opens ON the name field: there is no screen before this one that asked for a
-    // name. The effect runs against a field the Scaffold subcomposes during measure, so it has to
-    // wait for that frame rather than fire at composition.
     @Test
     fun testAFreshEditorOpensWithTheNameFieldFocused() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -117,8 +114,6 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // 15-the-routine: the counter appears in the last fifth and is silent before it, the same rule
-    // the note editor's byte counter keeps.
     @Test
     fun testTheNameCounterIsSilentUntilTheLastFifth() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -135,14 +130,12 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // Save is disabled while the draft cannot be saved, and the reason is drawn — one at a time, name
-    // first, never concatenated.
     @Test
-    fun testTheTwoSaveRefusalsAreDrawnOneAtATimeInThePinnedOrder() {
+    fun testFreshBlankDraftIsQuietAndANamedEmptyDraftExplainsItsMissingMovement() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, RoutineDraft())
 
-        compose.onNodeWithText("Name it to save it.").assertIsDisplayed()
+        compose.onNodeWithText("Name it to save it.").assertDoesNotExist()
         compose.onNodeWithText("A routine is at least one movement.").assertDoesNotExist()
 
         compose.onNodeWithContentDescription("Routine name").performTextReplacement("Push Day")
@@ -151,8 +144,6 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // The open line's sentence has one home — the target sheet, where the lifter is deciding it.
-    // The list prints the compact `open` token in the row's own target column and no sentence.
     @Test
     fun testTheEditorPrintsOpenPerRowAndLeavesTheSentenceToTheTargetSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -162,11 +153,8 @@ class RoutineEditorTests {
         compose.onNodeWithText("open").assertIsDisplayed()
         compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
 
-        // The sheet stands up and says it, once, beside the never-logged line the list has no
-        // equivalent of.
         compose.onNodeWithText("bench-press").performClick()
         compose.onAllNodesWithText("You decide the numbers at the rack.").assertCountEquals(1)
-        compose.onNodeWithText("Never logged — these are your numbers.").assertIsDisplayed()
         compose.onNodeWithText("You decide the numbers at the rack.").assertIsDisplayed()
         scope.cancel()
     }
@@ -191,146 +179,91 @@ class RoutineEditorTests {
         scope.cancel()
     }
 
-    // The reorder rail's single-pointer path, in the web's words: a tap on a handle picks the row
-    // up and says so; the next tap on another row's handle places it there and says the move once;
-    // the handle's own name says what it does next throughout.
     @Test
-    fun testATapPicksARowUpAndATapOnAnotherHandlePlacesItThere() {
+    fun testLongPressDragReordersAndRenumbersTheWholeDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat").adding("row"))
-
-        handle("Move bench-press, 1 of 3").assertIsDisplayed()
-        handle("Move squat, 2 of 3").assertIsDisplayed()
-
-        handle("Move bench-press, 1 of 3").performClick()
-        compose.onNodeWithText("bench-press, 1 of 3 — picked up").assertIsDisplayed()
-        handle("Move bench-press, 1 of 3 — picked up").assertIsDisplayed()
-        handle("Place bench-press at 3 of 3").assertIsDisplayed()
-        compose.runOnIdle {
-            assertEquals("picking up moves nothing", listOf("bench-press", "squat", "row"),
-                draft().entries.map { it.exerciseId })
+        val start = handle("Move bench-press, 1 of 3").fetchSemanticsNode().boundsInRoot.center
+        val end = handle("Move row, 3 of 3").fetchSemanticsNode().boundsInRoot.center
+        handle("Move bench-press, 1 of 3").performTouchInput {
+            down(center)
         }
-
-        handle("Place bench-press at 3 of 3").performClick()
+        compose.mainClock.advanceTimeBy(650)
+        handle("Move bench-press, 1 of 3").performTouchInput {
+            moveBy(Offset(0f, end.y - start.y), delayMillis = 300)
+            up()
+        }
         compose.runOnIdle {
             assertEquals(listOf("squat", "row", "bench-press"), draft().entries.map { it.exerciseId })
-            assertEquals("and every position is renumbered", listOf(1, 2, 3), draft().entries.map { it.position })
-        }
-        compose.onNodeWithText("bench-press, 3 of 3").assertIsDisplayed()
-        handle("Move bench-press, 3 of 3").assertIsDisplayed()
-        handle("Move squat, 1 of 3").assertIsDisplayed()
-        scope.cancel()
-    }
-
-    @Test
-    fun testTheSameHandleAgainPutsTheRowBackWhereItStands() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat"))
-
-        handle("Move squat, 2 of 2").performClick()
-        handle("Move squat, 2 of 2 — picked up").performClick()
-        compose.onNodeWithText("squat, 2 of 2 — put back").assertIsDisplayed()
-        handle("Move squat, 2 of 2").assertIsDisplayed()
-        compose.runOnIdle {
-            assertEquals(listOf("bench-press", "squat"), draft().entries.map { it.exerciseId })
+            assertEquals(listOf(1, 2, 3), draft().entries.map { it.position })
         }
         scope.cancel()
     }
 
-    // Law 1's other half: Move up / Move down are the row's own custom actions, offered only where
-    // there is somewhere to go, and each move is said once on the same line.
     @Test
-    fun testMoveUpAndMoveDownAreCustomActionsAndTheEndsAreNotWrapped() {
+    fun testMoveActionsBelongToTheirRowAndDoNotWrapAtEitherEnd() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat").adding("row"))
-
-        assertEquals(listOf("Remove", "Move down"), actionsOn("bench-press").map { it.label })
-        assertEquals(listOf("Remove", "Move up", "Move down"), actionsOn("squat").map { it.label })
-        assertEquals(listOf("Remove", "Move up"), actionsOn("row").map { it.label })
-
+        assertEquals(listOf("Delete bench-press", "Move down"), actionsOn("bench-press").map { it.label })
+        assertEquals(listOf("Delete squat", "Move up", "Move down"), actionsOn("squat").map { it.label })
+        assertEquals(listOf("Delete row", "Move up"), actionsOn("row").map { it.label })
         compose.runOnIdle { actionsOn("row").first { it.label == "Move up" }.action() }
-        compose.runOnIdle {
-            assertEquals(listOf("bench-press", "row", "squat"), draft().entries.map { it.exerciseId })
-        }
+        compose.runOnIdle { assertEquals(listOf("bench-press", "row", "squat"), draft().entries.map { it.exerciseId }) }
         compose.onNodeWithText("row, 2 of 3").assertIsDisplayed()
-
         compose.runOnIdle { actionsOn("bench-press").first { it.label == "Move down" }.action() }
-        compose.runOnIdle {
-            assertEquals(listOf("row", "bench-press", "squat"), draft().entries.map { it.exerciseId })
-        }
+        compose.runOnIdle { assertEquals(listOf("row", "bench-press", "squat"), draft().entries.map { it.exerciseId }) }
         compose.onNodeWithText("bench-press, 2 of 3").assertIsDisplayed()
         scope.cancel()
     }
 
-    // The web's `step`: a held row is what the two moves move, whichever row's action was invoked.
-    // With the held row already at the top, Move up on the row beneath it has nowhere to go, so
-    // nothing moves and nothing new is said.
     @Test
-    fun testMoveUpOnAnotherRowMovesTheHeldRowAndTheEndsStillHold() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat"))
-
-        handle("Move bench-press, 1 of 2").performClick()
-        compose.onNodeWithText("bench-press, 1 of 2 — picked up").assertIsDisplayed()
-
-        compose.runOnIdle { actionsOn("squat").first { it.label == "Move up" }.action() }
-        compose.runOnIdle {
-            assertEquals(listOf("bench-press", "squat"), draft().entries.map { it.exerciseId })
-        }
-        compose.onNodeWithText("bench-press, 1 of 2 — picked up").assertIsDisplayed()
-
-        compose.runOnIdle { actionsOn("bench-press").first { it.label == "Move down" }.action() }
-        compose.runOnIdle {
-            assertEquals(listOf("squat", "bench-press"), draft().entries.map { it.exerciseId })
-        }
-        compose.onNodeWithText("bench-press, 2 of 2").assertIsDisplayed()
-        handle("Move bench-press, 2 of 2 — picked up").assertIsDisplayed()
-        scope.cancel()
-    }
-
-    // A row that leaves the list is no longer held: the handles stop offering to place it, the line
-    // that said it was picked up goes quiet, and adding the same movement back does not bring the
-    // hold back with it.
-    @Test
-    fun testRemovingTheHeldRowDropsTheHoldAndQuietsTheLine() {
+    fun testSwipeRemovesAnAddedMovementAndRenumbersTheRemainingRows() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val draft = editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat").adding("row"))
-
-        handle("Move bench-press, 1 of 3").performClick()
-        compose.onNodeWithText("bench-press, 1 of 3 — picked up").assertIsDisplayed()
-        handle("Place bench-press at 2 of 3").assertIsDisplayed()
-
-        compose.runOnIdle { actionsOn("bench-press").first { it.label == "Remove" }.action() }
+        compose.onNodeWithText("squat").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
         compose.runOnIdle {
-            assertEquals(listOf("squat", "row"), draft().entries.map { it.exerciseId })
+            assertEquals(listOf("bench-press", "row"), draft().entries.map { it.exerciseId })
+            assertEquals(listOf(1, 2), draft().entries.map { it.position })
         }
-        compose.onAllNodesWithText("bench-press, 1 of 3 — picked up").assertCountEquals(0)
-        handle("Move squat, 1 of 2").assertIsDisplayed()
-        handle("Move row, 2 of 2").assertIsDisplayed()
-        val line = compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
-            .fetchSemanticsNode()
-        assertEquals("", line.config[SemanticsProperties.Text].joinToString { it.text })
         scope.cancel()
     }
 
-    // The line under the list is a polite live region: it stands before there is anything to say,
-    // so the sentence that lands on it is announced as a change.
     @Test
-    fun testTheMoveIsSaidOnOnePoliteLiveRegionUnderTheList() {
+    fun testTheMoveIsSaidOnOneStablePoliteLiveRegion() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat"))
-
         val lines = compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
         lines.assertCountEquals(1)
         val standing = lines.fetchSemanticsNodes().single()
         assertEquals("", standing.config[SemanticsProperties.Text].joinToString { it.text })
-
-        handle("Move squat, 2 of 2").performClick()
-        handle("Place squat at 1 of 2").performClick()
-        val said = compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
-            .fetchSemanticsNode()
+        compose.runOnIdle { actionsOn("squat").first { it.label == "Move up" }.action() }
+        val said = lines.fetchSemanticsNodes().single()
         assertEquals("squat, 1 of 2", said.config[SemanticsProperties.Text].joinToString { it.text })
-        assertEquals("the same node, not a new one", standing.id, said.id)
+        assertEquals(standing.id, said.id)
         scope.cancel()
     }
+    @Test
+    fun testHoldingTheGripAtTheViewportEdgeScrollsBeyondInitiallyVisibleRows() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val initial = (1..20).fold(RoutineDraft(name = "Long day")) { draft, id -> draft.adding("movement-$id") }
+        val draft = editor(scope, initial)
+        val body = compose.onNodeWithTag("routine-editor-body").fetchSemanticsNode().boundsInRoot
+        val grip = handle("Move movement-1, 1 of 20").fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        handle("Move movement-1, 1 of 20").performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(650)
+        handle("Move movement-1, 1 of 20").performTouchInput {
+            moveBy(Offset(0f, body.bottom - 12f - grip.center.y), delayMillis = 300)
+        }
+        compose.mainClock.advanceTimeBy(4_000)
+        compose.onRoot().performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertTrue("the first movement reaches rows that started below the viewport", draft().entries.indexOfFirst { it.exerciseId == "movement-1" } >= 12)
+        assertEquals((1..20).toList(), draft().entries.map { it.position })
+        assertEquals(initial.entries.map { it.exerciseId }.toSet(), draft().entries.map { it.exerciseId }.toSet())
+        scope.cancel()
+    }
+
 }

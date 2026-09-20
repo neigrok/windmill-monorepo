@@ -30,20 +30,21 @@ fun DeviationSheet(
     onSave: () -> Unit,
     onToday: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     Column(
         Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface)
+            .background(skin.surface)
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
-        Text("Heavier than the plan", style = WindmillFont.display(22), color = GymSkin.ink)
+        Text("Heavier than the plan", style = WindmillFont.display(22), color = skin.ink)
 
         Text(
             deviation.sentence(movement),
             style = WindmillFont.body(16),
-            color = GymSkin.inkDim,
+            color = skin.inkDim,
             lineHeight = 25.sp,
         )
 
@@ -68,11 +69,11 @@ fun DeviationSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(GymSkin.accent)
+                .background(skin.accent)
                 .clickable(role = Role.Button, onClick = onSave),
             contentAlignment = Alignment.Center,
         ) {
-            Text(deviation.saveLabel, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
+            Text(deviation.saveLabel, style = WindmillFont.body(17, FontWeight.Bold), color = skin.onAccent)
         }
 
         Box(
@@ -82,7 +83,7 @@ fun DeviationSheet(
                 .clickable(role = Role.Button, onClick = onToday),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Today only", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
+            Text("Today only", style = WindmillFont.body(16, FontWeight.SemiBold), color = skin.inkDim)
         }
     }
 }

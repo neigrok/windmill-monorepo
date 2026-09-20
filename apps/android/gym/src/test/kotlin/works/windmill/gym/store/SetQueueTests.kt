@@ -1,6 +1,8 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.gym.domain.ClaimBatch
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,6 +24,31 @@ class SetQueueTests {
 
     private fun aSet(id: String, exerciseId: String = "bench-press", at: Long) = TrainingSet(
         id = id, exerciseId = exerciseId, weightKg = 82.5, reps = 5, completedAtMs = at)
+
+    @Test
+    fun theRestOriginAndSelectedMovementSurviveCanonicalRepliesAndReopening() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.hold(Session(id = "live", startedAtMs = 1_000))
+        assertNull(queue.restStartedAtMs)
+        queue.choose("bench-press")
+        queue.store(aSet("local", at = 2_000), "live", needsPush = true)
+        queue.choose("overhead-press")
+        assertEquals(2_000L, queue.restStartedAtMs)
+        queue.remint("local", "retry")
+        val canonical = aSet("stored", at = 3_000).copy(setNumber = 7)
+        queue.delivered(canonical, "retry", "live")
+        queue.store(canonical.copy(completedAtMs = 4_000), "live", needsPush = false)
+        queue.flush()
+        val reopened = SetQueue(file)
+        assertEquals(listOf("overhead-press", 2_000L, listOf(canonical.copy(completedAtMs = 4_000))),
+            listOf(reopened.chosenMovement, reopened.restStartedAtMs, reopened.sets))
+        reopened.remapExercise("overhead-press", "canonical-press")
+        assertEquals("canonical-press", reopened.chosenMovement)
+        reopened.adopt("another")
+        assertNull(reopened.chosenMovement)
+        assertNull(reopened.restStartedAtMs)
+    }
 
     @Test
     fun testTheLiveSessionAndItsOwedSetsSurviveBeingReadBackFromDisk() {
@@ -284,9 +311,11 @@ class SetQueueTests {
         assertNull("a file from before the seats, on a phone holding no session, belongs to " +
             "nobody until a human says so", fromBefore.session)
         assertEquals("ses_old", fromBefore.unattributedSession?.id)
-        assertFalse("and nobody signed in may claim it", fromBefore.release())
+        val batch = ClaimBatch("legacy-workout-approval", fromBefore.claimItems())
         fromBefore.adopt("alice")
-        assertTrue(fromBefore.release())
+        assertNull("selection does not claim it", fromBefore.session)
+        fromBefore.preflight(batch, "alice")
+        fromBefore.complete(batch, "alice")
         assertTrue("and once released it reads as unclaimed — that build's file says nothing " +
             "about whether the log ever answered", fromBefore.sessionIsUnclaimed)
     }
@@ -317,7 +346,7 @@ class SetQueueTests {
     }
 
     @Test
-    fun testAnAnonymousWorkoutRidesOntoAFreeSeatAndWaitsForATakenOne() {
+    fun testExplicitConsentRequiresAFreeQueueAndMovesTheWholeWorkout() {
         val file = queueFile()
         val queue = SetQueue(file)
         queue.adopt("alice")
@@ -329,6 +358,8 @@ class SetQueueTests {
         queue.store(aSet("set_anon", at = 2_100), "ses_anon", needsPush = true)
         queue.flush()
 
+        val batch = ClaimBatch("workout-approval", queue.claimItems())
+        assertThrows(IllegalStateException::class.java) { queue.preflight(batch, "alice") }
         queue.adopt("alice")
         assertEquals("A's own live workout holds the slot", "ses_alice", queue.session?.id)
         queue.adopt(null)
@@ -337,6 +368,8 @@ class SetQueueTests {
         assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
 
         queue.adopt("bob")
+        assertNull("a free account still needs explicit consent", queue.session)
+        queue.complete(batch, "bob")
         assertEquals("a free seat claims it", "ses_anon", queue.session?.id)
         assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
     }
@@ -373,7 +406,9 @@ class SetQueueTests {
         assertEquals("ses_old", queue.unattributedSession?.id)
         assertNull("and the decision is on DISK — a relaunch that does hold a session must still " +
             "find a quarantine", SetQueue(file, deviceOwner = "bob").session)
-        assertTrue(queue.release())
+        val batch = ClaimBatch("quarantine-approval", queue.claimItems())
+        queue.preflight(batch, "alice")
+        queue.complete(batch, "alice")
         assertEquals("ses_old", queue.session?.id)
     }
 
@@ -400,20 +435,24 @@ class SetQueueTests {
 
         assertNull("no workout stands over them", queue.session)
         assertEquals(1, queue.pending.size)
-        assertFalse("owed lanes are a queue too", queue.release())
+        val batch = ClaimBatch("occupied-queue-approval", queue.claimItems())
+        val refusal = assertThrows(IllegalStateException::class.java) { queue.preflight(batch, "alice") }
+        assertEquals("Finish the account’s current workout before adding this training.", refusal.message)
         assertTrue("and nothing was taken out of quarantine", queue.hasUnattributed)
     }
 
     @Test
-    fun testAnUnconfirmedSeatDoesNotClaimTheAnonymousWorkout() {
+    fun testRepeatedSeatSelectionDoesNotClaimTheAnonymousWorkout() {
         val queue = SetQueue(queueFile())
         queue.hold(Session(id = "ses_anon", startedAtMs = 1_000), unclaimed = true)
         queue.flush()
 
-        queue.adopt("alice", confirmed = false)
+        queue.adopt("alice")
         assertNull(queue.session)
         queue.adopt(null)
-        queue.adopt("alice", confirmed = true)
+        queue.adopt("alice")
+        assertNull("returning to the account still does not claim a workout", queue.session)
+        queue.adopt(null)
         assertEquals("ses_anon", queue.session?.id)
     }
 }

@@ -50,6 +50,7 @@ internal fun Refusals(refusals: List<RefusedWrite>, catalog: List<Exercise>, onD
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
+    val skin = LocalGymColors.current
     val haptics = rememberGymHaptics()
     val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
         haptics.revealed()
@@ -65,23 +66,24 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
         },
     ) {
         Column(
-            Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(GymSkin.canvas),
+            Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(skin.canvas),
             verticalArrangement = Arrangement.spacedBy(GymLayout.pair, Alignment.CenterVertically),
         ) {
-            Text(headline, style = MaterialTheme.typography.bodySmall, color = GymSkin.alarmInk)
-            Text(reason, style = MaterialTheme.typography.bodySmall, color = GymSkin.inkDim)
+            Text(headline, style = MaterialTheme.typography.bodySmall, color = skin.alarmInk)
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = skin.inkDim)
         }
     }
 }
 
 @Composable
 private fun DismissGround() {
+    val skin = LocalGymColors.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).padding(horizontal = WindmillSpace.x1),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.inkFaint) }
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.inkFaint) }
+        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = skin.inkDim) }
+        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = skin.inkDim) }
     }
 }

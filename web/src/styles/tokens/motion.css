@@ -24,20 +24,10 @@
   50%      { box-shadow: 0 0 0 5px var(--nd-glow), 0 0 34px var(--nd-glow); }
 }
 
-/* Ember — the in-progress breath. Same 2400ms clock as the crown and in phase; amplitude peaks
-   BELOW a complete node's resting halo, with no ring offset. Colour-agnostic via --nd-glow.
-   Use: `wm-ember var(--duration-glow) var(--ease-glow) infinite`. */
-@keyframes wm-ember {
+/* Soft attention pulse for transient prompts and pending actions. */
+@keyframes wm-soft-pulse {
   0%, 100% { box-shadow: 0 0 6px 0 color-mix(in srgb, var(--nd-glow) 28%, transparent), 0 0 13px 2px color-mix(in srgb, var(--nd-glow) 12%, transparent); }
   50%      { box-shadow: 0 0 9px 1px color-mix(in srgb, var(--nd-glow) 60%, transparent), 0 0 18px 3px color-mix(in srgb, var(--nd-glow) 26%, transparent); }
-}
-
-/* Reduced motion: freeze the ember at its static mid-breath face (--glow-ember), for DOM consumers
-   that apply wm-ember unconditionally. */
-@media (prefers-reduced-motion: reduce) {
-  @keyframes wm-ember {
-    0%, 100% { box-shadow: var(--glow-ember); }
-  }
 }
 
 @keyframes wm-pop-in {
@@ -65,15 +55,14 @@
   88%      { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
 
-/* Reduced motion: the shared waveforms lose their movement and keep their event. Same treatment as
-   wm-ember above — redefine the keyframes rather than cancel the animation, so every consumer of a
-   token waveform (the shell, the design system, all three products) is covered at once and none of
-   them has to know about the preference. An arrival still arrives; it just no longer travels.
-   global.css bounds iteration count; movement is bounded here. */
+/* Reduced motion keeps each event visible without movement. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes wm-fade-in-up {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+  @keyframes wm-soft-pulse {
+    0%, 100% { box-shadow: var(--glow-soft); }
   }
   @keyframes wm-pop-in {
     0% { opacity: 0; }

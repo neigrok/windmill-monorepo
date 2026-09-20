@@ -41,7 +41,7 @@ public struct GymRoom: View {
     // Neither is stored; on re-entering the room both are gone, and nothing pretends otherwise.
     @State private var receipts: [String: String] = [:]
     @State private var undecided: Set<String> = []
-    @State private var conversation = AskConversation()
+    @StateObject private var coach = CoachSession()
     // A server with no Anthropic key answers the Coach route's 404, and the entry goes for the rest of the visit.
     @State private var askOnThisDeployment = true
     @StateObject private var connections = ConnectedLogReader()
@@ -190,6 +190,11 @@ public struct GymRoom: View {
             }
             // Its own task so a credential list never holds up the read above.
             .task(id: account.seat) { await connections.read(for: account) }
+            .task(id: account.user?.id) {
+                paths[.ask] = []
+                await coach.connect(account)
+            }
+            .onChange(of: coach.conversation.draft) { _, _ in coach.saveDraft() }
             .onChange(of: scenePhase) { _, phase in
                 WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
                 if phase != .active { Task { await store.flushPendingSets() } }
@@ -300,7 +305,7 @@ public struct GymRoom: View {
                             }
                         }
                     }
-                    ToolbarItem(placement: .topBarTrailing) { YouSeat() }
+                    if destination != .ask || !coachReachable { ToolbarItem(placement: .topBarTrailing) { YouSeat() } }
                 }
         }
         // The transient floats over the reach band; the room's status line sits BELOW it, so a refusal
@@ -347,8 +352,7 @@ public struct GymRoom: View {
             case .threads:
                 ThreadsScreen(doors: threadDoors, withheld: withheld)
             case .thread(let threadId):
-                ThreadScreen(threadId: threadId, doors: threadDoors,
-                             receipts: receipts, undecided: undecided)
+                coachScreen.task(id: threadId) { await coach.resume(threadId) }
             case .notes:
                 if account.isSignedIn {
                     NotesScreen(doors: notesDoors, withheld: withheld)
@@ -405,13 +409,25 @@ public struct GymRoom: View {
                           share: { doors(to: $0) }, discard: discard(_:), say: { note = $0 })
             case .ask:
                 if coachReachable {
-                    AskScreen(store: store, conversation: $conversation, doors: askDoors,
-                              receipts: receipts, undecided: undecided)
+                    coachScreen
                 } else if !account.isSignedIn {
                     AskSignedOutStance(onSignIn: { shell.openYou() })
                 } else {
                     AskAbsentStance(onNotes: { look(at: .notes) })
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var coachScreen: some View {
+        if coach.user == account.user?.id {
+            AskScreen(store: store, conversation: $coach.conversation, doors: askDoors,
+                      receipts: receipts, undecided: undecided,
+                      photo: coach.photo, photoData: coach.photoData, photoBusy: coach.photoBusy,
+                      uploadProgress: coach.uploadProgress, photoFailure: coach.photoFailure)
+                .id(coach.user)
+        } else {
+            ProgressView()
         }
     }
 
@@ -473,36 +489,28 @@ public struct GymRoom: View {
                  openThreads: { look(at: .threads) },
                  openNotes: { look(at: .notes) },
                  connect: { look(at: .connect) },
-                 openProposal: review)
+                 openProposal: review,
+                 openRoutine: { look(at: .routine($0)) },
+                 newChat: askSomethingNew,
+                 account: { shell.openYou() },
+                 older: { Task { await coach.load(older: coach.conversation.nextCursor != nil) } },
+                 stop: coach.stop,
+                 addPhoto: { data, thread in
+                     guard coach.user == account.user?.id, coach.conversation.threadId == thread else { return }
+                     coach.addPhoto(data)
+                 },
+                 removePhoto: coach.removePhoto,
+                 retryPhoto: coach.uploadPhoto,
+                 cancelPhoto: coach.cancelPhotoUpload,
+                 readPhoto: { id, thread in try await coach.readPhoto(id, thread: thread) })
     }
 
-    // The one send path, the room's rather than the screen's so that the finish receipt can open a
-    // conversation on a first question: the thread is titled by its first message, the four-per-thread
-    // and ten-per-day ceilings apply, and every refusal is drawn by the exchange, whichever door asked.
-    // The exchange is placed waiting BEFORE the task starts, so it is on screen the instant the tab is.
     private func ask(_ asked: String, replacing id: String?) {
-        guard !conversation.waiting, let text = Ask.question(from: asked) else { return }
-        let asking = conversation.open(text, replacing: id)
-        let thread = conversation.threadId
-        let gym = GymApi(api: account.api)
-        Task {
-            do {
-                conversation.settle(asking, .answered(try await gym.ask(text, in: thread)))
-            } catch {
-                let why = AskRefusal(error)
-                // A fresh thread is this conversation's answer to a full one; a refusal for an
-                // exchange the lifter has since left behind says nothing about the one on screen.
-                // No Coach on this deployment is true of the room, so it lands either way.
-                let landed = conversation.settle(asking, .refused(why))
-                if landed, why.opensAFreshThread { conversation.openAFreshThread() }
-                if why.closesTheDoor { askOnThisDeployment = false }
-            }
-        }
+        coach.ask(asked, replacing: id)
     }
 
-    // The same reset the thread list's door performs, then the tab.
     private func askSomethingNew() {
-        conversation = AskConversation()
+        coach.newChat()
         note = nil
         paths[.ask] = []
         tab = .ask
@@ -545,21 +553,17 @@ public struct GymRoom: View {
     private var threadDoors: ThreadDoors {
         let gym = GymApi(api: account.api)
         return ThreadDoors(
-            // Served whole. The screen is what answers twice — the count and the empty stance off
-            // what the account holds, the rows off what the window leaves — and a door that thinned
-            // the read would take that second answer away from it.
-            list: {
-                do { return .success(try await gym.threads()) }
-                catch { return .failure(AskRefusal(error)) }
-            },
-            read: { id in
-                do { return .success(try await gym.thread(id)) }
-                catch { return .failure(AskRefusal(error)) }
-            },
             delete: { thread in withholdDelete(of: thread, through: gym) },
-            openThread: { look(at: .thread($0)) },
-            openProposal: review,
-            askSomethingNew: askSomethingNew)
+            openThread: { id in
+                paths[.ask] = []
+                tab = .ask
+                Task { await coach.resume(id) }
+            },
+            askSomethingNew: askSomethingNew,
+            page: { cursor in
+                do { return .success(try await gym.threadPage(cursor: cursor)) }
+                catch { return .failure(AskRefusal(error)) }
+            })
     }
 
     private func openConnect() {

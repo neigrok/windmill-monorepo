@@ -2,9 +2,10 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   const activityHint = keyHint('Activity feed');
-  const shortcutsHint = keyHint('Keyboard shortcuts');
+  const focusHint = keyHint('Focus on a step');
+  const showAllHint = keyHint('All steps');
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -38,16 +39,6 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
         <Tooltip label="Share roadmap" side="bottom">
           <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
-        {canReset && (
-          <Tooltip label="Reset to authored roadmap" side="bottom">
-            <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />
-          </Tooltip>
-        )}
-        {onShowShortcuts && (
-          <Tooltip label={`Keyboard shortcuts (${shortcutsHint})`} side="bottom">
-            <IconButton icon={<Icon name="keyboard" />} label="Keyboard shortcuts" size="sm" onClick={onShowShortcuts} />
-          </Tooltip>
-        )}
         <div className="st-zoom-group">
           <Tooltip label="Zoom out" side="bottom">
             <IconButton icon={<Icon name="zoom-out" />} label="Zoom out" size="sm" onClick={onZoomOut} />
@@ -55,8 +46,12 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
           <Tooltip label="Zoom in" side="bottom">
             <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
           </Tooltip>
-          <Tooltip label="Fit to view" side="bottom">
-            <IconButton icon={<Icon name="maximize" />} label="Fit to view" size="sm" onClick={onFitToView} />
+          <Tooltip label={focusHint ? `Read the step you are on (${focusHint})` : 'Read the step you are on'} side="bottom">
+            {/* The tooltip is hover-only, so the key itself is on the button: a keyboard reader hears it too. */}
+            <button type="button" className="st-view-action" onClick={onFocus} aria-keyshortcuts={focusHint || undefined}>Focus</button>
+          </Tooltip>
+          <Tooltip label={showAllHint ? `Show the whole roadmap (${showAllHint})` : 'Show the whole roadmap'} side="bottom">
+            <button type="button" className="st-view-action" onClick={onShowAll} aria-keyshortcuts={showAllHint || undefined}>All steps</button>
           </Tooltip>
         </div>
       </div>

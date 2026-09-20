@@ -5,24 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  askedLabel, conversationsLine, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
-  THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_LIST_CEILING, THREADS_TITLE,
+  askedLabel, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
+  THREAD_DELETE_DETAIL, THREAD_DELETED, THREADS_TITLE,
 } from '../../../../src/products/gym/coach/threads.js';
 
 const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
 
-test('the subhead counts the conversations and says they are yours to delete', () => {
-  assert.equal(THREADS_TITLE, 'Threads');
-  assert.equal(conversationsLine(9), '9 conversations · yours to delete');
-  assert.equal(conversationsLine(1), '1 conversation · yours to delete');
-});
-
-test('the subhead prints no count while the list holds as many rows as the server will send', () => {
-  assert.equal(THREAD_LIST_CEILING, 200);
-  assert.equal(conversationsLine(199), '199 conversations · yours to delete');
-  assert.equal(conversationsLine(200), 'yours to delete');
-  assert.equal(conversationsLine(201), 'yours to delete');
-});
+test('history identifies retained conversations', () => { assert.equal(THREADS_TITLE, 'History'); });
 
 test('an applied row names how much moved and where it moved', () => {
   assert.equal(outcomeChip({ kind: 'applied', changes: 4, routine: 'Push A' }), 'applied');

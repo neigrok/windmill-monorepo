@@ -3,15 +3,24 @@ package works.windmill.gym.domain
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// Both fields carry NO DEFAULT: encodeDefaults is off, so a thread id defaulted to "" would travel as
-// an absent key. The thread id is this phone's to mint: a fresh one opens a conversation, a spent one
-// continues it, and it is NOT a replay key.
+// The conversation ID locates the history; the request ID identifies one retryable question.
 @Serializable
-data class AskQuestion(val thread: String, val question: String)
+data class AskQuestion(val thread: String, val question: String, val requestId: String? = null, val attachmentIds: List<String> = emptyList())
 
 // Arrives on the DETAIL read only. `from` carries no default, and an absent `at` prints nothing.
 @Serializable
-data class AskTurn(val from: String, val text: String, @SerialName("at") val atMs: Long = 0) {
+data class AskTurn(
+    val from: String,
+    val text: String,
+    @SerialName("at") val atMs: Long = 0,
+    val receipt: AnswerReceipt? = null,
+    val position: Long = 0,
+    val generationId: String? = null,
+    val results: List<CoachResult> = emptyList(),
+    val status: String = "completed",
+    val requestId: String? = null,
+    val attachments: List<CoachAttachment> = emptyList(),
+) {
     val fromLifter: Boolean get() = from == Ask.fromLifter
 }
 
@@ -60,7 +69,7 @@ data class ThreadOutcome(
     val label: String?
         get() = when (kind) {
             applied -> "applied"
-            readOnly -> "read only"
+            created -> "created"
             dismissed -> "turned down"
             proposed -> "waiting"
             superseded -> "set aside"
@@ -70,7 +79,8 @@ data class ThreadOutcome(
     val detail: String?
         get() = when (kind) {
             applied -> routine?.takeIf { it.isNotBlank() }?.let { "$counted → $it" } ?: counted
-            readOnly -> "no changes proposed"
+            created -> if (changes == 1) routine?.takeIf { it.isNotBlank() }?.let { "created $it" }
+                ?: "1 routine created" else "$changes routines created"
             dismissed -> "$counted turned down"
             proposed -> "$counted waiting"
             superseded -> "$counted superseded"
@@ -84,6 +94,7 @@ data class ThreadOutcome(
     companion object {
         const val applied = "applied"
         const val readOnly = "read-only"
+        const val created = "created"
         const val dismissed = "dismissed"
         const val proposed = "proposed"
         const val superseded = "superseded"
@@ -100,19 +111,48 @@ data class AskThread(
     val outcome: ThreadOutcome = ThreadOutcome(),
     val proposals: List<ThreadProposal> = emptyList(),
     val turns: List<AskTurn> = emptyList(),
+    val nextCursor: String? = null,
+    val generation: AskGeneration? = null,
 ) {
     fun day(nowMs: Long): String? =
         askedAtMs.takeIf { it > 0 }?.let { Readout.briefDay(it, nowMs) }
+
+    fun exchanges(): List<AskExchange> {
+        val exchanges = mutableListOf<AskExchange>()
+        turns.forEach { turn ->
+            if (turn.fromLifter) exchanges += AskExchange(turn.text, requestId = turn.requestId.orEmpty(), attachments = turn.attachments)
+            else {
+                val previous = if (exchanges.isNotEmpty() && exchanges.last().answer == null) exchanges.removeAt(exchanges.lastIndex) else AskExchange("")
+                if (turn.status == "failed" || turn.status == "stopped") {
+                    val request = turn.requestId ?: generation?.takeIf { it.id == turn.generationId }?.requestId.orEmpty()
+                    exchanges += previous.copy(requestId = request, trouble = if (turn.status == "stopped") Ask.stopped else Ask.interrupted,
+                        again = turn.status == "failed" && request.isNotEmpty(),
+                        generation = AskGeneration(turn.generationId.orEmpty(), request, previous.question, turn.status,
+                            turn.text, turn.atMs, turn.receipt?.steps.orEmpty(), turn.receipt, turn.results, attachments = previous.attachments))
+                } else exchanges += previous.copy(answer = AskAnswer(turn.text, turn.receipt?.read ?: ReadTally(),
+                    turn.receipt?.steps.orEmpty(), turn.receipt?.proposals.orEmpty(), turn.receipt, results = turn.results))
+            }
+        }
+        generation?.let { current ->
+            val index = exchanges.indexOfFirst { it.requestId == current.requestId }
+            if (index >= 0) exchanges[index] = current.exchange()
+            else if (turns.none { it.generationId == current.id }) exchanges += current.exchange()
+        }
+        return exchanges
+    }
 }
+
+@Serializable
+data class ThreadPage(val threads: List<AskThread> = emptyList(), val nextCursor: String? = null)
 
 // The label is NULL for the group the log gave no instant for; it sits last, under no heading.
 data class ThreadMonth(val label: String?, val threads: List<AskThread>)
 
 object Threads {
-    const val title = "Threads"
+    const val title = "History"
     const val open = "Ask something new"
 
-    const val door = "Threads"
+    const val door = "History"
 
     const val conversation = "Conversation"
 

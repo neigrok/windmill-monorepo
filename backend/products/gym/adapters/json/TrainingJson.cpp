@@ -1,6 +1,7 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <string>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -471,13 +472,89 @@ Json::Value toJson(const ProposalHead& head) {
 Json::Value toJson(const ThreadOutcome& outcome) {
   Json::Value body(Json::objectValue);
   body["kind"] = toString(outcome.kind);
-  // Always present; zero means the thread proposed nothing.
+  // Always present; an unknown outcome has no trustworthy count and carries zero.
   body["changes"] = outcome.changes;
   if (outcome.routine) {
     body["routineId"] = outcome.routine->str();
     body["routine"] = outcome.routineName;
   }
   return body;
+}
+
+Json::Value toJson(const CoachAttachment& attachment) {
+  Json::Value body(Json::objectValue);
+  body["id"] = attachment.id;
+  body["mediaType"] = attachment.mediaType;
+  body["width"] = attachment.width;
+  body["height"] = attachment.height;
+  body["bytes"] = Json::UInt64(attachment.bytes);
+  return body;
+}
+
+std::vector<CoachAttachment> coachAttachmentsFrom(const Json::Value& attachments) {
+  std::vector<CoachAttachment> result;
+  for (const auto& item : attachments)
+    result.push_back({item["id"].asString(), item["mediaType"].asString(), item["width"].asInt(),
+                      item["height"].asInt(), item["bytes"].asUInt64()});
+  return result;
+}
+
+Json::Value toJson(const std::vector<CoachResult>& results) {
+  Json::Value body(Json::arrayValue);
+  for (const auto& result : results) {
+    Json::Value item(Json::objectValue);
+    item["kind"] = "routine-created";
+    item["operationId"] = result.operationId;
+    item["routineId"] = result.routineId;
+    item["routineName"] = result.routineName;
+    body.append(item);
+  }
+  return body;
+}
+
+std::vector<CoachResult> coachResultsFrom(const Json::Value& results) {
+  std::vector<CoachResult> out;
+  for (const auto& result : results)
+    out.push_back({result["operationId"].asString(), result["routineId"].asString(), result["routineName"].asString()});
+  return out;
+}
+
+Json::Value toJson(const AskGeneration& generation) {
+  Json::Value body(Json::objectValue);
+  body["id"] = generation.id;
+  body["requestId"] = generation.requestId;
+  body["question"] = generation.question;
+  body["status"] = generation.status;
+  body["answer"] = generation.answer;
+  body["at"] = Json::UInt64(generation.atMs);
+  body["steps"] = toJson(generation.steps);
+  body["results"] = toJson(generation.results);
+  body["revision"] = Json::UInt64(generation.revision);
+  if (generation.stopRequested) body["stopRequested"] = true;
+  if (!generation.attachments.empty()) {
+    body["attachments"] = Json::Value(Json::arrayValue);
+    for (const auto& attachment : generation.attachments) body["attachments"].append(toJson(attachment));
+  }
+  if (generation.receipt) body["receipt"] = toJson(*generation.receipt);
+  return body;
+}
+
+AskGeneration generationFrom(const Json::Value& body) {
+  AskGeneration generation;
+  generation.id = body["id"].asString();
+  generation.requestId = body["requestId"].asString();
+  generation.question = body["question"].asString();
+  generation.status = body["status"].asString();
+  generation.answer = body.get("answer", "").asString();
+  generation.atMs = body.get("at", Json::UInt64(0)).asUInt64();
+  generation.receipt = receiptFrom(body["receipt"]);
+  for (const Json::Value& step : body["steps"])
+    generation.steps.push_back({step["tool"].asString(), step["failed"].asBool()});
+  generation.results = coachResultsFrom(body["results"]);
+  generation.attachments = coachAttachmentsFrom(body["attachments"]);
+  generation.revision = body.get("revision", Json::UInt64(0)).asUInt64();
+  generation.stopRequested = body.get("stopRequested", false).asBool();
+  return generation;
 }
 
 Json::Value toJson(const AskThread& thread) {
@@ -487,6 +564,8 @@ Json::Value toJson(const AskThread& thread) {
   body["createdAt"] = Json::Value::UInt64(thread.createdAtMs);
   body["askedAt"] = Json::Value::UInt64(thread.askedAtMs);
   body["outcome"] = toJson(outcomeOf(thread));
+  if (thread.generation) body["generation"] = toJson(*thread.generation);
+  if (!thread.nextCursor.empty()) body["nextCursor"] = thread.nextCursor;
   Json::Value proposals(Json::arrayValue);
   for (const ThreadProposal& minted : thread.minted) {
     Json::Value line(Json::objectValue);
@@ -506,6 +585,18 @@ Json::Value toJson(const AskThread& thread) {
       turn["from"] = said.fromLifter ? "lifter" : "ask";
       turn["text"] = said.text;
       turn["at"] = Json::Value::UInt64(said.atMs);
+      if (said.position) turn["position"] = Json::UInt64(said.position);
+      if (!said.generationId.empty()) {
+        turn["generationId"] = said.generationId;
+        turn["requestId"] = said.requestId;
+        turn["status"] = said.status;
+      }
+      if (!said.results.empty()) turn["results"] = toJson(said.results);
+      if (!said.attachments.empty()) {
+        turn["attachments"] = Json::Value(Json::arrayValue);
+        for (const auto& attachment : said.attachments) turn["attachments"].append(toJson(attachment));
+      }
+      if (!said.fromLifter && said.receipt) turn["receipt"] = toJson(*said.receipt);
       turns.append(turn);
     }
     body["turns"] = turns;
@@ -663,6 +754,112 @@ Json::Value toJson(const ReadTally& tally) {
   return out;
 }
 
+Json::Value toJson(const std::vector<AskStep>& steps) {
+  Json::Value out(Json::arrayValue);
+  for (const AskStep& step : steps) {
+    Json::Value line(Json::objectValue);
+    line["tool"] = step.tool;
+    line["failed"] = step.failed;
+    out.append(line);
+  }
+  return out;
+}
+
+Json::Value toJson(const AnswerReceipt& receipt) {
+  Json::Value out(Json::objectValue);
+  out["version"] = receipt.version;
+  out["read"] = toJson(receipt.read);
+  out["steps"] = toJson(receipt.steps);
+  out["proposals"] = Json::Value(Json::arrayValue);
+  for (const std::string& id : receipt.proposals) out["proposals"].append(id);
+  out["observations"] = Json::Value(Json::arrayValue);
+  for (const SessionObservation& fact : receipt.observations) {
+    Json::Value line(Json::objectValue);
+    line["tool"] = fact.tool;
+    line["sessionId"] = fact.sessionId.str();
+    line["startedAt"] = Json::Value::UInt64(fact.startedAtMs);
+    if (fact.finishedAtMs) line["finishedAt"] = Json::Value::UInt64(*fact.finishedAtMs);
+    if (fact.routine) line["routine"] = *fact.routine;
+    switch (fact.coverage) {
+      case ReadCoverage::summary: line["coverage"] = "summary"; break;
+      case ReadCoverage::session: line["coverage"] = "session"; break;
+      case ReadCoverage::movement: line["coverage"] = "movement"; break;
+    }
+    if (fact.exerciseId) line["exerciseId"] = fact.exerciseId->str();
+    line["setsRead"] = fact.setsRead;
+    if (fact.workout) {
+      line["workout"]["workingSetCount"] = fact.workout->workingSetCount;
+      line["workout"]["tonnageKg"] = fact.workout->tonnageKg;
+      if (fact.workout->durationMs)
+        line["workout"]["durationMs"] = Json::Value::UInt64(*fact.workout->durationMs);
+    }
+    out["observations"].append(line);
+  }
+  return out;
+}
+
+std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored) {
+  if (!stored.isObject() || !stored["version"].isInt() ||
+      !stored["read"].isObject() || !stored["steps"].isArray() ||
+      !stored["proposals"].isArray() || !stored["observations"].isArray()) return std::nullopt;
+  AnswerReceipt receipt;
+  receipt.version = stored["version"].asInt();
+  for (const char* key : {"sets", "sessions", "weeks"})
+    if (!stored["read"][key].isInt()) return std::nullopt;
+  receipt.read = ReadTally{stored["read"]["sets"].asInt(), stored["read"]["sessions"].asInt(),
+                           stored["read"]["weeks"].asInt()};
+  for (const Json::Value& step : stored["steps"]) {
+    if (!step.isObject() || !step["tool"].isString() || !step["failed"].isBool()) return std::nullopt;
+    receipt.steps.push_back(AskStep{step["tool"].asString(), step["failed"].asBool()});
+  }
+  for (const Json::Value& proposal : stored["proposals"]) {
+    if (!proposal.isString()) return std::nullopt;
+    receipt.proposals.push_back(proposal.asString());
+  }
+  for (const Json::Value& line : stored["observations"]) {
+    if (!line.isObject() || !line["tool"].isString() || !line["sessionId"].isString() ||
+        !line["startedAt"].isUInt64() || !line["coverage"].isString() ||
+        !line["setsRead"].isInt()) return std::nullopt;
+    SessionObservation fact;
+    fact.tool = line["tool"].asString();
+    fact.sessionId = SessionId{line["sessionId"].asString()};
+    fact.startedAtMs = line["startedAt"].asUInt64();
+    fact.setsRead = line["setsRead"].asInt();
+    if (!line["finishedAt"].isNull()) {
+      if (!line["finishedAt"].isUInt64()) return std::nullopt;
+      fact.finishedAtMs = line["finishedAt"].asUInt64();
+    }
+    if (!line["routine"].isNull()) {
+      if (!line["routine"].isString()) return std::nullopt;
+      fact.routine = line["routine"].asString();
+    }
+    if (line["coverage"].asString() == "summary") fact.coverage = ReadCoverage::summary;
+    else if (line["coverage"].asString() == "session") fact.coverage = ReadCoverage::session;
+    else if (line["coverage"].asString() == "movement") fact.coverage = ReadCoverage::movement;
+    else return std::nullopt;
+    if (!line["exerciseId"].isNull()) {
+      if (!line["exerciseId"].isString()) return std::nullopt;
+      fact.exerciseId = ExerciseId{line["exerciseId"].asString()};
+    }
+    if (!line["workout"].isNull()) {
+      const Json::Value& workout = line["workout"];
+      if (!workout.isObject() || !workout["workingSetCount"].isInt() ||
+          !workout["tonnageKg"].isNumeric()) return std::nullopt;
+      WorkoutObservation total;
+      total.workingSetCount = workout["workingSetCount"].asInt();
+      total.tonnageKg = workout["tonnageKg"].asDouble();
+      if (!workout["durationMs"].isNull()) {
+        if (!workout["durationMs"].isUInt64()) return std::nullopt;
+        total.durationMs = workout["durationMs"].asUInt64();
+      }
+      fact.workout = total;
+    }
+    receipt.observations.push_back(std::move(fact));
+  }
+  if (!receipt.valid()) return std::nullopt;
+  return receipt;
+}
+
 // No `e1rm` on a point or a best means that load has no one-rep estimate; an absent `bestE1rm` means
 // no set of that movement ever had one. `weeks` is contiguous: a week with no training is zero.
 Json::Value toJson(const Statistics& statistics) {
@@ -698,6 +895,41 @@ Json::Value toJson(const Statistics& statistics) {
   Json::Value body(Json::objectValue);
   body["weeks"] = weeks;
   body["movements"] = movements;
+  return body;
+}
+
+Json::Value toJson(const StatsProgress& progress) {
+  const auto performedJson = [](const PerformedFact& fact) {
+    Json::Value body(Json::objectValue);
+    body["setId"] = fact.set.str();
+    body["weightKg"] = fact.weightKg;
+    body["reps"] = fact.reps;
+    if (fact.rpe) body["rpe"] = *fact.rpe;
+    return body;
+  };
+  Json::Value sessions(Json::arrayValue);
+  for (const ProgressSession& session : progress.sessions) {
+    Json::Value movements(Json::arrayValue);
+    for (const MovementSessionFact& fact : session.movements) {
+      Json::Value movement(Json::objectValue);
+      movement["exerciseId"] = fact.exercise.str();
+      movement["workingSetCount"] = fact.workingSetCount;
+      movement["heaviest"] = performedJson(fact.heaviest);
+      if (fact.estimate) {
+        movement["estimate"] = performedJson(fact.estimate->performed);
+        movement["estimate"]["e1rm"] = fact.estimate->e1rm;
+      }
+      movements.append(movement);
+    }
+    Json::Value row(Json::objectValue);
+    row["sessionId"] = session.session.str();
+    row["startedAt"] = Json::Value::UInt64(session.startedAtMs);
+    row["movements"] = movements;
+    sessions.append(row);
+  }
+  Json::Value body(Json::objectValue);
+  body["asOf"] = Json::Value::UInt64(progress.asOfMs);
+  body["sessions"] = sessions;
   return body;
 }
 

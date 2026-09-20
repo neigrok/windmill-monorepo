@@ -21,26 +21,18 @@ async function mirror(t, { plan = null, restSeconds = null, logged = sets }) {
   return renderHook(t, () => training.type(training.props)).tree;
 }
 
-const mirrorLine = async (t, over) => textOf(findByClass(await mirror(t, over), 'gym-mirror-line')[0]);
-
-test('the mirror’s rest reads the dial, and says nothing about where it came from', async (t) => {
-  const line = await mirrorLine(t, { restSeconds: 120 });
-  assert.equal(line.endsWith('  ·  target 2:00'), true, line);
-  assert.equal(line.includes('from the routine'), false);
-});
-
-test('the mirror’s rest reads the routine entry when the frozen plan carries one for this movement, and says so once', async (t) => {
-  const plan = { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 5 }], restSeconds: 180 }] };
-  const line = await mirrorLine(t, { plan, restSeconds: 120 });
-  assert.equal(line.endsWith('  ·  target 3:00 · from the routine'), true, line);
-  assert.equal((line.match(/from the routine/g) ?? []).length, 1);
-  assert.equal((await mirrorLine(t, { plan, restSeconds: null })).endsWith('  ·  target 3:00 · from the routine'), true, 'the entry runs the clock with the dial off');
-});
-
-test('the mirror draws no rest with the dial off and no entry naming one', async (t) => {
-  const plan = { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 5 }] }] };
-  const line = await mirrorLine(t, { plan, restSeconds: null });
-  assert.equal(line.includes('rest'), false, line);
+test('the mirror shows two quiet count-up readings before the first set and after it, with no rest target', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  const empty = await mirror(t, { logged: [] });
+  assert.deepEqual(findByClass(empty, 'gym-workout-clock').map((clock) => [textOf(clock), clock.props['aria-label']]), [
+    ['10:00', 'Workout time: 10 minutes'], ['10:00', 'Since start: 10 minutes'],
+  ]);
+  const logged = await mirror(t, { restSeconds: 120 });
+  assert.deepEqual(findByClass(logged, 'gym-workout-clock').map((clock) => [textOf(clock), clock.props['aria-label']]), [
+    ['10:00', 'Workout time: 10 minutes'], ['0:30', 'Since last set: 30 seconds'],
+  ]);
+  assert.equal(textOf(logged).includes('target 2:00'), false);
+  assert.equal(findByClass(logged, 'gym-workout-clocks')[0].props['aria-live'], 'off');
 });
 
 // Lower A / Back Squat at the rack: sets 1 and 2 landed as planned, set 3 current (R11).
@@ -78,4 +70,25 @@ test('a free session draws no plan line and only what landed', async (t) => {
   const tree = await mirror(t, {});
   assert.deepEqual(findByClass(tree, 'gym-mirror-plan'), []);
   assert.deepEqual(findByClass(tree, 'gym-mirror-slot').map((row) => [row.props.className, textOf(row)]), [['gym-mirror-slot is-lifted', '80 × 5']]);
+});
+
+test('clock anchors survive corrections, exercise changes, deletion/Undo, finish and skew', async () => {
+  const { workoutClocks } = await import('../../../src/products/gym/log.js');
+  const session = { startedAt: 1000 };
+  const first = { id: 's1', completedAt: 6000, exerciseId: 'squat', kind: 'warmup' };
+  const last = { id: 's2', completedAt: 61000, exerciseId: 'bench', kind: 'working' };
+  const now = 3662000;
+  assert.deepEqual(workoutClocks(session, [first, last], now), [
+    { label: 'Workout time', elapsed: 3661000, spoken: '1 hour 1 minute 1 second' },
+    { label: 'Since last set', elapsed: 3601000, spoken: '1 hour 1 second' },
+  ]);
+  assert.deepEqual(workoutClocks(session, [first, { ...last, reps: 8, weightKg: 80, exerciseId: 'row' }], now), workoutClocks(session, [first, last], now));
+  assert.equal(workoutClocks(session, [first], now)[1].elapsed, now - first.completedAt);
+  assert.equal(workoutClocks(session, [], now)[1].elapsed, now - session.startedAt);
+  assert.equal(workoutClocks(session, [first, last], now)[1].elapsed, now - last.completedAt);
+  assert.deepEqual(workoutClocks({ ...session, finishedAt: 62000 }, [first, last], now), [
+    { label: 'Workout time', elapsed: 61000, spoken: '1 minute 1 second' },
+    { label: 'Since last set', elapsed: 1000, spoken: '1 second' },
+  ]);
+  assert.deepEqual(workoutClocks({ startedAt: now + 1000 }, [{ completedAt: now + 2000 }], now).map((clock) => clock.elapsed), [0, 0]);
 });

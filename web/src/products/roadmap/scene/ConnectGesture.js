@@ -1,8 +1,8 @@
 // Dragging a branch end onto a node: start() pulls a new edge from a rim port, startReconnect() re-aims one end of an existing one; the node under the cursor rings by verdict — valid, cyclic, or valid-but-costly.
-import { NODE_SIZE } from '../theme.js';
+import { BODY_WU } from '../theme.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
-const NODE_RADIUS = NODE_SIZE * 0.42;
+const NODE_RADIUS = BODY_WU / 2;
 
 export class ConnectGesture {
   constructor(canvas, container, { camera, pick, onConnect, onReconnect, onFadeNodes, onRestoreNodes }) {

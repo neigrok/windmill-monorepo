@@ -8,9 +8,6 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TheSix
 
-// C2: an empty query shows six most-used movements and then the WHOLE catalogue, on every empty
-// query — never gated on a first session. The six are ranked off the last fifty sessions this device
-// holds and topped up in order from the shared opener list, so a fresh account still sees six.
 class PickerSixRankingTests {
     private val openers = TheSix.movements
     private val extras = (1..12).map { Exercise(id = "ex_$it", name = "Movement $it") }
@@ -51,8 +48,6 @@ class PickerSixRankingTests {
         )
     }
 
-    // The device's own sessions name their movements by ID; the log's name them by NAME. A movement is
-    // counted by either spelling of itself, or a shelf full of training would rank nothing.
     @Test
     fun testAShelvedSessionCountsTheSameAsOneTheLogServed() {
         val sessions = listOf(session(2, "ex_7"), session(1, "ex_7"), session(3, "Movement 4"))
@@ -99,25 +94,23 @@ class PickerSixRankingTests {
     }
 
     @Test
-    fun testAMovementAlreadyInTheSessionIsNotOfferedAsOneOfTheSix() {
+    fun testSelectedMovementsKeepTheirRankInTheSix() {
         val options = PickerOptions.matching(query = "", catalog = catalog,
                                              taken = listOf("back-squat", "bench-press"),
                                              sessions = emptyList())
 
         assertEquals(
-            listOf("Deadlift", "Overhead Press", "Barbell Row", "Chin Up"),
+            listOf("Back Squat", "Bench Press", "Deadlift", "Overhead Press"),
             options.six.take(4).map { it.name },
         )
-        assertTrue(options.six.none { it.id == "back-squat" || it.id == "bench-press" })
+        assertEquals(listOf(true, true, false, false, false, false), options.six.map { it.selected })
     }
 
-    // C11: the same bytes web and iOS say.
     @Test
     fun testTheCatalogueThatDidNotLoadSaysWhatTheOtherSurfacesSay() {
         val options = PickerOptions.matching(query = "bench", catalog = emptyList(), taken = emptyList())
 
         assertEquals("The catalog didn’t load. It comes back when you have signal.", options.unread)
         assertNull("one silence, one sentence", options.empty)
-        assertNull(options.create)
     }
 }

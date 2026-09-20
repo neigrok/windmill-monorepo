@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.SemanticsActions
@@ -14,6 +15,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import java.io.File
@@ -32,6 +37,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
@@ -95,7 +102,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
-                onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
             )
         }
@@ -115,8 +121,6 @@ class RoutinesScreenTests {
             exerciseId = "bench-press", before = ProposalTargets(List(5) { SetTarget(5, 82.5) }),
             after = ProposalTargets(List(5) { SetTarget(3, 87.5) }))))
 
-    // The reach band holds what a lifter does with a bar in their hands; planning work rides the top
-    // bar, where nobody has to reach one-handed. And the connect pitch is not on this screen at all.
     @Test
     fun testTheBandStartsTheWorkoutAndTheNewRoutineActionIsInTheTopBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -124,32 +128,29 @@ class RoutinesScreenTests {
         val drafts = mutableListOf<RoutineDraft>()
         home(scope, doors, drafts)
 
-        compose.onNodeWithText("Just start logging").assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertDoesNotExist()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        compose.onNodeWithText("Start logging").assertIsDisplayed()
+        val newRoutine = compose.onNodeWithText("New routine")
+        newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
+        newRoutine.performClick()
+        compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
         compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-        compose.onNodeWithText("Gym settings").assertIsDisplayed()
+        compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
-        compose.onNodeWithText("Just start logging").performClick()
+        compose.onNodeWithText("Start logging").performClick()
         compose.runOnIdle { assertEquals(listOf("start"), doors) }
         scope.cancel()
     }
 
-    // A device-local clock can support an omission, never an assertion. The tabs are not mounted while
-    // a session is open, and offline this room cannot read the account the other phone is training on
-    // — so the head counts the program and claims nothing about what is running.
     @Test
     fun testTheHeadCountsTheProgramAndClaimsNothingAboutASessionItCannotSee() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         home(scope, mutableListOf(), mutableListOf())
 
-        compose.onNodeWithText("1 routine").assertIsDisplayed()
+        compose.onNodeWithText("1 routine").assertDoesNotExist()
         compose.onNodeWithText("nothing running", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 
-    // Law 1: the row draws no control for Delete — the swipe is its whole door — so the row declares
-    // the same Delete as a custom action a screen reader reaches, named with the routine.
     @Test
     fun testTheRowDeclaresItsDeleteAsACustomActionNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -158,17 +159,15 @@ class RoutinesScreenTests {
         val store = home(scope, doors, drafts)
         val routineId = store.routines.single().id
 
-        compose.onNodeWithContentDescription("More for Push Day").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
         compose.onNodeWithText("Duplicate").assertDoesNotExist()
-        // One node says it: the swipe's lane behind the row. The row's own Delete is the custom
-        // action, not a drawn button.
         compose.onAllNodesWithText("Delete").assertCountEquals(1)
 
         val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
         val actions = row.config[SemanticsActions.CustomActions]
-        assertEquals(listOf("Delete Push Day"), actions.map { it.label })
+        assertEquals(listOf("Duplicate Push Day", "Delete Push Day"), actions.map { it.label })
 
-        compose.runOnIdle { actions.single().action() }
+        compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
         compose.runOnIdle {
             assertEquals("the same act the swipe makes, and the room withholds it",
                 listOf("delete:$routineId"), doors)
@@ -177,21 +176,16 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // With no control at its trailing edge the row's height is its text's, over the room's row floor
-    // (`GymTap.row`). The number is what ledger 5s records beside iOS's 62 pt.
     @Test
     fun testTheRowStandsOnTheRoomsRowFloor() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         home(scope, mutableListOf(), mutableListOf())
 
         val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
-        assertEquals(63.dp, bounds.height)
+        assertEquals(68.dp, bounds.height)
         scope.cancel()
     }
 
-    // One proposal, one rendering. The newest waiting proposal is the standing card at the head, and
-    // the routine it is about wears the accent border and NO chip; every other waiting routine keeps
-    // the chip that is its only rendering.
     @Test
     fun testTheRoutineTheStandingCardIsAboutDrawsNoChipOfItsOwn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -227,7 +221,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = {},
                 onDeleteRoutine = {},
                 onReview = { reviewed += it.id },
-                onOpenSettings = {},
                 onSignIn = {},
             )
         }
@@ -236,7 +229,7 @@ class RoutinesScreenTests {
             assertEquals(listOf("prop_1", "prop_2"), store.pendingProposals.map { it.id })
         }
         compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
-        compose.onNodeWithText("Push Day · 1 change · waiting").assertIsDisplayed()
+        compose.onNodeWithText("1 change").assertIsDisplayed()
         compose.onAllNodesWithText("1 proposal").assertCountEquals(1)
 
         compose.onNodeWithText("1 proposal").performClick()
@@ -280,7 +273,6 @@ class RoutinesScreenTests {
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it" },
                 onReview = { doors += "review" },
-                onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
             )
         }
@@ -294,8 +286,6 @@ class RoutinesScreenTests {
         scope.cancel()
     }
 
-    // The routine page's one primary is under the thumb: pinned in the Scaffold's bottom bar, out of
-    // the scrolling body, and it starts the workout.
     @Test
     fun testStartWorkoutIsPinnedOutOfTheScrollAndStartsTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -314,7 +304,7 @@ class RoutinesScreenTests {
                 api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
                 user = null,
             ))
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
+            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
         }
         val routineId = store.routines.single().id
         compose.setContent {
@@ -339,9 +329,50 @@ class RoutinesScreenTests {
         val band = compose.onNodeWithText("Start workout").fetchSemanticsNode()
         val body = compose.onNodeWithText("Bench Press").fetchSemanticsNode()
         assertTrue("the band sits under the body", band.positionInRoot.y > body.positionInRoot.y)
+        val first = compose.onNodeWithText("Bench Press").getBoundsInRoot()
+        val second = compose.onNodeWithText("Barbell Row").getBoundsInRoot()
+        assertTrue("compact movement rows retain their target", first.height >= 68.dp)
+        assertTrue("the detail uses compact row rhythm", second.top - first.top < 105.dp)
 
         compose.onNodeWithText("Start workout").performClick()
         compose.runOnIdle { assertEquals(listOf(routineId), started) }
         scope.cancel()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h915dp-xhdpi")
+    fun compactDetailGrowsForLongMovementNamesAtDoubleTextAndKeepsPinnedActions() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try {
+            val firstName = "Single arm supported dumbbell row with a long movement name"
+            val secondName = "Standing overhead press with a long movement name"
+            val server = FakeTraining().apply {
+                catalog = listOf(Exercise("long-row", firstName), Exercise("long-press", secondName))
+                settings = GymPreferences(restSeconds = null)
+                written["rt_compact"] = Routine("rt_compact", "Compact detail", 0, 1, entries = listOf(
+                    RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0)), restSeconds = 90),
+                    RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
+                ))
+            }
+            val store = TrainingStore(SetQueue(File(tmp.root, "queue.json")), DeviceCopy(File(tmp.root, "catalog.json")),
+                LocalLog(File(tmp.root, "local.json")), LocalPreferences(File(tmp.root, "prefs.json")),
+                LocalBodyweight(File(tmp.root, "bodyweight.json")), scope, sync = { server })
+            runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
+                User("u1", "sam@example.com", "Sam"))) }
+            val opened = mutableListOf<String>()
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                    RoutineScreen("rt_compact", store, true, "Routines", {}, {}, {}, { opened += it }, emptySet(), {}, {})
+                }
+            }
+            val first = compose.onNodeWithText(firstName).performScrollTo().assertIsDisplayed()
+            assertTrue("the long entry expands instead of clipping into68dp: ${first.getBoundsInRoot()}", first.getBoundsInRoot().height > 68.dp)
+            compose.onNodeWithText("Rest 1:30").assertIsDisplayed()
+            first.performClick()
+            compose.onNodeWithText(secondName).performScrollTo().assertIsDisplayed().performClick()
+            compose.onNodeWithText("Start workout").assertIsDisplayed()
+            compose.onNodeWithText("Edit routine").assertIsDisplayed()
+            compose.runOnIdle { assertEquals(listOf("long-row", "long-press"), opened) }
+        } finally { scope.cancel() }
     }
 }

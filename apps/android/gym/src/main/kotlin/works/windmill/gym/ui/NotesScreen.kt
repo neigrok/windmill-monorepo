@@ -1,53 +1,34 @@
 package works.windmill.gym.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
@@ -56,14 +37,7 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
-// What the lifter writes for Coach, in precedence order. The head says the one surprising thing —
-// every connected agent reads these — and nothing else. Account-only: read on the way in, nothing
-// on this phone's disk, and the ceiling is said where it bites rather than in a caption. The list
-// itself belongs to the STORE, so a delete inside its window drops the row and the cap together
-// when the clock fires.
 @Composable
 fun NotesScreen(
     store: TrainingStore,
@@ -74,298 +48,176 @@ fun NotesScreen(
     onSignIn: () -> Unit,
     say: (String?) -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    // The STORE owns the notebook, so a delete that settles takes the row and the cap with it. This
-    // screen keeps one thing of its own: the order under the finger, which is nobody's until the
-    // finger lifts and the log takes it.
-    var dragOrder by remember { mutableStateOf<List<Note>?>(null) }
-    // Whether the read on the way in landed. An empty notebook is not the same fact as an unread one.
+    var attempt by remember { mutableIntStateOf(0) }
     var read by remember { mutableStateOf(false) }
-    // A list that could not be read is not an empty one: the screen says so in place, in the log's
-    // words where it has them.
-    var outOfReach by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(isSignedIn) {
+    var reading by remember { mutableStateOf(isSignedIn) }
+    var failure by remember { mutableStateOf<String?>(null) }
+    var order by remember { mutableStateOf<List<Note>?>(null) }
+    var savingOrder by remember { mutableStateOf(false) }
+    LaunchedEffect(store, isSignedIn, attempt) {
         if (!isSignedIn) return@LaunchedEffect
-        when (val served = store.readNotes()) {
-            is GymResult.Ok -> {
-                read = true
-                outOfReach = null
+        reading = true
+        failure = null
+        try {
+            when (val result = store.readNotes()) {
+                is GymResult.Ok -> read = true
+                is GymResult.Failed -> failure = result.why.line("Your notes could not be read.")
             }
-            is GymResult.Failed -> outOfReach = served.why.line("your notes are out of reach")
-        }
+        } finally { reading = false }
     }
-
-    // The order is the lifter's instruction: it lands on the log before it is believed here, and a
-    // refusal drops back to whatever the log last said — never to what the drag had already drawn.
-    // What goes over is the DRAWN order; a note inside its window is named back into it by the
-    // store, which is where the standing list lives.
-    fun reorder(order: List<Note>) {
-        dragOrder = order
+    fun reorder(next: List<Note>) {
+        if (savingOrder) return
+        savingOrder = true
+        order = next
+        say(null)
         scope.launch {
-            say(null)
             try {
-                val written = store.reorderNotes(order.map { it.id })
-                if (written is GymResult.Failed) say(written.why.line("the order stayed as it was"))
-            } finally {
-                dragOrder = null
-            }
+                val result = store.reorderNotes(next.map { it.id })
+                if (result is GymResult.Failed) say(result.why.line("The order stayed as it was."))
+            } finally { order = null; savingOrder = false }
         }
     }
-
     GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
-      Column(Modifier.fillMaxSize()) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x4),
-        ) {
-            Text(Notes.honesty, style = WindmillFont.display(22), color = GymSkin.ink)
-            Text(Notes.sub, style = GymType.numeral(12), color = GymSkin.inkFaint)
-        }
-        if (!isSignedIn) {
-            SignedOut(onSignIn)
-            return@Column
-        }
-        outOfReach?.let {
-            Text(
-                it,
-                style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                color = GymSkin.inkDim,
-                modifier = Modifier.padding(horizontal = GymLayout.gutter),
-            )
-        }
-        if (!read) return@Column
-        // A note inside its undo window is off the list; the CAP still counts it, because the store
-        // will refuse the eleventh whether or not this screen is drawing the tenth.
-        val held = dragOrder ?: store.notes
-        if (store.noteCount == 0) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
-            ) {
-                Notes.placeholders.forEach { title ->
-                    PlaceholderRow(title) { onEdit(null, title) }
+        Column(Modifier.fillMaxSize()) {
+            NoteList(order ?: store.notes, enabled = !savingOrder,
+                modifier = Modifier.weight(1f), onOpen = { onEdit(it, "") },
+                onMove = { if (!savingOrder) order = it }, onSettle = ::reorder,
+                header = {
+                    Text(Notes.sub, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                    Text(Notes.honesty, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+                    when {
+                        !isSignedIn -> Text(Notes.signedOut, style = WindmillFont.body(16), color = skin.inkDim)
+                        failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Notes unavailable", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+                            Text(failure!!, style = WindmillFont.body(16), color = skin.inkDim)
+                            TextButton(onClick = { attempt++ }, enabled = !reading) { Text("Try again") }
+                        }
+                        !read -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
+                    }
+                    if (isSignedIn && read && failure == null && store.noteCount == 0) {
+                        Notes.placeholders.forEach { title ->
+                            Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
+                                .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                                    color = skin.inkDim, modifier = Modifier.weight(1f))
+                                Chevron()
+                            }
+                        }
+                    }
+                }, showRows = isSignedIn && read && failure == null,
+                footer = {
+                    if (isSignedIn && read && failure == null) {
+                        if (store.notes.size > 1) Text(Notes.topWins, style = WindmillFont.body(14), color = skin.inkDim)
+                        if (store.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
+                    }
+                })
+            if (!isSignedIn || (read && failure == null && store.noteCount < Notes.maxNotes)) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
+                        enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
+                        Text(if (isSignedIn) Notes.add else "Sign in", style = WindmillFont.body(16, FontWeight.Bold))
+                    }
                 }
-                AddRow(count = store.noteCount) { onEdit(null, "") }
-            }
-            return@Column
-        }
-        NoteList(
-            notes = held,
-            onOpen = { onEdit(it, "") },
-            onMove = { dragOrder = it },
-            onSettle = ::reorder,
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-                modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
-            ) {
-                // With the second note there is an order to explain; one note has none.
-                if (held.size > 1) Text(Notes.topWins, style = GymType.numeral(12), color = GymSkin.inkFaint)
-                AddRow(count = store.noteCount) { onEdit(null, "") }
             }
         }
-      }
     }
 }
 
-@Composable
-private fun SignedOut(onSignIn: () -> Unit) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
-    ) {
-        Text(
-            Notes.signedOut,
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkFaint,
-        )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.secondary)
-                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(role = Role.Button, onClick = onSignIn),
-        ) {
-            Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
-        }
-    }
-}
-
-// Placeholder text inside an empty row, never a stored note: nothing is written until the lifter
-// saves.
-@Composable
-private fun PlaceholderRow(title: String, onOpen: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.row)
-            .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg)
-            .clip(RoundedCornerShape(WindmillRadius.lg))
-            .clickable(role = Role.Button, onClickLabel = "write this note", onClick = onOpen)
-            .padding(horizontal = WindmillSpace.x4),
-    ) {
-        Text(title, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
-        Spacer(Modifier.weight(1f))
-        Chevron()
-    }
-}
-
-// At ten the row stops offering and says so, in the body face: a sentence with a number in it.
-@Composable
-private fun AddRow(count: Int, onAdd: () -> Unit) {
-    if (count >= Notes.maxNotes) {
-        Text(
-            Notes.full,
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = GymSkin.inkDim,
-            modifier = Modifier.fillMaxWidth().padding(vertical = WindmillSpace.x3),
-        )
-        return
-    }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.secondary)
-            .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
-            .clickable(role = Role.Button, onClick = onAdd),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(Notes.add, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
-    }
-}
-
-// The same drag the session assembly uses: one step at a time, past a neighbour's midpoint, moved on
-// screen at once (`onMove`) and handed to the log when the finger lifts (`onSettle`). The gesture
-// keeps its own copy of the order: a finger that lifts before the last move has recomposed still
-// settles what it moved. Every row also offers Move up / Move down as custom actions, so a screen
-// reader can change precedence without the drag.
 @Composable
 private fun NoteList(
     notes: List<Note>,
+    enabled: Boolean,
+    modifier: Modifier,
     onOpen: (Note) -> Unit,
-    onMove: (List<Note>) -> Unit,
+    onMove: (List<Note>?) -> Unit,
     onSettle: (List<Note>) -> Unit,
-    foot: @Composable () -> Unit,
+    header: @Composable ColumnScope.() -> Unit,
+    showRows: Boolean,
+    footer: @Composable ColumnScope.() -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val skin = LocalGymColors.current
+    val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val standing by rememberUpdatedState(notes)
-    // The handle appears with the second note, beside the caption that says what dragging decides.
-    val handles = notes.size > 1
-    var dragging by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
-        verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
-        contentPadding = PaddingValues(bottom = GymLayout.scrollTail),
-    ) {
-        itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
-            val held = dragging == note.id
-            val steps = buildList {
-                if (index > 0) add(CustomAccessibilityAction("Move up") {
-                    onSettle(Notes.moved(standing, index, index - 1))
-                    true
-                })
-                if (index < notes.lastIndex) add(CustomAccessibilityAction("Move down") {
-                    onSettle(Notes.moved(standing, index, index + 1))
-                    true
-                })
+    val mayMove by rememberUpdatedState(enabled)
+    var dragged by remember { mutableStateOf<String?>(null) }
+    var offset by remember { mutableFloatStateOf(0f) }
+    var focused by remember { mutableStateOf<String?>(null) }
+    LazyColumn(state = list, modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        item("head") { Column(verticalArrangement = Arrangement.spacedBy(20.dp), content = header) }
+        if (showRows) itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
+            val focus = remember(note.id) { FocusRequester() }
+            LaunchedEffect(focused, enabled) {
+                if (focused == note.id && enabled) focus.requestFocus()
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .zIndex(if (held) 1f else 0f)
-                    .graphicsLayer { translationY = if (held) dragOffset else 0f }
-                    .heightIn(min = GymTap.row)
-                    .clip(RoundedCornerShape(WindmillRadius.lg))
-                    .background(GymSkin.surface)
-                    .border(1.dp, if (held) GymSkin.accent else GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(role = Role.Button, onClickLabel = "open this note") { onOpen(note) }
-                    .semantics { customActions = steps }
-                    .padding(start = if (handles) 0.dp else WindmillSpace.x4, end = WindmillSpace.x4)
-                    .padding(vertical = WindmillSpace.x2),
-            ) {
-                if (handles) GrabRail(
-                    lit = held,
-                    modifier = Modifier.pointerInput(note.id) {
+            val actions = if (!enabled) emptyList() else buildList {
+                fun move(to: Int) {
+                    focused = note.id
+                    onSettle(Notes.moved(standing, index, to))
+                    if (list.layoutInfo.visibleItemsInfo.none { it.index == to + 1 }) {
+                        scope.launch { list.scrollToItem(to + 1) }
+                    }
+                }
+                if (index > 0) add(CustomAccessibilityAction("Move up") { move(index - 1); true })
+                if (index < notes.lastIndex) add(CustomAccessibilityAction("Move down") { move(index + 1); true })
+            }
+            Row(Modifier.fillMaxWidth().zIndex(if (dragged == note.id) 1f else 0f)
+                .graphicsLayer { translationY = if (dragged == note.id) offset else 0f }
+                .heightIn(min = 70.dp).background(if (dragged == note.id) skin.raised else Color.Transparent)
+                .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = "Open note") { onOpen(note) }
+                .semantics { customActions = actions }.padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (notes.size > 1) Icon(painterResource(R.drawable.gym_reorder), "Reorder ${note.title}", tint = skin.inkDim,
+                    modifier = Modifier.size(48.dp).pointerInput(note.id) {
                         var order = standing
                         var moved = false
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
-                                dragging = note.id
-                                dragOffset = 0f
-                                order = standing
-                                moved = false
+                                if (mayMove) { dragged = note.id; offset = 0f; order = standing; moved = false }
                             },
-                            onDragEnd = {
-                                dragging = null
-                                dragOffset = 0f
-                                if (moved) onSettle(order)
-                            },
-                            onDragCancel = {
-                                dragging = null
-                                dragOffset = 0f
-                                if (moved) onSettle(order)
-                            },
+                            onDragEnd = { dragged = null; offset = 0f; if (moved) onSettle(order) },
+                            onDragCancel = { dragged = null; offset = 0f; onMove(null) },
                             onDrag = { change, amount ->
+                                if (!mayMove || dragged != note.id) return@detectDragGesturesAfterLongPress
                                 change.consume()
-                                dragOffset += amount.y
+                                offset += amount.y
                                 val from = order.indexOfFirst { it.id == note.id }
-                                val visible = listState.layoutInfo.visibleItemsInfo
-                                val card = visible.firstOrNull { it.index == from }
-                                    ?: return@detectDragGesturesAfterLongPress
-                                val centre = card.offset + card.size / 2f + dragOffset
-                                val above = visible.firstOrNull { it.index == from - 1 }
-                                val below = visible.firstOrNull { it.index == from + 1 }
-                                val over = when {
-                                    above != null && centre < above.offset + above.size / 2f -> above
-                                    below != null && centre > below.offset + below.size / 2f -> below
+                                val visible = list.layoutInfo.visibleItemsInfo
+                                val row = visible.firstOrNull { it.key == note.id } ?: return@detectDragGesturesAfterLongPress
+                                val center = row.offset + row.size / 2f + offset
+                                val above = order.getOrNull(from - 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
+                                val below = order.getOrNull(from + 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
+                                val to = when {
+                                    above != null && center < above.offset + above.size / 2f -> from - 1
+                                    below != null && center > below.offset + below.size / 2f -> from + 1
                                     else -> return@detectDragGesturesAfterLongPress
                                 }
+                                val neighbor = if (to < from) above!! else below!!
+                                order = Notes.moved(order, from, to)
                                 moved = true
-                                order = Notes.moved(order, from, over.index)
                                 onMove(order)
-                                val landed = if (over.index < from) over.offset
-                                    else over.offset + over.size - card.size
-                                dragOffset += (card.offset - landed)
+                                offset += row.offset - if (to < from) neighbor.offset else neighbor.offset + neighbor.size - row.size
                             },
                         )
-                    },
-                )
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(GymLayout.pair),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        note.title,
-                        style = WindmillFont.body(15, FontWeight.SemiBold),
-                        color = GymSkin.ink,
-                        maxLines = 1,
-                    )
-                    note.firstLine?.let {
-                        Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
-                    }
+                    })
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(note.title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+                    Text(note.firstLine ?: "empty · tap to write", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
                 }
                 Chevron()
             }
         }
-        item { foot() }
+        item("foot") { Column(verticalArrangement = Arrangement.spacedBy(20.dp), content = footer) }
     }
 }
 
-// A title and a body, stored verbatim. The id is minted once per editor so a save whose reply was
-// lost replays as the same note; a refusal — the ten cap, the two bounds — shows in the log's words.
-// Delete asks nothing: the editor closes and the room's window holds the note for nine seconds with
-// Undo on the transient, which is the same way back every other delete in this room takes.
 @Composable
 fun NoteEditorScreen(
     note: Note?,
@@ -375,136 +227,72 @@ fun NoteEditorScreen(
     onBack: () -> Unit,
     onDone: () -> Unit,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val id = rememberSaveable { note?.id ?: Ids.note() }
-    var title by rememberSaveable { mutableStateOf(note?.title ?: seedTitle) }
+    var title by rememberSaveable { mutableStateOf(note?.title ?: "") }
     var body by rememberSaveable { mutableStateOf(note?.body ?: "") }
     var saving by remember { mutableStateOf(false) }
-    var said by remember { mutableStateOf<String?>(null) }
-
+    var said by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(saving) {}
     fun save() {
+        if (saving || !Notes.savable(title)) return
+        saving = true
+        said = null
         scope.launch {
-            if (saving) return@launch
-            saving = true
             try {
-                said = null
-                when (val written = store.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
+                when (val result = store.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
                     is GymResult.Ok -> onDone()
-                    is GymResult.Failed -> said = written.why.line("the note stayed as it was")
+                    is GymResult.Failed -> said = result.why.line("The note stayed as it was.")
                 }
-            } finally {
-                saving = false
-            }
+            } finally { saving = false }
         }
     }
-
-    GymScreen(
-        title = if (note == null) "New note" else "Note",
-        onBack = onBack,
-        backTo = backTo,
-    ) {
-      Column(
-        Modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-      ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter),
-        ) {
-            Field(
-                value = title,
-                onChange = { title = it },
-                placeholder = Notes.titlePlaceholder,
-                style = WindmillFont.body(17, FontWeight.SemiBold),
-                singleLine = true,
-                enabled = !saving,
-            )
-            // Chrome only in the last fifth, and alarm past the bound; Save stays tappable and the
-            // log's sentence refuses in place.
+    GymScreen(title = if (note == null) "New note" else "Note", onBack = { if (!saving) onBack() }, backTo = backTo,
+        actions = {
+            TextButton(onClick = ::save, enabled = Notes.savable(title) && !saving,
+                modifier = Modifier.widthIn(min = 88.dp).heightIn(min = 48.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.accent, disabledContentColor = skin.inkFaint)) {
+                Text(if (saving) "Saving…" else Notes.save, style = WindmillFont.body(13, FontWeight.Bold))
+            }
+        }) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            NoteField("Title", title, { title = it; said = null }, seedTitle.ifBlank { Notes.titlePlaceholder },
+                enabled = !saving, minimum = 56.dp, problem = said?.takeIf { Notes.titleOver(title) })
             Notes.titleCounter(title)?.let {
-                Text(
-                    it,
-                    style = GymType.numeral(12),
-                    color = if (Notes.titleOver(title)) GymSkin.alarmInk else GymSkin.inkFaint,
-                )
+                Text(it, style = WindmillFont.body(14), color = if (Notes.titleOver(title)) skin.alarmInk else skin.inkDim)
             }
-            Field(
-                value = body,
-                onChange = { body = it },
-                placeholder = Notes.bodyPlaceholder,
-                style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                singleLine = false,
-                enabled = !saving,
-                minHeight = 160.dp,
-            )
+            NoteField(if (note == null) "Body" else "Note", body, { body = it; said = null }, Notes.bodyPlaceholder,
+                enabled = !saving, minimum = 240.dp, problem = said?.takeIf { !Notes.titleOver(title) && Notes.over(body) })
             Notes.counter(body)?.let {
-                Text(
-                    it,
-                    style = GymType.numeral(12),
-                    color = if (Notes.over(body)) GymSkin.alarmInk else GymSkin.inkFaint,
-                )
+                Text(it, style = WindmillFont.body(14), color = if (Notes.over(body)) skin.alarmInk else skin.inkDim)
             }
-            said?.let {
-                Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.inkDim)
-            }
-            val ready = Notes.savable(title) && !saving
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.primary)
-                    .alpha(if (ready) 1f else 0.4f)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = ready, role = Role.Button) { save() },
-            ) {
-                Text(Notes.save, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
-            }
-            if (note != null) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = GymTap.row)
-                        .clickable(enabled = !saving, role = Role.Button) {
-                            // Nothing is sent: the window holds it and the editor leaves at once, so
-                            // the Undo is on the room's transient rather than behind this screen.
-                            store.withhold(Deletion.Note(note.id))
-                            onDone()
-                        },
-                ) {
-                    Text(Notes.delete, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
-                }
+            said?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            if (note == null) Text(Notes.honesty, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            if (note != null) TextButton(onClick = { if (!saving) { store.withhold(Deletion.Note(note.id)); onDone() } },
+                enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                Text(Notes.delete, style = WindmillFont.body(16), color = skin.alarmInk)
             }
         }
-      }
     }
 }
 
 @Composable
-private fun Field(
-    value: String,
-    onChange: (String) -> Unit,
-    placeholder: String,
-    style: androidx.compose.ui.text.TextStyle,
-    singleLine: Boolean,
-    enabled: Boolean,
-    minHeight: androidx.compose.ui.unit.Dp = GymTap.secondary,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        textStyle = style,
-        singleLine = singleLine,
-        enabled = enabled,
-        placeholder = { Text(placeholder, style = style) },
-        shape = RoundedCornerShape(WindmillRadius.lg),
-        colors = gymFieldColours(),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = minHeight),
-    )
+private fun NoteField(label: String, value: String, onValue: (String) -> Unit, placeholder: String,
+    enabled: Boolean, minimum: androidx.compose.ui.unit.Dp, problem: String?) {
+    val skin = LocalGymColors.current
+    Text(label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+    OutlinedTextField(value, onValueChange = onValue, enabled = enabled,
+        textStyle = WindmillFont.body(18).copy(lineHeight = 24.sp),
+        placeholder = { Text(placeholder, style = WindmillFont.body(18).copy(lineHeight = 24.sp)) },
+        shape = RoundedCornerShape(20.dp), isError = problem != null,
+        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = skin.raised, unfocusedContainerColor = skin.raised,
+            disabledContainerColor = skin.raised, focusedBorderColor = skin.accent, unfocusedBorderColor = Color.Transparent,
+            focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, cursorColor = skin.accent),
+        modifier = Modifier.fillMaxWidth().heightIn(min = minimum).semantics {
+            contentDescription = "$label field"
+            problem?.let { error(it) }
+        })
 }

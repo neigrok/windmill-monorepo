@@ -1,69 +1,62 @@
 package works.windmill.gym.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import works.windmill.gym.domain.LoggedSetLimits
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
-// An invalid entry never silently reverts: the buffer stays and the only ways out are Set and cancel
-// — the sheet's own dismissal where the pad is a sheet, a drawn Cancel where it has taken over
-// another sheet's body and the platform has no handle for "back to that body". The pad opens ON the
-// number it was opened from, and `seeded` is what makes the first digit start a fresh number rather
-// than append. In reps mode the comma and the ± are stood DOWN, never removed.
 object KeypadEntry {
     enum class Mode { Weight, Reps }
 
     const val maxBuffer = 8
 
-    // The band a PERFORMED set is bounded by. The routine's own target band is wider and lives on
-    // `TargetEntry` — a plan may name 100 reps, a logged set may not.
-    const val maxLoggedReps = 99
+    const val maxLoggedReps = LoggedSetLimits.maxReps
 
-    // The same four refusals the routine target's typed fields carry, in the same bytes — a lifter
-    // who has read one has read the other. Only the band differs: a set that was PERFORMED is bounded
-    // at 99 reps, where `TargetEntry` plans up to 100. A comma and a point both read, and nothing
-    // says so: the echo shows what was typed.
     const val onePoint = "One decimal point only."
     const val notANumber = "That is not a number yet."
     const val overWeight = "Over 500 kg — check the number."
     const val outsideReps = "Whole reps, 1 to $maxLoggedReps."
 
-    val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", ",")
+    val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", ".")
 
-    // C21: the ten digits and the decimal separator read themselves out loud. The pad's two glyphs
-    // read as nothing, so each carries a name — ± in the same bytes the target sheet's own ± control
-    // carries, so one control met on two screens is called one thing. The sign key is also where
-    // the one fact about a negative load lives: it is band-assisted work.
     const val deleteGlyph = "⌫"
     const val signName = "Flip the sign — band-assisted"
     const val deleteName = "Delete"
@@ -74,12 +67,10 @@ object KeypadEntry {
         else -> null
     }
 
-    // Under a valid weight the row carries the unit and nothing else.
     const val weightHint = "kg"
     const val repsHint = "whole reps"
 
     data class Pad(val text: String, val seeded: Boolean) {
-        // The buffer is ASCII: the parser reads only the hyphen, and `echo` re-spells it as U+2212.
         constructor(opening: String) : this(opening.replace("−", "-"), true)
 
         val echo: String
@@ -89,7 +80,6 @@ object KeypadEntry {
                 return "−" + text.drop(1)
             }
 
-        // A key that does not fit is refused WHOLE: never write a number the lifter did not type.
         fun pressing(key: String, mode: Mode): Pad {
             if (!isLive(key, mode)) return this
             if (key == "±") {
@@ -112,7 +102,7 @@ object KeypadEntry {
 
     fun isLive(key: String, mode: Mode): Boolean {
         if (mode != Mode.Reps) return true
-        return key != "," && key != "±"
+        return key != "," && key != "." && key != "±"
     }
 
     fun read(pad: Pad, mode: Mode, keeping: Double): Reading {
@@ -129,12 +119,11 @@ object KeypadEntry {
             return Reading(null, notANumber)
         }
         if (mode == Mode.Weight) {
-            if (kotlin.math.abs(value) > 500) {
+            if (kotlin.math.abs(value) > LoggedSetLimits.maxWeightKg) {
                 return Reading(null, overWeight)
             }
             return Reading(Ladder.round(value), weightHint)
         }
-        // 1 and not 0: the server refuses reps < 1.
         if (value < 1 || value > maxLoggedReps || value != kotlin.math.floor(value)) {
             return Reading(null, outsideReps)
         }
@@ -149,120 +138,94 @@ fun KeypadSheet(
     onCommit: (Double) -> Unit,
     onCancel: (() -> Unit)? = null,
 ) {
+    val skin = LocalGymColors.current
     val opening = if (mode == KeypadEntry.Mode.Weight) Readout.weight(current) else current.toInt().toString()
-    var pad by remember { mutableStateOf(KeypadEntry.Pad(opening)) }
+    var pad by rememberSaveable(mode, current, stateSaver = listSaver(
+        save = { listOf(it.text, it.seeded) },
+        restore = { KeypadEntry.Pad(it[0] as String, it[1] as Boolean) },
+    )) { mutableStateOf(KeypadEntry.Pad(opening)) }
     val reading = KeypadEntry.read(pad, mode, keeping = current)
+    val title = if (mode == KeypadEntry.Mode.Weight) "Weight" else "Reps"
 
+    BackHandler(enabled = onCancel != null) { onCancel?.invoke() }
     Column(
-        Modifier
-            .fillMaxWidth()
-            .background(GymSkin.surface)
+        Modifier.fillMaxWidth().background(skin.surface)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            if (mode == KeypadEntry.Mode.Weight) "Weight" else "Reps",
-            style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
-        )
-
-        BasicText(
-            pad.echo,
-            maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 56.sp),
-            style = WindmillFont.display(56, FontWeight.ExtraBold)
-                .copy(fontFeatureSettings = "tnum", color = if (reading.isValid) GymSkin.weightInk else GymSkin.alarmInk),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Text(
-            reading.message,
-            style = GymType.numeral(12),
-            color = if (reading.isValid) GymSkin.inkFaint else GymSkin.alarmInk,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        // A keypad is a grid: the keys sit as far apart downwards as they do sideways.
-        Column(verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap)) {
+        Text(title, style = WindmillFont.body(24, FontWeight.Bold).copy(lineHeight = 31.sp),
+            color = skin.ink, modifier = Modifier.semantics { heading() })
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 80.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicText(
+                pad.echo,
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 64.sp),
+                style = WindmillFont.display(64, FontWeight.ExtraBold)
+                    .copy(lineHeight = 83.sp, fontFeatureSettings = "tnum", color = skin.weightInk),
+                modifier = Modifier.weight(1f).semantics {
+                    if (!reading.isValid) error(reading.message)
+                },
+            )
+            Text(if (mode == KeypadEntry.Mode.Weight) "kg" else "reps",
+                style = WindmillFont.body(18).copy(lineHeight = 23.sp), color = skin.inkDim)
+            TextButton(
+                onClick = { pad = pad.backspaced },
+                modifier = Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp)
+                    .semantics { contentDescription = KeypadEntry.deleteName },
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.ink),
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Text(KeypadEntry.deleteGlyph, style = WindmillFont.body(20))
+            }
+        }
+        if (!reading.isValid) {
+            Text(reading.message, style = WindmillFont.body(14).copy(lineHeight = 18.sp),
+                color = skin.alarmInk,
+                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             KeypadEntry.keys.chunked(3).forEach { row ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
-                ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { key ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .heightIn(min = GymTap.secondary)
-                                .clip(RoundedCornerShape(WindmillRadius.md))
-                                .background(GymSkin.raised)
-                                .clickable(role = Role.Button) { pad = pad.pressing(key, mode) }
-                                // A digit is its own name; a glyph is not, so a glyph key says what it is.
-                                .then(
-                                    KeypadEntry.spoken(key)?.let { name ->
-                                        Modifier.semantics(mergeDescendants = true) { contentDescription = name }
-                                    } ?: Modifier
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                key,
-                                style = WindmillFont.display(24, FontWeight.SemiBold).copy(fontFeatureSettings = "tnum"),
-                                color = if (KeypadEntry.isLive(key, mode)) GymSkin.ink else GymSkin.inkFaint,
-                            )
-                        }
+                        FilledTonalButton(
+                            onClick = { pad = pad.pressing(key, mode) },
+                            enabled = KeypadEntry.isLive(key, mode),
+                            modifier = Modifier.weight(1f).heightIn(min = 64.dp).then(
+                                KeypadEntry.spoken(key)?.let { name ->
+                                    Modifier.semantics { contentDescription = name }
+                                } ?: Modifier),
+                            shape = RoundedCornerShape(WindmillRadius.lg),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = skin.raised, contentColor = skin.ink,
+                                disabledContainerColor = skin.raised.copy(alpha = 0.38f),
+                                disabledContentColor = skin.ink.copy(alpha = 0.38f),
+                            ),
+                        ) { Text(key, style = WindmillFont.body(16, FontWeight.Bold)) }
                     }
                 }
             }
         }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            onCancel?.let { cancel ->
-                Box(
-                    Modifier
-                        .widthIn(min = 88.dp)
-                        .heightIn(min = GymTap.minimum)
-                        .clickable(role = Role.Button, onClick = cancel),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
-                }
-            }
-
-            Box(
-                Modifier
-                    .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
-                    .clickable(role = Role.Button, onClickLabel = "delete the last digit") {
-                        pad = pad.backspaced
-                    }
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = KeypadEntry.deleteName
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                // No core icon draws a backspace, so the glyph stays and the key carries its name.
-                Text(KeypadEntry.deleteGlyph, style = WindmillFont.body(20), color = GymSkin.ink)
-            }
-
-            Box(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = GymTap.row)
-                    .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(if (reading.isValid) GymSkin.accent else GymSkin.raised)
-                    .clickable(role = Role.Button) { reading.value?.let(onCommit) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "Set",
-                    style = WindmillFont.body(17, FontWeight.Bold),
-                    color = if (reading.isValid) GymSkin.onAccent else GymSkin.inkFaint,
-                )
+        Button(
+            onClick = { reading.value?.let(onCommit) },
+            enabled = reading.isValid,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = skin.accent, contentColor = skin.onAccent,
+                disabledContainerColor = skin.accent.copy(alpha = 0.4f),
+                disabledContentColor = skin.onAccent,
+            ),
+        ) { Text("Set ${title.lowercase()}", style = WindmillFont.body(16, FontWeight.Bold)) }
+        onCancel?.let { cancel ->
+            TextButton(onClick = cancel, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.ink)) {
+                Text("Cancel", style = WindmillFont.body(16, FontWeight.Bold))
             }
         }
     }

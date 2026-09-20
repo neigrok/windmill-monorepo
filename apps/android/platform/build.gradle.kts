@@ -21,6 +21,8 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
 kotlin {
@@ -37,12 +39,17 @@ dependencies {
     api(libs.androidx.core.ktx)
     api(libs.androidx.lifecycle.viewmodel.compose)
     api(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.sentry.android)
     // api: HttpUrl is in this module's public signatures.
     api(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)
 
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.compose.ui.test.manifest)
+    testImplementation(libs.robolectric)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)

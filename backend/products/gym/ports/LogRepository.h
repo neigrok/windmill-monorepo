@@ -216,6 +216,8 @@ struct LogRepository {
   // `tops` come back grouped by movement, oldest first within each group; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
 
+  virtual std::vector<ProgressSet> progressHistory(const UserId& user) = 0;
+
   // Idempotent ON THE SESSION: a second call while a share is live hands back the same token; an
   // expired share is replaced rather than returned. Absent, another account's, and
   // already-shared-by-someone-else are one answer.

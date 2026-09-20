@@ -1,6 +1,14 @@
 package works.windmill.gym.store
 
 import java.io.File
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.storage.AtomicDocument
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimSource
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimItem
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -15,7 +23,7 @@ import works.windmill.gym.domain.TrainingSet
 // Locally minted movements, local routines and FINISHED local sessions no account has claimed yet;
 // the live session is SetQueue's file. A row leaves the shelf only once the server confirms it.
 // `deviceOwner` is the account this device holds a session for at open time.
-class LocalLog(private val file: File, deviceOwner: String? = null) {
+class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None) {
     @Serializable
     data class FinishedSession(
         val session: Session,
@@ -37,12 +45,16 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     }
 
     @Serializable
-    private data class Held(val shelves: Map<String, Shelf> = emptyMap())
+    private data class Held(val shelves: Map<String, Shelf> = emptyMap(), val claims: Map<String, String> = emptyMap())
 
     companion object {
         const val fileName = "windmill-gym-local.json"
     }
 
+    internal val claimConsentFile: File get() = File(file.absoluteFile.parentFile, LocalClaimConsent.fileName)
+
+    private val storage = StoredDocument(file, telemetry)
+    private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
     private var migrated = false
     private var held: Held = open(deviceOwner)
@@ -54,14 +66,15 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     // An unnamed shelf is seated to the device's account, or quarantined when it holds no session;
     // quarantine is reachable by no seat and adopted by no arriving account.
     private fun open(deviceOwner: String?): Held {
-        val document = StoredDocument.tree(file) ?: return Held()
+        val document = storage.tree() ?: return Held()
         val before = shelf(document)
         if (!before.isEmpty) {
             migrated = true
             return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
-        val shelves = document["shelves"] as? JsonObject ?: return Held()
-        return Held(shelves.mapValues { shelf(it.value) })
+        val shelves = document["shelves"] as? JsonObject ?: JsonObject(emptyMap())
+        return Held(shelves.mapValues { shelf(it.value) },
+            document["claims"]?.let { diskJson.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }.orEmpty())
     }
 
     // Row by row: a movement, a routine or a finished session this build cannot read is the one
@@ -69,38 +82,95 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     private fun shelf(node: JsonElement): Shelf {
         val fields = node as? JsonObject ?: return Shelf()
         return Shelf(
-            exercises = StoredDocument.each(fields["exercises"], Exercise.serializer()),
-            routines = StoredDocument.each(fields["routines"], Routine.serializer()),
-            finished = StoredDocument.each(fields["finished"], FinishedSession.serializer()),
+            exercises = storage.each(fields["exercises"], Exercise.serializer()),
+            routines = storage.each(fields["routines"], Routine.serializer()),
+            finished = storage.each(fields["finished"], FinishedSession.serializer()),
         )
     }
 
     private val mine: Shelf get() = held.shelves[seat] ?: Shelf()
 
     private fun keep(next: Shelf) {
-        held = Held(held.shelves + (seat to next))
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        held = held.copy(shelves = held.shelves + (seat to next))
         flush()
     }
 
-    // The one place the seat changes hands; the departing seat's rows stay on disk under their own
-    // key. The anonymous shelf MOVES onto an arriving account seat, never copies, and only once the
-    // server has answered for this seat in this process (`confirmed`).
-    fun adopt(owner: String?, confirmed: Boolean = true) {
-        val next = Seat.of(owner)
-        val anonymous = held.shelves[Seat.anonymous] ?: Shelf()
-        // Not conditioned on the seat changing: a confirmed account seat sweeps any anonymous shelf.
-        val carrying = owner != null && confirmed && !anonymous.isEmpty
-        if (next == seat && !carrying) return
-        val arriving = held.shelves[next] ?: Shelf()
-        val landed = if (!carrying) arriving else Shelf(
-            exercises = anonymous.exercises.orEmpty() + arriving.exercises.orEmpty(),
-            routines = anonymous.routines.orEmpty() + arriving.routines.orEmpty(),
-            finished = anonymous.finished.orEmpty() + arriving.finished.orEmpty(),
-        )
-        val parked = if (carrying) held.shelves - Seat.anonymous else held.shelves
-        seat = next
-        held = Held((parked + (next to landed)).filterValues { !it.isEmpty })
-        flush()
+    // Selecting a seat never transfers training from another seat.
+    fun adopt(owner: String?) {
+        seat = Seat.of(owner)
+    }
+
+    fun claimItems(): List<ClaimItem> = ClaimSource.entries.flatMap { source ->
+        val shelf = held.shelves[source.seat] ?: return@flatMap emptyList()
+        shelf.exercises.orEmpty().map { claimItem(source, ClaimKind.Movement, it.id, it, Exercise.serializer()) } +
+            shelf.routines.orEmpty().map { claimItem(source, ClaimKind.Routine, it.id, it, Routine.serializer()) } +
+            shelf.finished.orEmpty().map { claimItem(source, ClaimKind.Session, it.session.id, it,
+                FinishedSession.serializer(), it.session.startedAtMs) }
+    }
+
+    fun preflight(batch: ClaimBatch, owner: String?) { transfer(batch, owner) }
+
+    fun complete(batch: ClaimBatch, owner: String?) {
+        val next = transfer(batch, owner)
+        if (next == held) return
+        try {
+            AtomicDocument.write(file, diskJson.encodeToString(Held.serializer(), next))
+        } catch (failure: Exception) {
+            transferFailed = true
+            throw failure
+        }
+        held = next
+    }
+
+    private fun transfer(batch: ClaimBatch, owner: String?): Held {
+        check(!transferFailed) { "Restart the app to recover the local-data decision." }
+        if (held.claims.completed(batch, owner)) return held
+        var shelves = held.shelves
+        for (item in batch.items.filter { it.kind in listOf(ClaimKind.Movement, ClaimKind.Routine, ClaimKind.Session) }) {
+            val source = shelves[item.source.seat] ?: Shelf()
+            val target = shelves[Seat.of(owner)] ?: Shelf()
+            when (item.kind) {
+                ClaimKind.Movement -> {
+                    val value = item.decode(Exercise.serializer())
+                    check(value.id == item.id)
+                    if (owner != null) {
+                        val existing = target.exercises.orEmpty().firstOrNull { it.id == value.id }
+                        check(existing == null || existing == value) { "A movement with this identity already belongs to the account." }
+                        shelves = shelves + (Seat.of(owner) to target.copy(exercises = target.exercises.orEmpty().filterNot { it.id == value.id } + value))
+                    }
+                    shelves = shelves + (item.source.seat to source.copy(exercises = source.exercises.orEmpty().filterNot {
+                        it.id == item.id && item.matches(it, Exercise.serializer())
+                    }))
+                }
+                ClaimKind.Routine -> {
+                    val value = item.decode(Routine.serializer())
+                    check(value.id == item.id)
+                    if (owner != null) {
+                        val existing = target.routines.orEmpty().firstOrNull { it.id == value.id }
+                        check(existing == null || existing == value) { "A routine with this identity already belongs to the account." }
+                        shelves = shelves + (Seat.of(owner) to target.copy(routines = target.routines.orEmpty().filterNot { it.id == value.id } + value))
+                    }
+                    shelves = shelves + (item.source.seat to source.copy(routines = source.routines.orEmpty().filterNot {
+                        it.id == item.id && item.matches(it, Routine.serializer())
+                    }))
+                }
+                ClaimKind.Session -> {
+                    val value = item.decode(FinishedSession.serializer())
+                    check(value.session.id == item.id)
+                    if (owner != null) {
+                        val existing = target.finished.orEmpty().firstOrNull { it.session.id == value.session.id }
+                        check(existing == null || existing == value) { "A workout with this identity already belongs to the account." }
+                        shelves = shelves + (Seat.of(owner) to target.copy(finished = target.finished.orEmpty().filterNot { it.session.id == value.session.id } + value))
+                    }
+                    shelves = shelves + (item.source.seat to source.copy(finished = source.finished.orEmpty().filterNot {
+                        it.session.id == item.id && item.matches(it, FinishedSession.serializer())
+                    }))
+                }
+                else -> error("Unsupported local log item.")
+            }
+        }
+        return held.copy(shelves = shelves.filterValues { !it.isEmpty }, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }
 
     // Counts and days only: whoever reads this may not be who trained it.
@@ -121,25 +191,6 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
                 days = quarantined.finished.orEmpty().map { it.session.startedAtMs }.sortedDescending(),
             )
         }
-
-    // Only a signed-in seat may claim the quarantine; it merges onto the seat in hand.
-    fun release(): Boolean {
-        if (seat == Seat.anonymous) return false
-        val quarantined = held.shelves[Seat.quarantine] ?: return false
-        held = Held(held.shelves - Seat.quarantine + (seat to Shelf(
-            exercises = quarantined.exercises.orEmpty() + mine.exercises.orEmpty(),
-            routines = quarantined.routines.orEmpty() + mine.routines.orEmpty(),
-            finished = quarantined.finished.orEmpty() + mine.finished.orEmpty(),
-        )))
-        flush()
-        return true
-    }
-
-    fun discardUnattributed() {
-        if (Seat.quarantine !in held.shelves) return
-        held = Held(held.shelves - Seat.quarantine)
-        flush()
-    }
 
     val exercises: List<Exercise> get() = mine.exercises ?: emptyList()
     val finished: List<FinishedSession> get() = mine.finished ?: emptyList()
@@ -248,6 +299,27 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
         return corrected
     }
 
+    fun acceptSession(oldId: String, stored: Session) {
+        keep(mine.copy(finished = finished.map { past ->
+            if (past.session.id != oldId) past
+            else past.copy(session = stored.copy(finishedAtMs = past.session.finishedAtMs,
+                plan = stored.plan ?: past.session.plan))
+        }))
+    }
+
+    fun acceptSet(sessionId: String, sent: TrainingSet, stored: TrainingSet) {
+        keep(mine.copy(finished = finished.map { past ->
+            if (past.session.id != sessionId) past
+            else past.copy(
+                sets = past.sets.map { current ->
+                    if (current.id != sent.id) current
+                    else current.copy(id = stored.id, setNumber = stored.setNumber, completedAtMs = stored.completedAtMs)
+                },
+                deleted = past.deleted.map { if (it == sent.id) stored.id else it },
+            )
+        }))
+    }
+
     // The set leaves the row and is remembered as gone: part of this session may already be on the
     // account.
     fun deleteSet(sessionId: String, setId: String): Boolean {
@@ -287,7 +359,8 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     fun remintSet(sessionId: String, old: String, fresh: String) {
         keep(mine.copy(finished = finished.map { past ->
             if (past.session.id != sessionId) past
-            else past.copy(sets = past.sets.map { if (it.id == old) it.copy(id = fresh) else it })
+            else past.copy(sets = past.sets.map { if (it.id == old) it.copy(id = fresh) else it },
+                deleted = past.deleted.map { if (it == old) fresh else it })
         }))
     }
 
@@ -307,7 +380,6 @@ class LocalLog(private val file: File, deviceOwner: String? = null) {
     }
 
     private fun flush() {
-        val text = runCatching { diskJson.encodeToString(Held.serializer(), held) }.getOrNull() ?: return
-        writeAtomically(file, text)
+        storage.write(held, Held.serializer())
     }
 }

@@ -29,11 +29,7 @@ namespace wm::gym {
 // carries. One core, two doors — so a rule cannot be true on one surface and not the other, and
 // neither door needs to know the other exists.
 //
-// `askService` is the ONE nullable field, and null is the shipped default. It is Ask — the in-app
-// chat in front of those same tools — and it needs a vendor key nobody is obliged to set, so a
-// deployment without one gets a null here and the route below is never registered at all. That is the
-// stance every vendor-backed feature in this repo takes: dark means absent, never a button that
-// answers 503.
+// AskService remains available for durable Stop/recovery; new asks are mounted only with a vendor key.
 struct GymDeps {
   std::shared_ptr<TrainingService> trainingService;
   std::shared_ptr<CatalogService> catalogService;

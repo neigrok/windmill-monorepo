@@ -66,15 +66,16 @@ internal fun rememberRowDismiss(
 // else in this room wears it.
 @Composable
 internal fun RowDeleteGround() {
+    val skin = LocalGymColors.current
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.row)
-            .background(GymSkin.alarmInk.copy(alpha = 0.18f), RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.alarmInk.copy(alpha = 0.18f), RoundedCornerShape(WindmillRadius.lg))
             .padding(horizontal = WindmillSpace.x4),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Delete", style = GymType.numeral(13, FontWeight.Bold), color = GymSkin.alarmInk)
+        Text("Delete", style = GymType.numeral(13, FontWeight.Bold), color = skin.alarmInk)
     }
 }

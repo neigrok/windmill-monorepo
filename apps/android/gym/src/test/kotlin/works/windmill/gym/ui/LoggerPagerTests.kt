@@ -3,7 +3,6 @@ package works.windmill.gym.ui
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -16,6 +15,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
@@ -114,7 +114,7 @@ class LoggerPagerTests {
                     .targeting("bench-press", List(8) { benchTarget })
                     .targeting("barbell-row", List(3) { rowTarget })
             ) as GymResult.Ok).value
-            server.open(Session(id = "ses_1", startedAtMs = day + 2,
+            server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis(),
                 routineId = routine.id, plan = PlanSnapshot(routine)))
             store.start(routine.id)
             store.choose("bench-press")
@@ -133,8 +133,6 @@ class LoggerPagerTests {
         val store = logger(scope, heavier = true)
         compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
         compose.onNode(hasContentDescription("one rep more")).performClick()
-        compose.onNode(hasContentDescription("Set kind")).performClick()
-        compose.onNodeWithText("warmup").performClick()
         compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
 
@@ -148,8 +146,8 @@ class LoggerPagerTests {
 
         compose.onNodeWithText("Bench Press").assertIsDisplayed()
         compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-        compose.onNodeWithText("Set 1 of 3 · target 8 @ 60").assertIsDisplayed()
-        compose.onNodeWithText("55 kg × 8").assertIsDisplayed()
+        compose.onNodeWithText("Set 1 of 3").assertIsDisplayed()
+        compose.onNodeWithText("55 × 8").assertIsDisplayed()
         compose.onNode(hasContentDescription("set 1, target 60 × 8")).assertIsDisplayed()
         compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
         compose.onNodeWithText("Log set").assertIsNotEnabled()
@@ -163,8 +161,6 @@ class LoggerPagerTests {
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
         compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
-        compose.onAllNodes(hasContentDescription("Set kind") and hasClickAction()).onFirst()
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "warmup"))
         compose.onNodeWithText("Log set").assertIsEnabled()
         compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
 
@@ -194,6 +190,71 @@ class LoggerPagerTests {
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
         compose.onNodeWithText("Bench Press").assertIsDisplayed()
         compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun aRackDragPreviewsTheMovementWhileTheRackStaysPinnedAndReversalDoesNotLog() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope)
+        val log = compose.onNodeWithText("Log set")
+        val button = log.fetchSemanticsNode().boundsInRoot
+        val weight = compose.onNode(hasContentDescription("Weight 82.5 kg"))
+            .fetchSemanticsNode().boundsInRoot
+
+        log.performTouchInput {
+            down(Offset(width * 0.9f, centerY))
+            moveTo(Offset(width * 0.25f, centerY), delayMillis = 600)
+        }
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        compose.onNodeWithText("Barbell Row").assertIsDisplayed()
+        log.assertIsNotEnabled()
+        assertEquals(button, log.fetchSemanticsNode().boundsInRoot)
+        assertEquals(weight, compose.onNode(hasContentDescription("Weight 82.5 kg"))
+            .fetchSemanticsNode().boundsInRoot)
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(emptyList<TrainingSet>(), store.sets)
+        }
+
+        log.performTouchInput {
+            moveTo(Offset(width * 0.9f, centerY), delayMillis = 600)
+            advanceEventTime(200)
+            up()
+        }
+        log.assertIsEnabled()
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(emptyList<TrainingSet>(), store.sets)
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aCancelledTouchPastTheMidpointKeepsTheMovementDraftAndDepartureQuestion() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, heavier = true)
+        val sets = store.sets.toList()
+        compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
+        val pager = compose.onNodeWithTag("Movement pager")
+        val y = compose.onNodeWithText("Bench Press").fetchSemanticsNode().boundsInRoot.center.y -
+            pager.fetchSemanticsNode().boundsInRoot.top
+        pager.performTouchInput {
+            down(Offset(width * 0.9f, y))
+            moveTo(Offset(width * 0.25f, y), delayMillis = 600)
+        }
+        compose.onNodeWithText("Barbell Row").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
+
+        pager.performTouchInput { cancel() }
+        compose.runOnIdle {
+            assertEquals("bench-press", store.exerciseId)
+            assertEquals(sets, store.sets)
+        }
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
+        compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
+        compose.onNodeWithText("Log set").assertIsEnabled()
         scope.cancel()
     }
 
@@ -243,7 +304,7 @@ class LoggerPagerTests {
         }
         compose.runOnIdle { assertEquals("barbell-row", store.exerciseId) }
         compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-        compose.onNodeWithText("Set 1 of 3 · target 8 @ 60").assertIsDisplayed()
+        compose.onNodeWithText("Set 1 of 3").assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 60 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 8")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Movement 2 of 2")).assertIsDisplayed()
@@ -264,14 +325,20 @@ class LoggerPagerTests {
         val store = logger(scope)
         val vertical = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
         val reading = compose.onNode(vertical)
+        compose.onNodeWithText("Bench Press").performScrollTo()
         val initial = reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertTrue("the reading region overflows and starts at the slot strip", initial > 0f)
+        assertTrue("the reading region overflows",
+            reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
 
-        reading.performTouchInput { swipeDown() }
+        reading.performTouchInput { swipeUp() }
+        val after = reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
         assertTrue("vertical drag scrolls the reading region",
-            reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() < initial)
+            after > initial)
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
 
+        reading.performTouchInput { swipeDown() }
+        assertTrue("the return drag scrolls back through the same movement",
+            reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() < after)
         reading.performTouchInput { swipeUp() }
         val strip = compose.onNode(
             SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and

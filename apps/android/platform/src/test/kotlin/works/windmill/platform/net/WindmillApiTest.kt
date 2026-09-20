@@ -1,7 +1,9 @@
 package works.windmill.platform.net
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
 import kotlinx.serialization.Serializable
+import okio.buffer
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -12,6 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
+import works.windmill.platform.telemetry.Telemetry
 
 @Serializable
 private data class Wire(val value: String)
@@ -30,6 +34,76 @@ class WindmillApiTest {
     }
 
     private fun api(credential: () -> String? = { null }) = WindmillApi(server.url("/"), credential)
+
+    @Test
+    fun rawConsumptionClosesTheResponseAndCancellationStopsAnIncompleteBody() = kotlinx.coroutines.runBlocking {
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        server.enqueue(MockResponse().setBody("first\nlast\n").throttleBody(6, 2, TimeUnit.SECONDS))
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            val original = requireNotNull(response.body)
+            val source = object : okio.ForwardingSource(original.source()) {
+                override fun close() { try { super.close() } finally { closed.complete(Unit) } }
+            }.buffer()
+            response.newBuilder().body(object : okhttp3.ResponseBody() {
+                override fun contentType() = original.contentType()
+                override fun contentLength() = original.contentLength()
+                override fun source() = source
+            }).build()
+        }.build()
+        val request = async {
+            WindmillApi(server.url("/"), { "private" }, client).consume("GET", "/v1/raw", accept = "text/plain") { response ->
+                assertEquals("first", response.body!!.source().readUtf8Line())
+                entered.complete(Unit)
+                response.body!!.source().readUtf8Line()
+            }
+        }
+        entered.await()
+        request.cancel()
+        request.join()
+        kotlinx.coroutines.withTimeout(2_000) { closed.await() }
+        assertTrue(request.isCancelled)
+        assertEquals("Bearer private", server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun malformedAndServerFailuresAreReportedOnceWithoutResponseContent() = runTest {
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val events = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures += operation to properties
+            }
+        }
+        val api = WindmillApi(server.url("/"), { "private-bearer" }, telemetry = telemetry)
+        server.enqueue(MockResponse().setResponseCode(503).setBody("private response"))
+        server.enqueue(MockResponse().setBody("private malformed body"))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        for (attempt in 1..3) runCatching {
+            api.send<Wire>("POST", "/v1/example?token=private-token", operation = "example_action")
+        }
+        assertEquals(listOf(
+            "example_action" to mapOf("method" to "POST", "route" to "/v1/example", "failure_kind" to "http", "operation" to "example_action", "status" to "503"),
+            "example_action" to mapOf("method" to "POST", "route" to "/v1/example", "failure_kind" to "malformed", "operation" to "example_action"),
+        ), failures)
+        assertEquals(listOf("api_request_failed", "api_request_failed", "api_request_failed"), events)
+    }
+
+    @Test
+    fun aReadTimeoutIsVisibleAndDistinctFromOffline() = runTest {
+        val failures = mutableListOf<Throwable>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += error }
+        }
+        server.enqueue(MockResponse().setBody("{\"value\":\"late\"}").setBodyDelay(150, TimeUnit.MILLISECONDS))
+        val client = okhttp3.OkHttpClient.Builder().readTimeout(25, TimeUnit.MILLISECONDS).build()
+        val error = runCatching { WindmillApi(server.url("/"), { null }, client, telemetry).get<Wire>("/v1/example") }.exceptionOrNull()
+        assertTrue(error is WindmillApiException.Timeout)
+        assertEquals(listOf(error), failures)
+    }
 
     @Test
     fun theBearerHeaderComesFromTheCredential() = runTest {

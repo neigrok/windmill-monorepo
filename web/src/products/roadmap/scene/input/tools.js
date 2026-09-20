@@ -7,7 +7,7 @@ export class Tool {
   onPointerDown() {}
   onPointerDrag() {} // the owning pointer moving with the button held
   onPointerMove() {} // a free pointer moving with no button (hover)
-  onPointerUp() {}
+  onPointerUp() {} // returns true when the lift became a zoom, so the controller runs no double-tap ladder on top of it
   onPointerLeave() {}
   onPointerCancel() {} // a competing gesture took over — drop any in-progress drag
   onDoubleClick() {}
@@ -21,10 +21,10 @@ export class NavigateTool extends Tool {
     this.lastHoverAt = 0;
   }
 
-  onPointerDown(pos, event) {
+  onPointerDown(pos, event, pickedId = this.ctx.pick(pos.x, pos.y, event?.pointerType)) {
     const marquee = !!event?.shiftKey && !!this.ctx.beginMarquee;
-    const reorderId = !marquee && this.ctx.beginReorder ? this.ctx.pick(pos.x, pos.y) : null;
-    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee, reorderId, reordering: false };
+    const reorderId = !marquee && this.ctx.beginReorder ? pickedId : null;
+    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee, pickedId, reorderId, reordering: false };
     if (marquee) this.ctx.beginMarquee(pos.x, pos.y);
   }
 
@@ -55,11 +55,11 @@ export class NavigateTool extends Tool {
     this.drag.lastTime = now;
   }
 
-  onPointerMove(pos) {
+  onPointerMove(pos, event) {
     const now = performance.now();
     if (now - this.lastHoverAt < HOVER_THROTTLE_MS) return;
     this.lastHoverAt = now;
-    const id = this.ctx.pick(pos.x, pos.y);
+    const id = this.ctx.pick(pos.x, pos.y, event?.pointerType);
     this.ctx.hover(id);
     this.ctx.hoverEdge(id ? null : this.ctx.pickEdge(pos.x, pos.y));
   }
@@ -71,7 +71,7 @@ export class NavigateTool extends Tool {
     if (drag.marquee) {
       if (drag.moved) { this.ctx.commitMarquee(drag.startX, drag.startY, pos.x, pos.y, !!event?.shiftKey); return; }
       this.ctx.cancelMarquee();
-      const hit = this.ctx.pick(pos.x, pos.y);
+      const hit = drag.pickedId;
       if (hit) { this.ctx.toggleSelect(hit); return; }
       const edge = this.ctx.pickEdge(pos.x, pos.y);
       if (edge && this.ctx.toggleEdge) this.ctx.toggleEdge(edge);
@@ -84,8 +84,9 @@ export class NavigateTool extends Tool {
     }
     const { moved, vx, vy } = drag;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
-    const id = this.ctx.pick(pos.x, pos.y);
+    const id = drag.pickedId;
     if (id) { this.ctx.select(id); return; }
+    if (this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true; // too crowded to pick one apart: the tap zooms in instead of missing
     const edge = this.ctx.pickEdge(pos.x, pos.y);
     if (edge) { this.ctx.selectEdge(edge); return; }
     this.ctx.select(null);
@@ -103,28 +104,29 @@ export class NavigateTool extends Tool {
     this.drag = null;
   }
 
-  onDoubleClick(pos) {
-    const id = this.ctx.pick(pos.x, pos.y);
+  onDoubleClick(pos, event) {
+    const id = this.ctx.pick(pos.x, pos.y, event?.pointerType);
     if (id) this.ctx.select(id);
   }
 }
 
 // The shared-tree viewer: one finger pans 1:1 with no inertia fling, a tap selects, hover is node-only and there is no edge selection.
 export class ReadOnlyTool extends NavigateTool {
-  onPointerMove(pos) {
+  onPointerMove(pos, event) {
     const now = performance.now();
     if (now - this.lastHoverAt < HOVER_THROTTLE_MS) return;
     this.lastHoverAt = now;
-    this.ctx.hover(this.ctx.pick(pos.x, pos.y));
+    this.ctx.hover(this.ctx.pick(pos.x, pos.y, event?.pointerType));
   }
 
-  onPointerUp(pos) {
+  onPointerUp(pos, event) {
     if (!this.drag) return;
-    const moved = this.drag.moved;
+    const { moved, pickedId: id } = this.drag;
     this.drag = null;
     if (moved) return;
-    if (this.ctx.editTap?.(pos.x, pos.y)) return; // an owner editing on a phone routes the tap by mode
-    this.ctx.select(this.ctx.pick(pos.x, pos.y));
+    if (id === null && this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true;
+    if (this.ctx.editTap?.(pos.x, pos.y, id)) return; // an owner editing on a phone routes the picked step by mode
+    this.ctx.select(id);
   }
 
   onDoubleClick() {} // touch double-tap zoom lives in the InputController

@@ -28,7 +28,7 @@ ten cards scrolls sideways and says nothing about which of them matter.
 
 ## The consistency sentence
 
-One line in the head, under the loaded line: **`trained 3 of the last 4 weeks`**.
+One line in the head, under the loaded line: **`Trained 3 of the last 4 weeks`**.
 
 The four weeks are the current local-Monday week and the three before it; a week is trained when
 it holds a finished session with at least one working set. The sentence is **absent** when the
@@ -38,29 +38,23 @@ there is no streak, no target, no arrow, and the number is not coloured.
 
 ## The rule every e1RM in the room obeys
 
-Three surfaces printed three different e1RMs for one session: the log row took the best Epley over
-every working set, the record page took Epley over the heaviest set, the statistics engine took
-Epley over the heaviest set with the most reps. One rule replaces them, and it has a name so that
-a screen, a test and a review can point at it.
+Android's Log captions, movement strip and Record screen use one complete progress projection.
+Its session estimate is the shared rule for qualification, ranking and display.
 
 > **The session estimate.** A session's e1RM for a movement is Epley — `weight × (1 + reps / 30)`,
 > and the load itself at one rep — over the working set of that movement with the highest estimate
 > among sets of **one to ten reps**, leaving out any set rated **below RPE 7** where an RPE was
-> given. A session whose working sets of a movement are all over ten reps, all unrated below 7, or
+> given. A session whose working sets of a movement are all over ten reps, all rated below 7, or
 > all at or below zero load has **no estimate** for that movement. A session's own e1RM — the log
 > row's number — is the largest session estimate over the movements it worked.
 
-Ten reps is where Epley's error passes the size of the progress it is meant to show; a twenty-rep
-set drawn as a point is a ±15 % claim. Those sets still count for records, tonnage and the weekly
-count. RPE is a filter and never a multiplier: an RPE-adjusted series would mix two estimators
-the day a lifter starts rating sets.
+Sets outside the estimate's qualification still count for records, tonnage and the weekly count.
+RPE is a filter, never a multiplier. Retain the unrounded estimate for ranking; format only the
+displayed value. A one-rep estimate is exactly the logged load.
 
 ## The chart is the room's one primitive, and bars have left
 
-Gym drew two chart shapes: bars for e1RM on the Record screen and dots for bodyweight. The bars
-could not do their job — from zero, a climb from 100 to 106 kg over twelve weeks is a row of
-equal blocks, which is why two of the three Record screens had quietly moved their baseline. **Bars
-are retired.** The Record screen and the card draw the primitive `11-bodyweight.md` owns:
+The Record screen and the card draw the dated-dot primitive `11-bodyweight.md` owns:
 
 > **A dot per session with an estimate, on a truncated and labelled y-axis** — the window's own
 > minimum and maximum plus padding — **placed on a time axis** from the window's first day to
@@ -69,16 +63,14 @@ are retired.** The Record screen and the card draw the primitive `11-bodyweight.
 > its own label — *no session · 7 Jul – 4 Aug* — naming the last session before it and the first
 > after. **The window is stated**: *last 12 weeks · 9 sessions*, *the whole series · 23 sessions*.
 
-Twenty-one days is where the detraining literature puts the first significant loss of maximal
-force; a fortnight off is ordinary and a segment across it is honest, a month is not. The
-threshold lives in one constant per surface — `SESSION_GAP_DAYS` in `progress.js`,
-`Progress.gapDays` in `Progress.swift`, `Progress.maxGapDays` in `Progress.kt` — and in no sentence.
+The twenty-one-day threshold lives in one constant per surface — `SESSION_GAP_DAYS` in `progress.js`,
+`Progress.gapDays` in `Progress.swift`, `MovementProgress.maxGapDays` in Android `Progress.kt` — and in no sentence.
 The bodyweight chart keeps seven. One primitive, two series, two thresholds.
 
-**The standing best takes the room's gold** (`--pr-ink`) on exactly one dot, when the session that
-set it is inside the window. **In Daylight that dot is an ordinary dot until the Daylight PR token
-lands** — the shipped gold holds 3.2:1 on the light card and the ledger already owes the token
-(`consistency.md`, line 32); a mark that cannot be seen is not drawn in a colour that lies about it.
+**The standing best takes the resolved PR token** on exactly one dot, when the session that set it
+is inside the window. Android resolves `prInk` from the shared Instrument or Daylight palette.
+The earliest session wins an equal standing mark; equal-time
+sessions and set ties use the deterministic identity ordering in `../android-delivery.md`.
 
 **What the chart refuses to draw.** No line across a gap. No rolling maximum, moving average or
 fitted trend. No projection. No goal line. No percent change, no arrow, no green, no red. No
@@ -90,7 +82,7 @@ Ours on every surface, identical to the pixel (`12-native-idiom.md`: a chart is 
 vocabulary, not the platform's). Top to bottom:
 
 1. **The name**, row-title style, with the door's chevron.
-2. **The chart**, 64 pt tall, with two axis labels — the window's ceiling and floor — and the two
+2. **The chart**, 90dp tall on Android and 64pt on the other surfaces, with two axis labels — the window's ceiling and floor — and the two
    end dates under it. The compact chart draws no gap labels; a gap is an empty span, and the
    Record screen's full chart names it.
 3. **The window line**, the chart's own label: `last 12 weeks · 9 sessions`.
@@ -125,7 +117,7 @@ Never *incl. bodyweight*, never an estimate built on a weigh-in.
 
 ## The Record screen follows
 
-The Record screen's e1RM section draws the same primitive at full height (220 pt, as bodyweight)
+The Record screen's **Estimated strength** section draws the same primitive at full height (220 pt, as bodyweight)
 and gains the two-value window control **12 weeks · All**, default twelve weeks, above the chart.
 Its tiles, PR ladder and recent-sets list stay. A dot there is an image named by its session
 (*e1RM 132.5 · 5 Sep · 120 × 5*), not a button: a set is repaired in its session, and the chart
@@ -142,19 +134,26 @@ it came from. Two gestures, and a rule about where they live.
 > instead. The card is also in the top band, where `thumb-reach.md` allows a destination and no
 > control. One tap on the card lands on the full chart with the same window, under the thumb.
 
-**Scrub.** A finger down on the chart selects the nearest dot by x and holds it while the finger
+**Android scrub.** A held touch selects the nearest dot by x and updates one readout above the
+plot. The readout includes the estimate, local day and actual set, and wraps at large text without
+covering a point. Releasing returns immediately to the latest point's readout. A movement before
+the native hold threshold pans instead. Selection feedback is an ordinary native light tick and
+is independent of the removed set-confirmation sound and haptics.
+
+**Other surfaces' scrub.** A finger down on the chart selects the nearest dot by x and holds it while the finger
 moves; the readout says the estimate, the day and the set — `102.5 kg est · 3 Sep · 95 × 5` — and
 follows the finger. It **never covers the dot it names**: it sits above the dot, and beside it —
 on the side with more room — when the dot is in the top quarter of the plot. The selected dot grows
 by one ring and every other dot keeps its ink. Lifting the finger keeps the readout for
 **`SCRUB_HOLD_MS` = 1500** and then clears it; the constant lives in `progress.js`,
-`Progress.scrubHold` in `Progress.swift`, `Progress.scrubHoldMs` in `Progress.kt`, and in no
-sentence. Each change of selected dot fires the platform's light tick — `.selection` feedback on
+`Progress.scrubHold` in `Progress.swift`, and in no sentence. Each change of selected dot fires the platform's light tick — `.selection` feedback on
 iOS, `HapticFeedbackType.SegmentFrequentTick` on Android — and never the impact the record row
 uses. The readout is one line in the fact style, the same bytes in both skins and at every text
 size; at the largest size it wraps to two lines above the plot rather than shrinking.
 
-**Pan.** The plot gives every session at least **`POINT_PITCH_PT` = 24** points of width. When the
+**Pan.** The plot uses a nominal **`POINT_PITCH_PT` = 24** points of width per distinct session time. Android
+preserves true time positions: equal timestamps share an x coordinate, and short time intervals
+are never expanded independently to invent dates. When the
 window's sessions need more than the card's plot — about thirteen sessions at the phone rule —
 the chart is wider than the card and pans sideways with momentum, opening at its **right edge, the
 most recent session**, and stopping at both ends. The axis labels stay pinned; the window line
@@ -214,7 +213,7 @@ Every board in this brief is drawn in both skins and at three text sizes.
 
 | Where | String |
 |---|---|
-| Consistency sentence | `trained 3 of the last 4 weeks` · `trained 1 of the last 4 weeks` |
+| Consistency sentence | `Trained 3 of the last 4 weeks` · `Trained 1 of the last 4 weeks` |
 | Window line | `last 12 weeks · 9 sessions` · `last 12 weeks · 1 session` · `the whole series · 23 sessions` |
 | Window control (Record) | `12 weeks` · `All` |
 | Gap label (Record, full chart) | `no session · 7 Jul – 4 Aug` |
@@ -223,7 +222,7 @@ Every board in this brief is drawn in both skins and at three text sizes.
 | Sparse card | `Best so far: e1RM 120, from 100 × 5 on 3 Sep.` over `3 sessions · since 21 Aug` |
 | Sparse card, no estimate | `3 sessions · since 21 Aug` alone |
 | Assisted card | `most reps 14 · bodyweight · 3 Sep` · `heaviest added +10 · 28 Aug` · `heaviest assisted −20 · 28 Aug` |
-| Chart head (Record) | `E1RM PER SESSION` |
+| Chart head (Record) | `Estimated strength` |
 | Strip, spoken | `Progress by movement` |
 | Scrub readout | `102.5 kg est · 3 Sep · 95 × 5` · `102.5 kg est · today · 95 × 5` |
 | Reader actions on the plot | `earlier session` · `later session` |
@@ -233,23 +232,22 @@ the log row already draws.
 
 ## The wire
 
-`GET /v1/gym/stats` already answers `movements[{exerciseId, lastTrainedAt, points[{at, weightKg,
-reps, e1rm?}], bestE1rm?, heaviest?}]`, most recently trained first, and `weeks[{startedAt,
-sessions, workingSets}]` contiguous with zero weeks. The strip reads it once per log open and cuts
-the window on the client; the movement's name comes from the catalog the client holds.
+Android reads `GET /v1/gym/stats?projection=progress` for a complete owner-scoped snapshot:
+`{asOf, sessions:[{sessionId, startedAt, movements:[{exerciseId, workingSetCount, heaviest,
+estimate?}]}]}`. Each performed fact retains `setId`, `weightKg`, `reps` and optional `rpe`;
+the qualified estimate also carries `e1rm`. Signed, zero and no-estimate working facts remain
+present. Sessions sort by `(startedAt, sessionId)` and movements by exercise ID. Equal estimates
+choose the smaller set ID; heaviest-load ties choose more reps, then the smaller set ID.
 
-Missing, and filed with the backend:
+Log captions, strip facts and the complete Record series derive from that same snapshot. The
+client cuts the twelve-week window and computes current-plus-three local-Monday weeks with the
+device zone, independently of session pagination. All means the complete lifetime series.
+Movement names and record metadata, aliases and recent sets retain their existing reads.
 
-- **The session estimate rule** in `points` — best set by estimate, the one-to-ten rep band, the
-  RPE filter — and the same rule behind `topE1rm` on a log row and `e1rmSeries` on the record page,
-  so the three readers of one session agree. The record page's `e1rmSeries` and `stats.points`
-  should be one projection.
-- **Local weeks.** `weeks` are UTC Mondays; the log folds local Mondays. The consistency sentence
-  is therefore computed **on the client** from the loaded log, which already folds local weeks and
-  carries `workingSetCount` per row — and the log's first page must reach four weeks back for the
-  count to be honest. If it cannot, the engine takes a zone and answers `trainedWeeksOfFour`.
-- `heaviest` in `/stats` is lifetime; the card's heaviest is the window's. The client takes the
-  maximum load over the windowed `points` — the point already carries its `weightKg` and `reps`.
+The snapshot is cached per owner and refreshed or invalidated after finish, correction, deletion,
+rename and ownership changes. A failed read preserves loaded Log rows and states the failure;
+it cannot fall back to differently qualified legacy estimates or call a partial series All.
+The legacy stats, record and Review responses remain compatible for web, iOS and MCP.
 
 ## Open
 

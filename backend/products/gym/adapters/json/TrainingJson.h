@@ -194,6 +194,12 @@ Json::Value toJson(const RoutineProposal& proposal);
 Json::Value toJson(const std::vector<ProposalHead>& heads);
 // The outcome is computed here rather than stored.
 Json::Value toJson(const ThreadOutcome& outcome);
+Json::Value toJson(const std::vector<CoachResult>& results);
+std::vector<CoachResult> coachResultsFrom(const Json::Value& results);
+Json::Value toJson(const CoachAttachment& attachment);
+std::vector<CoachAttachment> coachAttachmentsFrom(const Json::Value& attachments);
+Json::Value toJson(const AskGeneration& generation);
+AskGeneration generationFrom(const Json::Value& body);
 Json::Value toJson(const AskThread& thread);
 Json::Value toJson(const std::vector<AskThread>& threads);
 // Composed onto the single-routine read by the handler; the list read must not carry it.
@@ -210,9 +216,13 @@ Json::Value toJson(const std::vector<Bodyweight>& entries);   // the array; the 
 Json::Value toJson(const Review& review);
 // The share omits the ids and the frozen plan: a reader who is not the owner gets neither.
 Json::Value toJson(const Statistics& statistics);
+Json::Value toJson(const StatsProgress& progress);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
 Json::Value toJson(const ReadTally& tally);
+Json::Value toJson(const std::vector<AskStep>& steps);
+Json::Value toJson(const AnswerReceipt& receipt);
+std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 // A stored `sets` array read back: anything that is not an array is the open line, and a set that
 // cannot be read is dropped rather than failing the row it sits on.

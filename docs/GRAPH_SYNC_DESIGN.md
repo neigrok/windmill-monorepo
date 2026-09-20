@@ -297,7 +297,7 @@ into a real cross-language pin would take.
 Progress is a second lattice, private to one account. Same registers, same clock, same outbox
 law, same `join`.
 
-- **One LWW register per node**, value `complete | active | none`, stamped. `none` is a *value*,
+- **One LWW register per node**, value `complete | none`, stamped. `none` is a *value*,
   not a deletion — a clear is an ordinary write, so "cleared on another device" converges with no
   cleared-array and no known-set diff.
 - **One clock for both lanes.** The session's `HlcClock` stamps a progress write exactly as it

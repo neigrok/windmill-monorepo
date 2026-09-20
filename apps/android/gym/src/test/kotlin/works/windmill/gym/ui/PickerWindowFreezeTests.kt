@@ -77,7 +77,7 @@ class PickerWindowFreezeTests {
                     sessions = sessions(),
                     title = "Add movement",
                     onPick = {},
-                    onCreate = { _, _ -> },
+                    onCreate = { name, equipment, id -> works.windmill.gym.store.GymResult.Ok(works.windmill.gym.domain.Exercise(id, name, equipment = equipment, custom = true)) },
                 )
             }
         }

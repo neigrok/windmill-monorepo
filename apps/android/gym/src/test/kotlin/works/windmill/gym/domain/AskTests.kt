@@ -19,14 +19,14 @@ class AskTests {
     fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
         assertEquals("Ten questions a day, three back to back.", Ask.allowance)
         assertEquals("The next question frees up in a couple of hours.", Ask.capReached)
-        assertEquals("the ceiling says four, never eight",
-            "This conversation holds four questions. Start a new one.", Ask.threadFull)
+        assertEquals("an unavailable conversation has a recovery",
+            "This conversation is unavailable. Start a new one.", Ask.threadFull)
     }
 
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", Ask.title)
-        assertEquals("reads your log · proposes only", Ask.subtitle)
+        assertEquals("reads your log · helps with your routines", Ask.subtitle)
         assertEquals("Coach reads your log, so it needs you signed in.", Ask.signedOut)
         assertEquals("Coach isn’t part of this Windmill. Your log is still yours to read.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
@@ -73,6 +73,8 @@ class AskTests {
         assertEquals("read your recent workouts", AskStep("list_sessions").phrase)
         assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase)
         assertEquals("read your notes", AskStep("list_notes").phrase)
+        assertEquals("saved a note", AskStep("save_note").phrase)
+        assertEquals("could not confirm a note save", AskStep("save_note", failed = true).phrase)
         assertEquals("read your bodyweight", AskStep("list_bodyweight").phrase)
     }
 
@@ -87,7 +89,7 @@ class AskTests {
         )
         assertEquals("the same table the web draws from, plus the notes and bodyweight reads",
             setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines",
-                "get_stats", "list_notes", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
+                "get_stats", "list_notes", "save_note", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
             Ask.phrases.keys)
     }
 

@@ -4,93 +4,56 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillPalette
 
-// The room's own Material theme and its palette — the gym module's `Skin`. Every Material control
-// inside gym reads THIS scheme, never the brand's, and the shell's chrome drawn under it (the
-// account sheet, the door) reads `gymPalette`: WindmillMaterial paints gold on warm brown, and gold
-// in this room means a personal record (`GymSkin.prInk`), so a control taking the brand's primary
-// would say `record` on a Switch. Gold is therefore absent from both and stays painted by hand
-// where a PR is.
-//
-// Dynamic colour is a refusal rather than an omission: colour here is a legend — verdigris says the agent
-// proposed it, olive says logged, brick says this destroys something — and a wallpaper cannot
-// recolour a legend.
+// Both product content and the account sheet resolve one palette for the current system mode.
 @Composable
 fun GymMaterial(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalWindmillPalette provides gymPalette) {
-        MaterialTheme(colorScheme = gymColorScheme, typography = gymTypography, content = content)
+    val dark = LocalWindmillDark.current
+    val skin = if (dark) GymSkin.Instrument else GymSkin.Daylight
+    CompositionLocalProvider(LocalGymColors provides skin, LocalWindmillPalette provides gymPalette(skin)) {
+        MaterialTheme(colorScheme = gymColorScheme(skin, dark), typography = gymTypography, content = content)
     }
 }
 
-// The shell's slots in the room's colours. The refusal line's wash is the verdigris wash, its ink
-// the room's ink.
-val gymPalette: WindmillPalette = WindmillPalette(
-    canvas = GymSkin.canvas,
-    surface = GymSkin.surface,
-    ink = GymSkin.ink,
-    inkDim = GymSkin.inkDim,
-    inkFaint = GymSkin.inkFaint,
-    line = GymSkin.line,
-    lineStrong = GymSkin.lineStrong,
-    accent = GymSkin.accent,
-    onAccent = GymSkin.onAccent,
-    noticeWash = GymSkin.accentSoft,
-    noticeInk = GymSkin.ink,
+fun gymPalette(skin: GymColors): WindmillPalette = WindmillPalette(
+    canvas = skin.canvas, surface = skin.surface, ink = skin.ink, inkDim = skin.inkDim,
+    inkFaint = skin.inkDim, line = skin.line, lineStrong = skin.lineStrong,
+    accent = skin.accent, onAccent = skin.onAccent, noticeWash = skin.accentSoft, noticeInk = skin.ink,
 )
 
-// One skin, and it is dark: Daylight is a design task of its own and this scheme does not pretend to
-// have it. `secondaryContainer` is the rail's selected seat; `inverseSurface` is the snackbar's
-// ground, so the undo transient lands in the room's ink rather than on a light slab.
-val gymColorScheme: ColorScheme = darkColorScheme(
-    primary = GymSkin.accent,
-    onPrimary = GymSkin.onAccent,
-    primaryContainer = GymSkin.accentSoft,
-    onPrimaryContainer = GymSkin.accent,
-    secondary = GymSkin.accent,
-    onSecondary = GymSkin.onAccent,
-    secondaryContainer = GymSkin.accentSoft,
-    onSecondaryContainer = GymSkin.accent,
-    tertiary = GymSkin.setDone,
-    onTertiary = GymSkin.onAccent,
-    background = GymSkin.canvas,
-    onBackground = GymSkin.ink,
-    surface = GymSkin.canvas,
-    onSurface = GymSkin.ink,
-    surfaceVariant = GymSkin.surface,
-    onSurfaceVariant = GymSkin.inkFaint,
-    surfaceContainerLowest = GymSkin.canvas,
-    surfaceContainerLow = GymSkin.canvas,
-    surfaceContainer = GymSkin.surface,
-    surfaceContainerHigh = GymSkin.surface,
-    surfaceContainerHighest = GymSkin.raised,
-    surfaceTint = Color.Transparent,
-    inverseSurface = GymSkin.raised,
-    inverseOnSurface = GymSkin.ink,
-    inversePrimary = GymSkin.accent,
-    // Brick is the destroy hue and nothing else in this room wears it.
-    error = GymSkin.alarmInk,
-    onError = GymSkin.onAccent,
-    errorContainer = GymSkin.raised,
-    onErrorContainer = GymSkin.alarmInk,
-    // Two hairlines, as the room draws them: border-default carries a control's edge, border-subtle
-    // a divider.
-    outline = GymSkin.lineStrong,
-    outlineVariant = GymSkin.line,
-    scrim = Color.Black,
-)
+fun gymColorScheme(skin: GymColors, dark: Boolean): ColorScheme {
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = skin.accent, onPrimary = skin.onAccent,
+        primaryContainer = skin.accentSoft, onPrimaryContainer = skin.accent,
+        secondary = skin.accent, onSecondary = skin.onAccent,
+        secondaryContainer = skin.raised, onSecondaryContainer = skin.ink,
+        tertiary = skin.setDone, onTertiary = skin.onAccent,
+        tertiaryContainer = skin.raised, onTertiaryContainer = skin.ink,
+        background = skin.canvas, onBackground = skin.ink,
+        surface = skin.canvas, onSurface = skin.ink,
+        surfaceVariant = skin.surface, onSurfaceVariant = skin.inkDim,
+        surfaceContainerLowest = skin.canvas, surfaceContainerLow = skin.canvas,
+        surfaceContainer = skin.surface, surfaceContainerHigh = skin.surface,
+        surfaceContainerHighest = skin.raised, surfaceTint = Color.Transparent,
+        inverseSurface = skin.raised, inverseOnSurface = skin.ink, inversePrimary = skin.accent,
+        error = skin.alarmInk, onError = skin.onAlarm,
+        errorContainer = skin.raised, onErrorContainer = skin.alarmInk,
+        outline = skin.lineStrong, outlineVariant = skin.line, scrim = skin.scrim,
+    )
+}
 
-// The room's faces, so a Material control does not come up in stock Roboto: prose and action labels
-// take the body face, every title the display face. Tabular figures ride on every role, because a
-// running clock and a changing weight jitter without them and the room's own rule is that every
-// numeral in gym is tabular.
+// Native system faces with tabular figures keep changing weights and clocks steady.
 val gymTypography: Typography = Typography(
     displayLarge = display(44),
     displayMedium = display(38),
@@ -98,15 +61,15 @@ val gymTypography: Typography = Typography(
     headlineLarge = display(30),
     headlineMedium = display(26),
     headlineSmall = display(22),
-    titleLarge = display(20),
+    titleLarge = display(24),
     titleMedium = display(17),
     titleSmall = display(15),
     bodyLarge = body(16),
     bodyMedium = body(15),
     bodySmall = body(13),
-    labelLarge = body(15, FontWeight.SemiBold),
-    labelMedium = body(13, FontWeight.SemiBold),
-    labelSmall = body(11, FontWeight.SemiBold),
+    labelLarge = body(16, FontWeight.Bold),
+    labelMedium = body(14, FontWeight.Bold),
+    labelSmall = body(12, FontWeight.Bold),
 )
 
 private fun display(size: Int): TextStyle =

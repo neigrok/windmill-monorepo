@@ -39,7 +39,8 @@ import { SkillTree } from './model/SkillTree.js';
 import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
+import { layoutNameFrom, loadLayoutEngine, layoutTree } from './layout/index.js';
+import { frontierTarget, viewportInsets, DOCK_WIDTH, TABLET_PANEL_WIDTH } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -53,7 +54,7 @@ import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewP
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
+import { advanceProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -66,12 +67,11 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
-const layoutEngine = new RadialLayoutEngine();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
@@ -83,6 +83,8 @@ const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const CTA_ECHO_DELAY = 1500;
+// The chrome measures itself within a frame of the first paint; past this the first view is the reader's to move.
+const FIRST_FRAME_REFRAME_MS = 1200;
 
 function consumeSessionFlag(key) {
   try {
@@ -113,9 +115,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   const readOnlyRef = useRef(readOnly);
   const editorRef = useRef(null);
   const treeRef = useRef(null);
-  const layoutCacheRef = useRef({ signature: '', raw: new Map() });
+  const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
+  const layoutCacheRef = useRef({ signature: '', result: null });
+  const firstFrameRef = useRef(null); // { id, at } — the step the first view opened on, until the chrome has measured itself
+  const insetsRef = useRef(null); // the live chrome insets, for the first view: the load lands long after the chrome has
+  const legendDockRef = useRef(null);
   const completedRef = useRef(new Set());
-  const inProgressRef = useRef(new Set());
   const seedRef = useRef(null);
   const repoRef = useRef(null);
   const collabRef = useRef(null);
@@ -235,13 +240,13 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const {
     legend, legendRef, legendOpen, legendForceOpen, highlightedKindId, highlightedKindIdRef,
-    hydrateLegend, syncLegendFromTree, clearLegendStore, clearHighlightedKind,
+    hydrateLegend, syncLegendFromTree, clearHighlightedKind,
     onRenameKind, onDescribeKind, onAddKind, onRemoveKind, onRecolorKind,
     onHighlightKind, onLegendOpenChange, openLegendFromPicker,
   } = useLegend({ seedRef, collabRef, editorRef, sceneRef });
 
   const {
-    workspaceByNode, hydrateWorkspaces, clearWorkspaceStore, cancelAllAutoCompletes, pushArcs,
+    workspaceByNode, hydrateWorkspaces, pushArcs,
     onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink,
   } = useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef });
 
@@ -250,8 +255,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [tree, setTree] = useState(null);
   const [renderModel, setRenderModel] = useState(null);
   const [completed, setCompleted] = useState(() => new Set());
-  const [inProgress, setInProgress] = useState(() => new Set());
-  const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms }
   const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms }
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -323,16 +326,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     commitSelectedId(null);
   }, [cancelNextUpSelect]);
 
-  const [hasLocalEdits, setHasLocalEdits] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [laneInset, setLaneInset] = useState(0); // px
+  const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [panning, setPanning] = useState(false);
-  const [recenterAvailable, setRecenterAvailable] = useState(false);
   const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // { from, to } | null
   const [multiMode, setMultiMode] = useState(false);
@@ -344,21 +346,30 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [demoCompletions, setDemoCompletions] = useState(0);
   const [ctaEcho, setCtaEcho] = useState(false);
 
+  // Everything a layout reads: the engine, the DAG and order (the trunk), color and createdAt (trunk election and
+  // sibling ties) — and the label only for an engine that reserves each caption's box, so a rename never re-runs the
+  // others.
   const layoutPositions = useCallback((nextTree) => {
-    const signature = nextTree.allNodes
-      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
-      .sort()
-      .join('|');
+    const { requestedName, engine } = layoutRef.current;
+    const readsCaptions = engine.constructor.readsCaptions;
+    const rows = nextTree.allNodes.map((node) => JSON.stringify([
+      node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null,
+      readsCaptions ? node.label : '',
+    ]));
+    const signature = `${requestedName}|${rows.sort().join('|')}`;
     if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
+      layoutCacheRef.current = { signature, result: layoutTree(engine, nextTree) };
     }
-    return new Map(layoutCacheRef.current.raw);
+    const result = layoutCacheRef.current.result;
+    layoutRef.current.name = result.name;
+    sceneRef.current?.setReorderHint(result.engine.constructor.reorder);
+    return new Map(result.positions);
   }, []);
 
   const states = useMemo(() => {
     if (!tree) return new Map();
-    return UnlockRules.derive(tree, { completed, inProgress });
-  }, [tree, completed, inProgress]);
+    return UnlockRules.derive(tree, { completed });
+  }, [tree, completed]);
 
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
 
@@ -368,9 +379,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Records only that THIS DEVICE witnessed these completions; callers pass freshly computed values, since state setters are async.
   const witnessProgress = useCallback((next) => {
     if (demoRef.current) return;
-    if (!seedRef.current || readOnlyRef.current) return;
+    if (!seedRef.current?.mine || shared || demotion) return;
     returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
-  }, []);
+  }, [shared, demotion]);
 
   const showToast = useCallback((message, options = {}) => {
     toastTimersRef.current.forEach(clearTimeout);
@@ -442,28 +453,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [canTend, breakpoint, tendOpen]);
 
-  const handlePanStateChange = useCallback((isPanning) => {
-    setPanning(isPanning);
-    if (isPanning) setRecenterAvailable(true);
-  }, []);
+  const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
   const {
-    emit, seedActivity, ticker, newEventIds, pinned, unreadCount, activityPing,
+    emit, seedActivity, ticker, newEventIds, unreadCount, activityPing,
     feedVisible, feedSummonedRef, activityGroups, selectedHistory, eventCount,
-    toggleActivity, openActivity, closeActivity, togglePin,
+    toggleActivity, openActivity, closeActivity,
   } = useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpSelect, setSelectedId });
-
-  const handleResetEdits = useCallback(() => {
-    if (seedRef.current) {
-      collabRef.current?.clearDurable?.();
-      clearWorkspaceStore(seedRef.current.id);
-      clearLegendStore(seedRef.current.id);
-      returnLedger.clear(seedRef.current.id);
-      milestoneLedger.clear(seedRef.current.id);
-    }
-    cancelAllAutoCompletes();
-    setReloadKey((key) => key + 1);
-  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes]);
 
   // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
   const syncStructure = useCallback(() => {
@@ -482,8 +478,16 @@ export function SkillTreeView({ treeId, demo = false }) {
       cycles = renderable.cycles;
     }
 
-    const positions = layoutPositions(nextTree);
-    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
+    // A tree no engine can lay out keeps the picture it has: the edit lives in the lattice and the next one retries.
+    let positions;
+    try {
+      positions = layoutPositions(nextTree);
+    } catch (error) {
+      console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
+      showToast('That edit could not be drawn — the picture is one step behind');
+      return;
+    }
+    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
     treeRef.current = nextTree;
@@ -777,6 +781,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,
+      reorderHint: layoutCacheRef.current.result?.engine.constructor.reorder ?? 'none',
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         setSheetHeld(false);
@@ -808,6 +813,24 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
 
   useEffect(() => {
+    scene?.setWorkingZoom(breakpoint === 'phone' ? PHONE_WORKING_ZOOM : WORKING_ZOOM);
+  }, [scene, breakpoint]);
+
+  // Focus: the working zoom on the selected step, else on the frontier. All steps: the whole tree.
+  const handleFocus = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene || !tree) return;
+    scene.focusWorking(selectedIdRef.current ?? frontierTarget(tree, states, { completedAt }));
+  }, [tree, states, completedAt]);
+
+  const handleShowAll = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.fitToView();
+    setBounds(scene.getBounds());
+  }, []);
+
+  useEffect(() => {
     const onKey = (event) => {
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
@@ -834,10 +857,21 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (feedSummonedRef.current) closeActivity();
         return;
       }
-      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-      if (event.key === 'a' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing) {
+      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
+      const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
+      if (event.key === 'a' && plainKey) {
         event.preventDefault();
         toggleActivity();
+        return;
+      }
+      if (event.key.toLowerCase() === 'f' && plainKey) {
+        event.preventDefault();
+        handleFocus();
+        return;
+      }
+      if (event.key === '0' && plainKey) {
+        event.preventDefault();
+        handleShowAll();
         return;
       }
       if (event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -863,7 +897,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll]);
 
   useEffect(() => {
     const onPaste = (event) => {
@@ -900,7 +934,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (!seedRef.current) return;
-        placeStore.save({ treeId, camera: scene.getViewpoint(), selectedId: selectedIdRef.current });
+        placeStore.save({ treeId, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: selectedIdRef.current });
       }, 400);
     });
     return () => { clearTimeout(timer); unsubscribe(); };
@@ -908,7 +942,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => {
     if (viewReadOnly || loading || !seedRef.current) return;
-    placeStore.save({ treeId, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
+    placeStore.save({ treeId, layout: layoutRef.current.name, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
   }, [selectedId, loading, treeId, viewReadOnly]);
 
   useEffect(() => {
@@ -926,8 +960,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     setTreeVisibility(null);
     setTreeMine(false);
     repoRef.current = null;
+    firstFrameRef.current = null;
 
     async function loadTree() {
+      const layoutName = layoutNameFrom(window.location);
+      const engine = await loadLayoutEngine(layoutName);
+      if (cancelled) return;
+      layoutRef.current = { requestedName: layoutName, name: engine.constructor.layoutName, engine };
       const repo = new HttpTreeRepository({ treeId });
       // Confirm who holds this device before anything is read from it or written to it.
       await resolveDeviceOwner();
@@ -938,12 +977,12 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (!seed) throw new Error(`tree ${treeId}: unknown to the server, and not this device's to open`);
       }
       const treeData = seed;
-      if (!cancelled) setHasLocalEdits(false);
       const nextTree = new SkillTree(treeData);
       const progress = demo
-        ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), startedAt: {}, completedAt: {}, server: false }
+        ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
         : await repo.loadProgress(treeData);
       const serverActivity = await repo.loadActivity({ limit: 200 });
+      if (cancelled) return;
       const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
       const positions = layoutPositions(nextTree);
@@ -956,38 +995,46 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (sinceIds.length) {
         scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
       }
-      scene.setModel(model);
-      if (demo) scene.suppressArrivalToast();
-      const place = viewReadOnly ? null : placeStore.load();
+      // The first view: a saved place is restored (clamped to the zoom range); the owner with none opens on the
+      // frontier at the working zoom, no glide; a visitor keeps the whole-tree fit and the arrival ceremony.
+      const place = viewReadOnly ? null : placeStore.load(layoutRef.current.name);
       const returning = place?.treeId === seed.id ? place : null;
       const savedCamera = returning?.camera
         && [returning.camera.x, returning.camera.y, returning.camera.zoom].every(Number.isFinite)
         ? returning.camera : null;
-      if (savedCamera) scene.restoreViewpoint(savedCamera);
-      else scene.fitToView();
       const restoredSelection = returning?.selectedId && treeData.nodes.some((n) => n.id === returning.selectedId)
         ? returning.selectedId : null;
+      const owner = seed.mine === true && !shared && !demo;
+      const opensOnFrontier = !savedCamera && owner;
+      if (opensOnFrontier) scene.suppressArrival();
+      if (demo) scene.suppressArrivalToast();
+      scene.setModel(model);
+      if (savedCamera) scene.restoreViewpoint(savedCamera);
+      if (opensOnFrontier) {
+        const target = frontierTarget(nextTree, states, { selectedId: restoredSelection, completedAt: overlay.completedAt });
+        scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
+        scene.focusWorking(target, { instant: true });
+        firstFrameRef.current = { id: target, at: Date.now(), camera: scene.getViewpoint() };
+      }
 
       editorRef.current = new TreeEditor(treeData);
+      treeRef.current = nextTree;
       seedRef.current = seed;
       repoRef.current = repo;
       completedRef.current = new Set(overlay.completed);
-      inProgressRef.current = new Set(overlay.inProgress);
       seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
       setTree(nextTree);
       setRenderModel(model);
       setTreeVisibility(seed.visibility ?? null);
       setTreeMine(seed.mine ?? false);
       setCompleted(new Set(overlay.completed));
-      setInProgress(new Set(overlay.inProgress));
-      setStartedAt(overlay.startedAt);
       setCompletedAt(overlay.completedAt);
       hydrateWorkspaces(seed.id);
       hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
       pushArcs();
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
-      if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
+      if (!viewReadOnly) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: restoredSelection });
       if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
@@ -1006,10 +1053,10 @@ export function SkillTreeView({ treeId, demo = false }) {
         }
       }
 
-      // Read-only views never enter the device index, so the claim path can't adopt a visited tree.
+      // Only owned trees enter the device index, so a visited share cannot be claimed.
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: viewReadOnly ? null : deviceTrees })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1043,6 +1090,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const legendWithCounts = useMemo(() => (tree ? withCounts(legend, tree.nodes) : []), [legend, tree, states]);
   const inUse = useMemo(() => (tree ? inUseCount(legend, tree.nodes) : 0), [legend, tree, states]);
+  const legendVisible = inUse >= 2 || legendForceOpen;
   const recolorKinds = legend.length > 0 ? legend : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
 
   useEffect(() => {
@@ -1050,7 +1098,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [states]);
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
-  useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
@@ -1157,7 +1204,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(id);
   }, [setSelectedId]);
 
-  const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
+  const mobileEditable = treeMine && !shared && !demo && !demotion && breakpoint !== 'desktop';
 
   // Phone only: the initial view is decided ONCE, the moment the tree is ready; tablet and desktop keep `view` null.
   const phone = breakpoint === 'phone';
@@ -1255,9 +1302,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (!scene) return undefined;
     if (!mobileEditable || breakpoint === 'desktop') { scene.setEditTap(null); return undefined; }
-    scene.setEditTap((x, y) => {
+    scene.setEditTap((x, y, nodeId) => {
       setSheetHeld(false);
-      const nodeId = scene.pick(x, y);
       if (multiMode) {
         if (nodeId === null) { setSelectedIds(new Set()); reconcileProjections(new Set(), new Set()); return; }
         const next = new Set(selectedIdsRef.current);
@@ -1318,18 +1364,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     collabRef.current?.markProgress(nodeId, wireStatus);
   }
 
-  function handleStart() {
-    if (!selectedId) return;
-    const node = nodesById.get(selectedId);
-    const nextInProgress = new Set(inProgress).add(selectedId);
-    const nextStartedAt = startedAt[selectedId] ? startedAt : { ...startedAt, [selectedId]: Date.now() };
-    setInProgress(nextInProgress);
-    setStartedAt(nextStartedAt);
-    witnessProgress({ completed, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt });
-    pushProgress(selectedId, 'active');
-    emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
-  }
-
   // Once ever per milestone: the ledger survives reloads and an undo/re-complete.
   function milestoneOffer(prevCompleted, nextCompleted) {
     // Gate on the genuine read-only signals, NOT the width-derived readOnly.
@@ -1345,29 +1379,25 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
   }
 
-  function completeStep(id, { fromRemote = false } = {}) {
+  function completeStep(id) {
     const node = nodesById.get(id);
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], 'complete', Date.now());
+    const next = advanceProgress({ completed, completedAt }, [id], 'complete', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
-    if (!fromRemote) pushProgress(id, 'complete');
+    pushProgress(id, 'complete');
     emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
-    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
-    let opened = 0;
-    for (const [otherId, nodeState] of after) {
-      if (nodeState === 'available' && states.get(otherId) !== 'available') {
-        const unlocked = nodesById.get(otherId);
-        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
-        opened += 1;
-      }
+    const changes = progressChanges(tree, { completed }, next);
+    for (const otherId of changes.unlocked) {
+      const unlocked = nodesById.get(otherId);
+      emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
+    const opened = changes.unlocked.length;
     const label = node?.label?.trim() || 'Step';
     const stepSummary = demo && id === COACHED_NODE_ID
       ? DEMO_COPY.unlockToast
       : (opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
-    const offer = fromRemote ? null : milestoneOffer(completed, next.completed);
+    const offer = milestoneOffer(completed, next.completed);
     const ceremony = offer ? offer.summary : stepSummary;
     const ceremonyOptions = offer ? { action: offer.action } : {};
     if (listActive) showToast(ceremony, ceremonyOptions);
@@ -1388,9 +1418,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   function bulkMarkDone() {
     const targets = markDoneTargets(selectedIdsRef.current, completed);
     if (!targets.length) return;
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, targets, 'complete', Date.now());
+    const next = advanceProgress({ completed, completedAt }, targets, 'complete', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
     for (const id of targets) {
@@ -1398,12 +1427,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     }
-    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
-    for (const [otherId, nodeState] of after) {
-      if (nodeState === 'available' && states.get(otherId) !== 'available') {
-        const unlocked = nodesById.get(otherId);
-        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
-      }
+    const changes = progressChanges(tree, { completed }, next);
+    for (const otherId of changes.unlocked) {
+      const unlocked = nodesById.get(otherId);
+      emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
     const offer = milestoneOffer(completed, next.completed);
     if (offer) sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
@@ -1413,37 +1440,39 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (selectedId) completeStep(selectedId);
   }
 
-  function handleSetState(id, target, { fromRemote = false } = {}) {
+  function resetStep(id) {
     if (!id) return;
-    if (target === 'complete') { completeStep(id, { fromRemote }); return; }
-
-    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], target, Date.now());
+    const next = advanceProgress({ completed, completedAt }, [id], 'none', Date.now());
     setCompleted(next.completed);
-    setInProgress(next.inProgress);
-    setStartedAt(next.startedAt);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
-    if (!fromRemote) pushProgress(id, target === 'notstarted' ? 'none' : 'active');
+    pushProgress(id, 'none');
   }
 
-  // Read-only views never adopt the remote overlay, or a reader's empty overlay would overwrite the owner's progress.
+  // A viewer keeps the owner's displayed progress; every owner surface adopts its private lane.
   applyRemoteProgressRef.current = (overlay) => {
-    if (demoRef.current) return;
-    if (readOnlyRef.current) return;
-    for (const id of overlay.completed) {
-      if (!nodesById.has(id) || completedRef.current.has(id)) continue;
-      handleSetState(id, 'complete', { fromRemote: true });
+    if (demoRef.current || shared || demotion || !seedRef.current?.mine) return;
+    const currentTree = treeRef.current;
+    if (!currentTree) return;
+    const next = { completed: new Set(overlay.completed), completedAt: overlay.completedAt };
+    const changes = progressChanges(currentTree, { completed: completedRef.current }, next);
+    completedRef.current = next.completed;
+    setCompleted(next.completed);
+    setCompletedAt(next.completedAt);
+    witnessProgress(next);
+
+    for (const [verb, ids] of [['completed', changes.completed], ['unlocked', changes.unlocked]]) {
+      for (const id of ids) {
+        const node = currentTree.nodesById.get(id);
+        emit({ verb, nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
+      }
     }
-    for (const id of overlay.inProgress) {
-      if (!nodesById.has(id) || inProgressRef.current.has(id)) continue;
-      handleSetState(id, 'inprogress', { fromRemote: true });
-    }
-    for (const id of [...completedRef.current, ...inProgressRef.current]) {
-      if (!nodesById.has(id) || overlay.completed.has(id) || overlay.inProgress.has(id)) continue;
-      handleSetState(id, 'notstarted', { fromRemote: true });
-    }
-    setStartedAt(overlay.startedAt);
-    setCompletedAt(overlay.completedAt);
+    if (changes.completed.length === 0) return;
+    const label = currentTree.nodesById.get(changes.completed[0])?.label?.trim() || 'Step';
+    const summary = changes.completed.length === 1 ? `Step completed: ${label}` : `${changes.completed.length} steps completed`;
+    const ceremony = changes.unlocked.length ? `${summary} · ${changes.unlocked.length} more opened` : summary;
+    if (listActive) showToast(ceremony);
+    else sceneRef.current?.announceCeremony(ceremony);
   };
 
   function handleZoomIn() {
@@ -1452,18 +1481,6 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   function handleZoomOut() {
     sceneRef.current?.zoomBy(1 / 1.2);
-  }
-
-  function handleFitToView() {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    scene.fitToView();
-    setBounds(scene.getBounds());
-  }
-
-  function handleRecenter() {
-    handleFitToView();
-    setRecenterAvailable(false);
   }
 
   function handlePanTo(x, y) {
@@ -1496,7 +1513,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       state={selectedState}
       prerequisites={prerequisites}
       unlocks={unlocks}
-      startedAt={startedAt[selectedId]}
       completedAt={completedAt[selectedId]}
       history={selectedHistory}
       workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
@@ -1526,6 +1542,45 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
+
+  const insets = useMemo(
+    () => viewportInsets({ breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216, laneInset, legendBox }),
+    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset, legendBox],
+  );
+  // The lane and the legend publish their measured boxes after the first paint, so the first view — framed a moment
+  // earlier against insets that were still guesses — is framed once more as soon as the real ones arrive.
+  useEffect(() => {
+    insetsRef.current = insets;
+    if (!scene) return;
+    scene.setViewportInsets(insets);
+    // Each piece of chrome measures itself a beat after the first paint, so the first view is framed again on every
+    // inset it publishes — until the window closes, or the reader moves the camera and the view becomes theirs.
+    const first = firstFrameRef.current;
+    if (!first) return;
+    const now = scene.getViewpoint();
+    if (Date.now() - first.at >= FIRST_FRAME_REFRAME_MS || now.x !== first.camera.x || now.y !== first.camera.y || now.zoom !== first.camera.zoom) {
+      firstFrameRef.current = null;
+      return;
+    }
+    scene.focusWorking(first.id, { instant: true });
+    firstFrameRef.current = { ...first, camera: scene.getViewpoint() };
+  }, [scene, insets]);
+
+  // The legend dock's height is its rows', so it publishes its measured box the way the action lane publishes its
+  // inset: the corner it holds is a block no caption may sit under.
+  useEffect(() => {
+    const dock = legendDockRef.current;
+    if (!dock) {
+      setLegendBox(null);
+      return undefined;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setLegendBox((box) => (box && box.width === width && box.height === height ? box : { width, height }));
+    });
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [legendVisible]);
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
@@ -1580,7 +1635,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               describe: mobileDescribe,
               addStep: mobileListAddStep,
               markDone: (id) => completeStep(id),
-              markUndone: (id) => handleSetState(id, 'notstarted'),
+              markUndone: resetStep,
               recolor: mobileRecolor,
               remove: deleteNodeAt,
               addNeed: mobileAddNeed,
@@ -1599,9 +1654,9 @@ export function SkillTreeView({ treeId, demo = false }) {
           ctaEcho={ctaEcho}
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
-          onSignInToKeep={status === 'ghost' && treeMine && !demo ? openSignInDoor : undefined}
-          onRecenter={handleRecenter}
-          showRecenter={recenterAvailable}
+          onSignInToKeep={status !== 'signed-in' && treeMine && !demo ? openSignInDoor : undefined}
+          onFocus={handleFocus}
+          onShowAll={handleShowAll}
           tablet={breakpoint === 'tablet'}
           panelOpen={!!selectedNode}
         />
@@ -1621,11 +1676,9 @@ export function SkillTreeView({ treeId, demo = false }) {
           }
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
-          onFitToView={handleFitToView}
-          canReset={hasLocalEdits}
-          onResetEdits={handleResetEdits}
+          onFocus={handleFocus}
+          onShowAll={handleShowAll}
           onShare={() => setShareOpen(true)}
-          onShowShortcuts={() => setShortcutsOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -1667,7 +1720,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {!readOnly && status !== 'signed-in' && treeMine && !demo && (
+      {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
@@ -1681,8 +1734,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         onPanTo={handlePanTo}
       />
 
-      {(inUse >= 2 || legendForceOpen) && (
-        <div className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
+      {legendVisible && (
+        <div ref={legendDockRef} className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
           <KindLegend
             kinds={legendWithCounts}
             defaultOpen={legendOpen}
@@ -1701,14 +1754,13 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {!readOnly && (
-        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: DOCK_WIDTH }}>
           <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
             {composerOpen ? composer : selectedNode ? (
               <StepPanel
                 node={selectedNode}
                 state={selectedState}
                 prerequisites={prerequisites}
-                startedAt={startedAt[selectedId]}
                 completedAt={completedAt[selectedId]}
                 history={selectedHistory}
                 workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
@@ -1726,9 +1778,8 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onSetKind={handleSetKind}
                 kinds={legend}
                 onOpenLegend={openLegendFromPicker}
-                onStart={handleStart}
                 onMarkComplete={handleMarkComplete}
-                onSetState={handleSetState}
+                onReset={resetStep}
                 onReveal={handleRevealNode}
                 onDelete={deleteNodeAt}
                 onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
@@ -1743,8 +1794,6 @@ export function SkillTreeView({ treeId, demo = false }) {
                 now={Date.now()}
                 hoveredId={hoveredId}
                 newIds={newEventIds}
-                pinned={pinned}
-                onTogglePin={togglePin}
                 onClose={closeActivity}
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
@@ -1790,7 +1839,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                   onConnect={enterAim}
                   onSetKind={mobileRecolor}
                   onMarkDone={(id) => completeStep(id)}
-                  onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                  onUnmarkDone={resetStep}
                   onDelete={deleteNodeAt}
                   onJump={handleSheetJump}
                   isRoot={selectedId !== null && selectedId === singleRootId}
@@ -1833,7 +1882,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {mobileEditable && breakpoint === 'tablet' && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
           <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
             {mobileSurface === 'bulk' ? (
               <BulkBar
@@ -1880,7 +1929,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onConnect={enterAim}
                 onSetKind={mobileRecolor}
                 onMarkDone={(id) => completeStep(id)}
-                onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                onUnmarkDone={resetStep}
                 onDelete={deleteNodeAt}
                 onJump={handleSheetJump}
                 isRoot={selectedId !== null && selectedId === singleRootId}
@@ -1891,7 +1940,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {readOnlyDock && (
-        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`}>
+        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: breakpoint === 'tablet' ? TABLET_PANEL_WIDTH : DOCK_WIDTH }}>
           <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
             {readOnlyDetail}
           </div>

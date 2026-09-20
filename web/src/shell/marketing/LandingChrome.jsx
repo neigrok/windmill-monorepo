@@ -2,7 +2,7 @@
 // opens the door in place; a landing never navigates to sign in.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button } from '../../design-system';
+import { BrandWordmark, Button } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
 import { AppearanceToggle } from './AppearanceToggle.jsx';
@@ -87,7 +87,7 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
 function LandingNav({ product = null, links = [], cta = null, resume = null, resolving = false, seat = null, anchored = false }) {
   return (
     <header className="landing-header">
-      <a className="landing-wordmark" href="/">Windmill</a>
+      <a className="landing-wordmark" href="/"><BrandWordmark /></a>
       <nav className="navlinks" aria-label="Primary">
         {links.map((link) => <a key={link.href} className="navlinks-page" href={link.href}>{link.label}</a>)}
         {links.length > 0 && <span className="navlinks-divider" aria-hidden="true" />}
@@ -195,7 +195,7 @@ function LandingFooter() {
     <>
       <footer className="landing-footer">
         <div className="landing-footer-brand">
-          <span className="landing-footer-mark">Windmill</span>
+          <BrandWordmark className="landing-footer-mark" size={22} />
           © 2026
         </div>
         <div className="landing-footer-shelf">

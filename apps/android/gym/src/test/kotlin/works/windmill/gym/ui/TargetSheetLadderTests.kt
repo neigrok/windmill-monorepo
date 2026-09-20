@@ -116,7 +116,7 @@ class TargetSheetLadderTests {
 
     // `Set · {tail}` with a reading, `Set` alone while something is refused.
     private fun commit() = compose.onNode(SemanticsMatcher("the commit") { node ->
-        node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Set" || it.text.startsWith("Set · ") } == true
+        node.config.contains(SemanticsActions.OnClick) && node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Set" || it.text.startsWith("Set · ") } == true
     })
 
     private fun yOf(description: String): Float =
@@ -378,7 +378,7 @@ class TargetSheetLadderTests {
         compose.onNodeWithContentDescription("Reps target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
         compose.onNodeWithContentDescription("Set 1 reps").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
         commit().assertIsNotEnabled()
-        compose.onNodeWithText("Set").assertIsDisplayed()
+        commit().assertIsDisplayed()
 
         compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
         compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
@@ -435,7 +435,7 @@ class TargetSheetLadderTests {
         assertTrue("under row 3", said > row3)
         assertTrue("and above row 4", said < row4)
         commit().assertIsNotEnabled()
-        compose.onNodeWithText("Set").assertIsDisplayed()
+        commit().assertIsDisplayed()
 
         // Topmost first: a second fault lower down waits its turn.
         compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("501")
@@ -450,7 +450,7 @@ class TargetSheetLadderTests {
     // movement, the place line, the never-logged line, the numbers and the placeholders — what
     // empty means — are content.
     @Test
-    fun testTheChromeAtFirstPaintIsTheFourteenPinnedWords() {
+    fun testTheSheetChromeNamesItsControlsAndLadderColumns() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, lowerA, "Back Squat")
 
@@ -464,10 +464,10 @@ class TargetSheetLadderTests {
         val chrome = words.filterNot { it in content || it.all { c -> c.isDigit() || c == '.' } }
 
         assertEquals(
-            listOf("Every set", "Sets", "Reps", "Weight", "Set by set", "Fill", "Add set", "Set · 5 sets"),
+            listOf("Cancel", "Every set", "Sets", "Reps", "Weight", "Each set", "Fill", "Set", "Reps", "kg", "Add set", "Set · 5 sets"),
             chrome,
         )
-        assertEquals(14, chrome.flatMap { it.split(" ") }.count { it != "·" })
+        assertEquals(17, chrome.flatMap { it.split(" ") }.count { it != "·" })
         scope.cancel()
     }
 }

@@ -236,6 +236,13 @@ Statistics TrainingService::statistics(const UserId& user) {
   return wm::gym::statistics(log_.trainingLog(user));
 }
 
+StatsProgress TrainingService::progress(const UserId& user) {
+  const std::uint64_t nowMs = clock_.nowMs();
+  settleOpen(log_, user, nowMs);
+  const std::vector<ProgressSet> history = log_.progressHistory(user);
+  return statsProgress(history, nowMs);
+}
+
 // The clock is read once and passed in, so the twelve-week window and the settle cannot disagree
 // about what now is.
 std::optional<MovementRecord> TrainingService::movementRecord(const UserId& user,

@@ -12,7 +12,7 @@ Ordered by how often the job happens on a phone.
 | **P1** | **Check off** | the list row | one tap |
 | **P2** | **Capture intent** — "add a testing branch under backend" | the AI input | one sentence |
 | **P3** | **Structural edit** — add · connect · recolor · delete | row card, below content | available, never featured |
-| **P4** | **Arrange** — angular reorder | canvas, desktop only | not on the phone |
+| **P4** | **Arrange** — angular reorder | own canvas, when the layout exposes a sibling arc | direct drag; no separate mode |
 
 **P3 is demoted on purpose.** The agent does those edits from one sentence (P2) and a desk
 does them faster; they stay reachable but never set the layout. **P0 gets the default view,
@@ -34,18 +34,18 @@ the header, the search, and the primitives in §4.**
 
 | Gesture | List | Canvas |
 |---|---|---|
-| scroll / drag | scroll the list | pan 1:1 (also during aim mode) |
+| scroll / empty-canvas drag | scroll the list | pan 1:1 (also during aim mode) |
+| drag a step | — | same-parent reorder on your own tree when the layout exposes an arc (`angular-reorder.md`) |
 | tap row / node | **expand in place** | select → sheet |
 | tap the fruit | **mark done / undone** | — (the sheet's state chip does it) |
 | swipe row right | mark done — accelerator | — |
 | swipe down | — | dismiss the sheet |
 | long-press | enter multi-select | enter multi-select (**your tree only**; on a stranger's tree: nothing, OS callout suppressed) |
-| pinch · double-tap | — | zoom 0.5–2.5× · 1×↔1.6× at the point |
+| pinch · double-tap | — | pinch from the dynamic floor to 2.5×; double-tap approaches the working zoom, then toggles working ↔1.6× working |
 
 - **Nothing means two things.** A gesture absent from a view is absent, never repurposed.
-- **Every hidden gesture has a visible twin:** multi-select also opens from a **"Select
-  steps"** row; done is also a button in the row card. Phones have no `?` overlay, so a
-  gesture-only capability is an unshipped capability.
+- **Selection and progress have visible controls:** multi-select also opens from a **"Select
+  steps"** row; done is also a button in the row card. Phones have no `?` overlay.
 - **Platform contract:** `-webkit-touch-callout: none` + `touch-action: none` on the canvas,
   or iOS eats the long-press with a selection callout. **The same contract binds every
   full-width button in the list** — a Next-up row looks like a list row in a list that trains
@@ -173,11 +173,12 @@ field (§4).
 
 ## 9. Precision on the canvas
 ```
-hit disc = max(44px, visual), capped at ½ the nearest-neighbour distance
-below that cap  ⇒  a tap zooms 1.6× at the point instead of selecting
+drawn disc  ⇒  select
+touch extension radius = min(44px, ½ nearest-neighbor distance)
+ambiguous tap within 44px, below the working zoom  ⇒  zoom to the working view at the point
 ```
-Two fruit can never overlap their targets. The real answer to "I can't hit the right node" is
-**switch to the list**: precision is a property of rows, not of a zoom level.
+The extended reach does not cross halfway to another fruit. **Switch to the list** supplies
+row-sized targets when the canvas is crowded.
 
 **In the list, the same arithmetic binds every wrapped chip row.** A 44px hit box extended
 past its border box overlaps its neighbour when the row gap is smaller than the overhang, and

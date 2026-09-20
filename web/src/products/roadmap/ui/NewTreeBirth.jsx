@@ -8,6 +8,7 @@ import { PasteComposer } from '../paste/PasteComposer.jsx';
 import { GhostSkeleton } from '../paste/GhostSkeleton.jsx';
 import { BottomSheet } from './mobile/BottomSheet.jsx';
 import { useViewMode } from './useViewMode.js';
+import { DOCK_WIDTH } from './viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -215,7 +216,7 @@ export function NewTreeBirth() {
       )}
 
       {composerOpen && parse && (breakpoint === 'desktop' ? (
-        <aside className="birth-composer">{composer}</aside>
+        <aside className="birth-composer" style={{ width: DOCK_WIDTH }}>{composer}</aside>
       ) : (
         <BottomSheet open onDismiss={() => setComposerOpen(false)}>{composer}</BottomSheet>
       ))}

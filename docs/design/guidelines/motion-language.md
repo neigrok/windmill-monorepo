@@ -6,9 +6,8 @@ invent new motion. Tokens: `tokens/motion.css`.
 The tree breathes, it doesn't flash. Motion celebrates growth only — downward state changes
 are silent.
 
-Tier names here are the component vocabulary (`SkillNode`): **locked · available · active
-(the ember) · complete**. The renderer's enum names the same four tiers
-`unavailable / available / inprogress / activated` (`web/src/products/roadmap/theme.js`).
+Tier names follow the component vocabulary (`SkillNode`): **locked · available · complete**.
+The renderer maps them to unavailable, available and complete.
 
 ---
 
@@ -82,9 +81,6 @@ Two intensities, by the tier the node *lands on*:
 - **Crown** (root only): emphasized halo (radius ×1.35 + thin satellite ring at r+8px) that
   **breathes**: α .22↔.34, radius ±2px, period **2400ms** `--ease-glow`, infinite. The only
   infinite halo loop on the canvas. Other complete nodes wear a **static** halo (α .28).
-- **Ember** (active tier): the in-progress breath — same 2400ms clock and phase, amplitude
-  peaking *below* a resting halo, no ring offset. DOM: `wm-ember`. A wide field of embers
-  freezes at mid-breath past a small concurrent cap; frozen face = `--glow-ember`.
 - **Pulse** (finite attention beat): the same waveform at double-time — **1200ms/cycle × 2
   cycles, decaying** (peaks α .42/+3px, then .34/+1.5px), then rest. Marks the newly-available
   frontier after a ceremony. DOM: `wm-pulse-echo` (2400ms, once).
@@ -107,8 +103,7 @@ Two intensities, by the tier the node *lands on*:
   (one toast that sums them).
 - **≤24 nodes tweening concurrently.** A wider ring drops the blossom overshoot and
   plain-cross-fades instead.
-- **Exactly 1 infinite halo loop** in the scene: the crown. The ember's low-amplitude breath
-  (capped, shared clock) is the only other periodic motion; everything else is finite.
+- **Exactly 1 infinite halo loop** in the scene: the crown. Every other node animation is finite.
 - **Motion yields to interaction**: pointer-down / wheel / pinch / key-nav fast-forwards every
   running ceremony beat to its end state via a **150ms** fade. Toasts survive. Feedback motion
   never waits.
@@ -129,7 +124,6 @@ waveforms via the `uMotion` uniform; the JS timeline collapses to endpoint keyfr
 | camera ease | snap + 150ms fade-through; zero spatial interpolation |
 | toast | opacity fades only, no rise |
 | crown | frozen at mid-amplitude (α .28 — exactly a standard halo) |
-| ember | frozen at mid-breath (static face: `--glow-ember`) |
 | pulse ×2 | **skip** entirely |
 | cascade | one simultaneous 280ms cross-fade, no stagger |
 | feedback: hover/press scale | skip scale; keep ring/colour change + tooltip |

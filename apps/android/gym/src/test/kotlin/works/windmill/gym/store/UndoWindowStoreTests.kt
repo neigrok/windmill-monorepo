@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.Account
@@ -24,6 +25,7 @@ class UndoWindowStoreTests {
     val tmp = TemporaryFolder()
 
     private var clockMs = 1_000L
+    private var nextSetId = 0
     private lateinit var queueFile: File
     private lateinit var catalogFile: File
     private lateinit var localFile: File
@@ -32,6 +34,7 @@ class UndoWindowStoreTests {
     @Before
     fun setUp() {
         clockMs = 1_000
+        nextSetId = 0
         queueFile = File(tmp.root, "gym-undo-${System.nanoTime()}.json")
         catalogFile = File(tmp.root, "gym-undo-catalog-${System.nanoTime()}.json")
         localFile = File(tmp.root, "gym-undo-local-${System.nanoTime()}.json")
@@ -49,7 +52,7 @@ class UndoWindowStoreTests {
         scope = backgroundScope,
         now = { clockMs },
         mintSession = { "ses_1" },
-        mintSet = { "set_$clockMs" },
+        mintSet = { "set_${++nextSetId}" },
         sync = { server },
     )
 
@@ -192,7 +195,7 @@ class UndoWindowStoreTests {
     }
 
     @Test
-    fun testAReadOfTheLogSendsWhatIsHeldFirst() = runTest {
+    fun testAReadOfTheLogPreservesTheOriginalUndoDeadlineBeforeSendingTheSet() = runTest {
         val server = FakeTraining()
         val store = liveStore(server)
         store.logSet(weightKg = 82.5, reps = 5)
@@ -202,7 +205,23 @@ class UndoWindowStoreTests {
             api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
             user = User(id = "u1", email = "sam@example.com", name = "Sam")))
 
-        assertEquals(listOf(82.5), server.appended.map { it.weightKg })
-        assertEquals("and the first store still draws the workout it held", 1, store.sets.size)
+        val original = TrainingSet("set_2", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 1_000)
+        assertEquals(listOf(original), relaunched.sets)
+        assertEquals(original, relaunched.undoable)
+        assertEquals(emptyList<SetWrite>(), server.appended)
+
+        clockMs += SetQueue.undoWindowMs - 1
+        relaunched.flushPendingSets()
+        assertEquals(original, relaunched.undoable)
+        assertEquals(emptyList<SetWrite>(), server.appended)
+        assertEquals(listOf(original), onDisk().pending.map { it.set })
+
+        clockMs += 1
+        relaunched.flushPendingSets()
+        assertEquals(listOf(SetWrite(original)), server.appended)
+        assertEquals(listOf(original.copy(setNumber = 1)), relaunched.sets)
+        assertNull(relaunched.undoable)
+        assertEquals(emptyList<SetQueue.Entry>(), onDisk().pending)
+        assertEquals("and the first store still draws the workout it held", listOf(original), store.sets)
     }
 }

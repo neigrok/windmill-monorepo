@@ -1,163 +1,62 @@
 package works.windmill.gym.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Record
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
-// A sheet of the platform's: back, the scrim and the drag handle put it down and change nothing, so
-// no Cancel is drawn beside Rename.
 @Composable
 fun RenameSheet(
     title: String,
     from: String,
     value: String,
-    proof: List<Record.Proof>,
+    keepsAlias: Boolean,
     refused: String?,
     onValue: (String) -> Unit,
     onRename: () -> Unit,
+    saving: Boolean = false,
 ) {
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
+    val skin = LocalGymColors.current
+    val problem = Program.nameProblem(value)
     val changed = Program.renamed(from, value) != null
-
-    LaunchedEffect(Unit) {
-        focus.requestFocus()
-        keyboard?.show()
-    }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(GymSkin.surface)
-            .imePadding()
-            .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = GymLayout.sheetBottom),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-    ) {
-        Text(title, style = WindmillFont.display(22), color = GymSkin.ink)
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { onValue(Program.capped(it)) },
-                singleLine = true,
-                isError = refused != null,
-                textStyle = WindmillFont.body(19),
+    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp)) {
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(title, style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink)
+            Text("Name", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            OutlinedTextField(value, onValueChange = onValue, enabled = !saving,
+                singleLine = true, isError = refused != null || problem != null,
+                textStyle = WindmillFont.body(18).copy(lineHeight = 24.sp),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                shape = RoundedCornerShape(WindmillRadius.md),
-                colors = gymFieldColours(),
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = GymTap.minimum)
-                    .focusRequester(focus),
-            )
-            Program.counter(value)?.let { counted ->
-                Text(
-                    counted,
-                    style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
-                    modifier = Modifier.padding(start = WindmillSpace.x3),
-                )
-            }
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = skin.raised,
+                    unfocusedContainerColor = skin.raised, disabledContainerColor = skin.raised,
+                    focusedBorderColor = skin.accent, unfocusedBorderColor = Color.Transparent,
+                    focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, cursorColor = skin.accent),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp))
+            Program.counter(value)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+            (refused ?: problem)?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+            Text("Renames this movement everywhere.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+            Text("Your logged sets and records keep the same movement.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            if (keepsAlias) Text("Old name: $from\nSearchable as an alias.",
+                style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
         }
-
-        refused?.let { Text(it, style = GymType.numeral(12), color = GymSkin.alarmInk) }
-
-        if (proof.isNotEmpty()) ProofBlock(proof)
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.primary)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (changed) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = changed, role = Role.Button, onClick = onRename),
-        ) {
-            Text(
-                "Rename",
-                style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (changed) GymSkin.onAccent else GymSkin.inkFaint,
-            )
-        }
-    }
-}
-
-// The proof's label column; the same width as iOS, so the two phones' receipts line up.
-private val proofLabel = 80.dp
-
-@Composable
-private fun ProofBlock(proof: List<Record.Proof>) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        ) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = GymSkin.setDone,
-                modifier = Modifier.size(15.dp),
-            )
-            Text(
-                "Everything follows the name",
-                style = WindmillFont.body(14, FontWeight.SemiBold),
-                color = GymSkin.ink,
-            )
-        }
-        proof.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-                Text(
-                    row.label,
-                    style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
-                    color = GymSkin.inkFaint,
-                    modifier = Modifier.width(proofLabel),
-                )
-                Text(row.value, style = GymType.numeral(12), color = GymSkin.inkDim)
-                Spacer(Modifier.weight(1f))
+        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+            androidx.compose.material3.Button(onClick = onRename, enabled = changed && problem == null && !saving,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp)) {
+                Text(if (saving) "Renaming…" else "Rename", style = WindmillFont.body(16, FontWeight.Bold))
             }
         }
     }

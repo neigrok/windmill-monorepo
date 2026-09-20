@@ -1,39 +1,64 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import android.Manifest
+import android.app.Activity
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.gym.notification.WorkoutNotifications
+import works.windmill.gym.domain.WorkoutChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.ConnectedLogState
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
@@ -41,11 +66,11 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// Every row writes on the tap: no Save button and no dirty state.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -56,12 +81,17 @@ fun SettingsScreen(
     onNotes: () -> Unit,
     onConnectedLog: () -> Unit,
     say: (String?) -> Unit,
+    accountEmail: String? = null,
+    onAccount: () -> Unit = {},
+    onClaimSignIn: (String) -> Unit = {},
+    notifications: WorkoutNotifications? = null,
 ) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
+    var restOpen by rememberSaveable { mutableStateOf(false) }
+    val workout by store.notification.collectAsState()
 
-    // The connected-log row prints the state, so it is asked for on the way in and again whenever
-    // the store drops the seat's answer; the store reads only while it holds none.
     LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
     ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
 
@@ -72,98 +102,215 @@ fun SettingsScreen(
         }
     }
 
-    GymScreen(title = "Settings", onBack = onBack, backTo = backTo) {
+    GymScreen(title = "Gym settings", onBack = onBack, backTo = backTo) {
         Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
-            verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            Text("At the rack", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp),
+                color = skin.inkDim)
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-            ConfirmRow(
-                preferences = preferences,
-                onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
-                onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
-            )
-            NotesRow(onNotes)
-            ConnectedLogRow(store.connectedLog, onConnectedLog)
-            UnattributedRow(store, isSignedIn, say)
-            ClosingNote()
+            SettingsRow("Rest timer", preferences.restSeconds?.let { Readout.clock(it * 1000L) } ?: "Off") {
+                restOpen = true
+            }
+            if (workout?.hidden == true) {
+                SettingsRow("Workout hidden", "Show workout") {
+                    val key = workout?.key ?: return@SettingsRow
+                    val result = store.showWorkout(key, false)
+                    if (result is WorkoutChange.Unavailable) say(result.reason)
+                }
+                Text("Rest alerts are paused for this workout.", style = WindmillFont.body(14), color = skin.inkDim)
+            }
+            store.workoutFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+            HorizontalDivider(color = skin.line)
+            SettingsRow(Notes.title, "what you write for Coach", onNotes)
+            SettingsRow(ConnectedLog.title, store.connectedLog.settingsMeta, onConnectedLog)
+            HorizontalDivider(color = skin.line)
+            SettingsRow("Account", accountEmail ?: "Not signed in", onAccount)
+            store.consentFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+            UnattributedRow(store, isSignedIn, say, onClaimSignIn)
         }
+    }
+    if (restOpen) {
+        RestTimerSheet(
+            seconds = preferences.restSeconds,
+            alerts = {
+                if (notifications != null && (store.planEntry?.restSeconds ?: preferences.restSeconds ?: 0) > 0) {
+                    RestAlerts(store, notifications, say)
+                }
+            },
+            onDismiss = { restOpen = false },
+            onSave = {
+                write(preferences.copy(restSeconds = it))
+                restOpen = false
+            },
+        )
     }
 }
 
-// A display transform only: storage is kilograms and nothing this toggle does reaches a write.
 @Composable
 private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
-    SettingCard {
-        Text("Units", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-        GymSegmented(
-            options = Units.entries.map { it to it.wire },
-            picked = units,
-            onPick = onPick,
-        )
-        // Drawn only under the answer it is about: on kg it would be a sentence about nothing.
+    val skin = LocalGymColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Units", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                color = skin.ink, modifier = Modifier.weight(1f))
+            Row(
+                Modifier.width(152.dp).clip(CircleShape).background(skin.raised)
+                    .selectableGroup().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Units.entries.forEach { option ->
+                    val selected = option == units
+                    Box(
+                        Modifier.weight(1f).heightIn(min = 48.dp).clip(CircleShape)
+                            .background(if (selected) skin.surface else Color.Transparent)
+                            .selectable(selected, role = Role.RadioButton, onClick = { onPick(option) }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(option.wire, style = WindmillFont.body(16, FontWeight.Bold),
+                            color = if (selected) skin.ink else skin.inkDim)
+                    }
+                }
+            }
+        }
         if (units == Units.Pounds) Caption(Bodyweight.kilogramsOnly)
     }
 }
 
 @Composable
-private fun ConfirmRow(
-    preferences: GymPreferences,
-    onToggleHaptic: () -> Unit,
-    onToggleSound: () -> Unit,
-) {
-    SettingCard {
-        Text("Set confirmation", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-        // The switch can be on and the phone still silent: Compose's haptics go through Android's
-        // own touch-feedback setting. Said on the row it qualifies.
-        ToggleLine("Haptic", preferences.confirmHaptic, onToggleHaptic,
-            supporting = "Silenced if Android’s touch feedback is off.")
-        ToggleLine("Sound", preferences.confirmSound, onToggleSound)
+private fun SettingsRow(title: String, meta: String, onOpen: () -> Unit) {
+    val skin = LocalGymColors.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 70.dp).clickable(role = Role.Button, onClick = onOpen)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+            Text(meta, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+        }
+        Chevron()
     }
 }
 
-// The secondary door to the notes; the front door is a row in Coach's own room.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NotesRow(onNotes: () -> Unit) {
-    SettingCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClick = onNotes),
+private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) -> Unit, alerts: @Composable () -> Unit = {}) {
+    val skin = LocalGymColors.current
+    var text by rememberSaveable { mutableStateOf(seconds?.toString().orEmpty()) }
+    val value = text.toIntOrNull()
+    val valid = value != null && value in 15..900
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = skin.surface,
+        scrimColor = skin.scrim,
+    ) {
+            WindmillSheetWindow()
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-                Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-                Caption(Notes.sub)
+            Text("Rest timer", style = WindmillFont.display(24), color = skin.ink)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Seconds") },
+                supportingText = { Text("15–900 seconds") },
+                isError = text.isNotEmpty() && !valid,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                colors = gymFieldColours(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            alerts()
+            Button(
+                onClick = { onSave(value) }, enabled = valid,
+                shape = RoundedCornerShape(WindmillRadius.lg),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            ) { Text("Save", style = WindmillFont.body(16, FontWeight.Bold)) }
+            TextButton(onClick = { onSave(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Turn off", style = WindmillFont.body(16, FontWeight.Bold))
             }
-            Chevron()
         }
     }
 }
 
-// The door to the connected-log screen. Its meta is the state and nothing else: the screen behind
-// it is where the words are.
 @Composable
-private fun ConnectedLogRow(state: ConnectedLogState, onOpen: () -> Unit) {
-    SettingCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClick = onOpen),
-        ) {
-            Text(ConnectedLog.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            Text(state.settingsMeta, style = GymType.numeral(13), color = GymSkin.accent)
-            Chevron()
+private fun RestAlerts(store: TrainingStore, notifications: WorkoutNotifications, say: (String?) -> Unit) {
+    val telemetry = LocalTelemetry.current
+    val context = LocalContext.current
+    val skin = LocalGymColors.current
+    val scope = rememberCoroutineScope()
+    val capabilities by notifications.capabilities.collectAsState()
+    val prompt = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
+    var explainAlarm by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    val enabled = store.preferences.restSound
+    val gates = capabilities
+    val posting = gates?.let { it.postGranted && it.appEnabled && it.channelEnabled } == true
+    val state = when {
+        !enabled -> "Off"
+        !posting -> "Needs setup"
+        gates?.channelAudible != true -> "Muted"
+        gates.exactAlarms -> "On"
+        else -> "Needs setup"
+    }
+    fun settings(alarm: Boolean) {
+        try { context.startActivity(if (alarm) notifications.alarmSettings() else notifications.notificationSettings()) }
+        catch (error: Exception) {
+            telemetry.failure("gym.openAndroidSettings", error)
+            say("Android settings could not be opened.")
         }
     }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notifications.refreshCapabilities()
+        if (granted && notifications.capabilities.value?.exactAlarms != true) explainAlarm = true
+    }
+    fun setup() {
+        val current = notifications.capabilities.value ?: return
+        if (!current.postGranted && Build.VERSION.SDK_INT >= 33) {
+            val activity = context as? Activity
+            if (prompt.getBoolean("requested", false) && activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == false) {
+                settings(false)
+                return
+            }
+            prompt.edit().putBoolean("requested", true).apply()
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        if (!current.appEnabled || !current.channelEnabled || !current.channelAudible) { settings(false); return }
+        if (!current.exactAlarms) explainAlarm = true
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Rest alerts · $state", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+        Text("Uses your notification sound. Android may delay alerts while idle.",
+            style = WindmillFont.body(14), color = skin.inkDim)
+        TextButton(enabled = !busy && gates != null, onClick = {
+            if (!enabled || state == "On") {
+                busy = true
+                val owner = store.accountKey
+                scope.launch {
+                    try {
+                        store.savePreferences(store.preferences.copy(restSound = !enabled))?.let { say(it.line("that setting stayed on this device")) }
+                        if (store.accountKey == owner && store.preferences.restSound && !enabled) setup()
+                    } finally { busy = false }
+                }
+            } else setup()
+        }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(when { busy -> "Saving…"; !enabled -> "Enable"; state == "On" -> "Turn off alerts"; state == "Muted" -> "Sound settings"; else -> "Set up" })
+        }
+    }
+    if (explainAlarm) AlertDialog(onDismissRequest = { explainAlarm = false },
+        title = { Text("Allow rest alerts") },
+        text = { Text("Android needs alarm access to schedule a rest alert. Android may delay it while idle.") },
+        confirmButton = { TextButton(onClick = { explainAlarm = false; settings(true) }) { Text("Open settings") } },
+        dismissButton = { TextButton(onClick = { explainAlarm = false }) { Text("Not now") } })
 }
 
 // What this phone is holding for nobody: a shelf with no name on it, neither handed over nor deleted.
@@ -172,21 +319,24 @@ private fun ConnectedLogRow(state: ConnectedLogState, onOpen: () -> Unit) {
 // so a row left drawing would leave `These are mine` tappable over training a pending discard wipes
 // nine seconds later.
 @Composable
-private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit) {
+private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit, onSignIn: (String) -> Unit) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     if (Deletion.Unattributed.subjectId in store.withheldIds) return
     val held = store.unattributed ?: return
     val live = store.unattributedIsLive
-    if (held.sessions == 0 && held.routines == 0 && held.movements == 0 && !live) return
+    val batch = store.localDataBatch ?: return
 
     SettingCard {
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
-            color = GymSkin.ink)
+            color = skin.ink)
         Caption("Logged before any sign-in. Nothing joins an account until you say it is yours.")
         Column(verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-            Text(heldLine(held, live), style = GymType.numeral(13), color = GymSkin.inkDim)
+            Text((listOf(heldLine(held, live)).filter { it.isNotEmpty() } +
+                listOfNotNull(batch.weighIns.takeIf { it > 0 }?.let { count(it, "weigh-in") },
+                    "Settings".takeIf { batch.preferences > 0 })).joinToString(" · "), style = GymType.numeral(13), color = skin.inkDim)
             held.days.take(4).forEach {
-                Text(Readout.date(it), style = GymType.numeral(12), color = GymSkin.inkFaint)
+                Text(Readout.date(it), style = GymType.numeral(12), color = skin.inkDim)
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
@@ -195,24 +345,25 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .weight(1f)
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(if (isSignedIn) GymSkin.accent else GymSkin.canvas)
-                    .clickable(role = Role.Button) {
+                    .background(if (isSignedIn) skin.accent else skin.canvas)
+                    .clickable(enabled = !store.claimBusy, role = Role.Button) {
                         scope.launch {
                             say(null)
-                            store.releaseUnattributed()?.let { say(it) }
+                            if (isSignedIn) store.releaseUnattributed()?.let { say(it) }
+                            else store.requestClaimSignIn()?.let(onSignIn)
                         }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text("These are mine", style = GymType.numeral(13, FontWeight.Bold),
-                    color = if (isSignedIn) GymSkin.onAccent else GymSkin.inkFaint)
+                Text(if (store.claimBusy) "Adding…" else "These are mine", style = GymType.numeral(13, FontWeight.Bold),
+                    color = if (isSignedIn) skin.onAccent else skin.inkDim)
             }
             Box(
                 Modifier
                     .weight(1f)
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                    .border(1.dp, skin.lineStrong, RoundedCornerShape(WindmillRadius.md))
                     // One tap, nothing sent, and nine seconds of Undo on the room's transient. The
                     // arm-and-relabel it replaces had no cancel and no timeout: once armed, the only
                     // resets were leaving the screen or tapping the button that CLAIMS the shelf.
@@ -225,14 +376,13 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                 Text(
                     "Not mine",
                     style = GymType.numeral(13, FontWeight.Bold),
-                    color = GymSkin.inkDim,
+                    color = skin.inkDim,
                 )
             }
         }
         Caption(
             if (isSignedIn) "Claiming adds it to the account you are signed in as."
-            else "Sign in first to claim it. Nobody signed in can say whose training this is, " +
-                "and it will not be handed to the next account on its own.")
+            else "These are mine opens sign-in for this local training.")
     }
 }
 
@@ -249,26 +399,14 @@ private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
 private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 @Composable
-private fun ClosingNote() {
-    Text(
-        "Account, appearance, plan, sessions, devices and delete live in You.",
-        style = GymType.numeral(12).copy(lineHeight = 18.sp),
-        color = GymSkin.inkFaint,
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-            .padding(WindmillSpace.x3),
-    )
-}
-
-@Composable
 private fun SettingCard(content: @Composable () -> Unit) {
+    val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
+            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, skin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(GymLayout.cardInset),
     ) {
         content()
@@ -277,35 +415,6 @@ private fun SettingCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun Caption(line: String) {
-    Text(line, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
-}
-
-// The platform's switch, so TalkBack reads a switch with a state rather than a coloured box.
-@Composable
-private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit, supporting: String? = null) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .toggleable(value = on, role = Role.Switch, onValueChange = { onToggle() }),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GymLayout.pair)) {
-            Text(label, style = WindmillFont.body(14), color = GymSkin.inkDim)
-            supporting?.let { Caption(it) }
-        }
-        Switch(
-            checked = on,
-            // The row owns the tap, so the switch is drawn rather than separately reachable.
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = GymSkin.onAccent,
-                checkedTrackColor = GymSkin.accent,
-                checkedBorderColor = GymSkin.accent,
-                uncheckedThumbColor = GymSkin.inkFaint,
-                uncheckedTrackColor = GymSkin.canvas,
-                uncheckedBorderColor = GymSkin.lineStrong,
-            ),
-        )
-    }
+    val skin = LocalGymColors.current
+    Text(line, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
 }

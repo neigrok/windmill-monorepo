@@ -124,7 +124,7 @@ TEST(mcp_nodeId_is_canonical_and_the_legacy_id_is_still_accepted) {
   ToolResult marked = h.call("set_progress", legacyMark);
   CHECK_FALSE(marked.isError);
   CHECK_EQ(body(marked)["nodeId"].asString(), std::string("a"));
-  CHECK_EQ(body(marked)["status"].asString(), std::string("active"));
+  CHECK_EQ(body(marked)["status"].asString(), std::string("none"));
 }
 
 TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
@@ -291,7 +291,7 @@ TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
   ToolResult badStatus = h.call("set_progress", status);
   CHECK(badStatus.isError);
   CHECK_EQ(message(badStatus),
-           std::string("set_progress: status \"finished\" is not one of {active, complete, none}"));
+           std::string("set_progress: status \"finished\" is not one of {complete, none}"));
 
   Json::Value updates(Json::arrayValue);
   updates.append(mark("a", "finished"));
@@ -301,7 +301,7 @@ TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
   CHECK(badRow.isError);
   CHECK_EQ(message(badRow),
            std::string("set_progress: updates[0].status \"finished\" is not one of "
-                       "{active, complete, none}"));
+                       "{complete, none}"));
 
   Json::Value color(Json::objectValue);
   color["nodeId"] = "a";
@@ -395,14 +395,14 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("import_subgraph: nodes[0].seedStatus \"shipped\" is not one of "
-                       "{active, complete, none}"));
+                       "{complete, none}"));
 
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
   const Json::Value& carried = (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"];
-  REQUIRE_EQ(carried["seedStatus"]["enum"].size(), 3u);
-  CHECK_EQ(carried["seedStatus"]["enum"][0].asString(), std::string("active"));
+  REQUIRE_EQ(carried["seedStatus"]["enum"].size(), 2u);
+  CHECK_EQ(carried["seedStatus"]["enum"][0].asString(), std::string("complete"));
   CHECK_FALSE(carried.isMember("status"));
 }
 

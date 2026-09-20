@@ -1,239 +1,217 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Menu } from '../../../design-system/index.js';
+import { ImagePlus, Square } from 'lucide-react';
+import { CoachPhoto } from './CoachPhoto.jsx';
 import { gymApi } from '../gymApi.js';
-import { NOTES_HREF, proposalHref, THREADS_HREF } from '../log.js';
-import { mintId } from '../mint.js';
+import { COACH_HREF, NOTES_HREF, proposalHref, routineHref, THREADS_HREF } from '../log.js';
 import {
   CARD_ROW_CAP, CARD_ROW_KINDS, countedLabel, diffRows, isPending, moreRowsLabel, receiptLine,
   stateChip, STILL_WAITING, summaryLine,
 } from '../proposals.js';
 import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
-import {
-  ALLOWANCE_LINE, answerTurn, askFailure, COACH_PLACEHOLDER, COACH_TERMS, COACH_TITLE, FIX_IS_YOURS,
-  FREE_DOOR_LINE, FREE_DOOR_VERB, MID_SESSION_NOTE, NO_ANSWER_NOTE, NOTES_DOOR, PROPOSAL_NOTE,
-  questionTooLong, readLine, stepsLine, THREAD_FULL_NOTE, THREAD_PREFIX, threadFull, TOO_LONG_NOTE,
-} from './coach.js';
-import { NEW_THREAD_VERB, THREADS_TITLE } from './threads.js';
+import { COACH_PLACEHOLDER, COACH_TITLE, MID_SESSION_NOTE, PROPOSAL_NOTE, readLine, stepsLine } from './coach.js';
+import { forgetCoachDraft, useCoachConversation } from './useCoachConversation.js';
 
-// A tab root: no back link. Threads and one conversation are pushed screens under it.
-export function CoachRoom({ log }) {
-  // turns: { from: 'lifter' | 'ask', text, steps?, read?, proposals? } — `from` is the wire's enum.
-  const [turns, setTurns] = useState([]);
-  const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));
-  const [draft, setDraft] = useState('');
-  const [asking, setAsking] = useState(false);
-  const [note, setNote] = useState('');
-  const [closed, setClosed] = useState('');
-  const [refusedFull, setRefusedFull] = useState(false);
-  // Null, or the cap-reached state with the sentence the server sent for it: BOTH 429s land here,
-  // and the state says whichever ceiling was hit rather than a constant of its own.
-  const [capped, setCapped] = useState(null);
+export function CoachRoom({ log, accountId, initialThread }) {
+  const conversation = useCoachConversation({ accountId, initialThread });
+  const reading = useRef(null);
+  const follow = useRef(true);
+  const [latest, setLatest] = useState(false);
+  useEffect(() => {
+    if (follow.current && reading.current) reading.current.scrollTop = reading.current.scrollHeight;
+    else if (conversation.turns.length) setLatest(true);
+  }, [conversation.turns]);
 
-  const ask = async () => {
-    const question = draft.trim();
-    if (question === '' || asking) return;
-    // The cap is bytes; the field counts characters.
-    if (questionTooLong(question)) {
-      setNote(TOO_LONG_NOTE);
+  const newChat = () => {
+    if (conversation.busy || conversation.pending || conversation.photoBusy || conversation.photo?.status === 'uploading') {
+      log.say('Stop the current response or cancel the upload before starting a new chat.');
       return;
     }
-    setTurns((held) => [...held, { from: 'lifter', text: question }]);
-    setDraft('');
-    setNote('');
-    setAsking(true);
-    try {
-      const reply = await gymApi.ask(threadId, question);
-      const answer = answerTurn(reply);
-      if (answer) setTurns((held) => [...held, answer]);
-      else setNote(NO_ANSWER_NOTE);
-    } catch (error) {
-      const failure = askFailure(error);
-      // The server stored nothing of a refused question: it is not a turn of the conversation, and
-      // the words return to the composer for the next conversation.
-      if (failure.refused) { setTurns((held) => held.slice(0, -1)); setDraft(question); }
-      if (failure.fresh) setThreadId(mintId(THREAD_PREFIX));
-      if (failure.full) setRefusedFull(true);
-      else if (failure.capped) setCapped({ note: failure.note, ceiling: Boolean(failure.ceiling) });
-      else if (failure.gone) setClosed(failure.note);
-      else setNote(failure.note);
-    }
-    setAsking(false);
+    if (initialThread) {
+      forgetCoachDraft(accountId);
+      window.location.hash = COACH_HREF;
+    } else conversation.newChat();
   };
 
   return (
     <section className="gym-coach">
       <header className="gym-coach-head">
-        <div className="gym-coach-titles">
-          <h1 className="gym-title">{COACH_TITLE}</h1>
-          <p className="gym-coach-terms">{COACH_TERMS}</p>
-        </div>
-        {/* The two doors under the coach, side by side in the head: the notes are the lifter's own. */}
+        <h1 className="gym-title">{COACH_TITLE}</h1>
         <nav className="gym-coach-doors" aria-label="Coach">
-          <a className="gym-coach-notes-door" href={NOTES_HREF}>{NOTES_DOOR} ›</a>
-          <a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>
+          <a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>
+          <Menu label="More Coach options" items={[
+            { label: 'Notes', run: () => { window.location.hash = NOTES_HREF; } },
+            { label: 'Connected log', run: () => { window.location.href = '/app/connect'; } },
+            { label: 'Account', run: () => { window.location.hash = '#/settings'; } },
+            ...(conversation.turns.length || initialThread || conversation.closed ? [{ label: 'New chat', run: newChat }] : []),
+          ]} />
         </nav>
       </header>
-
-      <CoachBody
-        log={log}
-        turns={turns}
-        asking={asking}
-        note={note}
-        closed={closed}
-        capped={capped}
-        draft={draft}
-        setDraft={setDraft}
-        onAsk={ask}
-        refusedFull={refusedFull}
-        onStartAgain={() => {
-          setTurns([]); setNote(''); setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));
-        }}
-      />
-    </section>
-  );
-}
-
-function CoachBody({ log, turns, asking, note, closed, capped, draft, setDraft, onAsk, onStartAgain, refusedFull }) {
-  if (log.phase === 'loading') return <p className="gym-quiet">Opening the log…</p>;
-
-  if (log.session) {
-    return (
-      <>
-        <p className="gym-coach-closed">{MID_SESSION_NOTE}</p>
-        <p className="gym-coach-note">Your workout is on your phone. This room is here when it is over.</p>
-      </>
-    );
-  }
-
-  const full = refusedFull || threadFull(turns);
-
-  return (
-    <>
-      {turns.length === 0 && <FreeDoor />}
-
-      {turns.length > 0 && (
+      <div className="gym-coach-reading" ref={reading} onScroll={() => {
+        const element = reading.current;
+        if (!element) return;
+        follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+        if (follow.current) setLatest(false);
+      }}>
+        {conversation.nextCursor && <button type="button" className="gym-coach-older"
+          disabled={conversation.olderBusy} onClick={async () => {
+            const element = reading.current;
+            const height = element?.scrollHeight ?? 0;
+            follow.current = false;
+            await conversation.older();
+            requestAnimationFrame(() => { if (element) element.scrollTop += element.scrollHeight - height; });
+          }}>{conversation.olderBusy ? 'Loading…' : 'Earlier messages'}</button>}
+        {conversation.olderNote && <p className="gym-coach-note" role="status">{conversation.olderNote}</p>}
         <ol className="gym-coach-thread">
-          {turns.map((turn, index) => (
-            <li
-              className={turn.from === 'lifter' ? 'gym-coach-turn is-lifter' : 'gym-coach-turn is-coach'}
-              key={`${turn.from}-${index}`}
-            >
-              {turn.from === 'lifter' ? (
-                <p className="gym-coach-text">{turn.text}</p>
-              ) : (
-                <Answer turn={turn} log={log} />
-              )}
-            </li>
-          ))}
+          {conversation.turns.map((turn, index) => <CoachMessage key={`${turn.position ?? turn.requestId ?? index}-${turn.from}`}
+            turn={turn} log={log} accountId={accountId} thread={conversation.thread} onRetry={conversation.send} busy={conversation.busy || conversation.pending} />)}
         </ol>
-      )}
-
-      {asking && <p className="gym-coach-note" role="status">Reading your log…</p>}
-      {note && <p className="gym-coach-note">{note}</p>}
-
-      {closed && <p className="gym-coach-closed">{closed}</p>}
-
-      {/* The promise sits immediately above whatever holds the composer's place — except under the
-          account's 30-day ceiling, where ten a day is not the rule that stopped the question and a
-          promise standing on top of the sentence refusing it would be the one lie in the room. */}
-      {!closed && !capped?.ceiling && <p className="gym-coach-allowance">{ALLOWANCE_LINE}</p>}
-
-      {!closed && full && (
-        <div className="gym-coach-full">
-          <p className="gym-coach-note">{THREAD_FULL_NOTE}</p>
-          <button type="button" className="gym-coach-again" onClick={onStartAgain}>Start a new one</button>
-        </div>
-      )}
-
-      {!closed && !full && capped && <CapReached capped={capped} onStartAgain={onStartAgain} />}
-
-      {!closed && !full && !capped && (
-        <div className="gym-coach-compose">
-          <textarea
-            className="gym-coach-input"
-            value={draft}
-            rows={2}
-            maxLength={1000}
-            placeholder={COACH_PLACEHOLDER}
-            aria-label={COACH_PLACEHOLDER}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); onAsk(); }
-            }}
-          />
-          <button
-            type="button"
-            className={draft.trim() === '' || asking ? 'gym-coach-send is-inert' : 'gym-coach-send'}
-            onClick={onAsk}
-            aria-busy={asking}
-            aria-label="Send"
-          >
-            {asking ? '…' : '↑'}
-          </button>
-        </div>
-      )}
-
-      {!closed && (
-        <p className="gym-coach-hand-back">
-          {FIX_IS_YOURS}
-          <a className="gym-coach-hand-back-door" href="#/gym/log">Open the log ›</a>
-        </p>
-      )}
-    </>
-  );
-}
-
-function FreeDoor() {
-  return (
-    <section className="gym-coach-empty">
-      <p className="gym-coach-free">{FREE_DOOR_LINE}</p>
-      <a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>
+      </div>
+      {latest && <button type="button" className="gym-coach-latest" onClick={() => {
+        follow.current = true; setLatest(false);
+        if (reading.current) reading.current.scrollTop = reading.current.scrollHeight;
+      }}>Jump to latest</button>}
+      <div className="gym-coach-bottom">
+        <CoachBody log={log} accountId={accountId} conversation={conversation} onNewChat={newChat} />
+      </div>
     </section>
   );
 }
 
-// The moment an allowance is spent, whichever one it was: the sentence the server sent for it, the
-// one door that is not rationed, and the way out of the conversation. Which of the two leads is the
-// ceiling's to decide, and it is decided on the CODE the refusal arrived with, never on the sentence
-// it printed. Under the day's ten a new conversation is the way back to the composer, so it leads.
-// Under the account's 30-day ceiling a new conversation cannot take a question either, so the
-// unrationed door leads and `Ask something new` goes quiet beneath it — a way out of this
-// conversation, and not a way to an answer.
-function CapReached({ capped, onStartAgain }) {
-  const door = <a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>;
-  const again = <button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>;
-  return (
-    <div className={capped.ceiling ? 'gym-coach-capped is-ceiling' : 'gym-coach-capped'} role="status">
-      <p className="gym-coach-closed">{capped.note}</p>
-      {capped.ceiling ? <>{door}{again}</> : <>{again}{door}</>}
-    </div>
-  );
+export function CoachBody({ log, accountId, conversation, onNewChat }) {
+  const picker = useRef(null);
+  const { phase, request, busy, pending, note, closed, draft, setDraft, send, stop, photo, photoBusy,
+    stopRequested, stopBusy, thread, selectPhoto, removePhoto, uploadPhoto, cancelUpload } = conversation;
+  const generating = busy || pending;
+  const photoUpload = photo?.status === 'uploading';
+  if (log.phase === 'loading' || phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
+  if (log.session) return <p className="gym-coach-closed">{MID_SESSION_NOTE}</p>;
+  return <>
+    {note && !(note === 'Response interrupted.' && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
+    {stopRequested && <p className="gym-coach-note" role="status">Stopping…</p>}
+    {closed === 'thread' && <button type="button" className="gym-coach-retry" onClick={onNewChat}>New chat</button>}
+    {closed === 'account' && <a className="gym-coach-proposal-door" href="#/settings">Open account</a>}
+    {!closed && <>
+      {photoBusy && <p className="gym-coach-note" role="status">Preparing photo…</p>}
+      {photo && <div className="gym-coach-photo-draft">
+        <CoachPhoto accountId={accountId} thread={thread} photo={photo} draft />
+        <div className="gym-coach-photo-actions">
+          {photoUpload ? <>
+            <progress aria-label="Photo upload" value={photo.progress ?? 0} max={1} />
+            <button type="button" className="gym-coach-retry" onClick={cancelUpload}>Cancel upload</button>
+          </> : <>
+            {photo.status === 'failed' && <>
+              <p className="gym-coach-note" role="status">Photo didn’t upload. {photo.note}</p>
+              <button type="button" className="gym-coach-retry" onClick={() => uploadPhoto()}>Retry upload</button>
+            </>}
+            {!request && <button type="button" className="gym-coach-retry" onClick={removePhoto}>Remove photo</button>}
+          </>}
+        </div>
+      </div>}
+      <div className="gym-coach-compose">
+        <input ref={picker} className="gym-visually-hidden" type="file" accept="image/*" tabIndex={-1}
+          aria-label="Choose a photo" onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) selectPhoto(file);
+          }} />
+        <button type="button" className="gym-coach-add-photo" aria-label="Add photo"
+          disabled={Boolean(request || photo || photoBusy)} onClick={() => picker.current?.click()}><ImagePlus size={20} aria-hidden="true" /></button>
+        <textarea className="gym-coach-input" value={draft} rows={2} maxLength={1000}
+          placeholder={COACH_PLACEHOLDER} aria-label={COACH_PLACEHOLDER}
+          readOnly={Boolean(request)} onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
+              event.preventDefault();
+              if (!generating && !photoUpload && !photoBusy) send();
+            }
+          }} />
+        <button type="button" className="gym-coach-send"
+          disabled={generating ? Boolean(stopBusy || stopRequested) : Boolean((!draft.trim() && !photo && !request) || photoUpload || photoBusy)}
+          onClick={() => generating ? stop() : send()} aria-label={generating ? 'Stop response' : request ? 'Retry' : 'Send'}>
+          {generating ? <Square size={18} aria-hidden="true" /> : request ? '↻' : '↑'}
+        </button>
+      </div>
+    </>}
+  </>;
 }
 
-// The receipt is the honesty mechanism and is always visible; the step list opens behind it.
-function Answer({ turn, log }) {
-  const steps = stepsLine(turn.steps);
-  return (
-    <>
-      <p className="gym-coach-text">{turn.text}</p>
-      {turn.proposals?.map((id) => <CoachProposal key={id} id={id} log={log} />)}
-      {steps === null ? (
-        <p className="gym-coach-read">{readLine(turn.read)}</p>
-      ) : (
-        <details className="gym-coach-trace">
-          <summary className="gym-coach-read">{readLine(turn.read)}</summary>
-          <p className="gym-coach-steps">{steps}</p>
-        </details>
-      )}
-    </>
-  );
+export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
+  const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState('');
+  const noticeTimer = useRef(null);
+  const hold = useRef(null);
+  const origin = useRef(null);
+  const box = useRef(null);
+  const copyButton = useRef(null);
+  const text = turn.text ?? '';
+  const clearHold = () => { clearTimeout(hold.current); hold.current = null; };
+  useEffect(() => () => { clearHold(); clearTimeout(noticeTimer.current); }, []);
+  useEffect(() => {
+    if (!open) return undefined;
+    copyButton.current?.focus();
+    const away = (event) => { if (!box.current?.contains(event.target)) setOpen(false); };
+    window.addEventListener('pointerdown', away);
+    return () => window.removeEventListener('pointerdown', away);
+  }, [open]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      clearTimeout(noticeTimer.current);
+      setNotice('Message copied.');
+      noticeTimer.current = setTimeout(() => setNotice(''), 2000);
+      setOpen(false);
+    } catch {
+      setNotice('Couldn’t copy. Select the message text and copy it.');
+    }
+  };
+  const receipt = turn.receipt ?? turn;
+  const read = readLine(receipt.read);
+  const steps = stepsLine(receipt.steps);
+  return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
+    {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
+    {text && <>
+      <p className="gym-coach-text" tabIndex={0}
+        onContextMenu={(event) => { event.preventDefault(); setOpen(true); }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          clearHold();
+          origin.current = { x: event.clientX, y: event.clientY };
+          hold.current = setTimeout(() => setOpen(true), 550);
+        }}
+        onPointerMove={(event) => {
+          if (origin.current && Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8) clearHold();
+        }} onPointerUp={clearHold} onPointerCancel={clearHold} onPointerLeave={clearHold}
+        onKeyDown={(event) => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault(); setOpen(true);
+          }
+          if (event.key === 'Escape') setOpen(false);
+        }}>{text}</p>
+      <button ref={copyButton} type="button" className="gym-coach-copy"
+        aria-label={`Copy ${turn.from === 'lifter' ? 'your' : 'Coach'} message`} onClick={copy}
+        onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); box.current?.querySelector('.gym-coach-text')?.focus(); } }}>Copy</button>
+    </>}
+    {turn.from !== 'lifter' && <>
+      {(receipt.proposals ?? []).map((id) => <CoachProposal key={id} id={id} log={log} />)}
+      {(turn.results ?? []).filter((result) => result.kind === 'routine-created').map((result) =>
+        <div key={result.operationId} className="gym-coach-result">
+          <span>Routine created · {result.routineName}</span>
+          <a href={routineHref(result.routineId)}>Open routine</a>
+        </div>)}
+      {read && (steps ? <details className="gym-coach-trace">
+        <summary className="gym-coach-read">{read}</summary><p className="gym-coach-steps">{steps}</p>
+      </details> : <p className="gym-coach-read">{read}</p>)}
+      {turn.status === 'stopped' && <p className="gym-coach-note">Response stopped.</p>}
+      {turn.status === 'failed' && <p className="gym-coach-note">Response interrupted.
+        {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>Retry</button>}
+      </p>}
+    </>}
+    <span className="gym-coach-copy-notice" role="status">{notice}</span>
+  </li>;
 }
 
-// The card: the summary it wrote, how much it is, a skim of what moved, one affordance, and after a
-// decision the receipt beneath it — derived from the server's reply, held only for this visit to the
-// room. The document is drawn once, in the dialog behind Review — and the door to it stands in every
-// state, because a card that counts rows it will not draw has to reach them. The counted phrase names
-// no routine: the kicker and the summary above it both do.
 function CoachProposal({ id, log }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
   const [reviewing, setReviewing] = useState(false);

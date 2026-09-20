@@ -18,8 +18,8 @@ constexpr std::size_t kMaxNotes = 10;
 constexpr std::size_t kMaxNoteTitleChars = 60;   // code points, after trim; never empty
 constexpr std::size_t kMaxNoteBodyBytes = 500;   // UTF-8 bytes, after trim; may be empty
 
-// A note is a title and a body the lifter wrote FOR Coach, stored verbatim — nothing in this product
-// summarises what a lifter typed. `position` is precedence: the top note wins where two disagree.
+// Notes hold user instructions and useful user-provided insights saved by Coach.
+// `position` is precedence: the top note wins where two disagree.
 // Position and instant are the store's facts: an incoming write carries neither (both zero) and the
 // store answers with the row as it now stands.
 struct Note {

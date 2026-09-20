@@ -108,6 +108,34 @@ Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` in
 builder stage with no database beside it, so those cases are proven on a developer's machine and
 nowhere else. Run them before pushing a change to a Pg repository or the tables it reads.
 
+## Coach verification
+
+Tests and automation must not call a real LLM. Coach's committed adapter and service tests use
+deterministic model replies, SSE bytes and repository fixtures. They cover request construction,
+stream parsing, cancellation, receipts, owner isolation and retry persistence without provider
+credentials. From the repository root:
+
+```sh
+cmake --build backend/build -j4
+ctest --test-dir backend/build -R adapters --output-on-failure
+```
+
+Postgres cases additionally require `WM_PG_TEST=1` and an isolated `DATABASE_URL`, as described
+above. A local protocol fixture can exercise HTTP and proxy transport without calling a model;
+its replies do not establish actual-model quality or vision understanding.
+
+Actual-model exploration is manual and local only, when the user provides a local key. Use the
+normal local application and isolated account/data; do not turn that interaction into a test,
+scripted acceptance harness, CI job or deployment gate. Keep the key outside tracked files and
+record only the observations needed for review.
+
+Deployment verification checks image/endpoint/asset behavior without model calls. The deploy
+workflow retains normal production `ANTHROPIC_API_KEY` rendering so customer Coach requests keep
+their configured provider. Runtime stream diagnostics contain only HTTP status, numeric libcurl
+result, message-state flags, fixed parser/provider error categories and cancellation/callback flags.
+They do not retain raw bodies, prompts, thinking or credentials. An HTTP 200 can carry an SSE error;
+zero observed tokens on an interrupted call do not prove that the provider billed nothing.
+
 ## Roadmap tree endpoints
 
 The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys, reminders, the
@@ -121,7 +149,7 @@ share/gallery pages, and all of journal's and gym's routes, each in its product'
 | GET | `/v1/trees/:id` | → `{ seq, data, state, createdAt, visibility, mine }`. `data.kinds` is the legend, `state` the full CRDT state, `createdAt` the planting time in epoch ms — the week-N card counts from it, never the calendar week |
 | PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }`. Whole-document write; seeds the default legend on a new tree |
 | POST | `/v1/trees/:id/fork` | `{ id?, title? }` → `{ seq, data }`. Copies nodes, edges and kinds verbatim, progress cleared |
-| GET | `/v1/trees/:id/progress` | → `{ completed[], inProgress[], cleared[] }` — the **owner's** progress, not the caller's |
+| GET | `/v1/trees/:id/progress` | → `{ marks: [{ node, status, at, markedAt, outOfOrder? }] }` — the **owner's** progress, not the caller's |
 | GET | `/v1/trees/:id/diagnostics` | → `{ cycles[], dangling[], selfEdges[], smells[], maskedWork[] }` |
 | GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }`, a human feed from `tree_ops` |
 

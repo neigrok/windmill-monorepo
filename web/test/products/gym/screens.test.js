@@ -82,7 +82,7 @@ test('the live mirror heads the routines home and keeps its charter: no Finish, 
   assert.equal(mirror.includes('Not training now.'), true);
   assert.equal(mirror.includes('Workouts start on your phone.'), true);
   assert.equal(/[Ff]inish/.test(mirror), false, 'the mirror never offers a Finish');
-  assert.equal(mirror.includes('clockOf(now - session.startedAt)'), true, 'the clock counts up from the start');
+  assert.equal(mirror.includes('workoutClocks(session, sets, Date.now())'), true, 'the clock counts up from the start');
   assert.equal(mirror.includes('const [, setBeat] = useState(0);'), true, 'the beat is the mirror’s own state');
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;
@@ -133,10 +133,10 @@ test('the record page’s block heads do not take the finish screen’s gold cla
 
 test('the chat is one room in the frame, and no session screen carries one', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'coach' && <CoachRoom log={log} />}"), true);
+  assert.equal(app.includes("{screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}"), true);
   for (const file of gymFiles()) {
     const source = fs.readFileSync(file, 'utf8');
-    const mine = path.basename(file) === 'GymApp.jsx';
+    const mine = ['GymApp.jsx', 'Threads.jsx'].includes(path.basename(file));
     assert.equal(source.includes('<CoachRoom') && !mine, false, file);
     assert.equal(source.includes('CoachPanel'), false, file);
   }
@@ -152,59 +152,18 @@ test('Coach is a tab root: a column in the rail, no back link, its threads and n
   assert.equal((app.match(/active: screen === '[a-z]+'/g) ?? []).length, 3);
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('gym-back'), false, 'a tab root keeps no back link');
-  assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
-  // The notes door sits in the head beside the threads door — one band, two doors, the words unchanged.
+  assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
+  // History is visible; secondary destinations stay in More.
   const head = room.slice(room.indexOf('<header className="gym-coach-head">'), room.indexOf('</header>'));
-  assert.equal(head.includes('<a className="gym-coach-notes-door" href={NOTES_HREF}>{NOTES_DOOR} ›</a>'), true);
-  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
-  assert.equal((room.match(/gym-coach-notes-door/g) ?? []).length, 1, 'one door, and it is in the head');
+  assert.equal(head.includes("label: 'Notes'"), true);
+  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
+  assert.equal((head.match(/label: 'Notes'/g) ?? []).length, 1);
   assert.equal(/gym-coach-notes-verb|gym-coach-notes-go/.test(read('gym.css')), false);
-  assert.equal(room.includes('if (log.session) {'), true);
+  assert.equal(room.includes('if (log.session) return'), true);
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
   assert.equal(threads.includes('<Back href={THREADS_HREF}>{THREADS_TITLE}</Back>'), true);
   assert.equal(read('Proposals.jsx').includes('gym-coach-aside'), false, 'the review is a dialog over the room, with no door to another');
-});
-
-test('the allowance is the line above the composer, and the spent allowance replaces the composer with the door', () => {
-  const room = read('coach/CoachRoom.jsx');
-  const allowance = room.indexOf('<p className="gym-coach-allowance">{ALLOWANCE_LINE}</p>');
-  const composer = room.indexOf('<div className="gym-coach-compose">');
-  assert.ok(allowance > 0 && allowance < composer, 'the promise sits immediately above the composer');
-  // Except under the 30-day ceiling, where ten a day is not the rule that stopped the question.
-  assert.equal(room.includes("{!closed && !capped?.ceiling && <p className=\"gym-coach-allowance\">{ALLOWANCE_LINE}</p>}"), true);
-  assert.equal(room.includes('{!closed && !full && capped && <CapReached capped={capped} onStartAgain={onStartAgain} />}'), true);
-  assert.equal(room.includes('{!closed && !full && !capped && ('), true);
-  const moment = room.slice(room.indexOf('function CapReached'), room.indexOf('function Answer'));
-  // The state says the sentence it was GIVEN — both 429s land here and they do not say the same
-  // thing, so a constant of this room's own would be a lie under one of them.
-  assert.equal(moment.includes('{capped.note}'), true);
-  assert.equal(moment.includes('CAP_REACHED_NOTE'), false);
-  assert.equal(read('coach/CoachRoom.jsx').includes('CAP_REACHED_NOTE'), false, 'no constant left over the state');
-  assert.equal(moment.includes('href="/app/connect"'), true);
-  // Which door leads is the ceiling's to decide and is decided on the code, never on the sentence.
-  // Both orders are held against a rendered room in CoachRoom.test.js; this is the branch itself.
-  assert.equal(moment.includes('{capped.ceiling ? <>{door}{again}</> : <>{again}{door}</>}'), true);
-  assert.equal(moment.includes("capped.ceiling ? 'gym-coach-capped is-ceiling' : 'gym-coach-capped'"), true);
-  // And the ink on top of the order: the unrationed door is filled under the ceiling and the way out
-  // of the conversation goes quiet, so an empty rule would leave the two reading alike.
-  const css = read('gym.css');
-  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-free-door \{[^}]*background: var\(--color-brand\);/);
-  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-again \{[^}]*color: var\(--gym-ink-dim\);/);
-  // A quiet control still answers a pointer: the three-class rules above outrank `:hover`, so the
-  // ceiling variant states its own or both tap targets go inert.
-  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-free-door:hover \{/);
-  assert.match(css, /\.gym-coach-capped\.is-ceiling \.gym-coach-again:hover \{/);
-  // There is no clock: the way back is a new conversation, which returns the composer.
-  assert.equal(moment.includes('<button type="button" className="gym-coach-again" onClick={onStartAgain}>{NEW_THREAD_VERB}</button>'), true);
-  assert.equal(room.includes("setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));"), true);
-  assert.equal(room.includes('else if (failure.capped) setCapped({ note: failure.note, ceiling: Boolean(failure.ceiling) });'), true);
-  // The server stored nothing of a refused question, so it is not a turn of the conversation.
-  assert.equal(room.includes('if (failure.refused) { setTurns((held) => held.slice(0, -1)); setDraft(question); }'), true);
-  const allowanceRule = /\.gym-coach-allowance \{([^}]*)\}/.exec(css)?.[1] ?? '';
-  assert.equal(allowanceRule.includes('font-family'), false, 'a sentence is set in the body face, never mono');
-  assert.equal(allowanceRule.includes('color: var(--gym-ink-dim)'), true);
-  assert.equal(/\beight\b/.test(speech('coach/coach.js')), false, 'nothing a lifter reads says eight');
 });
 
 test('nothing on this surface computes the number an answer is checked against', () => {
@@ -218,19 +177,10 @@ test('nothing on this surface computes the number an answer is checked against',
   }
 });
 
-test('the room makes no answer of its own, so prose with no receipt never reaches the screen', () => {
-  const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('const answer = answerTurn(reply);'), true);
-  assert.equal(room.includes('if (answer) setTurns((held) => [...held, answer]);'), true);
-  assert.equal(room.includes('else setNote(NO_ANSWER_NOTE);'), true);
-  assert.equal(room.includes("from: 'ask',"), false);
-  assert.equal(speech('coach/coach.js').includes("from: 'ask',"), true);
-});
-
 test('the receipt is always visible and the step list collapses behind it', () => {
   const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('<summary className="gym-coach-read">{readLine(turn.read)}</summary>'), true);
-  assert.equal(room.includes('<p className="gym-coach-read">{readLine(turn.read)}</p>'), true, 'a list of nothing readable still draws the receipt');
+  assert.equal(room.includes('<summary className="gym-coach-read">{read}</summary>'), true);
+  assert.equal(room.includes('<p className="gym-coach-read">{read}</p>'), true, 'a list of nothing readable still draws the receipt');
   assert.equal(room.includes('<details className="gym-coach-trace">'), true);
   assert.equal(room.includes('<p className="gym-coach-steps">{steps}</p>'), true);
   assert.equal(room.includes('<details open'), false, 'the trace opens on a tap, never by default');
@@ -260,7 +210,6 @@ test('Coach offers nothing to buy, and reads no entitlement to decide whether to
     assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d/.test(said), false, file);
   }
   const rules = speech('coach/coach.js');
-  assert.equal(rules.includes('Ten questions a day, three back to back.'), true);
   assert.equal(rules.includes('AI ceiling for the last 30 days'), true);
 });
 
@@ -279,19 +228,10 @@ test('the landing sells no panel, no plan behind Coach, and names the cap Coach 
   assert.equal(said.includes('end a share link'), true);
 });
 
-test('an empty Coach contrasts the free door on scope, and walks to it', () => {
-  const said = speech('coach/coach.js');
-  assert.equal(said.includes('If you already use Claude or ChatGPT, connect them instead'), true);
-  assert.equal(said.includes('it knows the rest of your life'), true);
-  const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('{turns.length === 0 && <FreeDoor />}'), true);
-  assert.equal(room.includes('<a className="gym-coach-free-door" href="/app/connect">{FREE_DOOR_VERB}</a>'), true);
-});
-
 test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'threads' && <ThreadsList log={log} />}"), true);
-  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}"), true);
+  assert.equal(app.includes("{screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}"), true);
+  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}"), true);
   const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
   assert.equal(rooms?.[1], "'routines', 'log', 'coach'");
 });
@@ -299,9 +239,9 @@ test('the threads list and one conversation are rooms in the frame, and the deta
 test('a thread row draws the question as it was asked, and nothing edits it', () => {
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<span className="gym-thread-title">{thread.title}</span>'), true);
-  assert.equal(threads.includes('<h1 className="gym-thread-name">{thread.title}</h1>'), true);
+  assert.equal(threads.includes('<h2 className="gym-thread-name gym-visually-hidden">{thread.title}</h2>'), true);
   const said = speech('coach/Threads.jsx');
-  for (const edit of ['.slice(', '.substring(', '.toUpperCase(', '.trim()', 'summar', '…\'']) {
+  for (const edit of ['.slice(', '.substring(', '.toUpperCase(', '.trim()', 'summar']) {
     assert.equal(said.includes(edit), false, edit);
   }
 });
@@ -314,17 +254,7 @@ test('nothing about the threads screens is an unread count, a badge or a notific
     }
   }
   assert.equal(speech('coach/Threads.jsx').includes('Dot'), false);
-  assert.equal(read('coach/CoachRoom.jsx').includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
-});
-
-test('Coach writes into a thread it minted, and starting again opens a new one', () => {
-  const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));'), true);
-  assert.equal(room.includes('const reply = await gymApi.ask(threadId, question);'), true);
-  assert.equal(room.includes("setRefusedFull(false); setCapped(null); setThreadId(mintId(THREAD_PREFIX));"), true);
-  for (const file of gymFiles()) {
-    assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('threadFor'), false, file);
-  }
+  assert.equal(read('coach/CoachRoom.jsx').includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
 });
 
 test('deleting a conversation says what it leaves behind on the act, is withheld, and is neither armed nor confirmed', () => {
@@ -1305,19 +1235,6 @@ test('the review sheet: one Apply in a scroll-gated dialog, kept rows folded in 
   assert.equal(read('coach/CoachRoom.jsx').includes('<ReviewDoor head={proposal} onReview={() => setReviewing(true)} />'), true);
   const dialog = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Dialog.jsx'), 'utf8');
   assert.equal(dialog.includes("const gated = gate === 'scrolled';"), true);
-});
-
-test('the mirror’s rest label says where the target came from, once, and only when the routine entry set it', () => {
-  const mirror = speech('Mirror.jsx');
-  assert.equal(mirror.includes('restInForce(session, newest.exerciseId, restSeconds)'), true);
-  assert.equal(mirror.includes("`  ·  target ${restLabel(rest.seconds)}${rest.fromRoutine ? FROM_THE_ROUTINE : ''}`"), true);
-  assert.equal(speech('log.js').includes("export const FROM_THE_ROUTINE = ' · from the routine';"), true);
-  // Settings say nothing about the override: the timer carries the fact, and it is drawn once.
-  assert.equal(/from the routine|override|overrid/i.test(speech('settings/GymSettingsSection.jsx')), false);
-  for (const file of gymFiles()) {
-    if (!/\.(jsx?|css)$/.test(file) || file.endsWith('log.js')) continue;
-    assert.equal(fs.readFileSync(file, 'utf8').includes(' · from the routine'), false, `${file} spells the suffix itself`);
-  }
 });
 
 test('the finished session’s detail has the discard door, through the same window as every other delete; the live mirror has none', () => {

@@ -1,371 +1,197 @@
 package works.windmill.gym.ui
 
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import kotlin.math.min
+import java.time.ZoneId
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.MovementRecord
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.*
 import works.windmill.gym.domain.Record
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheetWindow
 
-// It RENDERS what `Record.page` decided; the one piece of arithmetic is where the bars STAND, in
-// `BarRow` rather than in the canvas. A rename moves a NAME and never an id.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit) {
+    val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = System.currentTimeMillis()
+    val nowMs = remember(exerciseId, store.progress?.asOf) { System.currentTimeMillis() }
+    val zone = ZoneId.systemDefault()
     var record by remember(exerciseId) { mutableStateOf<MovementRecord?>(null) }
     var failure by remember(exerciseId) { mutableStateOf<WriteFailure?>(null) }
     var asked by remember(exerciseId) { mutableIntStateOf(0) }
-    // Saveable: a half-typed name exists nowhere but here.
     var renaming by rememberSaveable(exerciseId) { mutableStateOf(false) }
     var draft by rememberSaveable(exerciseId) { mutableStateOf("") }
-    var refused by remember(exerciseId) { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // Compose fires no dismiss callback on a programmatic close, so nothing here waits for one.
+    var refused by rememberSaveable(exerciseId) { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { renaming = false }
+        if (saving || closing) return
+        closing = true
+        scope.launch {
+            try { sheetState.hide(); renaming = false; refused = null }
+            finally { closing = false }
+        }
     }
-
     LaunchedEffect(exerciseId, asked) {
         failure = null
-        when (val read = store.record(exerciseId)) {
-            is GymResult.Ok -> record = read.value
-            is GymResult.Failed -> failure = read.why
+        coroutineScope {
+            val data = async { store.loadProgress(force = asked > 0) }
+            when (val read = store.record(exerciseId)) {
+                is GymResult.Ok -> record = read.value
+                is GymResult.Failed -> failure = read.why
+            }
+            when (val read = data.await()) {
+                is GymResult.Ok -> Unit
+                is GymResult.Failed -> failure = read.why
+            }
         }
     }
-
-    GymScreen(
-        title = record?.exercise?.name ?: Readout.movement(exerciseId, store.catalog),
-        onBack = onBack,
-        backTo = backTo,
-        actions = {
-            if (record != null) {
-                TopAction("Rename") {
-                    refused = null
-                    draft = record?.exercise?.name.orEmpty()
-                    renaming = true
-                }
-            }
-        },
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = GymLayout.contentTop, bottom = GymLayout.scrollTail),
-        ) {
-            val read = record
-            val silent = failure
+    val progress = store.progress?.movement(exerciseId)
+    val ready = record != null && progress != null && failure == null && store.progressFailure == null
+    GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, store.catalog),
+        onBack = onBack, backTo = backTo,
+        actions = { if (ready) TopAction("Rename") { draft = record!!.exercise.name; refused = null; renaming = true } }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             when {
-                read != null -> Body(Record.page(read, nowMs))
-                silent != null -> Silence(silent.line("this movement isn’t drawn"), retry = { asked += 1 })
-                else -> Silence("reading your log…", retry = null)
+                failure != null || store.progressFailure != null -> {
+                    Text("Record unavailable", style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink)
+                    Text((failure ?: store.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = skin.inkDim)
+                    TextButton(onClick = { asked += 1 }) { Text("Try again") }
+                }
+                ready -> RecordBody(Record.page(record!!, nowMs, progress!!), progress, nowMs, zone)
+                else -> Text("Reading your log…", style = WindmillFont.body(16), color = skin.inkDim)
             }
         }
     }
-
     val read = record
     if (renaming && read != null) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                refused = null
-                close()
-            },
-            sheetState = sheetState,
-            containerColor = GymSkin.surface,
-        ) {
-            RenameSheet(
-                title = "Rename this movement",
-                from = read.exercise.name,
-                value = draft,
-                proof = Record.proof(read, aliased = store.renameKeepsAnAlias(exerciseId)),
-                refused = refused,
-                onValue = { draft = it },
-                onRename = {
-                    scope.launch {
-                        when (val written = store.rename(exerciseId, draft)) {
-                            is GymResult.Failed -> refused = written.why.line("that movement kept its name")
-                            is GymResult.Ok -> {
-                                close()
-                                // The movement THE LOG CONFIRMED goes onto the page at once and the
-                                // page is re-read behind it, in that order.
-                                record = record?.copy(exercise = written.value)
-                                asked += 1
+        ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+            containerColor = skin.surface, scrimColor = skin.scrim) {
+            WindmillSheetWindow()
+            WindmillSheetBack(onDismiss = { close() }) {
+                BackHandler(saving || closing) {}
+                RenameSheet("Rename movement", read.exercise.name, draft,
+                    store.renameKeepsAnAlias(exerciseId), refused,
+                    onValue = { if (!saving && !closing) { draft = it; refused = null } },
+                    onRename = {
+                        if (!saving && !closing) {
+                            saving = true
+                            scope.launch {
+                                try {
+                                    when (val result = store.rename(exerciseId, draft)) {
+                                        is GymResult.Failed -> refused = result.why.line("That movement kept its name.")
+                                        is GymResult.Ok -> {
+                                            record = read.copy(exercise = result.value)
+                                            saving = false
+                                            close()
+                                        }
+                                    }
+                                } finally { saving = false }
                             }
                         }
-                    }
-                },
-            )
+                    }, saving = saving || closing)
+            }
         }
     }
 }
 
 @Composable
-private fun Body(page: Record.Page) {
-    Text(page.subhead, style = GymType.numeral(12), color = GymSkin.inkFaint)
-
-    page.nothingYet?.let {
-        Text(
-            it,
-            style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-            color = GymSkin.inkDim,
-            modifier = Modifier.padding(top = WindmillSpace.x2),
-        )
-        return
-    }
-
+private fun RecordBody(page: Record.Page, progress: MovementProgress, nowMs: Long, zone: ZoneId) {
+    val skin = LocalGymColors.current
+    Text(page.subhead, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+    page.nothingYet?.let { Text(it, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim); return }
     if (page.tiles.isNotEmpty()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            page.tiles.forEach { tile -> MarkTile(tile, Modifier.weight(1f)) }
+        if (LocalDensity.current.fontScale >= 1.5f) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            page.tiles.forEach { RecordMetric(it, Modifier.fillMaxWidth()) }
+        } else Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            page.tiles.forEach { RecordMetric(it, Modifier.weight(1f)) }
         }
     }
-
-    page.chart?.let { ChartCard(it) }
-
-    // Said only where a number really is missing rather than undefined.
-    page.noEstimate?.let {
-        Text(
-            it,
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
-        )
-    }
-
-    if (page.records.isNotEmpty()) {
-        SectionHead("Personal records")
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            page.records.forEach { RecordRow(it) }
+    if (progress.estimates.isNotEmpty()) StrengthChart(progress, nowMs, zone)
+    page.noEstimate?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
+    if (page.records.size > 1) {
+        Text("Personal records", style = WindmillFont.body(18, FontWeight.Bold), color = skin.ink)
+        page.records.forEach { mark ->
+            Column(Modifier.fillMaxWidth().background(if (mark.standing) skin.prSoft else skin.surface,
+                RoundedCornerShape(12.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${mark.effort} · ${mark.estimate}", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                Text(mark.day, style = WindmillFont.body(14), color = skin.inkDim)
+            }
         }
     }
-
     if (page.days.isNotEmpty()) {
-        SectionHead("Recent sets")
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-            page.days.forEach { day ->
-                Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-                    Text(
-                        day.day,
-                        style = GymType.numeral(13),
-                        color = GymSkin.inkFaint,
-                        modifier = Modifier.width(WindmillSpace.x16),
-                    )
-                    Text(day.sets, style = GymType.numeral(13), color = GymSkin.ink)
-                }
+        Text("Recent sets", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp), color = skin.ink)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            page.days.forEach { day -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(day.day.replaceFirstChar { it.titlecase() }, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                Text(day.sets, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+            } }
+        }
+    }
+}
+
+@Composable
+private fun RecordMetric(tile: Record.Tile, modifier: Modifier) {
+    val skin = LocalGymColors.current
+    Column(modifier.heightIn(min = 136.dp).background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(tile.label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+        Text(tile.value, style = WindmillFont.display(40).copy(lineHeight = 56.sp), color = if (tile.loud) skin.prInk else skin.ink)
+        Text(tile.caption, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId) {
+    val skin = LocalGymColors.current
+    var all by rememberSaveable(progress.exerciseId) { mutableStateOf(false) }
+    val window = if (all) progress else progress.window(nowMs, zone)
+    var inspected by remember(window) { mutableStateOf<DatedPoint?>(null) }
+    val point = window.estimates.firstOrNull { it.id == inspected?.id } ?: window.latest
+    Column(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Estimated strength", style = WindmillFont.body(18, FontWeight.Bold), color = skin.ink)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf(false to "12 weeks", true to "All").forEach { (value, label) ->
+                SegmentedButton(selected = all == value, onClick = { all = value },
+                    shape = RoundedCornerShape(24.dp), icon = {}, border = androidx.compose.foundation.BorderStroke(0.dp, androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    colors = SegmentedButtonDefaults.colors(activeContainerColor = skin.raised, activeContentColor = skin.ink,
+                        inactiveContainerColor = androidx.compose.ui.graphics.Color.Transparent, inactiveContentColor = skin.ink),
+                    label = { Text(label, style = WindmillFont.body(14, FontWeight.Bold)) })
             }
         }
-    }
-}
-
-@Composable
-private fun MarkTile(tile: Record.Tile, modifier: Modifier) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = modifier
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
-    ) {
-        Text(
-            tile.label.uppercase(),
-            style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-            color = GymSkin.inkFaint,
-        )
-        Text(
-            tile.value,
-            style = WindmillFont.display(34),
-            color = if (tile.loud) GymSkin.prInk else GymSkin.ink,
-        )
-        Text(tile.caption, style = GymType.numeral(11), color = GymSkin.inkFaint)
-    }
-}
-
-@Composable
-private fun ChartCard(chart: Record.Chart) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .padding(GymLayout.cardInset),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "e1RM per session".uppercase(),
-                style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-                color = GymSkin.inkFaint,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(chart.window, style = GymType.numeral(11), color = GymSkin.inkFaint)
+        point?.let {
+            Text(progressReading(it, nowMs), style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp),
+                color = if (it.id == progress.best?.id) skin.prInk else skin.ink)
         }
-        Bars(chart.bars)
-        Row(
-            horizontalArrangement = if (chart.to == null) Arrangement.Center else Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(chart.from, style = GymType.numeral(10), color = GymSkin.inkFaint)
-            chart.to?.let { Text(it, style = GymType.numeral(10), color = GymSkin.inkFaint) }
-        }
-    }
-}
-
-// A bar has a width it may not exceed and one it may not fall under, at which point THE GAP GIVES
-// WAY; between the two the gap is exactly 6dp and the pitch is exactly slot + gap.
-internal object BarRow {
-    val gap = 6.dp
-    val widest = 28.dp
-    val narrowest = 1.5.dp
-
-    data class Slot(val width: Float, val pitch: Float, val first: Float)
-
-    fun layout(width: Float, count: Int, gap: Float, widest: Float, narrowest: Float): Slot {
-        if (count <= 0 || width <= 0f) return Slot(0f, 0f, 0f)
-        val air = ((width - narrowest * count) / (count - 1).coerceAtLeast(1)).coerceIn(0f, gap)
-        val slot = min((width - air * (count - 1)) / count, widest)
-        if (count == 1) return Slot(slot, 0f, (width - slot) / 2)
-        return Slot(slot, (width - slot) / (count - 1), 0f)
-    }
-}
-
-// Gold on exactly one bar — the session holding the standing best, when it is inside the window.
-@Composable
-private fun Bars(bars: List<Record.Bar>) {
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(122.dp),
-    ) {
-        if (bars.isEmpty()) return@Canvas
-        val corner = CornerRadius(5.dp.toPx())
-        val slot = BarRow.layout(
-            width = size.width,
-            count = bars.size,
-            gap = BarRow.gap.toPx(),
-            widest = BarRow.widest.toPx(),
-            narrowest = BarRow.narrowest.toPx(),
-        )
-        bars.forEachIndexed { index, bar ->
-            val tall = (bar.height.coerceIn(0.0, 1.0) * size.height).toFloat()
-            if (tall <= 0f) return@forEachIndexed
-            val standing = Offset(slot.first + index * slot.pitch, size.height - tall)
-            drawPath(
-                Path().apply {
-                    addRoundRect(RoundRect(
-                        rect = Rect(standing, Size(slot.width, tall)),
-                        topLeft = corner, topRight = corner,
-                        bottomRight = CornerRadius.Zero, bottomLeft = CornerRadius.Zero,
-                    ))
-                },
-                color = if (bar.standingBest) GymSkin.prInk else GymSkin.raised,
-            )
-        }
-    }
-}
-
-@Composable
-private fun RecordRow(best: Record.Best) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = WindmillSpace.x10)
-            .background(
-                if (best.standing) GymSkin.prSoft else GymSkin.surface,
-                RoundedCornerShape(WindmillRadius.md),
-            )
-            .border(
-                1.dp,
-                if (best.standing) GymSkin.prInk else GymSkin.line,
-                RoundedCornerShape(WindmillRadius.md),
-            )
-            .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x2),
-    ) {
-        Text(best.effort, style = GymType.numeral(14, FontWeight.Bold), color = GymSkin.ink)
-        Text(best.estimate, style = GymType.numeral(11), color = GymSkin.inkDim)
-        Spacer(Modifier.weight(1f))
-        Text(best.day, style = GymType.numeral(11), color = GymSkin.inkFaint)
-    }
-}
-
-@Composable
-private fun SectionHead(label: String) {
-    Text(
-        label.uppercase(),
-        style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
-        color = GymSkin.inkFaint,
-        modifier = Modifier.padding(top = WindmillSpace.x2),
-    )
-}
-
-@Composable
-private fun Silence(line: String, retry: (() -> Unit)?) {
-    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        Text(line, style = GymType.numeral(13), color = GymSkin.inkFaint)
-        if (retry != null) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum)
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(role = Role.Button, onClick = retry),
-            ) {
-                Text("Try again", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
-            }
-        }
+        if (window.hasChart(zone)) DatedPlot(progressSeries(window, nowMs, zone, all),
+            interaction = PlotInteraction.Inspect, standingBestId = progress.best?.id,
+            onInspect = { inspected = it }, gapLabel = { a, b -> "No session · ${Readout.date(a.atMs)} – ${Readout.date(b.atMs)}" })
+        Text("${if (all) "All" else "Last 12 weeks"} · ${Readout.sessionCount(window.sessions.size)}",
+            style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+        if (window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillFont.body(14), color = skin.inkDim)
     }
 }

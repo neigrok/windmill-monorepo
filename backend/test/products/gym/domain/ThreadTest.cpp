@@ -42,6 +42,30 @@ TEST(a_thread_that_proposed_nothing_is_read_only) {
   CHECK_EQ(toString(outcome.kind), std::string("read-only"));
 }
 
+TEST(a_missing_recorded_proposal_has_no_known_outcome_count_or_routine) {
+  AskThread held = thread({});
+  held.referencedProposals = {ProposalId{"prop_0001"}};
+  CHECK_EQ(outcomeOf(held), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
+}
+
+TEST(a_missing_proposal_does_not_turn_the_remaining_proposals_into_a_complete_total) {
+  for (const ProposalState state : {ProposalState::pending, ProposalState::applied,
+                                   ProposalState::dismissed, ProposalState::superseded}) {
+    AskThread held = thread({minted("prop_0002", state, 4)});
+    held.referencedProposals = {ProposalId{"prop_0001"}, ProposalId{"prop_0002"}};
+    CHECK_EQ(outcomeOf(held), (ThreadOutcome{ThreadOutcomeKind::unknown, 0, std::nullopt, ""}));
+  }
+}
+
+TEST(repeated_receipt_references_do_not_repeat_the_count_of_a_known_proposal) {
+  AskThread held = thread({minted("prop_0001", ProposalState::applied, 3),
+                          minted("prop_0002", ProposalState::pending, 5)});
+  held.referencedProposals = {ProposalId{"prop_0002"}, ProposalId{"prop_0001"},
+                              ProposalId{"prop_0001"}};
+  CHECK_EQ(outcomeOf(held),
+           (ThreadOutcome{ThreadOutcomeKind::applied, 3, RoutineId{"rt_00000001"}, "Push A"}));
+}
+
 TEST(an_applied_thread_counts_what_landed_and_names_the_routine_it_landed_on) {
   const ThreadOutcome outcome =
       outcomeOf(thread({minted("prop_0001", ProposalState::applied, 3),
@@ -147,4 +171,28 @@ TEST(every_outcome_has_one_stored_word_and_they_do_not_collide) {
   CHECK_EQ(toString(ThreadOutcomeKind::applied), std::string("applied"));
   CHECK_EQ(toString(ThreadOutcomeKind::dismissed), std::string("dismissed"));
   CHECK_EQ(toString(ThreadOutcomeKind::superseded), std::string("superseded"));
+  CHECK_EQ(toString(ThreadOutcomeKind::unknown), std::string("unknown"));
+}
+
+TEST(coach_context_preserves_complete_recent_exchanges_and_excludes_failed_attempts) {
+  std::vector<ThreadTurn> history;
+  for (int index = 0; index < 20; ++index) {
+    history.push_back({true, "Question " + std::to_string(index)});
+    history.push_back({false, "Answer " + std::to_string(index)});
+  }
+  ThreadTurn failedQuestion{true, "Failed question"};
+  failedQuestion.status = "failed";
+  ThreadTurn failedAnswer{false, "Partial answer"};
+  failedAnswer.status = "failed";
+  history.push_back(failedQuestion);
+  history.push_back(failedAnswer);
+  const auto context = contextOf(history);
+  CHECK_EQ(context, (std::vector<ThreadTurn>{history.begin() + 16, history.begin() + 40}));
+  CHECK_EQ(history.size(), 42u);
+}
+
+TEST(coach_context_byte_limit_never_splits_a_message_or_starts_with_an_answer) {
+  const std::vector<ThreadTurn> history{{true, "Early question"},
+      {false, std::string(kMaxContextBytes, 'a')}, {true, "Recent question"}, {false, "Recent answer"}};
+  CHECK_EQ(contextOf(history), (std::vector<ThreadTurn>{{true, "Recent question"}, {false, "Recent answer"}}));
 }

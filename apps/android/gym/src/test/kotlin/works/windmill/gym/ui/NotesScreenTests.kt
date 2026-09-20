@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -97,7 +98,7 @@ class NotesScreenTests {
         compose.onNodeWithText(Notes.add).assertIsDisplayed()
 
         compose.runOnIdle {
-            assertEquals("the editor opens with the title filled in, and nothing was written",
+            assertEquals("the editor receives a title hint, and nothing was written",
                 listOf<Pair<Note?, String>>(null to "What I am training for"), opened)
             assertEquals(emptyList<Note>(), server.notebook)
         }
@@ -189,7 +190,6 @@ class NotesScreenTests {
         compose.runOnIdle { runBlocking { store.settleWithheld("note_3") } }
 
         compose.onNodeWithText("note 3").assertDoesNotExist()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.add))
         compose.onNodeWithText(Notes.add).assertIsDisplayed()
         compose.onNodeWithText(Notes.full).assertDoesNotExist()
         compose.runOnIdle {
@@ -216,7 +216,7 @@ class NotesScreenTests {
             )
         }
 
-        compose.onNodeWithText(Notes.delete).performClick()
+        compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("the editor leaves on the tap", 1, done)
             assertEquals(listOf("note_1"), store.withheld.map { it.subjectId })

@@ -1,5 +1,9 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -21,46 +25,70 @@ import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.FixOutcome
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 
-// The two things a lifter can say about a set that are not the set. The sheet is seeded from what the
-// LOG holds, so what it saves is a diff and not a restatement — the log has no concurrency guard on a
-// set, and a sheet that sent its whole state would clobber a note written elsewhere while it stood.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class FixSheetEffortTests {
     @get:Rule
     val compose = createComposeRule()
 
-    private val plain = TrainingSet(
+    private fun sheet(set: TrainingSet = TrainingSet(
         id = "set_1", exerciseId = "bench-press", setNumber = 2,
         weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0,
-    )
-
-    private fun sheet(set: TrainingSet = plain): () -> SetFix? {
+    ), haptics: HapticFeedback? = null): () -> SetFix? {
         var saved: SetFix? = null
         compose.setContent {
-            FixSheet(
-                set = set,
-                movement = "Bench Press",
-                setNumber = 2,
-                routine = null,
-                onSave = { saved = it },
-                onDelete = {},
-            )
+            CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
+                FixSheet(
+                    set = set,
+                    movement = "Bench Press",
+                    setNumber = 2,
+                    routine = null,
+                    onSave = { saved = it; FixOutcome.Corrected(it.corrected(set)) },
+                    onDelete = {},
+                )
+            }
         }
         return { saved }
+    }
+
+    @Test
+    fun correctingAHistoricalWarmupKeepsItsKindAndDoesNotConfirmWithAHaptic() {
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
+            weightKg = 82.5, reps = 5, kind = SetKind.Warmup, completedAtMs = 0), object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                sensations += hapticFeedbackType
+            }
+        })
+
+        compose.onNodeWithText("Kind").assertDoesNotExist()
+        compose.onNodeWithText("warmup").assertDoesNotExist()
+        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
+        compose.onNodeWithText("Save fix").performClick()
+
+        compose.runOnIdle {
+            assertEquals(SetFix(note = "left shoulder"), saved())
+            assertEquals(emptyList<HapticFeedbackType>(), sensations)
+        }
     }
 
     @Test
     fun theBandOffersSixToTenByHalvesAndAWayBackToNothing() {
         sheet()
 
-        compose.onNodeWithText(SetEffort.rpeLabel).assertIsDisplayed()
-        compose.onNodeWithText(SetEffort.rpeUnrated).assertIsDisplayed()
+        compose.onNodeWithText("Effort").assertIsDisplayed()
+        compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
+        compose.onAllNodesWithText(SetEffort.rpeUnrated)[1].assertExists()
         SetEffort.rpeBand.forEach {
-            compose.onNodeWithContentDescription(SetEffort.rpeReading(it)).assertExists()
+            compose.onNodeWithText(SetEffort.rpeReading(it)).assertExists()
         }
-        compose.onNodeWithContentDescription(SetEffort.rpeReading(10.0))
+        compose.onNodeWithText(SetEffort.rpeReading(10.0))
             .performScrollTo().assertIsDisplayed()
     }
 
@@ -69,16 +97,18 @@ class FixSheetEffortTests {
         sheet()
 
         compose.onNodeWithText(SetEffort.noteLabel).assertIsDisplayed()
-        compose.onNodeWithText("A record for you — not an instruction to Coach.").assertIsDisplayed()
+        compose.onNodeWithText(SetEffort.noteLabel).assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription, SetEffort.noteCaption))
     }
 
     @Test
     fun pickingAnRpeAndTypingANoteSendsThoseTwoFieldsAndNothingElse() {
         val saved = sheet()
 
-        compose.onNodeWithContentDescription(SetEffort.rpeReading(8.5)).performScrollTo().performClick()
+        compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
+        compose.onNodeWithText(SetEffort.rpeReading(8.5)).performScrollTo().performClick()
         compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
-        compose.onNodeWithText("Save the fix").performClick()
+        compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
             assertEquals(8.5, saved()!!.rpe)
@@ -92,11 +122,13 @@ class FixSheetEffortTests {
 
     @Test
     fun clearingANoteSendsAnEmptyStringAndClearingAnRpeNamesItAsNull() {
-        val saved = sheet(plain.copy(rpe = 9.0, note = "felt heavy"))
+        val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
+            weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
         compose.onNodeWithText("felt heavy").performTextClearance()
+        compose.onNodeWithText(SetEffort.rpeReading(9.0)).performClick()
         compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
-        compose.onNodeWithText("Save the fix").performClick()
+        compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
             assertEquals("", saved()!!.note)
@@ -107,9 +139,10 @@ class FixSheetEffortTests {
 
     @Test
     fun aSheetOpenedOverAnAnnotatedSetAndSavedUntouchedSendsNothingAtAll() {
-        val saved = sheet(plain.copy(rpe = 9.0, note = "felt heavy"))
+        val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
+            weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
-        compose.onNodeWithText("Save the fix").performClick()
+        compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
             assertEquals("an empty diff, which is what leaves another device's work alone",
@@ -117,8 +150,6 @@ class FixSheetEffortTests {
         }
     }
 
-    // D10. A byte counter over its bound goes alarm wherever it is drawn, and it is drawn only in the
-    // last fifth — the same two rules the note editor already keeps one screen away.
     @Test
     fun theByteCounterAppearsOnlyInTheLastFifthAndSaysTheOverageOutLoud() {
         sheet()
@@ -133,8 +164,6 @@ class FixSheetEffortTests {
         compose.onNodeWithText(SetEffort.noteTooLong).assertExists()
     }
 
-    // The log answers an overlong note with one generic sentence about the whole fix, so this is the
-    // only reason a lifter will ever read — and it is said before anything is sent.
     @Test
     fun anOverlongNoteIsRefusedAtTheFieldAndTheSaveIsHeld() {
         val saved = sheet()
@@ -143,8 +172,8 @@ class FixSheetEffortTests {
             .performTextInput("🏋".repeat(1_001))
 
         compose.onNodeWithText(SetEffort.noteTooLong).assertIsDisplayed()
-        compose.onNodeWithText("Save the fix").assertIsNotEnabled()
-        compose.onNodeWithText("Save the fix").performClick()
+        compose.onNodeWithText("Save fix").assertIsNotEnabled()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertNull("and nothing was sent", saved()) }
     }
 }

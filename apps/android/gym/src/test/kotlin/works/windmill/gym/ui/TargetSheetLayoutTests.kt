@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -38,8 +39,6 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 
-// The sheet on the small phone: the ramp's five rows and Add set stand inside the first paint, the
-// body needing no scroll, and the commit is pinned under the body inside the window.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h731dp-xhdpi")
 class TargetSheetLayoutTests {
@@ -71,7 +70,7 @@ class TargetSheetLayoutTests {
     }
 
     @Test
-    fun testFiveRowsAndAddSetStandInsideTheFirstPaintWithTheCommitPinnedUnder() {
+    fun testLongLaddersScrollWhileTheCommitStaysPinned() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = store(scope)
         var draft by mutableStateOf(lowerA)
@@ -80,10 +79,9 @@ class TargetSheetLayoutTests {
         }
         compose.onNodeWithText("Back Squat").performClick()
 
-        val addSet = compose.onNodeWithText(TargetEntry.addSet).assertIsDisplayed().fetchSemanticsNode()
+        val addSet = compose.onNodeWithText(TargetEntry.addSet).performScrollTo().assertIsDisplayed().fetchSemanticsNode()
         val commit = compose.onNodeWithText("Set · 5 sets").assertIsDisplayed().fetchSemanticsNode()
         val fifthRow = compose.onNodeWithContentDescription("Set 5 load").assertIsDisplayed().fetchSemanticsNode()
-        // The sheet is its own window; its root is the extent to stand inside.
         val window = addSet.root!!.semanticsOwner.rootSemanticsNode.size.height.toFloat()
 
         assertTrue("row 5 inside the window", fifthRow.boundsInRoot.bottom <= window)
@@ -94,7 +92,7 @@ class TargetSheetLayoutTests {
 
         val body = compose.onNodeWithTag("target-sheet-body").fetchSemanticsNode()
         val reach = body.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)!!
-        assertEquals("nothing of the body is past the fold", 0f, reach.maxValue(), 0f)
+        assertTrue("the ladder can scroll under the pinned commit", reach.maxValue() > 0f)
         scope.cancel()
     }
 }

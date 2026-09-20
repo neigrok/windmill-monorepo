@@ -487,6 +487,14 @@ internal class FakeTraining : TrainingSyncing {
         return ProposalDecision(settled)
     }
 
+    override suspend fun progress(): works.windmill.gym.domain.StatsProgress {
+        calls.add("progress")
+        if (!online) throw java.io.IOException("offline")
+        return works.windmill.gym.domain.StatsProgress.of(stored.values.map { session ->
+            SessionDetail(session, sets[session.id].orEmpty())
+        }, nowMs())
+    }
+
     override suspend fun record(exerciseId: String): MovementRecord? {
         calls.add("record")
         reachable()
