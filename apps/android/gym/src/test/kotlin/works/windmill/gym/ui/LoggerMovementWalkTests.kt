@@ -6,8 +6,10 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -196,7 +198,7 @@ class LoggerMovementWalkTests {
     }
 
     @Test
-    fun aVerticalStartCancellationMultiplePointersAndSystemEdgesNeverNavigate() {
+    fun aVerticalStartCancellationAndSystemEdgesNeverNavigate() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope)
         title("Bench Press").performTouchInput {
@@ -211,15 +213,6 @@ class LoggerMovementWalkTests {
             moveTo(center + Offset(-150f, 0f))
             cancel()
         }
-        val clock = compose.onNode(hasContentDescription("Workout time,", substring = true)).fetchSemanticsNode().boundsInRoot
-        compose.onRoot().performTouchInput {
-            val start = Offset(width * 0.6f, clock.center.y)
-            down(0, start)
-            down(1, start + Offset(30f, 0f))
-            moveTo(0, start + Offset(-150f, 0f))
-            up(1)
-            up(0)
-        }
         compose.onRoot().performTouchInput {
             swipe(Offset(1f, height * 0.6f), Offset(width * 0.7f, height * 0.6f))
         }
@@ -230,10 +223,34 @@ class LoggerMovementWalkTests {
     }
 
     @Test
+    fun aSecondPointerCanTakeOverOneNativeSwipeWithoutLogging() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = logger(scope, threeMovements = true)
+        val session = store.session
+        compose.onNodeWithText("Log set").performTouchInput {
+            down(0, Offset(width * 0.9f, centerY))
+            moveTo(0, Offset(width * 0.65f, centerY), delayMillis = 300)
+            down(1, Offset(width * 0.65f, centerY))
+            up(0)
+            moveTo(1, Offset(width * 0.15f, centerY), delayMillis = 600)
+            advanceEventTime(200)
+            up(1)
+        }
+        compose.runOnIdle {
+            assertEquals("barbell-row", store.exerciseId)
+            assertEquals(session, store.session)
+            assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), store.sets)
+        }
+    }
+
+    @Test
     fun horizontalSetStripKeepsItsDragAndDoesNotChangeMovement() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope, loggedSets = 8)
-        val strip = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+        val strip = compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
+                hasAnyAncestor(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)),
+        )
         val before = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
         strip.performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
         val after = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
@@ -273,6 +290,18 @@ class LoggerMovementWalkTests {
             assertEquals("barbell-row", store.exerciseId)
             assertEquals(0, store.sets.size)
         }
+        title("Barbell Row").assertIsDisplayed()
+        compose.onNodeWithText("Log set").assertIsEnabled()
+
+        title("Barbell Row").performTouchInput {
+            swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
+        }
+        compose.runOnIdle {
+            assertEquals("cable-fly", store.exerciseId)
+            assertEquals(0, store.sets.size)
+        }
+        title("Cable Fly").assertIsDisplayed()
+        compose.onNodeWithText("Log set").assertIsEnabled()
     }
 
     @Test

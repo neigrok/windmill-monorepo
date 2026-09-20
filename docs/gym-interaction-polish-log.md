@@ -8,7 +8,7 @@ Coach keeps native Compose text and a stable request-keyed message slot through 
 
 The HTTP reader has one conflated snapshot slot. A slower durable consumer cannot accumulate an unbounded queue of obsolete full answers. The consumer drains the newest snapshot before propagating an interrupted stream. Request identity is persisted before HTTP; snapshot persistence runs on IO before publication. The same atomic write clears only the matching sent draft. Duplicate draft saves do no disk work, and a late snapshot cannot recreate a cleared request or erase a new draft. Account identity is rechecked after suspended persistence.
 
-Routine detail uses compact rows with a 68dp minimum, 16sp names, 13sp targets and 4dp row separation. Content can grow for large text. Start and Edit keep 56dp and 48dp minimum targets. Logger movement swipes cover the workout body: native touch slop determines direction, 36dp horizontal travel is required at release, and child drags, vertical intent, modal UI, multiple pointers and system gesture edges retain ownership. The existing movement transition and accessible actions remain shared.
+Routine detail uses compact rows with a 68dp minimum, 16sp names, 13sp targets and 4dp row separation. Content can grow for large text. Start and Edit keep 56dp and 48dp minimum targets. Logger movement swipes cover the workout body through native Compose scrolling and a horizontal pager. Adjacent reading pages follow the finger while the rack stays fixed; selection changes after settlement. Child drags, vertical scrolling, modal UI and system gesture edges retain ownership. Native pointer transfer is supported without performing a rack action during a drag. Reversal and cancellation retain the selected movement and draft.
 
 ## Structural observations and simplification
 
@@ -16,7 +16,7 @@ The previous Coach update path combined an animated new-question scroll, a per-r
 
 The stream callback previously waited for a full atomic JSON write on the UI thread. Moving snapshot persistence exposed a second path: the actual screen callback repeatedly cleared an already-empty draft. The persistence boundary now treats that as a no-op and combines the first matching draft clear with the snapshot write. This removes repeated serialization/fsync work instead of hiding it behind another queue.
 
-The simplification pass also unifies partial and completed answer composition, removes text-dependent saved-state keys and unused imports, and keeps stream callback suspension within gym networking rather than changing shared platform transport. The logger implementation replaces its title-only gesture handler with one body-level handler and a small pure direction policy.
+The simplification pass also unifies partial and completed answer composition, removes text-dependent saved-state keys and unused imports, and keeps stream callback suspension within gym networking rather than changing shared platform transport. The logger uses one native body scroll owner and no custom gesture thresholds or domain direction recognizer.
 
 ## Verification
 

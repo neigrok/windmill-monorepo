@@ -1070,31 +1070,30 @@ class TrainingStore(
         lastTimeFailed = false
         redial()
 
-        // Signed out the answer comes off the device's own history, where "no history" is a first
-        // time and never a failed read.
-        val log = gym
-        if (log == null) {
-            if (lastTime == null) {
-                val answer = LastTime.of(movement, localLog.details())
-                lastTimes[movement] = answer
-                lastTime = answer
-                redial()
-            }
-            return
-        }
         if (lastTime != null) return
         val seat = owner
-        val answer = tried("gym.choose") { log.lastTime(movement) }
-        if (!workoutAuthorized || seat != owner || gym !== log) return
-        if (answer == null) {
-            lastTimeFailed = exerciseId == movement
-            return
-        }
-        // A reply for a movement the lifter has already left is dropped.
-        if (answer.exerciseId != movement || exerciseId != movement) return
-        lastTimes[movement] = answer
+        val sessionId = session?.id
+        val log = gym
+        val answer = lastTimeFor(movement)
+        if (!workoutAuthorized || consentRecoveryBlocked || exerciseId != movement || owner != seat || session?.id != sessionId || gym !== log) return
+        lastTimeFailed = answer == null
+        if (answer == null) return
         lastTime = answer
         redial()
+    }
+
+    suspend fun lastTimeFor(movement: String): LastTime? {
+        if (!workoutAuthorized || consentRecoveryBlocked) return null
+        lastTimes[movement]?.let { return it }
+        val seat = owner
+        val sessionId = session?.id
+        val log = gym
+        val answer = if (log == null) LastTime.of(movement, localLog.details())
+            else tried("gym.choose") { log.lastTime(movement) }
+        if (!workoutAuthorized || consentRecoveryBlocked || owner != seat || session?.id != sessionId || gym !== log) return null
+        if (answer?.exerciseId != movement) return null
+        lastTimes[movement] = answer
+        return answer
     }
 
     // Sets are keyed by movement and never by position, so only the walk order moves.

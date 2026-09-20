@@ -1,23 +1,21 @@
-# Windmill Gym for Android 0.8.2
+# Windmill Gym for Android 0.9.2
 
-This update adds Sentry reporting for Android crashes, ANRs and handled failures, plus app, account, Coach and training events sent through Windmill to Amplitude.
+Exercise swipes now follow your finger. See the next or previous exercise while dragging, and
+reverse direction before releasing to stay on the current exercise.
 
-- Errors identify the app build, operation and failure category. Coach timeouts are distinct from offline failures, with a longer bounded request budget.
-- Product events cover screen use, Coach attempts and outcomes, workout starts/finishes, logged sets, routine saves and proposal decisions. Events queue on the device and retain stable IDs across retries.
-- Unexpected Coach worker and telemetry delivery failures create Sentry Issues on the backend. Temporary Amplitude failures are retried.
-- Telemetry excludes conversation text, training values, email addresses, credentials and response bodies. The privacy notice names the diagnostic and analytics processors.
+- Preview each exercise's own planned sets, logged sets and previous workout.
+- Start a swipe anywhere in the workout body, including the rack. Weight and rep controls stay
+  in place, and a swipe does not log a set.
+- The selected exercise changes after the page settles. Reversing or interrupting a drag preserves
+  the current exercise and its entered weight and reps.
+- Set-strip scrolling, numeric editors, workout clocks and Android's edge Back gesture keep their
+  existing behavior.
 
-The reported customer incident could not be reconstructed without incident details. This update adds instrumentation for future failures; it cannot recover telemetry from earlier versions.
+## Installation
 
-Validation includes both Android test variants, live API round trips, the real Sentry SDK against a local HTTP collector, and backend delivery tests against local HTTPS collectors. Delivery remains bounded best effort; an app update is required to enable the new client instrumentation.
+Install this APK over 0.9.1 to keep local routines and training. The retained release signing
+identity supports Android's normal in-place update.
 
-## Installing over an older APK
-
-Version 0.8.2 uses the same retained signing identity as 0.8.0 and supports Android’s normal in-place
-update. Keep the app installed and install the new APK over it to preserve local training.
-
-APKs signed with older, different certificates cannot update in place. Keep the old installation
-until every record you need is verified from another signed-in Windmill surface. If you cannot
-verify those records elsewhere, keep the old installation and do not uninstall it: uninstalling
-removes local data, including unclaimed or unsynced training. This release does not migrate data
-across a certificate change.
+Historical APKs through 0.7.1 used different certificates and cannot update in place. Uninstalling
+removes records saved only on that phone; preserve those records before changing the installation.
+Signing in alone does not transfer anonymous records.

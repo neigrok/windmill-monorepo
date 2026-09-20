@@ -43,9 +43,9 @@ This contract improves presentation latency and stability. It does not promise l
 
 ## Workout exercise swipes
 
-The horizontal navigation region covers the workout body: title, clock and history region, unused space, and rack surfaces that do not own a conflicting drag. This replaces the reading-region-only limitation in the earlier Android delivery contract. Native top/bottom navigation and modal surfaces retain their own behavior.
+The horizontal navigation region covers the workout body: title, clock and history region, unused space, and rack surfaces that do not own a conflicting drag. Native top/bottom navigation and modal surfaces retain their own behavior.
 
-The gesture changes one exercise per deliberate swipe: left advances, right returns. At the first/last exercise it stays in place. It never wraps, opens the movement picker, finishes training or logs a set. Movement switching uses the existing domain transition and preserves clock anchors, entered rack values according to existing movement ownership, queued sets and save/refusal state.
+The native pager reveals the adjacent exercise while the finger moves. In a left-to-right layout, left advances and right returns; the platform mirrors direction in a right-to-left layout. Reversing a drag restores the current page. A released gesture settles using native position and velocity rules, one adjacent exercise at a time. At the first/last exercise it stays in place. It never wraps, opens the movement picker, finishes training or logs a set. Movement switching uses the existing domain transition and preserves clock anchors, entered rack values according to existing movement ownership, queued sets and save/refusal state.
 
 | Competing interaction | Ownership |
 | --- | --- |
@@ -55,9 +55,10 @@ The gesture changes one exercise per deliberate swipe: left advances, right retu
 | Button or editable value | Tap and long press retain their action; a deliberate horizontal drag can cancel the click and navigate if the child has not claimed a drag |
 | System edge gesture | Android owns the gesture; respect actual system gesture insets and add no exclusion rectangle |
 | Sheet, keypad, popup or menu | Modal surface owns the interaction; underlying workout navigation is disabled |
-| Cancel, additional pointer, owner/state change | No navigation caused by the canceled gesture |
+| Additional pointer | Native scrolling may transfer the active pointer; a second contact performs no rack action during a drag |
+| Cancel or owner/state change | No stale destination is committed; align the pager to the current selected exercise |
 
-Once a gesture is owned by an axis or a child, it cannot change owners midway and trigger a second action. A drag below the navigation threshold changes nothing. Preserve existing pressed feedback; do not add a new sound, haptic or page animation. Existing previous/next controls and semantic actions remain discoverable alternatives to swiping. A gesture does not become a requirement for operating training with accessibility services.
+Compose owns touch slop, axis selection and snapping. The reading region translates with the finger; the rack stays fixed. A cancelled or reversed drag preserves the rack draft. Selection and any departure question wait until the destination settles, and rack edits and logging are disabled during motion. Preserve existing pressed feedback and add no sound or haptic. Existing previous/next controls and semantic actions remain discoverable alternatives to swiping. A gesture does not become a requirement for operating training with accessibility services.
 
 ## Acceptance and structure
 

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -171,7 +172,9 @@ class LoggerScreenTests {
     private fun strip(count: Int): List<Pair<String, Boolean>> {
         val found = mutableMapOf<Int, Pair<String, Boolean>>()
         repeat(count) { index ->
-            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(index)
+            compose.onNode(hasScrollToIndexAction() and
+                hasAnyAncestor(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)))
+                .performScrollToIndex(index)
             compose.onAllNodes(hasContentDescription("Set ", substring = true) or hasContentDescription("set ", substring = true))
                 .fetchSemanticsNodes().forEach { node ->
                     val name = node.config[SemanticsProperties.ContentDescription].first()

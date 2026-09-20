@@ -51,38 +51,12 @@ object AutoClose {
 // account's session lapsed (401).
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
-object LoggerWalk {
-    const val edgeDp = 24
-    const val distanceDp = 36
-    const val dominance = 1.6f
-    enum class Intent { Undecided, Horizontal, Other }
-
-    fun startsInTheEdge(x: Float, width: Float, edgePx: Float, rightEdgePx: Float = edgePx): Boolean =
-        x <= edgePx || (width > 0f && x >= width - rightEdgePx)
-
-    fun horizontal(dx: Float, dy: Float, slopPx: Float): Boolean =
-        kotlin.math.abs(dx) >= slopPx && kotlin.math.abs(dx) > kotlin.math.abs(dy) * dominance
-
-    fun intent(dx: Float, dy: Float, slopPx: Float): Intent {
-        if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) < slopPx) return Intent.Undecided
-        if (horizontal(dx, dy, slopPx)) return Intent.Horizontal
-        return Intent.Other
-    }
-
-    // Left walks to the NEXT movement: the page moves the way the thumb does.
-    fun to(dx: Float, previous: String?, next: String?): String? = if (dx < 0) next else previous
-
-    // A stroke makes two-in-a-moment ordinary where a tap never did, and the deviation the last walk
-    // raised lives in ONE slot: a second walk that overwrote it would take the question about the
-    // movement you left and never ask it. So the second walk is REFUSED — and says so, naming the
-    // movement whose question is open, because a stroke that does nothing reads as a broken stroke.
-    fun oneAtATime(movement: String): String = "$movement first — that question is still open."
-}
-
 object LiveLines {
     data class Card(val title: String, val body: String)
 
     const val onThisDevice = "on this device"
+
+    fun oneAtATime(movement: String): String = "$movement first — that question is still open."
 
     data class Row(
         val id: String,

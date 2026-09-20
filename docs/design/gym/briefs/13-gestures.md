@@ -431,17 +431,19 @@ TalkBack (`RefusalBanner.kt:54-66`). Removes its "Dismiss" button. Safe: it disc
 data.
 
 **Walking between movements in the logger** — a horizontal swipe on the body
-(`LoggerScreen.swift:84`, `:229-243`; `MovementHead`'s `pointerInput` in `LoggerScreen.kt`). Removes **two chevron buttons**
-from the screen a lifter looks at with a bar in their hands. The progress dots stay: they are the
-position readout the swipe needs, and on Android each step is declared again as a custom action on
-the title (`MovementHead`'s `steps`, `LoggerScreen.kt`).
+(`LoggerScreen.swift`; Android's `HorizontalPager` in `LoggerScreen.kt`). The reading region follows
+the finger on Android, revealing the adjacent movement's name, targets, sets and history. Reversing
+the drag brings the original movement back. Selection, rack prefill and any deviation question change
+only after the destination settles; a cancelled drag preserves the entered weight and reps.
+The rack stays pinned; the dots and add control belong to the scrolling reading region. The dots describe the settled movement, and
+Android declares Previous movement and Next movement as custom actions on the title. There are no
+chevron buttons.
 
-Three collisions, all three answered in the build: the today-column is a nested vertical scroll, so
-the stroke claims the pointer only once horizontal dominance is proven and a vertical one still
-reaches the scroll; the title is a full-width tap target, so the stroke is attached above it and a
-tap still opens the session; and **leaving a movement can raise a sheet, guarded by a check written
-for taps** — at swipe velocity a second walk over a deviation still pending is **refused in words
-that name the movement**, never allowed to overwrite the first.
+Vertical gestures scroll the reading region. The horizontally scrolling set strip owns gestures
+that begin on it. A tap on the title still opens the session. Editing and logging wait while the
+pager is moving, so the fixed rack cannot submit a set against a movement still being previewed.
+Leaving a movement can raise a deviation sheet: a second move while that question is pending is
+refused in words that name the movement, never allowed to overwrite the first.
 
 **And a fourth on Android.** The logger is the *most* exposed screen to an edge-started horizontal
 gesture, not the safest, because an edge stroke there is the system's back and back mid-workout would
@@ -451,8 +453,8 @@ genuinely clear of is the *shell's* claim: it has no shell
 chrome, so there is no go-home swipe layered underneath as a simultaneous gesture. That is the iOS
 risk, and it does not exist here — where, at the logger, the room reports depth zero and the shell's
 edge still means home. Law 3's question is answered the same way on both: a stroke that starts inside
-the system's edge strip is never the room's (`LoggerScreen.swift:232`, `:241`;
-`LoggerWalk.startsInTheEdge`, read first in `MovementHead`'s `pointerInput`, `LoggerScreen.kt`).
+the system's edge strip is never the room's. Android uses one native horizontal scroll owner over
+the workout body, including clocks and rack, and adds no system-gesture exclusion.
 
 ## What does not ship, and why
 
