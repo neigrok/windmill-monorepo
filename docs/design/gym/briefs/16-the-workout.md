@@ -177,6 +177,10 @@ against `LoggerScreen.kt`, top to bottom:
   only elastic part, centred while it is short and scrolling only once the largest text leaves it no
   room; the walk's dots and the `+` sit under that scroller, pinned above a hairline. The rack —
   `Weight`, the ladder, `Reps`, `Log set` — is pinned to the bottom, never scrolls and never shrinks.
+  Android pages the reading region with Compose's native `HorizontalPager`: the adjacent movement
+  follows the finger and a reversed drag returns to the original. Each page shows its own targets,
+  sets and history. The rack and dots update only when the destination settles, and editing and
+  logging are disabled during the transition. A cancelled drag preserves the rack's entered values.
 - **The set line is the domain's, capitalised at the draw site.** `Set 2 of 4` (`Set 2` with no
   count) from `LiveLines.counter`, whose bytes stay `set 2 of 4`; the tail ` · target 3 @ 90` is the
   **current slot's** — the planned set the coming working set fills (`17-set-targets.md`) — in the

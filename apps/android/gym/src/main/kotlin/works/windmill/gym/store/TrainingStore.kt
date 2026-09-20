@@ -612,29 +612,29 @@ class TrainingStore(
         lastTimeFailed = false
         redial()
 
-        // Signed out the answer comes off the device's own history, where "no history" is a first
-        // time and never a failed read.
-        val log = gym
-        if (log == null) {
-            if (lastTime == null) {
-                val answer = LastTime.of(movement, localLog.details())
-                lastTimes[movement] = answer
-                lastTime = answer
-                redial()
-            }
-            return
-        }
         if (lastTime != null) return
-        val answer = tried { log.lastTime(movement) }
-        if (answer == null) {
-            lastTimeFailed = exerciseId == movement
-            return
-        }
-        // A reply for a movement the lifter has already left is dropped.
-        if (answer.exerciseId != movement || exerciseId != movement) return
-        lastTimes[movement] = answer
+        val seat = owner
+        val sessionId = session?.id
+        val log = gym
+        val answer = lastTimeFor(movement)
+        if (exerciseId != movement || owner != seat || session?.id != sessionId || gym !== log) return
+        lastTimeFailed = answer == null
+        if (answer == null) return
         lastTime = answer
         redial()
+    }
+
+    suspend fun lastTimeFor(movement: String): LastTime? {
+        lastTimes[movement]?.let { return it }
+        val seat = owner
+        val sessionId = session?.id
+        val log = gym
+        val answer = if (log == null) LastTime.of(movement, localLog.details())
+            else tried { log.lastTime(movement) }
+        if (owner != seat || session?.id != sessionId || gym !== log) return null
+        if (answer?.exerciseId != movement) return null
+        lastTimes[movement] = answer
+        return answer
     }
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
