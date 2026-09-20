@@ -179,6 +179,12 @@ requires the local-data decision; a signed-out decision opens its bound sign-in 
 
 ## Native workout surface
 
+Exercise pages follow the finger using native Compose scrolling. Adjacent pages show their own
+sets and history while the rack stays fixed. Reversing or cancelling a drag preserves the selected
+exercise and rack draft; selection changes after settling. Swipes can start across the workout
+body, while set-strip scrolling and modal editors retain their gestures. Editing and logging wait
+until the selected page is settled. See [paging verification](../../docs/android-workout-paging.md).
+
 The logger displays workout elapsed and time since the latest retained set, with session start as the
 second anchor before any set. The two quiet icon clocks use persisted timestamps across movements,
 accepted offline sets, edits and relaunch; deletion and Undo recalculate the second anchor. Their
@@ -209,7 +215,7 @@ versioned `workflow_dispatch` also produces an unpublished signing-input artifac
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
 configuration. `versionCode` equals the workflow run number and must exceed the published
-[`android-v0.9.1`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.1) version code 89.
+[`android-v0.9.2`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.2) version code 93.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
@@ -219,23 +225,27 @@ unchanged application contents. Its output includes the APK, digest and provenan
 exact input bytes. It does not publish. Native acceptance and a same-key update check precede
 uploading the public artifacts to the matching GitHub release.
 
-The published [0.9.1/code89 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.1) uses tag `android-v0.9.1` at
-`7010c3e04b9e0668e55b06baa9805ed99fc5fe3b`, [Actions run 35463302150](https://github.com/neigrok/windmill-monorepo/actions/runs/35463302150), attempt 1, from a tag push.
+The published [0.9.2/code93 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.2) uses tag `android-v0.9.2` at
+`5a656915c5b1f3f5c94a5849c032e6e85835794a`, [Actions run 35502208864](https://github.com/neigrok/windmill-monorepo/actions/runs/35502208864), attempt 1, from a tag push.
 The retained signature, non-debuggable package, unchanged application payload and linked provenance
 are verified. All three anonymously downloaded public assets match the accepted signed files and
 GitHub's SHA-256 digests; the downloaded APK passes full verification.
-Its SHA-256 is `3e7c9cafe0a2d6773fcd0964efc73f42b948487f40687d16e67363f2ee82416f`.
+Its SHA-256 is `d23a429404035dfa0bfffc7eb1e6a32f33c7c2a27d0d155b533cc6e7491ee182`.
 
-Bounded final-APK checks on Android 14 verified an in-place 0.9.0 update preserving the existing
-routine and 20kg×5 workout through restart, plus an independent clean install with routine creation,
-workout-body swipes and a saved 20kg×5 session retained after restart. Notifications stayed denied;
-Coach's account door was checked without a model call. The retained signing identity permits
-in-place updates from 0.8.2 and 0.9.0; direct 0.8.2→0.9.1 preservation was not exercised in this release.
-Authenticated Coach streaming was verified on the debug build with deterministic local fixtures,
-not on the final signed APK. Spoken TalkBack remains unexercised, and the narrow 320dp/200% text
-Routines tab-label clipping remains a tracked follow-up. Current release evidence and frame-time
-limits are in [the interaction worklog](../../docs/gym-interaction-polish-log.md#android-091-release);
-[the feedback execution log](../../docs/gym-feedback-execution.md) retains the 0.9.0 verification.
+Final-APK checks on Android 14 verified an in-place 0.9.1 update preserving the two-movement routine,
+active workout, logged 20kg×5 set and 25kg rack draft, including restart. A held swipe revealed the
+adjacent exercise above the fixed rack; reversal retained the draft and logged no set. Completed
+swipes selected the destination and returned using the store's normal prefill. An independent clean
+install created a routine, swiped to Barbell Row and saved a 20kg×5 workout retained after restart.
+Notifications stayed denied. The full Android build passed 1,290 executed tests per variant, and
+11 separate local live-wire cases passed; the optional magic-link fixture was not supplied.
+
+Spoken TalkBack remains unexercised, and the narrow 320dp/200% text Routines tab-label clipping
+remains a tracked follow-up. Current paging and release evidence is in
+[paging verification](../../docs/android-workout-paging.md). The
+[interaction worklog](../../docs/gym-interaction-polish-log.md#android-091-release) retains the 0.9.1
+checks and frame-time limits; [the feedback execution log](../../docs/gym-feedback-execution.md)
+retains the 0.9.0 verification.
 
 Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
 identity. The historical published APKs through0.7.1 used different debug certificates; the
