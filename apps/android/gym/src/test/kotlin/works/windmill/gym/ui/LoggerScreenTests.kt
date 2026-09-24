@@ -6,6 +6,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -13,19 +14,14 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
-import org.junit.Assert.assertTrue
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -35,17 +31,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.Session
@@ -65,8 +61,8 @@ import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
-// The quiet logger: the words the old screen drew are now said by the controls that own them, and
-// each pin here reads a control by its name. Signed in against the fake log, so a set that is
+// The quiet ledger logger: the words the old screen drew are now said by the controls that own them,
+// and each pin here reads a control by its name. Signed in against the fake log, so a set that is
 // logged lands and the last-time read has somewhere to come from.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -83,6 +79,7 @@ class LoggerScreenTests {
         scope: CoroutineScope,
         lastTime: LastTime? = null,
         logged: Boolean = false,
+        warmup: Boolean = false,
         lastTimeDown: Boolean = false,
         offline: Boolean = false,
         haptics: HapticFeedback? = null,
@@ -104,8 +101,7 @@ class LoggerScreenTests {
             scope = scope,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
-            // No undo window here, so a logged set LANDS inside `logSet` rather than nine seconds
-            // later: the pill pins want a set the log holds.
+            // No delete window here, so a deleted set settles the moment it is deleted.
             undoWindowMs = 0,
             sync = { if (!it.isSignedIn) null else if (lastTimeDown) down(server) else server },
         )
@@ -120,6 +116,7 @@ class LoggerScreenTests {
             store.choose("bench-press")
             // Offline AFTER the connect: the set logged next stays owed, on this device only.
             if (offline) server.online = false
+            if (warmup) store.logSet(40.0, 10, SetKind.Warmup)
             if (logged) store.logSet(60.0, 5)
         }
         compose.setContent {
@@ -132,7 +129,7 @@ class LoggerScreenTests {
 
     // The rack fixture: Lower A, whose back squat is the ramp 60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 ·
     // 80 × 5, with the first two sets landed as planned. Signed out, so the plan is the routine the
-    // device holds and nothing here depends on a server.
+    // device holds, every set is on this device, and nothing here depends on a server.
     private fun rack(scope: CoroutineScope): TrainingStore {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
@@ -143,7 +140,6 @@ class LoggerScreenTests {
             scope = scope,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
-            undoWindowMs = 0,
             sync = { null },
         )
         runBlocking {
@@ -167,157 +163,127 @@ class LoggerScreenTests {
         return store
     }
 
-    // The strip's pills left to right, each as what it says and whether it is a door. A pill still on
-    // this device merges the cloud's own words after its name, so the name is the first said.
-    private fun strip(count: Int): List<Pair<String, Boolean>> {
-        val found = mutableMapOf<Int, Pair<String, Boolean>>()
-        repeat(count) { index ->
-            compose.onNode(hasScrollToIndexAction() and
-                hasAnyAncestor(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)))
-                .performScrollToIndex(index)
-            compose.onAllNodes(hasContentDescription("Set ", substring = true) or hasContentDescription("set ", substring = true))
-                .fetchSemanticsNodes().forEach { node ->
-                    val name = node.config[SemanticsProperties.ContentDescription].first()
-                    val number = Regex("(?:Set|set) (\\d+), .*").matchEntire(name)?.groupValues?.get(1)?.toIntOrNull()
-                    if (number != null) found[number] = name to (SemanticsActions.OnClick in node.config)
-                }
-        }
-        return found.toSortedMap().values.toList()
-    }
+    // The ledger's rows top to bottom, each as what it says to TalkBack and whether it is a door.
+    private fun ledger(): List<Pair<String, Boolean>> = compose
+        .onAllNodes(SemanticsMatcher("a ledger row") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                .any { Regex("^(Set \\d+|Warmup), .*").matches(it) }
+        })
+        .fetchSemanticsNodes()
+        .sortedBy { it.boundsInRoot.top }
+        .map { it.config[SemanticsProperties.ContentDescription].first() to (SemanticsActions.OnClick in it.config) }
 
     // The fake log with its last-time read down and nothing else.
     private fun down(server: FakeTraining): TrainingSyncing = object : TrainingSyncing by server {
         override suspend fun lastTime(exerciseId: String): LastTime = throw IOException("the log is down")
     }
 
-    private fun walk() = compose.onNode(hasContentDescription("Movement 1 of 3"))
+    private fun place() = compose.onNode(hasContentDescription("Exercise 1 of 3"))
 
-    private fun addMovement() = compose.onNode(hasContentDescription("Add movement"))
-
-    private fun pills() = compose.onAllNodes(hasContentDescription("Set 1, ", substring = true))
-
-    // The dots and the `+` are pinned above the hairline, outside the scroller: a landed set's
-    // strip pushes the head up, never the walk off the screen — and the rack under the
-    // hairline does not move by a pixel.
-    private fun theWalkStaysOnScreenWhenASetLands() {
+    // The head is pinned above the ledger: a landed set scrolls the rows, never the name, the place or
+    // the walk's glyphs off the screen — and the rack under the ledger does not move by a pixel.
+    private fun theHeadStandsStillWhenASetLands() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope)
         val rack = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
-        walk().assertIsDisplayed()
-        // A node the scroller has clipped still reads as displayed while a sliver of it shows, so
-        // the claim is the whole button: its full height, at the bounds it had before the set.
-        val add = addMovement().assertIsDisplayed().getBoundsInRoot()
-        assertEquals(GymTap.minimum, add.height)
+        val head = place().assertIsDisplayed().getBoundsInRoot()
+        val next = compose.onNode(hasContentDescription("Next movement")).assertIsDisplayed().getBoundsInRoot()
+        assertEquals(listOf(GymTap.minimum, GymTap.minimum), listOf(next.width, next.height))
 
-        compose.onNodeWithText("Log set").performClick()
-        compose.waitForIdle()
+        repeat(3) {
+            compose.onNodeWithText("Log set").performClick()
+            compose.waitForIdle()
+        }
 
-        pills().assertCountEquals(1)
-        walk().assertIsDisplayed()
-        assertEquals("the movement action remains48dp", GymTap.minimum, addMovement().performScrollTo().assertIsDisplayed().getBoundsInRoot().height)
+        compose.onAllNodes(hasContentDescription("logged", substring = true)).assertCountEquals(3)
+        assertEquals("the head did not move", head, place().assertIsDisplayed().getBoundsInRoot())
         assertEquals("the rack did not move", rack, compose.onNodeWithText("Log set").getBoundsInRoot())
+        assertEquals("the movement action remains 48dp", GymTap.minimum,
+            compose.onNodeWithText("Add movement").performScrollTo().assertIsDisplayed().getBoundsInRoot().height)
         scope.cancel()
     }
 
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h683dp-xhdpi")
-    fun theWalkStaysOnScreenWhenASetLandsAtTheEmulatorsFrame() = theWalkStaysOnScreenWhenASetLands()
+    fun theHeadStandsStillWhenASetLandsAtTheEmulatorsFrame() = theHeadStandsStillWhenASetLands()
 
     @Test
     @Config(sdk = [35], qualifiers = "w360dp-h780dp-xhdpi")
-    fun theWalkStaysOnScreenWhenASetLandsOnTheSmallestFrame() = theWalkStaysOnScreenWhenASetLands()
+    fun theHeadStandsStillWhenASetLandsOnTheSmallestFrame() = theHeadStandsStillWhenASetLands()
 
-    // A set deleted from the strip's own sheet stays off the strip once its window settles, and the
-    // set line counts it gone.
+    // A set deleted from its own fix sheet leaves the ledger once its window settles, and the set in
+    // hand counts it gone.
     @Test
-    fun aSetDeletedFromTheStripStaysOffItWhenTheWindowSettles() {
+    fun aSetDeletedFromTheLedgerStaysOffItWhenTheWindowSettles() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope, logged = true)
-        compose.onAllNodes(hasText("Set 2")).assertCountEquals(1)
+        assertEquals(listOf("Set 1, logged, 60 kg, 5 reps" to true, "Set 2, current" to false), ledger())
 
-        pills().onFirst().performClick()
+        compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps")).performClick()
         compose.onNodeWithText("Delete set").performClick()
         compose.waitForIdle()
 
         compose.runOnIdle { assertTrue("the window settled", store.withheld.isEmpty()) }
-        pills().assertCountEquals(0)
-        compose.onAllNodes(hasText("Set 1")).assertCountEquals(1)
-        compose.onAllNodes(hasText("Set 2")).assertCountEquals(0)
+        assertEquals(listOf("Set 1, current" to false), ledger())
         scope.cancel()
     }
 
-    // An empty prior session presents the empty context without inventing a prior set.
+    // Last time fills the rack; nothing on the screen draws last time itself.
     @Test
-    fun aLastTimeWithNoSetsShowsTheEmptyContext() {
+    fun lastTimePrefillsTheRackAndDrawsNothingOfItsOwn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val history = LastTime(
             exerciseId = "bench-press",
             session = Session(id = "ses_0", startedAtMs = day, finishedAtMs = day + 1),
             routine = "Push B",
-            sets = emptyList(),
+            sets = listOf(TrainingSet(id = "p1", exerciseId = "bench-press", weightKg = 80.0, reps = 6,
+                                      kind = SetKind.Working, completedAtMs = day)),
         )
         logger(scope, lastTime = history)
 
-        compose.onNodeWithText("Log set").assertIsDisplayed()
-        compose.onNodeWithText("No sets yet").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Weight 80 kg")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+        compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasContentDescription("Last time", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasText("80 × 6")).assertCountEquals(0)
         scope.cancel()
     }
 
-    // The chip stands in for the coming WORKING set: last time's warmup is never its first set, the
-    // second working set follows the first landing, and past the end the last working set stands.
+    // A last-time read that missed leaves the rack at the bar and says nothing of history.
     @Test
-    fun theLastTimeChipSkipsLastTimesWarmupsAndFollowsTheWorkingCount() {
+    fun aFailedLastTimeReadLeavesTheRackAtTheBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val history = LastTime(
-            exerciseId = "bench-press",
-            session = Session(id = "ses_0", startedAtMs = day, finishedAtMs = day + 1),
-            sets = listOf(
-                TrainingSet(id = "p0", exerciseId = "bench-press", weightKg = 40.0, reps = 10,
-                            kind = SetKind.Warmup, completedAtMs = day - 1),
-                TrainingSet(id = "p1", exerciseId = "bench-press", weightKg = 80.0, reps = 5,
-                            kind = SetKind.Working, completedAtMs = day),
-                TrainingSet(id = "p2", exerciseId = "bench-press", weightKg = 82.5, reps = 3,
-                            kind = SetKind.Working, completedAtMs = day + 1),
-            ),
-        )
-        logger(scope, lastTime = history)
-        val chip = compose.onNode(hasContentDescription("Last time · ", substring = true))
-        chip.assert(hasText("80 × 5"))
+        logger(scope, lastTimeDown = true)
 
-        compose.onNodeWithText("Log set").performClick()
-        compose.waitForIdle()
-        chip.assert(hasText("82.5 × 3"))
-
-        compose.onNodeWithText("Log set").performClick()
-        compose.waitForIdle()
-        chip.assert(hasText("82.5 × 3"))
+        compose.onNode(hasContentDescription("Weight 20 kg")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed()
+        compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasText("Didn’t load")).assertCountEquals(0)
         scope.cancel()
     }
 
-    // A set still on this device is fixed in the queue it waits in: the pill is a door like any
-    // other, the strip redraws the correction from the store, and the set is still owed — with the
-    // corrected body.
+    // A set whose send went out and never came back may already be on the log, so its fix goes to
+    // the log and nowhere else: the row is still a door, and offline the sheet says the fix did not
+    // go while the ledger keeps the body the log may hold.
     @Test
-    fun aPillStillOnThisDeviceIsFixableAndTheStripDrawsTheFix() {
+    fun aRowMaybeOnTheLogIsADoorWhoseFixSaysItDidNotGoOffline() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope, logged = true, offline = true)
         compose.runOnIdle { assertEquals(1, store.stalled.size) }
-        compose.onAllNodes(hasContentDescription("fix it once it lands", substring = true)).assertCountEquals(0)
-        val pill = compose.onNode(hasContentDescription("Set 1, 60 × 5"))
-        pill.assertIsDisplayed()
-        pill.assertHasClickAction()
-        compose.onNode(hasContentDescription(LiveLines.onThisDevice)).assertExists()
+        val row = compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device"))
+        row.assertIsDisplayed()
+        row.assertHasClickAction()
 
-        pill.performClick()
+        row.performClick()
         compose.onNodeWithText("Fix set").assertIsDisplayed()
         compose.onNodeWithText("+").performClick()
         compose.onNodeWithText("Save fix").performClick()
         compose.waitForIdle()
 
-        compose.onNode(hasContentDescription("Set 1, 60 × 6")).assertIsDisplayed()
+        compose.onNodeWithText("The log didn’t answer — that set wasn’t changed.").assertIsDisplayed()
         compose.runOnIdle {
-            assertEquals(listOf(6), store.sets.map { it.reps })
-            assertEquals("still owed, and the corrected body is what will land", 1, store.stalled.size)
+            assertEquals(listOf(5), store.sets.map { it.reps })
+            assertEquals(1, store.stalled.size)
         }
         scope.cancel()
     }
@@ -344,110 +310,53 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    // No history is an absence: nothing is drawn for it, not a chip and not a sentence.
+    // The ledger: what landed recedes and is a door, the set in hand names its target and repeats none
+    // of the rack's numbers, the sets after it wait in plain ink — and only a landed row is a door. The
+    // rack reads the CURRENT slot.
     @Test
-    fun theLastTimeContextIsHonestWithoutHistory() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        logger(scope)
-
-        compose.onNodeWithText("No sets yet").assertDoesNotExist()
-        compose.onAllNodes(hasContentDescription("First time", substring = true)).assertCountEquals(0)
-        compose.onAllNodes(hasContentDescription("no history", substring = true)).assertCountEquals(0)
-        compose.onAllNodes(hasText("First time logging this")).assertCountEquals(0)
-        compose.onAllNodes(hasText("no history", substring = true)).assertCountEquals(0)
-        compose.onAllNodes(hasText("didn’t load")).assertCountEquals(0)
-        scope.cancel()
-    }
-
-    // A read that missed must never draw as no history: it draws a chip, and the chip says so.
-    @Test
-    fun aFailedLastTimeReadDrawsAChipThatSaysSo() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        logger(scope, lastTimeDown = true)
-
-        compose.onNode(hasContentDescription("Last time: the log didn’t answer"))
-            .assertIsDisplayed()
-            .assert(hasText("Didn’t load"))
-        scope.cancel()
-    }
-
-    // With history the chip draws last time's set at the coming ordinal, SAYS the whole card, and
-    // its menu dials the rack to any of last time's sets.
-    @Test
-    fun theLastTimeChipDrawsOneSetSaysTheCardAndDialsAPastSet() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val history = LastTime(
-            exerciseId = "bench-press",
-            session = Session(id = "ses_0", startedAtMs = day, finishedAtMs = day + 1),
-            routine = "Push B",
-            sets = listOf(
-                TrainingSet(id = "p1", exerciseId = "bench-press", weightKg = 80.0, reps = 5,
-                            kind = SetKind.Working, completedAtMs = day),
-                TrainingSet(id = "p2", exerciseId = "bench-press", weightKg = 82.5, reps = 3,
-                            kind = SetKind.Working, completedAtMs = day + 1),
-            ),
-        )
-        logger(scope, lastTime = history)
-
-        val chip = compose.onNode(hasContentDescription("Last time · ", substring = true))
-        chip.assertIsDisplayed()
-        chip.assert(hasText("80 × 5"))
-        chip.assert(hasContentDescription("  ·  Push B: 80 × 5,   82.5 × 3", substring = true))
-
-        chip.performClick()
-        compose.onNodeWithText("82.5 × 3").performClick()
-        compose.onNode(hasContentDescription("Weight 82.5 kg")).assertIsDisplayed()
-        compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
-        scope.cancel()
-    }
-
-    // The strip is the slot strip: what landed as it was lifted, the set about to be lifted as its
-    // target behind the accent outline, the sets after it in the faint ink — and only a landed pill
-    // is a door. The set line and the rack read the CURRENT slot, never set 2.
-    @Test
-    fun theStripDrawsTheSlotsAndTheRackReadsTheCurrentOne() {
+    fun theLedgerDrawsEveryRowAndTheRackReadsTheCurrentOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         rack(scope)
 
-        compose.onNodeWithText("Set 3 of 5").assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
         assertEquals(
             listOf(
-                "Set 1, 60 × 5" to true,
-                "Set 2, 80 × 5" to true,
-                "set 3, target 90 × 3" to false,
-                "set 4, target 100 × 1" to false,
-                "set 5, target 80 × 5" to false,
+                "Set 1, logged, 60 kg, 5 reps, on this device" to true,
+                "Set 2, logged, 80 kg, 5 reps, on this device" to true,
+                "Set 3, current, target 90 kg, 3 reps" to false,
+                "Set 4, planned, 100 kg, 1 rep" to false,
+                "Set 5, planned, 80 kg, 5 reps" to false,
             ),
-            strip(5),
+            ledger(),
         )
-        compose.onNode(hasContentDescription("set 3, target 90 × 3")).assert(hasText("90 × 3"))
-        compose.onNode(hasContentDescription("set 3, target 90 × 3"))
+        compose.onNode(hasContentDescription("Set 3, current, target 90 kg, 3 reps"))
+            .assert(hasText("target 90 × 3"))
             .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
+        compose.onAllNodes(hasText("Set 3")).assertCountEquals(1)
 
         compose.onNodeWithText("Log set").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Set 4 of 5").assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 100 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 1")).assertIsDisplayed()
         assertEquals(
             listOf(
-                "Set 1, 60 × 5" to true,
-                "Set 2, 80 × 5" to true,
-                "Set 3, 90 × 3" to true,
-                "set 4, target 100 × 1" to false,
-                "set 5, target 80 × 5" to false,
+                "Set 1, logged, 60 kg, 5 reps, on this device" to true,
+                "Set 2, logged, 80 kg, 5 reps, on this device" to true,
+                "Set 3, logged, 90 kg, 3 reps, on this device" to true,
+                "Set 4, current, target 100 kg, 1 rep" to false,
+                "Set 5, planned, 80 kg, 5 reps" to false,
             ),
-            strip(5),
+            ledger(),
         )
+        compose.onNode(hasContentDescription("Set 4, current, target 100 kg, 1 rep")).assertIsDisplayed()
         scope.cancel()
     }
 
-    // A set logged past the plan appends a plain landed pill, and the set line counts on past the
-    // plan with no target tail — the log is right where it and the plan disagree.
+    // A set logged past the plan is a plain logged row, and the set in hand counts on past the plan
+    // with no target — the log is right where it and the plan disagree.
     @Test
-    fun aSetLoggedPastThePlanAppendsAPlainPill() {
+    fun aSetLoggedPastThePlanLeavesTheSetInHandWithNoTarget() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         rack(scope)
 
@@ -456,32 +365,53 @@ class LoggerScreenTests {
             compose.waitForIdle()
         }
 
-        compose.onNodeWithText("Set 7 of 5").assertIsDisplayed()
         compose.onAllNodes(hasText("target ", substring = true)).assertCountEquals(0)
         assertEquals(
             listOf(
-                "Set 1, 60 × 5" to true,
-                "Set 2, 80 × 5" to true,
-                "Set 3, 90 × 3" to true,
-                "Set 4, 100 × 1" to true,
-                "Set 5, 80 × 5" to true,
-                "Set 6, 80 × 5" to true,
+                "Set 1, logged, 60 kg, 5 reps, on this device" to true,
+                "Set 2, logged, 80 kg, 5 reps, on this device" to true,
+                "Set 3, logged, 90 kg, 3 reps, on this device" to true,
+                "Set 4, logged, 100 kg, 1 rep, on this device" to true,
+                "Set 5, logged, 80 kg, 5 reps, on this device" to true,
+                "Set 6, logged, 80 kg, 5 reps, on this device" to true,
+                "Set 7, current" to false,
             ),
-            strip(6),
+            ledger(),
         )
+        compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed()
         scope.cancel()
     }
 
-    // A landed set is a pill, and the pill is the drawn, named door to the fix.
+    // A warmup reads W, takes no number, and is a door like every landed row.
     @Test
-    fun aLoggedPillOpensTheFixSheet() {
+    fun aWarmupReadsWAndIsNotCounted() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        logger(scope, warmup = true, logged = true)
+
+        assertEquals(
+            listOf(
+                "Warmup, logged, 40 kg, 10 reps" to true,
+                "Set 1, logged, 60 kg, 5 reps" to true,
+                "Set 2, current" to false,
+            ),
+            ledger(),
+        )
+        compose.onNode(hasContentDescription("Warmup, logged, 40 kg, 10 reps")).assert(hasText("W"))
+        scope.cancel()
+    }
+
+    // A landed row is the drawn, named door to the fix.
+    @Test
+    fun aLoggedRowOpensTheFixSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope, logged = true)
 
-        val pill = compose.onNode(hasContentDescription("Set 1, 60 × 5"))
-        pill.assertIsDisplayed()
-        pill.assertHasClickAction()
-        pill.performClick()
+        val row = compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps"))
+        row.assertIsDisplayed()
+        row.assertHasClickAction()
+        row.assert(hasText("60") and hasText("5") and hasText("✓"))
+        assertTrue("the row is a whole touch target", row.getBoundsInRoot().height >= GymTap.minimum)
+        row.performClick()
         compose.onNodeWithText("Fix set").assertIsDisplayed()
         scope.cancel()
     }
@@ -521,13 +451,14 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    // The set line is the domain's `set 1` capitalised, once; the numeral above the rack no longer
-    // says it, and a free session draws no target tail and no `no target`.
+    // The set in hand is named once, by its ledger row; a free session draws no target and no
+    // `no target`.
     @Test
-    fun theSetLineIsDrawnOnceAndAFreeSessionHasNoTargetTail() {
+    fun theSetInHandIsNamedOnceAndAFreeSessionHasNoTarget() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         logger(scope)
 
+        assertEquals(listOf("Set 1, current" to false), ledger())
         compose.onAllNodes(hasText("Set 1")).assertCountEquals(1)
         compose.onAllNodes(hasText("SET 1")).assertCountEquals(0)
         compose.onAllNodes(hasText("no target")).assertCountEquals(0)
@@ -543,7 +474,7 @@ class LoggerScreenTests {
 
         compose.onNodeWithText("Log set").assertIsDisplayed().assertHasClickAction()
         compose.onAllNodes(hasText("Log set  ·  ", substring = true)).assertCountEquals(0)
-        compose.onNode(hasContentDescription("Add movement")).assertIsDisplayed().assertHasClickAction()
+        compose.onNodeWithText("Add movement").assertIsDisplayed().assertHasClickAction()
         compose.onNode(hasContentDescription("Gym settings")).assertIsDisplayed().assertHasClickAction()
         compose.onNode(hasContentDescription("one rep fewer")).assertHasClickAction()
         compose.onNode(hasContentDescription("one rep more")).assertHasClickAction()

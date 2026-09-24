@@ -46,10 +46,9 @@ surfaces. What that means in practice:
   bridge.
 - **Every delete in the room is withheld, and the gestures ride on that** (`13-gestures.md`). One
   window over every verb that can still be taken back — a set, a routine, a conversation, a finished
-  session, a line of an unsaved draft on the web, and on the phones the set just logged — a list
-  rather than a slot, each act on its own 9000 ms clock and nothing on
-  the wire until the clock closes; one transient per platform, hosted by the room, carrying the only
-  Undo there is. **Leaving a screen keeps the window; leaving the room abandons it** — to the
+  session, a line of an unsaved draft on the web — a list rather than a slot, each act on its own
+  9000 ms clock and nothing on the wire until the clock closes; one transient per platform, hosted
+  by the room, carrying the only Undo there is. **Leaving a screen keeps the window; leaving the room abandons it** — to the
   background, to another product, or by the process dying: the rows come back, nothing goes on the
   wire and nothing is said afterwards. One exception, and it is iOS's alone: a set's delete rides
   `SetQueue` on disk there and survives, where Android abandons it with the rest (ledger `2y`).
@@ -342,9 +341,9 @@ refusals, the picker's six then the whole catalogue, and the open line's one sen
 
 **Wave 6 · Gestures — done.** The withheld delete first, as one abstraction over every verb that
 deletes (`Withheld.swift`, `store/WithheldDelete.kt`, `withheld.js`): a set, a routine, a
-conversation, a finished session, and on the web a line of an unsaved draft; the phones' windows
-also hold the set just logged, which is the one thing in them that is not a delete. The window is a
-**list** — each act on its own 9000 ms clock, a second one settling nothing — hosted by the room, so
+conversation, a finished session, and on the web a line of an unsaved draft. Logging a set opens no
+window on the phones: the set is on its way at once, and a wrong one is corrected in its fix sheet.
+The window is a **list** — each act on its own 9000 ms clock, a second one settling nothing — hosted by the room, so
 leaving a screen keeps it and leaving the room abandons it. Every row-borne undo is gone and one
 transient per platform carries the action and the fact that a window is open. With it: the set-row,
 routine-row, thread-row and refusal-row swipes,
@@ -1609,29 +1608,19 @@ screenshots of the Lift training screen and *still a lot of text on several scre
 the Android logger rebuilt to a written spec, and a nineteen-row cut table applied on all three
 surfaces under the programme's standing rules. Everything below is read at the symbol.
 
-- **The Android logger is the ruled shape**, and `briefs/16-the-workout.md` now carries it in
-  words: `Finish` / the routine's name / a settings gear in the top bar; `Set 2 of 4` with its
-  target tail and a kind `AssistChip` opening a `DropdownMenu` (`KindChip`) where the four-segment
-  row was; a last-time `AssistChip` drawn only with history (`LastTimeChip`, the coming Nth working
-  set from `LiveLines.lastTimeSet`, the whole old card spoken and its sets in the menu) and a
-  disabled *didn’t load* chip for a read that missed; a clocks row — counting-up rest, ring, target —
-  that is one node speaking the old label's bytes (`Clocks`, `"${rest.label}  ·  ${rest.time}"`),
-  with *from the routine* drawn under it only when the entry's rest is in force; the stranded band
-  and the refusal rows kept; a horizontal strip of logged-set pills (`LoggedStrip`, `SetPill`) each
-  a door to `FixSheet` in the logger's own sheet (`LoggerSheet.Fix`), the cloud-off glyph speaking
-  *on this device*; the dots and `+` pinned above the hairline (`Walk`, *Movement N of M*, *Add
-  movement*); and the rack — `Weight`, the numeral with its unit, four equal ladder pills from the
-  golden (`LadderRow`), `Reps` between two 64 dp `FilledIconButton`s (`RepsRow`), a full-width
-  `Log set` with no echo (`LogButton`). **The store learned to fix what it still owes**:
-  `TrainingStore.fixSet` and `deleteSet` rewrite the live session's queue, so a set the log has not
-  taken yet is corrected in place and the corrected body is what the walk sends
-  (`TrainingStoreTests`). Deleted with their tests: `LiveLines.Counter` and the `plan` half of
-  `counter` (it answers the count string alone now), `GymType.movementHead`, `prefillCard`'s
-  first-time branches (it answers null for no history), the picker subtitle *the session is already
-  running*, `SET N`, `MOVEMENT N OF M`, `no target`, the `Log set  ·  20 × 5` echo. Two sans roles
-  joined `GymSkin.kt` — `GymType.reps`, `GymType.primary` — and the four glyphs the screen needed
-  from Material's extended set are drawn from their own path data rather than pulling the artifact
-  in. **iOS's logger was not redrawn** and is ledger `5m`.
+- **The Android logger is the ruled shape**, and `briefs/16-the-workout.md` carries it in words:
+  `Finish` / the routine's name / a settings gear in the top bar; a pinned head with `‹` `›` steps,
+  the movement, `Exercise i / n` and the clocks (`MovementHead`, `WorkoutClockRow`); the stranded
+  band and the refusal rows; the sets as one vertical ledger under pinned `Set · kg · Reps` labels —
+  `W` warmups, dim logged rows with ✓ each a door to `FixSheet` (`LoggerSheet.Fix`), one accent row
+  `Set N · target W × R` for the set in hand, plain planned rows, *Add movement* at its foot
+  (`Ledger`); no last-time block — last time fills the rack instead; and the rack on a raised
+  panel — `Weight`, the numeral with its unit, four equal ladder pills (`LadderRow`), `Reps` between
+  two circles (`RepsRow`), a full-width `Log set` with no echo (`LogButton`). `Log set` holds nothing
+  back: the set is sent at once and opens no window. **The store fixes what it still owes**:
+  `TrainingStore.fixSet` and `deleteSet` rewrite a set no send has carried yet in the queue, and
+  send the change to the log behind the append for a set that may already be there
+  (`LogSetDeliveryTests`). **iOS's logger was not redrawn** and is ledger `5m`.
 - **`Session · no routine` is `Free session` on all three** — `NO_ROUTINE` (`log.js`),
   `Readout.noRoutine` (`Readout.swift`, `Readout.kt`) — the log's rows, the finish sheet and the
   logger's title reading the one constant.
@@ -1689,10 +1678,10 @@ Everything below is a ledger entry, and `../consistency.md` carries each one's e
   conversation rows) · `3x` (Android says the log went quiet for a log that answered with a reason)
   · `4e` (iOS's double-keep guard is in the tree and nothing can pin it: what is owed is the seam,
   an injectable store on `GymRoom` or a launch argument that slows the write) · `5m` (iOS's logger
-  follows the Android shape N2 ruled — the kind menu, the last-time chip, the clocks row, the pill
-  strip, the pinned dots, the equal ladder, `Log set` with no echo).
+  follows Android's quiet ledger — the pinned head, the vertical set ledger, no last-time block, the
+  raised rack) · `5q` (Android re-sends a closed session's pending set).
 - **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` ·
-  `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l`. Two of
+  `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l` · `5p`. Two of
   them are not gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer
   a reader's own text size at all, and `3w` is device residue, whose direction belongs to the
   security work's owner. The three S3 opened are all copy calls: the gap state a held bodyweight

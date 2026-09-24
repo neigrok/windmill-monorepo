@@ -1,9 +1,10 @@
 import SwiftUI
 import WindmillPlatform
 
-// One window over every verb that can still be taken back: a set just logged, a set deleted, a
-// routine, a conversation, a finished workout, a note, a weigh-in. Nine seconds each
-// (`SetQueue.undoWindowMs`), each on its own clock, and a second act never settles the first.
+// One window over every delete that can still be taken back: a set, a routine, a conversation, a
+// finished workout, a note, a weigh-in. Nine seconds each (`SetQueue.undoWindowMs`), each on its own
+// clock, and a second act never settles the first. Logging a set opens no window: it goes to the
+// queue with no hold, and a wrong one is corrected in its fix sheet.
 //
 // It is also the room's answer to "are you sure": no delete here asks a question first. The one
 // confirmation the room keeps is turning a proposal down, which settles for good and has no window.
@@ -42,22 +43,14 @@ public enum WithheldWords {
     // Which thing left, in the surface's own rendering of the numbers.
     public static func deleted(_ effort: String) -> String { "\(effort) is out of the log." }
 
-    public static func logged(_ effort: String) -> String { "\(effort) logged." }
-
     public static func routine(_ name: String) -> String { "\(name) deleted." }
 
-    // The newest is drawn on its own; past one, the transient says how many are held. `deleted` is
-    // only honest while every one of them is a delete — the logger's own window is an append.
-    public static func many(_ kinds: [Withheld.Kind]) -> String {
-        guard kinds.count > 1 else { return "" }
-        if kinds.allSatisfy(\.isDelete) { return "\(kinds.count) deleted." }
-        return "\(kinds.count) to take back."
-    }
+    // The newest is drawn on its own; past one, the transient says how many are held.
+    public static func many(_ count: Int) -> String { "\(count) deleted." }
 }
 
 public struct Withheld: Identifiable {
     public enum Kind: String, Equatable, Sendable {
-        case loggedSet
         case set
         case routine
         case thread
@@ -65,13 +58,10 @@ public struct Withheld: Identifiable {
         case note
         case bodyweight
 
-        // Six verbs destroy and one does not; only the six may be counted as deleted.
-        public var isDelete: Bool { self != .loggedSet }
-
         // Where a set is concerned this register is not the only home: the queue writes the hold to
         // disk with its own clock. So the room forgetting a set may not reach in and change what the
         // lifter did — it lets go, and the queue keeps its promise.
-        public var isHeldOnDisk: Bool { self == .set || self == .loggedSet }
+        public var isHeldOnDisk: Bool { self == .set }
     }
 
     public let id: String
@@ -79,9 +69,6 @@ public struct Withheld: Identifiable {
     public let subject: String
     public let line: String
     public let detail: String?
-    // When the act already carries its own instant — a set the queue is holding on disk — the
-    // transient runs on THAT clock rather than starting a second one after the walk.
-    public let closesAtMs: Int64?
     // Does it, and is handed the instant its own window closes — the only verb that needs it is the
     // set, whose hold is written into the queue on disk.
     let take: @MainActor (Int64) async -> Void
@@ -93,7 +80,6 @@ public struct Withheld: Identifiable {
     // The id is minted per act, never derived from the subject: deleting a row, taking it back and
     // deleting it again is three acts, and two of them name the same row.
     public init(_ kind: Kind, subject: String, line: String, detail: String? = nil,
-                closesAtMs: Int64? = nil,
                 take: @escaping @MainActor (Int64) async -> Void = { _ in },
                 settle: @escaping @MainActor () async -> Bool = { true },
                 restore: @escaping @MainActor () async -> Void = {}) {
@@ -102,10 +88,33 @@ public struct Withheld: Identifiable {
         self.subject = subject
         self.line = line
         self.detail = detail
-        self.closesAtMs = closesAtMs
         self.take = take
         self.settle = settle
         self.restore = restore
+    }
+}
+
+extension Withheld {
+    // A set's delete, from whichever sheet or row raised it. The queue writes the hold to disk for the
+    // window, and taking it back puts the row back in the store. `deleted` and `restored` are the
+    // host's own after-steps, such as the session page redrawing the rows it read.
+    init(deleting set: TrainingSet, in sessionId: String, from store: TrainingStore,
+         deleted: @escaping @MainActor () async -> Void = {},
+         restored: @escaping @MainActor () async -> Void = {}) {
+        self.init(.set, subject: set.id,
+                  line: WithheldWords.deleted(Readout.effort(weightKg: set.weightKg, reps: set.reps)),
+                  take: { until in
+                      await store.delete(set, in: sessionId, heldUntilMs: until)
+                      await deleted()
+                  },
+                  settle: {
+                      await store.flushPendingSets()
+                      return true
+                  },
+                  restore: {
+                      guard await store.restore(set, in: sessionId) else { return }
+                      await restored()
+                  })
     }
 }
 
@@ -148,7 +157,7 @@ public final class WithheldWindow: ObservableObject {
     public var line: String {
         guard let newest else { return "" }
         guard held.count > 1 else { return newest.line }
-        return WithheldWords.many(held.map(\.kind))
+        return WithheldWords.many(held.count)
     }
 
     // Drawn only when it is the whole of what is held: a count has no one detail to carry.
@@ -156,8 +165,6 @@ public final class WithheldWindow: ObservableObject {
         guard held.count == 1 else { return nil }
         return newest?.detail
     }
-
-    public var closesAtMs: Int64? { newest?.untilMs }
 
     // How much of the newest window is still to run. The register holds the instant, so the
     // register does the subtraction, on the one clock that also closes the window: the transient
@@ -192,7 +199,7 @@ public final class WithheldWindow: ObservableObject {
 
     // The act runs here and now; only the send waits.
     public func hold(_ act: Withheld) async {
-        let until = act.closesAtMs ?? (now() + windowMs)
+        let until = now() + windowMs
         let waiting = max(0, until - now())
         held.append(Held(act: act, untilMs: until))
         await act.take(until)

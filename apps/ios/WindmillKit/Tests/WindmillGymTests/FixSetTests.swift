@@ -613,7 +613,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 2)
         XCTAssertEqual(store.strandedCount, 0)
         XCTAssertTrue(store.stalled.isEmpty)
-        XCTAssertNil(store.undoable, "the logger's Undo answers a set that was just LOGGED")
     }
 
     func testAQueueFileFromBeforeCorrectionsOpensWithEveryOwedRowAnAppend() throws {

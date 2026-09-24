@@ -186,9 +186,9 @@ requires the local-data decision; a signed-out decision opens its bound sign-in 
 ## Native workout surface
 
 Exercise pages follow the finger using native Compose scrolling. Adjacent pages show their own
-sets and history while the rack stays fixed. Reversing or cancelling a drag preserves the selected
+set ledger while the rack stays fixed. Reversing or cancelling a drag preserves the selected
 exercise and rack draft; selection changes after settling. Swipes can start across the workout
-body, while set-strip scrolling and modal editors retain their gestures. Editing and logging wait
+body; the ledger scrolls vertically only, and modal editors retain their gestures. Editing and logging wait
 until the selected page is settled. See [paging verification](../../docs/android-workout-paging.md).
 
 The logger displays workout elapsed and time since the latest retained set, with session start as the
@@ -197,9 +197,9 @@ accepted offline sets, edits and relaunch; deletion and Undo recalculate the sec
 readings freeze at session finish. The pair wraps when large text needs more width.
 
 The application owns one local workout runtime. Notification receivers restore that same runtime
-without starting HTTP authentication. The queue commits the exact offered set, consumed action,
-nine-second delivery/Undo hold and original rest timer together before reporting success. Editing
-the rack, changing movement, Undo, finishing or changing account makes old actions ineligible.
+without starting HTTP authentication. The queue commits the exact offered set, consumed action
+and original rest timer together before reporting success, and the set is sent at once. Editing
+the rack, changing movement, finishing or changing account makes old actions ineligible.
 
 Android renders the stock ongoing workout card and count-up chronometer. Supported systems may
 promote it to a Live Update; eligibility, user permission and actual promotion are separate facts.

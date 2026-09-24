@@ -43,7 +43,7 @@ class WithheldWindowTests {
     }
 
     private fun TestScope.storeOver(server: FakeTraining) = TrainingStore(
-        queue = SetQueue(File(tmp.root, "queue.json")) { clockMs },
+        queue = SetQueue(File(tmp.root, "queue.json")),
         deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
         localLog = LocalLog(File(tmp.root, "local.json")),
         localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
@@ -52,7 +52,7 @@ class WithheldWindowTests {
         now = { clockMs },
         mintSession = { "ses_1" },
         mintSet = Ids::set,
-        undoWindowMs = SetQueue.undoWindowMs,
+        undoWindowMs = Withheld.windowMs,
         sync = { if (it.isSignedIn) server else null },
     )
 
@@ -137,21 +137,16 @@ class WithheldWindowTests {
         assertNull(Deletion.Unattributed.stillThere)
     }
 
-    // `2 deleted.` is a lie the moment the window also holds a set that was ADDED. Both live in the
-    // same transient on this surface, so both are counted, and the count says which it is.
     @Test
-    fun theCountSaysDeletedOnlyWhileEveryHeldThingIsADelete() {
+    fun oneHeldDeleteIsNamedAndSeveralAreCounted() {
         val two = listOf(
             WithheldDelete(Deletion.Thread("thr_1"), untilMs = 10_000),
             WithheldDelete(Deletion.Session("ses_1"), untilMs = 10_000),
         )
 
         assertEquals("2 deleted.", Withheld.line(two))
-        assertEquals("2 to take back.", Withheld.line(two.take(1), justLogged = loggedSet()))
-        assertEquals("3 to take back.", Withheld.line(two, justLogged = loggedSet()))
         assertEquals("one held thing is NAMED, never counted",
             "Session deleted.", Withheld.line(two.drop(1)))
-        assertEquals("81.5 kg × 5 logged.", Withheld.line(emptyList(), justLogged = loggedSet()))
         assertEquals("81.5 kg × 5 is out of the log.",
             Withheld.line(listOf(WithheldDelete(Deletion.Set("ses_1", loggedSet()), untilMs = 10_000))))
         assertNull(Withheld.line(emptyList()))
@@ -170,11 +165,6 @@ class WithheldWindowTests {
         assertEquals("2 deleted.", said)
         assertFalse("no detail rides a count", said.contains("routine’s history"))
         assertFalse("and no subject is named", said.contains("Conversation"))
-
-        val mixed = Withheld.line(held.take(1), justLogged = loggedSet())!!
-        assertEquals("2 to take back.", mixed)
-        assertFalse(mixed.contains("Conversation"))
-        assertFalse(mixed.contains("81.5"))
     }
 
     // D1's list, re-read: the subject first, then what happened to it, and a full stop on every one.
@@ -185,7 +175,6 @@ class WithheldWindowTests {
             Deletion.Routine("rt_1", "Push A").line,
             Deletion.Session("ses_1").line,
             Deletion.Thread("thr_1").line,
-            Withheld.logged(loggedSet()),
             Withheld.line(listOf(WithheldDelete(Deletion.Thread("t"), 1), WithheldDelete(Deletion.Thread("u"), 1)))!!,
             Withheld.alreadyGone,
         )
@@ -196,7 +185,6 @@ class WithheldWindowTests {
                 "Push A deleted.",
                 "Session deleted.",
                 "Conversation deleted.",
-                "81.5 kg × 5 logged.",
                 "2 deleted.",
                 "The window closed — that delete already went.",
             ),
@@ -214,7 +202,7 @@ class WithheldWindowTests {
 
         store.withhold(Deletion.Thread("thr_1"))
         // Right up to the last millisecond of the window, with every dispatch it could have taken.
-        advanceTimeBy(SetQueue.undoWindowMs - 1)
+        advanceTimeBy(Withheld.windowMs - 1)
         runCurrent()
 
         assertEquals("the row is off every list that reads it", setOf("thr_1"), store.withheldIds)
@@ -224,7 +212,7 @@ class WithheldWindowTests {
 
         assertNotNull("so Undo is a local act", store.keepWithheld())
         assertEquals(emptySet<String>(), store.withheldIds)
-        advanceTimeBy(SetQueue.undoWindowMs * 2)
+        advanceTimeBy(Withheld.windowMs * 2)
         runCurrent()
         assertTrue("and the clock that would have sent it finds nothing owed",
             "deleteThread" !in server.calls)
@@ -238,7 +226,7 @@ class WithheldWindowTests {
         val store = seated(server)
 
         store.withhold(Deletion.Thread("thr_1"))
-        advanceTimeBy(SetQueue.undoWindowMs - 1)
+        advanceTimeBy(Withheld.windowMs - 1)
         runCurrent()
         assertTrue("a millisecond before the window closes, nothing has gone",
             "thr_1" in server.conversations)
@@ -275,7 +263,7 @@ class WithheldWindowTests {
             Withheld.line(store.withheld))
         assertEquals(Deletion.Thread("thr_1"), store.keepWithheld()?.deletion)
 
-        advanceTimeBy(SetQueue.undoWindowMs * 2)
+        advanceTimeBy(Withheld.windowMs * 2)
         runCurrent()
         assertEquals("both conversations survive", setOf("thr_1", "thr_2"), server.conversations.keys)
     }
@@ -300,7 +288,7 @@ class WithheldWindowTests {
             listOf(routine), store.routines)
 
         store.withhold(Deletion.Routine(routine.id, routine.name))
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
         assertTrue("and the window closing is what finally tells the log",
             routine.id !in server.written)
@@ -315,7 +303,7 @@ class WithheldWindowTests {
         store.choose("bench-press")
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
 
         store.withhold(Deletion.Session("ses_1"))
@@ -356,7 +344,7 @@ class WithheldWindowTests {
         assertNull("and nothing is offered to take back — the delete never happened",
             Withheld.line(store.withheld))
 
-        advanceTimeBy(SetQueue.undoWindowMs * 2)
+        advanceTimeBy(Withheld.windowMs * 2)
         runCurrent()
         assertTrue("the clocks went down with the window", "deleteThread" !in server.calls)
         assertTrue("thr_1" in server.conversations)
@@ -381,7 +369,7 @@ class WithheldWindowTests {
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 90.0, reps = 3)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
@@ -397,7 +385,7 @@ class WithheldWindowTests {
         assertNull("with nothing offered to take back — the delete never happened",
             Withheld.line(store.withheld))
 
-        advanceTimeBy(SetQueue.undoWindowMs * 2)
+        advanceTimeBy(Withheld.windowMs * 2)
         runCurrent()
         assertEquals("the clock went down with the window: nothing was ever sent",
             emptyList<Pair<String, String>>(), server.removed)
@@ -419,12 +407,12 @@ class WithheldWindowTests {
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 90.0, reps = 3)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
         store.withhold(Deletion.Set("ses_1", taken))
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
 
         assertEquals(listOf("ses_1" to taken.id), server.removed)
@@ -444,7 +432,7 @@ class WithheldWindowTests {
         val store = seated(server)
 
         store.withhold(Deletion.Thread("thr_1"))
-        advanceTimeBy(SetQueue.undoWindowMs - 1_000)
+        advanceTimeBy(Withheld.windowMs - 1_000)
         runCurrent()
         assertNotNull(store.keepWithheld())
         store.withhold(Deletion.Thread("thr_1"))
@@ -455,7 +443,7 @@ class WithheldWindowTests {
             "thr_1" in server.conversations)
         assertNotNull("and the second window is still the lifter's", store.holding)
 
-        advanceTimeBy(SetQueue.undoWindowMs)
+        advanceTimeBy(Withheld.windowMs)
         runCurrent()
         assertTrue("its own clock is what finally sends it", "thr_1" !in server.conversations)
     }
@@ -470,7 +458,7 @@ class WithheldWindowTests {
             500, works.windmill.platform.net.Refusal(message = "internal error"))
 
         store.withhold(Deletion.Routine(routine.id, routine.name))
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
 
         assertEquals("the log's own words, the way every refusal in this room is said",
@@ -503,7 +491,7 @@ class WithheldWindowTests {
         assertEquals("and nothing is holding the day any more", emptyList<WithheldDelete>(), store.withheld)
         assertEquals("so it is drawn the instant it is saved", listOf(day), store.bodyweight.map { it.dateLocal })
 
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
         assertEquals("and the clock that would have deleted it is down",
             listOf(79.5), store.bodyweight.map { it.weightKg })
@@ -534,7 +522,7 @@ class WithheldWindowTests {
         assertEquals("the note's own clock is still the lifter's",
             listOf("note_1"), store.withheld.map { it.subjectId })
 
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
         assertEquals("and it reaches the wire on that clock", listOf("deleteNote"),
             server.calls.filter { it == "deleteNote" })
@@ -557,7 +545,7 @@ class WithheldWindowTests {
         assertEquals("and the cap still counts it, because the log will refuse the eleventh",
             10, store.noteCount)
 
-        advanceTimeBy(SetQueue.undoWindowMs + 1)
+        advanceTimeBy(Withheld.windowMs + 1)
         runCurrent()
         assertEquals("the row stays gone", 9, store.notes.size)
         assertEquals("and the count is nine, so `Add a note` is offered again", 9, store.noteCount)

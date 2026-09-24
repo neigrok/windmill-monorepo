@@ -43,22 +43,22 @@ This contract improves presentation latency and stability. It does not promise l
 
 ## Workout exercise swipes
 
-The horizontal navigation region covers the workout body: title, clock and history region, unused space, and rack surfaces that do not own a conflicting drag. Native top/bottom navigation and modal surfaces retain their own behavior.
+The horizontal navigation region covers the workout body: the pinned head and clocks, the set ledger, unused space, and rack surfaces that do not own a conflicting drag. Native top/bottom navigation and modal surfaces retain their own behavior.
 
 The native pager reveals the adjacent exercise while the finger moves. In a left-to-right layout, left advances and right returns; the platform mirrors direction in a right-to-left layout. Reversing a drag restores the current page. A released gesture settles using native position and velocity rules, one adjacent exercise at a time. At the first/last exercise it stays in place. It never wraps, opens the movement picker, finishes training or logs a set. Movement switching uses the existing domain transition and preserves clock anchors, entered rack values according to existing movement ownership, queued sets and save/refusal state.
 
 | Competing interaction | Ownership |
 | --- | --- |
 | Horizontal workout drag | Claim only after native touch slop and clear horizontal intent; do not consume initial down |
-| Vertical or vertical-dominant drag | Reading-region scroll; no exercise switch |
-| Horizontal set strip or slider | Child drag wins once it consumes movement; parent does not also navigate |
+| Vertical or vertical-dominant drag | Ledger scroll; the head stays pinned; no exercise switch |
+| Horizontal slider | Child drag wins once it consumes movement; parent does not also navigate |
 | Button or editable value | Tap and long press retain their action; a deliberate horizontal drag can cancel the click and navigate if the child has not claimed a drag |
 | System edge gesture | Android owns the gesture; respect actual system gesture insets and add no exclusion rectangle |
 | Sheet, keypad, popup or menu | Modal surface owns the interaction; underlying workout navigation is disabled |
 | Additional pointer | Native scrolling may transfer the active pointer; a second contact performs no rack action during a drag |
 | Cancel or owner/state change | No stale destination is committed; align the pager to the current selected exercise |
 
-Compose owns touch slop, axis selection and snapping. The reading region translates with the finger; the rack stays fixed. A cancelled or reversed drag preserves the rack draft. Selection and any departure question wait until the destination settles, and rack edits and logging are disabled during motion. Preserve existing pressed feedback and add no sound or haptic. Existing previous/next controls and semantic actions remain discoverable alternatives to swiping. A gesture does not become a requirement for operating training with accessibility services.
+Compose owns touch slop, axis selection and snapping. The page — head and ledger — translates with the finger; the rack stays fixed. A cancelled or reversed drag preserves the rack draft. Selection and any departure question wait until the destination settles, and rack edits and logging are disabled during motion. Preserve existing pressed feedback and add no sound or haptic. The head’s ‹ and › buttons (48 dp) and the title’s Previous/Next movement actions remain discoverable alternatives to swiping. A gesture does not become a requirement for operating training with accessibility services.
 
 ## Acceptance and structure
 
@@ -66,6 +66,6 @@ Verify routine Home and Detail with the same fixture and scale, in both skins, a
 
 Exercise deterministic streaming with rapid bursts, isolated single characters, long paragraphs, newlines, Unicode, pauses, completion, Stop and reconnection. Record time to first visible fixture text and whether older-message anchors stay fixed while new content arrives. Check long-press Copy during streaming, menu persistence, Jump to latest, IME changes and reduced motion. Separate native observation from assertions that only exercise state or layout in tests.
 
-Exercise left/right swipes from the title, clocks, history, blank reading space, rack background and a button surface. Verify vertical scrolling at large text, horizontal set-strip scrolling, ordinary taps/long presses, first/last bounds, system Back edges and every open modal. Confirm no unintended set is logged and no timer anchor changes. Record accessibility checks actually performed rather than inferring TalkBack behavior from semantics.
+Exercise left/right swipes from the title, clocks, ledger rows, blank reading space, rack background and a button surface. Verify vertical ledger scrolling at large text, ordinary taps/long presses, first/last bounds, system Back edges and every open modal. Confirm no unintended set is logged and no timer anchor changes. Record accessibility checks actually performed rather than inferring TalkBack behavior from semantics.
 
 Keep gesture arbitration in one feature-level owner and streaming presentation in one feature-level owner. The store remains responsible for persisted data and domain transitions. After implementation, remove redundant title-only gesture handlers, competing scroll effects and text-keyed transient-state resets covered by the new owners. Do not broaden these changes into global spacing or text infrastructure without another concrete consumer.

@@ -116,8 +116,8 @@ enum Performed {
 struct SessionScreen: View {
     let summary: SessionSummary
     @ObservedObject var store: TrainingStore
-    // The undo lives on the room's transient now: an inline row can scroll out of view while the
-    // window is still open, and it never shows the window closing (`13-gestures.md` Law 4).
+    // The undo lives on the room's transient: an inline row can scroll out of view while the window
+    // is still open, and it never shows the window closing (`13-gestures.md` Law 4).
     @ObservedObject var withheld: WithheldWindow
     let coach: CoachDoors
     let onMovement: (String) -> Void
@@ -128,15 +128,7 @@ struct SessionScreen: View {
     @State private var setsFailure: TrainingStore.WriteFailure?
     @State private var review: Review?
     @State private var read = false
-    @State private var fixing: Fixing?
-
-    private struct Fixing: Identifiable {
-        let set: TrainingSet
-        let movement: String
-        let number: String
-
-        var id: String { self.set.id }
-    }
+    @State private var fixing: FixSheet.Subject?
 
     var body: some View {
         List {
@@ -173,11 +165,6 @@ struct SessionScreen: View {
                          fixing = nil
                          hold(open.set)
                      })
-                .presentationBackground(skin.surface)
-                // Not a fixed height: the sheet gained two fields, and a pinned detent is what sends
-                // the visible half to zero at the largest accessibility sizes.
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -320,12 +307,12 @@ struct SessionScreen: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Fix this set")
+        .accessibilityHint(FixSheet.door)
     }
 
     private func open(_ row: Performed.Row, of movement: String) {
         guard let held = detail?.sets.first(where: { $0.id == row.id }) else { return }
-        fixing = Fixing(set: held, movement: movement, number: row.number)
+        fixing = FixSheet.Subject(set: held, movement: movement, number: row.number)
     }
 
     // The head's numbers are the log's arithmetic, read off `recent`; the opening copy is the fallback.
@@ -355,8 +342,8 @@ struct SessionScreen: View {
     // What the store answers with is what stands: a change the log refused leaves the row exactly as it was.
     private func save(_ correction: SetFix, to set: TrainingSet) async {
         guard !correction.isEmpty else { return }
-        GymConfirm.saved()
         let stands = await store.fix(set, in: summary.session.id, by: correction)
+        if stands != set { GymConfirm.saved() }
         if let held = detail {
             detail = SessionDetail(session: held.session,
                                    sets: held.sets.map { $0.id == stands.id ? stands : $0 })
@@ -372,25 +359,14 @@ struct SessionScreen: View {
     }
 
     private func hold(_ set: TrainingSet) {
-        let sessionId = summary.session.id
         Task {
-            await withheld.hold(Withheld(
-                .set, subject: set.id,
-                line: WithheldWords.deleted(Readout.effort(weightKg: set.weightKg, reps: set.reps)),
-                take: { until in await delete(set, heldUntilMs: until) },
-                settle: {
-                    await store.flushPendingSets()
-                    return true
-                },
-                restore: {
-                    guard await store.restore(set, in: sessionId) else { return }
-                    await restored(set)
-                }))
+            await withheld.hold(Withheld(deleting: set, in: summary.session.id, from: store,
+                                         deleted: { await dropped(set) },
+                                         restored: { await restored(set) }))
         }
     }
 
-    private func delete(_ set: TrainingSet, heldUntilMs: Int64) async {
-        await store.delete(set, in: summary.session.id, heldUntilMs: heldUntilMs)
+    private func dropped(_ set: TrainingSet) async {
         if let held = detail {
             detail = SessionDetail(session: held.session, sets: held.sets.filter { $0.id != set.id })
         }

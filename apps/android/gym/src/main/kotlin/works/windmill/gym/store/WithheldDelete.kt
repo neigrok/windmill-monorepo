@@ -114,29 +114,21 @@ data class WithheldDelete(
 // that named one of them would be saying the wrong thing about the others. Undo takes the newest
 // back and the transient re-reads for the rest.
 //
-// A set just LOGGED has a way back on the same clock, and it is held in this same transient — so it
-// is counted here too. It is the one thing in the window that is not a delete, which is exactly why
-// the count has two spellings: `2 deleted.` is a lie the moment an append is among them.
-//
 // The same bytes on all three surfaces.
 object Withheld {
+    // How long a delete stays the lifter's. Must match iOS to the millisecond.
+    const val windowMs = 9_000L
+
     const val undo = "Undo"
 
     // Said when Undo is pressed a frame after the clock fired: the log has it, and pretending
     // otherwise would be the one lie this whole mechanism exists to prevent.
     const val alreadyGone = "The window closed — that delete already went."
 
-    // The room's own weight rendering, in the shape every other line here takes: the subject first,
-    // then what happened to it.
-    fun logged(set: TrainingSet): String =
-        "${Readout.weight(set.weightKg)} kg × ${set.reps} logged."
-
-    fun line(held: List<WithheldDelete>, justLogged: TrainingSet? = null): String? {
-        val deletes = held.count { it.takeable }
-        val open = deletes + if (justLogged == null) 0 else 1
+    fun line(held: List<WithheldDelete>): String? {
+        val open = held.count { it.takeable }
         if (open == 0) return null
-        if (open > 1) return if (justLogged == null) "$open deleted." else "$open to take back."
-        if (justLogged != null) return logged(justLogged)
+        if (open > 1) return "$open deleted."
         val only = held.last { it.takeable }.deletion
         return only.detail?.let { "${only.line}\n$it" } ?: only.line
     }

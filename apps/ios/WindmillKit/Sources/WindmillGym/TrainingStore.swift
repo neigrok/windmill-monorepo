@@ -66,6 +66,11 @@ public final class TrainingStore: ObservableObject {
     public var dayWrittenAgain: (String) async -> Void = { _ in }
     private var lastTimes: [String: LastTime] = [:]
     private var retryTask: Task<Void, Never>?
+    // The walk now on the wire. Walks run one at a time, so a set is never sent twice at once and a
+    // reply is only ever read against the entry its own walk sent.
+    private var walk: Task<Void, Never>?
+    // Appends on their first try: sent, not answered, and not failed either — nothing is stranded yet.
+    private var firstTries: Set<String> = []
     // While the shelf replays, an ordinary start composes on the device: the server would join instead.
     private var claiming = false
     private var claimAgainWhenDone = false
@@ -184,16 +189,6 @@ public final class TrainingStore: ObservableObject {
     // Owed as an append means this device is the only home; a correction or deletion is not.
     public var stalled: Set<String> {
         Set(queue.pending.filter { $0.owes == .append }.map(\.set.id))
-    }
-
-    public var undoable: TrainingSet? {
-        queue.withdrawable(at: now())?.set
-    }
-
-    // The instant the queue itself will let that set go. The transient runs on this clock rather than
-    // on a second one started after the walk, so it never offers an undo the queue has already spent.
-    public var undoableUntilMs: Int64? {
-        queue.withdrawable(at: now())?.heldUntilMs
     }
 
     // A delete whose window is still open: gone from every list published here, still on the log.
@@ -654,30 +649,14 @@ public final class TrainingStore: ObservableObject {
         guard let live = session, let movement = exerciseId, !isFinishing else { return }
         let set = TrainingSet(id: mintSet(), exerciseId: movement, weightKg: weightKg, reps: reps,
                               kind: kind, completedAtMs: now())
-        queue.store(set, in: live.id, needsPush: true, heldUntilMs: now() + undoWindowMs)
+        queue.store(set, in: live.id, needsPush: true)
         queue.flush()
         drawFromQueue()
         await deliver()
     }
 
-    @discardableResult
-    public func undoLast() -> Bool {
-        guard let set = undoable else { return false }
-        return withdraw(set.id)
-    }
-
-    // The set named, and only while it is still owed as an append: past that the log has it, and no
-    // route un-logs a set. The window register calls this one, so an undo cannot take back the wrong row.
-    @discardableResult
-    public func withdraw(_ setId: String) -> Bool {
-        guard queue.withdraw(setId) else { return false }
-        queue.flush()
-        drawFromQueue()
-        return true
-    }
-
-    // Leaving keeps the window: what is still held stays held, and the queue's own clock — written to
-    // disk beside the row — is what sends it, on the next walk or the next launch.
+    // Leaving keeps a delete's window: what is still held stays held, and the queue's own clock —
+    // written to disk beside the row — is what sends it, on the next walk or the next launch.
     public func flushPendingSets() async {
         await deliver()
     }
@@ -692,7 +671,7 @@ public final class TrainingStore: ObservableObject {
         guard let gym else { return .failed(.noAnswer) }
         isFinishing = true
         defer { isFinishing = false }
-        // Forced: a set still inside its window would be skipped by the walk and refused by the close.
+        // Forced: a delete still inside its window would be skipped and counted stranded below.
         await deliver(force: true)
 
         let stranded = queue.owed(in: live.id).count
@@ -1106,8 +1085,9 @@ public final class TrainingStore: ObservableObject {
                              })
     }
 
-    // Where the set lives decides the write: a shelf session is corrected there, a row owed as an
-    // append is rewritten in the queue, and only a row the log holds goes over the wire.
+    // Where the set lives decides the write: a shelf session is corrected there, an append never sent
+    // is rewritten in the queue, and a row the log holds — or may hold — is corrected over the wire.
+    // Answers the row as it stands: the set as it was when the log refused the change.
     @discardableResult
     public func fix(_ set: TrainingSet, in sessionId: String, by correction: SetFix) async -> TrainingSet {
         let corrected = set.corrected(by: correction)
@@ -1127,11 +1107,14 @@ public final class TrainingStore: ObservableObject {
         let said = refusals.count
         queue.fix(corrected, in: sessionId)
         queue.flush()
+        drawFromQueue()
         await deliver()
         // Only refusals this call collected: an older loss would answer for a write nobody has made.
         let refused = refusals.dropFirst(said).contains {
-            guard case .change(let lost) = $0 else { return false }
-            return lost.id == set.id
+            switch $0 {
+            case .set(let lost), .change(let lost): return lost.id == set.id
+            case .claim: return false
+            }
         }
         return refused ? set : corrected
     }
@@ -1147,7 +1130,7 @@ public final class TrainingStore: ObservableObject {
             drawRecent(served)
             return
         }
-        // A row the log has never been told about: letting the queue's row go is the whole deletion.
+        // An append never sent: letting the queue's row go is the whole deletion.
         if logHasNeverSeen(set.id, in: sessionId) {
             queue.drop(set.id)
             queue.flush()
@@ -1156,6 +1139,7 @@ public final class TrainingStore: ObservableObject {
         }
         queue.delete(set, in: sessionId, heldUntilMs: until)
         queue.flush()
+        drawFromQueue()
         await deliver()
     }
 
@@ -1238,10 +1222,11 @@ public final class TrainingStore: ObservableObject {
         return await deleteWeighIn(on: dateLocal)
     }
 
-    // A PATCH filed over an owed append destroys the only copy of that set.
+    // A PATCH filed over an unsent append destroys the only copy of that set; a rewrite of a sent one
+    // is overwritten by the log's answer to the append already on the wire.
     private func logHasNeverSeen(_ setId: String, in sessionId: String) -> Bool {
         if queue.sessionIsUnclaimed, queue.session?.id == sessionId { return true }
-        return queue.owes(setId) == .append
+        return queue.isUnsent(setId)
     }
 
     // The device answers only where it is the only home. Who answered rides back: it computes no Epley.
@@ -1312,8 +1297,19 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
-    // One pass per (session, movement) lane, so a set that cannot land holds up its own lane only.
+    // Waits for the walk on the wire, then walks again: whatever changed meanwhile goes out behind it.
     private func deliver(force: Bool = false) async {
+        let earlier = walk
+        let mine = Task {
+            await earlier?.value
+            await walkTheQueue(force: force)
+        }
+        walk = mine
+        await mine.value
+    }
+
+    // One pass per (session, movement) lane, so a set that cannot land holds up its own lane only.
+    private func walkTheQueue(force: Bool) async {
         retryTask?.cancel()
         retryTask = nil
         guard !queue.pending.isEmpty else {
@@ -1333,46 +1329,58 @@ public final class TrainingStore: ObservableObject {
         var vanished: Set<String> = []
         var blockedBy: Stall?
         while let owed = queue.nextOwed(skipping: blocked, readyAt: force ? nil : now()) {
+            let firstTry = owed.step == .append && !owed.mayBeOnTheLog
+            let sent = queue.sending(owed)
+            queue.flush()
+            if firstTry { firstTries.insert(sent.set.id) }
+            defer { firstTries.remove(sent.set.id) }
             do {
-                switch owed.write {
+                switch sent.step {
                 case .append:
-                    let stored = try await gym.appendSet(to: owed.sessionId, SetWrite(owed.set))
-                    queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
+                    let stored = try await gym.appendSet(to: sent.sessionId, SetWrite(sent.set))
+                    queue.appended(stored, as: sent)
                 case .fix:
-                    let stored = try await gym.fixSet(owed.set.id, in: owed.sessionId,
-                                                      SetFix(whole: owed.set))
-                    queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
+                    let stored = try await gym.fixSet(sent.set.id, in: sent.sessionId, SetFix(whole: sent.set))
+                    queue.fixed(stored, as: sent)
                     movedHistory = true
                 case .delete:
-                    try await gym.deleteSet(owed.set.id, in: owed.sessionId)
-                    queue.drop(owed.set.id)
+                    try await gym.deleteSet(sent.set.id, in: sent.sessionId)
+                    queue.deleted(sent)
                     movedHistory = true
                 }
             } catch {
                 // Every session the walk carries is one the log once answered for: a 404 is it gone.
                 let verdict = Verdict(refusing: error, sessionOnTheLog: true)
                 // `set-not-found` is a change's word, never an append's, so an append keeps waiting.
-                if case .gone = verdict, owed.write == .append {
-                    blocked.insert(owed.lane)
+                if case .gone = verdict, sent.step == .append {
+                    blocked.insert(sent.lane)
                     if blockedBy == nil { blockedBy = Stall(error) }
                     continue
                 }
-                if case .vanished = verdict { vanished.insert(owed.sessionId) }
+                if case .vanished = verdict { vanished.insert(sent.sessionId) }
                 // A spent id is an append's repair alone: a fresh id aims a change at nothing.
-                let budget = owed.write == .append ? owed.remints : SetQueue.maxRemints
+                let budget = sent.step == .append ? sent.remints : SetQueue.maxRemints
                 if let reason = verdict.terminalReason(afterRemints: budget) {
-                    queue.drop(owed.set.id)
-                    refusals.append(owed.write == .append
-                                    ? .set(RefusedSet(owed.set, reason: reason))
-                                    : .change(RefusedSet(owed.set, reason: reason)))
-                    if owed.write == .append { refusal = reason }
+                    // Read off the entry as it stands: it may have been corrected or taken back while
+                    // the write was on the wire, and a set taken back that never landed is no loss.
+                    let lost = queue.pending.first { $0.set.id == sent.set.id } ?? sent
+                    queue.drop(sent.set.id)
+                    switch (sent.step, lost.write) {
+                    case (.append, .delete):
+                        break
+                    case (.append, _):
+                        refusals.append(.set(RefusedSet(lost.set, reason: reason)))
+                        refusal = reason
+                    default:
+                        refusals.append(.change(RefusedSet(sent.set, reason: reason)))
+                    }
                     continue
                 }
                 if case .remint = verdict {
-                    queue.remint(owed.set.id, as: mintSet())
+                    queue.remint(sent.set.id, as: mintSet())
                     continue
                 }
-                blocked.insert(owed.lane)
+                blocked.insert(sent.lane)
                 if blockedBy == nil { blockedBy = Stall(error) }
             }
         }
@@ -1387,7 +1395,7 @@ public final class TrainingStore: ObservableObject {
         // Scheduled off every write still carried, so a refusal in one lane cannot take the retry from
         // a set jammed in another. Parked sets are not carried.
         let carried = queue.pending.filter { $0.sessionId != parked }
-        if let earliestReady = carried.map({ $0.heldUntilMs ?? 0 }).min() {
+        if let earliestReady = carried.map(\.readyAtMs).min() {
             let waiting = earliestReady - now()
             scheduleDeliver(after: waiting > 0 ? .milliseconds(waiting) : retryAfter)
         } else if claimOwedRetryably {
@@ -1399,15 +1407,11 @@ public final class TrainingStore: ObservableObject {
             return
         }
         let owedSets = queue.pending.filter { $0.owes == .append }
-        guard let earliestSet = owedSets.filter({ $0.sessionId != parked })
-            .map({ $0.heldUntilMs ?? 0 }).min() else {
+        guard owedSets.contains(where: { $0.sessionId != parked }) else {
             settle(owedSets.isEmpty ? .onTheLog : .onThisDevice)
             return
         }
-        guard earliestSet - now() > 0 else {
-            settle(.blocked(blockedBy ?? .logFailed))
-            return
-        }
+        settle(.blocked(blockedBy ?? .logFailed))
     }
 
     private func scheduleDeliver(after delay: Duration) {
@@ -1862,15 +1866,10 @@ public final class TrainingStore: ObservableObject {
             queue.flush()
         }
         order = merged
-        // Counted off the queue, never off `saveState`. A set inside its undo window is not stranded,
-        // nor is a parked set, a correction, a deletion, or anything signed out.
-        let instant = now()
+        // Counted off the queue, never off `saveState`. A parked set is not stranded, nor is a first
+        // try still on the wire, a correction, a deletion, or anything signed out.
         let parked = queue.sessionIsUnclaimed ? queue.session?.id : nil
-        strandedCount = gym == nil
-            ? 0
-            : queue.pending.filter {
-                $0.owes == .append && !$0.isHeld(at: instant) && $0.sessionId != parked
-            }.count
+        strandedCount = gym == nil ? 0 : queue.stranded(sparing: firstTries, parked: parked)
         redial()
     }
 

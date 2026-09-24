@@ -36,7 +36,6 @@ data class GymColors(
     val inkDim: Color,
     val inkFaint: Color,
     val setDone: Color,
-    val setDoneSoft: Color,
     val accentSoft: Color,
     val prInk: Color,
     val prSoft: Color,
@@ -57,7 +56,7 @@ object GymSkin {
         accent = Color(0xFF5FCDB4), accentHover = Color(0xFF8FE0CD), accentPressed = Color(0xFF3DAE95),
         onAccent = Color(0xFF1B1408), ink = Color(0xFFF1F0EB), inkDim = Color(0xFFB6B5AF),
         inkFaint = Color(0xFF727771), setDone = Color(0xFF9AA859),
-        setDoneSoft = Color(0x269AA859), accentSoft = Color(0x335FCDB4), prInk = Color(0xFFD9B04C), prSoft = Color(0x26D9B04C),
+        accentSoft = Color(0x335FCDB4), prInk = Color(0xFFD9B04C), prSoft = Color(0x26D9B04C),
         alarmInk = Color(0xFFD08268), scrim = Color(0xB8030606),
     )
     val Daylight = GymColors(
@@ -66,7 +65,7 @@ object GymSkin {
         accent = Color(0xFF4C4374), accentHover = Color(0xFF3A3358), accentPressed = Color(0xFF2F2A46),
         onAccent = Color.White, ink = Color(0xFF1A1918), inkDim = Color(0xFF4C4744),
         inkFaint = Color(0xFF625C58), setDone = Color(0xFF7D8C43),
-        setDoneSoft = Color(0xFFF3F4E4), accentSoft = Color(0xFFEDEBF3), prInk = Color(0xFFA17822), prSoft = Color(0x24A17822),
+        accentSoft = Color(0xFFEDEBF3), prInk = Color(0xFFA17822), prSoft = Color(0x24A17822),
         alarmInk = Color(0xFFA84E35), scrim = Color(0x731A1918),
     )
 }

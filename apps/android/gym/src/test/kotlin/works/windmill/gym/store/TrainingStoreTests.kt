@@ -109,7 +109,7 @@ class TrainingStoreTests {
         undoWindowMs: Long = 0,
         deviceOwner: String? = null,
     ) = TrainingStore(
-        queue = SetQueue(queueFile, deviceOwner) { clockMs },
+        queue = SetQueue(queueFile, deviceOwner),
         deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile, deviceOwner),
         localPreferences = LocalPreferences(preferencesFile),
@@ -127,7 +127,7 @@ class TrainingStoreTests {
         logs: Map<String, TrainingSyncing>,
         deviceOwner: String? = null,
     ) = TrainingStore(
-        queue = SetQueue(queueFile, deviceOwner) { clockMs },
+        queue = SetQueue(queueFile, deviceOwner),
         deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile, deviceOwner),
         localPreferences = LocalPreferences(preferencesFile),
@@ -450,8 +450,7 @@ class TrainingStoreTests {
 
         store.start()
         store.choose("bench-press")
-        assertEquals("no history is a first time, not a failure", false, store.lastTimeFailed)
-        assertEquals(true, store.lastTime?.isFirstTime)
+        assertEquals("no history is a first time", true, store.lastTime?.isFirstTime)
 
         store.logSet(weightKg = 60.0, reps = 10, kind = SetKind.Warmup)
         store.logSet(weightKg = 82.5, reps = 5)
@@ -1352,7 +1351,7 @@ class TrainingStoreTests {
 
     @Test
     fun testACrashBetweenShelfHoldAndQueueForgetConvergesOnRelaunch() = runTest {
-        val crashed = SetQueue(queueFile) { clockMs }
+        val crashed = SetQueue(queueFile)
         val live = Session(id = "ses_1", startedAtMs = 1_000)
         crashed.hold(live)
         crashed.store(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
@@ -1582,33 +1581,38 @@ class TrainingStoreTests {
         assertEquals(listOf(0), store.logged.map { it.workingSetCount })
     }
 
-    // The live session's rows are the queue's. A set the log has not taken is rewritten IN the
-    // queue, still owed: nothing goes over the wire, the strip draws the correction at once, and
-    // the corrected body is what lands when the signal is back.
+    // The live session's rows are the queue's. A set no send has carried yet — here the one queued
+    // behind a jammed lane — is rewritten IN the queue, still owed: nothing goes over the wire, the
+    // strip draws the correction at once, and the corrected body is what lands when the signal is
+    // back. The set whose send went out stays as it was: the log may already hold it.
     @Test
-    fun testFixingASetStillOwedRewritesItInTheQueueAndTheCorrectionIsWhatLands() = runTest {
+    fun testFixingASetNoSendHasCarriedRewritesItInTheQueueAndTheCorrectionIsWhatLands() = runTest {
         val server = FakeTraining()
         val store = liveStore(server)
         server.online = false
         store.logSet(weightKg = 82.5, reps = 5)
-        val setId = store.sets.single().id
-        assertEquals(setOf(setId), store.stalled)
+        store.logSet(weightKg = 85.0, reps = 5)
+        val (tried, behind) = store.sets.map { it.id }
+        assertEquals(setOf(tried, behind), store.stalled)
+        assertEquals(2, store.strandedCount)
 
-        val fixed = store.fixSet("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+        val fixed = store.fixSet("ses_1", behind, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
 
         assertEquals(90.0, (fixed as FixOutcome.Corrected).set.weightKg, 0.0)
-        assertEquals("the strip draws the correction from the store", listOf(90.0 to 3),
+        assertEquals("the strip draws the correction from the store", listOf(82.5 to 5, 90.0 to 3),
             store.sets.map { it.weightKg to it.reps })
         assertEquals("still owed — nothing was PATCHed at a log that has never seen the id",
-            setOf(setId), store.stalled)
+            setOf(tried, behind), store.stalled)
         assertTrue(server.fixes.isEmpty())
-        assertEquals(listOf(90.0), queueOnDisk().pending.map { it.set.weightKg })
+        assertEquals(listOf(Triple(tried, 82.5, true), Triple(behind, 90.0, false)),
+            queueOnDisk().pending.map { Triple(it.set.id, it.set.weightKg, it.attempted) })
 
         server.online = true
-        store.flushPendingSets(force = true)
-        assertEquals("the corrected body is the one that landed", listOf(90.0 to 3),
+        store.flushPendingSets()
+        assertEquals("the corrected body is the one that landed", listOf(82.5 to 5, 90.0 to 3),
             server.sets.getValue("ses_1").map { it.weightKg to it.reps })
         assertTrue(store.stalled.isEmpty())
+        assertEquals(0, store.strandedCount)
     }
 
     @Test
@@ -1629,22 +1633,25 @@ class TrainingStoreTests {
         assertTrue("a fix the log took owes nothing", store.stalled.isEmpty())
     }
 
+    // A set no send has carried is the device's alone, so its delete sends nothing.
     @Test
-    fun testDeletingASetStillOwedLeavesTheQueueAndSendsNothing() = runTest {
+    fun testDeletingASetNoSendHasCarriedLeavesTheQueueAndSendsNothing() = runTest {
         val server = FakeTraining()
         val store = liveStore(server)
         server.online = false
         store.logSet(weightKg = 82.5, reps = 5)
-        val setId = store.sets.single().id
+        store.logSet(weightKg = 85.0, reps = 5)
+        val (tried, behind) = store.sets
 
-        assertNull(store.deleteSet("ses_1", setId))
+        assertNull(store.deleteSet("ses_1", behind.id))
 
-        assertEquals(emptyList<TrainingSet>(), store.sets)
+        assertEquals(listOf(tried), store.sets)
         assertTrue("nothing to tell — the log never had it", server.removed.isEmpty())
-        assertTrue(queueOnDisk().pending.isEmpty())
+        assertEquals(listOf(tried), queueOnDisk().pending.map { it.set })
+        assertEquals(1, store.strandedCount)
         server.online = true
-        store.flushPendingSets(force = true)
-        assertEquals("and it never lands", emptyList<TrainingSet>(), server.sets["ses_1"] ?: emptyList<TrainingSet>())
+        store.flushPendingSets()
+        assertEquals("and it never lands", listOf(tried.id), server.sets.getValue("ses_1").map { it.id })
     }
 
     @Test
@@ -1737,17 +1744,17 @@ class TrainingStoreTests {
     @Test
     fun testADeleteIsWithheldUntilTheWindowClosesAndUndoTakesItBackUnsent() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        val store = liveStore(server, undoWindowMs = Withheld.windowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 90.0, reps = 3)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
         store.withhold(Deletion.Set("ses_1", taken))
         assertEquals(
-            listOf(WithheldDelete(Deletion.Set("ses_1", taken), untilMs = clockMs + SetQueue.undoWindowMs)),
+            listOf(WithheldDelete(Deletion.Set("ses_1", taken), untilMs = clockMs + Withheld.windowMs)),
             store.withheld)
         assertTrue("nothing has been told yet", server.removed.isEmpty())
 
@@ -1775,11 +1782,11 @@ class TrainingStoreTests {
     @Test
     fun testASecondDeleteOpensAWindowOfItsOwnAndSettlesNothing() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        val store = liveStore(server, undoWindowMs = Withheld.windowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 60.0, reps = 12)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val first = server.sets.getValue("ses_1").first()
         val second = server.sets.getValue("ses_1").last()
@@ -1807,7 +1814,7 @@ class TrainingStoreTests {
     @Test
     fun testADeleteTheLogCouldNotTakeIsSaidAndTheRowStands() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        val store = liveStore(server, undoWindowMs = Withheld.windowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
         store.finish()
@@ -1824,7 +1831,7 @@ class TrainingStoreTests {
     @Test
     fun testAWithheldDeleteIsDroppedRatherThanSentAtSomebodyElsesLog() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        val store = liveStore(server, undoWindowMs = Withheld.windowMs)
         store.logSet(weightKg = 82.5, reps = 5)
         clockMs += 60_000
         store.finish()

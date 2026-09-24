@@ -100,31 +100,39 @@ class LiveLinesTests {
     }
 
     @Test
-    fun testTheSlotStripIsWhatLandedThenEveryPlannedSetStillToCome() {
+    fun testTheLedgerIsWhatLandedThenTheSetInHandThenEveryPlannedSetStillToCome() {
         val lowerA = PlanEntry(exerciseId = "back-squat", sets = listOf(
             SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)))
         val landed = listOf(aSet("back-squat", 60.0, 5, at = 1_000, id = "s1"),
                             aSet("back-squat", 80.0, 5, at = 2_000, id = "s2"))
 
-        val slots = LiveLines.slots(landed, lowerA, stalled = emptySet())
+        val slots = LiveLines.slots(landed, lowerA, stalled = setOf("s2"))
 
         assertEquals(
             listOf(
-                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "60 × 5", "", isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "80 × 5", "", isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Planned(index = 3, target = SetTarget(3, 90.0), current = true),
-                LiveLines.Slot.Planned(index = 4, target = SetTarget(1, 100.0), current = false),
-                LiveLines.Slot.Planned(index = 5, target = SetTarget(5, 80.0), current = false),
+                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "60", 5, isWarmup = false, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "80", 5, isWarmup = false, isOnThisDevice = true)),
+                LiveLines.Slot.Current(index = 3, target = SetTarget(3, 90.0)),
+                LiveLines.Slot.Planned(index = 4, target = SetTarget(1, 100.0)),
+                LiveLines.Slot.Planned(index = 5, target = SetTarget(5, 80.0)),
             ),
             slots)
-        val current = slots[2] as LiveLines.Slot.Planned
-        assertEquals("90 × 3", current.value)
-        assertEquals("set 3, target 90 × 3", current.spoken)
-        assertEquals("set 3 of 5", LiveLines.counter(workingSetsToday = 2, planEntry = lowerA))
+        assertEquals(
+            listOf(
+                "Set 1, logged, 60 kg, 5 reps",
+                "Set 2, logged, 80 kg, 5 reps, on this device",
+                "Set 3, current, target 90 kg, 3 reps",
+                "Set 4, planned, 100 kg, 1 rep",
+                "Set 5, planned, 80 kg, 5 reps",
+            ),
+            slots.map { it.spoken })
+        assertEquals("target 90 × 3", (slots[2] as LiveLines.Slot.Current).targetLine)
+        assertEquals(listOf("100" to "1", "80" to "5"),
+            slots.filterIsInstance<LiveLines.Slot.Planned>().map { it.weight to it.reps })
     }
 
     @Test
-    fun testAWarmupStandsBeforeSlotOneAndASetPastThePlanIsAPlainLandedPill() {
+    fun testAWarmupIsUncountedAndPastThePlanTheSetInHandHasNoTarget() {
         val entry = PlanEntry(exerciseId = "chin-up", sets = List(2) { SetTarget() })
         val sets = listOf(aSet("chin-up", 0.0, 5, at = 900, kind = SetKind.Warmup, id = "w1"),
                           aSet("chin-up", 0.0, 9, at = 1_000, id = "s1"),
@@ -132,117 +140,54 @@ class LiveLinesTests {
                           aSet("chin-up", 0.0, 6, at = 3_000, id = "s3"))
 
         assertEquals(
-            listOf("w", "1", "2", "3"),
-            LiveLines.slots(sets, entry, stalled = setOf("s3")).map { (it as LiveLines.Slot.Landed).row.index })
+            listOf(
+                LiveLines.Slot.Landed(LiveLines.Row("w1", "W", "0", 5, isWarmup = true, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "0", 9, isWarmup = false, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "0", 8, isWarmup = false, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s3", "3", "0", 6, isWarmup = false, isOnThisDevice = false)),
+                LiveLines.Slot.Current(index = 4, target = null),
+            ),
+            LiveLines.slots(sets, entry, stalled = emptySet()))
+
+        val opening = LiveLines.slots(sets.take(1), entry, stalled = emptySet())
         assertEquals(
-            listOf(LiveLines.Slot.Landed(LiveLines.Row("w1", "w", "0 × 5", "warmup", isWarmup = true, isOnThisDevice = false)),
-                   LiveLines.Slot.Planned(index = 1, target = SetTarget(), current = true),
-                   LiveLines.Slot.Planned(index = 2, target = SetTarget(), current = false)),
-            LiveLines.slots(sets.take(1), entry, stalled = emptySet()))
-        assertEquals("set 1, target last × max",
-            (LiveLines.slots(sets.take(1), entry, stalled = emptySet())[1] as LiveLines.Slot.Planned).spoken)
-        assertEquals("no plan, no planned pills", emptyList<LiveLines.Slot>(),
-            LiveLines.slots(emptyList(), null, stalled = emptySet()))
-    }
+            listOf(
+                LiveLines.Slot.Landed(LiveLines.Row("w1", "W", "0", 5, isWarmup = true, isOnThisDevice = false)),
+                LiveLines.Slot.Current(index = 1, target = SetTarget()),
+                LiveLines.Slot.Planned(index = 2, target = SetTarget()),
+            ),
+            opening)
+        assertEquals(
+            listOf(
+                "Warmup, logged, 0 kg, 5 reps",
+                "Set 1, current, target last time’s weight, max reps",
+                "Set 2, planned, last time’s weight, max reps",
+            ),
+            opening.map { it.spoken })
+        assertEquals("target last × max", (opening[1] as LiveLines.Slot.Current).targetLine)
+        assertEquals("last" to "max", (opening[2] as LiveLines.Slot.Planned).let { it.weight to it.reps })
 
-    // The chip stands in for the coming WORKING set: last time's warmups are skipped over, never
-    // counted as its first set; past the end the last working set stands; only a last time that was
-    // warmups alone answers with its last set; and one with no set at all answers with nothing.
-    @Test
-    fun testTheLastTimeSetIsTheNthWorkingSetAndDegradesToTheLastOne() {
-        val lastTime = listOf(
-            aSet("bench-press", 40.0, 10, at = 100, kind = SetKind.Warmup, id = "w1"),
-            aSet("bench-press", 80.0, 5, at = 200, id = "s1"),
-            aSet("bench-press", 82.5, 3, at = 300, id = "s2"),
-            aSet("bench-press", 60.0, 8, at = 400, kind = SetKind.Drop, id = "d1"),
-        )
-
-        assertEquals("s1", LiveLines.lastTimeSet(lastTime, workingSetsToday = 0)?.id)
-        assertEquals("s2", LiveLines.lastTimeSet(lastTime, workingSetsToday = 1)?.id)
-        assertEquals("past the end, the last working set — never the drop after it",
-                     "s2", LiveLines.lastTimeSet(lastTime, workingSetsToday = 5)?.id)
-        val warmupsOnly = lastTime.take(1)
-        assertEquals("w1", LiveLines.lastTimeSet(warmupsOnly, workingSetsToday = 0)?.id)
-        assertNull(LiveLines.lastTimeSet(emptyList(), workingSetsToday = 0))
+        val free = LiveLines.slots(emptyList(), null, stalled = emptySet())
+        assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null)), free)
+        assertEquals(listOf("Set 1, current"), free.map { it.spoken })
+        assertNull((free.single() as LiveLines.Slot.Current).targetLine)
     }
 
     @Test
     fun testTheMovementPlaceIsCountedOffTheWalkAndDegradesToSilence() {
         val order = listOf("bench-press", "overhead-press", "cable-fly")
 
-        assertEquals("movement 1 of 3", LiveLines.place(order, "bench-press"))
-        assertEquals("movement 3 of 3", LiveLines.place(order, "cable-fly"))
+        assertEquals(LiveLines.Place(1, 3), LiveLines.place(order, "bench-press"))
+        assertEquals(listOf("Exercise 3 / 3", "Exercise 3 of 3"),
+                     LiveLines.place(order, "cable-fly")?.let { listOf(it.shown, it.spoken) })
         assertEquals("an appended movement counts the moment it joins the walk",
-                     "movement 3 of 3", LiveLines.place(order, order.last()))
+                     LiveLines.Place(3, 3), LiveLines.place(order, order.last()))
         assertNull("a movement the walk does not hold has no place",
                    LiveLines.place(order, "chin-up"))
         assertNull(LiveLines.place(order, null))
         assertNull("a walk of one is not a position worth a line",
                    LiveLines.place(listOf("bench-press"), "bench-press"))
         assertNull(LiveLines.place(emptyList(), "bench-press"))
-    }
-
-    @Test
-    fun testTheCardTellsAPendingReadFromAFailedOne() {
-        assertNull("a read still running draws nothing — the chip appears when the answer lands",
-                   LiveLines.prefillCard(lastTime = null, routine = null, readFailed = false, now = 0))
-
-        val failed = LiveLines.prefillCard(lastTime = null, routine = null, readFailed = true, now = 0)
-        assertEquals(LiveLines.Card(title = "Last time", body = "the log didn’t answer"), failed)
-    }
-
-    // No history is an ABSENCE and the screen draws nothing for it: no chip, no sentence. Only a
-    // failed read is a card, so the two can never draw alike.
-    @Test
-    fun testAMovementNeverTrainedDrawsNoCardAtAll() {
-        val answered = LastTime(exerciseId = "zercher-squat")
-        assertNull(LiveLines.prefillCard(lastTime = answered, routine = null, readFailed = false, now = 0))
-    }
-
-    @Test
-    fun testTheCardNamesTheOtherRoutineTheBlockCameFrom() {
-        val day = 1_754_000_000_000L
-        val answer = LastTime(
-            exerciseId = "bench-press",
-            session = Session(id = "ses_1", startedAtMs = day, finishedAtMs = day + 1),
-            routine = "Push B",
-            sets = listOf(aSet("bench-press", 80.0, 5, at = day), aSet("bench-press", 80.0, 5, at = day + 1))
-        )
-        val card = LiveLines.prefillCard(lastTime = answer, routine = "Push A",
-                                         readFailed = false, now = day + 3 * 86_400_000)
-        assertEquals("Last time · ${Readout.day(day)} · 3 days ago  ·  Push B", card?.title)
-        assertEquals("80 × 5,   80 × 5", card?.body)
-
-        val sameDay = LiveLines.prefillCard(lastTime = answer, routine = "Push B",
-                                            readFailed = false, now = day + 3 * 86_400_000)
-        assertEquals("Last time · ${Readout.day(day)} · 3 days ago", sameDay?.title)
-    }
-
-    @Test
-    fun testTheCardShowsFourSetsAndCountsTheRest() {
-        val day = 1_754_000_000_000L
-        val answer = LastTime(
-            exerciseId = "bench-press",
-            session = Session(id = "ses_1", startedAtMs = day, finishedAtMs = day + 1),
-            sets = (0 until 6).map { aSet("bench-press", 80.0, 5, at = day + it) }
-        )
-        val card = LiveLines.prefillCard(lastTime = answer, routine = null,
-                                         readFailed = false, now = day)
-        assertEquals("80 × 5,   80 × 5,   80 × 5,   80 × 5,   +2 more", card?.body)
-    }
-
-    @Test
-    fun testWarmupsCarryAWAndNeverAdvanceTheOrdinal() {
-        val rows = LiveLines.rows(listOf(
-            aSet("bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup, id = "w1"),
-            aSet("bench-press", 82.5, 5, at = 2_000, id = "s1"),
-            aSet("bench-press", 82.5, 5, at = 3_000, id = "s2"),
-        ), stalled = setOf("s2"))
-
-        assertEquals(listOf("w", "1", "2"), rows.map { it.index })
-        assertEquals(listOf("warmup", "", "on this device"), rows.map { it.note })
-        assertEquals(listOf("40 × 8", "82.5 × 5", "82.5 × 5"), rows.map { it.value })
-        assertEquals(listOf(true, false, false), rows.map { it.isWarmup })
     }
 
     @Test
@@ -269,7 +214,7 @@ class LiveLinesTests {
                      listOf(5), rows.map { it.sets.size })
 
         assertEquals("the today list numbers what was performed, which is not what counts",
-                     listOf("w", "1", "2", "3", "4"),
+                     listOf("W", "1", "2", "3", "4"),
                      LiveLines.rows(sets, stalled = emptySet()).map { it.index })
     }
 

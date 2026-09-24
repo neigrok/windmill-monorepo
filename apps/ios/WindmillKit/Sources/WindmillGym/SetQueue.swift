@@ -4,6 +4,8 @@ import WindmillPlatform
 // Appends, corrections and deletions ride one walk. Android's SetQueue.kt is the same contract and
 // the two must not drift. A client-minted id IS the idempotency key: a replay answers 200 with the
 // stored row even after the session closed, so this queue may send in any order, any number of times.
+// An append once sent may be on the log until the log answers it, so a change to that set goes out
+// behind the append rather than over it.
 // A set that never landed is refused once its session is finished, so the queue flushes before finish
 // and before the boot read. Entries are keyed by identity, never by position; order is per session and
 // movement, the only order the server keeps, so a set that cannot land holds up its own lane alone.
@@ -29,10 +31,14 @@ public final class SetQueue {
         public let sessionId: String
         public let needsPush: Bool
         public let remints: Int
-        // The undo window the device keeps; a delete waits it out here. Optional: an older file has none.
+        // The undo window a delete waits out here; nothing else is held, whatever an older file wrote
+        // beside an append. Optional: an older file has none.
         let heldUntilMs: Int64?
         // Optional the same way: in an older file every owed row is an append.
         let owedWrite: Owed?
+        // An append of this row went out and the log has not answered it, so the row may be on the log.
+        // Written before the send and kept on disk: an answer lost with the app still leaves it true.
+        let appendUnanswered: Bool?
 
         public var lane: Lane { Lane(sessionId: sessionId, exerciseId: set.exerciseId) }
 
@@ -40,7 +46,21 @@ public final class SetQueue {
 
         public var owes: Owed? { needsPush ? write : nil }
 
-        public func isHeld(at instant: Int64) -> Bool { (heldUntilMs ?? 0) > instant }
+        public var mayBeOnTheLog: Bool { appendUnanswered ?? false }
+
+        // What goes on the wire next. A change filed over an unanswered append waits behind it: the
+        // append goes again first — a replay answers the stored row — so the change meets a row the log holds.
+        public var step: Owed { mayBeOnTheLog ? .append : write }
+
+        public var readyAtMs: Int64 { write == .delete ? heldUntilMs ?? 0 : 0 }
+
+        public func isHeld(at instant: Int64) -> Bool { readyAtMs > instant }
+
+        // The same entry, its unanswered append now answered: the log holds the row.
+        var appendAnswered: Entry {
+            Entry(set: self.set, sessionId: sessionId, needsPush: needsPush, remints: remints,
+                  heldUntilMs: heldUntilMs, owedWrite: owedWrite, appendUnanswered: nil)
+        }
     }
 
     // Time spent offline spends none of the id collisions a set is allowed to survive.
@@ -199,7 +219,7 @@ public final class SetQueue {
             guard entry.sessionId == old else { return entry }
             return Entry(set: entry.set, sessionId: fresh, needsPush: entry.needsPush,
                          remints: entry.remints, heldUntilMs: entry.heldUntilMs,
-                         owedWrite: entry.owedWrite)
+                         owedWrite: entry.owedWrite, appendUnanswered: entry.appendUnanswered)
         }
         guard let live = queue.session, live.id == old else { return }
         queue.session = Session(id: fresh, startedAtMs: live.startedAtMs,
@@ -223,7 +243,7 @@ public final class SetQueue {
                                     completedAtMs: entry.set.completedAtMs)
             return Entry(set: moved, sessionId: entry.sessionId, needsPush: entry.needsPush,
                          remints: entry.remints, heldUntilMs: entry.heldUntilMs,
-                         owedWrite: entry.owedWrite)
+                         owedWrite: entry.owedWrite, appendUnanswered: entry.appendUnanswered)
         }
         queue.order = queue.order.map { $0.map { $0 == old ? fresh : $0 } }
         guard let live = queue.session, let plan = live.plan,
@@ -262,9 +282,15 @@ public final class SetQueue {
         pending.filter { $0.sessionId == sessionId }
     }
 
-    // A row owed as an append is one the log has never been told about.
     public func owes(_ id: String) -> Owed? {
         queue.entries[id]?.owes
+    }
+
+    // Owed as an append that never went out: the one row this device may still rewrite or let go of
+    // alone. Once sent it may be on the log, and a change to it waits behind the append on the wire.
+    public func isUnsent(_ id: String) -> Bool {
+        guard let entry = queue.entries[id] else { return false }
+        return entry.owes == .append && !entry.mayBeOnTheLog
     }
 
     // An entry inside its undo window is not offered at `readyAt`; a forced walk passes nil.
@@ -276,71 +302,105 @@ public final class SetQueue {
         }
     }
 
-    // Appends only — a deletion is held on the same clock but taken back through its own door.
-    public func withdrawable(at instant: Int64) -> Entry? {
-        pending.filter { $0.isHeld(at: instant) && $0.owes == .append }.last
-    }
-
-    // Legal only while the set is still owed as an append.
-    public func withdraw(_ id: String) -> Bool {
-        guard let entry = queue.entries[id], entry.owes == .append else { return false }
-        queue.entries[id] = nil
-        return true
+    // An owed append is stranded once its lane holds an append the walk tried and could not land; a
+    // first try still on the wire has not failed yet, and a parked session is not trying.
+    public func stranded(sparing firstTries: Set<String>, parked: String?) -> Int {
+        let appends = pending.filter { $0.owes == .append && $0.sessionId != parked }
+        let stuck = Set(appends.filter { $0.mayBeOnTheLog && !firstTries.contains($0.set.id) }.map(\.lane))
+        return appends.filter { stuck.contains($0.lane) }.count
     }
 
     // One door for appends and settlements: a server row for a set this device owes settles it.
-    public func store(_ set: TrainingSet, in sessionId: String, needsPush: Bool, heldUntilMs: Int64? = nil) {
+    public func store(_ set: TrainingSet, in sessionId: String, needsPush: Bool) {
         let remints = queue.entries[set.id]?.remints ?? 0
         queue.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: needsPush,
-                                     remints: remints, heldUntilMs: heldUntilMs, owedWrite: .append)
+                                     remints: remints, heldUntilMs: nil, owedWrite: .append,
+                                     appendUnanswered: nil)
     }
 
-    // The set as it should now read; the PATCH goes under the same id. There may have been no entry
-    // at all, so the correction brings the whole row with it.
+    // The set as it should now read; the PATCH goes under the same id, behind an append still
+    // unanswered. There may have been no entry at all, so the correction brings the whole row with it.
     public func fix(_ corrected: TrainingSet, in sessionId: String) {
         queue.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
-                                           remints: 0, heldUntilMs: nil, owedWrite: .fix)
+                                           remints: 0, heldUntilMs: nil, owedWrite: .fix,
+                                           appendUnanswered: queue.entries[corrected.id]?.appendUnanswered)
     }
 
-    // The set stays owed as an append: a `fix` filed over it would replace the set's only copy.
+    // Only for an append never sent: a `fix` filed over it would replace the set's only copy.
     public func rewrite(_ corrected: TrainingSet, in sessionId: String) {
-        let owed = queue.entries[corrected.id]
         queue.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
-                                           remints: owed?.remints ?? 0,
-                                           heldUntilMs: owed?.heldUntilMs, owedWrite: .append)
+                                           remints: queue.entries[corrected.id]?.remints ?? 0,
+                                           heldUntilMs: nil, owedWrite: .append, appendUnanswered: nil)
     }
 
-    // The row leaves `sets` at once and the DELETE waits out the undo window: no route un-deletes a set.
+    // The row leaves `sets` at once and the DELETE waits out the undo window, behind an append still
+    // unanswered: no route un-deletes a set.
     public func delete(_ set: TrainingSet, in sessionId: String, heldUntilMs: Int64) {
         queue.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: true,
-                                     remints: 0, heldUntilMs: heldUntilMs, owedWrite: .delete)
+                                     remints: 0, heldUntilMs: heldUntilMs, owedWrite: .delete,
+                                     appendUnanswered: queue.entries[set.id]?.appendUnanswered)
     }
 
     // Comes back owed as a correction: this device may hold numbers the log does not.
     public func restore(_ id: String) -> Bool {
         guard let entry = queue.entries[id], entry.owes == .delete else { return false }
         queue.entries[id] = Entry(set: entry.set, sessionId: entry.sessionId, needsPush: true,
-                                 remints: entry.remints, heldUntilMs: nil, owedWrite: .fix)
+                                 remints: entry.remints, heldUntilMs: nil, owedWrite: .fix,
+                                 appendUnanswered: entry.appendUnanswered)
         return true
     }
 
-    // The row comes back under the id that went out; clearing the sent key stops a disagreeing reply
-    // leaving an entry owed, resent, and owed again.
-    public func delivered(_ stored: TrainingSet, for id: String, in sessionId: String) {
-        queue.entries[id] = nil
-        // Settled rows are kept for the live session alone: `close` and `forget` reach no other.
-        guard queue.session?.id == sessionId else { return }
-        queue.entries[stored.id] = Entry(set: stored, sessionId: sessionId, needsPush: false,
-                                        remints: 0, heldUntilMs: nil, owedWrite: nil)
+    // The entry as it goes on the wire. An append is marked unanswered before it leaves, so neither a
+    // lost answer nor a dead app lets this device treat a row the log may hold as its own.
+    public func sending(_ owed: Entry) -> Entry {
+        guard owed.step == .append, !owed.mayBeOnTheLog else { return owed }
+        let marked = Entry(set: owed.set, sessionId: owed.sessionId, needsPush: owed.needsPush,
+                           remints: owed.remints, heldUntilMs: owed.heldUntilMs,
+                           owedWrite: owed.owedWrite, appendUnanswered: true)
+        queue.entries[owed.set.id] = marked
+        return marked
     }
 
-    // The same set under a new key, still owed, budget counted down.
+    // The log's answer to an append. A change filed while it was on the wire stays owed, now aimed at
+    // a row the log is known to hold; only an append nobody touched is settled by the reply. The row
+    // comes back under the id that went out; clearing the sent key stops a disagreeing reply leaving
+    // an entry owed, resent, and owed again.
+    public func appended(_ stored: TrainingSet, as sent: Entry) {
+        guard let current = queue.entries[sent.set.id] else { return }
+        guard current == sent, sent.write == .append else {
+            queue.entries[sent.set.id] = current.appendAnswered
+            return
+        }
+        settle(stored, for: sent)
+    }
+
+    // A correction filed again while this one was on the wire is the newer word, and stays owed.
+    public func fixed(_ stored: TrainingSet, as sent: Entry) {
+        guard queue.entries[sent.set.id] == sent else { return }
+        settle(stored, for: sent)
+    }
+
+    public func deleted(_ sent: Entry) {
+        guard queue.entries[sent.set.id] == sent else { return }
+        queue.entries[sent.set.id] = nil
+    }
+
+    private func settle(_ stored: TrainingSet, for sent: Entry) {
+        queue.entries[sent.set.id] = nil
+        // Settled rows are kept for the live session alone: `close` and `forget` reach no other.
+        guard queue.session?.id == sent.sessionId else { return }
+        queue.entries[stored.id] = Entry(set: stored, sessionId: sent.sessionId, needsPush: false,
+                                        remints: 0, heldUntilMs: nil, owedWrite: nil,
+                                        appendUnanswered: nil)
+    }
+
+    // The same set under a new key, owed as the append it never became, budget counted down. A set
+    // taken back needs no new key: it never landed, and nobody wants it now.
     public func remint(_ id: String, as fresh: String) {
-        guard let entry = queue.entries.removeValue(forKey: id) else { return }
-        // The fresh id carries no hold: the window was spent waiting for the send that collided.
+        guard let entry = queue.entries.removeValue(forKey: id), entry.write != .delete else { return }
         queue.entries[fresh] = Entry(set: entry.set.reminted(as: fresh), sessionId: entry.sessionId,
                                     needsPush: true, remints: entry.remints + 1, heldUntilMs: nil,
-                                    owedWrite: entry.owedWrite)
+                                    owedWrite: .append, appendUnanswered: nil)
     }
 
     public func drop(_ id: String) {

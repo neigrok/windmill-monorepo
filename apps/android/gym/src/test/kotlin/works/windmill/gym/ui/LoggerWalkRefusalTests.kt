@@ -31,6 +31,7 @@ import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 
@@ -61,7 +62,7 @@ class LoggerWalkRefusalTests {
             scope = scope,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
-            undoWindowMs = SetQueue.undoWindowMs,
+            undoWindowMs = Withheld.windowMs,
             sync = { null },
         )
         runBlocking {

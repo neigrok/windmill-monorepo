@@ -6,7 +6,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -146,9 +146,7 @@ class LoggerPagerTests {
 
         compose.onNodeWithText("Bench Press").assertIsDisplayed()
         compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-        compose.onNodeWithText("Set 1 of 3").assertIsDisplayed()
-        compose.onNodeWithText("55 × 8").assertIsDisplayed()
-        compose.onNode(hasContentDescription("set 1, target 60 × 8")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Set 1, current, target 60 kg, 8 reps")).assertIsDisplayed()
         compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
         compose.onNodeWithText("Log set").assertIsNotEnabled()
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
@@ -189,7 +187,7 @@ class LoggerPagerTests {
 
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
         compose.onNodeWithText("Bench Press").assertIsDisplayed()
-        compose.onNode(hasContentDescription("Movement 1 of 2")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Exercise 1 of 2")).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -304,10 +302,10 @@ class LoggerPagerTests {
         }
         compose.runOnIdle { assertEquals("barbell-row", store.exerciseId) }
         compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-        compose.onNodeWithText("Set 1 of 3").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Set 1, current, target 60 kg, 8 reps")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Weight 60 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 8")).assertIsDisplayed()
-        compose.onNode(hasContentDescription("Movement 2 of 2")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Exercise 2 of 2")).assertIsDisplayed()
 
         compose.onNodeWithText("Barbell Row").performTouchInput {
             swipeRight(startX = width * 0.1f, endX = width * 0.9f)
@@ -318,40 +316,31 @@ class LoggerPagerTests {
         scope.cancel()
     }
 
+    // Only the ledger scrolls: a vertical stroke on it reads the sets and leaves the head where it
+    // stood, and a horizontal stroke on the same rows still walks to the next movement.
     @Test
-    @Config(sdk = [35], qualifiers = "w360dp-h560dp-xhdpi")
-    fun verticalReadingAndHorizontalSlotScrollingDoNotSelectAnotherMovement() {
+    fun aVerticalStrokeScrollsOnlyTheLedgerAndAHorizontalOneWalks() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope)
-        val vertical = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
-        val reading = compose.onNode(vertical)
-        compose.onNodeWithText("Bench Press").performScrollTo()
-        val initial = reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertTrue("the reading region overflows",
-            reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
+        val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+        val head = compose.onNodeWithText("Bench Press").assertIsDisplayed().getBoundsInRoot()
+        val initial = ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue("the ledger overflows",
+            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
 
-        reading.performTouchInput { swipeUp() }
-        val after = reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertTrue("vertical drag scrolls the reading region",
-            after > initial)
+        ledger.performTouchInput { swipeUp() }
+        val after = ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue("vertical drag scrolls the ledger", after > initial)
+        assertEquals("and the head stays pinned", head, compose.onNodeWithText("Bench Press").getBoundsInRoot())
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
 
-        reading.performTouchInput { swipeDown() }
+        ledger.performTouchInput { swipeDown() }
         assertTrue("the return drag scrolls back through the same movement",
-            reading.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() < after)
-        reading.performTouchInput { swipeUp() }
-        val strip = compose.onNode(
-            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
-                hasAnyAncestor(vertical),
-        )
-        val first = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
-        strip.performTouchInput {
-            swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
-        }
-        assertTrue("horizontal drag scrolls the slot strip",
-            strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value() > first)
-        strip.performTouchInput { swipeLeft(startX = width * 0.9f, endX = width * 0.1f) }
+            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() < after)
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
+
+        ledger.performTouchInput { swipeLeft(startX = width * 0.9f, endX = width * 0.1f) }
+        compose.runOnIdle { assertEquals("barbell-row", store.exerciseId) }
         scope.cancel()
     }
 
@@ -369,10 +358,10 @@ class LoggerPagerTests {
         }
         compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
 
-        compose.onNode(hasContentDescription("Add movement")).performClick()
+        compose.onNodeWithText("Add movement").performScrollTo().performClick()
         compose.onNodeWithText("Cable Fly").performClick()
         compose.runOnIdle { assertEquals("cable-fly", store.exerciseId) }
-        compose.onNode(hasContentDescription("Movement 3 of 3")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Exercise 3 of 3")).assertIsDisplayed()
         compose.onNodeWithText("Cable Fly").performTouchInput {
             swipeRight(startX = width * 0.1f, endX = width * 0.9f)
         }

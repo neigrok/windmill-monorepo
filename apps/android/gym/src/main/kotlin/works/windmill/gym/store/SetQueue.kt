@@ -43,15 +43,14 @@ import works.windmill.gym.domain.WorkoutState
 class SetQueue private constructor(
     private val file: File,
     deviceOwner: String?,
-    private val clock: () -> Long,
     private val write: (File, String) -> Unit,
     private val telemetry: Telemetry,
 ) {
-    constructor(file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None,
-        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, AtomicDocument::write, telemetry)
+    constructor(file: File, deviceOwner: String? = null, telemetry: Telemetry = Telemetry.None) :
+        this(file, deviceOwner, AtomicDocument::write, telemetry)
 
-    internal constructor(file: File, deviceOwner: String? = null, write: (File, String) -> Unit,
-        clock: () -> Long = System::currentTimeMillis) : this(file, deviceOwner, clock, write, Telemetry.None)
+    internal constructor(file: File, deviceOwner: String? = null, write: (File, String) -> Unit) :
+        this(file, deviceOwner, write, Telemetry.None)
 
     // The key the server numbers sets under.
     data class Lane(val sessionId: String, val exerciseId: String)
@@ -62,30 +61,21 @@ class SetQueue private constructor(
         val sessionId: String,
         val needsPush: Boolean,
         val remints: Int,
-        // The undo window: a set can be taken back only while this device is the only place it
-        // exists. Defaulted — the decoder tolerates a missing key only where there is a default.
-        val heldUntilMs: Long? = null,
+        // Defaulted — the decoder tolerates a missing key only where there is a default.
         val loggedAtMs: Long? = null,
         val event: WorkoutEvent? = null,
-        val holdOrigin: WorkoutMoment? = null,
-        val holdDurationMs: Long = undoWindowMs,
         val eventOrder: Long = 0,
+        // Maybe on the log: marked on disk before the first send and never cleared, because a lost
+        // reply looks exactly like a send that never arrived. Only an unattempted set may be
+        // rewritten or dropped on this device alone.
+        val attempted: Boolean = false,
     ) {
         val lane: Lane get() = Lane(sessionId, set.exerciseId)
-
-        fun isHeld(at: Long): Boolean = (heldUntilMs ?: 0) > at
-
-        fun isHeld(at: WorkoutMoment): Boolean = holdOrigin?.let {
-            heldUntilMs != null && it.bootId == at.bootId && at.elapsedMs - it.elapsedMs in 0 until holdDurationMs
-        } ?: isHeld(at.wallMs)
     }
 
     companion object {
         // Id collisions one set may survive before the refusal is said out loud.
         const val maxRemints = 3
-
-        // Must match iOS SetQueue.swift to the millisecond.
-        const val undoWindowMs = 9_000L
 
         // Resolved by the room edge against context.filesDir; this file touches no android class.
         const val fileName = "windmill-gym-sets.json"
@@ -265,14 +255,7 @@ class SetQueue private constructor(
         val entries = mine.entries.mapValues { (_, entry) ->
             if (entry.sessionId != live.id) entry else {
                 val oldOrigin = entry.event?.origin ?: WorkoutMoment(entry.loggedAtMs ?: entry.set.completedAtMs, 0, "legacy")
-                val event = WorkoutEvent(entry.event?.id ?: entry.set.id, oldOrigin.reconciled(moment) ?: oldOrigin)
-                val until = if (entry.heldUntilMs == null) null else entry.holdOrigin?.let { origin ->
-                    if (origin.bootId != moment.bootId) null else {
-                        val remaining = entry.holdDurationMs - (moment.elapsedMs - origin.elapsedMs)
-                        if (remaining in 1..entry.holdDurationMs) moment.wallMs + remaining else null
-                    }
-                }
-                entry.copy(event = event, heldUntilMs = until)
+                entry.copy(event = WorkoutEvent(entry.event?.id ?: entry.set.id, oldOrigin.reconciled(moment) ?: oldOrigin))
             }
         }
         val next = prepared(mine.copy(entries = entries), lastTime, preferences, moment, ready, mint)
@@ -306,7 +289,7 @@ class SetQueue private constructor(
     }
 
     fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTime: LastTime?, preferences: GymPreferences,
-        holdDurationMs: Long = undoWindowMs, mint: () -> String): LogSetAcceptance {
+        mint: () -> String): LogSetAcceptance {
         val live = mine.session ?: return LogSetAcceptance.Stale
         if (command.key != WorkoutKey(seat, live.id) || !workout.accepts(command)) return LogSetAcceptance.Stale
         val offer = requireNotNull(workout.offer)
@@ -315,9 +298,8 @@ class SetQueue private constructor(
         }
         val set = TrainingSet(offer.id, offer.exerciseId, weightKg = offer.weightKg, reps = offer.reps,
             completedAtMs = moment.wallMs)
-        val entry = Entry(set, live.id, needsPush = true, remints = 0,
-            heldUntilMs = moment.wallMs + holdDurationMs, loggedAtMs = moment.wallMs,
-            event = WorkoutEvent(offer.id, moment), holdOrigin = moment, holdDurationMs = holdDurationMs, eventOrder = workout.revision + 1)
+        val entry = Entry(set, live.id, needsPush = true, remints = 0, loggedAtMs = moment.wallMs,
+            event = WorkoutEvent(offer.id, moment), eventOrder = workout.revision + 1)
         val next = prepared(mine.copy(entries = mine.entries + (set.id to entry), workout = workout.consume(command)),
             lastTime, preferences, moment, true, mint)
         keep(next)
@@ -383,34 +365,16 @@ class SetQueue private constructor(
 
     fun owed(sessionId: String): List<Entry> = pending.filter { it.sessionId == sessionId }
 
-    // `readyAt` is the instant the walk stands at; an entry still inside its undo window is not
-    // offered at it. A forced walk passes null, which ends the window.
-    fun nextOwed(skipping: Set<Lane>, readyAt: Long?): Entry? = pending.firstOrNull { entry ->
-        if (entry.lane in skipping) return@firstOrNull false
-        if (readyAt == null) return@firstOrNull true
-        !entry.isHeld(readyAt)
-    }
-
-    // The newest set still inside its undo window.
-    fun withdrawable(at: Long = clock()): Entry? = pending.lastOrNull { it.isHeld(at) }
-
-    // Legal only while the set is still owed; false once the log holds the row.
-    fun withdraw(id: String): Boolean {
-        val entry = mine.entries[id] ?: return false
-        if (!entry.needsPush) return false
-        keep(mine.copy(entries = mine.entries - id, workout = mine.workout?.invalidate()))
-        return true
-    }
+    fun nextOwed(skipping: Set<Lane>): Entry? = pending.firstOrNull { it.lane !in skipping }
 
     // Both directions: a set just logged (owed), and a row the log handed back (not owed), which
     // settles an owed set.
-    fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, heldUntilMs: Long? = null, moment: WorkoutMoment? = null) {
+    fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, moment: WorkoutMoment? = null) {
         val existing = mine.entries[set.id]
         val loggedAt = existing?.loggedAtMs ?: if (needsPush && existing == null) set.completedAtMs else null
         keep(mine.copy(entries = mine.entries + (set.id to Entry(set, sessionId, needsPush,
-            existing?.remints ?: 0, heldUntilMs, loggedAt, existing?.event ?: moment?.let { WorkoutEvent(set.id, it) },
-            existing?.holdOrigin ?: moment, existing?.holdDurationMs ?: moment?.let { (heldUntilMs ?: it.wallMs) - it.wallMs } ?: undoWindowMs,
-            existing?.eventOrder ?: if (moment != null) workout.revision + 1 else 0)),
+            existing?.remints ?: 0, loggedAt, existing?.event ?: moment?.let { WorkoutEvent(set.id, it) },
+            existing?.eventOrder ?: if (moment != null) workout.revision + 1 else 0, existing?.attempted ?: false)),
             workout = if (existing?.set == set) mine.workout else mine.workout?.invalidate()))
     }
 
@@ -420,17 +384,23 @@ class SetQueue private constructor(
         val entry = mine.entries[id]
         keep(mine.copy(entries = mine.entries - id +
             (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0,
-                heldUntilMs = null, loggedAtMs = entry?.loggedAtMs, event = entry?.event, eventOrder = entry?.eventOrder ?: 0)),
+                loggedAtMs = entry?.loggedAtMs, event = entry?.event, eventOrder = entry?.eventOrder ?: 0)),
             workout = if (stored.id == id) mine.workout else mine.workout?.invalidate()))
+    }
+
+    // On disk before the send goes out, so an app killed mid-send still knows.
+    fun attempting(id: String) {
+        val entry = mine.entries[id] ?: return
+        if (entry.attempted) return
+        keep(mine.copy(entries = mine.entries + (id to entry.copy(attempted = true))))
     }
 
     // The same set under a new key, still owed, with the remint budget counted down.
     fun remint(id: String, fresh: String) {
         val entry = mine.entries[id] ?: return
-        // The fresh id carries no hold: the undo window was already spent.
         keep(mine.copy(entries = mine.entries - id +
             (fresh to Entry(entry.set.copy(id = fresh), entry.sessionId, needsPush = true,
-                remints = entry.remints + 1, heldUntilMs = null, loggedAtMs = entry.loggedAtMs, event = entry.event, eventOrder = entry.eventOrder)),
+                remints = entry.remints + 1, loggedAtMs = entry.loggedAtMs, event = entry.event, eventOrder = entry.eventOrder)),
             workout = mine.workout?.invalidate()))
     }
 

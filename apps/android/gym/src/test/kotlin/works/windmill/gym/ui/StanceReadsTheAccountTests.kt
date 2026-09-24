@@ -38,6 +38,7 @@ import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
@@ -69,7 +70,7 @@ class StanceReadsTheAccountTests {
     private fun store(
         scope: CoroutineScope,
         server: FakeTraining,
-        undoWindowMs: Long = SetQueue.undoWindowMs,
+        undoWindowMs: Long = Withheld.windowMs,
     ): TrainingStore {
         val root = File(System.getProperty("java.io.tmpdir"), "stance-${System.nanoTime()}")
         root.mkdirs()
@@ -92,7 +93,7 @@ class StanceReadsTheAccountTests {
     private fun oneWorkout(store: TrainingStore) = runBlocking {
         store.choose("bench-press")
         store.logSet(weightKg = 82.5, reps = 5)
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
     }
 

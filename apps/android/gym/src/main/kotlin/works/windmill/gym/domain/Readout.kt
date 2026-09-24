@@ -34,7 +34,7 @@ object Readout {
 
     const val openTarget = "open"
 
-    // One set in the logged pill's own shape, `{load} × {reps}`, with the nulls as their placeholders:
+    // One set as `{load} × {reps}`, with the nulls as their placeholders:
     // `100 × 5` · `100 × max` · `last × 5`.
     fun setTarget(set: SetTarget): String =
         "${set.weightKg?.let(::weight) ?: "last"} × ${repTarget(set.reps)}"

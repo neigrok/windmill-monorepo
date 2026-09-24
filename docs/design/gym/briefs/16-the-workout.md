@@ -173,41 +173,48 @@ against `LoggerScreen.kt`, top to bottom:
   bytes the log's rows and the finish sheet draw on all three surfaces — and a settings gear
   (*Gym settings*) that opens the room's settings screen. A planning door in a top corner is what
   `../../guidelines/thumb-reach.md` §2 allows there: a destination, not an action.
-- **Two regions.** The reading region contains the name, set counter, clocks, history, set strip,
-  position dots and Add movement. It centres short content and scrolls vertically when text needs
-  more room. Compose's `HorizontalPager` translates this region with the finger while the rack —
-  `Weight`, the ladder, `Reps`, `Log set` — stays fixed. One native horizontal scroll owner covers
-  the workout body, including the rack. Reversing the drag restores the current movement and draft;
-  selection and departure prompts change only when a destination settles. Editing and logging are
-  disabled during motion.
-- **Each page belongs to its movement.** Its set counter is `Set 2 of 4` (`Set 2` without a planned
-  count). Targets appear in the planned-set strip; the counter carries no target tail or kind chip.
-  The persisted rack belongs to the selected movement and workout.
-- **History is a card when there is something to show.** The card names Last time and shows the
-  corresponding previous working set as `20 × 15`; its menu can dial a previous set into the rack.
-  Reading and failed states say `Reading…` and `Didn’t load`. No history reserves no card. Adjacent
-  pages read their own history without changing selection or rack values.
+- **Two regions.** The page is the B+ Quiet ledger ([Figma 805:4536](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)):
+  a pinned head — `‹` name `›`, `Exercise 1 / 3` under the name, the clocks — over the set ledger,
+  which is the only thing that scrolls, vertically. Compose's `HorizontalPager` translates the page
+  with the finger while the rack — `Weight`, the ladder, `Reps`, `Log set` — stays fixed. One native
+  horizontal scroll owner covers the workout body, including the rack. Reversing the drag restores
+  the current movement and draft; selection and departure prompts change only when a destination
+  settles. Editing and logging are disabled during motion.
+- **The head steps the walk.** `‹` and `›` are 48 dp buttons in ink named *Previous movement* /
+  *Next movement*; at the walk's ends the missing one is dimmed and inert. The title opens the
+  session and carries the same two steps as custom actions. `Exercise 1 / 3` (spoken *Exercise 1
+  of 3*, `LiveLines.place`) is drawn only for a walk of two or more.
+- **Last time is not drawn.** History prefills the rack (`Prefill.of`) and nothing else on the
+  screen names it.
 - **Two elapsed readings.** A quiet clock/stopwatch pair follows movement identity. Workout time runs from session start; since-set runs from the latest valid session-wide set or start. No target card or rest caption is drawn. Accessible names carry the meaning without live-announcing every tick.
 - **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
-  keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs. This is the only
-  prose on the screen, and it exists only while something is wrong.
-- **The slot strip** (`LiveLines.slots`): one pill per planned set, in order. A landed set reads
-  what was lifted — index and `20 × 5`, a warmup in its own ink where it was logged, a stalled set
-  carrying a cloud-off glyph whose name is *on this device*; the set about to be lifted reads its
-  target in the target ink with the accent outline; the sets still to come read theirs in the faint
-  ink, each spoken as *set {n}, target {load} × {reps}*; a set logged past the plan is a plain landed
-  pill. Every landed pill is a door — *fix this set* — to the same `FixSheet` the session screen
-  raises, and a set still owed to the log is fixed or deleted in the queue it waits in
-  (`TrainingStore.fixSet`, `deleteSet`), so the corrected body is what lands. A planned pill is not
-  a door. A pill without the cloud is synced: an absence needs no glyph.
-- **The walk's dots say their position** — *Movement 1 of 3*, `LiveLines.place` capitalised — and
-  are drawn only for a walk of two or more; the `+` beside them is *Add movement*, the free
-  session's one way to a next movement, and opens the picker directly.
+  keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs, above the ledger.
+  This is the only prose on the screen, and it exists only while something is wrong.
+- **The ledger** (`LiveLines.slots`): column labels `Set · kg · Reps`, then one row per set — what
+  landed, warmups where they were lifted, the set in hand, then every planned set still to come. A
+  landed row recedes in dim ink with a small ✓ after its index and is a door to the same `FixSheet`
+  the session screen raises. A set no send has carried yet is fixed or deleted in the queue it waits
+  in (`TrainingStore.fixSet`, `deleteSet`), so the corrected body is what lands; from its first send
+  a set may already be on the log, so its fix and its delete go to the log, behind any send in
+  flight. A set a walk could not land carries a cloud-off glyph — a row without it is synced or on
+  its way. A warmup reads `W` and takes no number. The set in
+  hand is the one accented row, slim, with a teal rail: `Set 3 · target 90 × 3` and `↓` — the rack is
+  its editor, so it repeats none of the draft's numbers; past the plan, or with no plan, it reads
+  `Set 7` alone. Planned rows wait in plain ink and are no door. No status word is printed: each
+  row's TalkBack description carries it — *Set 1, logged, 60 kg, 8 reps*, *Set 3, current, target
+  90 kg, 3 reps*, *Set 4, planned, 100 kg, 1 rep*. A landed set, and a page becoming the one in hand,
+  bring the set in hand into view just above the rack; when no planned set follows it, *Add
+  movement* comes into view with it whenever both fit. *Add movement* sits at the ledger's foot, the
+  free session's one way to a next movement, and opens the picker directly. The `Set` column is as
+  wide as a two-digit index and its ✓ measure at the lifter's text size, so kg and Reps stand in one
+  line down every row.
 - **The rack.** `Weight` over the numeral and its unit, one node (*Weight 20 kg*, *type a weight*)
   that raises the rack keypad; four **equal** ladder pills whose labels are the golden's by weight
   band (`Ladder.labels`), never a fixed ±1/±5; `Reps` over the numeral (*Reps 5*, *type the reps*)
   between two filled circles named *one rep fewer* / *one rep more*; and one full-width primary
-  reading **`Log set`** with no echo — the two numerals stand directly above it. While a finish is
+  reading **`Log set`** with no echo — the two numerals stand directly above it. The rack stands on a
+  raised surface panel with 24 dp top corners and a thin teal top edge. `Log set` sends the set at
+  once and offers no *Undo*: a set is corrected or deleted from its ledger row. While a finish is
   in flight the primary is drawn disabled under the same label.
 **The keypad's own words**, pinned here so nothing holds them by test alone: a valid load's line is
 its unit, `kg` (`WEIGHT_UNIT` in `logger/entry.js`, `KeypadEntry.weightUnit` in `KeypadSheet.swift`,
@@ -221,8 +228,9 @@ No hint about separators stands under the pad on any surface.
 Built, on the screen that owns it: the drawn *Undo* is out of the logger's set row on every surface,
 and one transient per platform — hosted by the room, not by a screen — carries both the action and
 the fact that a window is open, and retires itself when the last clock closes. It floats above the
-reach band and grows no inset, because `Log set` is pressed five to forty times a session and may not
-jump when a window opens. `13-gestures.md` Law 4 has the whole of it.
+reach band, which grows no inset, because `Log set` is pressed five to forty times a session and may
+not jump when a window opens. The ledger under it gains the transient's height at its foot while it
+shows, and the set in hand is kept above it. `13-gestures.md` Law 4 has the whole of it.
 
 **The window is 9000 ms on every surface** (ledger `2m`); a board that draws a duration draws 9000.
 It is **two constants pinned equal, not one number** — the span a delete is held, and the span a said

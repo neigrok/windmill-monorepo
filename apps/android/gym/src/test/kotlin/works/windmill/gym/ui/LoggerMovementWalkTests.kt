@@ -1,15 +1,12 @@
 package works.windmill.gym.ui
 
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -30,7 +27,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -40,15 +36,14 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
@@ -86,7 +81,7 @@ class LoggerMovementWalkTests {
             scope = scope,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
-            undoWindowMs = SetQueue.undoWindowMs,
+            undoWindowMs = Withheld.windowMs,
             sync = { if (it.isSignedIn) server else null },
         )
         runBlocking {
@@ -114,18 +109,26 @@ class LoggerMovementWalkTests {
     private fun title(name: String) =
         compose.onAllNodes(hasText(name) and hasClickAction()).onFirst()
 
+    // The head says where the walk stands, and its glyphs step it: at the first movement only the
+    // forward glyph is a door, and it is said once.
     @Test
-    fun theTwoChevronButtonsAreOffTheScreenAndTheDotsStay() {
+    fun theHeadSaysThePlaceAndItsGlyphsStepTheWalk() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        logger(scope)
+        val store = logger(scope)
 
         title("Bench Press").assertIsDisplayed()
-        assertEquals("the dots stay — they are the position readout the swipe needs", 1,
-            compose.nodesDescribed("Movement 1 of 2"))
-        assertEquals("and the dots are the only thing that says it: no uppercased line beneath them", 0,
-            compose.onAllNodes(hasText("MOVEMENT 1 OF 2")).fetchSemanticsNodes().size)
-        assertEquals("but no button says either verb any more", 0,
-            compose.nodesDescribed("Previous movement") + compose.nodesDescribed("Next movement"))
+        compose.onNodeWithText("Exercise 1 / 2").assertIsDisplayed()
+        assertEquals(1, compose.nodesDescribed("Exercise 1 of 2"))
+        assertEquals("nothing behind the first movement", 0, compose.nodesDescribed("Previous movement"))
+        assertEquals(1, compose.nodesDescribed("Next movement"))
+
+        compose.onNode(hasContentDescription("Next movement")).performClick()
+        compose.runOnIdle { assertEquals("barbell-row", store.exerciseId) }
+        compose.onNodeWithText("Exercise 2 / 2").assertIsDisplayed()
+        assertEquals("nothing past the last movement", 0, compose.nodesDescribed("Next movement"))
+
+        compose.onNode(hasContentDescription("Previous movement")).performClick()
+        compose.runOnIdle { assertEquals("bench-press", store.exerciseId) }
         scope.cancel()
     }
 
@@ -240,24 +243,6 @@ class LoggerMovementWalkTests {
             assertEquals("barbell-row", store.exerciseId)
             assertEquals(session, store.session)
             assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), store.sets)
-        }
-    }
-
-    @Test
-    fun horizontalSetStripKeepsItsDragAndDoesNotChangeMovement() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = logger(scope, loggedSets = 8)
-        val strip = compose.onNode(
-            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
-                hasAnyAncestor(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)),
-        )
-        val before = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
-        strip.performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
-        val after = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
-        compose.runOnIdle {
-            assertTrue("the child strip actually scrolled", after < before)
-            assertEquals("bench-press", store.exerciseId)
-            assertEquals(8, store.sets.size)
         }
     }
 

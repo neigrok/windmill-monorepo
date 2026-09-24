@@ -32,6 +32,7 @@ import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
@@ -59,7 +60,7 @@ class RowSwipeAccessibilityTests {
             localPreferences = LocalPreferences(File(root, "prefs.json")),
             localBodyweight = LocalBodyweight(File(root, "bodyweight.json")),
             scope = scope,
-            undoWindowMs = SetQueue.undoWindowMs,
+            undoWindowMs = Withheld.windowMs,
             sync = { if (it.isSignedIn) server else null },
         )
         runBlocking {

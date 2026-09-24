@@ -33,8 +33,8 @@ public enum LiveLines {
         public let target: String?  // "target 3 @ 90" · "target max @ 90" · "target 3" · nil when nothing is named
     }
 
-    // One pill per planned set: the landed ones as lifted (a door to the fix sheet), the one about to be
-    // lifted in target ink, the rest to come in faint ink.
+    // One pill per planned set: the landed ones as lifted (each a door to its fix sheet), the one about
+    // to be lifted in target ink, the rest to come in faint ink.
     public enum Slot: Equatable, Identifiable {
         case landed(Row)
         case current(ordinal: Int, target: String, spoken: String)
@@ -52,6 +52,7 @@ public enum LiveLines {
         public let id: String
         public let index: String  // the performed ordinal, or "w" — only a warmup skips a number
         public let value: String
+        public let spokenValue: String  // `value` in words: a screen reader reads `×` as a sum
         public let note: String  // the kind, when it is not a working set — else where it is saved
         public let countsTowardNothing: Bool
         public let isOnThisDevice: Bool
@@ -133,23 +134,11 @@ public enum LiveLines {
             return Row(id: set.id,
                        index: isWarmup ? "w" : String(ordinal),
                        value: Readout.effort(weightKg: set.weightKg, reps: set.reps),
+                       spokenValue: Readout.spokenEffort(weightKg: set.weightKg, reps: set.reps),
                        note: set.kind == .working ? (held ? "on this device" : "") : set.kind.rawValue,
                        countsTowardNothing: set.kind != .working,
                        isOnThisDevice: held)
         }
-    }
-
-    // Carries the one row an Undo may still be owed on, named with its own movement, until the undo window closes.
-    public static func column(_ sets: [TrainingSet], of movement: String?, undoable: TrainingSet?,
-                              catalog: [Exercise], stalled: Set<String>) -> [Row] {
-        let here = rows(sets.filter { $0.exerciseId == movement }, stalled: stalled)
-        guard let undoable, undoable.exerciseId != movement,
-              let left = rows(sets.filter { $0.exerciseId == undoable.exerciseId }, stalled: stalled)
-                  .first(where: { $0.id == undoable.id })
-        else { return here }
-        return here + [Row(id: left.id, index: left.index, value: left.value,
-                           note: Readout.movement(undoable.exerciseId, in: catalog),
-                           countsTowardNothing: left.countsTowardNothing, isOnThisDevice: false)]
     }
 
     // Only a `working` set counts toward a target, a plan counter or the number under the thumb.

@@ -2,8 +2,9 @@
 
 The workout uses one native Compose horizontal scroll owner over its body, including clocks,
 blank space and rack controls. `HorizontalPager` renders the exercise reading region, while the
-rack stays fixed. Each page derives its counter, planned and logged sets, and previous-session
-history from its exercise id. Position dots and Add remain in the scrolling reading region.
+rack stays fixed. Each page derives its ledger — logged, current and planned sets — from its
+exercise id. The page head (‹ name ›, `Exercise i / n`, clocks) is pinned; only the ledger scrolls
+vertically, and Add movement sits at its foot.
 
 Selection changes after the pager settles. Reversal preserves the selected exercise, persisted
 rack draft and pending departure question. The store owns rack values across movement changes,
@@ -15,12 +16,12 @@ the active drag before aligning the page, so old pointer events cannot leave the
 
 - Native scrolling owns touch slop, axis arbitration, pointer transfer and snapping. The domain
   holds refusal wording, with no pixel thresholds or gesture recognizer.
-- Adjacent pages preload through the same history cache as selection. Reads do not select or
-  redial; replies are checked against the current authority, account, workout and transport.
-- Each exercise has its own vertical and set-strip scroll state. The set strip consumes remaining
-  horizontal scroll and fling, so its edge cannot change exercise.
+- Each exercise has its own ledger scroll state. The ledger scrolls vertically only, so every
+  horizontal stroke on the body pages exercises. A landed set, and a page becoming the selected
+  one, bring the current row into view just above the rack.
 - Fully offscreen semantics are cleared; incoming previews stay outside TalkBack's active controls.
-  Previous/Next movement actions remain on the selected title.
+  The head's ‹ › buttons step the walk, and Previous/Next movement actions remain on the selected
+  title.
 - Workout clocks, persisted rack and notification commands retain their current ownership. Paging
   draws no new sound, haptic, control or system-gesture exclusion.
 

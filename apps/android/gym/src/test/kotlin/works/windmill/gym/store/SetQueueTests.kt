@@ -152,9 +152,9 @@ class SetQueueTests {
         queue.store(aSet("set_a", "bench-press", at = 1_000), sessionId = "ses_1", needsPush = true)
         queue.store(aSet("set_b", "back-squat", at = 2_000), sessionId = "ses_1", needsPush = true)
 
-        val first = queue.nextOwed(skipping = emptySet(), readyAt = null)
+        val first = queue.nextOwed(skipping = emptySet())
         assertEquals("set_a", first?.set?.id)
-        assertEquals("set_b", queue.nextOwed(skipping = setOf(first!!.lane), readyAt = null)?.set?.id)
+        assertEquals("set_b", queue.nextOwed(skipping = setOf(first!!.lane))?.set?.id)
     }
 
     @Test
@@ -187,16 +187,13 @@ class SetQueueTests {
     @Test
     fun testARemintMovesTheSetToTheFreshIdAndSpendsOneOfTheRepairs() {
         val queue = SetQueue(queueFile())
-        queue.store(aSet("set_a", at = 1_000), sessionId = "ses_1", needsPush = true,
-            heldUntilMs = 999_999)
+        queue.store(aSet("set_a", at = 1_000), sessionId = "ses_1", needsPush = true)
         queue.remint("set_a", fresh = "set_b")
 
         assertEquals(listOf("set_b"), queue.pending.map { it.set.id })
         assertEquals(listOf(1), queue.pending.map { it.remints })
         assertEquals("a remint moves the key and nothing else",
             listOf(82.5), queue.pending.map { it.set.weightKg })
-        assertFalse("the fresh id carries no hold — the window was spent on the send that collided",
-            queue.pending.single().isHeld(at = 1_000))
     }
 
     @Test
@@ -221,19 +218,6 @@ class SetQueueTests {
 
         assertNull(queue.session)
         assertTrue(queue.pending.isEmpty())
-    }
-
-    @Test
-    fun testNextOwedSkipsAnEntryStillInsideItsWindowAndAForcedWalkDoesNot() {
-        val queue = SetQueue(queueFile())
-        queue.store(aSet("set_held", at = 1_000), sessionId = "ses_1", needsPush = true,
-            heldUntilMs = 10_000)
-        queue.store(aSet("set_ready", "back-squat", at = 2_000), sessionId = "ses_1", needsPush = true)
-
-        assertEquals("a held set is being kept on purpose — the walk moves past it",
-            "set_ready", queue.nextOwed(skipping = emptySet(), readyAt = 5_000)?.set?.id)
-        assertEquals("a forced walk ends every window",
-            "set_held", queue.nextOwed(skipping = emptySet(), readyAt = null)?.set?.id)
     }
 
     @Test

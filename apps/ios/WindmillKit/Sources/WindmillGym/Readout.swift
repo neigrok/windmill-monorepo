@@ -20,6 +20,15 @@ public enum Readout {
         "\(weight(weightKg)) × \(reps)"
     }
 
+    // The same numbers as VoiceOver should hear them, in the words the rack's own controls use.
+    public static func spokenEffort(weightKg: Double, reps: Int) -> String {
+        "\(weight(weightKg)) kilograms, \(spokenReps(reps))"
+    }
+
+    public static func spokenReps(_ reps: Int) -> String {
+        reps == 1 ? "1 rep" : "\(reps) reps"
+    }
+
     // The column keeps one decimal, so a whole rating prints whole: `8`, never `8.0`.
     public static func rpe(_ rated: Double) -> String {
         guard rated.isFinite else { return "—" }

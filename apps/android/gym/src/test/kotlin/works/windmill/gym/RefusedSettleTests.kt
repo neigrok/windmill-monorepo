@@ -65,7 +65,7 @@ class RefusedSettleTests {
     // measured against the wall clock instead would be the machine's to close: the swipe's dismiss
     // animation and the recomposition behind it take however long this runner takes, and a shortened
     // span turns that into whether the transient is still on screen when the next line reads it.
-    private val window = SetQueue.undoWindowMs
+    private val window = Withheld.windowMs
 
     private val account = Account(
         api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
@@ -74,7 +74,7 @@ class RefusedSettleTests {
 
     private fun program(scope: CoroutineScope, server: FakeTraining): TrainingStore {
         val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json"), clock = SystemClock::uptimeMillis),
+            queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),

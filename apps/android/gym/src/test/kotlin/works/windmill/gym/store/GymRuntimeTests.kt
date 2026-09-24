@@ -39,7 +39,7 @@ class GymRuntimeTests {
     )
 
     @Test
-    fun twoConcurrentDeliveriesAndAColdDuplicatePersistOneOfferedSetAndOriginalHold() = runTest {
+    fun twoConcurrentDeliveriesAndAColdDuplicatePersistOneOfferedSet() = runTest {
         var moment = WorkoutMoment(101_000, 1_000, "boot")
         val file = File(tmp.root, "sets")
         val queue = SetQueue(file)
@@ -57,18 +57,15 @@ class GymRuntimeTests {
         val original = TrainingSet(offered.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
         assertEquals(listOf(original), first.sets)
         val disk = SetQueue(file)
-        assertEquals(110_000L, disk.pending.single().heldUntilMs)
+        assertEquals(listOf(original), disk.pending.map { it.set })
         assertEquals(setOf(offered.id), disk.workout.consumed)
         moment = moment.copy(wallMs = 801_000, elapsedMs = 4_000)
         val next = store(SetQueue(file), backgroundScope, WorkoutClock { moment })
         val cold = GymRuntime(next, { null }, { true }, StandardTestDispatcher(testScheduler))
         assertEquals(LogSetAcceptance.Stale, cold.logSet(command))
         assertEquals(listOf(original), next.sets)
-        assertEquals(807_000L, next.undoableUntilMs)
         assertEquals(3_000L, next.restElapsedMs())
-        assertTrue(next.undoLast())
-        assertEquals(LogSetAcceptance.Stale, cold.logSet(command))
-        assertEquals(emptyList<TrainingSet>(), SetQueue(file).sets)
+        assertEquals(listOf(original), SetQueue(file).sets)
     }
 
     @Test
@@ -181,7 +178,7 @@ class GymRuntimeTests {
             runtime.restoreLocal()
             val first = requireNotNull(runtime.notification.value?.offer)
             assertEquals(LogSetAcceptance.Accepted(first.id), runtime.logSet(LogSetCommand(first.key, first.id)))
-            val accepted = requireNotNull(store.undoable)
+            val accepted = store.sets.single()
             val original = requireNotNull(runtime.notification.value?.offer)
             val shelfBefore = logFile.readText()
             val preferencesBefore = preferencesFile.readText()
@@ -193,7 +190,6 @@ class GymRuntimeTests {
             assertEquals("u.A", store.accountKey)
             assertTrue(store.acceptSet(LogSetCommand(original.key, original.id)) is LogSetAcceptance.Unavailable)
             store.logSet(30.0, 8, SetKind.Warmup)
-            assertFalse(store.undoLast())
             assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), store.finish())
             store.choose("overhead-press")
             store.reorder(0, 1)
@@ -271,9 +267,8 @@ class GymRuntimeTests {
         assertEquals("u.B", store.accountKey)
         assertEquals("anonymous", store.session?.id)
         val claimed = SetQueue(file, "B")
-        assertEquals(listOf(original), claimed.sets)
-        assertEquals(110_000L, claimed.pending.single().heldUntilMs)
-        assertEquals(moment, claimed.pending.single().holdOrigin)
+        assertEquals("the claim delivers the set at once", listOf(original.copy(setNumber = 1)), claimed.sets)
+        assertEquals(emptyList<SetQueue.Entry>(), claimed.pending)
         assertEquals(rest.id, runtime.notification.value?.rest?.id)
         assertEquals(rest.origin, runtime.notification.value?.rest?.origin)
         assertEquals(first.id, claimed.workout.rest?.id)
@@ -314,7 +309,6 @@ class GymRuntimeTests {
                 assertEquals(listOf(TrainingSet(offer.id, "bench-press", weightKg = 20.0, reps = 5,
                     completedAtMs = moment.wallMs)), reopened.sets)
                 assertEquals(setOf(offer.id), reopened.workout.consumed)
-                assertEquals(110_000L, reopened.pending.single().heldUntilMs)
                 assertEquals(offer.id, reopened.workout.rest?.id)
             }
         }

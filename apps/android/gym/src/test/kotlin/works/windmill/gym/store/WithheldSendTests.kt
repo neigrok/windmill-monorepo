@@ -52,7 +52,7 @@ class WithheldSendTests {
     }
 
     private fun TestScope.storeOver(sync: TrainingSyncing) = TrainingStore(
-        queue = SetQueue(File(tmp.root, "queue.json")) { clockMs },
+        queue = SetQueue(File(tmp.root, "queue.json")),
         deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
         localLog = LocalLog(File(tmp.root, "local.json")),
         localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
@@ -61,7 +61,7 @@ class WithheldSendTests {
         now = { clockMs += 1; clockMs },
         mintSession = { "ses_minted" },
         mintSet = Ids::set,
-        undoWindowMs = SetQueue.undoWindowMs,
+        undoWindowMs = Withheld.windowMs,
         sync = { if (it.isSignedIn) sync else null },
     )
 
@@ -81,7 +81,7 @@ class WithheldSendTests {
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 90.0, reps = 3)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 
@@ -116,7 +116,7 @@ class WithheldSendTests {
         store.logSet(weightKg = 82.5, reps = 5)
         store.logSet(weightKg = 90.0, reps = 3)
         clockMs += 60_000
-        store.flushPendingSets(force = true)
+        store.flushPendingSets()
         store.finish()
         val taken = server.sets.getValue("ses_1").first()
 

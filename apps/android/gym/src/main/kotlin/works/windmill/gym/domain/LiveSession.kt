@@ -51,21 +51,29 @@ object AutoClose {
 // account's session lapsed (401).
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
-object LiveLines {
-    data class Card(val title: String, val body: String)
+// A target as TalkBack says it: units named, the placeholders spelled out.
+private val SetTarget.spoken: String
+    get() = (weightKg?.let { "${Readout.weight(it)} kg" } ?: "last time’s weight") + ", " +
+        (reps?.let(Readout::repCount) ?: "max reps")
 
+object LiveLines {
     const val onThisDevice = "on this device"
 
     fun oneAtATime(movement: String): String = "$movement first — that question is still open."
 
+    // One set that landed. `index` is the performed ordinal, or "W" — only a warmup skips a number.
     data class Row(
         val id: String,
-        val index: String,      // the performed ordinal, or "w" — only a warmup skips a number
-        val value: String,
-        val note: String,
+        val index: String,
+        val weight: String,
+        val reps: Int,
         val isWarmup: Boolean,
         val isOnThisDevice: Boolean,
-    )
+    ) {
+        val spoken: String
+            get() = listOfNotNull(if (isWarmup) "Warmup" else "Set $index", "logged", "$weight kg",
+                Readout.repCount(reps), onThisDevice.takeIf { isOnThisDevice }).joinToString(", ")
+    }
 
     data class MovementRow(
         val id: String,
@@ -85,59 +93,52 @@ object LiveLines {
         return "set ${workingSetsToday + 1} of $sets"
     }
 
-    // One pill of the slot strip: a set that landed reads what was lifted; a planned slot still to
-    // come reads its target, and the first of those is the set about to be lifted.
+    // One row of the logger's ledger. State is never printed as a word: a row's look carries it on
+    // screen and `spoken` carries it to TalkBack.
     sealed interface Slot {
-        data class Landed(val row: Row) : Slot
+        val spoken: String
 
-        data class Planned(val index: Int, val target: SetTarget, val current: Boolean) : Slot {
-            val value: String get() = Readout.setTarget(target)
-            val spoken: String get() = "set $index, target $value"
+        data class Landed(val row: Row) : Slot {
+            override val spoken: String get() = row.spoken
+        }
+
+        // The set about to be lifted. The rack is its editor, so the row names only the plan's target.
+        data class Current(val index: Int, val target: SetTarget?) : Slot {
+            val targetLine: String? get() = target?.let { "target ${Readout.setTarget(it)}" }
+            override val spoken: String
+                get() = listOfNotNull("Set $index", "current", target?.let { "target ${it.spoken}" }).joinToString(", ")
+        }
+
+        data class Planned(val index: Int, val target: SetTarget) : Slot {
+            val weight: String get() = target.weightKg?.let(Readout::weight) ?: "last"
+            val reps: String get() = Readout.repTarget(target.reps)
+            override val spoken: String get() = "Set $index, planned, ${target.spoken}"
         }
     }
 
-    // Landed rows first, warmups where they were lifted, then one pill per planned slot the working
-    // count has not reached. A set logged past the plan is a landed pill with no slot behind it.
+    // What landed, warmups where they were lifted, then the set in hand, then every planned slot the
+    // working count has not reached. Past the end of the plan the set in hand carries no target.
     fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>): List<Slot> {
         val landed = rows(sets, stalled).map { Slot.Landed(it) }
         val lifted = workingCount(sets)
-        val coming = planEntry?.sets.orEmpty().drop(lifted).mapIndexed { offset, target ->
-            Slot.Planned(index = lifted + offset + 1, target = target, current = offset == 0)
+        val plan = planEntry?.sets.orEmpty()
+        val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted))
+        val coming = plan.drop(lifted + 1).mapIndexed { offset, target ->
+            Slot.Planned(index = lifted + offset + 2, target = target)
         }
-        return landed + coming
-    }
-
-    // The set the last-time chip draws for the coming working set: last time's Nth WORKING set, past
-    // its end the last working set, and only where last time was warmups alone its last set. Null
-    // where last time holds no set at all — no chip, never a crash.
-    fun lastTimeSet(lastTime: List<TrainingSet>, workingSetsToday: Int): TrainingSet? {
-        val working = lastTime.filter { it.kind == SetKind.Working }
-        return working.getOrNull(workingSetsToday) ?: working.lastOrNull() ?: lastTime.lastOrNull()
+        return landed + current + coming
     }
 
     // Counted off the merged walk by position, never off a plan index; a walk of one has no place.
-    fun place(order: List<String>, movement: String?): String? {
-        val at = movement?.let { order.indexOf(it) } ?: -1
-        if (at < 0 || order.size < 2) return null
-        return "movement ${at + 1} of ${order.size}"
+    data class Place(val at: Int, val of: Int) {
+        val shown: String get() = "Exercise $at / $of"
+        val spoken: String get() = "Exercise $at of $of"
     }
 
-    // A missing card is an empty history; a failed read keeps its distinct disclosure.
-    fun prefillCard(lastTime: LastTime?, routine: String?, readFailed: Boolean, now: Long): Card? {
-        if (lastTime == null) {
-            if (!readFailed) return null
-            return Card(title = "Last time", body = "the log didn’t answer")
-        }
-        val session = lastTime.session ?: return null
-        if (lastTime.sets.isEmpty()) return null
-        val elsewhere = lastTime.routine?.takeIf { it != routine }?.let { "  ·  $it" } ?: ""
-        val shown = lastTime.sets.take(4)
-            .joinToString(",   ") { Readout.effort(it.weightKg, it.reps) }
-        val more = if (lastTime.sets.size > 4) ",   +${lastTime.sets.size - 4} more" else ""
-        return Card(
-            title = "Last time · ${Readout.day(session.startedAtMs)} · ${Readout.ago(session.startedAtMs, now)}$elsewhere",
-            body = shown + more
-        )
+    fun place(order: List<String>, movement: String?): Place? {
+        val at = movement?.let { order.indexOf(it) } ?: -1
+        if (at < 0 || order.size < 2) return null
+        return Place(at + 1, order.size)
     }
 
     fun rows(sets: List<TrainingSet>, stalled: Set<String>): List<Row> {
@@ -145,13 +146,12 @@ object LiveLines {
         return sets.map { set ->
             val isWarmup = set.kind == SetKind.Warmup
             if (!isWarmup) ordinal += 1
-            val held = set.id in stalled
             Row(id = set.id,
-                index = if (isWarmup) "w" else ordinal.toString(),
-                value = Readout.effort(set.weightKg, set.reps),
-                note = if (isWarmup) "warmup" else (if (held) onThisDevice else ""),
+                index = if (isWarmup) "W" else ordinal.toString(),
+                weight = Readout.weight(set.weightKg),
+                reps = set.reps,
                 isWarmup = isWarmup,
-                isOnThisDevice = held)
+                isOnThisDevice = set.id in stalled)
         }
     }
 

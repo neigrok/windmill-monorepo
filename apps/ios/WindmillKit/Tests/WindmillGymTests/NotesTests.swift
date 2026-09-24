@@ -162,7 +162,6 @@ final class NotesScreenWordsTests: XCTestCase {
     func testDeletingANoteTakesTheWindowRatherThanAskingFirst() throws {
         XCTAssertEqual(Notes.delete, "Delete note")
         XCTAssertEqual(WithheldWords.note, "Note deleted.")
-        XCTAssertTrue(Withheld.Kind.note.isDelete)
         XCTAssertFalse(Withheld.Kind.note.isHeldOnDisk, "a note has no hold on disk to wait in")
 
         let screen = try source("NotesScreen.swift")

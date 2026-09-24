@@ -1463,6 +1463,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var onSavePreferences: () async -> Void = {}
     // Awaited once the call is counted and before the fake acts: a test holds a reply in flight here.
     var onBodyweightRead: () async -> Void = {}
+    var onAppend: () async -> Void = {}
     var onPutBodyweight: () async -> Void = {}
     var onDeleteBodyweight: () async -> Void = {}
 
@@ -1553,6 +1554,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     func appendSet(to sessionId: String, _ write: SetWrite) async throws -> TrainingSet {
         calls.append("append")
         appended.append(write)
+        await onAppend()
         guard online else { throw WindmillApiError.offline }
         if let refusal = refuse(write) { throw refusal }
         if let already = sets[sessionId]?.first(where: { $0.id == write.id }) { return already }

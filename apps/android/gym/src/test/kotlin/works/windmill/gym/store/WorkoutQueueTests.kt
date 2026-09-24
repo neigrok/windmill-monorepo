@@ -3,7 +3,6 @@ package works.windmill.gym.store
 import java.io.File
 import java.io.IOException
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -42,7 +41,7 @@ class WorkoutQueueTests {
         assertEquals(LogSetAcceptance.Accepted("set_1"), queue.accept(command, now, null, prefs) { "set_${++nextId}" })
         assertEquals(before + 1, writes)
         val set = TrainingSet("set_1", "bench", weightKg = 20.0, reps = 5, completedAtMs = now.wallMs)
-        val expected = SetQueue.Entry(set, live.id, true, 0, 110_000, 101_000, WorkoutEvent(set.id, now), now, eventOrder = first.revision + 1)
+        val expected = SetQueue.Entry(set, live.id, true, 0, 101_000, WorkoutEvent(set.id, now), eventOrder = first.revision + 1)
         assertEquals(listOf(expected), queue.pending)
         assertEquals(setOf("set_1"), queue.workout.consumed)
         assertEquals(listOf("set_2", 2, "set_1", now), listOf(queue.workout.offer?.id,
@@ -51,7 +50,7 @@ class WorkoutQueueTests {
         assertEquals(queue.workout, reopened.workout)
         assertEquals(queue.pending, reopened.pending)
         assertEquals(LogSetAcceptance.Stale, reopened.accept(command, now, null, prefs) { error("no new ID") })
-        reopened.withdraw("set_1")
+        reopened.drop("set_1")
         reopened.prepare(null, prefs, now, true) { "set_${++nextId}" }
         assertEquals(emptyList<TrainingSet>(), reopened.sets)
         assertEquals(setOf("set_1"), reopened.workout.consumed)
@@ -59,7 +58,7 @@ class WorkoutQueueTests {
     }
 
     @Test
-    fun sameBootClockChangePreservesRestAndRemainingHoldButNewBootRetiresTheHoldAndOldOffer() {
+    fun sameBootClockChangePreservesRestButNewBootRetiresTheOldOffer() {
         val file = File(tmp.root, "sets.json")
         var id = 0
         val queue = SetQueue(file)
@@ -73,12 +72,10 @@ class WorkoutQueueTests {
         val afterClockEdit = WorkoutMoment(901_000, 4_000, "boot1")
         val reopened = SetQueue(file)
         reopened.prepare(null, prefs, afterClockEdit, true) { "set_${++id}" }
-        assertEquals(907_000L, reopened.pending.single().heldUntilMs)
         assertEquals(origin, reopened.workout.rest?.origin)
         val oldOffer = requireNotNull(reopened.workout.offer)
         val afterBoot = WorkoutMoment(902_000, 100, "boot2")
         reopened.prepare(null, prefs, afterBoot, true) { "set_${++id}" }
-        assertNull(reopened.pending.single().heldUntilMs)
         assertEquals(listOf("set_1"), reopened.sets.map { it.id })
         assertEquals(LogSetAcceptance.Stale, reopened.accept(LogSetCommand(oldOffer.key, oldOffer.id), afterBoot,
             null, prefs) { error("no new ID") })
@@ -133,7 +130,7 @@ class WorkoutQueueTests {
         val initial = SetQueue(file, deviceOwner = "A")
         initial.hold(session)
         initial.choose("bench")
-        initial.store(first, session.id, needsPush = true, heldUntilMs = 11_000)
+        initial.store(first, session.id, needsPush = true)
         val bytes = file.readText()
         val broken = SetQueue(file, deviceOwner = "A", write = { _, _ -> throw IOException("disk full") })
         assertThrows(IOException::class.java) {
@@ -141,7 +138,7 @@ class WorkoutQueueTests {
         }
         assertEquals(bytes, file.readText())
         assertEquals(listOf(first), broken.sets)
-        assertThrows(IllegalStateException::class.java) { broken.withdraw(first.id) }
+        assertThrows(IllegalStateException::class.java) { broken.drop(first.id) }
         val reopened = SetQueue(file, deviceOwner = "A")
         assertEquals(listOf(session, listOf("bench"), "bench", initial.pending),
             listOf(reopened.session, reopened.order, reopened.chosenMovement, reopened.pending))
@@ -158,14 +155,14 @@ class WorkoutQueueTests {
             throw IOException("reply lost after replacement")
         })
         assertThrows(IOException::class.java) {
-            broken.store(set, session.id, needsPush = true, heldUntilMs = 11_000)
+            broken.store(set, session.id, needsPush = true)
         }
         assertEquals(emptyList<TrainingSet>(), broken.sets)
         assertThrows(IllegalStateException::class.java) {
             broken.store(set.copy(id = "replacement"), session.id, needsPush = true)
         }
         val reopened = SetQueue(file)
-        assertEquals(listOf(SetQueue.Entry(set, session.id, true, 0, 11_000, 2_000)), reopened.pending)
+        assertEquals(listOf(SetQueue.Entry(set, session.id, true, 0, 2_000)), reopened.pending)
         assertEquals(session, reopened.session)
         assertEquals(listOf(set), reopened.sets)
     }
@@ -192,7 +189,7 @@ class WorkoutQueueTests {
     }
 
     @Test
-    fun undoRestoresPriorElapsedWithoutMakingItsOldAlertEligibleAgain() {
+    fun droppingTheNewestSetRestoresPriorElapsedWithoutMakingItsOldAlertEligibleAgain() {
         val file = File(tmp.root, "undo.json")
         val queue = SetQueue(file)
         val prefs = GymPreferences(restSeconds = 90)
@@ -205,7 +202,7 @@ class WorkoutQueueTests {
         queue.accept(LogSetCommand(first.key, first.id), origin, null, prefs) { "set_${++id}" }
         val second = requireNotNull(queue.workout.offer)
         queue.accept(LogSetCommand(second.key, second.id), origin.copy(wallMs = 111_000, elapsedMs = 11_000), null, prefs) { "set_${++id}" }
-        assertTrue(queue.withdraw(second.id))
+        queue.drop(second.id)
         queue.prepare(null, prefs, origin.copy(wallMs = 116_000, elapsedMs = 16_000), true) { "set_${++id}" }
         val rest = requireNotNull(queue.workout.rest)
         assertEquals(listOf(first.id, origin, true), listOf(rest.id, rest.origin, rest.attempted))

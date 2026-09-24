@@ -6,7 +6,7 @@ import XCTest
 //   · two deletes in one second BOTH restore — the window is a list, never a slot;
 //   · swipe, then press back, does not destroy the row — leaving keeps the window;
 //   · a full swipe does nothing — the fastest possible gesture is not a delete;
-//   · the transient grows no inset — `Log set` is pressed five to forty times a session.
+//   · logging a set opens no window — the set is on its way at once.
 final class RoomUndoWindowUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -91,27 +91,17 @@ final class RoomUndoWindowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Delete"].exists, "the stroke revealed the action and waited")
     }
 
-    // The transient floats OVER the reach band. `Log set` may not move when a window opens, and may
-    // not move back when it closes.
-    func testTheTransientNeverMovesTheLogSetButton() {
+    // `Log set` holds nothing back, so it raises nothing to take back, and the reach band stays put.
+    func testLoggingASetOpensNoWindow() {
         startASessionOnOneMovement()
 
         let logSet = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Log set")).firstMatch
         XCTAssertTrue(logSet.waitForExistence(timeout: 15), "the logger drew no Log set")
-        let closed = settled(logSet)
+        let before = settled(logSet)
         logSet.tap()
 
-        let undo = app.buttons["Undo"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 5), "logging a set opened no window")
-        let whileOpen = settled(logSet)
-        XCTAssertEqual(whileOpen, closed, "the reach band moved when a window opened")
-        XCTAssertLessThanOrEqual(undo.frame.maxY, whileOpen.maxY + 1,
-                                 "the transient is drawn below the reach band, not over it")
-
-        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: undo)
-        waitForExpectations(timeout: 20)
-
-        XCTAssertEqual(settled(logSet), closed, "the reach band jumped when the window closed")
+        XCTAssertFalse(app.buttons["Undo"].waitForExistence(timeout: 3), "logging a set opened a window")
+        XCTAssertEqual(settled(logSet), before, "the reach band moved when a set was logged")
         // A session left open sends the next launch straight into the logger, where there is no tab
         // bar to find: this test closes what it opened.
         finishAndKeep()
@@ -319,7 +309,7 @@ final class RoomUndoWindowUITests: XCTestCase {
 
     // A session logged with no routine reads `Free session` at the head of its own row.
     private var sessionRow: XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "no routine")).firstMatch
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Free session")).firstMatch
     }
 
     private func openTheNewestSession() {

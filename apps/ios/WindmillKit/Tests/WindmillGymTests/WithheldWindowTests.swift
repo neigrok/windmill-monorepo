@@ -133,7 +133,6 @@ final class WithheldWindowTests: XCTestCase {
         let log = Log()
         let open = window(60_000)
 
-        await open.hold(delete(.loggedSet, "set_1", line: WithheldWords.logged("100 × 5"), into: log))
         await open.hold(delete(.set, "set_2", line: WithheldWords.deleted("100 × 5"), into: log))
         await open.hold(delete(.session, "ses_1", line: WithheldWords.session, into: log))
         await open.abandon()
@@ -232,7 +231,7 @@ final class WithheldWindowTests: XCTestCase {
     }
 
     // The transient says the newest act's own words, and only counts once there is more than one.
-    func testTheTransientSaysTheNewestAndCountsOnlyWhatIsActuallyADelete() async {
+    func testTheTransientSaysTheNewestAndCountsPastOne() async {
         let log = Log()
         let open = window(4_000)
 
@@ -244,10 +243,6 @@ final class WithheldWindowTests: XCTestCase {
                                  detail: WithheldWords.routineDetail))
         XCTAssertEqual(open.line, "2 deleted.")
         XCTAssertNil(open.detail, "a count has no one detail to carry")
-
-        await open.hold(delete(.loggedSet, "set_9", line: WithheldWords.logged("100 × 3"), into: log))
-        XCTAssertEqual(open.line, "3 to take back.",
-                       "a set just LOGGED is not a delete, and the count may not say it is")
     }
 
     func testTheDetailIsDrawnWhenTheRoutineIsTheWholeOfWhatIsHeld() async {
@@ -271,10 +266,17 @@ final class WithheldWindowTests: XCTestCase {
         XCTAssertEqual(WithheldWords.threadStands, "that conversation is still here")
         XCTAssertEqual(WithheldWords.noteStands, "that note is still here")
         XCTAssertEqual(WithheldWords.deleted("82.5 × 5"), "82.5 × 5 is out of the log.")
-        XCTAssertEqual(WithheldWords.logged("82.5 × 5"), "82.5 × 5 logged.")
-        XCTAssertEqual(WithheldWords.many([.set, .routine]), "2 deleted.")
-        XCTAssertEqual(WithheldWords.many([.set, .loggedSet]), "2 to take back.")
+        XCTAssertEqual(WithheldWords.many(6), "6 deleted.")
         XCTAssertEqual(WithheldWords.windowClosed, "The window closed — that delete already went.")
+    }
+
+    // Only the set has a hold on disk: a note and a weigh-in are let go of when the room leaves,
+    // exactly as a routine, a conversation and a finished workout are.
+    func testOnlyTheSetIsHeldOnDisk() {
+        XCTAssertTrue(Withheld.Kind.set.isHeldOnDisk)
+        for kind in [Withheld.Kind.routine, .thread, .session, .note, .bodyweight] {
+            XCTAssertFalse(kind.isHeldOnDisk, kind.rawValue)
+        }
     }
 
     // What is LEFT of a window is measured on the clock that closes it, and on no other. The
@@ -282,24 +284,6 @@ final class WithheldWindowTests: XCTestCase {
     // a bar draining on the wall clock under a seat built on an injected one empties at a different
     // moment than the way back disappears. The instants below are nowhere near wall-clock time on
     // purpose — an ambient read answers 0 for every one of them.
-    // Six verbs destroy and one does not, and only the set has a hold on disk: a note and a weigh-in are
-    // let go of when the room leaves, exactly as a routine, a conversation and a finished workout are.
-    func testEveryDeleteTheRoomCanTakeBackIsCountedAsOneAndOnlyTheSetIsHeldOnDisk() {
-        let deletes: [Withheld.Kind] = [.set, .routine, .thread, .session, .note, .bodyweight]
-        for kind in deletes {
-            XCTAssertTrue(kind.isDelete, kind.rawValue)
-        }
-        XCTAssertFalse(Withheld.Kind.loggedSet.isDelete)
-        XCTAssertEqual(WithheldWords.many(deletes), "6 deleted.")
-
-        for kind in [Withheld.Kind.set, .loggedSet] {
-            XCTAssertTrue(kind.isHeldOnDisk, kind.rawValue)
-        }
-        for kind in [Withheld.Kind.routine, .thread, .session, .note, .bodyweight] {
-            XCTAssertFalse(kind.isHeldOnDisk, kind.rawValue)
-        }
-    }
-
     func testWhatIsLeftIsMeasuredOnTheWindowsOwnClock() async {
         var clockMs: Int64 = 10_000
         let open = WithheldWindow(windowMs: 9_000, now: { clockMs })
@@ -316,25 +300,7 @@ final class WithheldWindowTests: XCTestCase {
         XCTAssertEqual(open.leftMs, 0, "never past the end, and never negative")
     }
 
-    // A logged set carries the instant the QUEUE stamped on disk. The subtraction still happens
-    // here, against that instant, so the drain runs out with the queue's own hold rather than with a
-    // second window started when the walk back to the room finished.
-    func testAnActThatCarriesItsOwnInstantIsMeasuredFromThatInstant() async {
-        var clockMs: Int64 = 500_000
-        let open = WithheldWindow(windowMs: 9_000, now: { clockMs })
-
-        await open.hold(Withheld(.loggedSet, subject: "set_1",
-                                 line: WithheldWords.logged("100 × 5"),
-                                 closesAtMs: clockMs + 4_000))
-
-        XCTAssertEqual(open.closesAtMs, 504_000)
-        XCTAssertEqual(open.leftMs, 4_000, "what the queue has left, not nine fresh seconds")
-
-        clockMs += 1_500
-        XCTAssertEqual(open.leftMs, 2_500)
-    }
-
-    // The rule the two tests above cannot reach: the transient's own arithmetic is private to a
+    // The rule the test above cannot reach: the transient's own arithmetic is private to a
     // SwiftUI view, so nothing executable here can catch it reading the wall clock again. It is
     // pinned on the source instead — the register owns the clock, and the view that draws it owns
     // none.

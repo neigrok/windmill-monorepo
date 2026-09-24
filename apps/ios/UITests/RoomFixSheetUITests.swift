@@ -2,7 +2,7 @@ import XCTest
 
 // The fix sheet at the rack (C10): a correction is one-handed too, so both its numerals raise the SAME
 // keypad the logger does — and the sign key on it answers to a name rather than to its own glyph
-// (C17 scope). A sheet over a finished session only exists once one has been logged, so this opens one.
+// (C17 scope). It opens off a logged pill mid-workout and off a set row on a finished session.
 final class RoomFixSheetUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -89,6 +89,30 @@ final class RoomFixSheetUITests: XCTestCase {
         }
     }
 
+    // Mid-workout the logged pill is the door. Its Delete is the room's withheld delete: the pill
+    // leaves at once and comes back off the transient's Undo.
+    func testALoggedPillOpensItsFixSheetMidWorkout() {
+        startAndLogOneSet()
+
+        let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "set 1, logged, ")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 15), "the logged set drew no door")
+        pill.tap()
+        XCTAssertTrue(app.staticTexts["Fix this set"].waitForExistence(timeout: 10),
+                      "the logged pill opened no fix sheet")
+
+        let delete = app.buttons["Delete set"]
+        XCTAssertTrue(scrolledTo(delete), "the sheet's Delete cannot be reached")
+        delete.tap()
+        let said = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", "is out of the log."))
+        XCTAssertTrue(said.firstMatch.waitForExistence(timeout: 10), "the delete raised no transient")
+        XCTAssertFalse(pill.exists, "the pill is still drawn inside the window")
+
+        app.buttons["Undo"].tap()
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "Undo did not bring the pill back")
+
+        finishAndKeep()
+    }
+
     // MARK: - the ways in
 
     // The sheet's own scroll view, never the app's middle: with a keyboard up the middle of the
@@ -119,6 +143,11 @@ final class RoomFixSheetUITests: XCTestCase {
     // One workout, one set, finished and kept — which lands the room on the session the fix sheet is
     // opened from. Kept rather than discarded: a discarded session has no set to correct.
     private func logOneSetAndKeepTheSession() {
+        startAndLogOneSet()
+        finishAndKeep()
+    }
+
+    private func startAndLogOneSet() {
         XCTAssertTrue(app.buttons["Just start logging"].waitForExistence(timeout: 20),
                       "the routines home never drew its reach band")
         app.buttons["Just start logging"].tap()
@@ -129,7 +158,9 @@ final class RoomFixSheetUITests: XCTestCase {
         let logSet = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Log set")).firstMatch
         XCTAssertTrue(logSet.waitForExistence(timeout: 15), "the logger drew no Log set")
         logSet.tap()
+    }
 
+    private func finishAndKeep() {
         app.navigationBars.buttons["Finish"].tap()
         XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20)
                       || app.staticTexts["Ended early."].exists,

@@ -118,8 +118,8 @@ final class LiveLinesTests: XCTestCase {
         let landed = [aSet("back-squat", 60, 5, at: 1_000, id: "s1"), aSet("back-squat", 80, 5, at: 2_000, id: "s2")]
         let slots = LiveLines.slots(landed, plan: PlanEntry(exerciseId: "back-squat", sets: ramp), stalled: [])
         XCTAssertEqual(slots, [
-            .landed(LiveLines.Row(id: "s1", index: "1", value: "60 × 5", note: "", countsTowardNothing: false, isOnThisDevice: false)),
-            .landed(LiveLines.Row(id: "s2", index: "2", value: "80 × 5", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s1", index: "1", value: "60 × 5", spokenValue: "60 kilograms, 5 reps", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s2", index: "2", value: "80 × 5", spokenValue: "80 kilograms, 5 reps", note: "", countsTowardNothing: false, isOnThisDevice: false)),
             .current(ordinal: 3, target: "90 × 3", spoken: "set 3, target 90 × 3"),
             .coming(ordinal: 4, target: "100 × 1", spoken: "set 4, target 100 × 1"),
             .coming(ordinal: 5, target: "80 × 5", spoken: "set 5, target 80 × 5"),
@@ -133,9 +133,9 @@ final class LiveLinesTests: XCTestCase {
                     aSet("chin-up", 10, 8, at: 3_000, id: "s2")]
         let slots = LiveLines.slots(sets, plan: PlanEntry(exerciseId: "chin-up", sets: [SetTarget(reps: 8, weightKg: 10)]), stalled: ["s2"])
         XCTAssertEqual(slots, [
-            .landed(LiveLines.Row(id: "w1", index: "w", value: "0 × 8", note: "warmup", countsTowardNothing: true, isOnThisDevice: false)),
-            .landed(LiveLines.Row(id: "s1", index: "1", value: "10 × 8", note: "", countsTowardNothing: false, isOnThisDevice: false)),
-            .landed(LiveLines.Row(id: "s2", index: "2", value: "10 × 8", note: "on this device", countsTowardNothing: false, isOnThisDevice: true)),
+            .landed(LiveLines.Row(id: "w1", index: "w", value: "0 × 8", spokenValue: "0 kilograms, 8 reps", note: "warmup", countsTowardNothing: true, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s1", index: "1", value: "10 × 8", spokenValue: "10 kilograms, 8 reps", note: "", countsTowardNothing: false, isOnThisDevice: false)),
+            .landed(LiveLines.Row(id: "s2", index: "2", value: "10 × 8", spokenValue: "10 kilograms, 8 reps", note: "on this device", countsTowardNothing: false, isOnThisDevice: true)),
         ])
         XCTAssertEqual(LiveLines.slots([], plan: nil, stalled: []), [])
     }
@@ -197,41 +197,6 @@ final class LiveLinesTests: XCTestCase {
                        "and it names every kind that counts toward nothing, so the column and the "
                        + "counter above it cannot be read as one number")
         XCTAssertEqual(column.map(\.countsTowardNothing), [true, false, false, true, true])
-    }
-
-    func testTheColumnDrawsTheMovementInHand() {
-        let sets = [aSet("bench-press", 82.5, 5, at: 1_000, id: "s1"),
-                    aSet("overhead-press", 45, 5, at: 2_000, id: "s2")]
-
-        let column = LiveLines.column(sets, of: "bench-press", undoable: nil, catalog: [], stalled: [])
-        XCTAssertEqual(column.map(\.id), ["s1"])
-        XCTAssertEqual(column.map(\.value), ["82.5 × 5"])
-        XCTAssertEqual(column.map(\.note), [""])
-    }
-
-    func testAnUndoStillOwedFollowsTheWalkToTheNextMovement() {
-        let bench = aSet("bench-press", 82.5, 5, at: 1_000, id: "s1")
-        let sets = [bench, aSet("overhead-press", 45, 5, at: 2_000, id: "s2")]
-        let catalog = [Exercise(id: "bench-press", name: "Bench Press")]
-
-        let column = LiveLines.column(sets, of: "overhead-press", undoable: bench,
-                                      catalog: catalog, stalled: ["s1"])
-        XCTAssertEqual(column.map(\.id), ["s2", "s1"], "it is drawn last, under the sets of the "
-                       + "movement in hand, where a bottom-anchored column cannot scroll it away")
-        XCTAssertEqual(column.map(\.value), ["45 × 5", "82.5 × 5"])
-        XCTAssertEqual(column.map(\.index), ["1", "1"], "and it keeps ITS movement's ordinal")
-        XCTAssertEqual(column.map(\.note), ["", "Bench Press"])
-        XCTAssertEqual(column.map(\.isOnThisDevice), [false, false],
-                       "where it is saved is not the fact a row about to be withdrawn carries")
-    }
-
-    func testTheTravellingUndoIsNotDrawnTwiceOnItsOwnMovement() {
-        let bench = aSet("bench-press", 82.5, 5, at: 1_000, id: "s1")
-        let column = LiveLines.column([bench], of: "bench-press", undoable: bench,
-                                      catalog: [Exercise(id: "bench-press", name: "Bench Press")],
-                                      stalled: ["s1"])
-        XCTAssertEqual(column.map(\.id), ["s1"])
-        XCTAssertEqual(column.map(\.note), ["on this device"])
     }
 
     func testTheJumpSheetSaysWhereEachMovementStands() {

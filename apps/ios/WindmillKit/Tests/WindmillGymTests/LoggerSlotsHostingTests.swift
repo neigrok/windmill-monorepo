@@ -17,7 +17,7 @@ final class LoggerSlotsHostingTests: XCTestCase {
     }
 
     // The rack fixture: sets 1 and 2 landed as planned against the ramp, set 3 current.
-    func testTheStripSpeaksEveryPillAsOneSentenceAndNoPlannedPillIsADoor() throws {
+    func testTheStripSpeaksEveryPillAsOneSentenceAndOnlyALandedPillIsADoor() throws {
         let ramp = [SetTarget(reps: 5, weightKg: 60), SetTarget(reps: 5, weightKg: 80),
                     SetTarget(reps: 3, weightKg: 90), SetTarget(reps: 1, weightKg: 100),
                     SetTarget(reps: 5, weightKg: 80)]
@@ -28,8 +28,8 @@ final class LoggerSlotsHostingTests: XCTestCase {
         let slots = LiveLines.slots(landed, plan: PlanEntry(exerciseId: "back-squat", sets: ramp), stalled: [])
 
         XCTAssertEqual(slots.map { SlotRow(slot: $0).spoken }, [
-            "set 1, 60 × 5",
-            "set 2, 80 × 5",
+            "set 1, logged, 60 kilograms, 5 reps",
+            "set 2, logged, 80 kilograms, 5 reps",
             "set 3, target 90 × 3",
             "set 4, target 100 × 1",
             "set 5, target 80 × 5",
@@ -39,13 +39,16 @@ final class LoggerSlotsHostingTests: XCTestCase {
             .sizeThatFits(in: CGSize(width: 390, height: CGFloat.infinity))
         XCTAssertGreaterThanOrEqual(drawn.height, 5 * GymTap.minimum + 4 * 8, "five pills, each a tap target tall")
 
-        // The logger opens no fix sheet of its own — the session page does — so a landed pill is a
-        // row today, and a planned pill is never a door: there is nothing to fix yet.
+        // A landed pill opens its fix sheet; a planned pill is never a door: there is nothing to fix yet.
         let screen = try gymSource("LoggerScreen.swift")
         let row = try XCTUnwrap(screen.range(of: "struct SlotRow: View {"))
         let rule = try XCTUnwrap(screen.range(of: "struct TypeableRule: View {", range: row.upperBound..<screen.endIndex))
-        XCTAssertFalse(screen[row.upperBound..<rule.lowerBound].contains("Button"), "a pill became a door")
-        XCTAssertTrue(screen[row.upperBound..<rule.lowerBound].contains(".accessibilityLabel(spoken)"),
+        let pill = screen[row.upperBound..<rule.lowerBound]
+        XCTAssertTrue(pill.contains("if isLanded, let onFix {\n            Button(action: onFix) { pill }"),
+                      "the door is not the landed pill's alone")
+        XCTAssertTrue(pill.contains(".accessibilityHint(FixSheet.door)"), "the door names where it goes")
+        XCTAssertEqual(pill.components(separatedBy: "Button").count, 2, "a second door on the pill")
+        XCTAssertTrue(pill.contains(".accessibilityLabel(spoken)"),
                       "the pill is spoken as one sentence, never as its parts")
     }
 
@@ -57,8 +60,8 @@ final class LoggerSlotsHostingTests: XCTestCase {
         let plan = PlanEntry(exerciseId: "chin-up", sets: [SetTarget(reps: 8, weightKg: 10), SetTarget(reps: 8)])
 
         XCTAssertEqual(LiveLines.slots(sets, plan: plan, stalled: ["s1"]).map { SlotRow(slot: $0).spoken }, [
-            "warmup, 0 × 8",
-            "set 1, 10 × 8, on this device",
+            "warmup, logged, 0 kilograms, 8 reps",
+            "set 1, logged, 10 kilograms, 8 reps, on this device",
             "set 2, target last × 8",
         ])
     }

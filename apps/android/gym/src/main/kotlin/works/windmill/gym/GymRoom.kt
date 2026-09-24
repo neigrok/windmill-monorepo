@@ -83,8 +83,6 @@ import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.AskAbsentStance
@@ -497,32 +495,18 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
-    // tab change and sheet; the clock that closes a window is the store's own, one per act, so a
-    // screen going away settles nothing; the application owns queued delivery.
+    // tab change and sheet; the clock that closes a window is the store's own, one per delete, so a
+    // screen going away settles nothing.
     //
-    // ONE transient, ONE owner. Two different things can have a way back open at the same moment — a
-    // delete being withheld, and a set just logged, which used to be a text button inside the logger's
-    // set row and moved here because an inline button scrolls out of sight and can never say that the
-    // window has CLOSED. Two effects racing one host would show the second late or not at all, so
-    // they are said together: the count is over both, and it is `to take back` rather than `deleted`
-    // the moment the append is among them.
-    //
-    // Said for as long as a way back is open and never a moment longer: the span is the queue's
-    // `undoWindowMs` and never a snackbar default. The store stamped both windows and the store is
-    // what says how much is left of them — the room reads no clock of its own, or the span would be
-    // measured against an instant a different clock wrote. The key is
-    // everything that could change what is offered — so the instant a settle commits a delete to the
-    // wire, or a second act joins the window, or an older one leaves it, this effect is cancelled and
-    // the transient is redrawn for what is left. An Undo offered over a delete already sent is a lie.
-    //
-    // `store.sets` is read for its own sake and not for its value: `undoable` is computed off the
-    // queue and the queue's own clock, neither of which a composition observes, so without this read
-    // the room never hears that a set landed and the offer would never be made.
+    // Said for as long as a way back is open and never a moment longer: the span is the store's
+    // `undoWindowMs` and never a snackbar default, and the store says how much is left — the room
+    // reads no clock of its own. The key is everything that could change what is offered, so the
+    // instant a settle commits a delete to the wire, or a second delete joins the window, this effect
+    // is cancelled and the transient is redrawn for what is left. An Undo offered over a delete
+    // already sent is a lie.
     val takeable = store.holding
-    val landed = store.sets.lastOrNull()?.id
-    val owed = store.undoable
-    LaunchedEffect(takeable?.subjectId, store.withheld.size, owed?.id, landed) {
-        val said = Withheld.line(store.withheld, owed) ?: return@LaunchedEffect
+    LaunchedEffect(takeable?.subjectId, store.withheld.size) {
+        val said = Withheld.line(store.withheld) ?: return@LaunchedEffect
         val left = store.wayBackLeftMs
         if (left <= 0) return@LaunchedEffect
         val decided = withTimeoutOrNull(left) {
@@ -536,12 +520,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             )
         }
         if (decided == SnackbarResult.ActionPerformed) {
-            // Newest first, whichever kind it is: the one whose clock closes last is the one the
-            // lifter just did.
-            if ((store.undoableUntilMs ?: 0L) > (takeable?.untilMs ?: 0L)) {
-                store.undoLast()
-                return@LaunchedEffect
-            }
             // A tap that raced the send by a frame: the log has it, so say so rather than report a
             // keep that did not happen.
             if (store.keepWithheld() == null) {
@@ -568,8 +546,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.clearDeleteRefused()
     }
 
-    // ON_STOP is the second net behind ON_PAUSE. The dispose flush is launched UNSTRUCTURED: the
-    // Held deletes are screen-local; logged sets retain their durable delivery window.
+    // ON_STOP is the second net behind ON_PAUSE: owed sets go out and held deletes, which are the
+    // room's alone, are let go.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->

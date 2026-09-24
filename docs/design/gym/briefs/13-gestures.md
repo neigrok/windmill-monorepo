@@ -97,8 +97,8 @@ discoverable. Every gesture below names the control that comes off, and the one 
 "none" says so.
 
 **And the law as first written was wrong in a way worth keeping visible.** It counted the control
-that disappears and not the *state that control was carrying*. Removing the drawn "Undo" from the
-logger's set row takes away the only on-screen signal that the nine-second window is open at all —
+that disappears and not the *state that control was carrying*. Removing the drawn "Undo" from a
+deleted set's row takes away the only on-screen signal that the nine-second window is open at all —
 the undoable row becomes identical to the settled one, and the lifter cannot tell whether they still
 have a way back.
 
@@ -107,8 +107,7 @@ have a way back.
 > a window is open, and retires itself when the window closes.
 
 **And the undo lives there on every surface, not only where a swipe displaced it.** The session
-screen's inline row and the logger's row button are both the transient now. Three reasons: it is one
-pattern instead of two; an inline row **can scroll out of view**, so the way back disappears while
+screen's inline row is the transient now. Three reasons: it is one pattern instead of two; an inline row **can scroll out of view**, so the way back disappears while
 the window is still open; and a transient retires itself when the window closes, which is the only
 honest way to show that a way back has expired.
 
@@ -120,8 +119,10 @@ That is better than both alternatives: the row loses its button, and the closing
 becomes visible for the first time.
 
 **It is built, one transient per platform, hosted by the room and not by a screen.** Android's is the
-`SnackbarHost` in the room's own Scaffold, run for the queue's own window and never a snackbar
-default (`GymRoom.kt`'s withheld-transient effect, hung on the Scaffold's own `snackbarHost` slot).
+room's `SnackbarHostState`, run for the queue's own window and never a snackbar default
+(`GymRoom.kt`'s withheld-transient effect). It is drawn in the Scaffold's bottom bar, and while the
+logger stands, over the ledger's foot instead (`LoggerScreen.kt`), where the ledger gains its height
+so the set in hand stays above it.
 iOS's is hand-rolled, because
 SwiftUI provides none: a
 bottom transient with a draining rule, floating over the reach band and growing no inset
@@ -421,26 +422,27 @@ The constraint it trades against is real and is handled by the window rather tha
 the list is re-read from the server, so a screen drawn around an open window filters the read by what
 the window holds rather than crossing a row out locally.
 
-**The logger's today-set row** — **no swipe at all.** The drawn "Undo" text button is off the busiest
-screen in the product and the transient carries both the action and the state, per Law 4. A swipe
-here would be a second path to something already one tap away on a surface that is already showing —
-it removes nothing, so Law 4 leaves it out.
+**The logger's today-set row** — **no swipe at all, and no Undo.** On the phones, `Log set` holds
+nothing back: the set is on its way at once and opens no window. A wrong one is corrected mid-workout
+by tapping its logged row, which opens its fix sheet (edit, or *Delete set*, which takes the window
+every delete takes).
 
 **The refusal row** — swipe to dismiss, either direction, with the same act declared by hand for
 TalkBack (`RefusalBanner.kt:54-66`). Removes its "Dismiss" button. Safe: it discards a notice, not
 data.
 
 **Walking between movements in the logger** — a horizontal swipe on the body
-(`LoggerScreen.swift`; Android's `HorizontalPager` in `LoggerScreen.kt`). The reading region follows
-the finger on Android, revealing the adjacent movement's name, targets, sets and history. Reversing
+(`LoggerScreen.swift`; Android's `HorizontalPager` in `LoggerScreen.kt`). The page follows the
+finger on Android, revealing the adjacent movement's name and set ledger. Reversing
 the drag brings the original movement back. Selection, rack prefill and any deviation question change
 only after the destination settles; a cancelled drag preserves the entered weight and reps.
-The rack stays pinned; the dots and add control belong to the scrolling reading region. The dots describe the settled movement, and
-Android declares Previous movement and Next movement as custom actions on the title. There are no
-chevron buttons.
+The rack stays pinned. On Android the head is pinned too: `‹` and `›` step the walk, the title
+declares Previous movement and Next movement as custom actions, and Add movement sits at the foot of
+the set ledger.
 
-Vertical gestures scroll the reading region. The horizontally scrolling set strip owns gestures
-that begin on it. A tap on the title still opens the session. Editing and logging wait while the
+Vertical gestures scroll the reading region — on Android the ledger alone, which has no horizontal
+drag of its own, so a horizontal stroke that starts on it walks. A tap on the title still opens the
+session. Editing and logging wait while the
 pager is moving, so the fixed rack cannot submit a set against a movement still being previewed.
 Leaving a movement can raise a deviation sheet: a second move while that question is pending is
 refused in words that name the movement, never allowed to overwrite the first.

@@ -31,7 +31,7 @@ class TrainingFinishTests {
         val folder = tmp.newFolder()
         var nextSetId = 0
         return TrainingStore(
-        queue = SetQueue(File(folder, "queue"), null) { testScheduler.currentTime + 1_000 },
+        queue = SetQueue(File(folder, "queue")),
         deviceCopy = DeviceCopy(File(folder, "catalog")),
         localLog = LocalLog(File(folder, "local")),
         localPreferences = LocalPreferences(File(folder, "prefs")),
@@ -335,10 +335,10 @@ class TrainingFinishTests {
         store.connect(account())
         store.start()
         store.choose("bench-press")
+        server.online = false
         store.logSet(60.0, 8)
         val live = store.session
         val sets = store.sets
-        server.online = false
         assertEquals(FinishOutcome.Stranded(1), store.finish())
         assertTrue(server.finished.isEmpty())
         assertEquals(live, store.session)

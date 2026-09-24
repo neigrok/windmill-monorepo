@@ -2031,20 +2031,33 @@ screen (`shell/auth/OAuthConsent.jsx`) names the levels a tool asked for.
 
 **5m · the Android logger is the ruled shape and iOS's logger still draws the older one** → a build
 owed on iOS; the direction is Android → iOS, and the domain bytes do not move. Android's
-`LoggerScreen.kt` draws the shape `gym/briefs/16-the-workout.md` now pins: the set line `Set 2 of 4`
-with its target tail and a kind `AssistChip` opening a `DropdownMenu` (`KindChip`), a last-time
-`AssistChip` only where history exists (`LastTimeChip`, `LiveLines.lastTimeSet`), a clocks row that
-speaks the old label's bytes (`Clocks`), the logged sets as a strip of pills opening `FixSheet`
-(`LoggedStrip`, `SetPill`), the dots pinned above the hairline (`Walk`), four equal ladder pills
-(`LadderRow`), the reps between two filled circles (`RepsRow`) and a primary reading `Log set`
-alone (`LogButton`). iOS's `LoggerScreen.swift` still draws `counter.plan` under the name (`:202` —
-*plan 5 × 5 @ 82.5* / *no target*, `LiveSession.swift:33`, `:59`), the position eyebrow in
-`.textCase(.uppercase)` (`:220`), `counter.count` uppercased above the numeral (`:320-322`), the
-kind as a `Menu` holding a `Picker` (`:363-366`), and the primary as `Log set  ·  20 × 5` (`:477`);
-`LiveLines.Counter` keeps its `plan` there while Android's `counter` answers the count alone. The
-web starts no sessions and draws a mirror, so it has nothing to follow. What is owed is the same
-screen on iOS in the platform's own controls — a `Menu` where Android has a menu, a `Capsule` where
-it has a chip — with the same strings and the same absences.
+`LoggerScreen.kt` draws the quiet ledger `gym/briefs/16-the-workout.md` pins (Figma `805:4536`): a
+pinned head with `‹` `›` steps, the movement, `Exercise i / n` and the clocks (`MovementHead`); the
+sets as one vertical ledger — `W` warmups, dim logged rows with ✓ that open `FixSheet`, one accent
+row `Set N · target W × R` for the set in hand, plain planned rows (`Ledger`, `LandedRow`,
+`CurrentRow`, `PlannedRow`); no last-time block; the rack on a raised panel with the equal ladder
+(`LadderRow`), reps between two circles (`RepsRow`) and `Log set` alone (`LogButton`). iOS's
+`LoggerScreen.swift` still draws the horizontal slot strip, the last-time line and its own head.
+Its logged pills open the same fix sheet mid-workout. The web starts no sessions and draws a
+mirror, so it has nothing to follow. What is owed is the same screen on iOS in the platform's own
+controls, with the same strings and the same absences.
+
+**5o · the canonical Figma logger frames draw the retired strip** → fix toward the Gym Figma file.
+The Android logger frames (`659:7175`, `660:7955`) and brief 17's frame from `313:361` draw the
+horizontal set strip and the last-time chip. The shipped shape exists only in the proposals section
+`805:4536` (`B+ · Quiet ledger`), whose Frame 3 still draws an Undo after `Log set` that the build
+does not have. Promote `805:4536` to canon and retire the old frames.
+
+**5p · a fix made offline to a set that may be on the log differs by phone** → a ruling owed.
+Neither phone holds a logged set any more. From a set's first send it may be on the log, so a fix or
+delete must go to the log behind that send. iOS files the change behind the append in the queue and
+it lands when the log answers. Android sends it at once and, offline, refuses it —
+*The log didn't answer — that set wasn't changed.* Pick one; iOS's keeps a lifter on gym signal from
+retyping.
+
+**5q · Android sends a closed session's pending set again** → a build owed on Android. A pending set
+whose session was closed elsewhere is deleted on the log but not dropped from `SetQueue`, so a later
+walk can send it again.
 
 **5n · the Units lb sentence says two different things on the web and on the phones** → recorded as
 legal, nothing owed. Under the Units control with lb picked the web draws *A backfill, a correction,

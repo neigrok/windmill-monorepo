@@ -61,6 +61,35 @@ public enum SetRecord {
 // Only what the lifter actually moved is sent — the log has no concurrency guard, so a sheet that
 // posted its whole state would silently overwrite whatever another device wrote since.
 struct FixSheet: View {
+    // The sheet's title, and the hint on every row that opens it: the logger's landed pill and the
+    // session page's set row.
+    static let door = "Fix this set"
+
+    // Which set a host is fixing, named the way the sheet's head names it.
+    struct Subject: Identifiable {
+        let set: TrainingSet
+        let movement: String
+        let number: String
+
+        var id: String { self.set.id }
+
+        init(set: TrainingSet, movement: String, number: String) {
+            self.set = set
+            self.movement = movement
+            self.number = number
+        }
+
+        // A pill the logger drew, numbered and named by the session page's own rule, so both hosts
+        // head the sheet alike. Nil when the row is not one of these sets.
+        init?(landed row: LiveLines.Row, in sets: [TrainingSet], catalog: [Exercise]) {
+            guard let set = sets.first(where: { $0.id == row.id }),
+                  let movement = Performed.movements(sets, catalog: catalog)
+                      .first(where: { $0.id == set.exerciseId }),
+                  let number = movement.rows.first(where: { $0.id == set.id })?.number else { return nil }
+            self.init(set: set, movement: movement.movement, number: number)
+        }
+    }
+
     let set: TrainingSet
     let movement: String
     let number: String
@@ -119,7 +148,7 @@ struct FixSheet: View {
             }
             .safeAreaPadding(.bottom, keyboardInset)
             .background(skin.surface)
-            .navigationTitle("Fix this set")
+            .navigationTitle(Self.door)
             .navigationBarTitleDisplayMode(.inline)
         }
         .onReceive(NotificationCenter.default.publisher(
@@ -140,6 +169,12 @@ struct FixSheet: View {
                 .presentationBackground(skin.surface)
                 .presentationDetents([.height(520)])
         }
+        // Carried by the sheet rather than by each host, so the logger and the session page present
+        // one sheet. Not a fixed height: the sheet gained two fields, and a pinned detent is what
+        // sends the visible half to zero at the largest accessibility sizes.
+        .presentationBackground(skin.surface)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 
     // The bar carries the title; the content says which set this is.
@@ -202,7 +237,7 @@ struct FixSheet: View {
                     .multilineTextAlignment(.center)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(reps) reps")
+            .accessibilityLabel(Readout.spokenReps(reps))
             .accessibilityHint("Type a rep count")
             Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("plus") }
                 .accessibilityLabel("One rep more")

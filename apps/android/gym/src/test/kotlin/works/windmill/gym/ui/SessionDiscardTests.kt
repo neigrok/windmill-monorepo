@@ -72,7 +72,7 @@ class SessionDiscardTests {
             scope = scope,
             mintSession = { "ses_1" },
             mintSet = Ids::set,
-            undoWindowMs = SetQueue.undoWindowMs,
+            undoWindowMs = Withheld.windowMs,
             sync = { if (it.isSignedIn) server else null },
         )
         runBlocking {
@@ -84,7 +84,7 @@ class SessionDiscardTests {
             store.logSet(weightKg = 90.0, reps = 3)
             store.logSet(weightKg = 90.0, reps = 3)
             store.logSet(weightKg = 90.0, reps = 2)
-            store.flushPendingSets(force = true)
+            store.flushPendingSets()
             store.finish()
         }
         return store

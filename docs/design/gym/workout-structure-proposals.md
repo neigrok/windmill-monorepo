@@ -1,7 +1,9 @@
 # Android workout structure proposals
 
-Status: design exploration, 24 September 2026. These alternatives are proposals, not approved
-product behavior or app implementation. The scope is the live Android workout screen.
+Status: design exploration, 24 September 2026. The owner chose B+ · Quiet ledger
+([Figma 805:4536](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)); the
+Android workout is built from it, without the after-log Undo its specimen draws. The alternatives
+below remain proposals. The scope is the live Android workout screen.
 
 The [Proposals board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=787-4134)
 is separate from the canonical screens on the same Figma page. The four primary specimens are
@@ -10,10 +12,9 @@ recorded, set 2 is next, and set 3 remains planned. Overhead Press, three sets a
 Cable Fly, three sets at 15 kg × 12, have not started. Matching target and actual values in this
 fixture do not imply that entry is constrained to the target.
 
-The exploration removes the Last time block and arranges set records vertically. The current
-horizontal workout pager changes exercises; the current horizontal set strip scrolls recorded and
-planned sets. The weight ladder contains discrete adjustment buttons. Vertical set records remove
-the competing horizontal scroll without changing weight entry.
+The exploration removes the Last time block and arranges set records vertically. The horizontal
+workout pager changes exercises; vertical set records leave it the only horizontal scroll, without
+changing weight entry.
 
 ## Alternatives
 
@@ -33,7 +34,8 @@ The supporting specimens show [B after logging](https://www.figma.com/design/vdm
 [C All sets](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=794-4462), and
 [D focused logging](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=794-4532).
 The after-log state has two recorded sets, set 3 current, a zero since-set clock and a transient Undo
-above the unchanged rack. Correction edits actual set 1 while retaining the routine's targets.
+above the unchanged rack; the built Android screen draws no Undo after a log — a logged set is
+corrected or deleted from its row. Correction edits actual set 1 while retaining the routine's targets.
 
 ## Constraints
 

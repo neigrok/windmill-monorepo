@@ -1,13 +1,18 @@
 package works.windmill.gym.ui
 
 import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.launch
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import org.junit.Assert.assertEquals
@@ -278,20 +283,20 @@ class LargestTypeTests {
     // A logger over a walk of two, stood on the 411 × 731 phone with the 24 dp status bar and the
     // 24 dp gesture bar the device takes off that frame — Robolectric's window has no insets, so
     // without them this measures a phone 48 dp taller than the one in hand.
-    private fun loggerOnThePhone(scope: CoroutineScope, fontScale: Float): TrainingStore {
+    private fun loggerOnThePhone(scope: CoroutineScope, fontScale: Float, walk: List<String> = listOf("bench-press", "deadlift"),
+                                 transient: SnackbarHostState? = null): TrainingStore {
         val store = store(scope)
         runBlocking {
             store.start(null)
-            store.choose("bench-press")
-            store.choose("deadlift")
-            store.choose("bench-press")
+            walk.forEach { store.choose(it) }
+            store.choose(walk.first())
         }
         compose.setContent {
             GymMaterial {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = fontScale)) {
                     Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
                         LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
-                                     onSettings = {})
+                                     onSettings = {}, transient = transient)
                     }
                 }
             }
@@ -299,53 +304,143 @@ class LargestTypeTests {
         return store
     }
 
+    private fun logSets(count: Int) = repeat(count) {
+        compose.onNodeWithText("Log set").performClick()
+        compose.waitForIdle()
+    }
+
     private fun scroller() =
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).getBoundsInRoot()
 
     private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
 
-    // At fontScale 1.0 on the 411 × 731 phone the reading region has 196 dp between the bar and the
-    // dots once the numeral owns a 72 dp box: the head, the set line, the strip and the
-    // pinned dots are all drawn, and the strip is fully INSIDE the scroller rather than clipped by it
-    // — while Log set stands exactly where it stood before the set landed.
+    // At fontScale 1.0 on the 411 × 731 phone the head, the place and both rows are drawn once a set
+    // lands, each row fully INSIDE the ledger rather than clipped by it — while Log set stands
+    // exactly where it stood before the set landed.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun theWholeReadingRegionShowsAfterASetLandsOnTheSmallPhoneAtFontScaleOne() {
+    fun theWholeLedgerShowsAfterASetLandsOnTheSmallPhoneAtFontScaleOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         loggerOnThePhone(scope, fontScale = 1f)
         val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
 
         compose.onNodeWithText("Log set").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
-        }
+        compose.waitForIdle()
 
-        compose.onNodeWithText("Bench Press").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Set 2").performScrollTo().assertIsDisplayed()
-        compose.onNode(hasContentDescription("Movement 1 of 2")).performScrollTo().assertIsDisplayed()
-        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).performScrollTo().assertIsDisplayed().getBoundsInRoot()
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Exercise 1 of 2")).assertIsDisplayed()
         val region = scroller()
-        assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
+        listOf("Set 1, logged, 20 kg, 5 reps", "Set 2, current").forEach { said ->
+            val row = compose.onNode(hasContentDescription(said, substring = true)).assertIsDisplayed().getBoundsInRoot()
+            assertTrue("$said at $row is clipped by the ledger $region", inside(row, region))
+        }
         assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
         scope.cancel()
     }
 
-    // At fontScale 1.3 the same frame does overflow, and a landed set brings its own pill into view:
-    // the scroller is at the strip, not at the head.
+    // At fontScale 1.3 the ledger overflows after a few sets, and every landed set brings the set in
+    // hand into view just above the rack: the ledger is at the current row, not at the first set.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun aLandedSetScrollsItsPillIntoViewWhereTheLargestTextOverflows() {
+    fun aLandedSetBringsTheSetInHandIntoViewWhereTheLargestTextOverflows() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         loggerOnThePhone(scope, fontScale = 1.3f)
-        compose.onNodeWithText("Log set").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(hasContentDescription("Set 1, 20 × 5")).fetchSemanticsNodes().isNotEmpty()
+        repeat(5) {
+            compose.onNodeWithText("Log set").performClick()
+            compose.waitForIdle()
         }
-        compose.waitForIdle()
-        val pill = compose.onNode(hasContentDescription("Set 1, 20 × 5")).assertIsDisplayed().getBoundsInRoot()
+
+        val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+        assertTrue("the ledger overflows",
+            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
+        val current = compose.onNode(hasContentDescription("Set 6, current")).assertIsDisplayed().getBoundsInRoot()
         val region = scroller()
-        assertTrue("the strip $pill is clipped by the reading region $region", inside(pill, region))
+        assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
         compose.onNodeWithText("Log set").assertIsDisplayed()
+        scope.cancel()
+    }
+
+    // A free session has nothing planned after the set in hand, only Add movement, the next thing a
+    // lifter may want: every landed set brings the set in hand AND Add movement into view.
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun addMovementStaysInViewAsSetsLandInAFreeSingleMovementSession() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        loggerOnThePhone(scope, fontScale = 1.3f, walk = listOf("bench-press"))
+        logSets(6)
+
+        val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+        assertTrue("the ledger overflows",
+            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
+        val region = scroller()
+        val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
+        val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
+        assertTrue("Add movement $add is clipped by the ledger $region", add.height > 0.dp && inside(add, region))
+        scope.cancel()
+    }
+
+    // A transient rises over the ledger's foot, where the set in hand is parked; the rows gain its
+    // height at their end and the set in hand moves up out from under it.
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun theSetInHandStaysAboveATransient() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val transient = SnackbarHostState()
+        loggerOnThePhone(scope, fontScale = 1.3f, transient = transient)
+        logSets(6)
+
+        scope.launch { transient.showSnackbar("Set deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite) }
+        compose.waitForIdle()
+
+        val bar = compose.onNodeWithTag("Transient").assertIsDisplayed().getBoundsInRoot()
+        val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
+        assertTrue("the transient stands at $bar", bar.height > 0.dp)
+        assertTrue("the set in hand $current is under the transient $bar", current.bottom <= bar.top)
+        assertTrue("the set in hand $current is clipped by the ledger ${scroller()}", inside(current, scroller()))
+        scope.cancel()
+    }
+
+    // From set 10 on the index has two digits, and at the largest scales the set column still holds
+    // it and its ✓ unclipped, while every row keeps its kg under the column label.
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun aTwoDigitSetKeepsItsTickAtOneThirtyPercent() = aTwoDigitSetKeepsItsTick(1.3f)
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
+    fun aTwoDigitSetKeepsItsTickAtTwoHundredPercent() = aTwoDigitSetKeepsItsTick(2f)
+
+    private fun aTwoDigitSetKeepsItsTick(fontScale: Float) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        loggerOnThePhone(scope, fontScale = fontScale)
+        logSets(10)
+
+        fun laid(node: SemanticsNodeInteraction): TextLayoutResult {
+            val results = mutableListOf<TextLayoutResult>()
+            node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+            return results.single()
+        }
+        fun unclipped(text: TextLayoutResult) = text.lineCount == 1 && !text.multiParagraph.didExceedMaxLines &&
+            text.size.width >= kotlin.math.ceil(text.multiParagraph.maxIntrinsicWidth)
+        val ticks = compose.onAllNodes(hasText("✓"), useUnmergedTree = true)
+        ticks.assertCountEquals(10)
+        (0 until 10).forEach { at ->
+            val tick = laid(ticks[at])
+            assertTrue("✓ $at is ${tick.size.width}px wide and needs ${tick.multiParagraph.maxIntrinsicWidth}px", unclipped(tick))
+        }
+        val ten = laid(compose.onNode(hasText("10"), useUnmergedTree = true))
+        assertTrue("10 is ${ten.size.width}px wide and needs ${ten.multiParagraph.maxIntrinsicWidth}px", unclipped(ten))
+
+        compose.onNode(hasContentDescription("Set 10, logged", substring = true)).assertIsDisplayed()
+        // The column label is the topmost "kg"; the rack's units sit below the ledger.
+        val label = compose.onAllNodes(hasText("kg"), useUnmergedTree = true).fetchSemanticsNodes()
+            .minBy { it.positionInRoot.y }.positionInRoot.x
+        val ledgerFoot = with(compose.density) { scroller().bottom.toPx() }
+        val weights = compose.onAllNodes(hasText("20"), useUnmergedTree = true).fetchSemanticsNodes()
+            .filter { it.positionInRoot.y < ledgerFoot }
+        assertEquals(10, weights.size)
+        assertEquals(List(10) { label }, weights.map { it.positionInRoot.x })
         scope.cancel()
     }
 }

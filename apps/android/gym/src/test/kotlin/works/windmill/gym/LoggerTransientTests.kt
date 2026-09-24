@@ -30,22 +30,26 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Ladder
+import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WithheldDelete
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
-// The room's transient over the logger. A set's way back is said for nine seconds, and for those
-// nine seconds it must cover no control of the rack: the logger hosts it over its own reading
-// region, its foot on the hairline, and the rack grows no inset for it — nothing moves.
+// The room's transient over the logger. Log set offers no way back — the set goes to the log at
+// once. A deleted set's way back is said for nine seconds, and for those nine seconds it must cover
+// no control of the rack: the logger hosts it over its own reading region, and the rack grows no
+// inset for it — nothing moves.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
 class LoggerTransientTests {
@@ -61,10 +65,9 @@ class LoggerTransientTests {
     )
 
     // ONE fake log: the room connects the store again on mount and reads the open session back off it.
-    private fun live(scope: CoroutineScope): TrainingStore {
-        val server = FakeTraining()
+    private fun live(scope: CoroutineScope, server: FakeTraining): TrainingStore {
         val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json"), clock = SystemClock::uptimeMillis),
+            queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
@@ -89,17 +92,26 @@ class LoggerTransientTests {
     private fun bounds(matcher: SemanticsMatcher) = compose.onNode(matcher).getBoundsInRoot()
 
     @Test
-    fun testTheWayBackStandsOverTheReadingRegionAndCoversNoControlOfTheRack() {
+    fun testLogSetOffersNoWayBackAndADeletedSetsWayBackCoversNoControlOfTheRack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = live(scope)
+        val server = FakeTraining()
+        val store = live(scope, server)
         compose.setContent { GymMaterial { GymRoom(account, store) } }
         compose.waitForIdle()
         val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
 
         compose.onNodeWithText("Log set").performClick()
-        val said = "20 kg × 5 logged."
+        compose.waitForIdle()
+        compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
+        val logged = compose.runOnIdle { store.sets.single() }
+        assertEquals("the set is on the log the moment it is logged",
+            listOf(TrainingSet(id = logged.id, exerciseId = "bench-press", setNumber = 1, weightKg = 20.0, reps = 5,
+                completedAtMs = logged.completedAtMs)),
+            server.sets.getValue("ses_1"))
+
+        compose.runOnIdle { store.withhold(Deletion.Set("ses_1", logged)) }
+        val said = "20 kg × 5 is out of the log."
         compose.waitUntil(10_000) { compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(said).assertIsDisplayed()
         compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
 
         // The snackbar's own box — the live region Material declares around it, margin included.
@@ -115,7 +127,12 @@ class LoggerTransientTests {
             assertFalse("the transient $transient covers $name at $control", transient.overlaps(control))
         }
         assertEquals("Log set moved for the transient", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
-        compose.runOnIdle { assertEquals("the set landed", 1, store.sets.size) }
+
+        compose.onNodeWithText(Withheld.undo).performClick()
+        compose.runOnIdle {
+            assertEquals("Undo puts the set back", listOf(logged), store.sets)
+            assertEquals(emptyList<WithheldDelete>(), store.withheld)
+        }
         scope.cancel()
     }
 }

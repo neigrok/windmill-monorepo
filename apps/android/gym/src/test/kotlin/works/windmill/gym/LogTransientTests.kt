@@ -54,7 +54,7 @@ class LogTransientTests {
         }
         val original = server.stored.toMap()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = TrainingStore(SetQueue(File(tmp.root, "queue"), clock = SystemClock::uptimeMillis),
+        val store = TrainingStore(SetQueue(File(tmp.root, "queue")),
             DeviceCopy(File(tmp.root, "catalog")), LocalLog(File(tmp.root, "log")),
             LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "weight")), scope,
             now = SystemClock::uptimeMillis, sync = { server })

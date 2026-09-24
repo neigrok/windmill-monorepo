@@ -359,19 +359,16 @@ class WorkoutRecoveryTests {
         compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
         compose.runOnIdle { gate = CompletableDeferred() }
         restored.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("Reading…").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("No sets yet").assertDoesNotExist()
         compose.onNode(hasContentDescription("Weight 92 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
         compose.runOnIdle { gate!!.complete(Unit) }
-        compose.onNodeWithText("80 × 5").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Reading…").assertDoesNotExist()
+        compose.waitForIdle()
         compose.onNode(hasContentDescription("Weight 92 kg")).assertIsDisplayed()
         compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
         compose.onNodeWithText("Log set").performClick()
         compose.runOnIdle {
             assertEquals(listOf(92.0 to 6), current.sets.map { it.weightKg to it.reps })
-            runBlocking { current.flushPendingSets(force = true) }
+            runBlocking { current.flushPendingSets() }
             assertEquals(listOf(92.0 to 6), fake.sets.values.flatten().map { it.weightKg to it.reps })
             assertEquals(2, instances)
         }
@@ -384,11 +381,11 @@ class WorkoutRecoveryTests {
         val account = Account(WindmillApi("https://windmill.works".toHttpUrl(), credential = { null }), User("u1", "sam@example.com"))
         val server = FakeTraining().apply { catalog = listOf(Exercise("bench", "Bench Press")) }
         val held = store(scope, server)
-        runBlocking { held.connect(account); held.start(); held.choose("bench"); held.logSet(60.0, 8); held.flushPendingSets(force = true) }
+        runBlocking { held.connect(account); held.start(); held.choose("bench"); held.logSet(60.0, 8); held.flushPendingSets() }
         val sessionId = held.session!!.id
         val setId = held.sets.single().id
         compose.setContent { GymMaterial { GymRoom(account, held) } }
-        compose.onNode(hasContentDescription("Set 1, 60 × 8")).performScrollTo().performClick()
+        compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 8 reps")).performScrollTo().performClick()
         compose.onNodeWithText("Set note").performTextInput("Live retained note")
         compose.onNodeWithText("Not rated").performClick()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()

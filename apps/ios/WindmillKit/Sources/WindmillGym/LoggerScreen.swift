@@ -5,8 +5,7 @@ import WindmillPlatform
 
 struct LoggerScreen: View {
     @ObservedObject var store: TrainingStore
-    // The logger's drawn Undo comes off the busiest screen in the product; the room's transient
-    // carries both the action and the fact that the window is open (`16-the-workout.md`).
+    // A set deleted from its fix sheet takes the room's window, like every other delete.
     @ObservedObject var withheld: WithheldWindow
     let isSignedIn: Bool
     // nil once something already reaches this log.
@@ -30,6 +29,7 @@ struct LoggerScreen: View {
         case jump
         case picker
         case deviation(Deviation, movement: String)
+        case fix(FixSheet.Subject)
 
         var id: String {
             switch self {
@@ -38,13 +38,14 @@ struct LoggerScreen: View {
             case .jump: return "jump"
             case .picker: return "picker"
             case .deviation(let deviation, _): return "deviation-\(deviation.exerciseId)"
+            case .fix(let subject): return "fix-\(subject.id)"
             }
         }
 
         var detents: Set<PresentationDetent> {
             switch self {
             case .weight, .reps: return [.height(520)]
-            case .picker, .jump: return [.large]
+            case .picker, .jump, .fix: return [.large]
             case .deviation: return [.medium, .large]
             }
         }
@@ -209,52 +210,45 @@ struct LoggerScreen: View {
         return store.order[next]
     }
 
-    // The slot strip: this movement's landed sets, the slot about to be lifted, the slots still to
-    // come — and, last, the set a window is still open on, carried under its own movement's name;
-    // taking it back is the transient's job, not this row's.
+    // The slot strip: this movement's landed sets, each a door to its fix sheet, the slot about to be
+    // lifted, the slots still to come.
     private var slotColumn: some View {
-        // Rows and height are both read on the beat: nothing publishes the window closing.
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let slots = slots(undoable: store.undoable)
-            let current = slots.first { slot in
-                guard case .current = slot else { return false }
-                return true
-            }?.id
-            ScrollViewReader { column in
-                ScrollView {
-                    VStack(spacing: WindmillSpace.x2) {
-                        ForEach(slots) { slot in SlotRow(slot: slot).id(slot.id) }
-                    }
-                    .frame(maxWidth: .infinity)
+        let slots = LiveLines.slots(store.todaySets, plan: store.planEntry, stalled: store.stalled)
+        let current = slots.first { slot in
+            guard case .current = slot else { return false }
+            return true
+        }?.id
+        return ScrollViewReader { column in
+            ScrollView {
+                VStack(spacing: WindmillSpace.x2) {
+                    ForEach(slots) { slot in SlotRow(slot: slot, onFix: fixDoor(slot)).id(slot.id) }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .defaultScrollAnchor(.bottom)
-                // Only this column is elastic, and it asks for exactly what it holds; past three rows it scrolls inside itself.
-                .frame(maxHeight: min(Self.columnCap, CGFloat(slots.count) * Self.rowHeight))
-                // The bottom anchor shows the newest landed set; with slots still to come under it,
-                // the one about to be lifted is what has to stay in view.
-                .onChange(of: current, initial: true) { _, current in
-                    guard let current else { return }
-                    column.scrollTo(current, anchor: .center)
-                }
+                .frame(maxWidth: .infinity)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .defaultScrollAnchor(.bottom)
+            // Only this column is elastic, and it asks for exactly what it holds; past three rows it scrolls inside itself.
+            .frame(maxHeight: min(Self.columnCap, CGFloat(slots.count) * Self.rowHeight))
+            // The bottom anchor shows the newest landed set; with slots still to come under it,
+            // the one about to be lifted is what has to stay in view.
+            .onChange(of: current, initial: true) { _, current in
+                guard let current else { return }
+                column.scrollTo(current, anchor: .center)
             }
         }
         .layoutPriority(1)
     }
 
+    private func fixDoor(_ slot: LiveLines.Slot) -> (() -> Void)? {
+        guard case .landed(let row) = slot,
+              let subject = FixSheet.Subject(landed: row, in: store.todaySets, catalog: store.catalog)
+        else { return nil }
+        return { sheet = .fix(subject) }
+    }
+
     // Named rather than measured: the column claims its height before its rows are laid out.
     private static let rowHeight: CGFloat = GymTap.minimum + WindmillSpace.x2
     private static let columnCap: CGFloat = rowHeight * 3
-
-    // `column`'s rows that are not this movement's own are the one carried row.
-    private func slots(undoable: TrainingSet?) -> [LiveLines.Slot] {
-        let here = store.todaySets
-        let carried = LiveLines.column(store.sets, of: store.exerciseId, undoable: undoable,
-                                       catalog: store.catalog, stalled: store.stalled)
-            .filter { row in !here.contains { $0.id == row.id } }
-        return LiveLines.slots(here, plan: store.planEntry, stalled: store.stalled)
-            + carried.map(LiveLines.Slot.landed)
-    }
 
     // MARK: - the value
 
@@ -373,7 +367,7 @@ struct LoggerScreen: View {
                     .overlay(alignment: .bottom) { TypeableRule() }
                     .frame(minWidth: 40, minHeight: GymTap.minimum)
             }
-            .accessibilityLabel("\(reps) reps")
+            .accessibilityLabel(Readout.spokenReps(reps))
             .accessibilityHint("Type a rep count")
             Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("plus") }
                 .accessibilityLabel("One rep more")
@@ -396,22 +390,7 @@ struct LoggerScreen: View {
             // One haptic for one act: the set confirmation, and nothing else fires here.
             GymConfirm.setLogged(under: store.preferences)
             kind = .working
-            Task {
-                await store.logSet(weightKg: weightKg, reps: reps, kind: filedAs)
-                // Nil once the window is zero-length or the set has already gone: the room draws no
-                // transient over an act it cannot take back.
-                guard let held = store.undoable else { return }
-                await withheld.hold(Withheld(
-                    .loggedSet, subject: held.id,
-                    line: WithheldWords.logged(Readout.effort(weightKg: held.weightKg,
-                                                              reps: held.reps)),
-                    closesAtMs: store.undoableUntilMs,
-                    settle: {
-                    await store.flushPendingSets()
-                    return true
-                },
-                    restore: { store.withdraw(held.id) }))
-            }
+            Task { await store.logSet(weightKg: weightKg, reps: reps, kind: filedAs) }
         } label: {
             Text("Log set  ·  \(Readout.effort(weightKg: weightKg, reps: reps))")
                 .font(WindmillFont.body(19, .bold))
@@ -468,6 +447,23 @@ struct LoggerScreen: View {
                                }
                            },
                            onToday: { self.sheet = nil })
+        case .fix(let subject):
+            FixSheet(set: subject.set, movement: subject.movement, number: subject.number,
+                     routine: store.session?.plan?.routine,
+                     onSave: { correction in
+                         self.sheet = nil
+                         guard !correction.isEmpty, let live = store.session else { return }
+                         Task {
+                             // Confirmed only once it stands: a refused change leaves the set as it was.
+                             let stands = await store.fix(subject.set, in: live.id, by: correction)
+                             if stands != subject.set { GymConfirm.saved() }
+                         }
+                     },
+                     onDelete: {
+                         self.sheet = nil
+                         guard let live = store.session else { return }
+                         Task { await withheld.hold(Withheld(deleting: subject.set, in: live.id, from: store)) }
+                     })
         }
     }
 
@@ -534,14 +530,27 @@ struct LoggerScreen: View {
 
 // One pill of the slot strip, drawn three ways: a landed set as lifted with its ✓, the set about to
 // be lifted reading its target in the target ink under the accent outline, and a set still to come
-// reading its target in the faint ink. A planned pill is not a door — there is nothing to fix yet —
-// and VoiceOver reads every pill as one sentence rather than as its parts.
+// reading its target in the faint ink. A landed pill is the door to its fix sheet; a planned pill is
+// not a door — there is nothing to fix yet — and VoiceOver reads every pill as one sentence rather
+// than as its parts.
 struct SlotRow: View {
     let slot: LiveLines.Slot
+    // Opens the landed set's fix sheet. Ignored on a planned pill.
+    var onFix: (() -> Void)? = nil
 
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
+        if isLanded, let onFix {
+            Button(action: onFix) { pill }
+                .buttonStyle(.plain)
+                .accessibilityHint(FixSheet.door)
+        } else {
+            pill
+        }
+    }
+
+    private var pill: some View {
         HStack(spacing: WindmillSpace.x3) {
             switch slot {
             case .landed(let row):
@@ -593,14 +602,20 @@ struct SlotRow: View {
         return true
     }
 
-    // A landed pill is `set 2, 80 × 5`, a warmup `warmup, 40 × 5`, with the note after when it says
-    // something more; a planned pill is the domain's `set 4, target 100 × 1`.
+    private var isLanded: Bool {
+        guard case .landed = slot else { return false }
+        return true
+    }
+
+    // A landed pill is `set 2, logged, 80 kilograms, 5 reps`, a warmup `warmup, logged, 40 kilograms,
+    // 5 reps`, with the note after when it says something more; a planned pill is the domain's
+    // `set 4, target 100 × 1`.
     var spoken: String {
         switch slot {
         case .landed(let row):
             let head = row.index == "w" ? "warmup" : "set \(row.index)"
             let note = row.note.isEmpty || row.note == head ? [] : [row.note]
-            return ([head, row.value] + note).joined(separator: ", ")
+            return ([head, "logged", row.spokenValue] + note).joined(separator: ", ")
         case .current(_, _, let spoken), .coming(_, _, let spoken):
             return spoken
         }

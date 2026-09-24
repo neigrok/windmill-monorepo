@@ -107,6 +107,21 @@ final class DeviceDocumentTests: XCTestCase {
         XCTAssertEqual(reopened.pending, queue.pending)
     }
 
+    // An append a build with an undo window wrote carries a hold; it is sent at once all the same.
+    func testAnAppendHeldByAnOlderBuildIsSentAtOnce() throws {
+        let previous = #"""
+        {"queues":{"u.u1":{"session":{"id":"ses_live","startedAt":1000},"entries":{"set_a":{"set":{"id":"set_a","exerciseId":"bench-press","weightKg":82.5,"reps":5,"kind":"working","note":"","completedAt":1500},"sessionId":"ses_live","needsPush":true,"remints":0,"heldUntilMs":99000,"owedWrite":"append"}},"order":["bench-press"]}}}
+        """#
+        try Data(previous.utf8).write(to: queueURL)
+
+        let queue = SetQueue(url: queueURL, deviceHolds: nil)
+        queue.open(under: "u1")
+
+        XCTAssertEqual(queue.nextOwed(skipping: [], readyAt: 2_000)?.set.id, "set_a")
+        XCTAssertEqual(queue.pending.map(\.readyAtMs), [0])
+        XCTAssertEqual(queue.pending.map(\.mayBeOnTheLog), [false], "an older file names no send")
+    }
+
     // F2: one row this build cannot read costs that row alone.
     func testAnUnreadableSessionRoutineOrMovementIsDroppedAloneAndTheShelfKeepsTheRest() throws {
         let mixed = #"""
