@@ -85,7 +85,9 @@ planning sheet inherited from it is the refusals, pinned below.
 - **Add movement** is the last row of that list, not a floating button.
 - **Duplicate** has one home and it is the routine **row's** overflow, the menu that also carries
   **Delete** (`13-gestures.md` Law 1). The editor draws neither, save iOS's copy of the draft above.
-- **History** is a section, not an inline aside.
+- **History** is a section, not an inline aside — on the web and iOS. **Android's editor draws
+  none** (graduated 2026-09-24, board `820:5572`): the routine is the plan and nothing else, so the
+  editor is the name and the movements, and what changed a routine is read in Coach's threads.
 
 **The reorder handle is a control, not only a grip, and it answers three paths.** On the web it is a
 real `<button>` whose accessible name says the row *and* its place — `Move Back Squat, 2 of 3`. The
@@ -170,6 +172,15 @@ A routine on the routines list is a **door**, and a door does not restate what i
 > targets and the settled history are read one tap deeper, on the routine's own screen, which is the
 > only screen that draws them.
 
+**Android diverges here, by the owner's ruling of 2026-09-24 (boards `813:4935`, `820:5572`).** A
+routine on Android is the plan and nothing else. The list row's meta line **names the first
+movements** — `Bench Press · Barbell Row` — instead of counting them, and carries no trained-ago.
+Tapping a row raises a **bottom sheet** over the list: the name, the plan without rest lines,
+`Start workout` as the sheet's primary and `Edit routine` as its quiet action. There is no pushed
+routine screen, no last-trained line and no History block: past workouts belong to the Log, and a
+routine never links to any history. iOS keeps the pushed screen with History for now
+(`RoutineScreen.swift:113`, `:185`); the drift is in `../../consistency.md`.
+
 What that tie looks like is each surface's own, and the standing card is the one that names the
 proposal (ledger `3o`): the web draws one card per waiting routine at the head of the list
 and nothing on the row itself (`ProposalCard` in `Proposals.jsx`, `RoutinesList` in
@@ -204,8 +215,8 @@ with `Start workout` for the decision the screen exists to take.
 
 ## Starting a workout
 
-`Start workout` lives on the routine's own screen, and `13-gestures.md` puts it on the row's
-long-press menu as well — the only place it exists twice on purpose, because it is the verb this whole
+`Start workout` lives on the routine's own screen (on Android, on the routine's sheet), and
+`13-gestures.md` puts it on the row's long-press menu as well — the only place it exists twice on purpose, because it is the verb this whole
 screen is for.
 
 **On a phone it is pinned in the reach band**, not inline in the scroll, so the one thing a lifter

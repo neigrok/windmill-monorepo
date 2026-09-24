@@ -6,22 +6,21 @@ Figma screenshots and read-back checks confirm the edited frames’ dimensions, 
 
 ## Routine detail
 
-Detail uses the same compact reading rhythm as Routines Home. It retains routine identity, all movement targets, optional rest information, real history and proposal states. Density comes from the spaces around content; text and controls remain readable and reachable.
+Detail is a modal bottom sheet over the routine list (canonical board `813:4935`, graduated 2026-09-24), not a pushed screen. It draws routine identity, all movement targets and the proposal state; no rest line, no last-trained line and no history. Density comes from the spaces around content; text and controls remain readable and reachable.
 
 | Element | Contract |
 | --- | --- |
+| Sheet | Native `ModalBottomSheet`, surface fill, 28 dp top corners, drag handle; opens from a routine row and from the row's long-press Start |
 | Content | 20 dp horizontal inset, 8 dp top inset, 16 dp between sections |
 | Routine name | 28 sp display; wraps without a fixed height |
-| Routine summary | 14 sp dim; 4 dp from name; last-trained information remains subordinate |
 | Movement row | Minimum 68 dp; 16 dp horizontal and 8 dp vertical padding; 4 dp between rows |
 | Position | Existing 32 dp index treatment, 12 dp from text |
 | Movement name | 16 sp bold, unrestricted wrapping |
 | Target | 13 sp existing numeral role, readable dim ink; preserve values and units |
-| Rest | Optional 13 sp dim line; preserve the actual applicable value |
-| Text gaps | 4 dp between name, target and optional rest |
-| Actions | Start workout minimum 56 dp, Edit routine minimum 48 dp; existing native bottom inset and 8 dp action gap |
+| Text gaps | 4 dp between name and target |
+| Actions | Start workout minimum 56 dp primary, Edit routine minimum 48 dp quiet; existing native bottom inset and 8 dp action gap |
 
-The 68 dp value is a minimum, not a three-line box. A rest line, long movement name or larger font naturally increases row height. No ellipsis conceals a movement name or target. Keep one routine summary and one movement grouping surface; do not add dividers, badges or blank spacers merely to fill the screen. History has one section gap rather than a section gap plus redundant top padding. Controls retain at least 48 dp touch areas. Global spacing tokens and editor field metrics remain unchanged.
+The 68 dp value is a minimum, not a three-line box. A long movement name or larger font naturally increases row height. No ellipsis conceals a movement name or target. Keep one movement grouping surface; do not add dividers, badges or blank spacers merely to fill the sheet. Controls retain at least 48 dp touch areas. Global spacing tokens and editor field metrics remain unchanged.
 
 ## Coach streaming
 

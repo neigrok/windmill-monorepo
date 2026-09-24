@@ -19,7 +19,13 @@ These are two different things and they belong in two different places.
 **never a blank field demanding one**. A missing fact draws nothing — never a dash, never a zero.
 The age is *today*, *yesterday* or *N days ago*, counted in calendar days.
 
-**The writing** is one chip pinned in the reach band, opening a decimal sheet.
+**On Android the reading is a moment in the log's timeline, not a head line** (owner's ruling
+2026-09-24, board `837:14824`, `18-progress.md`): *Weighed in · 82.4 kg* sits between the sessions
+at its own date, with the change since the previous month under it, and opens Bodyweight. The head
+of the Android log carries no number at all.
+
+**The writing** is one chip pinned in the reach band, opening a decimal sheet — on every surface,
+Android included.
 
 The split is not fussiness. `../../guidelines/thumb-reach.md` forbids **a required input** in the top
 band by name, and the log's header sits inside the scroll on every surface — so a field at the top

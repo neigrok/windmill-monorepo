@@ -8,16 +8,27 @@ Obeys `12-native-idiom.md`, `13-gestures.md`, `../../guidelines/text-budget.md` 
 `../../guidelines/thumb-reach.md`. The chart rules here extend `11-bodyweight.md`, which owns the
 primitive.
 
-## Where it lives: the head of the log, as a strip
+## Where it lives: the log — a strip on web and iOS, moments woven in on Android
 
 **The log.** Progress is a reading of what happened, and the log is the record of what happened.
 It is not a fourth tab and not a Progress screen: the per-movement screen already exists — the
 Record screen — and a second room onto the same chart is two doors onto one value.
 
-> **A horizontal strip of movement cards sits in the head of the log**, under the loaded line and
-> the bodyweight reading, above the first week divider. One card per movement trained in the last
-> twelve weeks, most recently trained first. **Every card is a door to that movement's Record
-> screen.** Nothing on a card writes.
+> **Web and iOS: a horizontal strip of movement cards sits in the head of the log**, under the
+> loaded line and the bodyweight reading, above the first week divider. One card per movement
+> trained in the last twelve weeks, most recently trained first. **Every card is a door to that
+> movement's Record screen.** Nothing on a card writes.
+
+> **Android (owner's ruling 2026-09-24, boards `837:14824` and `837:14932`): no strip and no head
+> numbers. Progress is woven into the session list where it happened.** A **moment** is a quiet
+> one-line outlined card between the sessions, dated like them: *Bench Press · new best · 76 kg
+> est · up 4 kg since August* with a dot trail, *Weighed in · 82.4 kg*, or *Trained 4 of the last
+> 4 weeks* when a month is trained in full. Three kinds, at most one card a week. Tapping a moment
+> **expands it in place** to the movement's dot chart, its window line, best and heaviest, and
+> `Open record ›`; a weigh-in moment opens Bodyweight. Numbers appear only on the day they mean
+> something, so a plateau reads as a calm list. The Record stays reachable from every movement
+> name on a session's readback (`Caption · Readback` `850:14915`), so a lifter without a moment
+> to open still has a door.
 
 The head scrolls away, and that is right: a chart is read sitting down, and the reach band keeps
 exactly one control, the weigh-in chip, at every scroll position. A card is a destination and may
@@ -181,10 +192,11 @@ gutter so the shell's home swipe at depth zero is never contested. Each card is 
 onto `.movement(id)` in the log tab's path. The chart is a `Canvas`; the dots are one accessibility
 element carrying the card's whole label.
 
-**Android.** A `LazyRow` with `rememberSnapFlingBehavior` in the log's `LazyColumn` head item, the
-same widths, `contentPadding` at the gutter. A card is `clickable` with `onClickLabel = "open this
-movement's record"` and opens `Away.Movement(id)`. Predictive back returns to the log with the
-strip where it was.
+**Android.** No strip. Moments are items of the log's `LazyColumn`, keyed like sessions and dated
+by the session or weigh-in that earned them; an expanded moment is the same item grown in place
+(`animateContentSize`), never a navigation. `Open record ›` opens `Away.Movement(id)`; so does a
+movement name on the session readback (`SessionScreen.kt:428`). Predictive back returns to the log
+with the moment still open.
 
 **Web.** No carousel: the cards are a grid, two across in the centred column and one across at the
 phone rule, each an anchor to `#/gym/movement/{id}`. Hover names the nearest dot's session in a
