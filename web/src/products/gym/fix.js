@@ -2,9 +2,6 @@ import { failureReason } from './gymApi.js';
 import { routineNameOf, setLoadLabel } from './log.js';
 import { bump, bumpReps, round } from './logger/ladder.js';
 
-// DOM order for the segmented control; only `working` counts toward anything.
-export const SET_KINDS = ['warmup', 'working', 'drop', 'failure'];
-
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so
 // the band is the only thing this file states — and the leading seat is no rpe at all, because a set
 // that was never rated must be reachable again after one is chosen by mistake. That seat wears its
@@ -72,7 +69,6 @@ export function fixDraftOf(set) {
   return {
     weightKg: round(set.weightKg),
     reps: set.reps,
-    kind: set.kind,
     rpe: set.rpe ?? null,
     note: set.note ?? '',
   };
@@ -87,7 +83,8 @@ export function withReps(draft, direction) {
   return { ...draft, reps: bumpReps(draft.reps, direction) };
 }
 
-// Only changed fields go on the wire; omitted ones keep their stored value.
+// Only changed fields go on the wire; omitted ones keep their stored value. A set's kind is not
+// correctable here, so a fix never names it and the stored kind stands.
 // `Object.is` on the weight so a NaN on both sides is not reported as moved.
 //
 // The two nullable fields are where an omission and a clearing must not be confused: an rpe is
@@ -98,7 +95,6 @@ export function fixOf(set, draft) {
   const fix = {};
   if (!Object.is(draft.weightKg, round(set.weightKg))) fix.weightKg = draft.weightKg;
   if (draft.reps !== set.reps) fix.reps = draft.reps;
-  if (draft.kind !== set.kind) fix.kind = draft.kind;
   if (draft.rpe !== (set.rpe ?? null)) fix.rpe = draft.rpe;
   if (draft.note !== (set.note ?? '')) fix.note = draft.note;
   return fix;

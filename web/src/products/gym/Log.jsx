@@ -8,7 +8,7 @@ import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, e1rmLabel, finishHref, firstSessionLabel,
-  groupByExercise, hasRecord, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice,
+  fromSession, groupByExercise, hasRecord, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice,
   planFrozenLabel, planReadingOf, recordHref, routineNameOf, sessionDetailMeta, sessionHref,
   setLoadLabel, setNoteOf, tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
@@ -295,7 +295,7 @@ export function SessionDetail({ id, log }) {
         {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>Session review ›</a>}
       </header>
       {/* Off the ACCOUNT, and the meta line above it off the ROWS: a session holding one set the
-          window has taken off the screen is not an empty session, while `3 working sets · 1.2 t`
+          window has taken off the screen is not an empty session, while `3 working · 1,200 kg`
           counts what is drawn under it. Between the two stances the screen draws neither. */}
       {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
@@ -307,7 +307,7 @@ export function SessionDetail({ id, log }) {
           <section className="gym-exercise" key={exerciseId}>
             <div className="gym-exercise-head">
               <h2 className="gym-exercise-name">
-                <a className="gym-movement-door" href={recordHref(exerciseId)}>{names.get(exerciseId) ?? exerciseId}</a>
+                <a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id))}>{names.get(exerciseId) ?? exerciseId}</a>
               </h2>
               {reading.line && (
                 <span className={reading.entry ? 'gym-exercise-plan' : 'gym-exercise-plan is-added'}>

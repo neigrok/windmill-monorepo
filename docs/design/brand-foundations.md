@@ -46,8 +46,10 @@ values are `web/src/styles/tokens/`.
   text, terracotta-400 as the brand step, and intensified glows. Each product room lights its own
   night under the same rules — journal a cool ink-black, gym a verdigris-grey stone.
 - **Type**: two families. **Baloo 2** (rounded, bold, high personality) for display — page
-  headers, big numbers. **Nunito** (rounded, readable) for body/UI text. **JetBrains Mono**
-  for count readouts ("6/17 done") and item IDs only — never for prose.
+  headers, big numbers. A product room's page title is Baloo 2 Bold 32px on a 40px line, 28px on
+  a 36px line at narrow width, letter-spacing 0 (Gym Figma style `Gym/Web/Title`). **Nunito**
+  (rounded, readable) for body/UI text. **JetBrains Mono** for count readouts ("6/17 done") and
+  item IDs only — never for prose.
 - **Spacing**: 4px base unit, scale runs 4→128px (`--space-1`…`--space-32`). Generous padding
   throughout — nothing feels cramped.
 - **Backgrounds**: flat color, no photography, no gradients as backgrounds. The one gradient

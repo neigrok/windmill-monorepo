@@ -346,16 +346,6 @@ data class RoutineDraft(
         entries.mapIndexed { index, entry -> entry.copy(position = index + 1) }
 
     companion object {
-        fun duplicate(routine: Routine, position: Int): RoutineDraft {
-            val suffix = " copy"
-            val name = routine.name.trim()
-            val keep = (Program.maxNameLength - Program.length(suffix)).coerceAtLeast(0)
-            val prefix = name.takeIf { Program.length(it) <= keep }
-                ?: name.substring(0, name.offsetByCodePoints(0, keep))
-            return RoutineDraft(name = prefix + suffix, position = position,
-                entries = routine.entries.sortedBy { it.position })
-        }
-
         fun of(routine: Routine): RoutineDraft = RoutineDraft(
             id = routine.id,
             name = routine.name,

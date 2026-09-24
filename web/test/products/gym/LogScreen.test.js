@@ -5,7 +5,7 @@ import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { CLOSED_ITSELF_NOTE, sessionDetailMeta } from '../../../src/products/gym/log.js';
 import {
-  browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, settle, textOf,
+  browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, roomLog, settle, textOf,
 } from './harness.mjs';
 
 const realFetch = global.fetch;
@@ -273,4 +273,21 @@ test('the log that did not open names its reason, and offers the repair for it',
   assert.equal(textOf(signal), 'The log didn’t load. Open it again when you have signal.');
   repair(signal).props.onClick();
   assert.deepEqual(pressed, ['sign-in', 'retry', 'retry']);
+});
+
+test('the log names its unit once, in the head, and no row or week under it repeats it', async (t) => {
+  browserWith();
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ weighIns: [], latest: null }) });
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const summaries = [
+    { id: 'ses_2', startedAt: new Date(2026, 8, 7, 18, 0).getTime(), finishedAt: new Date(2026, 8, 7, 19, 0).getTime(), plan: { routine: 'Push A' }, workingSetCount: 9, tonnageKg: 2160, topE1rm: 76 },
+    { id: 'ses_1', startedAt: new Date(2026, 7, 24, 18, 0).getTime(), finishedAt: new Date(2026, 7, 24, 19, 0).getTime(), plan: { routine: 'Bench day' }, workingSetCount: 3, tonnageKg: 1380 },
+  ];
+  const tree = renderHook(t, () => LogList({ log: roomLog({ summaries }), onSignIn: () => {} })).tree;
+  assert.deepEqual(findByClass(tree, 'gym-log-count').map(textOf), ['2 sessions · 2 weeks loaded · loads in kg']);
+  assert.deepEqual(findByClass(tree, 'gym-week-tonnage').map(textOf), ['2,160', '1,380']);
+  const facts = elementsOf(tree)
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow')
+    .map((row) => findByClass(row.type(row.props), 'gym-row-facts').map((line) => elementsOf(line).slice(1).map(textOf)));
+  assert.deepEqual(facts, [[['9 working', '2,160', 'e1RM 76']], [['3 working', '1,380']]]);
 });

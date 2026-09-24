@@ -4,7 +4,9 @@
 // band-assisted movement carries no `bestE1rm`, no `e1rmSeries` and no `records`, and draws no tile,
 // no chart and no dash inside a chart frame. The bar scale starts at zero: a bar's length is its value.
 
-import { agoLabel, e1rmLabel, fmt, setLoadLabel, shortDayLabel } from './log.js';
+import {
+  agoLabel, e1rmLabel, fmt, NO_ROUTINE, routineNameOf, ROUTINES_HREF, sessionHref, setLoadLabel, shortDayLabel,
+} from './log.js';
 import { weightUnit } from './units.js';
 
 const round2 = (value) => Math.round(value * 100) / 100;
@@ -108,6 +110,15 @@ export function daysOf(record, now) {
       .map((set) => (set.kind === 'working' ? setLoadLabel(set) : `${setLoadLabel(set)} ${set.kind}`))
       .join(' · '),
   }));
+}
+
+// The back link names the screen the record was opened from and returns there. A workout is named
+// by its routine, which only the session's own read knows: without that read, or when it found no
+// session, the link says `The workout`.
+export function backOf(from, session = null) {
+  if (from.screen !== 'session') return { href: ROUTINES_HREF, label: 'Routines' };
+  if (session === null) return { href: sessionHref(from.id), label: 'The workout' };
+  return { href: sessionHref(from.id), label: routineNameOf(session) ?? NO_ROUTINE };
 }
 
 // A name is a label on a stable id, so renaming never forks a record. A row with nothing to prove is

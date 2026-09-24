@@ -6,7 +6,7 @@ import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF, proposalHref, routineHref, THREADS_HREF } from '../log.js';
 import {
   CARD_ROW_CAP, CARD_ROW_KINDS, countedLabel, diffRows, isPending, moreRowsLabel, receiptLine,
-  stateChip, STILL_WAITING, summaryLine,
+  stateChip, STILL_WAITING,
 } from '../proposals.js';
 import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
@@ -233,13 +233,14 @@ function CoachProposal({ id, log }) {
       <article className="gym-coach-proposal">
         <p className="gym-proposal-kicker">
           <span className="gym-proposal-dot" aria-hidden="true" />
-          <span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>
+          <span className="gym-proposal-named">
+            <span className="gym-proposal-name">{proposal.baseName}</span>
+            <span className="gym-proposal-count">{`\u00a0· ${countedLabel(proposal)}`}</span>
+          </span>
           <span className="gym-proposal-when">{pending ? STILL_WAITING : stateChip(proposal)?.toLowerCase()}</span>
         </p>
-        <p className="gym-proposal-line">{summaryLine(proposal, proposal.baseName)}</p>
-        <p className="gym-proposal-counted">{countedLabel(proposal)}</p>
         {/* A rename and a reorder are claims about the whole document, so they stay in the dialog;
-            the count above has already said them. A proposal that only moves lines draws no rows. */}
+            the count in the head has already said them. A proposal that only moves lines draws no rows. */}
         {changed.length > 0 && (
           <ul className="gym-diff">
             {changed.slice(0, CARD_ROW_CAP).map((row, index) => (

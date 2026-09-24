@@ -206,8 +206,8 @@ export function RoutineEditor({ id, log }) {
 
   return (
     <>
+      <Back href={ROUTINES_HREF}>Routines</Back>
       <header className="gym-editor-head">
-        <Back href={ROUTINES_HREF}>Routines</Back>
         <span className="gym-editor-name-field">
           <Input
             value={draft.name}

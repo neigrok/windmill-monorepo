@@ -60,9 +60,11 @@ export function isFull(notes) {
   return notes.length >= NOTES_MAX;
 }
 
-// The one surprising fact, at the head; then what these are, in the lifter's own direction.
-export const HONESTY_LINE = 'Any agent you connect can read these too.';
+// The room's title and what these are, in the lifter's own direction; then the one surprising fact,
+// said in the panel under the head.
+export const NOTES_TITLE = 'Notes';
 export const HEAD_LINE = 'what you write for Coach';
+export const HONESTY_LINE = 'Any agent you connect can read these too.';
 export const PRECEDENCE_CAPTION = 'Top note wins.';
 export const ADD_VERB = 'Add a note';
 export const FULL_LINE = '10 of 10 notes. Delete one to add another.';

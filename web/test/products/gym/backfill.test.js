@@ -12,13 +12,13 @@ const BLOCKS = [
   {
     exerciseId: 'back-squat',
     lines: [
-      { weightKg: 60, reps: 5, sets: 2, kind: 'warmup' },
-      { weightKg: 80, reps: 5, sets: 3, kind: 'working' },
+      { weightKg: 60, reps: 5, sets: 2 },
+      { weightKg: 80, reps: 5, sets: 3 },
     ],
   },
   {
     exerciseId: 'chin-up',
-    lines: [{ weightKg: 0, reps: 8, sets: 3, kind: 'working' }],
+    lines: [{ weightKg: 0, reps: 8, sets: 3 }],
   },
 ];
 
@@ -41,7 +41,7 @@ test('the total, the button that carries it, and the note under it', () => {
   assert.equal(totalSets(BLOCKS), 8);
   assert.equal(totalSets([]), 0);
   assert.equal(saveLabel(BLOCKS), 'Add to the log · 8 sets');
-  assert.equal(saveLabel([{ exerciseId: 'chin-up', lines: [{ weightKg: 0, reps: 8, sets: 1, kind: 'working' }] }]), 'Add to the log · 1 set');
+  assert.equal(saveLabel([{ exerciseId: 'chin-up', lines: [{ weightKg: 0, reps: 8, sets: 1 }] }]), 'Add to the log · 1 set');
   assert.equal(
     saveNote(new Date(2026, 7, 3, 17, 30).getTime()),
     'Lands under Mon 3 Aug · set times will read as approximate.',
@@ -50,7 +50,7 @@ test('the total, the button that carries it, and the note under it', () => {
   assert.equal(lineLabel({ weightKg: -20, reps: 8 }), '−20 × 8');
 });
 
-test('expandLines — a line becomes its sets, in the order the form reads them', () => {
+test('expandLines — a line becomes its sets, in the order the form reads them, every one a working set', () => {
   const startedAt = new Date(2026, 7, 3, 17, 30).getTime();
   let minted = 0;
   const sets = expandLines({
@@ -61,8 +61,8 @@ test('expandLines — a line becomes its sets, in the order the form reads them'
   });
   assert.equal(sets.length, 8);
   assert.deepEqual(sets.map((set) => [set.id, set.exerciseId, set.weightKg, set.reps, set.kind]), [
-    ['set_1', 'back-squat', 60, 5, 'warmup'],
-    ['set_2', 'back-squat', 60, 5, 'warmup'],
+    ['set_1', 'back-squat', 60, 5, 'working'],
+    ['set_2', 'back-squat', 60, 5, 'working'],
     ['set_3', 'back-squat', 80, 5, 'working'],
     ['set_4', 'back-squat', 80, 5, 'working'],
     ['set_5', 'back-squat', 80, 5, 'working'],
@@ -95,7 +95,7 @@ test('expandLines — the instants are evenly spread, in order, and inside the s
   const one = expandLines({
     startedAt,
     durationMs,
-    blocks: [{ exerciseId: 'chin-up', lines: [{ weightKg: 0, reps: 8, sets: 1, kind: 'working' }] }],
+    blocks: [{ exerciseId: 'chin-up', lines: [{ weightKg: 0, reps: 8, sets: 1 }] }],
     mint: () => 'set_x',
   });
   assert.deepEqual(one.map((set) => set.completedAt), [startedAt + durationMs / 2]);
@@ -155,7 +155,7 @@ test('endsAhead — a session whose end runs past now is refused, and one ending
 
 test('withMovementAdded — a movement joins on the empty bar, the opening value everything dials from', () => {
   assert.deepEqual(withMovementAdded([], 'back-squat'), [
-    { exerciseId: 'back-squat', lines: [{ weightKg: 20, reps: 5, sets: 3, kind: 'working' }] },
+    { exerciseId: 'back-squat', lines: [{ weightKg: 20, reps: 5, sets: 3 }] },
   ]);
   const two = withMovementAdded(BLOCKS, 'face-pull');
   assert.deepEqual(two.map((block) => block.exerciseId), ['back-squat', 'chin-up', 'face-pull']);
@@ -164,27 +164,24 @@ test('withMovementAdded — a movement joins on the empty bar, the opening value
   assert.notEqual(pair[0].lines[0], pair[1].lines[0]);
 });
 
-test('withLineAdded — a line copies the last one of its block, as a working set', () => {
+test('withLineAdded — a line copies the last one of its block', () => {
   const added = withLineAdded(BLOCKS, 0);
   assert.deepEqual(added[0].lines, [
-    { weightKg: 60, reps: 5, sets: 2, kind: 'warmup' },
-    { weightKg: 80, reps: 5, sets: 3, kind: 'working' },
-    { weightKg: 80, reps: 5, sets: 3, kind: 'working' },
+    { weightKg: 60, reps: 5, sets: 2 },
+    { weightKg: 80, reps: 5, sets: 3 },
+    { weightKg: 80, reps: 5, sets: 3 },
   ]);
   assert.equal(added[1], BLOCKS[1]);
   assert.equal(BLOCKS[0].lines.length, 2);
-
-  const fromWarmup = withLineAdded([{ exerciseId: 'back-squat', lines: [{ weightKg: 60, reps: 5, sets: 2, kind: 'warmup' }] }], 0);
-  assert.deepEqual(fromWarmup[0].lines[1], { weightKg: 60, reps: 5, sets: 2, kind: 'working' });
 });
 
 test('withLineChanged — one line changes, and a set count stays inside what a visit holds', () => {
   assert.equal(LINE_SETS_MIN, 1);
   assert.equal(LINE_SETS_MAX, 12);
-  const warmed = withLineChanged(BLOCKS, 1, 0, { kind: 'warmup' });
-  assert.deepEqual(warmed[1].lines, [{ weightKg: 0, reps: 8, sets: 3, kind: 'warmup' }]);
-  assert.equal(warmed[0], BLOCKS[0]);
-  assert.equal(BLOCKS[1].lines[0].kind, 'working');
+  const heavier = withLineChanged(BLOCKS, 1, 0, { weightKg: 10 });
+  assert.deepEqual(heavier[1].lines, [{ weightKg: 10, reps: 8, sets: 3 }]);
+  assert.equal(heavier[0], BLOCKS[0]);
+  assert.equal(BLOCKS[1].lines[0].weightKg, 0);
 
   assert.equal(withLineChanged(BLOCKS, 0, 1, { sets: 4 })[0].lines[1].sets, 4);
   assert.equal(withLineChanged(BLOCKS, 0, 1, { sets: 0 })[0].lines[1].sets, 1);
@@ -195,7 +192,7 @@ test('withLineChanged — one line changes, and a set count stays inside what a 
 });
 
 test('withLineRemoved — dropping a movement’s last line drops the movement', () => {
-  assert.deepEqual(withLineRemoved(BLOCKS, 0, 0)[0].lines, [{ weightKg: 80, reps: 5, sets: 3, kind: 'working' }]);
+  assert.deepEqual(withLineRemoved(BLOCKS, 0, 0)[0].lines, [{ weightKg: 80, reps: 5, sets: 3 }]);
   assert.deepEqual(
     withLineRemoved(BLOCKS, 1, 0).map((block) => block.exerciseId),
     ['back-squat'],

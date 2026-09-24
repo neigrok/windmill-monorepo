@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '../../../design-system/index.js';
 import { gymApi } from '../gymApi.js';
 import {
-  CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, fmt, NO_ROUTINE, sessionMetaLabel, timeLabel,
+  CLOSED_ITSELF_NOTE, closedOnItsOwn, fmt, NO_ROUTINE, sessionMetaLabel, timeLabel,
   topSetLabel, topSetOf,
 } from '../log.js';
 import { KG, spellWeightsIn } from '../units.js';
@@ -43,10 +43,7 @@ export function SharedSession({ token }) {
     <main className="gym-column gym-shared">
       <p className="gym-shared-kicker">A shared workout</p>
       <header className="gym-detail-head">
-        <h1 className="gym-title">
-          {dayLabel(shared.startedAt)}
-          <span className="gym-detail-routine">{`  ·  ${shared.routine ?? NO_ROUTINE}`}</span>
-        </h1>
+        <h1 className="gym-title">{shared.routine ?? NO_ROUTINE}</h1>
         <p className="gym-detail-when">{sessionMetaLabel(shared, sets.length)}</p>
         {top && <p className="gym-detail-top">{`top set  ·  ${topSetLabel(top)}`}</p>}
         {closedOnItsOwn(shared, sets) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}

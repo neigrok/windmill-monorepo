@@ -4,15 +4,13 @@ import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
 import { cappedName, isNameOverCap, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
-import { NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
+import { backOf, NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
 import { useGymRead } from './useGymRead.js';
 
-// A movement is reached from every room; back lands on the home, which is Routines.
-const BACK = ROUTINES_HREF;
-
-export function MovementRecord({ id, log }) {
+// `from` is where the record was opened (log.js `recordFromOf`); its back link returns there.
+export function MovementRecord({ id, from, log }) {
   if (id == null) return <MovementChooser log={log} />;
-  return <OneMovement id={id} log={log} />;
+  return <OneMovement id={id} from={from} log={log} />;
 }
 
 function MovementChooser({ log }) {
@@ -25,21 +23,27 @@ function MovementChooser({ log }) {
       query={query}
       onQuery={setQuery}
       onPick={(exerciseId) => { window.location.hash = recordHref(exerciseId); }}
-      onClose={() => { window.location.hash = BACK; }}
+      onClose={() => { window.location.hash = ROUTINES_HREF; }}
       title="Movements"
     />
   );
 }
 
-function OneMovement({ id, log }) {
-  const view = useGymRead(() => gymApi.record(id), [id]);
+// Opened from a workout, the session is read beside the record: the back link is named by its
+// routine. A session read that fails costs the link its name, never the record.
+function OneMovement({ id, from, log }) {
+  const view = useGymRead(
+    () => Promise.all([gymApi.record(id), from.screen === 'session' ? gymApi.session(from.id).catch(() => null) : null])
+      .then(([record, detail]) => (record ? { record, session: detail?.session ?? null } : null)),
+    [id, from.screen, from.id],
+  );
   const [renaming, setRenaming] = useState(false);
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the movement…</p>;
   if (view.phase === 'absent') {
     return (
       <>
-        <Back href={BACK}>Routines</Back>
+        <BackTo from={from} />
         <p className="gym-quiet">This movement isn’t in your catalog.</p>
       </>
     );
@@ -47,7 +51,7 @@ function OneMovement({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <Back href={BACK}>Routines</Back>
+        <BackTo from={from} />
         <p className="gym-read-failed">
           The movement didn’t load.
           <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
@@ -56,14 +60,14 @@ function OneMovement({ id, log }) {
     );
   }
 
-  const model = recordView(view.data);
+  const model = recordView(view.data.record);
   return (
     <section className="gym-record-screen">
+      <BackTo from={from} session={view.data.session} />
       <header className="gym-record-head">
-        <Back href={BACK}>Routines</Back>
+        <h1 className="gym-record-name">{model.name}</h1>
         <button type="button" className="gym-record-rename" onClick={() => setRenaming(true)}>Rename</button>
       </header>
-      <h1 className="gym-record-name">{model.name}</h1>
       <p className="gym-record-sub">{model.subhead}</p>
 
       {!model.logged && (
@@ -122,7 +126,7 @@ function OneMovement({ id, log }) {
       {renaming && (
         <RenameSheet
           name={model.name}
-          record={view.data}
+          record={view.data.record}
           onClose={() => setRenaming(false)}
           onSave={async (typed) => {
             const renamed = await log.renameMovement(id, typed);
@@ -135,6 +139,11 @@ function OneMovement({ id, log }) {
       )}
     </section>
   );
+}
+
+function BackTo({ from, session = null }) {
+  const back = backOf(from, session);
+  return <Back href={back.href}>{back.label}</Back>;
 }
 
 function Chart({ chart }) {

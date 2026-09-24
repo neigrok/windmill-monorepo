@@ -183,13 +183,14 @@ curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/finish -H "$C" -H "
   -d '{"finishedAt":1785603600000}'
 curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
 
-# Routines and the frozen plan. `targetReps` and `targetSets` may each be OMITTED — that is how
-# "3 × max" and an open line are expressed. Both absences survive into the frozen `plan`; a zero in
-# either would be a target the lifter never set.
+# Routines and the frozen plan. An entry takes `exerciseId`, `sets`, `restSeconds`; `sets` is the
+# per-set scheme, each `{reps, weightKg}` with either OMITTED.
+# No `sets` is an open line; an empty array is refused. Absences survive into the frozen `plan`; a
+# zero would be a target the lifter never set.
 curl -s -X POST localhost:8088/v1/gym/routines -H "$C" -H "$J" -d '{"id":"rt_probe00001",
   "name":"Push A","position":0,"entries":[
-    {"exerciseId":"bench-press","targetSets":5,"targetReps":5,"targetWeightKg":82.5},
-    {"exerciseId":"chin-up","targetSets":3},
+    {"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}]},
+    {"exerciseId":"chin-up","sets":[{"reps":8},{"reps":8},{"reps":8}]},
     {"exerciseId":"barbell-row"}]}'
 curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C"   # `history` rides on this read only; the list omits it
 curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \

@@ -17,7 +17,7 @@ Status: proposed design for review, updated 9 September 2026. Product implementa
 - One navigation shell, type hierarchy, token palette and input treatment across the three areas.
 - The card is the door to a draft editor. On desktop the editor is a split — movements left, the selected movement's ladder right — so targets have no sheet and no page of their own; narrow keeps the sheet. `Every set` and `Set by set` are two zooms on one scheme and both are always drawn; there is no mode and no shortcut. The commit reads its own scheme (`Set · 3 × 8 · 60`, `Set · 5 sets`), and the six-set case fits its viewport with the commit reachable.
 - On desktop the log is a split: the history index left, the progress strip in the detail pane. Narrow puts progress above the history. Record back navigation preserves entry from the log or a workout.
-- Saved workout correction has its own set editor. Actual workout entry requires independent weight and reps for every set, with added or removed sets and added or substituted movements. Planned targets are a reference and do not constrain actual values. Past workout shows independent set rows; `Add set` is each movement's last row and a row leaves by the `×` at its trailing edge. A movement whose sets agree collapses to one readout line, so nine sets fit one viewport. Kind is a selected control on the open row. Dense actual-set and per-set target tables use plain editable numbers with a subtle focus underline; short forms retain conventional inputs.
+- Saved workout correction has its own set editor. Actual workout entry requires independent weight and reps for every set, with added or removed sets and added or substituted movements. Planned targets are a reference and do not constrain actual values. Past workout shows independent set rows; `Add set` is each movement's last row and a row leaves by the `×` at its trailing edge. A movement whose sets agree collapses to one readout line, so nine sets fit one viewport. Past workout and correction draw no set kind: a new set is Working and a correction keeps the stored kind. Dense actual-set and per-set target tables use plain editable numbers with a subtle focus underline; short forms retain conventional inputs.
 - Coach displays every proposed change inline in the conversation, with `Apply` beneath it and `Turn this down` beneath that — one word for one act, per `briefs/09-coach.md`. A diff row counts entries, not sets, so three set-targets on one line is one change. The same message becomes an applied or dismissed receipt; there is no Review button or review modal. Notes have separate existing-note and blank-note screens.
 - Small edits stay inline and longer tasks use dedicated pages, avoiding modal dialogs. Narrow primary actions remain reachable. The phone remains responsible for live training.
 
@@ -35,8 +35,6 @@ replaced the ordinal column, and the microinteraction table — is [the form con
 ## Structure observations
 
 Dense numeric tables share the Editable number component with default, hover and focus states. Short forms use the local compact Input derivative. Reconcile these controls with the shared library before implementation. Daylight is represented by routine previews; a complete light-theme screen audit remains an implementation follow-up.
-
-The broader findings and priorities are in [the UX review](web-ux-review.md).
 
 The extended history and human-coach sharing design contract, including source-inspected backend
 gaps, is in [Training history exploration and coach sharing](log-exploration.md).

@@ -64,7 +64,7 @@ export function lineLabel(line) {
   return `${fmtKg(line.weightKg)} × ${line.reps}`;
 }
 
-const OPENING_LINE = { weightKg: EMPTY_BAR_KG, reps: EMPTY_BAR_REPS, sets: 3, kind: 'working' };
+const OPENING_LINE = { weightKg: EMPTY_BAR_KG, reps: EMPTY_BAR_REPS, sets: 3 };
 
 export function withMovementAdded(blocks, exerciseId) {
   return [...blocks, { exerciseId, lines: [{ ...OPENING_LINE }] }];
@@ -73,7 +73,7 @@ export function withMovementAdded(blocks, exerciseId) {
 export function withLineAdded(blocks, blockIndex) {
   return blocks.map((block, at) => (at !== blockIndex ? block : {
     ...block,
-    lines: [...block.lines, { ...block.lines[block.lines.length - 1], kind: 'working' }],
+    lines: [...block.lines, { ...block.lines[block.lines.length - 1] }],
   }));
 }
 
@@ -101,14 +101,14 @@ export function withLineRemoved(blocks, blockIndex, lineIndex) {
 }
 
 // Set instants are SYNTHESIZED — spread evenly, strictly inside the span, never remembered — so
-// nothing downstream may read rest intervals off them.
+// nothing downstream may read rest intervals off them. Every backfilled set is a working set.
 export function expandLines({ startedAt, durationMs, blocks, mint }) {
   const flat = blocks.flatMap((block) => block.lines.flatMap((line) => (
     Array.from({ length: line.sets }, () => ({
       exerciseId: block.exerciseId,
       weightKg: line.weightKg,
       reps: line.reps,
-      kind: line.kind,
+      kind: 'working',
     }))
   )));
   return flat.map((set, index) => ({

@@ -59,7 +59,7 @@ export function changeLabel(count) {
   return count === 1 ? '1 change' : `${count} changes`;
 }
 
-// The card's one affordance, the same word on every surface; the count is on the card's own line.
+// The card's one affordance, the same word on every surface.
 export const REVIEW_VERB = 'Review';
 
 // The store's count and not the rows this screen drew: the store is what applies.

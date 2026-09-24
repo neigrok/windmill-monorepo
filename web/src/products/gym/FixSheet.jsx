@@ -3,7 +3,7 @@ import { Input } from '../../design-system/index.js';
 import { alsoReadsLabel, fmtKg } from './log.js';
 import {
   fixDraftOf, fixOf, fixSubtitle, isSetNoteOverCap, keepsItsOwnNumbers, NO_RPE_LABEL, RPE_RUNGS,
-  SET_KINDS, setNoteCountLabel, SET_NOTE_CAPTION, SET_NOTE_LABEL, setNoteRefusal, showsSetNoteCount,
+  setNoteCountLabel, SET_NOTE_CAPTION, SET_NOTE_LABEL, setNoteRefusal, showsSetNoteCount,
   withReps, withWeight,
 } from './fix.js';
 import { Keypad } from './logger/Keypad.jsx';
@@ -54,19 +54,6 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
             <button type="button" className="gym-fix-step" aria-label="One rep fewer" onClick={() => setDraft((held) => withReps(held, -1))}>−</button>
             <button type="button" className="gym-fix-value" onClick={() => setTyping('reps')}>{draft.reps}</button>
             <button type="button" className="gym-fix-step" aria-label="One rep more" onClick={() => setDraft((held) => withReps(held, 1))}>+</button>
-          </div>
-
-          <div className="gym-kinds">
-            {SET_KINDS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className={`gym-kind is-${kind}${draft.kind === kind ? ' is-on' : ''}`}
-                onClick={() => setDraft((held) => ({ ...held, kind }))}
-              >
-                {kind}
-              </button>
-            ))}
           </div>
 
           {/* Six to ten by halves, and the seat before them is no rating at all: a set the lifter

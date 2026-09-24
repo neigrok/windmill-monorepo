@@ -76,7 +76,7 @@ difference *is* the content. This is the rule that empties the workout reader.
 | `Every set` / `Set by set` toggle | both sections on the sheet, always — `briefs/17-set-targets.md` forbids the mode |
 | the `Sets` field in the head | the ladder is the count; `Add set` is its last row, delete is its trailing `×` |
 | `Remove` as a word, nine times | one `×` at the row's trailing edge, faint until the row is hovered or focused |
-| `Edit` on a routine card | the card is the door; `⋯` on hover holds Duplicate and Delete |
+| `Edit` on a routine card | the card is the door; `⋯` on hover holds Delete |
 | `kg` on every row | once, in the column head |
 | `3 movements · 9 sets` **and** the movement names | the names, with the set count as a rail grouped per movement |
 | `Plan here. Train on your phone.` under every visit | the phone fact belongs where a lifter reaches for a Start that is not there, once |

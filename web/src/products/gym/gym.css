@@ -25,12 +25,24 @@
   padding-top: 28px;
 }
 
-.gym-title {
+/* A room's page title and a record's name are one face: the family's display title, one step
+   smaller at the shell's narrow width. */
+.gym-title,
+.gym-record-name {
   margin: 0;
-  font-size: 22px;
+  font-family: var(--font-display);
+  font-size: 32px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  line-height: 40px;
+  letter-spacing: 0;
   color: var(--gym-ink);
+}
+@media (max-width: 480px) {
+  .gym-title,
+  .gym-record-name {
+    font-size: 28px;
+    line-height: 36px;
+  }
 }
 
 /* One title and nothing beside it — the doors a room offers sit in .gym-log-head. */
@@ -120,7 +132,7 @@
   flex-direction: column;
   padding: 13px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
   color: var(--gym-ink);
   text-decoration: none;
@@ -149,7 +161,7 @@
   flex: none;
   width: 7px;
   height: 7px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--pr-ink);
 }
 .gym-row-ring {
@@ -157,7 +169,7 @@
   width: 7px;
   height: 7px;
   border: 1.5px solid var(--unsynced-ink);
-  border-radius: 99px;
+  border-radius: var(--radius-full);
 }
 .gym-row-when {
   flex: none;
@@ -193,7 +205,7 @@
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -218,7 +230,7 @@
 .gym-older-dot {
   width: 7px;
   height: 7px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--gym-ink-faint);
 }
 .gym-log-bottom {
@@ -235,7 +247,7 @@
   min-height: 46px;
   margin-top: 12px;
   border: 1px solid var(--alarm-ink);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--alarm-soft);
   color: var(--alarm-ink);
   font: inherit;
@@ -260,12 +272,6 @@
 .gym-detail-head {
   margin-bottom: 18px;
 }
-.gym-detail-routine {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--gym-ink-dim);
-  white-space: pre;
-}
 .gym-detail-when {
   margin: 6px 0 0;
   font-family: var(--font-mono);
@@ -283,7 +289,7 @@
   margin: 10px 0 0;
   padding: 6px 11px;
   border: 1px solid var(--gym-line);
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--gym-sunken);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -292,7 +298,7 @@
 .gym-detail-plan-dot {
   width: 6px;
   height: 6px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--target-ink);
 }
 
@@ -328,7 +334,7 @@
   margin: 0;
   padding: 0;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   overflow: hidden;
 }
@@ -490,7 +496,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-live-dot {
   width: 7px;
   height: 7px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--set-done);
   box-shadow: 0 0 10px var(--set-done-glow);
 }
@@ -545,7 +551,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 34px;
   height: 34px;
   border: none;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--gym-ink-dim);
   font-size: 17px;
@@ -606,7 +612,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-key {
   height: 50px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink);
   font-family: var(--font-mono);
@@ -625,7 +631,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 86px;
   height: 50px;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font-size: 13px;
@@ -635,7 +641,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 66px;
   height: 50px;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink);
   font-family: var(--font-mono);
@@ -645,7 +651,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex: 1;
   height: 50px;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font-size: 15px;
@@ -728,7 +734,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-rung {
   height: 52px;
   border: 1px solid var(--gym-line);
-  border-radius: 15px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink-dim);
   font-family: var(--font-mono);
@@ -757,7 +763,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 46px;
   height: 46px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink);
   font-size: 19px;
@@ -775,38 +781,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
   text-align: center;
   cursor: pointer;
-}
-.gym-kinds {
-  margin-top: 12px;
-  display: flex;
-  gap: 6px;
-}
-.gym-kind {
-  flex: 1;
-  height: 40px;
-  border: 1px solid var(--gym-line);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-/* A warmup counts toward nothing and wears its own ink wherever it is named, chosen or not. */
-.gym-kind.is-warmup {
-  color: var(--warmup-ink);
-}
-.gym-kind.is-on {
-  border-color: var(--gym-line-strong);
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-  font-weight: 800;
-}
-.gym-kind.is-working.is-on {
-  border-color: var(--set-done);
-  background: var(--set-done-soft);
-  color: var(--set-done);
 }
 /* Ten seats across a phone's width: `Not rated`, then six to ten by halves. They are one row and
    never wrap — the band is read as a line, and a seat that dropped below the others would read as a
@@ -829,7 +803,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 38px;
   padding: 0;
   border: 1px solid var(--gym-line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -866,7 +840,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 56px;
   margin-top: 14px;
   border: none;
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -1020,7 +994,7 @@ button.gym-set:focus-visible .gym-set-fix,
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--gym-line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -1038,7 +1012,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 14px 0;
   padding: 13px 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 .gym-refusal-title {
@@ -1060,7 +1034,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 10px;
   padding: 0 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
@@ -1100,7 +1074,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-mirror {
   padding: 14px 16px 15px;
   border: 1px solid var(--color-brand);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--color-brand-soft);
 }
 .gym-mirror-head {
@@ -1194,7 +1168,7 @@ button.gym-set:focus-visible .gym-set-fix,
   display: flex;
   align-items: center;
   min-height: 68px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
 }
 .gym-routine:hover {
@@ -1207,7 +1181,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 4px;
   padding: 10px 16px;
-  border-radius: 11px 0 0 11px;
+  border-radius: calc(var(--radius-lg) - 1px) 0 0 calc(var(--radius-lg) - 1px);
   color: var(--gym-ink);
   text-decoration: none;
 }
@@ -1279,7 +1253,7 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 10px;
   padding: 11px 12px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 /* Lifted under the finger, and must not be caught by the pointer test of the rows it passes over. */
@@ -1370,7 +1344,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 34px;
   padding: 0 11px;
   border: 1px solid var(--gym-line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font-family: var(--font-mono);
@@ -1387,7 +1361,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--gym-ink-faint);
   font: inherit;
@@ -1508,7 +1482,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 40px;
   padding: 0 12px;
   border: 1px dashed var(--gym-line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -1560,7 +1534,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 34px;
   margin: -6px -8px -6px 0;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -1614,7 +1588,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-stat {
   padding: 14px 12px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
   text-align: center;
 }
@@ -1639,7 +1613,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 14px;
   padding: 13px 14px;
   border: 1px solid var(--pr-ink);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--pr-soft);
 }
 .gym-record-title {
@@ -1674,7 +1648,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 0;
   padding: 0;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   overflow: hidden;
 }
@@ -1719,7 +1693,7 @@ button.gym-set:focus-visible .gym-set-fix,
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
@@ -1736,7 +1710,7 @@ button.gym-set:focus-visible .gym-set-fix,
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -1765,7 +1739,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex: 1;
   height: 50px;
   border: 1px solid var(--alarm-ink);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--alarm-ink);
   font: inherit;
@@ -1790,7 +1764,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 22px;
   padding: 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 .gym-keep-title {
@@ -1804,7 +1778,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 44px;
   padding: 0 12px;
   border: 1px solid var(--gym-line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--gym-canvas);
   color: var(--gym-ink);
   font: inherit;
@@ -1867,7 +1841,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 40px;
   padding: 0 13px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -1908,7 +1882,7 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 7px;
   padding: 9px 10px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   margin-bottom: 7px;
 }
@@ -1917,7 +1891,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-width: 54px;
   padding: 0 10px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink);
   font-family: var(--font-mono);
@@ -1925,23 +1899,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-}
-.gym-line-kind {
-  height: 38px;
-  padding: 0 11px;
-  border: 1px solid var(--gym-line);
-  border-radius: 99px;
-  background: transparent;
-  color: var(--gym-ink-faint);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.gym-line-kind.is-warmup {
-  border-color: var(--gym-line-strong);
-  background: var(--gym-raised);
-  color: var(--warmup-ink);
-  font-weight: 700;
 }
 .gym-line-count {
   display: flex;
@@ -1953,7 +1910,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 38px;
   height: 38px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink);
   font-family: var(--font-mono);
@@ -1973,7 +1930,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--gym-ink-faint);
   font: inherit;
@@ -1987,7 +1944,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 38px;
   padding: 0 13px;
   border: 1px dashed var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -2000,7 +1957,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 18px 0 0;
   padding: 13px 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 .gym-overlap-title {
@@ -2020,7 +1977,7 @@ button.gym-set:focus-visible .gym-set-fix,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--color-brand-soft);
   color: var(--color-brand);
   font-size: 14px;
@@ -2034,6 +1991,17 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 10px;
   margin-top: 24px;
 }
+/* At the shell's narrow width a form that outgrows the screen keeps its Save in reach: the band
+   pins to the bottom on the page's own ground, and sits at the foot of the content when it fits. */
+@media (max-width: 480px) {
+  .gym-save {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    background: var(--gym-canvas);
+  }
+}
 .gym-save-note {
   margin: 8px 0 0;
   font-size: 12px;
@@ -2046,6 +2014,9 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-record-screen {
   display: flex;
   flex-direction: column;
+}
+.gym-record-screen > .gym-back {
+  align-self: flex-start;
 }
 .gym-record-head {
   display: flex;
@@ -2062,14 +2033,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-}
-.gym-record-name {
-  margin: 8px 0 0;
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.06;
-  letter-spacing: -0.015em;
-  color: var(--gym-ink);
 }
 .gym-record-sub {
   margin: 3px 0 0;
@@ -2091,7 +2054,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
 }
 .gym-record-tile-label {
@@ -2131,7 +2094,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 9px 0 0;
   padding: 16px 14px 12px;
   border: 1px solid var(--gym-line);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
 }
 .gym-record-chart-head {
@@ -2211,7 +2174,7 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 10px;
   padding: 11px 13px;
   border: 1px solid var(--gym-line);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 .gym-record-mark.is-standing {
@@ -2297,7 +2260,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 44px;
   margin-top: 6px;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -2315,7 +2278,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-equipment-choice {
   height: 46px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-raised);
   color: var(--gym-ink-dim);
   font: inherit;
@@ -2333,7 +2296,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 14px;
   padding: 12px 13px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
 }
 .gym-follows-head {
@@ -2386,7 +2349,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 22px;
   padding: 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
 }
 .gym-share-title {
@@ -2407,7 +2370,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
@@ -2426,7 +2389,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 10px;
   padding: 10px 11px;
   border: 1px solid var(--gym-line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
   color: var(--gym-ink-dim);
   font-family: var(--font-mono);
@@ -2441,7 +2404,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex: 1;
   min-height: 40px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -2457,7 +2420,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -2558,7 +2521,7 @@ button.gym-set:focus-visible .gym-set-fix,
   align-self: flex-end;
   max-width: 85%;
   padding: 10px 12px;
-  border-radius: 16px 16px 5px 16px;
+  border-radius: var(--radius-lg) var(--radius-lg) 5px var(--radius-lg);
   background: var(--color-brand-soft);
 }
 .gym-coach-text {
@@ -2579,7 +2542,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -2633,8 +2596,15 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-coach-proposal {
   padding: 14px 15px 13px;
   border: 1px solid var(--color-brand);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
+}
+/* In the conversation the head is a sentence — the routine and how much it would change — not an
+   eyebrow. */
+.gym-coach-proposal .gym-proposal-kicker {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .gym-coach-proposal .gym-diff {
   margin: 10px 0 0;
@@ -2675,7 +2645,7 @@ button.gym-set:focus-visible .gym-set-fix,
   box-sizing: border-box;
   padding: 12px 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
   color: var(--gym-ink);
   font: inherit;
@@ -2694,7 +2664,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: 48px;
   height: 48px;
   border: none;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -2764,7 +2734,7 @@ button.gym-set:focus-visible .gym-set-fix,
   max-width: 100%;
   max-height: 320px;
   object-fit: contain;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .gym-coach-photo-open {
   align-self: flex-start;
@@ -2806,10 +2776,20 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 8px 0 18px;
 }
 .gym-notes-sub {
-  margin: 4px 0 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--gym-ink-dim);
+}
+/* The one fact a lifter would not guess, said in a panel of its own under the head. */
+.gym-notes-disclosure {
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--gym-surface);
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--gym-ink);
 }
 .gym-notes-rows {
   list-style: none;
@@ -2864,7 +2844,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 52px;
   padding: 11px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -2915,7 +2895,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   margin-top: 12px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -2935,12 +2915,8 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.5;
   color: var(--gym-ink-dim);
 }
-.gym-note-editor .gym-back {
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
+.gym-note-editor .gym-editor-head {
+  justify-content: flex-end;
 }
 .gym-note-title-input {
   box-sizing: border-box;
@@ -2948,7 +2924,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 44px;
   padding: 0 12px;
   border: 1px solid var(--gym-line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -2961,7 +2937,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 10px;
   padding: 12px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -3006,7 +2982,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-top: 14px;
   padding: 14px 15px;
   border: 1px solid var(--alarm-ink);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--alarm-soft);
 }
 .gym-confirm-title {
@@ -3025,7 +3001,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
@@ -3037,7 +3013,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   padding: 0 18px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--alarm-fill);
   color: var(--gym-on-alarm);
   font: inherit;
@@ -3089,7 +3065,7 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 8px;
   padding: 13px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
   color: var(--gym-ink);
   text-decoration: none;
@@ -3116,7 +3092,7 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 .gym-thread-chip {
   padding: 3px 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--gym-raised);
   color: var(--gym-ink-dim);
   font-size: 10px;
@@ -3146,7 +3122,7 @@ button.gym-set:focus-visible .gym-set-fix,
   justify-content: center;
   min-height: 52px;
   margin-top: 6px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font-size: 15.5px;
@@ -3202,7 +3178,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
@@ -3273,7 +3249,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-proposal-card {
   padding: 14px 15px 13px;
   border: 1px solid var(--color-brand);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--color-brand-soft);
 }
 .gym-proposal-kicker {
@@ -3295,6 +3271,16 @@ button.gym-set:focus-visible .gym-set-fix,
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* The name and how much it would change, read as one phrase: only the name a lifter typed
+   truncates, and the count beside it never gives way. */
+.gym-proposal-named {
+  display: flex;
+  min-width: 0;
+}
+.gym-proposal-count {
+  flex: none;
+  white-space: nowrap;
+}
 .gym-proposal-when {
   flex: none;
   margin-left: auto;
@@ -3311,7 +3297,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex: none;
   width: 6px;
   height: 6px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--color-brand);
 }
 .gym-proposal-line {
@@ -3319,13 +3305,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 14px;
   line-height: 1.45;
   color: var(--gym-ink);
-}
-/* How much the proposal is, in one phrase, off the kicker and on a line of its own. */
-.gym-proposal-counted {
-  margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--gym-ink-faint);
 }
 /* What a removal would do, said by us rather than by the agent's own summary. */
 .gym-proposal-intent {
@@ -3341,7 +3320,7 @@ button.gym-set:focus-visible .gym-set-fix,
   justify-content: center;
   height: 44px;
   margin-top: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font-size: 14.5px;
@@ -3379,7 +3358,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 44px;
   padding: 10px 13px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--gym-sunken);
   color: var(--gym-ink-dim);
   text-decoration: none;
@@ -3424,7 +3403,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-proposal-chip {
   flex: none;
   padding: 4px 9px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -3460,7 +3439,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
   font-size: 13.5px;
   line-height: 1.45;
@@ -3472,7 +3451,7 @@ button.gym-set:focus-visible .gym-set-fix,
   padding: 10px 14px;
   border-left: 3px solid var(--color-brand);
   background: var(--color-brand-soft);
-  border-radius: 0 12px 12px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 .gym-proposal-wrote-kicker {
   margin: 0 0 4px;
@@ -3561,7 +3540,7 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 6px 9px;
   padding: 12px 13px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
 /* Added and removed carry their own ink; retargeted and renamed do not. */
@@ -3667,7 +3646,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 16px 0 0;
   padding: 13px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
   font-size: 13.5px;
   line-height: 1.5;
@@ -3687,7 +3666,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-proposal-apply {
   height: 52px;
   border: none;
-  border-radius: 15px;
+  border-radius: var(--radius-md);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -3768,7 +3747,7 @@ button.gym-set:focus-visible .gym-set-fix,
   min-height: 46px;
   padding: 0 22px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: var(--gym-raised);
   color: var(--gym-ink);
   box-shadow: var(--shadow-lg);
@@ -3799,7 +3778,7 @@ button.gym-set:focus-visible .gym-set-fix,
   box-sizing: border-box;
   padding: 0 14px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--gym-sunken);
   color: var(--gym-ink);
   font-family: var(--font-mono);
@@ -3835,7 +3814,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
   color: var(--gym-ink);
   font: inherit;
@@ -3861,7 +3840,7 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 52px;
   margin-top: 16px;
   border: none;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
@@ -3898,6 +3877,6 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-bodyweight-chart {
   padding: 16px 14px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: var(--gym-surface);
 }

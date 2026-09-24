@@ -81,22 +81,6 @@ class PlanningWritesTests {
     }
 
     @Test
-    fun duplicateSavesUnderANewIdentityAndLeavesTheSourceUntouched() = runTest {
-        val original = Routine("rt_a", "Push", 0, revision = 7, lastTrainedAtMs = 42,
-            entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)), 90)))
-        val server = FakeTraining().apply { written[original.id] = original }
-        val store = store(mapOf("a" to server))
-        store.connect(account("a"))
-        val draft = RoutineDraft.duplicate(original, 1).copy(creationId = "rt_copy")
-        val expected = Routine(RoutineWrite("rt_copy", "Push copy", 1, draft.write))
-        assertEquals(GymResult.Ok(expected), store.saveRoutine(draft))
-        assertEquals(mapOf(original.id to original, "rt_copy" to expected), server.written)
-        assertFalse(draft.trained)
-        assertNull(draft.original)
-        assertNull(draft.id)
-    }
-
-    @Test
     fun newRoutineRetriesKeepOneIdentityAndRefuseChangedAcceptedPayloads() = runTest {
         val server = FakeTraining()
         var loseReply = true

@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  chartOf, daysOf, recordsOf, recordView, RENAME_PROOF, renameProofOf, subheadOf, tilesOf, whenOf,
+  backOf, chartOf, daysOf, recordsOf, recordView, RENAME_PROOF, renameProofOf, subheadOf, tilesOf,
+  whenOf,
 } from '../../../src/products/gym/record.js';
+import { FROM_ROUTINES, fromSession } from '../../../src/products/gym/log.js';
 
 const NOW = new Date(2026, 7, 10, 20, 30).getTime();
 const TODAY = new Date(2026, 7, 10, 18, 0).getTime();
@@ -228,4 +230,13 @@ test('renameProofOf — a movement with nothing to keep claims nothing, and stil
     { label: 'old name', value: 'searchable as an alias' },
   ]);
   assert.deepEqual(renameProofOf({ ...NEVER, routineCount: 2 }), [{ label: 'old name', value: 'searchable as an alias' }]);
+});
+
+test('backOf — the back link names the screen the record was opened from and returns there', () => {
+  assert.deepEqual(backOf(FROM_ROUTINES), { href: '#/gym', label: 'Routines' });
+  const workout = { id: 'ses_9a', startedAt: TODAY, finishedAt: NOW, plan: { routine: 'Push A', entries: [] } };
+  assert.deepEqual(backOf(fromSession('ses_9a'), workout), { href: '#/gym/session/ses_9a', label: 'Push A' });
+  assert.deepEqual(backOf(fromSession('ses_9a'), { id: 'ses_9a', startedAt: TODAY }), { href: '#/gym/session/ses_9a', label: 'Free session' });
+  // Before the session's read lands, or when it found none, the link still returns to the workout.
+  assert.deepEqual(backOf(fromSession('ses_9a'), null), { href: '#/gym/session/ses_9a', label: 'The workout' });
 });

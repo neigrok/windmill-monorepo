@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   deletedLine, deleteFailure, fixDraftOf, fixFailure, fixOf, fixSubtitle, isSetNoteOverCap,
-  keepsItsOwnNumbers, NO_RPE_LABEL, RPE_MAX, RPE_MIN, RPE_RUNGS, SET_KINDS,
+  keepsItsOwnNumbers, NO_RPE_LABEL, RPE_MAX, RPE_MIN, RPE_RUNGS,
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS, withReps, withWeight,
 } from '../../../src/products/gym/fix.js';
@@ -24,13 +24,13 @@ const SESSION = {
 
 test('the draft opens on the set as it stands, every field the sheet can touch and no other', () => {
   assert.deepEqual(fixDraftOf(SET), {
-    weightKg: 47.5, reps: 4, kind: 'working', rpe: 8.5, note: 'felt heavy',
+    weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy',
   });
   assert.deepEqual(fixOf(SET, fixDraftOf(SET)), {});
   // An unrated set opens on null and an unwritten note on the empty string — what each field draws
   // as absent, and what tells `fixOf` neither was touched.
   const plain = { ...SET, rpe: undefined, note: undefined };
-  assert.deepEqual(fixDraftOf(plain), { weightKg: 47.5, reps: 4, kind: 'working', rpe: null, note: '' });
+  assert.deepEqual(fixDraftOf(plain), { weightKg: 47.5, reps: 4, rpe: null, note: '' });
   assert.deepEqual(fixOf(plain, fixDraftOf(plain)), {});
 });
 
@@ -38,38 +38,41 @@ test('the weight moves on the logger’s own ladder, which at 47.5 kg is −5 ·
   const draft = fixDraftOf(SET);
   assert.deepEqual(ladderLabels(draft.weightKg), ['−5', '−2.5', '+2.5', '+5']);
   const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withWeight(draft, -1, true), { weightKg: 42.5, reps: 4, kind: 'working', ...rated });
-  assert.deepEqual(withWeight(draft, -1, false), { weightKg: 45, reps: 4, kind: 'working', ...rated });
-  assert.deepEqual(withWeight(draft, 1, false), { weightKg: 50, reps: 4, kind: 'working', ...rated });
-  assert.deepEqual(withWeight(draft, 1, true), { weightKg: 52.5, reps: 4, kind: 'working', ...rated });
+  assert.deepEqual(withWeight(draft, -1, true), { weightKg: 42.5, reps: 4, ...rated });
+  assert.deepEqual(withWeight(draft, -1, false), { weightKg: 45, reps: 4, ...rated });
+  assert.deepEqual(withWeight(draft, 1, false), { weightKg: 50, reps: 4, ...rated });
+  assert.deepEqual(withWeight(draft, 1, true), { weightKg: 52.5, reps: 4, ...rated });
 });
 
 test('an assisted load steps by magnitude, so the sheet needs no sign to know which way is lighter', () => {
   const assisted = fixDraftOf({ ...SET, weightKg: -20 });
   assert.deepEqual(ladderLabels(assisted.weightKg), ['−5', '−2.5', '+1', '+2.5']);
   const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withWeight(assisted, 1, false), { weightKg: -19, reps: 4, kind: 'working', ...rated });
-  assert.deepEqual(withWeight(assisted, -1, false), { weightKg: -22.5, reps: 4, kind: 'working', ...rated });
+  assert.deepEqual(withWeight(assisted, 1, false), { weightKg: -19, reps: 4, ...rated });
+  assert.deepEqual(withWeight(assisted, -1, false), { weightKg: -22.5, reps: 4, ...rated });
 });
 
 test('the rep stepper climbs from one and cannot be walked below it', () => {
   const draft = fixDraftOf(SET);
   const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withReps(draft, 1), { weightKg: 47.5, reps: 5, kind: 'working', ...rated });
-  assert.deepEqual(withReps({ ...draft, reps: 1 }, -1), { weightKg: 47.5, reps: 1, kind: 'working', ...rated });
-  assert.deepEqual(withReps({ ...draft, reps: 0 }, -1), { weightKg: 47.5, reps: 1, kind: 'working', ...rated });
+  assert.deepEqual(withReps(draft, 1), { weightKg: 47.5, reps: 5, ...rated });
+  assert.deepEqual(withReps({ ...draft, reps: 1 }, -1), { weightKg: 47.5, reps: 1, ...rated });
+  assert.deepEqual(withReps({ ...draft, reps: 0 }, -1), { weightKg: 47.5, reps: 1, ...rated });
 });
 
 test('a fix carries the fields that moved and nothing else', () => {
   const held = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(fixOf(SET, { weightKg: 50, reps: 4, kind: 'working', ...held }), { weightKg: 50 });
-  assert.deepEqual(fixOf(SET, { weightKg: 47.5, reps: 5, kind: 'working', ...held }), { reps: 5 });
-  assert.deepEqual(fixOf(SET, { weightKg: 47.5, reps: 4, kind: 'drop', ...held }), { kind: 'drop' });
-  assert.deepEqual(
-    fixOf(SET, { weightKg: 42.5, reps: 6, kind: 'warmup', ...held }),
-    { weightKg: 42.5, reps: 6, kind: 'warmup' },
-  );
-  assert.deepEqual(SET_KINDS, ['warmup', 'working', 'drop', 'failure']);
+  assert.deepEqual(fixOf(SET, { weightKg: 50, reps: 4, ...held }), { weightKg: 50 });
+  assert.deepEqual(fixOf(SET, { weightKg: 47.5, reps: 5, ...held }), { reps: 5 });
+  assert.deepEqual(fixOf(SET, { weightKg: 42.5, reps: 6, ...held }), { weightKg: 42.5, reps: 6 });
+});
+
+test('a fix never names the kind, so the kind the store holds stands whatever the set was', () => {
+  for (const kind of ['warmup', 'working', 'drop', 'failure']) {
+    const set = { ...SET, kind };
+    assert.deepEqual(fixDraftOf(set), { weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy' });
+    assert.deepEqual(fixOf(set, { ...fixDraftOf(set), reps: 6 }), { reps: 6 });
+  }
 });
 
 test('clearing an rpe or a note is NAMED, and a field nobody touched is not named at all', () => {
@@ -139,8 +142,8 @@ test('a set that reached the sheet with no weight at all is still not reported a
   const weightless = { ...SET, weightKg: undefined };
   assert.deepEqual(fixOf(weightless, fixDraftOf(weightless)), {});
   assert.deepEqual(
-    fixOf(weightless, { ...fixDraftOf(weightless), reps: 6, kind: 'drop' }),
-    { reps: 6, kind: 'drop' },
+    fixOf(weightless, { ...fixDraftOf(weightless), reps: 6 }),
+    { reps: 6 },
   );
 });
 

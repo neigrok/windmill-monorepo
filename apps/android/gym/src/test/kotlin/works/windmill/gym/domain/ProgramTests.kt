@@ -303,13 +303,4 @@ class ProgramTests {
             json.encodeToString(RoutineWrite.serializer(), RoutineWrite(routine)))
     }
 
-    @Test
-    fun testDuplicateCapsUnicodeAndCopiesOnlyOrderedPlanningData() {
-        val original = Routine("rt_a", "💪".repeat(60), 0, revision = 9, lastTrainedAtMs = 42,
-            entries = listOf(RoutineEntry(2, "squat"), RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)), 90)),
-            history = listOf(RoutineEvent(kind = "created", atMs = 2, movements = 2)))
-        assertEquals(RoutineDraft(name = "💪".repeat(55) + " copy", position = 2,
-            entries = original.entries.sortedBy { it.position }), RoutineDraft.duplicate(original, 2))
-    }
-
 }

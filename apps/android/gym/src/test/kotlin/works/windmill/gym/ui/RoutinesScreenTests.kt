@@ -160,12 +160,11 @@ class RoutinesScreenTests {
         val routineId = store.routines.single().id
 
         compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
-        compose.onNodeWithText("Duplicate").assertDoesNotExist()
         compose.onAllNodesWithText("Delete").assertCountEquals(1)
 
         val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
         val actions = row.config[SemanticsActions.CustomActions]
-        assertEquals(listOf("Duplicate Push Day", "Delete Push Day"), actions.map { it.label })
+        assertEquals(listOf("Delete Push Day"), actions.map { it.label })
 
         compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
         compose.runOnIdle {

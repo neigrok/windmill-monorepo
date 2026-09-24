@@ -136,3 +136,15 @@ test('a byte counter past its bound goes alarm, in the class the room’s other 
   fix.type('felt heavy');
   assert.equal(counter(), false);
 });
+
+test('the sheet offers no kind, and a warmup fixed here stays a warmup because the fix never names it', async (t) => {
+  const fix = await sheet(t, { ...SET, kind: 'warmup' });
+  const buttons = elementsOf(fix.tree()).filter((each) => each.type === 'button').map(textOf);
+  assert.deepEqual(buttons, [
+    '×', '47.5kg', '−5', '−2.5', '+2.5', '+5', '−', '4', '+',
+    NO_RPE_LABEL, ...RPE_RUNGS.map(String), 'Save the fix', 'Delete set',
+  ]);
+  elementsOf(fix.tree()).find((each) => each.props?.['aria-label'] === 'One rep more').props.onClick();
+  fix.save().props.onClick();
+  assert.deepEqual(fix.saved, [{ reps: 5 }]);
+});

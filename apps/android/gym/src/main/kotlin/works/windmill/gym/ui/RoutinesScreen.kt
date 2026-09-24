@@ -149,7 +149,6 @@ fun RoutinesScreen(
                             nowMs = nowMs,
                             onOpenRoutine = onOpenRoutine,
                             onDelete = { onDeleteRoutine(routine.id) },
-                            onDuplicate = { onBuild(RoutineDraft.duplicate(routine, store.allRoutines.size)) },
                             onReview = onReview,
                         )
                     }
@@ -185,7 +184,6 @@ private fun SwipeableRoutineRow(
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
-    onDuplicate: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val haptics = rememberGymHaptics()
@@ -200,7 +198,7 @@ private fun SwipeableRoutineRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = { RowDeleteGround() },
     ) {
-        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onDuplicate, onReview)
+        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onReview)
     }
 }
 
@@ -214,7 +212,6 @@ private fun RoutineRow(
     nowMs: Long,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
-    onDuplicate: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val skin = LocalGymColors.current
@@ -224,7 +221,6 @@ private fun RoutineRow(
         .background(skin.canvas)
         .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
         .semantics { customActions = listOf(
-            CustomAccessibilityAction("Duplicate ${routine.name}") { onDuplicate(); true },
             CustomAccessibilityAction("Delete ${routine.name}") { onDelete(); true }) }
         .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -238,7 +234,6 @@ private fun RoutineRow(
                 Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = skin.inkDim)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = skin.raised) {
-                DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; onDuplicate() })
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
             }
         }

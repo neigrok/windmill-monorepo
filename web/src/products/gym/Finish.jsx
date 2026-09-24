@@ -3,7 +3,7 @@ import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  cappedName, entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
+  cappedName, entryLabel, fromSession, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
   weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
@@ -85,7 +85,7 @@ export function FinishScreen({ id, log }) {
           <ul className="gym-against-rows">
             {against.rows.map((row) => (
               <li className="gym-against-row" key={row.exerciseId}>
-                <a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>
+                <a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId, fromSession(id))}>
                   {row.movement}
                 </a>
                 <span className="gym-against-detail">{row.detail}</span>

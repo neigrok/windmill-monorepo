@@ -6,7 +6,7 @@ import { BODY_COUNT_FROM as NAME_TWIN } from '../../../../src/products/gym/notes
 import { NAME_COUNT_FROM, NAME_MAX } from '../../../../src/products/gym/log.js';
 import {
   ADD_VERB, BODY_BYTES, BODY_COUNT_FROM, bodyBytes, byteCountLabel, DELETE_VERB,
-  firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
+  firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, NOTES_TITLE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
   NOTE_PREFIX,
   noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
   isTitleOverCap, showsByteCount, showsTitleCount,
@@ -70,6 +70,7 @@ test('a title is counted in the code points the store counts, from the last fift
 });
 
 test('the head is one surprising fact and one line saying whose words these are, and nothing else', () => {
+  assert.equal(NOTES_TITLE, 'Notes');
   assert.equal(HONESTY_LINE, 'Any agent you connect can read these too.');
   assert.equal(HEAD_LINE, 'what you write for Coach');
   assert.equal(HEAD_LINE.includes('about you'), false);

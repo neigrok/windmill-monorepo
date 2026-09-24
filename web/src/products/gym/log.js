@@ -79,8 +79,23 @@ export function movementIdOf(hash) {
   return match ? match[1] : null;
 }
 
-export function recordHref(exerciseId) {
+// A record opened from a workout carries that session in its own hash, so its back link returns
+// there. A record opened with no origin was opened from Routines, the home.
+export const FROM_ROUTINES = { screen: 'routines' };
+
+export function fromSession(sessionId) {
+  return { screen: 'session', id: sessionId };
+}
+
+export function recordHref(exerciseId, from = FROM_ROUTINES) {
+  if (from.screen === 'session') return `#/gym/movement/${exerciseId}?from=session.${from.id}`;
   return `#/gym/movement/${exerciseId}`;
+}
+
+export function recordFromOf(hash) {
+  const match = /^#\/gym\/movement\/[A-Za-z0-9_-]+\?from=session\.([A-Za-z0-9_-]+)$/.exec(hash || '');
+  if (!match) return FROM_ROUTINES;
+  return fromSession(match[1]);
 }
 
 export const MOVEMENTS_HREF = '#/gym/movement';
@@ -152,12 +167,13 @@ export function arrivedLabel(ms, now = Date.now()) {
   return `${WEEKDAYS[new Date(ms).getDay()]} ${timeLabel(ms)}`;
 }
 
-// The day is the title above this line and is never printed twice.
+// The routine is the title above this line, so the day leads it.
 export function sessionMetaLabel(session, setCount) {
+  const day = dayLabel(session.startedAt);
   const started = timeLabel(session.startedAt);
-  if (!isFinished(session)) return `${started}   ·   in progress   ·   ${setCountLabel(setCount)}`;
+  if (!isFinished(session)) return `${day}   ·   ${started}   ·   in progress   ·   ${setCountLabel(setCount)}`;
   const length = durLabel(session.finishedAt - session.startedAt);
-  return `${started}–${timeLabel(session.finishedAt)}   ·   ${length}   ·   ${setCountLabel(setCount)}`;
+  return `${day}   ·   ${started}–${timeLabel(session.finishedAt)}   ·   ${length}   ·   ${setCountLabel(setCount)}`;
 }
 
 // Today by its clock, anything older by its day; the calendar-day rule is agoLabel's.
@@ -258,20 +274,23 @@ export function tonnageOf(session, sets = null) {
   return workingSetsOf(sets).reduce((total, set) => total + Math.max(set.weightKg, 0) * set.reps, 0);
 }
 
-// A zero tonnage answers null. The scale threshold is the mass and not the numeral, so both
-// readings switch scale on the same week.
+// A tonnage is a bare number in the account's unit, grouped by thousands — `1,380`. The unit is
+// named once per surface (the log's head says `loads in kg`), never on a row. Nothing, a zero, or a
+// number that is not finite answers null, and nothing is drawn.
+// Grouped in one fixed spelling and never localised, like every date in this product.
+const TONNAGE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
 export function tonnageLabel(kg) {
-  if (kg == null || kg <= 0) return null;
-  if (kg < 1000) return `${fmt(kg)} ${weightUnit()}`;
-  if (weightUnit() === LB) return `${(inDisplayUnit(kg) / 1000).toFixed(1)}k lb`;
-  return `${(kg / 1000).toFixed(1)} t`;
+  if (!Number.isFinite(kg) || kg <= 0) return null;
+  return TONNAGE.format(inDisplayUnit(kg));
 }
 
-// Both numbers are of what is in hand; the log carries no total.
+// Both numbers are of what is in hand; the log carries no total. The line is also where the log
+// names the unit every row under it is read in.
 export function loadedLine(sessions, weeks) {
   const list = sessions === 1 ? '1 session' : `${sessions} sessions`;
   const span = weeks === 1 ? '1 week' : `${weeks} weeks`;
-  return `${list} · ${span} loaded`;
+  return `${list} · ${span} loaded · loads in ${weightUnit()}`;
 }
 
 // A fold over the page in hand: the log arrives newest-first, so a week is a run of adjacent rows.
@@ -490,8 +509,9 @@ export function sessionDetailMeta(session, sets) {
   if (isFinished(session)) parts.push(durLabel(session.finishedAt - session.startedAt));
   else parts.push('in progress');
   parts.push(workingLabel(workingSetsOf(sets).length));
+  // No head above this line names the unit, so the tonnage carries it here.
   const tonnage = tonnageLabel(tonnageOf(session, sets));
-  if (tonnage) parts.push(tonnage);
+  if (tonnage) parts.push(`${tonnage} ${weightUnit()}`);
   return parts.join(' · ');
 }
 

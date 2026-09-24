@@ -137,15 +137,6 @@ export function Backfill({ log }) {
               >
                 {`× ${line.reps}`}
               </button>
-              <button
-                type="button"
-                className={line.kind === 'warmup' ? 'gym-line-kind is-warmup' : 'gym-line-kind'}
-                onClick={() => blocks((held) => withLineChanged(held, blockIndex, lineIndex, {
-                  kind: line.kind === 'warmup' ? 'working' : 'warmup',
-                }))}
-              >
-                warmup
-              </button>
               <span className="gym-line-count">
                 <button
                   type="button"

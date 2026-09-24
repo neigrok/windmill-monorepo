@@ -2159,15 +2159,16 @@ points at.
 
 ## Gym web review · 8 September 2026
 
-Open review and design-owner handoff: `gym/web-ux-review.md`. The report separates browser evidence,
-source findings and proposals, and links five inspected Figma frames. No UI fixes are implied.
+Browser evidence, source findings and design proposals from a review of the shipped web gym against
+five inspected Figma frames. No UI fixes are implied.
 
 - At 390 × 844, six target sets produce a dialog 867px high at y = −23, hiding its title and Close
   behind the shell; Escape does not dismiss it. Use a bounded shared overlay with keyboard handling.
 - Movement records entered from a workout return to Routines. Preserve the originating route.
 - Figma contains incompatible navigation generations: the session frame `327:2120` has Today /
   The log / Routines; the progress frame `460:98` has Routines / The log / Coach; record `463:129`
-  returns to Today. Design owners need an authoritative current/proposed/archive screen index.
+  returns to Today. The `Web · Proposed UX` page tags every board Current, Proposed or Archived;
+  the rest of the file has no such index (F53).
 - Progress/chart and appearance work remain open under their existing ledger entries. The browser
   record still draws bars, including a full-width gold rectangle for one point; the newer Figma
   dot chart is a proposal, not evidence of implementation.
@@ -2212,11 +2213,9 @@ contract; visual density must not make the values read-only.
 The form contract is `gym/web-form.md`; the drawn half is the component section
 `Components · Numeric row language` (`534:3341`) on the Gym file's `Web · Proposed UX` page.
 
-**F37 · the ordinal column's tokens outlive the column** → fix toward the Gym Figma file.
-`size/set-number-w` (18) and `size/set-mark-w` (12) in the `Gym · Metrics` collection sized the
-`#` column that `gym/web-form.md` replaces with the rail. Nothing references them now, and the
-rail's own 10px leading width has no token at all. Other surfaces read that collection, so the
-delete and the new token are one owner's change, not a board's.
+**F37 · the ordinal column's tokens outlive the column** → built 2026-09-24, nothing owed.
+`size/set-number-w` and `size/set-mark-w` are deleted from `Gym · Metrics` after a scan of every page
+found no binding, and the rail's leading width is `size/rail-w` (10).
 
 **F38 · web drops the target sheet's `Sets` field; the phones keep it** → a product owner's call
 across the three surfaces. `gym/briefs/17-set-targets.md` leaves it open whether `Sets` survives
@@ -2250,20 +2249,45 @@ ago` on a session another card called `yesterday`.
 **F43 · a pinned action floats over empty canvas on eight narrow boards** → built 2026-09-09, nothing
 owed. A geometric sweep (any child sitting 48px or more below the one above it) found seven boards
 beyond the one named, six of them invisible to a name search because their action is a bare `Button`.
-Seven were seated at the foot of their content; `470:21` and `524:3906` keep the band because their
-content provably overflows.
+Seven were seated at the foot of their content. `470:21`, `524:3906`, `470:99` and `482:1269` keep a
+pinned band on a `gym/canvas` ground because their content provably overflows the 844px viewport.
 
-**F44 · gym's own accent leaves the gym family in Daylight** → fix toward the Gym Figma file.
-`brand/base` in the local `Gym · Colour` collection aliases to verdigris in Instrument but to
-`VariableID:1:21` `#4c4374` in Daylight, so every gym CTA on a Daylight board renders indigo rather
-than a light-mode verdigris. This is F40's shape one layer deeper: not the shared `Button` leaking
-the global terracotta, but gym's own token aliasing out of its room in one mode. It belongs to the
-open gym light round.
+**F44 · gym's Daylight accent is iris, by design** → nothing owed. `brand/base` in `Gym · Colour`
+aliases to verdigris in Instrument and to iris-600 `#4C4374` in Daylight, matching the shipped
+`web/src/styles/tokens/palettes.css` (`[data-brand="gym"]`: pale stone lit by iris by day, verdigris
+by night). A Daylight gym CTA is indigo on every surface.
 
 **F45 · `End of history` sits below the fold on every narrow index** → a design owner's call.
 All eight narrow index boards clip a 506px list into roughly 410, so the end marker is drawn and
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
+
+## Gym web cleanliness · 24 September 2026
+
+The review and its outcome are on the Gym file's `Proposal · Cleanliness (2026-09-24)` page
+(`779:2`). `Web · Proposed UX` (`466:132`) now reads as six sections — Start · Components · Plan ·
+Record · Coach & Notes · Share — with boards named Area / Screen / State / Width, a `Board status` tag
+above each, text bound to the fourteen `Gym/Web/*` styles, and radius, spacing and measures bound to
+`Gym · Metrics`.
+
+**F51 · Android ships Duplicate** → built 2026-09-24, nothing owed. There is no Duplicate
+(`gym/BUILD.md` R5): a routine row's overflow carries Delete alone on web and the phones, and its
+only accessibility action is `Delete <routine>`.
+
+**F52 · the library's Room Switch Button names its labels after one room** → fix toward the design
+system. In the published `Room Switch Button`, the text layers that print `Home` and `Roadmap` are
+named `Journal`, so every instance in every product file carries the wrong layer names.
+
+**F53 · the Gym file's `Boards` page still presents retired generations** → a design owner's call.
+Sections `Spine · Today · log · routines` (`6:3`), `Ask · proposals · share` (`9:42`) and
+`Ask’s past · threads · one conversation` (`25:23`) draw the Today tab and the Ask name, with no
+status to say they are superseded. They are the only consumers of `Gym/Archive/Today Line` and the
+`Gym/Coach *` styles. Archive them or tag them the way `466:132` is tagged.
+
+**F54 · 355 text layers on `466:132` carry no `Gym/Web/*` style** → fix toward the Gym Figma file.
+68 layers mix Nunito prose with mono numerals in one run, and a style would flatten them; 287 sit
+inside library instances (`Button`, `Room Switch Button`) whose type is the design system's. Twelve
+sheet radii (20–26) and six mixed-corner nodes stay raw because `Gym · Metrics` has no sheet radius.
 
 ## Roadmap bubble graduation · 10 September 2026
 
@@ -2328,8 +2352,7 @@ history suppresses unknown outcome details instead of claiming Read only. Suppor
 validation is shared across detail/list and rejects malformed stored evidence before deriving
 outcomes. Native acceptance, focused regressions and independent final review pass.
 Full native motion, TalkBack, notification and device coverage remain in Wave 6, followed by final
-simplification and release verification. Daylight follows the approved existing tokens and still
-carries F44. Tracking node: `android-gym-implement-refined-flows`.
+simplification and release verification. Daylight follows the approved existing tokens. Tracking node: `android-gym-implement-refined-flows`.
 
 Android public-sharing disclosure matches the backend payload in Figma `672:9676` and the app:
 “Includes set notes and effort.” Public workout dates/name and set facts are shared; account IDs

@@ -8,7 +8,7 @@ import {
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
   groupByExercise,
   hasRecord, isFinished, isFirstSession, isNameOverCap, isUntested, loadedLine, logWhenLabel,
-  MOVEMENTS_HREF,
+  FROM_ROUTINES, fromSession, MOVEMENTS_HREF, recordFromOf,
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
   planFrozenLabel,
@@ -120,24 +120,24 @@ test('durLabel and setCountLabel — the two numbers the log row says out loud',
   assert.equal(setCountLabel(12), '12 sets');
 });
 
-test('sessionMetaLabel — a session read whole, without printing its day twice', () => {
+test('sessionMetaLabel — a session read whole, its day first under the routine that titles it', () => {
   const started = new Date(2025, 6, 22, 18, 12).getTime();
   const finished = new Date(2025, 6, 22, 19, 34).getTime();
   assert.equal(
     sessionMetaLabel({ startedAt: started, finishedAt: finished }, 13),
-    '18:12–19:34   ·   1h 22m   ·   13 sets',
+    'Tue 22 Jul   ·   18:12–19:34   ·   1h 22m   ·   13 sets',
   );
   assert.equal(
     sessionMetaLabel({ startedAt: started, finishedAt: started + 600_000 }, 1),
-    '18:12–18:22   ·   10m   ·   1 set',
+    'Tue 22 Jul   ·   18:12–18:22   ·   10m   ·   1 set',
   );
   assert.equal(
     sessionMetaLabel({ startedAt: started, finishedAt: null }, 4),
-    '18:12   ·   in progress   ·   4 sets',
+    'Tue 22 Jul   ·   18:12   ·   in progress   ·   4 sets',
   );
   assert.equal(
     sessionMetaLabel({ startedAt: started, finishedAt: finished }, 0),
-    '18:12–19:34   ·   1h 22m   ·   0 sets',
+    'Tue 22 Jul   ·   18:12–19:34   ·   1h 22m   ·   0 sets',
   );
 });
 
@@ -234,6 +234,24 @@ test('finishIdOf — the end of a session is a place, so a reload lands back on 
   assert.equal(finishIdOf('#/gym/finish/'), null);
   assert.equal(finishIdOf(''), null);
   assert.equal(finishIdOf(undefined), null);
+});
+
+test('recordFromOf — where a record was opened rides in its own link, and reads back as it was written', () => {
+  assert.equal(recordHref('back-squat', FROM_ROUTINES), '#/gym/movement/back-squat');
+  assert.equal(recordHref('back-squat', fromSession('ses_9a')), '#/gym/movement/back-squat?from=session.ses_9a');
+  assert.deepEqual(fromSession('ses_9a'), { screen: 'session', id: 'ses_9a' });
+
+  assert.deepEqual(recordFromOf(recordHref('back-squat')), { screen: 'routines' });
+  assert.deepEqual(recordFromOf(recordHref('back-squat', fromSession('ses_9a'))), { screen: 'session', id: 'ses_9a' });
+  assert.deepEqual(recordFromOf(MOVEMENTS_HREF), { screen: 'routines' });
+  assert.deepEqual(recordFromOf('#/gym/movement/back-squat?from=log'), { screen: 'routines' }, 'an origin nobody writes is the home');
+  assert.deepEqual(recordFromOf('#/gym/movement/back-squat?from=session.'), { screen: 'routines' });
+
+  // The origin never changes which record or which screen the link names.
+  for (const from of [FROM_ROUTINES, fromSession('ses_9a')]) {
+    assert.equal(movementIdOf(recordHref('ex_31ab77c0', from)), 'ex_31ab77c0');
+    assert.equal(screenOf(recordHref('ex_31ab77c0', from)), 'record');
+  }
 });
 
 test('movementIdOf — the record link a name writes is the link the record reads back', () => {
@@ -514,13 +532,13 @@ test('a kilogram field over a pounds reading says what the other numeral is', (t
   assert.equal(alsoReadsLabel(undefined), null);
 });
 
-test('the scale of a week follows the reading, and switches at the same mass either way', (t) => {
+test('a tonnage is read in the account’s unit, and a pound figure never names its unit either', (t) => {
   t.after(() => spellWeightsIn(KG));
   spellWeightsIn(LB);
 
-  assert.equal(tonnageLabel(999), '2202.4 lb');
-  assert.equal(tonnageLabel(1000), '2.2k lb');
-  assert.equal(tonnageLabel(14_200), '31.3k lb');
+  assert.equal(tonnageLabel(999), '2,202.4');
+  assert.equal(tonnageLabel(1000), '2,204.6');
+  assert.equal(tonnageLabel(14_200), '31,305.6');
   assert.equal(tonnageLabel(0), null);
   assert.equal(tonnageLabel(null), null);
 });
@@ -633,27 +651,35 @@ test('tonnageOf — the store’s sum on a row, the same sum from the sets on a 
   assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 5400 }, [set('working', 100, 5)]), 5400);
 });
 
-test('tonnageLabel — a zero says nothing at all, and no figure is ever spelled at a scale that doubles it', () => {
-  assert.equal(tonnageLabel(14_200), '14.2 t');
-  assert.equal(tonnageLabel(5400), '5.4 t');
-  assert.equal(tonnageLabel(1200), '1.2 t');
-  assert.equal(tonnageLabel(18_949), '18.9 t');
-  assert.equal(tonnageLabel(1000), '1.0 t');
-  assert.equal(tonnageLabel(999), '999 kg');
-  assert.equal(tonnageLabel(825), '825 kg');
-  assert.equal(tonnageLabel(51), '51 kg');
-  assert.equal(tonnageLabel(50), '50 kg');
-  assert.equal(tonnageLabel(49.5), '49.5 kg');
-  assert.equal(tonnageLabel(12), '12 kg');
+test('tonnageLabel — a bare number grouped by thousands, the unit left to the head, and a zero says nothing', () => {
+  assert.equal(tonnageLabel(14_200), '14,200');
+  assert.equal(tonnageLabel(5400), '5,400');
+  assert.equal(tonnageLabel(1380), '1,380');
+  assert.equal(tonnageLabel(18_949), '18,949');
+  assert.equal(tonnageLabel(1000), '1,000');
+  assert.equal(tonnageLabel(999), '999');
+  assert.equal(tonnageLabel(51), '51');
+  assert.equal(tonnageLabel(49.5), '49.5');
+  assert.equal(tonnageLabel(12), '12');
   assert.equal(tonnageLabel(0), null);
   assert.equal(tonnageLabel(null), null);
   assert.equal(tonnageLabel(undefined), null);
+  assert.equal(tonnageLabel(-40), null);
+  assert.equal(tonnageLabel(NaN), null);
+  assert.equal(tonnageLabel(Infinity), null);
+  assert.equal(tonnageLabel('1380'), null, 'a string off a bad wire is not a number');
 });
 
 test('loadedLine — the head says how much of the log is on the screen', () => {
-  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded');
-  assert.equal(loadedLine(1, 1), '1 session · 1 week loaded');
-  assert.equal(loadedLine(2, 1), '2 sessions · 1 week loaded');
+  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded · loads in kg');
+  assert.equal(loadedLine(1, 1), '1 session · 1 week loaded · loads in kg');
+  assert.equal(loadedLine(2, 1), '2 sessions · 1 week loaded · loads in kg');
+});
+
+test('loadedLine — a pound reader is told the log is in pounds', (t) => {
+  t.after(() => spellWeightsIn(KG));
+  spellWeightsIn(LB);
+  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded · loads in lb');
 });
 
 test('onThisDevice — only a session that says so is saved on this device only', () => {
@@ -681,14 +707,14 @@ test('weeksOf — Monday to Monday, newest first, and the oldest week withholds 
   ];
   const weeks = weeksOf(summaries);
   assert.deepEqual(weeks.map((week) => week.label), ['week of 10 aug', 'week of 3 aug', 'week of 27 jul']);
-  assert.deepEqual(weeks.map((week) => week.tonnage), ['5.4 t', '17.1 t', null]);
+  assert.deepEqual(weeks.map((week) => week.tonnage), ['5,400', '17,100', null]);
   assert.deepEqual(weeks.map((week) => week.sessions.map((session) => session.id)), [
     ['ses_5'], ['ses_4', 'ses_3', 'ses_2'], ['ses_1'],
   ]);
   assert.deepEqual(weeks.map((week) => week.startedAt), [
     new Date(2026, 7, 10).getTime(), new Date(2026, 7, 3).getTime(), new Date(2026, 6, 27).getTime(),
   ]);
-  assert.deepEqual(weeksOf(summaries, { complete: true }).map((week) => week.tonnage), ['5.4 t', '17.1 t', '5.0 t']);
+  assert.deepEqual(weeksOf(summaries, { complete: true }).map((week) => week.tonnage), ['5,400', '17,100', '5,000']);
   assert.deepEqual(weeksOf([]), []);
 });
 
@@ -699,7 +725,7 @@ test('weeksOf — a week nobody can sum, and a week that adds up to nothing, bot
     { id: 'ses_2', startedAt: new Date(2026, 7, 12, 7, 0).getTime() },
     row('ses_1', new Date(2026, 7, 4, 18, 0), 3000),
   ];
-  assert.deepEqual(weeksOf(partly, { complete: true }).map((week) => week.tonnage), [null, '3.0 t']);
+  assert.deepEqual(weeksOf(partly, { complete: true }).map((week) => week.tonnage), [null, '3,000']);
   const bodyweight = [
     row('ses_2', new Date(2026, 7, 12, 7, 0), 0),
     row('ses_1', new Date(2026, 7, 10, 7, 0), 0),
@@ -718,7 +744,7 @@ test('weeksOf — one training week is one divider in a zone whose clocks jump a
       { id: 'ses_1', startedAt: new Date(2026, 7, 31, 10, 0).getTime(), tonnageKg: 1000 },
     ], { complete: true });
     assert.deepEqual(chile.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 31 aug', '4.0 t', 4],
+      ['week of 31 aug', '4,000', 4],
     ]);
 
     process.env.TZ = 'Asia/Beirut';
@@ -727,7 +753,7 @@ test('weeksOf — one training week is one divider in a zone whose clocks jump a
       { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
     ], { complete: true });
     assert.deepEqual(lebanon.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 23 mar', '2.0 t', 2],
+      ['week of 23 mar', '2,000', 2],
     ]);
 
     process.env.TZ = 'Europe/Berlin';
@@ -736,7 +762,7 @@ test('weeksOf — one training week is one divider in a zone whose clocks jump a
       { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
     ], { complete: true });
     assert.deepEqual(berlin.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 23 mar', '2.0 t', 2],
+      ['week of 23 mar', '2,000', 2],
     ]);
   } finally {
     if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
@@ -750,7 +776,7 @@ test('weeksOf — a session that crosses midnight into Monday starts the new wee
   ];
   const weeks = weeksOf(summaries, { complete: true });
   assert.deepEqual(weeks.map((week) => [week.label, week.tonnage]), [
-    ['week of 10 aug', '1.0 t'], ['week of 3 aug', '2.0 t'],
+    ['week of 10 aug', '1,000'], ['week of 3 aug', '2,000'],
   ]);
 });
 
@@ -769,7 +795,7 @@ test('sessionDetailMeta — the day, the length, and the two facts the header is
   const wholeSession = [set('warmup', 40, 8), ...Array.from({ length: 11 }, () => set('working', 98, 5))];
   assert.equal(
     sessionDetailMeta({ startedAt, finishedAt: startedAt + 58 * 60_000 }, wholeSession),
-    'Mon 10 Aug · 58m · 11 working · 5.4 t',
+    'Mon 10 Aug · 58m · 11 working · 5,390 kg',
   );
   assert.equal(
     sessionDetailMeta({ startedAt, finishedAt: startedAt + 3_600_000 }, [set('working', 0, 9), set('working', 0, 7)]),

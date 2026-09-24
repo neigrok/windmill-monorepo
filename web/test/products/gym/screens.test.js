@@ -91,8 +91,10 @@ test('the live mirror heads the routines home and keeps its charter: no Finish, 
 });
 
 test('every exercise name a lifter can see is a link to that movement’s record — except on a screen holding an unsaved draft, where the movements door on the home reaches it instead', () => {
-  assert.equal(read('Log.jsx').includes('<a className="gym-movement-door" href={recordHref(exerciseId)}>'), true);
-  assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
+  // A name inside a workout opens the record FROM that workout, so the record's back link returns
+  // to it; the live mirror and a proposal sit on the Routines home and open it from there.
+  assert.equal(read('Log.jsx').includes('<a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id))}>'), true);
+  assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId, fromSession(id))}>'), true);
   assert.equal(read('Mirror.jsx').includes('<a className="gym-movement-door" href={recordHref(newest.exerciseId)}>'), true);
   assert.equal(read('Proposals.jsx').includes('<a className="gym-diff-name gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   assert.equal(read('gym.css').includes('.gym-movement-door {'), true);
@@ -636,7 +638,9 @@ test('nothing settles a proposal on a render, and no toggle offers to', () => {
 test('the proposal eyebrow holds one line: the routine name truncates and the stamp keeps its room', () => {
   // The eyebrow carries a name a lifter typed, up to `NAME_MAX` code points, on both cards.
   assert.equal(read('Proposals.jsx').includes('<span className="gym-proposal-name">{`Proposal · ${routine.name}`}</span>'), true);
-  assert.equal(read('coach/CoachRoom.jsx').includes('<span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>'), true);
+  // On the Coach card the count rides beside the name in a span of its own that never gives way.
+  assert.equal(read('coach/CoachRoom.jsx').includes('<span className="gym-proposal-name">{proposal.baseName}</span>'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('<span className="gym-proposal-count">{`\\u00a0· ${countedLabel(proposal)}`}</span>'), true);
   assert.equal(/export const NAME_MAX = 60;/.test(read('log.js')), true);
   const css = read('gym.css');
   const name = /\.gym-proposal-name \{([^}]*)\}/.exec(css)[1];
@@ -644,6 +648,10 @@ test('the proposal eyebrow holds one line: the routine name truncates and the st
     assert.equal(name.includes(rule), true, rule);
   }
   // The stamp is the shorter half and never the half that gives way, so it neither shrinks nor wraps.
+  const count = /\.gym-proposal-count \{([^}]*)\}/.exec(css)[1];
+  assert.equal(count.includes('flex: none;'), true);
+  assert.equal(count.includes('white-space: nowrap;'), true);
+  assert.equal(/\.gym-proposal-named \{[^}]*min-width: 0;/.test(css), true);
   const when = /\.gym-proposal-when \{([^}]*)\}/.exec(css)[1];
   assert.equal(when.includes('flex: none;'), true);
   assert.equal(when.includes('white-space: nowrap;'), true);
@@ -755,7 +763,9 @@ test('every pushed screen draws its back link through one component, and none po
     assert.equal(/>\s*Today\s*</.test(source), false, file);
   }
   assert.equal(read('Back.jsx').includes('export function Back({ href, onClick, children })'), true);
-  assert.equal(read('Record.jsx').includes('const BACK = ROUTINES_HREF;'), true);
+  // The record's back link is the one that varies: it names where the record was opened.
+  assert.equal(read('Record.jsx').includes('const back = backOf(from, session);'), true);
+  assert.equal(read('Record.jsx').includes('<Back href={back.href}>{back.label}</Back>'), true);
   assert.equal(read('Finish.jsx').includes('<Back href="#/gym/log">The log</Back>'), true);
 });
 
@@ -827,13 +837,15 @@ test('the settings section carries the Notes door under the line the Notes scree
   assert.equal(source.includes('SETTINGS_LINE'), false);
 });
 
-test('the Notes screen is its own room off #/gym/notes, headed by the honesty line, seeded with placeholders and nothing stored', () => {
+test('the Notes screen is its own room off #/gym/notes, titled as a room with the honesty line under it, seeded with placeholders and nothing stored', () => {
   const app = read('GymApp.jsx');
   assert.equal(app.includes("{screen === 'notes' && <Notes log={log} />}"), true);
   const notes = read('notes/Notes.jsx');
   assert.equal(notes.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
-  assert.equal(notes.includes('<h1 className="gym-title">{HONESTY_LINE}</h1>'), true);
-  assert.equal(notes.includes('<p className="gym-notes-sub">{HEAD_LINE}</p>'), true);
+  assert.equal(notes.includes(`<h1 className="gym-title">{NOTES_TITLE}</h1>
+        <p className="gym-notes-sub">{HEAD_LINE}</p>
+      </header>
+      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>`), true);
   assert.equal(notes.includes('{PLACEHOLDER_TITLES.map((title) => ('), true);
   assert.equal(notes.includes("onClick={() => fresh(title)}"), true);
   assert.equal(notes.includes('{shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
@@ -844,7 +856,7 @@ test('the Notes screen is its own room off #/gym/notes, headed by the honesty li
   assert.equal(notes.includes('{showsTitleCount(title) && ('), true);
   assert.equal(notes.includes('{titleCountLabel(title)}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
-  assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>Notes</Back>'), true, 'the editor draws its back through Back.jsx');
+  assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'notes-full') onStale();"), true, 'a full account re-reads the list behind the editor');
   assert.equal(notes.includes('onStale={() => settle(null)}'), true);
   assert.equal(notes.includes('{!note.fresh && ('), true, 'delete is offered only on a stored note');
@@ -1135,7 +1147,7 @@ test('a movement this account minted is tagged `yours`, in the picker and in a r
 
 test('the rename sheet’s proof is the page’s own read, and no number on it is typed in', () => {
   const source = read('Record.jsx');
-  assert.equal(source.includes('record={view.data}'), true);
+  assert.equal(source.includes('record={view.data.record}'), true);
   assert.equal(source.includes('const proof = renameProofOf(record);'), true);
   assert.equal((source.match(/useGymRead\(/g) ?? []).length, 1);
   assert.equal(source.includes('gymApi.record'), true);
@@ -1261,4 +1273,53 @@ test('the backfill takes a date, not a chip: any day up to today, yesterday by d
   assert.equal(/gym-save-cancel|>Cancel</.test(screen), false, 'the bottom door is gone; Back is the one');
   assert.equal(read('gym.css').includes('gym-save-cancel'), false);
   assert.equal(read('gym.css').includes('.gym-when-date'), true, 'the same family as the weigh-in date');
+});
+
+test('a room’s title and a record’s name wear the family’s display title, one step smaller at the shell’s narrow width', () => {
+  const css = read('gym.css');
+  assert.equal(css.includes(`.gym-title,
+.gym-record-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 40px;
+  letter-spacing: 0;
+  color: var(--gym-ink);
+}
+@media (max-width: 480px) {
+  .gym-title,
+  .gym-record-name {
+    font-size: 28px;
+    line-height: 36px;
+  }
+}`), true);
+  assert.equal((css.match(/^\.gym-(title|record-name)[ ,]/gm) ?? []).length, 2, 'the shared rule is the only one either has');
+});
+
+test('every radius is a token, save the sheets, the chart bar and the speech bubble’s tail', () => {
+  const radii = [...read('gym.css').matchAll(/border-radius: ([^;]+);/g)].map((match) => match[1]);
+  const raw = [...new Set(radii.filter((value) => /\d+px/.test(value.replace(/calc\(var\(--radius-\w+\) - 1px\)/g, ''))))];
+  assert.deepEqual(raw, ['26px 26px 0 0', '5px 5px 0 0', 'var(--radius-lg) var(--radius-lg) 5px var(--radius-lg)']);
+});
+
+test('at the narrow width the past workout’s Save band pins to the bottom on the page’s own ground', () => {
+  assert.equal(read('gym.css').includes(`@media (max-width: 480px) {
+  .gym-save {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    background: var(--gym-canvas);
+  }
+}`), true);
+  assert.equal(read('Backfill.jsx').includes('<div className="gym-save">'), true);
+});
+
+test('the routine editor and the note editor carry their back link on its own line, above the head', () => {
+  assert.equal(read('Routines.jsx').includes(`      <Back href={ROUTINES_HREF}>Routines</Back>
+      <header className="gym-editor-head">
+        <span className="gym-editor-name-field">`), true);
+  assert.equal(read('notes/Notes.jsx').includes(`      <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
+      <header className="gym-editor-head">`), true);
 });

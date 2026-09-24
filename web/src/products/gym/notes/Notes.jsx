@@ -8,7 +8,7 @@ import { useRail } from '../rail.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
-  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED,
+  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED, NOTES_TITLE,
   orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
@@ -93,9 +93,10 @@ export function Notes({ log }) {
     <section className="gym-notes">
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-notes-head">
-        <h1 className="gym-title">{HONESTY_LINE}</h1>
+        <h1 className="gym-title">{NOTES_TITLE}</h1>
         <p className="gym-notes-sub">{HEAD_LINE}</p>
       </header>
+      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
 
       {view.phase === 'loading' && held === null && <p className="gym-quiet">Opening your notes…</p>}
       {view.phase === 'failed' && held === null && (
@@ -229,8 +230,8 @@ export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
 
   return (
     <section className="gym-note-editor">
+      <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
       <header className="gym-editor-head">
-        <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>Notes</Back>
         {/* Tappable at every length: over the bound it refuses in place with the store's own
             sentence, so nothing here is ever silently dead. It says it is busy while the save is in
             the air, because it stays tappable through it. */}

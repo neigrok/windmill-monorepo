@@ -376,24 +376,20 @@ test('the review never pushes: no hash moves from a card, the card is a skim, an
   assert.equal(room.includes('<ProposalReview'), true);
   assert.equal(room.includes('onChanged={view.refresh}'), true, 'the card re-reads in place when the dialog learns the proposal moved');
   assert.equal(room.includes('view.retry()'), false, 'a re-read from loading would unmount the dialog and the receipt');
-  assert.equal(room.includes('<p className="gym-proposal-line">{summaryLine(proposal, proposal.baseName)}</p>'), true, 'the card carries the summary it wrote');
-  // The document is drawn once, in this dialog. The card outside it is a skim: how much it is on its
-  // own line under the summary, then what MOVED, three rows at most, then the rest counted.
-  assert.equal(room.includes('<p className="gym-proposal-counted">{countedLabel(proposal)}</p>'), true);
-  assert.ok(room.indexOf('gym-proposal-line') < room.indexOf('gym-proposal-counted'));
+  // The document is drawn once, in this dialog. The card outside it is a skim: its head names the
+  // routine and how much would change, then what MOVED, three rows at most, then the rest counted.
   assert.equal(room.includes('const changed = diffRows(proposal).filter((row) => CARD_ROW_KINDS.includes(row.kind));'), true);
   assert.equal(room.includes('changed.slice(0, CARD_ROW_CAP)'), true);
   assert.equal(room.includes('{moreRowsLabel(changed.length - CARD_ROW_CAP)}'), true);
-  // No kept row, no fold, and no count in the kicker — the kicker names the routine and nothing else.
+  // No kept row and no fold.
   for (const gone of ['collapseKept', 'keptRunLabel', 'gym-diff-unfolded']) {
     assert.equal(room.includes(gone), false, gone);
   }
   assert.equal(fs.readFileSync(path.join(GYM, 'gym.css'), 'utf8').includes('gym-diff-unfolded'), false);
-  assert.equal(room.includes('<span className="gym-proposal-name">{`Proposal · ${proposal.baseName}`}</span>'), true);
-  const kicker = room.slice(room.indexOf('<p className="gym-proposal-kicker">'), room.indexOf('<p className="gym-proposal-line">'));
-  for (const gone of ['countedLabel', 'changeLabel', 'changeCount']) {
-    assert.equal(kicker.includes(gone), false, `the count is off the kicker — ${gone}`);
-  }
+  assert.equal(room.includes(`<span className="gym-proposal-named">
+            <span className="gym-proposal-name">{proposal.baseName}</span>
+            <span className="gym-proposal-count">{\`\\u00a0· \${countedLabel(proposal)}\`}</span>
+          </span>`), true);
   assert.equal(room.includes('setReceipt(receiptLine(settled));'), true);
   assert.equal(room.includes('{receipt && <p className="gym-coach-receipt" role="status">{receipt}</p>}'), true);
   const threads = fs.readFileSync(path.join(GYM, 'coach', 'Threads.jsx'), 'utf8');
@@ -437,7 +433,7 @@ test('the Coach card draws three rows of what moved and counts the rest, and nev
   const many = await coachCard(t, proposal({ changeCount: 5, changes: retargets(5) }));
   assert.equal(lines(many.tree).length, 3);
   assert.deepEqual(findByClass(many.tree, 'gym-diff-more').map(textOf), ['+ 2 more']);
-  assert.deepEqual(findByClass(many.tree, 'gym-proposal-counted').map(textOf), ['5 changes']);
+  assert.deepEqual(findByClass(many.tree, 'gym-proposal-named').map(textOf), ['Push A\u00a0· 5 changes']);
 
   // Two changes inside twenty kept lines: two rows, and nothing counted — the kept run is the routine
   // standing still, which the dialog draws and the card does not.
@@ -459,17 +455,17 @@ test('the rename and the reorder are claims about the document, so only the dial
   const kept = Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'kept', exerciseId: `kept-${at}`, before: { sets: straight(3) }, after: { sets: straight(3) } }));
   const shuffled = await coachCard(t, proposal({ changeCount: 3, changes: kept }));
   assert.deepEqual(findByClass(shuffled.tree, 'gym-diff-row'), []);
-  assert.deepEqual(findByClass(shuffled.tree, 'gym-proposal-counted').map(textOf), ['3 changes']);
+  assert.deepEqual(findByClass(shuffled.tree, 'gym-proposal-named').map(textOf), ['Push A\u00a0· 3 changes']);
   assert.deepEqual(findByClass(shuffled.tree, 'gym-diff-more'), []);
 
-  // A rename spends no card row either; the kicker and the summary above it already name the routine.
+  // A rename spends no card row either; the head above it already names the routine.
   const renamed = await coachCard(t, proposal({
     name: 'Push A · heavy',
     changeCount: 2,
     changes: [...retargets(1), { position: 2, kind: 'kept', exerciseId: 'chin-up', before: { sets: straight(3) }, after: { sets: straight(3) } }],
   }));
   assert.deepEqual(lines(renamed.tree).map((row) => row.props.className), ['gym-diff-row is-retargeted']);
-  assert.deepEqual(findByClass(renamed.tree, 'gym-proposal-counted').map(textOf), ['2 changes']);
+  assert.deepEqual(findByClass(renamed.tree, 'gym-proposal-named').map(textOf), ['Push A\u00a0· 2 changes']);
 
   // Behind Review the document is there, so both rows are drawn and both sentences are true.
   browserWith();
@@ -504,11 +500,9 @@ test('a removal reads as a removal on the Coach card, never as a count of the li
     changeCount: 4,
     changes: Array.from({ length: 4 }, (_, at) => ({ position: at + 1, kind: 'removed', exerciseId: `mv-${at}`, before: { sets: straight(3, 8, 60) } })),
   }));
-  assert.deepEqual(findByClass(removal.tree, 'gym-proposal-counted').map(textOf), ['a removal']);
-  // The routine is named twice above it already — in the kicker and in the summary — so the counted
-  // phrase names nobody and reads in both intents.
-  assert.deepEqual(findByClass(removal.tree, 'gym-proposal-line').map(textOf), ['A proposal to remove Push A.']);
-  assert.equal(textOf(findByClass(removal.tree, 'gym-proposal-kicker')[0]), 'Proposal · Push Astill waiting');
+  // The head names the routine beside the counted phrase, so the phrase names nobody and reads in
+  // both intents.
+  assert.equal(textOf(findByClass(removal.tree, 'gym-proposal-kicker')[0]), 'Push A\u00a0· a removalstill waiting');
 });
 
 // The routines home holds two of these at once — one opened from a standing card, one from the

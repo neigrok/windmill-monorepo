@@ -15,7 +15,7 @@ import { Notes } from './notes/Notes.jsx';
 import { MovementRecord } from './Record.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
 import {
-  COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, ROUTINES_HREF, routineIdOf, screenOf,
+  COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, recordFromOf, ROUTINES_HREF, routineIdOf, screenOf,
   sessionIdOf, sharedTokenOf, threadIdOf,
 } from './log.js';
 import { SharedSession } from './share/SharedSession.jsx';
@@ -109,7 +109,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
         {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
         {screen === 'bodyweight' && <BodyweightScreen log={log} />}
-        {screen === 'record' && <MovementRecord id={movementIdOf(hash)} log={log} />}
+        {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
