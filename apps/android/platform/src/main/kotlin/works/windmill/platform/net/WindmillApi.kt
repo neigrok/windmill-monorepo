@@ -39,9 +39,11 @@ val WindmillJson: Json = Json {
 class WindmillApi(
     val baseUrl: HttpUrl,
     private val credential: () -> String?,
-    private val client: OkHttpClient = OkHttpClient(),
+    client: OkHttpClient = OkHttpClient(),
     @PublishedApi internal val telemetry: Telemetry = Telemetry.None,
 ) {
+    private val transport = RequestDiagnostics.attachTo(client)
+
     suspend inline fun <reified Reply> get(path: String, operation: String = "http_request"): Reply = send("GET", path, operation = operation)
 
     suspend inline fun <reified Reply> send(method: String, path: String, body: Any? = null, timeoutSeconds: Long? = null, operation: String = "http_request"): Reply =
@@ -55,26 +57,30 @@ class WindmillApi(
     ): Captured<Reply> = exchange(method, path, body, null, "auth_request")
 
     @PublishedApi
-    internal suspend inline fun <reified Reply> exchange(method: String, path: String, body: Any?, timeoutSeconds: Long?, operation: String): Captured<Reply> =
-        try {
-            val answer = perform(method, path, encode(body), timeoutSeconds)
+    internal suspend inline fun <reified Reply> exchange(method: String, path: String, body: Any?, timeoutSeconds: Long?, operation: String): Captured<Reply> {
+        val diagnostics = RequestDiagnostics()
+        return try {
+            val answer = perform(method, path, encode(body), timeoutSeconds, diagnostics)
+            diagnostics.phase = NetworkPhase.Decode
             Captured(decode(answer.body), sessionCookie(answer.headers))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             val failure = error as? WindmillApiException ?: WindmillApiException.Unexpected(error)
-            report(method, path, operation, failure)
+            report(method, path, operation, failure, diagnostics)
             throw failure
         }
+    }
 
     @PublishedApi
-    internal fun report(method: String, path: String, operation: String, error: Throwable) {
+    internal fun report(method: String, path: String, operation: String, error: Throwable, diagnostics: RequestDiagnostics) {
         val properties = mutableMapOf(
             "method" to method,
             "route" to path.substringBefore('?').substringBefore('#').split('/').take(3).joinToString("/"),
             "failure_kind" to TelemetryPolicy.failureKind(error),
             "operation" to TelemetryPolicy.operation(operation),
         )
+        properties.putAll(diagnostics.properties())
         if (error is WindmillApiException.Refused) properties["status"] = error.status.toString()
         telemetry.event("api_request_failed", properties)
         if (TelemetryPolicy.report(error)) telemetry.failure(operation, error, properties)
@@ -88,23 +94,29 @@ class WindmillApi(
         timeoutSeconds: Long? = null,
         operation: String = "http_request",
         read: (Response) -> Reply,
-    ): Reply = try {
-        execute(method, path, body, accept, timeoutSeconds, read)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        val failure = when (error) {
-            is WindmillApiException -> error
-            is SerializationException -> WindmillApiException.Malformed
-            else -> WindmillApiException.Unexpected(error)
+    ): Reply {
+        val diagnostics = RequestDiagnostics()
+        return try {
+            execute(method, path, body, accept, timeoutSeconds, diagnostics, read)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            val failure = when (error) {
+                is WindmillApiException -> error
+                is SerializationException -> {
+                    diagnostics.phase = NetworkPhase.Decode
+                    WindmillApiException.Malformed
+                }
+                else -> WindmillApiException.Unexpected(error)
+            }
+            report(method, path, operation, failure, diagnostics)
+            throw failure
         }
-        report(method, path, operation, failure)
-        throw failure
     }
 
     @PublishedApi
-    internal suspend fun perform(method: String, path: String, json: String?, timeoutSeconds: Long? = null): Answer =
-        execute(method, path, json?.toRequestBody("application/json".toMediaType()), "application/json", timeoutSeconds) {
+    internal suspend fun perform(method: String, path: String, json: String?, timeoutSeconds: Long?, diagnostics: RequestDiagnostics): Answer =
+        execute(method, path, json?.toRequestBody("application/json".toMediaType()), "application/json", timeoutSeconds, diagnostics) {
             Answer(it.code, it.body?.string().orEmpty(), it.headers)
         }
 
@@ -114,24 +126,26 @@ class WindmillApi(
         body: RequestBody?,
         accept: String,
         timeoutSeconds: Long?,
+        diagnostics: RequestDiagnostics,
         read: (Response) -> Reply,
     ): Reply {
         val url = baseUrl.resolve(path) ?: throw WindmillApiException.Malformed
-        val request = Request.Builder().url(url).header("Accept", accept)
+        val request = Request.Builder().url(url).header("Accept", accept).tag(RequestDiagnostics::class.java, diagnostics)
             .apply { credential()?.let { header("Authorization", "Bearer $it") } }
             .method(method, body ?: if (method == "POST" || method == "PUT" || method == "PATCH") ByteArray(0).toRequestBody() else null)
             .build()
         return try {
-            val transport = if (timeoutSeconds == null) client else client.newBuilder()
+            val requestClient = if (timeoutSeconds == null) transport else transport.newBuilder()
                 .readTimeout(timeoutSeconds, TimeUnit.SECONDS).callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
             suspendCancellableCoroutine { continuation ->
-                val call = transport.newCall(request)
+                val call = requestClient.newCall(request)
                 continuation.invokeOnCancellation { call.cancel() }
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, error: IOException) {
                         continuation.resumeWith(Result.failure(error))
                     }
                     override fun onResponse(call: Call, response: Response) {
+                        diagnostics.phase = NetworkPhase.ResponseBody
                         continuation.resumeWith(runCatching {
                             response.use {
                                 if (!it.isSuccessful) throw WindmillApiException.Refused(it.code,

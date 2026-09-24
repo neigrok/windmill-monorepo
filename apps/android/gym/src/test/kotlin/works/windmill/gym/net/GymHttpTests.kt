@@ -12,6 +12,7 @@ import works.windmill.gym.domain.AskQuestion
 import works.windmill.platform.net.WindmillApi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import works.windmill.gym.domain.ExerciseWrite
@@ -98,9 +99,12 @@ class GymHttpTests {
         )
         val expected = actions.map { (operation, method) -> operation to mapOf(
             "method" to method, "route" to "/v1/gym", "failure_kind" to "http", "operation" to operation, "status" to "503",
+            "network_phase" to "response_body",
         ) }
-        assertEquals(expected.map { "api_request_failed" to it.second }, events)
-        assertEquals(expected, failures)
+        assertEquals(expected.map { "api_request_failed" to it.second }, events.map { it.first to it.second.minus("duration_ms") })
+        assertEquals(expected, failures.map { it.first to it.second.minus("duration_ms") })
+        assertEquals(events.map { it.second }, failures.map { it.second })
+        assertTrue(failures.all { it.second.getValue("duration_ms").toLong() >= 0 })
     }
 
     @Test

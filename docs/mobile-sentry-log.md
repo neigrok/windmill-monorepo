@@ -45,3 +45,29 @@ is unchanged.
 
 Android SDK collector tests establish the existing privacy and delivery behavior locally. APK
 inspection and direct intake probes do not establish crash delivery from an installed updated app.
+
+## Android HTTP diagnostics — 2026-09-24
+
+HTTP failures carry nonnegative monotonic `duration_ms` and a bounded `network_phase`. Diagnostics
+belong to each invocation, including request preparation, dispatcher wait, response consumption and
+decode. The HTTP client preserves its caller's event listener. Analytics batches share one client
+and connection pool while retaining each batch's credential snapshot. Delivery reports keep those
+diagnostics, report once per failure streak and never enqueue another analytics event.
+
+- The 26 focused platform tests passed with no failures or skips. Local collectors verified real
+  header/body timeouts, concurrent phase isolation, listener composition, Coach's 660-second timeout,
+  elapsed consumption/decode time, connection reuse across account changes, private-field exclusion
+  and nonrecursive delivery diagnostics. Queue tests verified retry identity, wrapped offline
+  suppression and reset of the failure-streak guard after a successful batch.
+- The full Android Gradle build, including lint, passed. Debug and Release each reported 1,332 passed
+  tests, 12 skipped and zero failures or errors, out of 1,344 tests. All 18 release-tool tests passed.
+- The existing backend on port 8088 accepted two diagnostic events with HTTP 202. Postgres retained
+  exact numeric durations `120`/`121` and phases `response_headers`/`response_body`. Scratch rows were
+  deleted, with zero remaining rows confirmed.
+- No native app installation or release was performed for this change. Local collectors and intake
+  storage checks do not establish receipt from an installed updated app.
+
+The request owns timing and phase state; the client owns listener composition and pooled sockets.
+This keeps concurrent diagnostics isolated without rebuilding transport resources for each batch.
+The queue's existing retry boundary owns report suppression, so diagnostics do not add a second
+retry loop or recursive telemetry path.

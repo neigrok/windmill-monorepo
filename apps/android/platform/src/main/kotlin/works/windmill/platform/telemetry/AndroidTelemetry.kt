@@ -5,8 +5,11 @@ import android.util.Log
 import io.sentry.Sentry
 import io.sentry.SentryEvent
 import io.sentry.android.core.SentryAndroid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import works.windmill.platform.net.RequestDiagnostics
 import works.windmill.platform.net.WindmillApi
 
 class AndroidTelemetry(
@@ -25,6 +28,7 @@ class AndroidTelemetry(
         "app_version" to version, "build" to build,
     )
     private val events: EventQueue
+    private val client = RequestDiagnostics.attachTo(OkHttpClient())
 
     init {
         val prefs = runCatching { context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE) }
@@ -34,9 +38,23 @@ class AndroidTelemetry(
             read = { prefs?.getString("queue", null) },
             write = { prefs?.edit()?.putString("queue", it)?.commit() == true },
             send = { batch, bearer ->
-                WindmillApi(baseUrl, { bearer }).send<EventBatchOut>("POST", "/v1/events", batch).accepted
+                var failureProperties = emptyMap<String, String>()
+                val diagnostics = object : Telemetry {
+                    override fun event(name: String, properties: Map<String, String>) {
+                        if (name == "api_request_failed") failureProperties = properties.toMap()
+                    }
+                    override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {}
+                }
+                try {
+                    WindmillApi(baseUrl, { bearer }, client, diagnostics)
+                        .send<EventBatchOut>("POST", "/v1/events", batch, operation = "telemetry_delivery").accepted
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    throw EventDeliveryFailure(error, failureProperties)
+                }
             },
-            failure = { operation, error -> capture(operation, error) },
+            failure = { operation, error, properties -> capture(operation, error, properties) },
             scope = scope,
         )
     }

@@ -25,13 +25,15 @@ private data class EventShelf(val sessionKey: String, val userId: String?, val e
 @Serializable
 private data class EventStore(val shelves: List<EventShelf>)
 
+internal class EventDeliveryFailure(val error: Throwable, val properties: Map<String, String>) : Exception(error)
+
 class EventQueue(
     userId: String?,
     credential: String?,
     read: () -> String?,
     private val write: (String) -> Boolean,
     private val send: suspend (EventBatchIn, String?) -> Int,
-    private val failure: (String, Throwable) -> Unit,
+    private val failure: (String, Throwable, Map<String, String>) -> Unit,
     scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val retryMs: Long = 30_000,
@@ -45,7 +47,7 @@ class EventQueue(
     private var store = try {
         read()?.let { WindmillJson.decodeFromString<EventStore>(it) } ?: EventStore(emptyList())
     } catch (error: Exception) {
-        failure("telemetry_restore", error)
+        failure("telemetry_restore", error, emptyMap())
         EventStore(emptyList())
     }
 
@@ -63,7 +65,7 @@ class EventQueue(
                     try {
                         val accepted = send(batch, bearer)
                         if (accepted != batch.events.size) {
-                            failure("telemetry_rejected", IllegalStateException("Event intake rejected entries"))
+                            failure("telemetry_rejected", IllegalStateException("Event intake rejected entries"), emptyMap())
                         }
                         synchronized(lock) {
                             store = store.copy(shelves = store.shelves.map {
@@ -76,8 +78,10 @@ class EventQueue(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
-                        if (!deliveryReported && TelemetryPolicy.report(error)) {
-                            failure("telemetry_delivery", error)
+                        val delivery = error as? EventDeliveryFailure
+                        val cause = delivery?.error ?: error
+                        if (!deliveryReported && TelemetryPolicy.report(cause)) {
+                            failure("telemetry_delivery", cause, delivery?.properties.orEmpty())
                             deliveryReported = true
                         }
                         delay(retryMs)
@@ -100,11 +104,11 @@ class EventQueue(
 
     fun add(name: String, properties: Map<String, String>) = synchronized(lock) {
         if (!Regex("[a-z0-9_]{1,64}").matches(name)) {
-            failure("telemetry_event_name", IllegalArgumentException("Invalid event name"))
+            failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())
             return@synchronized
         }
         if (store.shelves.sumOf { it.events.size } >= 500) {
-            if (!overflowReported) failure("telemetry_overflow", IllegalStateException("Event queue reached capacity"))
+            if (!overflowReported) failure("telemetry_overflow", IllegalStateException("Event queue reached capacity"), emptyMap())
             overflowReported = true
             return@synchronized
         }
@@ -125,7 +129,7 @@ class EventQueue(
             check(write(WindmillJson.encodeToString(EventStore.serializer(), store)))
             storageReported = false
         } catch (error: Exception) {
-            if (!storageReported) failure("telemetry_persist", error)
+            if (!storageReported) failure("telemetry_persist", error, emptyMap())
             storageReported = true
         }
     }

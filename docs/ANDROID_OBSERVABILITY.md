@@ -31,8 +31,13 @@ batch is stored; it does not prove Amplitude has accepted the asynchronous forwa
 The SDK captures uncaught JVM crashes and Android ANRs. Shared HTTP reporting captures unexpected
 responses, malformed successful bodies, response timeouts, interrupted transport and failures while
 encoding a request or resolving credentials. Each HTTP failure has a method, a coarse route family,
-a static operation and a failure kind. Products supply operations such as `gym_ask` so dynamic
-resource IDs and query strings never enter the report.
+a static operation, a failure kind, `duration_ms` and `network_phase`. Duration uses a monotonic clock
+from the start of each invocation through response consumption and decoding. The phase is one of
+`prepare`, `queued`, `dns`, `connect`, `tls`, `request_headers`, `request_body`, `response_headers`,
+`response_body` or `decode`; it identifies the last observed boundary rather than proving a root
+cause. Concurrent calls keep separate diagnostics, and an injected client's event listener still
+receives its callbacks. Products supply operations such as `gym_ask` so dynamic resource IDs and
+query strings never enter the report. Phase labels contain no URL, host, IP address or body data.
 
 Expected HTTP statuses 400, 401, 403, 404, 409, 422 and 429 produce product/API failure metrics rather
 than Sentry issues. DNS/connect failures produce `failure_kind=offline` metrics; cancellation is
@@ -67,7 +72,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | storage |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, storage, outcome |
-| Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind |
+| Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms, network_phase |
 
 ## Delivery and limits
 
@@ -75,6 +80,11 @@ The event queue persists before sending, sends batches of at most 50 and retries
 30 seconds while the process runs. It retains at most 500 events across accounts. A full queue
 rejects new events and reports `telemetry_overflow` once until delivery frees capacity. Storage and
 unexpected delivery failures are reported to Sentry without recursively emitting another event.
+Analytics batches share one OkHttp client and connection pool. Each batch captures its own bearer
+before delivery; reusing a connection does not reuse another account's credentials. A reportable
+delivery failure carries `operation=telemetry_delivery`, `method=POST`, `route=/v1/events`, elapsed
+duration and network phase. It reports once per uninterrupted failure streak and resets after a
+successful batch.
 A partial acceptance count reports `telemetry_rejected` and removes the entire submitted batch;
 the client cannot identify individual rejected entries, so those entries are lost. An unreadable
 acknowledgement fails decoding and retries the batch with its original event IDs.
@@ -102,10 +112,16 @@ python3 -m unittest discover -s tools/tests -v
 
 `AndroidTelemetryTest` starts the real Sentry SDK against a local HTTP collector and uses the real
 first-party HTTP transport against another local collector. It checks private message exclusion,
-release/environment attribution, repeated singleton errors, persisted event IDs and numeric Coach
-latency. `EventQueueTest` checks retry identity, restart recovery, account isolation and storage and
-delivery failure reporting. HTTP tests distinguish server/malformed failures, expected refusals and
-timeouts. The gym suite checks product outcomes and handled-error ownership.
+release/environment attribution, repeated singleton errors, numeric latency, bounded phase labels,
+connection reuse across account changes and delivery diagnostics without recursive analytics events.
+`EventQueueTest` checks retry identity, restart recovery, account isolation, offline suppression and
+one delivery report per failure streak. HTTP tests distinguish header and body timeouts, keep phases
+separate across concurrent requests, preserve an injected event listener and measure consumption and
+decode time while retaining Coach's timeout. The gym suite checks product outcomes and handled-error
+ownership.
+
+The 2026-09-24 full Gradle build and lint passed. Debug and Release each reported 1,332 passed tests,
+12 skipped and zero failures or errors; the 26 focused transport/telemetry tests passed without skips.
 
 The 18 release-tool tests cover signing custody, provenance, private build logs and missing telemetry
 configuration. Release configuration checks cover both the Gradle DSN gate and the signing-input

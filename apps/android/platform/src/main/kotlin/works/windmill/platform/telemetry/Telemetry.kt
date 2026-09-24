@@ -2,6 +2,7 @@ package works.windmill.platform.telemetry
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.CancellationException
+import works.windmill.platform.net.NetworkPhase
 import works.windmill.platform.net.WindmillApiException
 
 interface Telemetry {
@@ -22,12 +23,15 @@ object TelemetryPolicy {
     private val keys = setOf(
         "operation", "outcome", "failure_kind", "status", "storage", "cap", "action",
         "method", "route", "state", "release", "environment", "platform",
-        "app_version", "build", "duration_ms", "screen",
+        "app_version", "build", "duration_ms", "network_phase", "screen",
     )
 
     fun properties(properties: Map<String, String>): Map<String, String> {
         var bytes = 2
-        return properties.filter { (key, value) -> key in keys && label.matches(value) }.entries
+        return properties.filter { (key, value) ->
+            key in keys && label.matches(value) &&
+                (key != "network_phase" || NetworkPhase.entries.any { it.value == value })
+        }.entries
             .takeWhile { bytes += it.key.length + it.value.length + 6; bytes <= 900 }
             .associate { it.key to it.value }
     }

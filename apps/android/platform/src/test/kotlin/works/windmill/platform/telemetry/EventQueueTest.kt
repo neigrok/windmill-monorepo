@@ -21,9 +21,11 @@ class EventQueueTest {
         val queue = EventQueue(null, null, { disk }, { disk = it; true }, { batch, bearer ->
             assertNull(bearer)
             attempts += batch
-            if (!online) throw WindmillApiException.Offline
+            if (!online) throw EventDeliveryFailure(WindmillApiException.Offline, mapOf(
+                "method" to "POST", "route" to "/v1/events", "duration_ms" to "10", "network_phase" to "dns",
+            ))
             batch.events.size
-        }, { operation, _ -> failures += operation }, backgroundScope, now = { 123L }, retryMs = 100)
+        }, { operation, _, _ -> failures += operation }, backgroundScope, now = { 123L }, retryMs = 100)
         queue.add("app_started", mapOf("screen" to "coach", "question" to "private message", "status" to "200"))
         runCurrent()
         assertEquals(1, attempts.size)
@@ -46,7 +48,7 @@ class EventQueueTest {
         val queue = EventQueue("first", "first-secret", { disk }, { disk = it; true }, { batch, bearer ->
             sent += batch to bearer
             batch.events.size
-        }, { _, error -> throw AssertionError(error) }, backgroundScope, now = { 123L })
+        }, { _, error, _ -> throw AssertionError(error) }, backgroundScope, now = { 123L })
         queue.add("first_event", emptyMap())
         queue.identity(null, null)
         queue.add("anonymous_event", emptyMap())
@@ -60,7 +62,7 @@ class EventQueueTest {
         val restored = EventQueue("first", "first-renewed", { disk }, { disk = it; true }, { batch, bearer ->
             sent += batch to bearer
             batch.events.size
-        }, { _, error -> throw AssertionError(error) }, backgroundScope)
+        }, { _, error, _ -> throw AssertionError(error) }, backgroundScope)
         runCurrent()
         assertEquals("first_event", sent.last().first.events.single().name)
         assertEquals("first-renewed", sent.last().second)
@@ -76,7 +78,7 @@ class EventQueueTest {
         val queue = EventQueue(null, null, { null }, { writes }, { batch, _ ->
             if (!online) throw IllegalStateException("failed intake")
             batch.events.size
-        }, { operation, _ -> failures += operation }, backgroundScope, retryMs = 100)
+        }, { operation, _, _ -> failures += operation }, backgroundScope, retryMs = 100)
         queue.add("app_started", emptyMap())
         runCurrent()
         advanceTimeBy(200)
@@ -87,5 +89,41 @@ class EventQueueTest {
         advanceTimeBy(100)
         runCurrent()
         assertEquals(listOf("telemetry_persist", "telemetry_delivery"), failures)
+    }
+
+    @Test
+    fun deliveryDiagnosticsReportOncePerFailureStreakAndResetAfterSuccess() = runTest {
+        var online = false
+        var attempts = 0
+        val failure = WindmillApiException.Timeout(java.io.InterruptedIOException("private transport detail"))
+        val diagnostics = mapOf(
+            "method" to "POST", "route" to "/v1/events", "network_phase" to "response_body",
+            "duration_ms" to "40", "operation" to "http_request", "failure_kind" to "timeout",
+        )
+        val reports = mutableListOf<Pair<String, Map<String, String>>>()
+        val queue = EventQueue(null, null, { null }, { true }, { batch, _ ->
+            attempts += 1
+            if (!online) throw EventDeliveryFailure(failure, diagnostics)
+            batch.events.size
+        }, { operation, error, properties ->
+            assertEquals(failure, error)
+            reports += operation to properties
+        }, backgroundScope, retryMs = 100)
+        queue.add("app_started", emptyMap())
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+        assertEquals(3, attempts)
+        assertEquals(listOf("telemetry_delivery" to diagnostics), reports)
+
+        online = true
+        advanceTimeBy(100)
+        runCurrent()
+        assertEquals(4, attempts)
+        online = false
+        queue.add("app_foregrounded", emptyMap())
+        runCurrent()
+        assertEquals(5, attempts)
+        assertEquals(List(2) { "telemetry_delivery" to diagnostics }, reports)
     }
 }
