@@ -52,7 +52,7 @@ jobs:
       # directory, so the whole repo must be checked out.
       - run: ./gradlew build
         env:
-          SENTRY_DSN: https://ci-placeholder@telemetry.invalid/1
+          ANDROID_SENTRY_DSN: https://ci-placeholder@telemetry.invalid/1
 
   signing-input:
     if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'
@@ -83,11 +83,11 @@ jobs:
       - name: Assemble the build candidate
         env:
           VERSION: ${{ steps.candidate.outputs.version }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ANDROID_SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN }}
         run: |
           umask 077
-          if [ -z "$SENTRY_DSN" ]; then
-            echo "SENTRY_DSN is required for Android release observability." >&2
+          if [ -z "$ANDROID_SENTRY_DSN" ]; then
+            echo "ANDROID_SENTRY_DSN is required for Android release observability." >&2
             exit 1
           fi
           if ! ./gradlew --no-daemon :app:assembleRelease \

@@ -396,7 +396,7 @@ class ReleaseTests(unittest.TestCase):
     def test_workflow_never_receives_private_signing_secrets_or_publishes_a_release(self):
         workflow = Path(__file__).resolve().parents[4] / '.github/workflows/android.yml'
         source = workflow.read_text()
-        sentry = '          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}\n'
+        sentry = '          ANDROID_SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN }}\n'
         self.assertEqual(source.count(sentry), 1)
         self.assertNotIn('secrets', source.replace(sentry, '', 1))
         self.assertNotIn('WINDMILL_ANDROID_', source)
@@ -410,7 +410,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('path: apps/android/signing-input/', upload)
         self.assertIn('python3 tools/release.py stage', source)
 
-    def test_candidate_refuses_missing_sentry_dsn_before_running_gradle(self):
+    def test_candidate_refuses_missing_android_dsn_even_with_backend_dsn(self):
         workflow = Path(__file__).resolve().parents[4] / '.github/workflows/android.yml'
         lines = workflow.read_text().splitlines()
         start = lines.index('      - name: Assemble the build candidate')
@@ -424,16 +424,17 @@ class ReleaseTests(unittest.TestCase):
         gradle = self.root / 'gradlew'
         gradle.write_text('#!/bin/sh\ntouch gradle-called\n')
         gradle.chmod(0o700)
-        env = dict(os.environ, RUNNER_TEMP=str(self.root), VERSION='0.8.0', GITHUB_RUN_NUMBER='57')
-        env.pop('SENTRY_DSN', None)
+        env = dict(os.environ, RUNNER_TEMP=str(self.root), VERSION='0.8.0', GITHUB_RUN_NUMBER='57',
+                   SENTRY_DSN='https://backend-fixture@telemetry.invalid/2')
+        env.pop('ANDROID_SENTRY_DSN', None)
         for value in (None, ''):
             with self.subTest(dsn=value):
                 if value is not None:
-                    env['SENTRY_DSN'] = value
+                    env['ANDROID_SENTRY_DSN'] = value
                 build = subprocess.run(['bash', '-e', '-c', '\n'.join(block)], cwd=self.root,
                                        env=env, capture_output=True, text=True)
                 self.assertEqual((build.returncode, build.stdout, build.stderr),
-                                 (1, '', 'SENTRY_DSN is required for Android release observability.\n'))
+                                 (1, '', 'ANDROID_SENTRY_DSN is required for Android release observability.\n'))
                 self.assertFalse((self.root / 'gradle-called').exists())
                 self.assertFalse((self.root / 'windmill-android-candidate-build.log').exists())
 
@@ -457,7 +458,7 @@ class ReleaseTests(unittest.TestCase):
         gradle.write_text('#!/bin/sh\nprintf "private diagnostic fixture\\n" >&2\nexit 1\n')
         gradle.chmod(0o700)
         env = dict(os.environ, RUNNER_TEMP=str(self.root), VERSION='0.8.0', GITHUB_RUN_NUMBER='57',
-                   SENTRY_DSN='https://test-fixture@telemetry.invalid/1')
+                   ANDROID_SENTRY_DSN='https://test-fixture@telemetry.invalid/1')
         build = subprocess.run(['bash', '-e', '-c', run_block('Assemble the build candidate')], cwd=self.root,
                                env=env, capture_output=True, text=True)
         self.assertEqual((build.returncode, build.stdout, build.stderr),

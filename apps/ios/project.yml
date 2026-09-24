@@ -16,8 +16,27 @@ options:
 packages:
   WindmillKit:
     path: WindmillKit
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa.git
+    exactVersion: 9.29.0
 
 targets:
+  WindmillCrashReportTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/App
+      - path: App/CrashReports.swift
+    dependencies:
+      - package: Sentry
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.crash-report-tests
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: "YES"
+
   # The leading edge means two things — the shell's way home at the room's root, the room's own back
   # once it has pushed — and which one it means can only be settled by a real touch on a real
   # simulator. That is what `UITests` is for; it is run by this scheme's `test` action.
@@ -44,9 +63,11 @@ targets:
     scheme:
       testTargets:
         - WindmillUITests
+        - WindmillCrashReportTests
     sources:
       - path: App
     dependencies:
+      - package: Sentry
       - package: WindmillKit
         product: WindmillPlatform
       - package: WindmillKit
@@ -67,6 +88,19 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: "YES"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
+        IOS_SENTRY_DSN: ""
+    preBuildScripts:
+      - name: Validate iOS crash reporting
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$CONFIGURATION" != "Release" ]; then exit 0; fi
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          dsn = urlparse(os.environ.get("IOS_SENTRY_DSN", ""))
+          if not (dsn.scheme == "https" and dsn.hostname and dsn.username and dsn.path.strip("/").isdigit()):
+              raise SystemExit("error: Release crash reporting requires a valid IOS_SENTRY_DSN build setting for the iOS Sentry project.")
+          PY
     # The app's claim on windmill.works links, so the emailed magic link opens THIS app instead of
     # Safari (Shell.swift's onOpenURL → AuthStore.arrived). The entitlement is the half that lives in
     # the repo; it does nothing on its own. iOS only honours it when the DOMAIN serves
@@ -96,6 +130,7 @@ targets:
         # (WindmillApi.resolvedBaseURL); point it at http://localhost:8088 to run against the local
         # windmill_server, which the ATS exception below is what makes possible.
         WMApiBaseURL: ""
+        IOS_SENTRY_DSN: $(IOS_SENTRY_DSN)
         # Sign in with Apple stays OFF until there is a paid team, the capability, and the four
         # server env vars. Off means the button is absent, never present-and-broken.
         WMAppleSignInEnabled: false

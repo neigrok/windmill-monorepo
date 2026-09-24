@@ -7,10 +7,13 @@ workout stores, notifications and Compose provider; tests default to `Telemetry.
 
 ## Configuration
 
-Release assembly requires `SENTRY_DSN`, or `-Pwindmill.sentryDsn`, with a valid HTTPS DSN. The Android
-signing-input CI job uses the existing repository `SENTRY_DSN` secret and fails when absent. The
+Release assembly requires `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, with a valid HTTPS DSN for
+the dedicated [Android Sentry project](https://none-gcb.sentry.io/projects/android/). The Android
+signing-input CI job uses the repository `ANDROID_SENTRY_DSN` secret and fails when absent.
+It does not consume the backend's `SENTRY_DSN`. The
 build-and-test job uses a nonproduction placeholder so its full debug/release build requires no
 production credentials. Release publication still requires local signing and native acceptance.
+The DSN is embedded at build time; installed builds keep their original destination until updated.
 
 Sentry initializes before session or workout storage reads. Errors carry `platform=android`,
 release `android-<version>-<source revision>`, distribution/version code and environment. CI supplies
@@ -107,7 +110,8 @@ timeouts. The gym suite checks product outcomes and handled-error ownership.
 The 18 release-tool tests cover signing custody, provenance, private build logs and missing telemetry
 configuration. Release configuration checks cover both the Gradle DSN gate and the signing-input
 workflow: missing or invalid DSNs fail Gradle validation, and the workflow refuses a missing DSN
-before starting the build while keeping private signing configuration out of CI.
+before starting the build, even when the backend DSN is configured, while keeping private signing
+configuration out of CI.
 
 Native acceptance passed for the published
 [0.8.2 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.2) (version code 76, source
@@ -131,6 +135,8 @@ emulator was stopped. These checks establish native vendor receipt for the teste
 not establish offline fatal-event persistence or delivery of every exception.
 
 The shared boundary keeps vendor APIs out of product code and makes missed outcomes testable with a
-recording `Telemetry`. A remaining performance consideration is the small synchronous preference
+recording `Telemetry`. Project selection stays at the build boundary so Android and backend routing
+are configured independently without changing shared error reporting or privacy filters.
+A remaining performance consideration is the small synchronous preference
 commit made for every queued event. Native end-to-end acceptance and a live vendor receipt remain
 separate checks from local collectors; build success alone is not evidence of either.

@@ -51,9 +51,18 @@ jobs:
           xcrun simctl list devices available | grep -m1 iPhone
 
       - name: Build the app
+        env:
+          IOS_SENTRY_DSN: ${{ github.event_name != 'pull_request' && secrets.IOS_SENTRY_DSN || '' }}
         run: |
           xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
-            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO
+            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO \
+            IOS_SENTRY_DSN="$IOS_SENTRY_DSN"
+
+      - name: Test crash report routing and privacy
+        run: |
+          xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:WindmillCrashReportTests CODE_SIGNING_ALLOWED=NO
 
       # The ladder test reads packages/api-contract/gym-ladder.json by walking up from #filePath, so
       # the whole repo must be checked out. Run from the package directory: WindmillKit-Package is

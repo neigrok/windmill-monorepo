@@ -28,7 +28,7 @@ the dependency does not exist in any product's build file.
 
 ```sh
 export JAVA_HOME=…    # JDK 17+; Android Studio's bundled JBR works, CI uses temurin 21
-SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build  # local verification only
+ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build  # local verification only
 ```
 
 - `local.properties` names the SDK (`sdk.dir=…`); Android Studio writes it on first open.
@@ -48,8 +48,9 @@ Release builds initialize Sentry before local account and workout storage. The s
 reports unexpected handled failures, including timeouts and malformed replies; product stores report
 handled local failures. Behavioral events persist in an account-isolated queue and reach Amplitude
 through `/v1/events`. Coach events include outcome and numeric latency without question or answer
-content. Release assembly requires `SENTRY_DSN`; signing-input CI consumes the existing repository
-secret. Debug telemetry is disabled by default and can be enabled with `-Pwindmill.debugTelemetry=true`.
+content. Release assembly requires `ANDROID_SENTRY_DSN`; signing-input CI consumes the repository
+secret of that name for the dedicated Android Sentry project. `-Pwindmill.sentryDsn` overrides it for
+local builds. Debug telemetry is disabled by default and can be enabled with `-Pwindmill.debugTelemetry=true`.
 See [`docs/ANDROID_OBSERVABILITY.md`](../../docs/ANDROID_OBSERVABILITY.md) for event names, privacy,
 delivery limits and collector tests. The placeholder DSN in the local build command is for validation
 only; a distributable release requires the configured project DSN.

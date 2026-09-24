@@ -10,6 +10,8 @@ subscription.
 project.yml          the app target, declared (XcodeGen). Windmill.xcodeproj is GENERATED, not committed
 App/
   WindmillApp.swift  the composition root — the only file that knows all three products exist
+  CrashReports.swift  dedicated iOS Sentry configuration and privacy scrub
+Tests/App/           app integration tests, including crash report routing and privacy
 WindmillKit/         the Swift package: everything that isn't the app bundle
   Sources/
     WindmillPlatform/  account · wire · session · the ProductModule seam · tokens · shell chrome
@@ -53,6 +55,29 @@ xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
   `http://localhost:8088` for the local backend; the ATS local-networking exception is declared.
 - The `WindmillGym` ladder suite reads `packages/api-contract/gym-ladder.json` out of the checkout,
   so the whole monorepo must be present.
+
+## Crash reports
+
+The app uses Sentry Cocoa with the dedicated iOS project's `IOS_SENTRY_DSN` build setting.
+Release builds require it; Debug builds without it send no crash reports. It never reads the
+backend's `SENTRY_DSN`. CI reads the `IOS_SENTRY_DSN` repository secret only on trusted runs.
+
+```sh
+xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
+  -destination 'platform=iOS Simulator,name=iPhone 17' IOS_SENTRY_DSN="$IOS_SENTRY_DSN"
+
+xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
+  -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:WindmillCrashReportTests
+```
+
+Crash reports retain exception types and stacks, release/build and device diagnostics. Exception
+messages, mechanism descriptions/data, user identity, request data, breadcrumbs, extras and custom contexts are
+removed before delivery. Memory introspection, screenshots, view hierarchies, network tracking,
+replay, performance tracing and automatic session tracking are disabled. The Sentry dependency
+lives in the app bundle; product libraries do not depend on it.
+
+CI builds and tests the app but does not upload dSYMs. Production crash frames require the matching
+release dSYMs to be uploaded to the iOS Sentry project before they can be fully symbolicated.
 
 ## The rooms
 

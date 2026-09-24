@@ -13,7 +13,7 @@ val windmillVersionCode = providers.gradleProperty("windmill.versionCode").orNul
 // Empty means the production host; http://10.0.2.2:8088 reaches the local stack from an emulator.
 val windmillApiBase = providers.gradleProperty("windmill.apiBase").orNull ?: ""
 val windmillSentryDsn = providers.gradleProperty("windmill.sentryDsn")
-    .orElse(providers.environmentVariable("SENTRY_DSN")).orElse("")
+    .orElse(providers.environmentVariable("ANDROID_SENTRY_DSN")).orElse("")
 val windmillSourceRevision = providers.gradleProperty("windmill.sourceRevision")
     .orElse(providers.environmentVariable("GITHUB_SHA")).orElse("local")
 val windmillDebugTelemetry = providers.gradleProperty("windmill.debugTelemetry").orElse("false")
@@ -28,7 +28,7 @@ abstract class ValidateReleaseTelemetry : DefaultTask() {
     fun validate() {
         val configured = runCatching { URI(dsn.get()) }.getOrNull()
         check(configured?.scheme == "https" && !configured.host.isNullOrBlank() && !configured.userInfo.isNullOrBlank() && configured.path.matches(Regex("/[0-9]+"))) {
-            "Release telemetry requires a valid SENTRY_DSN or -Pwindmill.sentryDsn."
+            "Release telemetry requires a valid ANDROID_SENTRY_DSN or -Pwindmill.sentryDsn."
         }
     }
 }
