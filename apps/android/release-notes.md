@@ -1,19 +1,21 @@
-# Windmill Gym for Android 0.9.2
+# Windmill Gym for Android 0.9.3
 
-Exercise swipes now follow your finger. See the next or previous exercise while dragging, and
-reverse direction before releasing to stay on the current exercise.
+Coach answers now arrive smoothly and read the way the model wrote them.
 
-- Preview each exercise's own planned sets, logged sets and previous workout.
-- Start a swipe anywhere in the workout body, including the rack. Weight and rep controls stay
-  in place, and a swipe does not log a set.
-- The selected exercise changes after the page settles. Reversing or interrupting a drag preserves
-  the current exercise and its entered weight and reps.
-- Set-strip scrolling, numeric editors, workout clocks and Android's edge Back gesture keep their
-  existing behavior.
+- Streamed text grows word by word instead of dropping in a few lines at a time, and the view
+  keeps the newest words in sight without chasing them. Scrolling back to reread pauses following;
+  Jump to latest resumes it.
+- Answers render their formatting: bold and italic phrases, headings, bullet and numbered lists,
+  inline and fenced code. Markers no longer show as raw asterisks or dashes, including while an
+  answer is still arriving.
+- Tapping a message no longer flashes a ripple. Long press, tap or the accessibility Copy action
+  still copies either message; an answer copies as plain text.
+- Returning to Coach while an answer is still streaming shows what has arrived and continues from
+  there.
 
 ## Installation
 
-Install this APK over 0.9.1 to keep local routines and training. The retained release signing
+Install this APK over 0.9.2 to keep local routines and training. The retained release signing
 identity supports Android's normal in-place update.
 
 Historical APKs through 0.7.1 used different certificates and cannot update in place. Uninstalling
