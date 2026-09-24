@@ -186,12 +186,13 @@ keeps deep chains off the call stack. Engines hold no state between layouts.
 
 `BubbleLayoutEngine.js` — **the default** (`reorder = 'parent-arc'`, `readsCaptions = true`) — a bubble tree: each
 node's children sit on rays around it inside its enclosing circle, every child facing its parent; a
-post-order tuck slides rigid subtrees along their ray until footprints or resting trunk edges touch; islands
-settle by front-chain circle packing with the largest root pinned at the origin. It is the engine measured
-closest on the reader's own complaint — a trunk parent and child 3.4 bodies apart, 24–25 steps in the
-working window — and the only one whose whole-tree fit clears the 6 px body floor by itself. It has no
-shared center or depth ring, so the minimap reads as a constellation. Siblings reorder around their
-trunk parent within an open fan; packed root islands have no drag reorder.
+post-order tuck slides rigid subtrees along their ray until footprints or resting trunk edges touch, or
+discs come within three quarters of a body of air rim to rim, so a step with a short name or none never
+sits on its neighbour; islands settle by front-chain circle packing with the largest root pinned at the
+origin. It is the engine measured closest on the reader's own complaint — a trunk parent and child 3.4
+bodies apart, 24–25 steps in the working window — and the only one whose whole-tree fit clears the 6 px
+body floor by itself. It has no shared center or depth ring, so the minimap reads as a constellation.
+Siblings reorder around their trunk parent within an open fan; packed root islands have no drag reorder.
 
 The tuck has a deterministic work ceiling, `max(1,000,000, 2048 × nodeCount)`, counting subtree
 passes, grid cells and candidate entries. If it runs out, the unfinished move is discarded and

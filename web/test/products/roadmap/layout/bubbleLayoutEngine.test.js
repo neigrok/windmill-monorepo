@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BubbleLayoutEngine } from '../../../../src/products/roadmap/layout/BubbleLayoutEngine.js';
+import { BubbleLayoutEngine, DISC_AIR } from '../../../../src/products/roadmap/layout/BubbleLayoutEngine.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { footprintOf, footprintRect } from '../../../../src/products/roadmap/model/footprint.js';
-import { BODY_WU, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
+import { BODY_WU, ROOT_BODY_SCALE, WORKING_ZOOM } from '../../../../src/products/roadmap/theme.js';
 import { loadDogfoodTree, dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap } from '../fixtures/largeRoadmap.js';
 import {
@@ -20,6 +20,18 @@ function treeOf(nodes) {
 function rectOf(tree, positions, id) {
   const { x, y } = positions.get(id);
   return footprintRect(x, y, footprintOf(tree.nodesById.get(id).label, { root: tree.trunk.primaryParentOf(id) === null }));
+}
+
+// The air between two discs' rims: centre to centre less both bodies' radii, a crowned root's body being the wider.
+function rimToRim(tree, positions, a, b) {
+  const radiusOf = (id) => (BODY_WU * (tree.trunk.primaryParentOf(id) === null ? ROOT_BODY_SCALE : 1)) / 2;
+  const here = positions.get(a);
+  const there = positions.get(b);
+  return Math.hypot(there.x - here.x, there.y - here.y) - radiusOf(a) - radiusOf(b);
+}
+
+function chainOf(length, labelOf) {
+  return treeOf(Array.from({ length }, (_, i) => ({ id: `c${i}`, label: labelOf(i), prerequisites: i === 0 ? [] : [`c${i - 1}`] })));
 }
 
 function segmentHitsRect(a, b, rect) {
@@ -148,19 +160,41 @@ test('a lone node sits at the origin', () => {
   assert.deepEqual(positions.get('only'), { x: 0, y: 0 });
 });
 
-test('a chain grows straight out of its root, each footprint exactly a margin from the one before', () => {
-  const chain = (length) => treeOf(Array.from({ length }, (_, i) => ({ id: `c${i}`, label: `Step ${i + 1}`, prerequisites: i === 0 ? [] : [`c${i - 1}`] })));
+test('a chain grows straight out of its root, each disc exactly its air from the one before', () => {
   for (const length of [2, 50]) {
-    const tree = chain(length);
+    const tree = chainOf(length, (i) => `Step ${i + 1}`);
     const positions = new BubbleLayoutEngine().layout(tree);
     assert.deepEqual(positions.get('c0'), { x: 0, y: 0 });
     for (let i = 1; i < length; i++) {
-      const gap = rectOf(tree, positions, `c${i}`).minX - rectOf(tree, positions, `c${i - 1}`).maxX;
-      assert.ok(Math.abs(gap - 8 / WORKING_ZOOM) < 1e-6, `link ${i} of ${length}: gap ${gap} wu`);
+      const air = rimToRim(tree, positions, `c${i - 1}`, `c${i}`);
+      assert.ok(Math.abs(air - DISC_AIR) < 1e-6, `link ${i} of ${length}: ${air} wu rim to rim`);
       assert.ok(Math.abs(positions.get(`c${i}`).y) < 1e-9, 'the chain stays on the root line');
     }
     assert.deepEqual(footprintOverlaps(tree, positions), []);
   }
+});
+
+test('unnamed steps and lone roots keep the same air between their rims; a wide caption still sets a wider gap', () => {
+  const unnamed = chainOf(5, () => '');
+  const unnamedPositions = new BubbleLayoutEngine().layout(unnamed);
+  for (let i = 1; i < 5; i++) {
+    const air = rimToRim(unnamed, unnamedPositions, `c${i - 1}`, `c${i}`);
+    assert.ok(Math.abs(air - DISC_AIR) < 1e-6, `unnamed link ${i}: ${air} wu rim to rim`);
+  }
+  assert.deepEqual(footprintOverlaps(unnamed, unnamedPositions), []);
+
+  const roots = treeOf([{ id: 'a', label: 'Alpha', prerequisites: [] }, { id: 'b', label: 'Beta', prerequisites: [] }]);
+  const rootPositions = new BubbleLayoutEngine().layout(roots);
+  const rootAir = rimToRim(roots, rootPositions, 'a', 'b');
+  assert.ok(Math.abs(rootAir - DISC_AIR) < 1e-6, `two crowned roots: ${rootAir} wu rim to rim`);
+  assert.deepEqual(footprintOverlaps(roots, rootPositions), []);
+
+  const wide = chainOf(5, (i) => `Step number ${i + 1} of the chain`);
+  const widePositions = new BubbleLayoutEngine().layout(wide);
+  const airs = Array.from({ length: 4 }, (_, i) => rimToRim(wide, widePositions, `c${i}`, `c${i + 1}`));
+  assert.ok(airs.every((air) => air >= DISC_AIR - 1e-6), `wide captions fell inside the air: ${airs} wu rim to rim`);
+  assert.ok(airs.some((air) => air > DISC_AIR + 1), `no wide caption set the distance: ${airs} wu rim to rim`);
+  assert.deepEqual(footprintOverlaps(wide, widePositions), []);
 });
 
 test('a two-hundred-leaf fan, nine uneven roots and five thousand steps all lay out finite, apart and deterministic', () => {

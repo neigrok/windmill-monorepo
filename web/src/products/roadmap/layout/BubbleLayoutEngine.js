@@ -1,9 +1,9 @@
-// Bubble tree over the trunk arborescence: children on rays around each node inside its enclosing circle, in-edge
-// side left free, then a post-order tuck sliding each subtree along its ray until footprints or trunk edges touch.
+// Bubble tree over the trunk arborescence: each node's children on rays inside its enclosing circle, in-edge side free,
+// then a post-order tuck sliding subtrees on their rays until footprints or trunk edges touch or discs meet their air.
 import { LayoutEngine } from '../model/ports.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
-import { WORKING_ZOOM } from '../theme.js';
+import { WORKING_ZOOM, BODY_WU } from '../theme.js';
 
 const TWO_PI = 2 * Math.PI;
 // The arc kept free on a node's parent side, so its in-edge reaches it between no children.
@@ -16,6 +16,8 @@ const RADIUS_STEP = 24;
 const ISLAND_STEP = RADIUS_STEP * 4;
 // The least two footprints, or a footprint and a trunk edge, keep between them after the tuck.
 const TUCK_MARGIN = 8 / WORKING_ZOOM;
+// The least air two discs keep between their rims after the tuck, whatever their captions reserve — as circles.
+export const DISC_AIR = BODY_WU * 0.75;
 const GRID_CELL = 256;
 const MAX_RECT_CELLS = 64;
 // A deterministic cap keeps deep trees responsive; untouched enclosing seats remain collision-free.
@@ -250,6 +252,11 @@ class RestingSet {
     return { minX: x + rect.minX, maxX: x + rect.maxX, minY: y + rect.minY, maxY: y + rect.maxY };
   }
 
+  // The disc as a circle: its centre and the body's radius (the footprint's top edge is the disc's rim).
+  discOf(node) {
+    return { x: this.positions.x[node], y: this.positions.y[node], r: -this.forest.shapes[node].rect.minY };
+  }
+
   edgeOf(node) {
     const parent = this.forest.parentOf[node];
     return { px: this.positions.x[parent], py: this.positions.y[parent], qx: this.positions.x[node], qy: this.positions.y[node] };
@@ -281,6 +288,13 @@ class RestingSet {
         const swept = expand(sweep(footprint, step * ux, step * uy), TUCK_MARGIN);
         for (const other of this.footprints.within(swept, work)) {
           if (!sliding(other)) fraction = Math.min(fraction, footprintStop(footprint, step * ux, step * uy, this.footprintOf(other)));
+        }
+        const disc = this.discOf(node);
+        disc.x += travelled * ux;
+        disc.y += travelled * uy;
+        const discBox = { minX: disc.x - disc.r, maxX: disc.x + disc.r, minY: disc.y - disc.r, maxY: disc.y + disc.r };
+        for (const other of this.footprints.within(expand(sweep(discBox, step * ux, step * uy), DISC_AIR), work)) {
+          if (!sliding(other)) fraction = Math.min(fraction, discStop(disc, step * ux, step * uy, this.discOf(other)));
         }
         for (const other of this.edges.within(swept, work)) {
           if (!sliding(other)) fraction = Math.min(fraction, edgeStop(this.edgeOf(other), -step * ux, -step * uy, footprint));
@@ -511,6 +525,29 @@ function footprintStop(moving, vx, vy, still) {
   if (margined === null) return 1;
   if (!margined.alreadyInside) return margined.t;
   return entryTime(moving, vx, vy, still)?.t ?? 1;
+}
+
+// The fraction of the move (vx, vy) the moving disc can take before its rim comes within DISC_AIR of the still disc's
+// rim — circles, so a diagonal neighbour is judged by its true distance; a pair already inside that air stops at their
+// bare rims instead; 1 when they never meet.
+function discStop(moving, vx, vy, still) {
+  const dx = moving.x - still.x;
+  const dy = moving.y - still.y;
+  const apart = Math.hypot(dx, dy);
+  let reach = moving.r + still.r + DISC_AIR;
+  if (apart < reach - EPSILON) {
+    reach = moving.r + still.r;
+    if (apart < reach - EPSILON) return 1;
+  }
+  const a = vx * vx + vy * vy;
+  const b = 2 * (dx * vx + dy * vy);
+  const c = apart * apart - reach * reach;
+  if (a < EPSILON || b >= 0) return 1;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return 1;
+  const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+  if (t >= 1) return 1;
+  return Math.max(0, t);
 }
 
 // The fraction of the move (ux, uy) the trunk edge can take before coming within the margin of the still footprint;
