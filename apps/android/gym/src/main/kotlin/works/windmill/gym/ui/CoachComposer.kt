@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
@@ -53,34 +56,40 @@ internal fun CoachComposer(store: TrainingStore, key: String, seed: String, aski
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    var draft by remember(store.accountKey, key) { mutableStateOf(store.coachDraft(key)) }
-    LaunchedEffect(store.accountKey, key) {
-        if (draft.text.isEmpty() && draft.photo == null && seed.isNotEmpty()) {
-            try { store.saveCoachDraft(key, CoachDraft(seed)); draft = CoachDraft(seed) }
+    val account = store.accountKey
+    val hidden by rememberUpdatedState(asking && upload == null)
+    val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
+    LaunchedEffect(editor) {
+        snapshotFlow { Triple(editor.field.text.toString(), store.coachDraftVersion, hidden) }
+            .collect { editor.sync(hidden) }
+    }
+    LaunchedEffect(account, key) {
+        if (store.accountKey != account) return@LaunchedEffect
+        val current = store.coachDraft(key)
+        if (current.text.isEmpty() && current.photo == null && seed.isNotEmpty()) {
+            try { store.saveCoachDraft(key, CoachDraft(seed)) }
             catch (_: Exception) { }
         }
     }
-    LaunchedEffect(store.accountKey, key, store.coachDraftVersion) { draft = store.coachDraft(key) }
-    var trouble by remember(store.accountKey, key) { mutableStateOf<String?>(null) }
-    var preparing by remember { mutableStateOf(false) }
-    fun keep(next: CoachDraft) {
-        try { store.saveCoachDraft(key, next); draft = next; trouble = null }
-        catch (_: Exception) { trouble = "Your draft couldn’t be saved. Try again." }
-    }
+    var preparing by remember(account, key) { mutableStateOf(false) }
+    fun canSend(next: CoachDraft) = Ask.sendable(next.text) ||
+        (next.photo != null && next.text.trim().toByteArray().size <= Ask.maxTurnBytes)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             preparing = true
-            try { store.importCoachPhoto(key, context.contentResolver, uri); trouble = null }
+            try { store.importCoachPhoto(key, context.contentResolver, uri); editor.trouble = null }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { trouble = "Choose a supported photo." }
+            catch (_: Exception) { editor.trouble = "Choose a supported photo." }
             finally { preparing = false }
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
+        editor.draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CoachPhoto(store, key, photo, Modifier.size(72.dp))
-                if (!asking) TextButton(onClick = { keep(draft.copy(photo = null)) },
+                if (!asking) TextButton(onClick = {
+                    if (editor.sync(hidden)) editor.keep(editor.draft.copy(photo = null))
+                },
                     modifier = Modifier.padding(start = 12.dp).heightIn(min = 48.dp)) {
                     Text("Remove photo", style = WindmillFont.body(14), color = skin.inkDim)
                 }
@@ -90,34 +99,76 @@ internal fun CoachComposer(store: TrainingStore, key: String, seed: String, aski
         upload?.let {
             LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Photo upload" })
         }
-        trouble?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+        editor.trouble?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom,
             modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(28.dp)).padding(8.dp)) {
             IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 enabled = !asking && !preparing, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.gym_photo), "Add photo", tint = skin.inkDim, modifier = Modifier.size(22.dp))
             }
-            val visibleText = if (asking && upload == null) "" else draft.text
-            BasicTextField(value = visibleText, onValueChange = { keep(draft.copy(text = it)) },
+            BasicTextField(state = editor.field,
                 textStyle = WindmillFont.body(16).copy(lineHeight = 22.sp, color = skin.ink), enabled = !asking && !preparing,
-                cursorBrush = SolidColor(skin.accent), decorationBox = { input ->
+                cursorBrush = SolidColor(skin.accent), decorator = { input ->
                     Box(Modifier.heightIn(min = 48.dp).padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
-                        if (visibleText.isEmpty()) Text(Ask.placeholder, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
+                        if (editor.field.text.isEmpty()) Text(Ask.placeholder, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
                         input()
                     }
                 }, modifier = Modifier.weight(1f).heightIn(max = 160.dp).semantics { contentDescription = "Question" })
-            val ready = !asking && !preparing && (Ask.sendable(draft.text) ||
-                (draft.photo != null && draft.text.trim().toByteArray().size <= Ask.maxTurnBytes))
+            val ready = !asking && !preparing && canSend(editor.draft.copy(text = editor.field.text.toString()))
             Box(contentAlignment = Alignment.Center,
                 modifier = Modifier.size(48.dp).clip(CircleShape).background(skin.raised)
                     .semantics { contentDescription = if (asking && onStop != null) if (upload != null) "Cancel upload" else "Stop response" else "Send" }
                     .clickable(enabled = ready || (asking && onStop != null), role = Role.Button) {
-                        if (asking) onStop?.invoke()
-                        else { focus.clearFocus(); keyboard?.hide(); onSend(draft.text.trim(), draft.photo); if (!retainDraft) keep(CoachDraft()) }
+                        if (asking) { onStop?.invoke(); return@clickable }
+                        if (!editor.sync(hidden)) return@clickable
+                        val next = editor.draft
+                        if (!canSend(next)) return@clickable
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        onSend(next.text.trim(), next.photo)
+                        if (!retainDraft) editor.keep(CoachDraft())
                     }) {
                 Text(if (asking && onStop != null) "■" else "↑", style = WindmillFont.body(if (asking) 20 else 28),
                     color = if (ready || asking) skin.ink else skin.inkFaint)
             }
+        }
+    }
+}
+
+private class CoachDraftEditor(private val store: TrainingStore, private val key: String, private var hidden: Boolean) {
+    private val account = store.accountKey
+    var draft by mutableStateOf(store.coachDraft(key))
+        private set
+    val field = TextFieldState(if (hidden) "" else draft.text)
+    var trouble by mutableStateOf<String?>(null)
+
+    fun sync(hidden: Boolean): Boolean {
+        if (store.accountKey != account) return false
+        val current = store.coachDraft(key)
+        val refresh = current.text != draft.text || this.hidden != hidden
+        draft = current
+        this.hidden = hidden
+        if (refresh) {
+            val text = if (hidden) "" else current.text
+            if (field.text.toString() != text) field.setTextAndPlaceCursorAtEnd(text)
+            return true
+        }
+        if (hidden || field.text.toString() == current.text) return true
+        return keep(current.copy(text = field.text.toString()))
+    }
+
+    fun keep(next: CoachDraft): Boolean {
+        if (store.accountKey != account) return false
+        try {
+            store.saveCoachDraft(key, next)
+            draft = next
+            val text = if (hidden) "" else next.text
+            if (field.text.toString() != text) field.setTextAndPlaceCursorAtEnd(text)
+            trouble = null
+            return true
+        } catch (_: Exception) {
+            trouble = "Your draft couldn’t be saved. Try again."
+            return false
         }
     }
 }

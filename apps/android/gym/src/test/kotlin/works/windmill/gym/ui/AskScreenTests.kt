@@ -555,7 +555,7 @@ class AskScreenTests {
         }
         compose.onNodeWithText("Second question").assertIsDisplayed()
         compose.onNodeWithText("A fast complete answer.").assertIsDisplayed()
-        val viewport = compose.onNode(hasScrollAction()).getUnclippedBoundsInRoot()
+        val viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
         val question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
         assertTrue("the new question starts the visible response", question.top <= viewport.top + 32.dp)
         compose.onNodeWithText("First question").assertIsNotDisplayed()
@@ -580,7 +580,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Question").performTextReplacement("Second question")
         compose.onNodeWithContentDescription("Send").performClick()
         compose.onNodeWithText(Ask.waiting).assertIsDisplayed()
-        var viewport = compose.onNode(hasScrollAction()).getUnclippedBoundsInRoot()
+        var viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
         var question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
         assertTrue("pending response is anchored", question.top <= viewport.top + 32.dp)
         compose.onNodeWithText("First question").assertIsNotDisplayed()
@@ -589,7 +589,7 @@ class AskScreenTests {
             height = 900.dp
             thread = listOf(first, AskExchange("Second question", AskAnswer("The complete answer is visible here.", ReadTally(0, 0, 0))))
         }
-        viewport = compose.onNode(hasScrollAction()).getUnclippedBoundsInRoot()
+        viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
         question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
         val answer = compose.onNodeWithText("The complete answer is visible here.").getUnclippedBoundsInRoot()
         assertTrue("expanded viewport retains the question anchor: question=$question viewport=$viewport", question.top >= viewport.top && question.top <= viewport.top + 32.dp)
@@ -623,7 +623,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Send").performClick()
         compose.onNodeWithContentDescription("Question").performTextReplacement("New second question")
         compose.onNodeWithContentDescription("Send").performClick()
-        val viewport = compose.onNode(hasScrollAction()).getUnclippedBoundsInRoot()
+        val viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
         val question = compose.onNodeWithText("New second question").getUnclippedBoundsInRoot()
         assertTrue("new conversation uses its own measured anchor: $question in $viewport",
             question.top >= viewport.top && question.top <= viewport.top + 32.dp)
