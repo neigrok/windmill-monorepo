@@ -195,9 +195,11 @@ against `LoggerScreen.kt`, top to bottom:
   landed row recedes in dim ink with a small ✓ after its index and is a door to the same `FixSheet`
   the session screen raises. A set no send has carried yet is fixed or deleted in the queue it waits
   in (`TrainingStore.fixSet`, `deleteSet`), so the corrected body is what lands; from its first send
-  a set may already be on the log, so its fix and its delete go to the log, behind any send in
-  flight. A set a walk could not land carries a cloud-off glyph — a row without it is synced or on
-  its way. A warmup reads `W` and takes no number. The set in
+  a set may already be on the log, so its fix and its delete are filed in the queue behind that
+  send and stand on the phone at once, offline included — the walk replays the append, then sends
+  the change once the log answers. A set whose append or correction a walk could not land carries a
+  cloud-off glyph — a row without it is synced or on its way — and Finish waits for every write the
+  session still owes, a delete included. A warmup reads `W` and takes no number. The set in
   hand is the one accented row, slim, with a teal rail: `Set 3 · target 90 × 3` and `↓` — the rack is
   its editor, so it repeats none of the draft's numbers; past the plan, or with no plan, it reads
   `Set 7` alone. Planned rows wait in plain ink and are no door. No status word is printed: each

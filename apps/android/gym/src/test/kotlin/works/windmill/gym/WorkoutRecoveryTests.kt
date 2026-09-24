@@ -408,7 +408,8 @@ class WorkoutRecoveryTests {
         }
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle {
-            assertEquals(listOf(Triple(sessionId, setId, SetFix(rpe = 9.5, rpeNamed = true, note = "Live retained note"))), server.fixes)
+            assertEquals(listOf(Triple(sessionId, setId, SetFix(weightKg = 60.0, reps = 8, kind = SetKind.Working,
+                note = "Live retained note", rpeNamed = true, rpe = 9.5))), server.fixes)
             assertEquals(60.0, held.sets.single().weightKg, 0.0)
             assertEquals(8, held.sets.single().reps)
             assertEquals(SetKind.Working, held.sets.single().kind)

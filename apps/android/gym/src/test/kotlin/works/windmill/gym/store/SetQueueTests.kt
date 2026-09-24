@@ -37,7 +37,7 @@ class SetQueueTests {
         assertEquals(2_000L, queue.restStartedAtMs)
         queue.remint("local", "retry")
         val canonical = aSet("stored", at = 3_000).copy(setNumber = 7)
-        queue.delivered(canonical, "retry", "live")
+        queue.appended(canonical, queue.sending(queue.pending.single()))
         queue.store(canonical.copy(completedAtMs = 4_000), "live", needsPush = false)
         queue.flush()
         val reopened = SetQueue(file)
@@ -168,20 +168,100 @@ class SetQueueTests {
     }
 
     @Test
-    fun testDeliveredReplacesTheDrawnSetWithTheStoredRow() {
+    fun testAnAnsweredAppendReplacesTheDrawnSetWithTheStoredRow() {
         val queue = SetQueue(queueFile())
         queue.hold(Session(id = "ses_1", startedAtMs = 1_000))
         queue.store(aSet("set_a", at = 1_100), sessionId = "ses_1", needsPush = true)
-        queue.delivered(aSet("set_a", at = 1_100).copy(setNumber = 1), id = "set_a", sessionId = "ses_1")
+        queue.appended(aSet("set_a", at = 1_100).copy(setNumber = 1), queue.sending(queue.pending.single()))
 
         assertTrue(queue.pending.isEmpty())
         assertEquals("the log numbered it, so it is the log's now",
             listOf(1), queue.sets.map { it.setNumber })
 
         queue.store(aSet("set_b", at = 1_200), sessionId = "ses_1", needsPush = true)
-        queue.delivered(aSet("set_c", at = 1_200).copy(setNumber = 2), id = "set_b", sessionId = "ses_1")
+        queue.appended(aSet("set_c", at = 1_200).copy(setNumber = 2), queue.sending(queue.pending.single()))
         assertEquals(emptyList<SetQueue.Entry>(), queue.pending)
         assertEquals(listOf("set_a", "set_c"), queue.sets.map { it.id })
+    }
+
+    // A change to a set whose append went out is filed behind that append: the mark carries through
+    // the fix and the delete, the file keeps both, and the next step on the wire is the append again.
+    @Test
+    fun testAChangeToAnAttemptedSetIsFiledBehindItsAppendAndSurvivesReopening() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.hold(Session(id = "ses_1", startedAtMs = 1_000))
+        queue.store(aSet("set_a", at = 1_100), sessionId = "ses_1", needsPush = true)
+        queue.store(aSet("set_b", at = 1_200), sessionId = "ses_1", needsPush = true)
+        queue.sending(queue.pending.first())
+        queue.sending(queue.pending.last())
+        assertEquals(listOf(false, false), listOf(queue.isUnsent("set_a"), queue.isUnsent("set_b")))
+
+        queue.fix(aSet("set_a", at = 1_100).copy(reps = 4))
+        queue.delete("set_b")
+
+        val reopened = SetQueue(file)
+        assertEquals(listOf(
+            SetQueue.Entry(aSet("set_a", at = 1_100).copy(reps = 4), "ses_1", needsPush = true, remints = 0,
+                loggedAtMs = 1_100, attempted = true, write = Owed.Fix),
+            SetQueue.Entry(aSet("set_b", at = 1_200), "ses_1", needsPush = true, remints = 0,
+                loggedAtMs = 1_200, attempted = true, write = Owed.Delete),
+        ), reopened.pending)
+        assertEquals(listOf(Owed.Append, Owed.Append), reopened.pending.map { it.step })
+        assertEquals("the deleted row leaves the drawn sets at once",
+            listOf(aSet("set_a", at = 1_100).copy(reps = 4)), reopened.sets)
+    }
+
+    // A reply settles an entry only while it reads as it did when sent: an append answered after a
+    // fix was filed leaves the fix owed, aimed at the row the log now holds, and a fix answered after
+    // a newer fix leaves the newer one owed.
+    @Test
+    fun testAReplyNeverOverwritesAnEntryChangedAfterItWasSent() {
+        val queue = SetQueue(queueFile())
+        queue.hold(Session(id = "ses_1", startedAtMs = 1_000))
+        queue.store(aSet("set_a", at = 1_100), sessionId = "ses_1", needsPush = true)
+        val append = queue.sending(queue.pending.single())
+        queue.fix(aSet("set_a", at = 1_100).copy(reps = 4))
+
+        assertEquals(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 4),
+            queue.appended(aSet("set_a", at = 1_100).copy(setNumber = 1), append))
+        assertEquals(listOf(Triple(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 4), false, Owed.Fix)),
+            queue.pending.map { Triple(it.set, it.attempted, it.write) })
+
+        val fix = queue.sending(queue.pending.single())
+        assertEquals(Owed.Fix, fix.step)
+        queue.fix(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 3))
+        assertFalse(queue.fixed(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 4), fix))
+        assertFalse(queue.letGo(fix))
+        queue.store(aSet("set_a", at = 1_100).copy(setNumber = 1), sessionId = "ses_1", needsPush = false)
+        assertEquals("a row read off the log does not settle a correction still owed",
+            listOf(Triple(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 3), false, Owed.Fix)),
+            queue.pending.map { Triple(it.set, it.attempted, it.write) })
+
+        val newer = queue.sending(queue.pending.single())
+        assertTrue(queue.fixed(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 3), newer))
+        assertEquals(emptyList<SetQueue.Entry>(), queue.pending)
+        assertEquals(listOf(aSet("set_a", at = 1_100).copy(setNumber = 1, reps = 3)), queue.sets)
+    }
+
+    // A remint is the append the set never became: a fresh, unmarked key carrying the corrected body.
+    // A set taken back needs no new key and leaves quietly.
+    @Test
+    fun testARemintGivesAFreshUnmarkedAppendAndLetsATakenBackSetGo() {
+        val queue = SetQueue(queueFile())
+        queue.store(aSet("set_a", at = 1_100), sessionId = "ses_1", needsPush = true)
+        queue.store(aSet("set_b", at = 1_200), sessionId = "ses_1", needsPush = true)
+        queue.sending(queue.pending.first())
+        queue.sending(queue.pending.last())
+        queue.fix(aSet("set_a", at = 1_100).copy(reps = 4))
+        queue.delete("set_b")
+
+        queue.remint("set_a", fresh = "set_c")
+        queue.remint("set_b", fresh = "set_d")
+
+        assertEquals(listOf(SetQueue.Entry(aSet("set_c", at = 1_100).copy(reps = 4), "ses_1", needsPush = true,
+            remints = 1, loggedAtMs = 1_100)), queue.pending)
+        assertTrue(queue.isUnsent("set_c"))
     }
 
     @Test

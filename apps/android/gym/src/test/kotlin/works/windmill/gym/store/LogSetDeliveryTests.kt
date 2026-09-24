@@ -4,6 +4,7 @@ import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -137,12 +138,14 @@ class LogSetDeliveryTests {
         assertEquals(SaveState.OnTheLog, store.saveState)
     }
 
-    // (a) A fix asked while the set's first send is in flight waits behind it and then goes to the
-    // log as a fix, never as a rewrite of a set the log already holds.
+
+    // A fix of a set whose first send is in flight is filed behind it and stands on the device at
+    // once; the append's answer does not settle the corrected entry, and the PATCH follows it.
     @Test
-    fun testAFixAskedWhileTheSendIsInFlightReachesTheLog() = runTest {
+    fun testAFixAskedWhileTheSendIsInFlightIsFiledAndThenReachesTheLog() = runTest {
         val server = FakeTraining()
-        val store = liveStore(server, File(tmp.root, "queue.json"))
+        val queueFile = File(tmp.root, "queue.json")
+        val store = liveStore(server, queueFile)
         store.enter()
         val landing = CompletableDeferred<Unit>()
         server.onAppend = { landing.await() }
@@ -151,23 +154,33 @@ class LogSetDeliveryTests {
         store.acceptSet(LogSetCommand(offer.key, offer.id))
         runCurrent()
 
-        val fixing = async { store.fixSet("ses_1", offer.id, SetFix(reps = 4)) }
-        runCurrent()
+        val outcome = store.fixSet("ses_1", offer.id, SetFix(reps = 4))
+
+        val corrected = TrainingSet(offer.id, "bench-press", weightKg = 82.5, reps = 4, completedAtMs = 1_000)
+        assertEquals(FixOutcome.Corrected(corrected), outcome)
+        assertEquals(listOf(corrected), store.sets)
+        assertEquals(listOf(Triple(corrected, true, Owed.Fix)),
+            SetQueue(queueFile, "u1").pending.map { Triple(it.set, it.attempted, it.write) })
+        assertEquals(emptyList<Any>(), server.fixes)
+
         landing.complete(Unit)
         runCurrent()
 
-        val corrected = TrainingSet(offer.id, "bench-press", setNumber = 1, weightKg = 82.5, reps = 4, completedAtMs = 1_000)
-        assertEquals(FixOutcome.Corrected(corrected), fixing.await())
+        val landed = corrected.copy(setNumber = 1)
         assertEquals(listOf("append", "fixSet"), server.calls.filter { it == "append" || it == "fixSet" })
-        assertEquals(mapOf("ses_1" to listOf(corrected)), server.sets)
-        assertEquals(listOf(corrected), store.sets)
+        assertEquals(listOf(Triple("ses_1", offer.id, SetFix(corrected))), server.fixes)
+        assertEquals(mapOf("ses_1" to listOf(landed)), server.sets)
+        assertEquals(listOf(landed), store.sets)
+        assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
         assertEquals(0, store.strandedCount)
+        assertEquals(SaveState.OnTheLog, store.saveState)
     }
 
-    // (b) The log stored the set and the reply was lost: the device cannot tell that from a send that
-    // never arrived, so the fix replays the append — idempotent on the set id — and then fixes the row.
+    // The log stored the set and the reply was lost, and the phone is offline: the fix stands on the
+    // device at once, filed behind the append. Back online the append goes again — idempotent on the
+    // set id — and then the PATCH puts the corrected body on the log.
     @Test
-    fun testAFixAfterALostReplyReachesTheLog() = runTest {
+    fun testAnOfflineFixAfterALostReplyIsFiledAndLandsAsAppendThenPatch() = runTest {
         val server = FakeTraining()
         val queueFile = File(tmp.root, "queue.json")
         val store = liveStore(server, queueFile)
@@ -175,25 +188,42 @@ class LogSetDeliveryTests {
         server.swallowReplies = 1
         store.logSet(weightKg = 82.5, reps = 5)
         val logged = store.sets.single()
-        assertEquals(1, store.strandedCount)
-        assertEquals(SaveState.Blocked(Blocker.Offline), store.saveState)
         assertEquals("the mark survives the app", listOf(true), SetQueue(queueFile, "u1").pending.map { it.attempted })
+        server.online = false
 
         val outcome = store.fixSet("ses_1", logged.id, SetFix(reps = 4))
+        runCurrent()
 
-        val corrected = logged.copy(setNumber = 1, reps = 4)
+        val corrected = logged.copy(reps = 4)
         assertEquals(FixOutcome.Corrected(corrected), outcome)
-        assertEquals(listOf("append", "append", "fixSet"), server.calls.filter { it == "append" || it == "fixSet" })
-        assertEquals(mapOf("ses_1" to listOf(corrected)), server.sets)
         assertEquals(listOf(corrected), store.sets)
+        assertEquals(listOf(Triple(corrected, true, Owed.Fix)),
+            SetQueue(queueFile, "u1").pending.map { Triple(it.set, it.attempted, it.write) })
+        assertEquals(mapOf("ses_1" to listOf(logged.copy(setNumber = 1))), server.sets)
+        assertEquals(1, store.strandedCount)
+        assertEquals(SaveState.Blocked(Blocker.Offline), store.saveState)
+
+        server.online = true
+        val sentBefore = server.calls.size
+        val appendedBefore = server.appended.size
+        store.flushPendingSets()
+
+        val landed = corrected.copy(setNumber = 1)
+        assertEquals(listOf("append", "fixSet"), server.calls.drop(sentBefore))
+        assertEquals("the replay carries the body the device now reads",
+            listOf(SetWrite(corrected)), server.appended.drop(appendedBefore))
+        assertEquals(listOf(Triple("ses_1", logged.id, SetFix(corrected))), server.fixes)
+        assertEquals(mapOf("ses_1" to listOf(landed)), server.sets)
+        assertEquals(listOf(landed), store.sets)
         assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
         assertEquals(0, store.strandedCount)
+        assertEquals(SaveState.OnTheLog, store.saveState)
     }
 
-    // A set the log may hold cannot be fixed on the device: offline, the fix says it did not go and
-    // the set keeps the body the log may already have.
+    // The fix is on disk the moment it is filed, so an app killed before the signal comes back
+    // still owes it: a fresh store over the same file replays the append and then the PATCH.
     @Test
-    fun testAFixOfASetMaybeOnTheLogFailsOfflineAndChangesNothing() = runTest {
+    fun testAFixFiledBeforeTheAppDiesLandsAfterReopening() = runTest {
         val server = FakeTraining()
         val queueFile = File(tmp.root, "queue.json")
         val store = liveStore(server, queueFile)
@@ -202,17 +232,26 @@ class LogSetDeliveryTests {
         store.logSet(weightKg = 82.5, reps = 5)
         val logged = store.sets.single()
         server.online = false
+        store.fixSet("ses_1", logged.id, SetFix(reps = 4))
+        runCurrent()
+        val corrected = logged.copy(reps = 4)
+        assertEquals(listOf(Triple(corrected, true, Owed.Fix)),
+            SetQueue(queueFile, "u1").pending.map { Triple(it.set, it.attempted, it.write) })
 
-        val outcome = store.fixSet("ses_1", logged.id, SetFix(reps = 4))
+        server.online = true
+        val reopened = liveStore(server, queueFile)
+        reopened.enter()
 
-        assertEquals(FixOutcome.Failed(WriteFailure.NoAnswer), outcome)
-        assertEquals(listOf(logged), store.sets)
-        assertEquals(listOf(logged), SetQueue(queueFile, "u1").pending.map { it.set })
-        assertEquals(emptyList<Any>(), server.fixes)
+        val landed = corrected.copy(setNumber = 1)
+        assertEquals(listOf(Triple("ses_1", logged.id, SetFix(corrected))), server.fixes)
+        assertEquals(mapOf("ses_1" to listOf(landed)), server.sets)
+        assertEquals(listOf(landed), reopened.sets)
+        assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
+        assertEquals(0, reopened.strandedCount)
     }
 
-    // (a) A delete asked while the first send is in flight waits behind it and removes the row the
-    // send put on the log.
+    // A delete asked while the first send is in flight is filed behind it: the row leaves the device
+    // at once, and the DELETE removes the row the send put on the log.
     @Test
     fun testADeleteAskedWhileTheSendIsInFlightRemovesTheRowFromTheLog() = runTest {
         val server = FakeTraining()
@@ -226,22 +265,22 @@ class LogSetDeliveryTests {
         store.acceptSet(LogSetCommand(offer.key, offer.id))
         runCurrent()
 
-        val deleting = async { store.deleteSet("ses_1", offer.id) }
-        runCurrent()
+        assertEquals(null, store.deleteSet("ses_1", offer.id))
+        assertEquals(emptyList<TrainingSet>(), store.sets)
         landing.complete(Unit)
         runCurrent()
 
-        assertEquals(null, deleting.await())
         assertEquals(listOf("append", "deleteSet"), server.calls.filter { it == "append" || it == "deleteSet" })
         assertEquals(mapOf("ses_1" to emptyList<TrainingSet>()), server.sets)
         assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
         assertEquals(0, store.strandedCount)
     }
 
-    // (b) The log stored the set and the reply was lost: the delete goes over the wire, where an
-    // absent row and a present one both answer 204, and the row is gone from the log.
+    // The log stored the set, the reply was lost and the phone is offline: the delete's window runs
+    // as always, and when it closes the delete is filed behind the append rather than refused. Back
+    // online the append goes again and the DELETE takes the row off the log.
     @Test
-    fun testADeleteAfterALostReplyRemovesTheRowFromTheLog() = runTest {
+    fun testAnOfflineDeleteAfterALostReplyIsFiledAndTakesTheRowOffTheLog() = runTest {
         val server = FakeTraining()
         val queueFile = File(tmp.root, "queue.json")
         val store = liveStore(server, queueFile)
@@ -249,14 +288,53 @@ class LogSetDeliveryTests {
         server.swallowReplies = 1
         store.logSet(weightKg = 82.5, reps = 5)
         val logged = store.sets.single()
-        assertEquals(listOf(logged.copy(setNumber = 1)), server.sets["ses_1"])
+        server.online = false
 
-        val refused = store.deleteSet("ses_1", logged.id)
+        store.withhold(Deletion.Set("ses_1", logged))
+        advanceTimeBy(Withheld.windowMs + 1)
+        runCurrent()
 
-        assertEquals(null, refused)
+        assertEquals(emptyList<WithheldDelete>(), store.withheld)
+        assertEquals(null, store.deleteRefused)
+        assertEquals(emptyList<TrainingSet>(), store.sets)
+        assertEquals(listOf(Triple(logged, true, Owed.Delete)),
+            SetQueue(queueFile, "u1").pending.map { Triple(it.set, it.attempted, it.write) })
+        assertEquals(mapOf("ses_1" to listOf(logged.copy(setNumber = 1))), server.sets)
+        assertEquals(0, store.strandedCount)
+
+        server.online = true
+        val sentBefore = server.calls.size
+        store.flushPendingSets()
+
+        assertEquals(listOf("append", "deleteSet"), server.calls.drop(sentBefore))
         assertEquals(listOf("ses_1" to logged.id), server.removed)
         assertEquals(mapOf("ses_1" to emptyList<TrainingSet>()), server.sets)
+        assertEquals(emptyList<TrainingSet>(), store.sets)
         assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
-        assertEquals(0, store.strandedCount)
+        assertEquals(SaveState.OnTheLog, store.saveState)
+    }
+
+    // A set the log never took is no loss when it was taken back: the append the delete waits behind
+    // is refused for good, and the entry is let go without a word.
+    @Test
+    fun testADeleteBehindAnAppendThatCanNeverLandIsDroppedQuietly() = runTest {
+        val server = FakeTraining()
+        val queueFile = File(tmp.root, "queue.json")
+        val store = liveStore(server, queueFile)
+        store.enter()
+        server.online = false
+        store.logSet(weightKg = 82.5, reps = 5)
+        val logged = store.sets.single()
+        assertEquals(null, store.deleteSet("ses_1", logged.id))
+        runCurrent()
+        server.stored["ses_1"] = Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000)
+
+        server.online = true
+        store.flushPendingSets()
+
+        assertEquals(emptyList<RefusedWrite>(), store.refusals)
+        assertEquals(emptyList<Pair<String, String>>(), server.removed)
+        assertEquals(emptyMap<String, List<TrainingSet>>(), server.sets)
+        assertEquals(emptyList<SetQueue.Entry>(), SetQueue(queueFile, "u1").pending)
     }
 }

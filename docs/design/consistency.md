@@ -2048,12 +2048,12 @@ horizontal set strip and the last-time chip. The shipped shape exists only in th
 `805:4536` (`B+ · Quiet ledger`), whose Frame 3 still draws an Undo after `Log set` that the build
 does not have. Promote `805:4536` to canon and retire the old frames.
 
-**5p · a fix made offline to a set that may be on the log differs by phone** → a ruling owed.
-Neither phone holds a logged set any more. From a set's first send it may be on the log, so a fix or
-delete must go to the log behind that send. iOS files the change behind the append in the queue and
-it lands when the log answers. Android sends it at once and, offline, refuses it —
-*The log didn't answer — that set wasn't changed.* Pick one; iOS's keeps a lifter on gym signal from
-retyping.
+**5p · a fix made offline to a set that may be on the log differs by phone** → built 2026-09-24,
+nothing owed. Both phones file a fix or delete of a set whose append has gone out in the queue
+behind that append (`SetQueue.kt` follows `SetQueue.swift`): it stands on the phone at once, offline
+included, the walk replays the append and then sends the change, a reply settles an entry only while
+it still reads as it did when sent, and Finish keeps the session open while any append, fix or
+delete of it is still owed.
 
 **5q · Android sends a closed session's pending set again** → a build owed on Android. A pending set
 whose session was closed elsewhere is deleted on the log but not dropped from `SetQueue`, so a later

@@ -30,8 +30,12 @@ import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutMoment
 import works.windmill.gym.domain.WorkoutState
 
-// The local-first write queue. A set's client-minted id IS the idempotency key, so sends may repeat
-// in any order and the log converges on one row per id.
+// The local-first write queue: appends, corrections and deletions of the live session's sets ride
+// one walk. iOS's SetQueue.swift is the same contract and the two must not drift. A set's
+// client-minted id IS the idempotency key, so sends may repeat in any order and the log converges on
+// one row per id. An append once sent may be on the log until the log answers it, so a change to that
+// set is filed behind the append rather than over it, and a reply settles an entry only while it
+// still reads as it did when sent.
 //
 // Walk by identity, never by position: entries are keyed by the minted set id.
 // Order is per (session, exercise) — the only order the server keeps, numbering sets max+1 per lane.
@@ -65,12 +69,28 @@ class SetQueue private constructor(
         val loggedAtMs: Long? = null,
         val event: WorkoutEvent? = null,
         val eventOrder: Long = 0,
-        // Maybe on the log: marked on disk before the first send and never cleared, because a lost
-        // reply looks exactly like a send that never arrived. Only an unattempted set may be
-        // rewritten or dropped on this device alone.
+        // An append of this row went out and the log has not answered it, so the row may be on the
+        // log: a lost reply looks exactly like a send that never arrived. Marked on disk before the
+        // send, cleared only by the log's answer, and carried through every change filed meanwhile.
         val attempted: Boolean = false,
+        // In an older file every owed row is an append.
+        val write: Owed = Owed.Append,
     ) {
         val lane: Lane get() = Lane(sessionId, set.exerciseId)
+
+        val owes: Owed? get() = if (needsPush) write else null
+
+        // What goes on the wire next. A change filed over an unanswered append waits behind it: the
+        // append goes again first — a replay answers the stored row — so the change meets a row the
+        // log holds.
+        val step: Owed get() = if (attempted) Owed.Append else write
+
+        // Owed as an append that never went out: the one row this device may rewrite or let go of
+        // alone.
+        val unsent: Boolean get() = owes == Owed.Append && !attempted
+
+        // Whether a reply to `sent` may settle this entry: never once its body changed after it left.
+        fun readsAs(sent: Entry): Boolean = needsPush && set == sent.set && write == sent.write
     }
 
     companion object {
@@ -268,7 +288,7 @@ class SetQueue private constructor(
         val live = queue.session ?: return queue
         val movement = queue.chosenMovement
         val plan = movement?.let { live.plan?.entry(it) }
-        val current = queue.entries.values.filter { it.sessionId == live.id }
+        val current = queue.entries.values.filter { it.sessionId == live.id && it.owes != Owed.Delete }
         val event = current.maxWithOrNull(compareBy<Entry> { it.eventOrder }
             .thenBy { it.event?.origin?.bootId == moment.bootId }
             .thenBy { if (it.event?.origin?.bootId == moment.bootId) it.event.origin.elapsedMs else it.loggedAtMs ?: it.set.completedAtMs })?.event
@@ -349,11 +369,12 @@ class SetQueue private constructor(
 
     val restStartedAtMs: Long?
         get() = mine.session?.let { live -> mine.entries.values
-            .filter { it.sessionId == live.id }
+            .filter { it.sessionId == live.id && it.owes != Owed.Delete }
             .maxOfOrNull { it.loggedAtMs ?: it.set.completedAtMs } }
 
+    // A deleted row leaves here at once; its entry survives only to carry the DELETE.
     fun sets(sessionId: String): List<TrainingSet> = mine.entries.values
-        .filter { it.sessionId == sessionId }
+        .filter { it.sessionId == sessionId && it.owes != Owed.Delete }
         .map { it.set }
         .sortedBy { it.completedAtMs }
 
@@ -367,37 +388,112 @@ class SetQueue private constructor(
 
     fun nextOwed(skipping: Set<Lane>): Entry? = pending.firstOrNull { it.lane !in skipping }
 
+    fun isUnsent(id: String): Boolean = mine.entries[id]?.unsent ?: false
+
     // Both directions: a set just logged (owed), and a row the log handed back (not owed), which
-    // settles an owed set.
+    // settles an owed append. A change still owed stands, since the row handed back is the one it
+    // corrects.
     fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, moment: WorkoutMoment? = null) {
         val existing = mine.entries[set.id]
+        if (!needsPush && existing?.owes.let { it == Owed.Fix || it == Owed.Delete }) return
         val loggedAt = existing?.loggedAtMs ?: if (needsPush && existing == null) set.completedAtMs else null
         keep(mine.copy(entries = mine.entries + (set.id to Entry(set, sessionId, needsPush,
             existing?.remints ?: 0, loggedAt, existing?.event ?: moment?.let { WorkoutEvent(set.id, it) },
-            existing?.eventOrder ?: if (moment != null) workout.revision + 1 else 0, existing?.attempted ?: false)),
+            existing?.eventOrder ?: if (moment != null) workout.revision + 1 else 0,
+            attempted = needsPush && existing?.attempted == true)),
             workout = if (existing?.set == set) mine.workout else mine.workout?.invalidate()))
     }
 
+    // Only for an append never sent: a correction filed over it would replace the set's only copy.
+    fun rewrite(corrected: TrainingSet) {
+        val entry = mine.entries[corrected.id]?.takeIf { it.unsent } ?: return
+        keep(mine.copy(entries = mine.entries + (corrected.id to entry.copy(set = corrected)),
+            workout = if (entry.set == corrected) mine.workout else mine.workout?.invalidate()))
+    }
+
+    // The set as it should now read; the PATCH goes under the same id, behind an append still
+    // unanswered.
+    fun fix(corrected: TrainingSet) {
+        val entry = mine.entries[corrected.id] ?: return
+        keep(mine.copy(entries = mine.entries + (corrected.id to
+            entry.copy(set = corrected, needsPush = true, write = Owed.Fix)),
+            workout = if (entry.set == corrected) mine.workout else mine.workout?.invalidate()))
+    }
+
+    // The row leaves `sets` at once and the DELETE goes behind an append still unanswered: no route
+    // un-deletes a set. Answers whether there was a row to take back.
+    fun delete(id: String): Boolean {
+        val entry = mine.entries[id] ?: return false
+        keep(mine.copy(entries = mine.entries + (id to entry.copy(needsPush = true, write = Owed.Delete)),
+            workout = mine.workout?.invalidate()))
+        return true
+    }
+
+    // The entry as it goes on the wire. An append is marked on disk before it leaves, so neither a
+    // lost answer nor a dead app lets this device treat a row the log may hold as its own.
+    fun sending(owed: Entry): Entry {
+        val entry = mine.entries[owed.set.id] ?: owed
+        if (entry.step != Owed.Append || entry.attempted) return entry
+        val marked = entry.copy(attempted = true)
+        keep(mine.copy(entries = mine.entries + (entry.set.id to marked)))
+        return marked
+    }
+
+    // The log's answer to an append. A change filed while it was on the wire stays owed, now aimed at
+    // the row the log is known to hold, under the id and number the log answered with; only an
+    // append nobody touched is settled by the reply. Answers the set as it is now drawn, or null when
+    // the entry had already gone.
+    fun appended(stored: TrainingSet, sent: Entry): TrainingSet? {
+        val current = mine.entries[sent.set.id] ?: return null
+        if (current.readsAs(sent) && sent.write == Owed.Append) {
+            settle(stored, current)
+            return stored
+        }
+        val aimed = current.copy(set = current.set.copy(id = stored.id, setNumber = stored.setNumber),
+            attempted = false)
+        keep(mine.copy(entries = mine.entries - sent.set.id + (stored.id to aimed),
+            workout = if (stored.id == sent.set.id) mine.workout else mine.workout?.invalidate()))
+        return aimed.set
+    }
+
+    // A correction filed again while this one was on the wire is the newer word, and stays owed.
+    fun fixed(stored: TrainingSet, sent: Entry): Boolean {
+        val current = mine.entries[sent.set.id]?.takeIf { it.readsAs(sent) } ?: return false
+        settle(stored, current)
+        return true
+    }
+
+    // A correction the log refused for good owes nothing more; the row stays as the device drew it
+    // until a read of the log hands back the log's own numbers. Not while something newer was filed.
+    fun withdraw(sent: Entry): Boolean = fixed(sent.set, sent)
+
+    // The log took the delete, so the entry leaves, unless something newer was filed over it while
+    // it was on the wire.
+    fun letGo(sent: Entry): Boolean {
+        if (mine.entries[sent.set.id]?.readsAs(sent) != true) return false
+        drop(sent.set.id)
+        return true
+    }
+
     // Clear the sent key as well as the stored one, or a reply that disagreed leaves an entry owed
-    // forever.
-    fun delivered(stored: TrainingSet, id: String, sessionId: String) {
-        val entry = mine.entries[id]
-        keep(mine.copy(entries = mine.entries - id +
-            (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0,
-                loggedAtMs = entry?.loggedAtMs, event = entry?.event, eventOrder = entry?.eventOrder ?: 0)),
-            workout = if (stored.id == id) mine.workout else mine.workout?.invalidate()))
+    // forever. Settled rows are kept for the live session alone: `close` and `forget` reach no other.
+    private fun settle(stored: TrainingSet, sent: Entry) {
+        val entries = mine.entries - sent.set.id
+        val kept = if (mine.session?.id != sent.sessionId) entries else entries +
+            (stored.id to Entry(stored, sent.sessionId, needsPush = false, remints = 0,
+                loggedAtMs = sent.loggedAtMs, event = sent.event, eventOrder = sent.eventOrder))
+        keep(mine.copy(entries = kept,
+            workout = if (stored.id == sent.set.id) mine.workout else mine.workout?.invalidate()))
     }
 
-    // On disk before the send goes out, so an app killed mid-send still knows.
-    fun attempting(id: String) {
-        val entry = mine.entries[id] ?: return
-        if (entry.attempted) return
-        keep(mine.copy(entries = mine.entries + (id to entry.copy(attempted = true))))
-    }
-
-    // The same set under a new key, still owed, with the remint budget counted down.
+    // The same set under a new key, owed as the append it never became, with the remint budget
+    // counted down. A set taken back needs no new key: it never landed, and nobody wants it now.
     fun remint(id: String, fresh: String) {
         val entry = mine.entries[id] ?: return
+        if (entry.write == Owed.Delete) {
+            drop(id)
+            return
+        }
         keep(mine.copy(entries = mine.entries - id +
             (fresh to Entry(entry.set.copy(id = fresh), entry.sessionId, needsPush = true,
                 remints = entry.remints + 1, loggedAtMs = entry.loggedAtMs, event = entry.event, eventOrder = entry.eventOrder)),
@@ -452,6 +548,14 @@ class SetQueue private constructor(
     fun flush() {
         commit(held)
     }
+}
+
+// The write an owed entry carries to the log.
+@Serializable
+enum class Owed {
+    Append,     // the log has never seen this row
+    Fix,        // the log holds this row, and this device holds numbers it does not
+    Delete,     // the log holds this row, and this device has taken it back
 }
 
 // A refusal stripped of the transport that carried it.

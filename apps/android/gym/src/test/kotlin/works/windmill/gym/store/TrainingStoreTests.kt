@@ -49,6 +49,7 @@ import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionStart
+import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
@@ -1625,12 +1626,72 @@ class TrainingStoreTests {
 
         val fixed = store.fixSet("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
 
-        assertEquals(listOf(Triple("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))),
-            server.fixes)
-        assertEquals((fixed as FixOutcome.Corrected).set, store.sets.single())
+        val corrected = (fixed as FixOutcome.Corrected).set
+        assertEquals("the strip draws the correction the moment it is filed", listOf(corrected), store.sets)
+        assertEquals(listOf(Triple(corrected, false, Owed.Fix)),
+            queueOnDisk().pending.map { Triple(it.set, it.attempted, it.write) })
+        runCurrent()
+
+        assertEquals("the walk carries the whole row the device now reads",
+            listOf(Triple("ses_1", setId, SetFix(corrected))), server.fixes)
+        assertEquals(listOf(corrected), server.sets.getValue("ses_1"))
         assertEquals("the queue's row followed the log's answer", listOf(Triple(90.0, 3, SetKind.Drop)),
             store.sets.map { Triple(it.weightKg, it.reps, it.kind) })
         assertTrue("a fix the log took owes nothing", store.stalled.isEmpty())
+        assertEquals(emptyList<SetQueue.Entry>(), queueOnDisk().pending)
+    }
+
+    // A row deleted elsewhere answers a fix with set-not-found: it leaves the strip, and the refusal
+    // row says why rather than letting it vanish.
+    @Test
+    fun testAFixOfARowDeletedElsewhereTakesItOffTheStripAndSaysSo() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        val logged = store.sets.single()
+        server.sets.getValue("ses_1").clear()
+
+        val fixed = (store.fixSet("ses_1", logged.id, SetFix(reps = 4)) as FixOutcome.Corrected).set
+        runCurrent()
+
+        assertEquals(emptyList<TrainingSet>(), store.sets)
+        assertEquals(listOf<RefusedWrite>(RefusedSet(fixed, "that set is no longer on the log")), store.refusals)
+        assertEquals(emptyList<SetQueue.Entry>(), queueOnDisk().pending)
+    }
+
+    // A correction the log will never take owes nothing more, and the row stays drawn until a read
+    // of the log hands back the log's numbers — a read that fails takes nothing away.
+    @Test
+    fun testAnUnwritableFixKeepsTheRowUntilARereadReplacesIt() = runTest {
+        val server = FakeTraining()
+        var readsFail = false
+        val log = object : TrainingSyncing by server {
+            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+                if (readsFail) throw IOException("offline")
+                return server.sessions(limit, before, beforeId)
+            }
+        }
+        server.open(Session(id = "ses_1", startedAtMs = 1_000))
+        val store = makeStore(sync = log)
+        store.connect(account(signedIn = true))
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        val logged = store.sets.single()
+        server.refuseFix = { refusal(400, "fix-unreadable", "that fix cannot be read") }
+        readsFail = true
+
+        val fixed = (store.fixSet("ses_1", logged.id, SetFix(reps = 4)) as FixOutcome.Corrected).set
+        runCurrent()
+
+        assertEquals(listOf(fixed), store.sets)
+        assertEquals(listOf<RefusedWrite>(RefusedSet(fixed, "the log kept the numbers this set was logged with")),
+            store.refusals)
+        assertEquals(emptyList<SetQueue.Entry>(), queueOnDisk().pending)
+        assertEquals(listOf(logged), server.sets.getValue("ses_1"))
+
+        readsFail = false
+        store.connect(account(signedIn = true))
+        assertEquals("the log's numbers replace the refused ones", listOf(logged), store.sets)
     }
 
     // A set no send has carried is the device's alone, so its delete sends nothing.
@@ -1662,16 +1723,27 @@ class TrainingStoreTests {
         val setId = store.sets.single().id
 
         assertNull(store.deleteSet("ses_1", setId))
+        runCurrent()
 
         assertEquals(listOf("ses_1" to setId), server.removed)
         assertEquals("the queue let it go once the log did", emptyList<TrainingSet>(), store.sets)
+        assertEquals(emptyList<SetQueue.Entry>(), queueOnDisk().pending)
         assertEquals(setOf(setId), store.deletedSets)
 
         server.refuseDelete = storageFailure
         store.logSet(weightKg = 90.0, reps = 3)
-        val second = store.sets.single().id
-        assertNotNull("a delete the log refused takes nothing off the queue", store.deleteSet("ses_1", second))
-        assertEquals(listOf(second), store.sets.map { it.id })
+        val second = store.sets.single()
+        assertNull("a delete is filed, never refused on the spot", store.deleteSet("ses_1", second.id))
+        runCurrent()
+        assertEquals(emptyList<TrainingSet>(), store.sets)
+        assertEquals("a delete the log refused stays owed", listOf(Triple(second.id, false, Owed.Delete)),
+            queueOnDisk().pending.map { Triple(it.set.id, it.attempted, it.write) })
+        assertEquals(listOf(second), server.sets.getValue("ses_1"))
+
+        server.refuseDelete = null
+        store.flushPendingSets()
+        assertEquals(emptyList<TrainingSet>(), server.sets.getValue("ses_1"))
+        assertEquals(emptyList<SetQueue.Entry>(), queueOnDisk().pending)
     }
 
     @Test

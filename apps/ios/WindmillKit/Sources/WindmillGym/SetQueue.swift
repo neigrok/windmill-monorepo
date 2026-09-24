@@ -310,9 +310,12 @@ public final class SetQueue {
         return appends.filter { stuck.contains($0.lane) }.count
     }
 
-    // One door for appends and settlements: a server row for a set this device owes settles it.
+    // One door for appends and settlements: a server row settles an owed append, never an owed fix or
+    // delete — the log's copy is the one this device has overruled.
     public func store(_ set: TrainingSet, in sessionId: String, needsPush: Bool) {
-        let remints = queue.entries[set.id]?.remints ?? 0
+        let existing = queue.entries[set.id]
+        if !needsPush, existing?.owes == .fix || existing?.owes == .delete { return }
+        let remints = existing?.remints ?? 0
         queue.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: needsPush,
                                      remints: remints, heldUntilMs: nil, owedWrite: .append,
                                      appendUnanswered: nil)

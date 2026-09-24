@@ -202,7 +202,8 @@ object LiveLines {
         }
     }
 
-    // The count is `TrainingStore.strandedCount` — offered and not landed — never every queued set.
+    // The count is `TrainingStore.strandedCount` — drawn sets whose append or correction a walk could
+    // not land — never every queued set.
     fun onThisDeviceLine(count: Int, by: Blocker?): String? {
         if (count <= 0) return null
         val subject = if (count == 1) "1 set is" else "$count sets are"

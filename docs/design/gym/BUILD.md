@@ -1619,8 +1619,8 @@ surfaces under the programme's standing rules. Everything below is read at the s
   two circles (`RepsRow`), a full-width `Log set` with no echo (`LogButton`). `Log set` holds nothing
   back: the set is sent at once and opens no window. **The store fixes what it still owes**:
   `TrainingStore.fixSet` and `deleteSet` rewrite a set no send has carried yet in the queue, and
-  send the change to the log behind the append for a set that may already be there
-  (`LogSetDeliveryTests`). **iOS's logger was not redrawn** and is ledger `5m`.
+  file the change in the queue behind the append for a set that may already be on the log, so it
+  stands on the phone at once and lands when the log answers (`LogSetDeliveryTests`). **iOS's logger was not redrawn** and is ledger `5m`.
 - **`Session · no routine` is `Free session` on all three** — `NO_ROUTINE` (`log.js`),
   `Readout.noRoutine` (`Readout.swift`, `Readout.kt`) — the log's rows, the finish sheet and the
   logger's title reading the one constant.
@@ -1681,7 +1681,7 @@ Everything below is a ledger entry, and `../consistency.md` carries each one's e
   follows Android's quiet ledger — the pinned head, the vertical set ledger, no last-time block, the
   raised rack) · `5q` (Android re-sends a closed session's pending set).
 - **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` ·
-  `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l` · `5p`. Two of
+  `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l`. Two of
   them are not gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer
   a reader's own text size at all, and `3w` is device residue, whose direction belongs to the
   security work's owner. The three S3 opened are all copy calls: the gap state a held bodyweight

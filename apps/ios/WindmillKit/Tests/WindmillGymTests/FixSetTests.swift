@@ -615,6 +615,76 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(store.stalled.isEmpty)
     }
 
+    private func liveLoggedStore(_ server: FakeTraining, undoWindowMs: Int64 = 0) async -> TrainingStore {
+        server.open(Session(id: "ses_1", startedAtMs: 1_000))
+        server.sets["ses_1"] = [set("set_1", 82.5, 5, at: 2_000, number: 1),
+                                set("set_2", 82.5, 4, at: 3_000, number: 2)]
+        let store = makeStore(sync: server, undoWindowMs: undoWindowMs)
+        await store.connect(to: account(signedIn: true))
+        return store
+    }
+
+    func testAReReadOfTheLiveSessionKeepsACorrectionStillOwed() async {
+        let server = FakeTraining()
+        let store = await liveLoggedStore(server)
+        server.refuseFix = refusal(503, message: "the log is busy")
+
+        await store.fix(set("set_2", 82.5, 4, at: 3_000, number: 2), in: "ses_1",
+                        by: SetFix(weightKg: 85, reps: 5, kind: .working))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.session?.id, "ses_1")
+        XCTAssertEqual(store.sets, [set("set_1", 82.5, 5, at: 2_000, number: 1),
+                                    set("set_2", 85, 5, at: 3_000, number: 2)])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.set), [set("set_2", 85, 5, at: 3_000, number: 2)])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.fix])
+
+        server.refuseFix = nil
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.sets["ses_1"], [set("set_1", 82.5, 5, at: 2_000, number: 1),
+                                              set("set_2", 85, 5, at: 3_000, number: 2)])
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
+    }
+
+    func testAReReadOfTheLiveSessionNeverBringsBackADeletedSet() async {
+        let server = FakeTraining()
+        let store = await liveLoggedStore(server, undoWindowMs: 9_000)
+
+        await store.delete(set("set_1", 82.5, 5, at: 2_000, number: 1), in: "ses_1")
+        server.refuseDelete = refusal(503, message: "the log is busy")
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1", "set_2"], "the log still holds the row")
+        XCTAssertEqual(store.sets, [set("set_2", 82.5, 4, at: 3_000, number: 2)])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.set.id), ["set_1"])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.delete])
+
+        server.refuseDelete = nil
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.sets["ses_1"], [set("set_2", 82.5, 4, at: 3_000, number: 2)])
+        XCTAssertEqual(store.sets, [set("set_2", 82.5, 4, at: 3_000, number: 2)])
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
+    }
+
+    func testFinishingIsRefusedWhileACorrectionOrADeleteOfThisSessionIsStillOwed() async {
+        let server = FakeTraining()
+        let store = await liveLoggedStore(server)
+        server.refuseFix = refusal(503, message: "the log is busy")
+        server.refuseDelete = refusal(503, message: "the log is busy")
+
+        await store.fix(set("set_2", 82.5, 4, at: 3_000, number: 2), in: "ses_1",
+                        by: SetFix(weightKg: 85, reps: 5, kind: .working))
+        await store.delete(set("set_1", 82.5, 5, at: 2_000, number: 1), in: "ses_1")
+        let outcome = await store.finish()
+
+        XCTAssertEqual(outcome, .stranded(2))
+        XCTAssertFalse(server.calls.contains("finish"))
+        XCTAssertEqual(store.session?.id, "ses_1", "the session stays open — a closed one could not take either write")
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.delete, .fix])
+    }
+
     func testAQueueFileFromBeforeCorrectionsOpensWithEveryOwedRowAnAppend() throws {
         let legacy = """
         {"entries":{"set_1":{"set":{"id":"set_1","exerciseId":"bench-press","weightKg":82.5,\

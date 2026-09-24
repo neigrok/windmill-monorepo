@@ -70,7 +70,7 @@ Gym has the mechanism — one window, declared once per platform. So the shape i
 transient that names what left and offers *Undo* → really gone.
 
 **And it is one length, held in two constants.** Every surface holds a delete for **9000 ms** —
-`SetQueue.swift:48`, `SetQueue.kt:53`, `fix.js:66` (`UNDO_MS`) — and a said sentence stands for the
+`SetQueue.undoWindowMs` (`SetQueue.swift`), `Withheld.windowMs` (`WithheldDelete.kt`), `fix.js:66` (`UNDO_MS`) — and a said sentence stands for the
 same 9000 (`useTrainingLog.js:21`, `TOAST_MS`). They are pinned equal and they are **two spans, never
 one number**: the window is how long a delete is still the lifter's, the toast is how long a sentence
 stands, and a window retires its own transient when its last clock closes rather than on a sentence's

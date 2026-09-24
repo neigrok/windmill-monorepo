@@ -55,6 +55,7 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
+import works.windmill.gym.store.Owed
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
@@ -262,11 +263,11 @@ class LoggerScreenTests {
         scope.cancel()
     }
 
-    // A set whose send went out and never came back may already be on the log, so its fix goes to
-    // the log and nowhere else: the row is still a door, and offline the sheet says the fix did not
-    // go while the ledger keeps the body the log may hold.
+    // A set whose send went out and never came back may already be on the log, so its fix is filed
+    // behind that send: the row is still a door, and offline the sheet saves at once, the ledger
+    // draws the correction, and the set stays on this device until the log answers.
     @Test
-    fun aRowMaybeOnTheLogIsADoorWhoseFixSaysItDidNotGoOffline() {
+    fun aRowMaybeOnTheLogIsADoorWhoseFixSavesOffline() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = logger(scope, logged = true, offline = true)
         compose.runOnIdle { assertEquals(1, store.stalled.size) }
@@ -280,10 +281,13 @@ class LoggerScreenTests {
         compose.onNodeWithText("Save fix").performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("The log didn’t answer — that set wasn’t changed.").assertIsDisplayed()
+        compose.onNodeWithText("Fix set").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 6 reps, on this device")).assertIsDisplayed()
         compose.runOnIdle {
-            assertEquals(listOf(5), store.sets.map { it.reps })
-            assertEquals(1, store.stalled.size)
+            assertEquals(listOf(6), store.sets.map { it.reps })
+            assertEquals(setOf(store.sets.single().id), store.stalled)
+            assertEquals(listOf(Triple(store.sets.single(), true, Owed.Fix)),
+                SetQueue(File(tmp.root, "queue.json"), "u1").pending.map { Triple(it.set, it.attempted, it.write) })
         }
         scope.cancel()
     }

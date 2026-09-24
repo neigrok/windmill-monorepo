@@ -250,7 +250,7 @@ class TrainingFinishTests {
         assertEquals(listOf(nextSet), server.sets.getValue(next.id))
     }
 
-    @Test fun aCorrectionWaitsForAppendAndPatchesItsCanonicalId() = runTest {
+    @Test fun aCorrectionFiledDuringTheAppendPatchesItsCanonicalId() = runTest {
         val server = FakeTraining()
         val gate = CompletableDeferred<Unit>()
         val log = object : TrainingSyncing by server {
@@ -267,21 +267,21 @@ class TrainingFinishTests {
         store.choose("bench-press")
         val append = launch { store.logSet(60.0, 8) }
         runCurrent()
-        val correction = async { store.fixSet("ses_mine", "set_2", SetFix(reps = 9)) }
-        runCurrent()
-        assertFalse(correction.isCompleted)
+        val filed = TrainingSet("set_2", "bench-press", null, 60.0, 9, completedAtMs = 1_000)
+        assertEquals(FixOutcome.Corrected(filed), store.fixSet("ses_mine", "set_2", SetFix(reps = 9)))
+        assertEquals(listOf(filed), store.sets)
         assertTrue(server.fixes.isEmpty())
         gate.complete(Unit)
         append.join()
         runCurrent()
         val expected = TrainingSet("set_canonical", "bench-press", 7, 60.0, 9, completedAtMs = 1_000)
-        assertEquals(FixOutcome.Corrected(expected), correction.await())
-        assertEquals(listOf(Triple("ses_mine", "set_canonical", SetFix(reps = 9))), server.fixes)
+        assertEquals(listOf(Triple("ses_mine", "set_canonical", SetFix(expected))), server.fixes)
+        assertEquals(listOf(expected), server.sets.getValue("ses_mine"))
         assertEquals(listOf(expected), store.sets)
         assertEquals(listOf(expected), (store.finish() as FinishOutcome.Closed).detail.sets)
     }
 
-    @Test fun aFailedCorrectionKeepsTheSettledSetAndCanRetryTheSameDraft() = runTest {
+    @Test fun aCorrectionTheLogCannotTakeYetStaysOwedAndLandsOnTheNextWalk() = runTest {
         val server = FakeTraining()
         val gate = CompletableDeferred<Unit>()
         server.onAppend = { gate.await() }
@@ -292,20 +292,77 @@ class TrainingFinishTests {
         val append = launch { store.logSet(60.0, 8) }
         runCurrent()
         val fix = SetFix(reps = 9, note = "kept input")
-        val correction = async { store.fixSet("ses_mine", "set_2", fix) }
+        val logged = TrainingSet("set_2", "bench-press", null, 60.0, 8, completedAtMs = 1_000)
         server.refuseFix = { IOException("offline") }
+        assertEquals(FixOutcome.Corrected(fix.corrected(logged)), store.fixSet("ses_mine", "set_2", fix))
         gate.complete(Unit)
         append.join()
         runCurrent()
-        assertTrue(correction.await() is FixOutcome.Failed)
         val stored = TrainingSet("set_2", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
-        assertEquals(listOf(stored), store.sets)
-        server.refuseFix = { null }
-        assertEquals(FixOutcome.Corrected(fix.corrected(stored)), store.fixSet("ses_mine", "set_2", fix))
+        assertEquals(listOf(stored), server.sets.getValue("ses_mine"))
         assertEquals(listOf(fix.corrected(stored)), store.sets)
+        assertEquals(1, store.strandedCount)
+        server.refuseFix = { null }
+        store.flushPendingSets()
+        assertEquals("every attempt carried the one correction",
+            setOf(Triple("ses_mine", "set_2", SetFix(fix.corrected(stored)))), server.fixes.toSet())
+        assertEquals(listOf(fix.corrected(stored)), server.sets.getValue("ses_mine"))
+        assertEquals(listOf(fix.corrected(stored)), store.sets)
+        assertEquals(0, store.strandedCount)
     }
 
-    @Test fun accountChangeDuringAppendDiscardsItsReplyAndTheWaitingCorrection() = runTest {
+    // A correction still owed keeps the session open: the closed workout is drawn from the log, and
+    // a PATCH landing after the finish would race any later fix of the past session.
+    @Test fun finishWaitsForAnOwedCorrectionAndTheClosedWorkoutShowsIt() = runTest {
+        val server = FakeTraining()
+        val store = store(mapOf("a" to server), undoMs = 0)
+        store.connect(account())
+        store.start()
+        store.choose("bench-press")
+        store.logSet(60.0, 8)
+        val logged = TrainingSet("set_2", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
+        assertEquals(listOf(logged), store.sets)
+        server.refuseFix = { IOException("offline") }
+        store.fixSet("ses_mine", "set_2", SetFix(reps = 9))
+        runCurrent()
+
+        assertEquals(FinishOutcome.Stranded(1), store.finish())
+        assertEquals(emptyList<Pair<String, Long>>(), server.finished)
+        assertEquals(listOf(logged), server.sets.getValue("ses_mine"))
+
+        server.refuseFix = { null }
+        val fixed = logged.copy(reps = 9)
+        val closed = store.finish() as FinishOutcome.Closed
+        assertEquals(listOf(fixed), closed.detail.sets)
+        assertEquals(listOf(fixed), server.sets.getValue("ses_mine"))
+        assertEquals(listOf(fixed), (store.sessionDetail("ses_mine") as GymResult.Ok).value.sets)
+    }
+
+    @Test fun finishWaitsForAnOwedDeleteAndTheClosedWorkoutLacksTheRow() = runTest {
+        val server = FakeTraining()
+        val store = store(mapOf("a" to server), undoMs = 0)
+        store.connect(account())
+        store.start()
+        store.choose("bench-press")
+        store.logSet(60.0, 8)
+        store.logSet(62.5, 6)
+        val (kept, deleted) = store.sets
+        server.refuseDelete = IOException("offline")
+        assertNull(store.deleteSet("ses_mine", deleted.id))
+        runCurrent()
+
+        assertEquals(FinishOutcome.Stranded(1), store.finish())
+        assertEquals(emptyList<Pair<String, Long>>(), server.finished)
+        assertEquals(listOf(kept, deleted), server.sets.getValue("ses_mine"))
+
+        server.refuseDelete = null
+        val closed = store.finish() as FinishOutcome.Closed
+        assertEquals(listOf(kept), closed.detail.sets)
+        assertEquals(listOf(kept), server.sets.getValue("ses_mine"))
+        assertEquals(listOf(kept), (store.sessionDetail("ses_mine") as GymResult.Ok).value.sets)
+    }
+
+    @Test fun accountChangeDuringAppendDiscardsItsReplyAndSendsNoCorrection() = runTest {
         val first = FakeTraining()
         val second = FakeTraining()
         val gate = CompletableDeferred<Unit>()
@@ -322,7 +379,8 @@ class TrainingFinishTests {
         gate.complete(Unit)
         append.join()
         arrival.join()
-        assertTrue(correction.await() is FixOutcome.Failed)
+        assertEquals(FixOutcome.Corrected(TrainingSet("set_2", "bench-press", null, 60.0, 9, completedAtMs = 1_000)),
+            correction.await())
         assertEquals(emptyList<TrainingSet>(), store.sets)
         assertTrue(first.fixes.isEmpty())
         assertTrue(second.appended.isEmpty())
