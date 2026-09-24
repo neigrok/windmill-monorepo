@@ -221,7 +221,7 @@ versioned `workflow_dispatch` also produces an unpublished signing-input artifac
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
 configuration. `versionCode` equals the workflow run number and must exceed the published
-[`android-v0.9.2`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.2) version code 93.
+[`android-v0.9.3`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.3) version code 98.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
@@ -231,27 +231,25 @@ unchanged application contents. Its output includes the APK, digest and provenan
 exact input bytes. It does not publish. Native acceptance and a same-key update check precede
 uploading the public artifacts to the matching GitHub release.
 
-The published [0.9.2/code93 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.2) uses tag `android-v0.9.2` at
-`5a656915c5b1f3f5c94a5849c032e6e85835794a`, [Actions run 35502208864](https://github.com/neigrok/windmill-monorepo/actions/runs/35502208864), attempt 1, from a tag push.
+The published [0.9.3/code98 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.9.3) uses tag `android-v0.9.3` at
+`ce6ce1893476ba1f2a35d5887c959b7736bf6694`, [Actions run 36016403780](https://github.com/neigrok/windmill-monorepo/actions/runs/36016403780), attempt 1, from a tag push.
 The retained signature, non-debuggable package, unchanged application payload and linked provenance
-are verified. All three anonymously downloaded public assets match the accepted signed files and
-GitHub's SHA-256 digests; the downloaded APK passes full verification.
-Its SHA-256 is `d23a429404035dfa0bfffc7eb1e6a32f33c7c2a27d0d155b533cc6e7491ee182`.
+are verified. All three anonymously downloaded public assets are byte-identical to the accepted signed
+files; the downloaded APK carries the retained certificate and version code 98.
+Its SHA-256 is `6975fdf8610a1c58269896fa9d42228ffbb9fa9701abbeaa5ca2ad0e8081918d`.
 
-Final-APK checks on Android 14 verified an in-place 0.9.1 update preserving the two-movement routine,
-active workout, logged 20kg×5 set and 25kg rack draft, including restart. A held swipe revealed the
-adjacent exercise above the fixed rack; reversal retained the draft and logged no set. Completed
-swipes selected the destination and returned using the store's normal prefill. An independent clean
-install created a routine, swiped to Barbell Row and saved a 20kg×5 workout retained after restart.
-Notifications stayed denied. The full Android build passed 1,290 executed tests per variant, and
-11 separate local live-wire cases passed; the optional magic-link fixture was not supplied.
+Final-APK checks on Android 14 verified an in-place 0.9.2 update preserving a one-movement routine and
+its finished 20 kg × 5 workout across two restarts, the signed-out Coach door, and an independent clean
+install whose saved workout survived a restart. Notifications stayed declined. The full Android build
+passed 1,254 gym unit tests per variant. Coach streaming and Markdown were verified on the debug build
+against a deterministic local provider, not on the signed APK; no live-wire cases were run for this
+release.
 
 Spoken TalkBack remains unexercised, and the narrow 320dp/200% text Routines tab-label clipping
-remains a tracked follow-up. Current paging and release evidence is in
-[paging verification](../../docs/android-workout-paging.md). The
-[interaction worklog](../../docs/gym-interaction-polish-log.md#android-091-release) retains the 0.9.1
-checks and frame-time limits; [the feedback execution log](../../docs/gym-feedback-execution.md)
-retains the 0.9.0 verification.
+remains a tracked follow-up. Coach stream evidence and the 0.9.3 acceptance are in the
+[interaction worklog](../../docs/gym-interaction-polish-log.md#android-093-release); the 0.9.2 paging
+evidence stays in [paging verification](../../docs/android-workout-paging.md), and
+[the feedback execution log](../../docs/gym-feedback-execution.md) retains the 0.9.0 verification.
 
 Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
 identity. The historical published APKs through0.7.1 used different debug certificates; the
