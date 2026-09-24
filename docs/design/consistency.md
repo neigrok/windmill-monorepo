@@ -2349,3 +2349,12 @@ reducing the accessible text size or touch target. This observation does not inv
 workout clocks, routine editor, logging and finish flows, and does not establish a complete
 large-text or TalkBack traversal pass.
 Tracking node: `android-gym-large-text-tab-label` (prerequisite: `android-gym-room`).
+
+**Gym Coach · Android renders answer Markdown; web and iOS show the markers** → open cross-surface drift, filed 24 September 2026.
+The Coach prompt asks the model for short paragraphs and bullet lists, and the model also bolds
+phrases. Android now renders those answers as Markdown blocks and paces streamed text between the
+server's once-a-second snapshots ([interaction-polish.md § Coach streaming](gym/interaction-polish.md)).
+Web (`pre-wrap` text) and iOS (`Text(text)`) still draw `**` and `- ` literally, and the Figma
+streaming specimens (`744:3844`, `744:3801`) show plain paragraphs. Design owns whether the two other
+surfaces adopt the same block typography and pacing rule; the Android choices are the reference until
+then. Tracking node: `gym-android-coach-stream-markdown`.

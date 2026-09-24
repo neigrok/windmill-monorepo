@@ -29,15 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
@@ -45,6 +43,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.R
@@ -102,10 +101,9 @@ fun AskScreen(
     val skin = LocalGymColors.current
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
     val presentation = rememberCoachPresentation(conversationId, thread)
-    val shownThread = presentation.exchanges
     val messageKeys = presentation.keys
-    val scroll = presentation.scroll
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
+    val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
     val telemetry = LocalTelemetry.current
     val shell = LocalShellActions.current
@@ -165,55 +163,57 @@ fun AskScreen(
             .fillMaxSize()
             .imePadding(),
       ) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onSizeChanged { presentation.viewport = it.height }) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val latestHeight = (maxHeight - GymLayout.contentTop - WindmillSpace.x2).coerceAtLeast(0.dp)
             Column(
                 verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(presentation.gestures)
-                    .verticalScroll(scroll)
+                    .then(presentation.anchoring)
+                    .verticalScroll(presentation.scroll)
                     .padding(horizontal = GymLayout.gutter)
                     .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x2),
             ) {
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
                 (historyFailure ?: draftFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
-                shownThread.forEachIndexed { index, exchange ->
-                    if (upload != null && index == shownThread.lastIndex && exchange.generation == null) return@forEachIndexed
-                    val messageKey = messageKeys[index]
-                    key(messageKey) {
+                thread.forEachIndexed { index, exchange ->
+                    if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
+                    key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth()
-                            .heightIn(min = if (index == shownThread.lastIndex && cap == null) latestHeight else 0.dp)
-                            .onGloballyPositioned { presentation.positions[messageKey] = it.positionInParent().y.toInt() },
+                            .heightIn(min = if (index == thread.lastIndex && cap == null) latestHeight else 0.dp),
                             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 exchange.attachments.forEach { CoachPhoto(store, conversationId, it, Modifier.size(160.dp)) }
                                 if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question)
                             }
-                            if (exchange.pending && exchange.generation?.answer.isNullOrEmpty()) {
+                            val answered = exchange.answer ?: exchange.generation?.response()
+                            val running = exchange.generation?.takeIf { exchange.answer == null && it.status == "running" }
+                            val text = if (running != null) rememberRevealedText(messageKeys[index], running) else answered?.answer.orEmpty()
+                            if (exchange.pending && text.isEmpty()) {
                                 Text(Ask.waiting, style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
                             }
-                            (exchange.answer ?: exchange.generation?.response())?.let { answered ->
-                                Answer(answered, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine)
-                                answered.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
+                            answered?.let { answer ->
+                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine)
+                                answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
                                     else failures[id]?.let { Trouble(it) { failures.remove(id); attempt += 1 } }
                                         ?: Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
                                 }
                             }
                             exchange.trouble?.let { said ->
-                                if ((cap != null || exchange.needsNew) && index == shownThread.lastIndex) return@let
+                                if ((cap != null || exchange.needsNew) && index == thread.lastIndex) return@let
                                 Trouble(
                                     said = said,
                                     onRetry = onRetry.takeIf {
-                                        exchange.again && !asking && index == shownThread.lastIndex
+                                        exchange.again && !asking && index == thread.lastIndex
                                     },
                                 )
                             }
                         }
                     }
                 }
-                val attached = shownThread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
+                val attached = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
                 proposalIds.filterNot { it in attached }.forEach { id ->
                     (store.settledProposals[id] ?: minted[id])?.let { proposal ->
                         Minted(proposal, store.catalog, nowMs, id in lookedAt) { onReview(proposal) }
@@ -231,8 +231,8 @@ fun AskScreen(
                     )
                 }
             }
-            if (!presentation.followEnd && shownThread.isNotEmpty() && presentation.awayFromEnd) TextButton(onClick = {
-                presentation.jumpToLatest()
+            if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) TextButton(onClick = {
+                scope.launch { presentation.jumpToLatest() }
             }, modifier = Modifier.align(Alignment.BottomCenter).heightIn(min = 48.dp)
                 .background(skin.surface, RoundedCornerShape(24.dp)).padding(horizontal = 12.dp)) {
                 Text("Jump to latest", style = WindmillFont.body(14), color = skin.accent)

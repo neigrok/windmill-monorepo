@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -671,6 +672,82 @@ class AskScreenTests {
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.onNodeWithText("Reading proposal…").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf("proposal"), server.calls.filter { it == "proposal" }) }
+        scope.cancel()
+    }
+
+    // Snapshots land about once a second; what each one adds after the room mounted is paced by
+    // the frame clock, and a stop shows the whole text at the next frame.
+    @Test
+    fun aRunningAnswerIsPacedBetweenSnapshotsAndAStopShowsItWholeAtTheNextFrame() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        val opening = "Opening words."
+        val first = opening + " " + "word ".repeat(60).trim()
+        val whole = first + " " + "more ".repeat(60).trim()
+        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", opening, revision = 1))
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+        }
+        fun shown(): String = compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true)
+            .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
+        assertEquals(opening, shown())
+        compose.runOnIdle { generation = generation.copy(answer = first, revision = 2) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        val early = shown()
+        assertTrue("early shows ${early.length} of ${first.length}", early.length > opening.length && early.length < first.length && first.startsWith(early))
+        compose.mainClock.advanceTimeBy(1500)
+        assertEquals(first, shown())
+        compose.runOnIdle { generation = generation.copy(answer = whole, revision = 3) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        val mid = shown()
+        assertTrue("mid shows ${mid.length}", mid.length > first.length && mid.length < whole.length && whole.startsWith(mid))
+        compose.runOnIdle { generation = generation.copy(status = "stopped", revision = 4) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeByFrame()
+        assertEquals(whole, shown())
+        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun aCompleteAnswerIsWholeOnItsFirstFrame() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val answer = "word ".repeat(60).trim()
+        compose.mainClock.autoAdvance = false
+        room(store(scope), thread = listOf(AskExchange("Question", AskAnswer(answer, ReadTally()))), cap = null, doors = mutableListOf())
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText(answer).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    // A room revisited mid-stream (tab switch, reopened thread, recreation) mounts on the text it
+    // already has: nothing re-types, and the waiting line never shows over text that is there.
+    @Test
+    fun aRunningAnswerAlreadyReceivedIsWholeOnItsFirstFrameAndNeverRetypes() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = store(scope)
+        val partial = "word ".repeat(300).trim().take(1499)
+        val generation = AskGeneration("generation-a", "request-a", "Question", "running", partial, revision = 7)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), true, null,
+                onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+        }
+        fun shown(): String = compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true)
+            .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
+        assertEquals(partial, shown())
+        compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+        repeat(3) {
+            compose.mainClock.advanceTimeByFrame()
+            assertEquals(partial, shown())
+            compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+        }
         scope.cancel()
     }
 

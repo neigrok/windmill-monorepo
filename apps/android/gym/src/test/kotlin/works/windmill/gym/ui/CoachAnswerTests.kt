@@ -8,15 +8,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -34,7 +41,7 @@ class CoachAnswerTests {
     fun anOpenCopyMenuAndExpandedReceiptSurviveReplacementText() {
         lateinit var clipboard: ClipboardManager
         val initial = "Café\n東京"
-        val final = "Café\n東京 — 🏋🏽‍♀️ e\u0301\nFinal words."
+        val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
         val text = androidx.compose.runtime.mutableStateOf(initial)
         val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes")))
         compose.setContent { GymMaterial {
@@ -62,15 +69,43 @@ class CoachAnswerTests {
         compose.onNodeWithText(question).performTouchInput { longClick() }
         compose.onNodeWithText("Copy").performClick()
         compose.runOnIdle { assertEquals(question, clipboard.getText()?.text) }
-        val actions = compose.onNodeWithText(answer).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        val message = compose.onNodeWithText("First paragraph.")
+        message.assert(hasText("Second paragraph — exact text."))
+        val actions = message.fetchSemanticsNode().config[SemanticsActions.CustomActions]
         compose.runOnIdle {
             assertEquals(listOf("Copy"), actions.map { it.label })
             actions.single().action()
         }
         compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
-        compose.onNodeWithText(answer).performTouchInput { longClick() }
+        compose.onNodeWithText("First paragraph.").performTouchInput { longClick() }
         compose.onNodeWithText("Copy").performClick()
         compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
+    }
+
+    @Test
+    fun markdownRendersAsStyledBlocksAndCopiesAsPlainText() {
+        lateinit var clipboard: ClipboardManager
+        val answer = "## Your week\n\n**Bold** start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work"
+        compose.setContent { GymMaterial {
+            clipboard = LocalClipboardManager.current
+            CoachAnswer(answer, null, emptyList(), 0)
+        } }
+        val bold = compose.onNodeWithText("Bold start").fetchSemanticsNode().config[SemanticsProperties.Text].single { it.text == "Bold start" }
+        assertEquals(listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, 4)), bold.spanStyles)
+        compose.onAllNodes(hasText("•"), useUnmergedTree = true).assertCountEquals(3)
+        compose.onNodeWithText("1.", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("2.", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Warm up", useUnmergedTree = true).assertIsDisplayed()
+        val laid = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Your week", useUnmergedTree = true).fetchSemanticsNode()
+            .config[SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
+        assertEquals(20.sp, laid.single().layoutInput.style.fontSize)
+        assertEquals(FontWeight.Bold, laid.single().layoutInput.style.fontWeight)
+        compose.onNodeWithText("Bold start").performTouchInput { longClick() }
+        compose.onNodeWithText("Copy").performClick()
+        compose.runOnIdle {
+            assertEquals("Your week\n\nBold start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work", clipboard.getText()?.text)
+        }
     }
 
     @Test
@@ -81,9 +116,9 @@ class CoachAnswerTests {
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             CoachAnswer("Keep these exact words.\n\nNo invented summary.", AnswerReceipt(1, ReadTally(4, 3, 1), observations = listOf(summary, full, movement)), emptyList(), 4000)
         } } }
-        compose.onNodeWithText("Keep these exact words.\n\nNo invented summary.").assertIsDisplayed()
+        compose.onNodeWithText("Keep these exact words.").assertIsDisplayed().assert(hasText("No invented summary."))
         compose.onNodeWithText("From your log").assertIsDisplayed()
-        compose.onAllNodes(androidx.compose.ui.test.hasText("Working sets")).assertCountEquals(1)
+        compose.onAllNodes(hasText("Working sets")).assertCountEquals(1)
         compose.onNodeWithText("960 kg").assertIsDisplayed()
         compose.onNodeWithText("2700 kg").assertDoesNotExist()
         compose.onNodeWithText("9999 kg").assertDoesNotExist()

@@ -2,8 +2,9 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -13,14 +14,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.runCurrent
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,32 +37,56 @@ class CoachPresentationTests {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    fun aBurstPublishesOneFullUnicodeReplacementAtTheNextDisplayFrame() = kotlinx.coroutines.test.runTest {
+    fun aBurstOfSupersedingRevisionsLeavesOneTextNodeShowingTheFinalUnicodeText() {
         val first = AskGeneration("generation-a", "request-a", "Question", "running", "First", revision = 1)
         var generation by mutableStateOf(first)
-        val presentation = CoachPresentation(listOf(first.exchange()), androidx.compose.foundation.ScrollState(0))
-        val frame = androidx.compose.runtime.BroadcastFrameClock()
-        val task = launch(frame) { presentation.present { listOf(generation.exchange()) } }
-        runCurrent()
-        frame.sendFrame(0)
-        runCurrent()
-        for (revision in 2..100) {
-            generation = first.copy(answer = "word ".repeat(revision), revision = revision.toLong())
-            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
-            runCurrent()
+        lateinit var presentation: CoachPresentation
+        compose.setContent { GymMaterial {
+            presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
+            Column(Modifier.fillMaxSize().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
+                CoachAnswer(generation.answer, null, emptyList(), 0)
+            }
+        } }
+        val final = List(500) { "Café 東京 مرحبًا 🏋🏽‍♀️ é" }.joinToString("\n")
+        compose.runOnIdle {
+            for (revision in 2..100) generation = first.copy(answer = "word ".repeat(revision), revision = revision.toLong())
+            generation = first.copy(status = "stopped", answer = final, revision = 101)
         }
-        val last = first.copy(status = "stopped", answer = "Café 東京 مرحبًا 🏋🏽‍♀️ e\u0301\n".repeat(500), revision = 101)
-        generation = last
-        androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
-        runCurrent()
-        assertEquals(listOf(first.exchange()), presentation.exchanges)
-        assertTrue(frame.hasAwaiters)
-        frame.sendFrame(16_000_000)
-        runCurrent()
-        assertEquals(listOf(last.exchange()), presentation.exchanges)
-        assertEquals(listOf("request-a"), presentation.keys)
-        task.cancel()
+        compose.onAllNodes(hasText(final), useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true).assertCountEquals(0)
+        compose.runOnIdle {
+            assertEquals(listOf("request-a"), presentation.keys)
+            assertEquals(presentation.scroll.maxValue, presentation.scroll.value)
+        }
+    }
+
+    @Test
+    fun noPlacementEverShowsTheOffsetLaggingTheEndWhileFollowing() {
+        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Line\n".repeat(60), revision = 1))
+        lateinit var presentation: CoachPresentation
+        val placements = mutableListOf<Pair<Int, Int>>()
+        compose.setContent {
+            presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
+            Column(Modifier.height(100.dp).fillMaxWidth().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
+                Text(generation.answer, Modifier.onPlaced {
+                    placements += presentation.scroll.maxValue to presentation.scroll.value
+                })
+            }
+        }
+        var opened = 0
+        compose.runOnIdle {
+            opened = presentation.scroll.maxValue
+            assertTrue(opened > 0)
+        }
+        for (revision in 2..6) {
+            compose.runOnIdle { generation = generation.copy(answer = generation.answer + "More\n".repeat(10), revision = revision.toLong()) }
+        }
+        compose.runOnIdle {
+            assertTrue(presentation.scroll.maxValue > opened)
+            assertEquals(placements.map { it.first }, placements.map { it.second })
+            assertEquals(6, placements.map { it.first }.distinct().size)
+            assertTrue(presentation.followEnd)
+        }
     }
 
     @Test
@@ -70,15 +97,12 @@ class CoachPresentationTests {
         compose.setContent {
             presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
             scope = rememberCoroutineScope()
-            presentation.viewport = 200
             presentation.tolerance = 96
-            Column(Modifier.height(100.dp).fillMaxWidth().verticalScroll(presentation.scroll)) {
-                Text(presentation.exchanges.single().generation!!.answer, Modifier.onGloballyPositioned {
-                    presentation.positions["request-a"] = it.positionInParent().y.toInt()
-                })
+            Column(Modifier.height(100.dp).fillMaxWidth().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
+                Text(generation.answer)
             }
         }
-        compose.runOnIdle { presentation.jumpToLatest() }
+        compose.runOnIdle { scope.launch { presentation.jumpToLatest() } }
         compose.waitForIdle()
         compose.mainClock.autoAdvance = false
         compose.runOnIdle { generation = generation.copy(answer = generation.answer + "Next line\n", revision = 2) }
@@ -99,10 +123,13 @@ class CoachPresentationTests {
         compose.runOnIdle {
             assertFalse(presentation.followEnd)
             assertEquals(pausedAt, presentation.scroll.value)
-            presentation.jumpToLatest()
+            scope.launch { presentation.jumpToLatest() }
         }
         compose.mainClock.autoAdvance = true
         compose.waitForIdle()
-        compose.runOnIdle { assertEquals(presentation.scroll.maxValue, presentation.scroll.value) }
+        compose.runOnIdle {
+            assertEquals(presentation.scroll.maxValue, presentation.scroll.value)
+            assertTrue(presentation.followEnd)
+        }
     }
 }

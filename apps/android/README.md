@@ -92,10 +92,15 @@ Connected log and Account. There is no Kind or set-confirmation sound/haptic con
 retains the explicit notice that this phone still displays kg.
 
 Coach's current and retained conversations share `AskScreen`, `CoachComposer` and `CoachAnswer`.
-History is editable and paged. Long press or the accessibility Copy action copies either speaker's
-text, including partial answers. Server-sent generation snapshots replace visible text in revision
-order; Stop, interruption and retry preserve partial words and completed routine receipts. Readers
-who scroll back keep their place and can jump to the latest message.
+History is editable and paged. Long press, a tap or the accessibility Copy action copies either
+speaker's text, including partial answers; an answer copies as plain text. Answers render as
+Markdown blocks (`CoachMarkdown` in `domain/`: headings, lists, code, bold, italic), with an
+unclosed marker styling the text to the end of its block while the answer streams. Server-sent
+generation snapshots arrive about once a second; `CoachPresentation` paces the new text of a
+running answer over the observed interval and corrects the scroll offset in the layout phase, so
+the end is followed with no lag and no animation. Stop, interruption and retry preserve partial
+words and completed routine receipts. Readers who scroll back keep their place and can jump to the
+latest message.
 
 The native photo picker accepts one image with an optional caption. `CoachPhotos` applies orientation
 and encodes JPEG/PNG within 4096 pixels per edge and 5 MiB. Attachment uploads and retained-image reads
