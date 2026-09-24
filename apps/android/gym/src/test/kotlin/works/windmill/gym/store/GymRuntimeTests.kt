@@ -323,8 +323,74 @@ class GymRuntimeTests {
             assertEquals(Session("session", started), coldStore.session)
             assertEquals(listOf(set), coldStore.sets)
             assertEquals("session", cold.notification.value?.key?.sessionId)
+            assertTrue(SetQueue(file).writable)
+            assertNotNull(cold.notification.value?.offer)
             assertEquals(Session("session", started), SetQueue(file).session)
         }
+    }
+
+    @Test
+    fun the093SavedWorkoutReconnectsAndContinuesItsNextSetExactlyOnce() = runTest {
+        val raw = requireNotNull(javaClass.getResourceAsStream("/works/windmill/gym/store/set-queue-0.9.3.json"))
+            .bufferedReader().use { it.readText() }
+        val file = File(tmp.root, "sets.json").apply { writeText(raw) }
+        val queue = SetQueue(file)
+        assertTrue(queue.writable)
+        assertEquals(raw, file.readText())
+        val started = 1_790_281_042_943L
+        val setAt = 1_790_281_045_070L
+        val moment = WorkoutMoment(setAt + 60_000, 821_156, "boot:8")
+        val live = Session("ses_2a4af890d6847b7f", started, routineId = "rt_d8b732ed2a49f4ff",
+            plan = PlanSnapshot("Cleanliness upgrade", entries = listOf(PlanEntry("bench-press"))))
+        val original = TrainingSet("set_f5cd00cda9ab6976", "bench-press", weightKg = 20.0,
+            reps = 5, completedAtMs = setAt)
+        val store = TrainingStore(queue, DeviceCopy(File(tmp.root, "catalog")), LocalLog(File(tmp.root, "log")),
+            LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "bodyweight")),
+            backgroundScope, now = { moment.wallMs }, workoutClock = WorkoutClock { moment },
+            mintSet = { "next-set" }, sync = { null })
+        val runtime = GymRuntime(store, { null }, { true }, StandardTestDispatcher(testScheduler))
+        runtime.restoreLocal()
+        store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), null))
+        assertNull(store.workoutFailure)
+        assertEquals(live, store.session)
+        assertEquals(listOf(original), store.sets)
+        assertEquals(listOf(SetQueue.Entry(original, live.id, true, 0, setAt,
+            WorkoutEvent(original.id, WorkoutMoment(setAt, 761_156, "boot:8")), eventOrder = 4)), queue.pending)
+        val offered = requireNotNull(runtime.notification.value?.offer)
+        assertEquals(LogSetOffer(WorkoutKey("anon", live.id), "set_cf23e0d077731ad8", 6,
+            "bench-press", 2, 20.0, 5), offered)
+        val command = LogSetCommand(offered.key, offered.id)
+        assertEquals(LogSetAcceptance.Accepted(offered.id), runtime.logSet(command))
+        assertEquals(LogSetAcceptance.Stale, runtime.logSet(command))
+        val second = TrainingSet(offered.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
+        val reopened = SetQueue(file)
+        assertTrue(reopened.writable)
+        assertEquals(live, reopened.session)
+        assertEquals(listOf(original, second), reopened.sets)
+        assertEquals(setOf(original.id, second.id), reopened.workout.consumed)
+        assertEquals(3, reopened.workout.offer?.workingOrdinal)
+        assertEquals("next-set", reopened.workout.offer?.id)
+    }
+
+    @Test
+    fun anUnreadableSavedWorkoutReportsRecoveryInsteadOfCrashingDuringReconnect() = runTest {
+        val raw = """{"queues":{"anon":{"session":{"id":"session","startedAt":100000},"order":["bench-press"],"chosenMovement":"bench-press","workout":{"version":2}}}}"""
+        val file = File(tmp.root, "sets.json").apply { writeText(raw) }
+        val queue = SetQueue(file)
+        val moment = WorkoutMoment(101_000, 1_000, "boot")
+        val store = TrainingStore(queue, DeviceCopy(File(tmp.root, "catalog")), LocalLog(File(tmp.root, "log")),
+            LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "bodyweight")),
+            backgroundScope, now = { moment.wallMs }, workoutClock = WorkoutClock { moment }, sync = { null })
+        val runtime = GymRuntime(store, { null }, { true }, StandardTestDispatcher(testScheduler))
+        runtime.restoreLocal()
+        store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), null))
+        assertFalse(store.isLoading)
+        assertEquals("The workout could not be saved safely. Restart the app to recover it.", store.workoutFailure)
+        assertNull(runtime.notification.value)
+        assertFalse(queue.writable)
+        assertEquals(raw, file.readText())
+        assertTrue(store.start() is GymResult.Failed)
+        assertEquals(raw, file.readText())
     }
 
     @Test

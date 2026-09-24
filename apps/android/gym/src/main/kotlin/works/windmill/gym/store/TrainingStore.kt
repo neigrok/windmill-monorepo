@@ -614,7 +614,10 @@ class TrainingStore(
         // A workout composed on this device is filed under the seat that composed it, so a claim can
         // never replay one lifter's training into the account that signed in after them. An
         // unverified seat draws its own room but may not take ownership of unclaimed work.
-        try { queue.adopt(owner) }
+        try {
+            check(queue.writable) { "Restart the app to recover the saved workout." }
+            queue.adopt(owner)
+        }
         catch (error: Exception) {
             reportFailure("gym.connect", error)
             authorizeWorkout(false)

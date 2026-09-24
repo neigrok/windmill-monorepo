@@ -215,8 +215,11 @@ the explicit way to restore it.
 Android has no rest target, rest alert or exact-alarm permission. The logger retains workout elapsed
 and time since the latest set. Preference and routine writes preserve unowned server fields at the
 HTTP boundary through a fresh preservation read before each replacement; an unavailable read
-prevents the write. Old local rest keys are ignored without migration. Logging has no confirmation
-sound or vibration.
+prevents the write. The saved-workout decoder ignores the four retired version-1 control keys
+(`rest`, `attemptedRest`, `alertAccess`, `restAlerts`) without interpreting their values or rewriting
+the file on open. Future versions, other unknown control fields and malformed current fields keep
+the queue read-only; reconnect reports recovery instead of attempting to resume writes. Logging
+has no confirmation sound or vibration.
 
 ## CI and releases
 

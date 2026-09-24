@@ -10,6 +10,7 @@ import works.windmill.gym.domain.ClaimSource
 import works.windmill.gym.domain.ClaimKind
 import works.windmill.gym.domain.ClaimItem
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
@@ -167,8 +168,11 @@ class SetQueue private constructor(
         val fields = node as? JsonObject ?: run { unreadable = true; return Queued() }
         if (fields["workout"] != null) {
             try {
-                val authority = Json { explicitNulls = false }.decodeFromJsonElement(WorkoutState.serializer(), fields.getValue("workout"))
-                return diskJson.decodeFromJsonElement(Queued.serializer(), fields).copy(workout = authority)
+                val authority = fields.getValue("workout") as? JsonObject
+                    ?: throw SerializationException("Workout controls must be an object")
+                val current = JsonObject(authority - setOf("rest", "attemptedRest", "alertAccess", "restAlerts"))
+                val workout = Json { explicitNulls = false }.decodeFromJsonElement(WorkoutState.serializer(), current)
+                return diskJson.decodeFromJsonElement(Queued.serializer(), fields).copy(workout = workout)
             } catch (error: Exception) {
                 telemetry.failure("gym.storage.decode", error)
                 unreadable = true

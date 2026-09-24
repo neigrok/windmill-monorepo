@@ -14,6 +14,7 @@ the backend, web and iOS keep their current behavior. The work is tracked by
 | Target during movement creation | Complete | Debug/release regression runs and lint passed |
 | Simplification and adversarial review | Complete | Final regression runs passed |
 | Native acceptance | Complete | Final Log captures accepted; spoken TalkBack not exercised |
+| 0.9.3 active-workout upgrade | Compatibility decoder and recovery guard complete | Focused/full tests and native fixture preflight passed; signed-release upgrade pending |
 | Android 0.10.0 release | Release notes prepared | Signing, update verification and publication pending |
 
 The five Android cleanliness drift entries filed on 24 September are closed in
@@ -36,6 +37,10 @@ The five Android cleanliness drift entries filed on 24 September are closed in
   field; deleted movements remain deleted. The preservation read never supplies a newer revision.
 - Auto-close reads the latest persisted set event directly, before any derived workout refresh.
   Legacy rest state is ignored, and a recent set remains the activity anchor after an app upgrade.
+- The saved-workout boundary ignores only the four retired version-1 control keys. Remaining
+  fields still use strict decoding: future versions, unknown control fields and malformed known
+  fields keep writes blocked. Opening a compatible queue does not rewrite it. An unreadable queue
+  reports recovery during reconnect instead of reaching the movement-selection writer.
 - The notification adapter renders the immutable workout projection directly; no second card DTO
   or rest alarm lifecycle remains. Existing callback identities outside Open, Log set and Hide
   have no effect.
@@ -49,16 +54,28 @@ The five Android cleanliness drift entries filed on 24 September are closed in
 
 ## Verification results
 
-The final Gradle build, lint, debug/release tests and APK builds passed in 1 minute 31 seconds.
-Each gym variant reports 1,252 tests: 1,240 executed, zero failures or errors, and 12 live-wire tests
+The final Gradle build, lint, debug/release tests and APK builds passed in 1 minute 54 seconds.
+Each gym variant reports 1,254 tests: 1,242 executed, zero failures or errors, and 12 live-wire tests
 skipped without runtime configuration. The separate configured live-wire run passed all 12 tests
 against the local backend with zero skips. Each platform variant passed 90 tests with zero skips.
 The release helper passed all 18 tests.
 
-Evidence is `accepted-build.log`, `accepted-gym-Debug/`, `accepted-gym-Release/`,
-`accepted-platform-Debug/`, `accepted-platform-Release/`, `live-wire-tests.log`,
+Evidence is `release/upgrade-full-build.log`, the debug/release test-result XML, `live-wire-tests.log`,
 `live-wire-results.xml` and `release-tools.log` under the verification directory below.
 Release-certificate checks, installation update verification and publication remain pending.
+
+The active-workout upgrade correction passed 178 focused tests with zero failures, errors or skips
+in 35 seconds: `WorkoutQueueTests` (10), `GymRuntimeTests` (10), `SetQueueTests` (26) and
+`TrainingStoreTests` (132). The exact 0.9.3 queue from the disposable upgrade installation is a
+test fixture; its regression restores, reconnects, logs the next set exactly once and reopens the
+queue with both set identities intact. Other regressions retain rejection of unknown top-level and
+nested controls, unsupported versions and malformed current fields. Independent review found no
+remaining issues. Evidence is `release/upgrade-regression.log`.
+
+Native debug preflight on emulator 5558 loaded the exact 0.9.3 queue, restored its 20 kg × 5 set,
+and logged one more set. The queue held exactly two 20 kg × 5 entries and an offer for set 3;
+both entries survived a restart. Captures are `upgrade-preflight-restored` and
+`upgrade-preflight-next-set`. The corrected signed-release upgrade check remains pending.
 
 Native acceptance on the isolated emulator verified:
 

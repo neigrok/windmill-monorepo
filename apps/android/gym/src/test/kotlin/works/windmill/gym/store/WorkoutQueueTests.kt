@@ -79,13 +79,18 @@ class WorkoutQueueTests {
 
     @Test
     fun malformedWorkoutAuthorityCannotBeOverwrittenOrUsedAsAnEmptyQueue() {
-        val file = File(tmp.root, "sets.json")
-        val raw = """{"queues":{"anon":{"session":{"id":"session","startedAt":100000},"workout":{"version":2}}}}"""
-        file.writeText(raw)
-        val queue = SetQueue(file)
-        assertFalse(queue.writable)
-        assertThrows(IllegalStateException::class.java) { queue.hold(Session("new", 200_000)) }
-        assertEquals(raw, file.readText())
+        for (authority in listOf("""{"version":2}""", """{"rack":{"reps":"bad"}}""",
+            """{"consumed":false}""", """{"offer":{"id":"missing-context"}}""",
+            """{"futureAuthority":true}""",
+            """{"rack":{"exerciseId":"bench","weightKg":20.0,"reps":5,"basisSetCount":0,"edited":false,"revision":1,"futureAuthority":true}}""")) {
+            val file = File(tmp.root, "sets.json")
+            val raw = """{"queues":{"anon":{"session":{"id":"session","startedAt":100000},"workout":$authority}}}"""
+            file.writeText(raw)
+            val queue = SetQueue(file)
+            assertFalse(queue.writable)
+            assertThrows(IllegalStateException::class.java) { queue.hold(Session("new", 200_000)) }
+            assertEquals(raw, file.readText())
+        }
     }
 
     @Test
