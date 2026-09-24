@@ -1679,7 +1679,7 @@ Everything below is a ledger entry, and `../consistency.md` carries each one's e
   · `4e` (iOS's double-keep guard is in the tree and nothing can pin it: what is owed is the seam,
   an injectable store on `GymRoom` or a launch argument that slows the write) · `5m` (iOS's logger
   follows Android's quiet ledger — the pinned head, the vertical set ledger, no last-time block, the
-  raised rack) · `5q` (Android re-sends a closed session's pending set).
+  raised rack) · `5z` (Android re-sends a closed session's pending set).
 - **A ruling or a copy owner is owed** — `3b` · `3j` · `3q` · `3s` · `3u` · `3w` · `3z` ·
   `4g` · `4j` · `4k` · `4l` · `4q` · `4r` · `4s` · `4u` · `4v` · `5h` · `5i` · `5k` · `5l`. Two of
   them are not gym's to answer alone: `4j` is product-wide, since two surfaces of three do not answer

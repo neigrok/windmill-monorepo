@@ -2042,20 +2042,20 @@ Its logged pills open the same fix sheet mid-workout. The web starts no sessions
 mirror, so it has nothing to follow. What is owed is the same screen on iOS in the platform's own
 controls, with the same strings and the same absences.
 
-**5o · the canonical Figma logger frames draw the retired strip** → fix toward the Gym Figma file.
+**5x · the canonical Figma logger frames draw the retired strip** → fix toward the Gym Figma file.
 The Android logger frames (`659:7175`, `660:7955`) and brief 17's frame from `313:361` draw the
 horizontal set strip and the last-time chip. The shipped shape exists only in the proposals section
 `805:4536` (`B+ · Quiet ledger`), whose Frame 3 still draws an Undo after `Log set` that the build
 does not have. Promote `805:4536` to canon and retire the old frames.
 
-**5p · a fix made offline to a set that may be on the log differs by phone** → built 2026-09-24,
+**5y · a fix made offline to a set that may be on the log differs by phone** → built 2026-09-24,
 nothing owed. Both phones file a fix or delete of a set whose append has gone out in the queue
 behind that append (`SetQueue.kt` follows `SetQueue.swift`): it stands on the phone at once, offline
 included, the walk replays the append and then sends the change, a reply settles an entry only while
 it still reads as it did when sent, and Finish keeps the session open while any append, fix or
 delete of it is still owed.
 
-**5q · Android sends a closed session's pending set again** → a build owed on Android. A pending set
+**5z · Android sends a closed session's pending set again** → a build owed on Android. A pending set
 whose session was closed elsewhere is deleted on the log but not dropped from `SetQueue`, so a later
 walk can send it again.
 
@@ -2071,14 +2071,9 @@ nothing, so theirs says so in four words. Each is true of its own surface and fa
 Neither draws *Display only — nothing stored changes.* any more, on any surface. Recorded so a later
 sweep does not read the two sentences as a byte drift to reconcile.
 
-**5o · the logger's two chips sit under the room's touch floor** → a ruling owed by
-`gym/guidelines/thumb-reach.md`. The Android logger's kind chip and last-time chip are Material
-`AssistChip`s drawn 32 dp tall with `LocalMinimumInteractiveComponentSize` lowered to 32 dp
-(`ChipRow` in `ui/LoggerScreen.kt`), because the reading region's height budget on a 411 × 731 dp
-frame at font scale 1.0 (`LargestTypeTests`) leaves no room for Material's 48 dp interactive box
-twice over. `GymTap.minimum` is 46 dp and every other control on the screen clears it. Either the
-floor admits a chip whose row is not in the reach band, or the two chips share one row. Decide once;
-until then this is the one control in the room below the floor.
+**5o · the logger's two chips sit under the room's touch floor** → resolved 2026-09-24, nothing
+owed. The Android logger draws no chips: the quiet ledger (`5m`) has no kind chip and no last-time
+chip, and every control on the screen clears `GymTap.minimum`.
 
 **5p · the pricing brief says the static pages are light only, and they are not** → built
 2026-09-06 in the brief, nothing owed. `marketing/guidelines/pricing.md` no longer says "light
