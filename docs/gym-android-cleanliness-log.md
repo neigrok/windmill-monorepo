@@ -14,11 +14,11 @@ the backend, web and iOS keep their current behavior. The work is tracked by
 | Target during movement creation | Complete | Debug/release regression runs and lint passed |
 | Simplification and adversarial review | Complete | Final regression runs passed |
 | Native acceptance | Complete | Final Log captures accepted; spoken TalkBack not exercised |
-| 0.9.3 active-workout upgrade | Compatibility decoder and recovery guard complete | Focused/full tests and native fixture preflight passed; signed-release upgrade pending |
-| Android 0.10.0 release | Release notes prepared | Signing, update verification and publication pending |
+| 0.9.3 active-workout upgrade | Complete | Focused/full tests, native fixture preflight and signed-release upgrade passed |
+| Android 0.10.0 release | Published | Signing, signed upgrade, clean installation and public download verification passed |
 
 The five Android cleanliness drift entries filed on 24 September are closed in
-`docs/design/consistency.md`. Release readiness remains subject to the gates above.
+`docs/design/consistency.md`.
 
 ## Contracts and observations
 
@@ -62,7 +62,6 @@ The release helper passed all 18 tests.
 
 Evidence is `release/upgrade-full-build.log`, the debug/release test-result XML, `live-wire-tests.log`,
 `live-wire-results.xml` and `release-tools.log` under the verification directory below.
-Release-certificate checks, installation update verification and publication remain pending.
 
 The active-workout upgrade correction passed 178 focused tests with zero failures, errors or skips
 in 35 seconds: `WorkoutQueueTests` (10), `GymRuntimeTests` (10), `SetQueueTests` (26) and
@@ -75,7 +74,7 @@ remaining issues. Evidence is `release/upgrade-regression.log`.
 Native debug preflight on emulator 5558 loaded the exact 0.9.3 queue, restored its 20 kg × 5 set,
 and logged one more set. The queue held exactly two 20 kg × 5 entries and an offer for set 3;
 both entries survived a restart. Captures are `upgrade-preflight-restored` and
-`upgrade-preflight-next-set`. The corrected signed-release upgrade check remains pending.
+`upgrade-preflight-next-set`. The signed-release upgrade also passed, as recorded below.
 
 Native acceptance on the isolated emulator verified:
 
@@ -94,8 +93,37 @@ Native acceptance on the isolated emulator verified:
   editor remain readable at 320 dp / 200% text. The final narrow Log capture is also accepted:
   the date stacks and the caption wraps to two lines without clipping (`log-320-200-final.png`).
 
-Spoken TalkBack was not exercised. Sign-in used a local test-token mail bridge; the real email
-provider was not exercised.
+Spoken TalkBack was not exercised. The 320 dp / 200% text Routines navigation-label clipping remains
+a tracked follow-up. Sign-in used a local test-token mail bridge; the real email provider was not
+exercised.
+
+## Published release
+
+[Android 0.10.0/code108](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.10.0)
+is published from `7a419e4664a8c380bac839946fc3cc8decf64c89`.
+[Tag CI run 36055932135](https://github.com/neigrok/windmill-monorepo/actions/runs/36055932135),
+attempt 1 from a tag push, passed the full build and signing-input job.
+[Main CI run 36055927071](https://github.com/neigrok/windmill-monorepo/actions/runs/36055927071)
+also passed. Local finalization verified the retained certificate, non-debuggable package,
+unchanged application payload and linked provenance.
+
+- APK SHA-256: `80d47e2ad5a48399b8cdf4aadf0218043ccd14a982f5ceff2da00f630fb71185`.
+- Certificate SHA-256: `e911c90024117df99a2852a0d7820889e3d8a399506a8557148af7171c63e2bb`.
+
+The signed APK passed a direct code98-to-code108 installation update on emulator 5560. Its actual
+0.9.3 saved queue restored one 20 kg × 5 set, accepted a second set once, and retained both sets
+and offer 3 after restart. Finishing stored 200 kg total volume. The routine opens in the new sheet,
+and the Log retains the earlier 100 kg session and the new 200 kg session.
+
+An independent clean installation saved a free-session 20 kg × 5 workout and retained its session
+and best moment in the Log after restart. Notifications remained declined during signed-APK
+acceptance.
+
+All three public release assets downloaded anonymously with curl configuration disabled are
+byte-identical to the accepted signed files. Inspection of the downloaded APK confirms the SHA-256
+above, retained certificate, `works.windmill.app` package, non-debuggable flag and version
+0.10.0/code108. The release is neither a draft nor a prerelease and has exactly three assets.
+Evidence is `release/public-proof.json`.
 
 ## Verification environment
 
