@@ -78,11 +78,11 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   // by what happened after what, and never by two readings of the same millisecond.
   const spoke = useRef(0);
 
-  // The one voice. It says a sentence and nothing else — the only move a transient carries is the
-  // withheld window's Undo, which the window itself hands over.
-  const say = useCallback((text) => {
+  // The one voice. A sentence, and at most one move beside it: a saved workout's Undo, which opens
+  // the discard's own window. The withheld window's Undo is the window's to hand over.
+  const say = useCallback((text, { action = null } = {}) => {
     spoke.current += 1;
-    setToast({ text, at: spoke.current });
+    setToast({ text, at: spoke.current, action });
   }, []);
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -452,7 +452,7 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   const transient = spoken == null ? null : {
     text: spoken.text,
     detail: spoken.detail ?? null,
-    action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : null,
+    action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : spoken.action ?? null,
     dismiss: spoken.undoable ? null : dismissToast,
   };
 

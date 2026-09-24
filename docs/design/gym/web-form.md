@@ -1,7 +1,7 @@
 # Gym web — form
 
 How the gym web surface is composed and how a number is drawn. Binding on every board of
-`Web · Proposed UX` (`vdmdiKWrmZoS1FtcvJRf6O`, `466:132`) and on the implementation that follows it.
+`Web · Gym` (`vdmdiKWrmZoS1FtcvJRf6O`, `466:132`) and on the implementation that follows it.
 
 Obeys `../brand-foundations.md`, `../guidelines/motion-language.md`, `../guidelines/text-budget.md`,
 `briefs/15-the-routine.md`, `briefs/16-the-workout.md`, `briefs/17-set-targets.md`,
@@ -106,11 +106,12 @@ Feedback class throughout — immediate, never queued, inside the ceilings of
 ## The boards
 
 Every board is drawn at 1440 and 390, in Instrument and Daylight, bound to `gym/*` variables, on the
-one fixture of `web-figma-proposal.md`.
+one fixture of `web-design.md`.
 
 1. **Plan** — Routines, Routines empty, Routine editor (desktop split · narrow), Target sheet
    (straight · ladder · open), New routine, stale-save recovery.
-2. **Record** — The log, workout reader, past workout, saved-set correction, movement record.
+2. **Record** — The log, workout reader, past workout (`briefs/20-past-workout.md`), saved-set correction,
+   movement record.
 3. **Coach** — conversation, inline proposal, applied and dismissed receipts, Notes.
 
 The shared symbols — the set row, the editable number, the rail, the readout, the row action — are

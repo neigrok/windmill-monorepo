@@ -72,6 +72,9 @@ TEST(gym_routes_without_a_session_are_401) {
       send(h.training, &TrainingApi::lastSets, getRequest("/v1/gym/exercises/last"));
   drogon::HttpResponsePtr start =
       send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody()));
+  drogon::HttpResponsePtr import =
+      send(h.training, &TrainingApi::importSession,
+           postRequest("/v1/gym/sessions/import", Json::Value(Json::objectValue)));
   drogon::HttpResponsePtr append = send(h.training, &TrainingApi::appendSet,
                                         postRequest("/v1/gym/sessions/ses_11111111/sets", setBody()),
                                         "ses_11111111");
@@ -118,6 +121,7 @@ TEST(gym_routes_without_a_session_are_401) {
   // The picker's meta is a read of somebody's LOG under a catalog-shaped path.
   CHECK_EQ(lastSets->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(start->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(import->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(append->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(routines->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(createRoutine->getStatusCode(), drogon::k401Unauthorized);
@@ -1938,4 +1942,260 @@ TEST(gym_revoke_answers_204_and_a_second_revoke_is_the_same_fact_as_never_having
   CHECK_EQ(dump(bodyOf(again)), std::string(R"({"error":"no such session"})"));
   CHECK(h.repo.db.shares.empty());
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));   // the workout itself is untouched
+}
+
+// ── POST /v1/gym/sessions/import: a past workout written whole ─────────────────────────────────
+// The clock stands at 1'700'000'000'000; the imported workout ran from two hours to one hour before.
+
+namespace {
+Json::Value importBody(const std::string& id, std::uint64_t startedAt, std::uint64_t finishedAt,
+                       const std::vector<Json::Value>& sets) {
+  Json::Value body(Json::objectValue);
+  body["id"] = id;
+  body["startedAt"] = Json::Value::UInt64(startedAt);
+  body["finishedAt"] = Json::Value::UInt64(finishedAt);
+  body["sets"] = Json::Value(Json::arrayValue);
+  for (const Json::Value& set : sets) body["sets"].append(set);
+  return body;
+}
+
+drogon::HttpResponsePtr sendImport(Harness& h, const Json::Value& body, const std::string& cookie = "s-live") {
+  return send(h.training, &TrainingApi::importSession,
+              postRequest("/v1/gym/sessions/import", body, cookie));
+}
+}
+
+TEST(gym_import_from_a_routine_is_201_with_the_plan_frozen_and_the_routine_left_alone) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.program, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", routineBody(), "s-live"));
+  const std::string routineBefore = dump(bodyOf(
+      send(h.program, &ProgramApi::getRoutine, getRequest("/v1/gym/routines/rt_11111111", "s-live"), "rt_11111111")));
+  Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                {setBody("set_import01", "bench-press", 60, 1'699'993'400'000),
+                                 setBody("set_import02", "bench-press", 62.5, 1'699'994'000'000)});
+  body["routineId"] = "rt_11111111";
+
+  drogon::HttpResponsePtr response = sendImport(h, body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  const std::string stored =
+      R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","plan":{"entries":[{"exerciseId":"bench-press",)"
+      R"("restSeconds":180,"sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
+      R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}]}],"routine":"Push A"},"routineId":"rt_11111111",)"
+      R"("startedAt":1699992800000},"sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
+      R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0},{"completedAt":1699994000000,)"
+      R"("exerciseId":"bench-press","id":"set_import02","kind":"working","note":"","reps":8,"setNumber":2,"weightKg":62.5}]})";
+  CHECK_EQ(dump(bodyOf(response)), stored);
+  // The same shape the session's own read answers, byte for byte.
+  CHECK_EQ(dump(bodyOf(readSession(h.training, "ses_import01", "s-live"))), stored);
+  // Logging a day is not changing the plan: the routine moves only its trained line.
+  Json::Value routineAfter = bodyOf(send(h.program, &ProgramApi::getRoutine,
+                                         getRequest("/v1/gym/routines/rt_11111111", "s-live"), "rt_11111111"));
+  CHECK_EQ(routineAfter["lastTrainedAt"].asUInt64(), static_cast<std::uint64_t>(1'699'992'800'000));
+  routineAfter.removeMember("lastTrainedAt");
+  CHECK_EQ(dump(routineAfter), routineBefore);
+}
+
+TEST(gym_import_without_a_routine_is_201_ad_hoc_and_a_replay_is_200_with_the_stored_row) {
+  Harness h;
+  h.signIn("s-live");
+  const Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                      {setBody("set_import01", "back-squat", 100, 1'699'993'400'000)});
+
+  drogon::HttpResponsePtr created = sendImport(h, body);
+  drogon::HttpResponsePtr replayed = sendImport(h, body);
+
+  const std::string stored =
+      R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
+      R"("sets":[{"completedAt":1699993400000,"exerciseId":"back-squat","id":"set_import01","kind":"working",)"
+      R"("note":"","reps":8,"setNumber":1,"weightKg":100.0}]})";
+  CHECK_EQ(created->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(dump(bodyOf(created)), stored);
+  CHECK_EQ(replayed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(replayed)), stored);
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+}
+
+TEST(gym_import_leaves_the_open_session_alone_even_where_their_times_cross) {
+  Harness h;
+  const UserId me = h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_live0001", 1'699'995'000'000), "s-live"));
+
+  drogon::HttpResponsePtr response =
+      sendImport(h, importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                               {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)}));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
+                       R"("sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
+                       R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
+  // Still open, still where it began.
+  CHECK_EQ(h.repo.log.open(me), (std::optional<Session>{Session{sid("ses_live0001"), me, 1'699'995'000'000}}));
+}
+
+TEST(gym_import_replayed_after_the_hour_filled_in_is_still_200_and_a_changed_body_still_id_taken) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.training, &TrainingApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_live0001", 1'699'995'000'000), "s-live"));
+  const Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                      {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
+  sendImport(h, body);
+  // The live workout ends inside the imported hour, and now it is a finished session in the way.
+  send(h.training, &TrainingApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_live0001/finish", finishBody(1'699'996'000'000), "s-live"),
+       "ses_live0001");
+  Json::Value changed = body;
+  changed["sets"][0]["reps"] = 9;
+
+  drogon::HttpResponsePtr replayed = sendImport(h, body);
+  drogon::HttpResponsePtr rewritten = sendImport(h, changed);
+
+  CHECK_EQ(replayed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(replayed)),
+           std::string(R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
+                       R"("sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
+                       R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
+  CHECK_EQ(dump(bodyOf(rewritten)), std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
+}
+
+TEST(gym_import_crossing_a_finished_session_is_409_session_overlap_naming_it) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_before01", 1'699'990'000'000, 1);   // runs one hour from there
+
+  drogon::HttpResponsePtr response =
+      sendImport(h, importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                               {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)}));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"session-overlap","error":"these times cross a session already in the log",)"
+                       R"("session":{"finishedAt":1699993600000,"id":"ses_before01","startedAt":1699990000000},)"
+                       R"("sessionId":"ses_before01"})"));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  // Ending exactly as that one began, or beginning as it ended, crosses nothing.
+  drogon::HttpResponsePtr after =
+      sendImport(h, importBody("ses_import02", 1'699'993'600'000, 1'699'996'400'000, {}));
+  CHECK_EQ(after->getStatusCode(), drogon::k201Created);
+}
+
+TEST(gym_import_with_a_spent_session_id_is_409_session_id_taken_whoever_spent_it) {
+  Harness h;
+  h.signIn("s-live");
+  h.repo.db.sessions.push_back(Session{sid("ses_taken001"), uid("another-account"), 1'699'000'000'000});
+  const Json::Value mine = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                      {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
+  sendImport(h, mine);
+  Json::Value changed = mine;
+  changed["sets"][0]["reps"] = 9;
+
+  drogon::HttpResponsePtr theirs =
+      sendImport(h, importBody("ses_taken001", 1'699'980'000'000, 1'699'983'600'000, {}));
+  drogon::HttpResponsePtr rewritten = sendImport(h, changed);
+
+  CHECK_EQ(theirs->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(theirs)), std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
+  CHECK_EQ(rewritten->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(rewritten)), std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
+  CHECK_EQ(h.repo.db.sets[0].reps, 8);
+}
+
+TEST(gym_import_with_a_spent_set_id_is_409_set_id_taken_and_lands_nothing) {
+  Harness h;
+  h.signIn("s-live");
+  sendImport(h, importBody("ses_import01", 1'699'980'000'000, 1'699'983'600'000,
+                           {setBody("set_import01", "bench-press", 60, 1'699'981'000'000)}));
+
+  drogon::HttpResponsePtr response =
+      sendImport(h, importBody("ses_import02", 1'699'992'800'000, 1'699'996'400'000,
+                               {setBody("set_import02", "bench-press", 60, 1'699'993'400'000),
+                                setBody("set_import01", "bench-press", 60, 1'699'994'000'000)}));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"set-id-taken","error":"sets[1] (set_import01): that set id is already used"})"));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+}
+
+TEST(gym_import_naming_a_routine_the_caller_cannot_read_is_404) {
+  Harness h;
+  h.signIn("s-live");
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_theirs01"), uid("another-account"), "Legs", 0, {benchEntry()}});
+  Json::Value theirs = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000, {});
+  theirs["routineId"] = "rt_theirs01";
+  Json::Value missing = importBody("ses_import02", 1'699'992'800'000, 1'699'996'400'000, {});
+  missing["routineId"] = "rt_missing1";
+
+  drogon::HttpResponsePtr another = sendImport(h, theirs);
+  drogon::HttpResponsePtr absent = sendImport(h, missing);
+
+  CHECK_EQ(another->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(another)), std::string(R"({"error":"no such routine"})"));
+  CHECK_EQ(dump(bodyOf(absent)), dump(bodyOf(another)));
+  CHECK(h.repo.db.sessions.empty());
+}
+
+TEST(gym_import_that_cannot_be_read_is_400_with_the_sentence_that_says_why) {
+  Harness h;
+  h.signIn("s-live");
+  const auto refusal = [&](const Json::Value& body) {
+    drogon::HttpResponsePtr response = sendImport(h, body);
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    return dump(bodyOf(response));
+  };
+  const Json::Value good = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                      {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
+  Json::Value unknownField = good;
+  unknownField["joinOpenSession"] = false;
+  Json::Value unknownSetField = good;
+  unknownSetField["sets"][0]["setNumber"] = 1;
+  Json::Value unknownKind = good;
+  unknownKind["sets"][0]["kind"] = "cluster";
+  Json::Value outside = good;
+  outside["sets"][0]["completedAt"] = Json::Value::UInt64(1'699'996'400'001);
+  Json::Value unknownExercise = good;
+  unknownExercise["sets"][0]["exerciseId"] = "no-such-lift";
+
+  CHECK_EQ(refusal(unknownField),
+           std::string(R"({"error":"unknown import field \"joinOpenSession\". An import takes: id, startedAt, )"
+                       R"(finishedAt, routineId, sets."})"));
+  CHECK_EQ(refusal(unknownSetField),
+           std::string(R"({"error":"sets[0]: unknown set field \"setNumber\". A set takes: id, exerciseId, )"
+                       R"(weightKg, reps, completedAt, kind, rpe, note."})"));
+  CHECK_EQ(refusal(unknownKind), std::string(R"({"error":"sets[0]: unknown set kind: cluster"})"));
+  CHECK_EQ(refusal(importBody("ses_import01", 1'699'996'400'000, 1'699'992'800'000, {})),
+           std::string(R"({"error":"finishedAt must be at or after startedAt"})"));
+  CHECK_EQ(refusal(importBody("ses_import01", 1'699'992'800'000, 1'700'000'000'001, {})),
+           std::string(R"({"error":"finishedAt cannot be in the future"})"));
+  CHECK_EQ(refusal(outside),
+           std::string(R"({"error":"sets[0] (set_import01): completedAt must be within the workout interval"})"));
+  CHECK_EQ(refusal(unknownExercise),
+           std::string(R"({"code":"unknown-exercise","error":"sets[0] (set_import01): no such exercise"})"));
+  Json::Value tooMany = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000, {});
+  for (int i = 0; i < 201; ++i)
+    tooMany["sets"].append(setBody("set_many" + std::to_string(1000 + i), "bench-press", 60, 1'699'993'400'000));
+  CHECK_EQ(refusal(tooMany), std::string(R"({"error":"sets must contain 0 to 200 rows"})"));
+  CHECK(h.repo.db.sessions.empty());
+}
+
+TEST(gym_import_replayed_after_the_workout_was_discarded_is_409_and_never_brings_it_back) {
+  Harness h;
+  h.signIn("s-live");
+  const Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                      {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
+  sendImport(h, body);
+  send(h.training, &TrainingApi::discardSession, deleteRequest("/v1/gym/sessions/ses_import01", "s-live"),
+       "ses_import01");
+
+  drogon::HttpResponsePtr response = sendImport(h, body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"code":"session-deleted","error":"that workout was discarded"})"));
+  CHECK(h.repo.db.sessions.empty());
 }

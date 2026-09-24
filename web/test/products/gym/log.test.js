@@ -2,22 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
+  agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, backfillFromOf, backfillHref, backfillTargetOf, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
   dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
   groupByExercise,
-  hasRecord, isFinished, isFirstSession, isNameOverCap, isUntested, loadedLine, logWhenLabel,
+  FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, hasRecord, isFinished, isFirstSession, isNameOverCap, isNeverTrained, lastTrainedDayLabel,
+  loadedLine, logWhenLabel, NEVER_TRAINED, NEVER_TRAINED_ALONE,
   FROM_ROUTINES, fromSession, MOVEMENTS_HREF, recordFromOf,
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
-  recordHref, restInForce, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
+  recordHref, restInForce, routineHref, routineIdOf, routineMetaLabel, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
   sameSet, schemeAgrees, sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
   threadHref, threadIdOf, THREADS_HREF,
-  topSetLabel, topSetOf, UNTESTED, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
+  topSetLabel, topSetOf, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -154,6 +155,20 @@ test('screenOf — one grammar decides which of the fifteen rooms a hash names, 
   assert.equal(screenOf('#/gym/session/ses_9f3a1c22'), 'session');
   assert.equal(screenOf('#/gym/finish/ses_9f3a1c22'), 'finish');
   assert.equal(screenOf('#/gym/backfill'), 'backfill');
+  assert.equal(screenOf('#/gym/backfill/rt_9f2c'), 'backfill');
+  assert.equal(screenOf(backfillHref(FREE_SESSION)), 'backfill');
+  assert.deepEqual([BACKFILL_HREF, FREE_SESSION, backfillHref('rt_9f2c'), backfillHref(FREE_SESSION)], [
+    '#/gym/backfill', 'free', '#/gym/backfill/rt_9f2c', '#/gym/backfill/free',
+  ]);
+  assert.deepEqual(['#/gym/backfill', '#/gym/backfill/', '#/gym/backfill/rt_9f2c', '#/gym/backfill/free', '#/gym/log', '#/gym/backfill/rt_9f2c?from=routines'].map(backfillTargetOf), [
+    null, null, 'rt_9f2c', 'free', null, 'rt_9f2c',
+  ]);
+  assert.equal(backfillHref('rt_9f2c', FROM_ROUTINE_MENU), '#/gym/backfill/rt_9f2c?from=routines');
+  assert.equal(backfillHref('rt_9f2c', FROM_PICK), '#/gym/backfill/rt_9f2c');
+  assert.deepEqual(['#/gym/backfill/rt_9f2c?from=routines', '#/gym/backfill/rt_9f2c', '#/gym/backfill', '#/gym/backfill/rt_9f2c?from=elsewhere'].map(backfillFromOf), [
+    'routines', 'pick', 'pick', 'pick',
+  ]);
+  assert.equal(screenOf('#/gym/backfill/rt_9f2c?from=routines'), 'backfill');
   assert.equal(screenOf('#/gym/routines'), 'routines');
   assert.equal(screenOf('#/gym/routines/'), 'routines');
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
@@ -410,13 +425,27 @@ test('routineMetaLabel — what a routine holds, and when it was last used', () 
     '1 movement · trained yesterday',
   );
   assert.equal(routineMetaLabel({ entries: entries(4), lastTrainedAt: now }, now), '4 movements · trained today');
-  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 movements · untested');
-  assert.equal(routineMetaLabel({ entries: [] }, now), '0 movements · untested');
-  assert.equal(UNTESTED, 'untested');
-  assert.equal(isUntested({ entries: [] }), true);
-  assert.equal(isUntested({ entries: [], lastTrainedAt: now }), false);
-  assert.equal(isUntested({ entries: [], lastTrainedAt: 0 }), false);
-  assert.equal(isUntested(null), true);
+  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 movements · never trained');
+  assert.equal(routineMetaLabel({ entries: [] }, now), '0 movements · never trained');
+  assert.deepEqual([NEVER_TRAINED, NEVER_TRAINED_ALONE], ['never trained', 'Never trained']);
+  assert.equal(isNeverTrained({ entries: [] }), true);
+  assert.equal(isNeverTrained({ entries: [], lastTrainedAt: now }), false);
+  assert.equal(isNeverTrained({ entries: [], lastTrainedAt: 0 }), false);
+  assert.equal(isNeverTrained(null), true);
+});
+
+test('the routine pick’s row: the day it was last trained, and the sets it names', () => {
+  const at = new Date(2026, 8, 22, 18, 5).getTime();
+  assert.deepEqual([
+    lastTrainedDayLabel({ entries: [], lastTrainedAt: at }),
+    lastTrainedDayLabel({ entries: [] }),
+  ], ['22 Sep', 'Never trained']);
+  assert.deepEqual([
+    routineSizeLabel({ entries: [{ sets: [{}, {}, {}] }, { sets: [{ reps: 5 }] }, {}] }),
+    routineSizeLabel({ entries: [{ sets: [{}] }] }),
+    routineSizeLabel({ entries: [{}, {}] }),
+    routineSizeLabel({ entries: [] }),
+  ], ['3 movements · 4 sets', '1 movement · 1 set', '2 movements', '0 movements']);
 });
 
 test('workingSetsOf — only a working set counts, and the other three kinds count toward nothing', () => {

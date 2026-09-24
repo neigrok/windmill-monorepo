@@ -1915,3 +1915,18 @@ TEST(gym_save_note_is_append_only_owner_scoped_and_granted_as_a_write) {
   CHECK_EQ(body(h.call("save_note", input)), expected);
   CHECK_EQ(h.repo.db.noteRows.size(), 1u);
 }
+
+TEST(gym_import_session_crossing_a_finished_workout_is_refused_naming_it) {
+  Harness h;
+  h.repo.db.sessions.emplace_back(SessionId{"ses_before01"}, uid(), 2000, 4000);
+  const Json::Value args = parse(R"({"id":"ses_import01","startedAt":1000,"finishedAt":3000,"sets":[]})");
+
+  const ToolResult refused = h.call("import_session", args);
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_session: those times cross workout ses_before01, already in the log; one visit is "
+                       "one workout, so read it with get_sessions before choosing other times. No changes from "
+                       "this batch were committed."));
+  CHECK_EQ(h.repo.db.sessions.size(), 1u);
+}

@@ -102,7 +102,9 @@ struct SetInsertOutcome {
   SetInsertError error;
 };
 
-enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict };
+// `overlap` is an import's alone: its span crosses a finished session (`crossedBy`), which
+// `overlapping` names.
+enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict, overlap };
 
 struct RecordedSet {
   SetId id;
@@ -117,6 +119,7 @@ struct BatchLogOutcome {
   std::optional<std::size_t> errorIndex;
   bool replayed = false;
   bool sessionDeleted = false;
+  std::optional<Session> overlapping;
 };
 
 struct SessionRows {

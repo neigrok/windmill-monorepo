@@ -884,6 +884,7 @@ Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every p
 | `PATCH /v1/gym/exercises/{id}` | rename — `{name}` and nothing else |
 | `GET  /v1/gym/exercises/{id}/record` | a movement's record: two tiles, twelve weeks of bars, the record ladder, recent days, the days of the program that name it — ONE read |
 | `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent |
+| `POST /v1/gym/sessions/import` | a past workout whole — `{id, startedAt, finishedAt, routineId?, sets: [0–200 × the append body]}`, field-strict; one transaction, the routine frozen as the plan and never edited, the open session untouched. `201` `{session, sets}` as `GET /v1/gym/sessions/{id}` reads it, `200` for an exact replay; `409 session-overlap` `{sessionId, session}` for a span crossing a finished session, `409 session-id-taken` / `set-id-taken` (another account's id, or this account's id with a different body), `409 session-deleted` for a replay of a discarded import, `404 no such routine`, `400` with the sentence otherwise (`400 unknown-exercise`) |
 | `POST /v1/gym/sessions/{id}/sets` | append — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` |
 | `PATCH /v1/gym/sessions/{id}/sets/{setId}` | fix — `{weightKg?, reps?, kind?, rpe?, note?}`; answers the stored row. An absent field leaves the stored value, `rpe: null` clears an rpe (band 1–10, kept to one decimal by the column) and `note: ""` clears a note (`kMaxSetNoteBytes` = 4000 BYTES). `404 set-not-found` covers absent, another account's and this account's set in another workout, is decided BEFORE any value is read, and writes nothing — a fix cannot create a set; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`) and every value the store cannot hold. **No MCP tool at any level** |
 | `DELETE /v1/gym/sessions/{id}/sets/{setId}` | delete — `204`, and `204` on retry; refuses nothing. **No MCP tool at any level** |
@@ -1124,7 +1125,12 @@ canonical tool name or compatibility alias **at boot**.
 precision and time intervals. The repository receives the validated batch and owns one transaction;
 it never loops over separately committed single-set service calls. Historical imports insert a
 finished session directly and leave an open workout untouched. Set instants must lie within the
-imported session, and recorded facts cannot be in the future.
+imported session, and recorded facts cannot be in the future. One visit is one session: inside the write
+transaction, after an advisory lock on the account and after the replay check, the store reads the
+account's sessions around the span and the pure `crossedBy` refuses an import whose half-open span
+crosses a FINISHED one, naming it (`overlap`). An exact replay therefore answers as the stored row,
+the open session never blocks, and two imports racing into one hour queue on the lock, so only one
+lands.
 
 `PgLogRepository::writeBatch` serves batch logging and imports. An owner-scoped session row lock
 serializes numbering and finish/correction operations. All single and batch creation paths reserve

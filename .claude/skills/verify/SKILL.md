@@ -197,6 +197,14 @@ curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \
   -d '{"id":"ses_probe0002","startedAt":1785686400000,"routineId":"rt_probe00001"}'   # freezes `plan`
 curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"
 curl -s -X DELETE localhost:8088/v1/gym/sessions/ses_probe0002 -H "$C"               # 204, or 409 open
+
+# A past workout lands whole through the import door: 201 {session, sets} as GET /v1/gym/sessions/{id};
+# the same body again → 200; a span crossing a finished session → 409 session-overlap {sessionId,
+# session}; the open session never blocks it.
+S=$(( $(date +%s)000 - 7200000 )); F=$(( S + 3600000 ))
+curl -s -X POST localhost:8088/v1/gym/sessions/import -H "$C" -H "$J" -d "{\"id\":\"ses_probe0101\",
+  \"startedAt\":$S,\"finishedAt\":$F,\"routineId\":\"rt_probe00001\",\"sets\":[
+  {\"id\":\"set_probe0101\",\"exerciseId\":\"bench-press\",\"weightKg\":60,\"reps\":5,\"completedAt\":$((S+600000))}]}"
 ```
 
 Traps:

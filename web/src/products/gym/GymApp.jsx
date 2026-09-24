@@ -5,7 +5,7 @@ import { navigate } from '../../shell/navigation.js';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
-import { Backfill } from './Backfill.jsx';
+import { Backfill } from './backfill/Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
 import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
@@ -15,7 +15,7 @@ import { Notes } from './notes/Notes.jsx';
 import { MovementRecord } from './Record.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
 import {
-  COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, recordFromOf, ROUTINES_HREF, routineIdOf, screenOf,
+  backfillFromOf, backfillTargetOf, COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, recordFromOf, ROUTINES_HREF, routineIdOf, screenOf,
   sessionIdOf, sharedTokenOf, threadIdOf,
 } from './log.js';
 import { SharedSession } from './share/SharedSession.jsx';
@@ -27,6 +27,13 @@ const TAB_SCREENS = ['routines', 'log', 'coach'];
 // A routable proposal opens its dialog over the routines home, so the bar under it is the home's.
 function tabOf(screen) {
   return screen === 'proposal' ? 'routines' : screen;
+}
+
+// Coach fills the viewport's height; the past workout takes the desk's width for its side column.
+function columnClass(screen) {
+  if (screen === 'coach' || screen === 'thread') return ' has-coach';
+  if (screen === 'backfill') return ' has-desk';
+  return '';
 }
 
 export function GymApp({ hash, inShell = false }) {
@@ -104,7 +111,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   return (
     <>
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
-      <main className={`gym-column${screen === 'coach' || screen === 'thread' ? ' has-coach' : ''}`}>
+      <main className={`gym-column${columnClass(screen)}`}>
         {/* An external link's proposal is the home's to open: its dialog settles into the home's own read. */}
         {tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
         {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
@@ -113,7 +120,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
-        {screen === 'backfill' && <Backfill log={log} />}
+        {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
         {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
         {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
         {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}

@@ -16,6 +16,12 @@ Read `01-context.md` first.
 | `16-the-workout.md` | The live logger, the finish, the session read back — and why the keypad stays at the rack. |
 | `18-progress.md` | Progress — the movement strip on the log, the one chart primitive for e1RM, and the consistency sentence. |
 | `19-connected-log.md` | The connected log — the grant as three rows, one caption, one action, one disclosure; and the CSV export removed everywhere. |
+| `20-past-workout.md` | The web's past workout — pick a routine, get it filled the way the rack fills it, change what differed, save once; and the default time it shows before storing. |
+
+## The web boards
+
+The web is drawn on the Gym file's `Web · Gym` page (`466:132`); `../web-design.md` reads it and
+`../web-form.md` is the form its boards obey.
 
 ## Scope
 

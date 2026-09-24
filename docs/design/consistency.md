@@ -2175,7 +2175,7 @@ five inspected Figma frames. No UI fixes are implied.
 - Movement records entered from a workout return to Routines. Preserve the originating route.
 - Figma contains incompatible navigation generations: the session frame `327:2120` has Today /
   The log / Routines; the progress frame `460:98` has Routines / The log / Coach; record `463:129`
-  returns to Today. The `Web · Proposed UX` page tags every board Current, Proposed or Archived;
+  returns to Today. The `Web · Gym` page tags every board Built or Ready;
   the rest of the file has no such index (F53).
 - Progress/chart and appearance work remain open under their existing ledger entries. The browser
   record still draws bars, including a full-width gold rectangle for one point; the newer Figma
@@ -2219,7 +2219,7 @@ contract; visual density must not make the values read-only.
 ## Gym web form · 9 September 2026
 
 The form contract is `gym/web-form.md`; the drawn half is the component section
-`Components · Numeric row language` (`534:3341`) on the Gym file's `Web · Proposed UX` page.
+`Components · Numeric row language` (`534:3341`) on the Gym file's `Web · Gym` page.
 
 **F37 · the ordinal column's tokens outlive the column** → built 2026-09-24, nothing owed.
 `size/set-number-w` and `size/set-mark-w` are deleted from `Gym · Metrics` after a scan of every page
@@ -2270,13 +2270,10 @@ All eight narrow index boards clip a 506px list into roughly 410, so the end mar
 never reached. The boards agree with each other, so this is not drift; the question is whether a
 marker nobody can see is worth drawing.
 
-## Gym web cleanliness · 24 September 2026
+## Gym web design · 24 September 2026
 
-The review and its outcome are on the Gym file's `Proposal · Cleanliness (2026-09-24)` page
-(`779:2`). `Web · Proposed UX` (`466:132`) now reads as six sections — Start · Components · Plan ·
-Record · Coach & Notes · Share — with boards named Area / Screen / State / Width, a `Board status` tag
-above each, text bound to the fourteen `Gym/Web/*` styles, and radius, spacing and measures bound to
-`Gym · Metrics`.
+`Web · Gym` (`466:132`) is the implementation page, read through `gym/web-design.md`: six sections,
+boards named Area / Screen / State / Width, each tagged Built or Ready, every board at 1440 and 390.
 
 **F51 · Android ships Duplicate** → built 2026-09-24, nothing owed. There is no Duplicate
 (`gym/BUILD.md` R5): a routine row's overflow carries Delete alone on web and the phones, and its
@@ -2290,12 +2287,31 @@ named `Journal`, so every instance in every product file carries the wrong layer
 Sections `Spine · Today · log · routines` (`6:3`), `Ask · proposals · share` (`9:42`) and
 `Ask’s past · threads · one conversation` (`25:23`) draw the Today tab and the Ask name, with no
 status to say they are superseded. They are the only consumers of `Gym/Archive/Today Line` and the
-`Gym/Coach *` styles. Archive them or tag them the way `466:132` is tagged.
+`Gym/Coach *` styles. Delete them, or move them to an archive page, so no page presents them as current.
 
-**F54 · 355 text layers on `466:132` carry no `Gym/Web/*` style** → fix toward the Gym Figma file.
-68 layers mix Nunito prose with mono numerals in one run, and a style would flatten them; 287 sit
-inside library instances (`Button`, `Room Switch Button`) whose type is the design system's. Twelve
-sheet radii (20–26) and six mixed-corner nodes stay raw because `Gym · Metrics` has no sheet radius.
+**F54 · 306 text layers on `Web · Gym` carry no `Gym/Web/*` style** → fix toward the Gym Figma file.
+225 sit inside library instances (`Button`, `Room Switch Button`) whose type is the design system's;
+the rest mix Nunito prose with mono numerals in one run, which a style would flatten. Twelve sheet
+radii (20–26) and six mixed-corner nodes stay raw because `Gym · Metrics` has no sheet radius.
+
+**F57 · every `Web · Gym` board is Ready and none is Built** → build owner. The shipped web draws the
+layout the boards replace — no desktop splits, no set rail, no log filters or log sharing, a keypad
+sheet where the boards edit numbers in place. The shell differs too: the boards draw the Routines ·
+The log · Coach tabs under the header on every gym page, while the web puts them in a bottom bar and
+drops them on pushed pages such as the past workout. The catalog names the movement `Chin Up` where
+the boards write `Chin-up`. Each board turns Built as the web matches it.
+
+## Gym web past workout · 24 September 2026
+
+**F55 · the web's past workout is drawn ahead of the build** → built 2026-09-24, nothing owed for the
+form. The web starts from a routine, prefills targets then last time, takes the day in one tap, states
+the stored default hour beside Save, and writes the workout through `POST /v1/gym/sessions/import`.
+Its boards stay Ready under F57: the page-wide shell, the log split the Saved board lands on, and the
+Routines page the From-a-routine board draws are not built.
+
+**F56 · a routine never trained has three spellings** → built 2026-09-24, nothing owed. Web and
+Android say never trained; the word is capitalised where it stands alone (`Never trained`) and lower
+case after a separator (`· never trained`).
 
 ## Roadmap bubble graduation · 10 September 2026
 

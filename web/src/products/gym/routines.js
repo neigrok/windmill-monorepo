@@ -6,7 +6,7 @@
 
 import { round, snap } from './logger/ladder.js';
 import {
-  entryLabel, groupByExercise, isUntested, OPEN_TARGET, proposalHref, schemeAgrees, shortDayLabel,
+  entryLabel, groupByExercise, isNeverTrained, OPEN_TARGET, proposalHref, schemeAgrees, shortDayLabel,
   weekdayName, workingSetsOf,
 } from './log.js';
 import { conversationOf, historyLabel, isPending, sourceLabel } from './proposals.js';
@@ -111,9 +111,9 @@ export function entryDroppedLine(movement) {
   return `${movement} is out of the routine.`;
 }
 
-// Both conditions: the routine untested — the store's `lastTrainedAt` absent — AND the row still open.
+// Both conditions: the routine never trained — the store's `lastTrainedAt` absent — AND the row still open.
 export function saysNeverLogged(routine, entry) {
-  return isUntested(routine) && isOpenEntry(entry);
+  return isNeverTrained(routine) && isOpenEntry(entry);
 }
 
 // The sheet hands back a WHOLE entry and this swaps one row for it — never a merge, because the row

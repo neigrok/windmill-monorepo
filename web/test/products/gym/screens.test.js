@@ -15,9 +15,12 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('the routine row’s overflow is Delete alone, and no surface offers a copy of a routine', () => {
+test('the routine row’s overflow is Log past above Delete, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
-  assert.equal(source.includes("items={[{ label: 'Delete', run: () => remove(routine) }]}"), true);
+  assert.equal(source.includes(`items={[
+                  { label: 'Log past', run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
+                  { label: 'Delete', run: () => remove(routine) },
+                ]}`), true);
   assert.equal(/duplicat/i.test(source), false, 'the room has no duplicate act');
   assert.equal(/duplicat/i.test(spoken(read('routines.js'))), false);
   // The editor's head keeps no menu of its own: the row's is the one menu in the room.
@@ -369,7 +372,7 @@ test('the transient is the room’s, and the window’s own carries the Undo, no
   const hosts = gymFiles().filter((file) => /\.jsx$/.test(file) && fs.readFileSync(file, 'utf8').includes('<Toast'));
   assert.deepEqual(hosts.map((file) => path.basename(file)), ['GymApp.jsx']);
   const room = read('useTrainingLog.js');
-  assert.equal(room.includes('action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : null,'), true);
+  assert.equal(room.includes('action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : spoken.action ?? null,'), true);
   assert.equal(room.includes('dismiss: spoken.undoable ? null : dismissToast,'), true);
 });
 
@@ -482,7 +485,7 @@ test('the picker reads every movement’s last set when it opens, and never on a
   assert.equal(picker.includes('const last = useGymRead(() => gymApi.lastSets(), []);'), true);
   assert.equal((picker.match(/useGymRead\(/g) ?? []).length, 1);
   assert.equal(/useGymRead\([^;]*\[[^\]]*query/.test(picker), false);
-  for (const host of ['Routines.jsx', 'Backfill.jsx', 'Record.jsx']) {
+  for (const host of ['Routines.jsx', 'backfill/Backfill.jsx', 'Record.jsx']) {
     assert.equal(read(host).includes('lastSets'), false, host);
   }
 });
@@ -936,7 +939,7 @@ test('the picker opens on the six it counted, then the catalogue, and says which
   const rules = speech('logger/movements.js');
   assert.equal(rules.includes('for (const name of session.exercises ?? []) counted.set(name, (counted.get(name) ?? 0) + 1);'), true);
   assert.equal(/gymApi|fetch\(/.test(rules), false, 'the six cost no read');
-  for (const host of ['Routines.jsx', 'Backfill.jsx', 'Record.jsx']) {
+  for (const host of ['Routines.jsx', 'backfill/Backfill.jsx', 'Record.jsx']) {
     assert.equal(read(host).includes('sessions={log.summaries}'), true, host);
   }
   // The head names the shortcut in the bytes both phones draw, and asserts no ranking over a log
@@ -1089,8 +1092,9 @@ test('the target sheet says there is nothing to prefill from, and prefills nothi
     true,
   );
   assert.equal(source.includes('untested={'), false);
+  // A past workout is the one prefill off last time, and it is the rack's, not the routine's.
   for (const file of gymFiles()) {
-    if (path.basename(file) === 'gymApi.js') continue;
+    if (['gymApi.js', 'Backfill.jsx'].includes(path.basename(file))) continue;
     assert.equal(fs.readFileSync(file, 'utf8').includes('lastTime('), false, file);
   }
 });
@@ -1114,7 +1118,7 @@ test('the open line is one sentence, drawn once, on the sheet', () => {
   // The row still names itself open in its own target button, so nothing above the list has to.
   assert.equal(read('log.js').includes("export const OPEN_TARGET = 'open';"), true);
   assert.equal(/\.gym-editor-untested/.test(read('gym.css')), false, 'the pill is the design system’s Tag');
-  assert.equal(source.includes('<Tag size="sm">{UNTESTED}</Tag>'), true);
+  assert.equal(source.includes('<Tag size="sm">{NEVER_TRAINED_ALONE}</Tag>'), true);
 });
 
 test('the create door asks how a movement is loaded, and mints nothing before it is answered', () => {
@@ -1190,7 +1194,7 @@ test('a routine’s name moves with its own document, and claims nothing about w
 test('bodyweight: the reading heads the log, the chip is the one door in the reach band, and the chart is the design system’s', () => {
   const log = read('Log.jsx');
   assert.equal(log.includes('<BodyweightReading latest={weights.latest} />'), true);
-  assert.ok(log.indexOf('<BodyweightReading') < log.indexOf('Add a past workout'), 'the reading sits in the head');
+  assert.ok(log.indexOf('<BodyweightReading') < log.indexOf('Add past workout'), 'the reading sits in the head');
   assert.equal(log.includes('<WeighInChip onOpen={() => setWeighing(true)} />'), true);
   assert.equal((log.match(/<WeighInSheet/g) ?? []).length, 1);
   const screen = read('bodyweight/Bodyweight.jsx');
@@ -1262,17 +1266,13 @@ test('the finished session’s detail has the discard door, through the same win
   assert.equal(read('Finish.jsx').includes('function ShortSession'), true, 'the review keeps its own');
 });
 
-test('the backfill takes a date, not a chip: any day up to today, yesterday by default, and one door back to the log', () => {
-  const screen = read('Backfill.jsx');
+test('the past workout takes its day in one tap, keeps the native field for any other day, and has one door back', () => {
+  const screen = read('backfill/Backfill.jsx');
   assert.equal(screen.includes('type="date"'), true);
-  assert.equal(screen.includes('max={dateLocalOf(Date.now())}'), true);
-  assert.equal(screen.includes('date: yesterdayOf()'), true);
-  assert.equal(/dayChips|DAY_CHIP_OFFSETS|form\.days/.test(screen), false);
-  assert.equal(/dayChips|DAY_CHIP_OFFSETS/.test(read('backfill.js')), false);
-  assert.equal((screen.match(/<Back href="#\/gym\/log">The log<\/Back>/g) ?? []).length, 1);
+  assert.equal(screen.includes('max={todayOf(now)}'), true);
+  assert.equal(screen.includes('const [day, setDay] = useState(() => todayOf(now));'), true);
   assert.equal(/gym-save-cancel|>Cancel</.test(screen), false, 'the bottom door is gone; Back is the one');
   assert.equal(read('gym.css').includes('gym-save-cancel'), false);
-  assert.equal(read('gym.css').includes('.gym-when-date'), true, 'the same family as the weigh-in date');
 });
 
 test('a room’s title and a record’s name wear the family’s display title, one step smaller at the shell’s narrow width', () => {
@@ -1313,7 +1313,7 @@ test('at the narrow width the past workout’s Save band pins to the bottom on t
     background: var(--gym-canvas);
   }
 }`), true);
-  assert.equal(read('Backfill.jsx').includes('<div className="gym-save">'), true);
+  assert.equal(read('backfill/Backfill.jsx').includes('<div className="gym-save">'), true);
 });
 
 test('the routine editor and the note editor carry their back link on its own line, above the head', () => {

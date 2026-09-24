@@ -13,20 +13,20 @@
 //         and a zero is real; lists are omitted when empty. `bestE1rm`, `e1rmSeries` and `records` are
 //         absent together where Epley is undefined. `e1rmSeries` is oldest first over twelve weeks,
 //         one point per session; `records` and `recentDays` newest first, warmups excluded.
-//   POST  /v1/gym/sessions -> {id, startedAt, joinOpenSession?, routineId?} in, the open session out;
-//         idempotent, a replayed start joins the open session, 409 for another account's id.
-//         joinOpenSession:false is refused 409 `session-already-open` while a workout is running.
-//         `routineId` asks the server to freeze that routine onto the session as its plan.
-//   POST  /v1/gym/sessions/:id/sets -> {id, exerciseId, weightKg, reps, completedAt, kind?, rpe?,
-//         note?} in; {id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt} out.
-//         A replay answers 200 with the stored row, finished session or not.
+//   POST  /v1/gym/sessions/import -> {id, startedAt, finishedAt, routineId?, sets: [{id, exerciseId,
+//         weightKg, reps, completedAt, kind?, rpe?, note?}]} in, 0–200 sets and nothing else;
+//         {session, sets} out, the shape of GET /v1/gym/sessions/:id — 201 landed now, 200 an exact
+//         replay. One finished workout, whole or not at all; the open session never blocks it. 409
+//         `session-overlap` names the earliest finished session it crosses as `sessionId` and
+//         `session`; 409 `session-id-taken` · `set-id-taken` · `session-deleted`; 404 for a routine
+//         that is not this account's; 400 for a bad span, a finish ahead of now or an unknown field.
+//         A routine's `routineId` is frozen onto the session as its plan; the routine is not written.
 //   PATCH /v1/gym/sessions/:id/sets/:setId -> {weightKg?, reps?, kind?, rpe?, note?}; an omitted field
 //         is left as stored, a null `rpe` clears it, "" clears a note, {} is legal. Any other key 400.
 //         400 `fix-unreadable`; 404 `set-not-found` for absent, another account's, deleted, or this
 //         account's set in a different workout.
 //   DELETE /v1/gym/sessions/:id/sets/:setId -> 204, for a set already gone and another account's
 //         alike. Set numbers are never reissued: a delete leaves a gap.
-//   POST  /v1/gym/sessions/:id/finish -> {finishedAt} in, the session out, idempotent.
 //   GET   /v1/gym/sessions?before=&beforeId=&limit= -> {sessions: [{...session, setCount,
 //         workingSetCount, tonnageKg, exercises, topSet?, topE1rm?, closedItself, record}]}, newest
 //         first, keyset-paged on (startedAt, id) — both or neither. The list carries no sets.
@@ -114,7 +114,7 @@
 // An entry with no `sets` key is open, and `restSeconds` is allowed on one; an empty `sets` is refused
 // 400 like a zero target. A set's absent `reps` is max, its absent `weightKg` is last time's Nth set.
 // Bounds: 1–20 sets per entry, reps 1–100 and weight ±500 kg per set, rest 15–900 s, one to fifty
-// entries per routine. No `lastTrainedAt` is `untested`.
+// entries per routine. No `lastTrainedAt` is never trained.
 // `revision` is the store's to move and is what a proposal is frozen against. `pendingProposal` is a
 // head — {id, routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
 // connection?, agent?, thread?}} — present only while one is waiting; `source.thread` is offered only
@@ -145,23 +145,21 @@ async function json(response) {
 
 // Recovers the machine code from the sentence, for servers that send only the sentence.
 const codeForSentence = new Map([
-  ['that session is finished', 'session-finished'],
   ['that set id is already used', 'set-id-taken'],
   ['that session id is taken', 'session-id-taken'],
   ['no such exercise', 'unknown-exercise'],
   ['that routine id is taken', 'routine-id-taken'],
   ['that movement id is taken', 'exercise-id-taken'],
   ['that session is still running', 'session-open'],
-  ['another session is already open', 'session-already-open'],
 ]);
 
-// The flush queue's retry policy: 400 and 409 are terminal, 5xx retryable, and 401 and 404 neither.
-// Repairs, decided off the code and never off the sentence: setIdTaken / sessionIdTaken /
-// routineIdTaken / exerciseIdTaken — mint a fresh id and retry the same body; unknownExercise —
-// reload the catalog; sessionFinished — a new set needs a new session; sessionOpen and
-// sessionAlreadyOpen — wait for the open workout to close; fixUnreadable — those bytes never land;
-// setNotFound — drop the pending edit and read the session again; proposalSuperseded and
-// proposalSettled — re-read.
+// The retry policy: 400 and 409 are terminal, 5xx retryable, and 401 and 404 neither. Repairs,
+// decided off the code and never off the sentence: setIdTaken / sessionIdTaken / routineIdTaken /
+// exerciseIdTaken — mint a fresh id and retry the same body; sessionDeleted — an import under that id
+// was discarded, mint a fresh one; unknownExercise — reload the catalog; sessionOpen — wait for the
+// open workout to close; sessionOverlap — `overlapping` is the finished session the times cross;
+// fixUnreadable — those bytes never land; setNotFound — drop the pending edit and read the session
+// again; proposalSuperseded and proposalSettled — re-read.
 export class GymError extends Error {
   constructor(status, detail = '', code = '', body = null) {
     super(detail || `gym request failed: ${status}`);
@@ -173,14 +171,15 @@ export class GymError extends Error {
     this.code = code || codeForSentence.get(detail) || '';
     this.terminal = status === 400 || status === 409;
     this.retryable = status >= 500;
-    this.sessionFinished = this.code === 'session-finished';
     this.setIdTaken = this.code === 'set-id-taken';
     this.sessionIdTaken = this.code === 'session-id-taken';
     this.unknownExercise = this.code === 'unknown-exercise';
     this.routineIdTaken = this.code === 'routine-id-taken';
     this.exerciseIdTaken = this.code === 'exercise-id-taken';
     this.sessionOpen = this.code === 'session-open';
-    this.sessionAlreadyOpen = this.code === 'session-already-open';
+    this.sessionDeleted = this.code === 'session-deleted';
+    this.sessionOverlap = this.code === 'session-overlap';
+    this.overlapping = this.sessionOverlap ? body?.session ?? null : null;
     this.fixUnreadable = this.code === 'fix-unreadable';
     this.setNotFound = this.code === 'set-not-found';
     this.proposalSuperseded = this.code === 'proposal-superseded';
@@ -224,18 +223,8 @@ export const gymApi = {
     return json(response);
   },
 
-  async startSession({ id, startedAt, joinOpenSession = true, routineId }) {
-    const body = {
-      id,
-      startedAt,
-      ...(joinOpenSession ? {} : { joinOpenSession: false }),
-      ...(routineId === undefined ? {} : { routineId }),
-    };
-    return json(await call('/sessions', { method: 'POST', body: JSON.stringify(body) }));
-  },
-
-  async appendSet(sessionId, set) {
-    return json(await call(`/sessions/${sessionId}/sets`, { method: 'POST', body: JSON.stringify(set) }));
+  async importSession(workout) {
+    return json(await call('/sessions/import', { method: 'POST', body: JSON.stringify(workout) }));
   },
 
   async fixSet(sessionId, setId, fix) {
@@ -247,10 +236,6 @@ export const gymApi = {
 
   async deleteSet(sessionId, setId) {
     return json(await call(`/sessions/${sessionId}/sets/${setId}`, { method: 'DELETE' }));
-  },
-
-  async finishSession(sessionId, { finishedAt }) {
-    return json(await call(`/sessions/${sessionId}/finish`, { method: 'POST', body: JSON.stringify({ finishedAt }) }));
   },
 
   async sessions({ before, beforeId, limit } = {}) {

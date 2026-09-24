@@ -1810,3 +1810,22 @@ TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_session) {
   CHECK_EQ(h.training.detail(uid(), sid("ses_00000001"))->sets.size(),
            static_cast<std::size_t>(2));
 }
+
+TEST(import_settles_a_walked_away_session_first_so_its_span_is_in_the_way) {
+  Harness h;
+  const std::uint64_t startedAt = h.clock.now;
+  h.startAt(startedAt, "ses_00000001");
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, startedAt + 30 * 60'000));
+  h.clock.now = startedAt + 30 * 60'000 + kAutoCloseMs;
+
+  const BatchLogOutcome crossing = h.training.importSession(
+      uid(), SessionImport{sid("ses_00000002"), startedAt + 10 * 60'000, startedAt + 20 * 60'000,
+                           std::nullopt, {h.bench("set_00000002", 60.0, startedAt + 15 * 60'000)}});
+
+  const Session walkedAway{sid("ses_00000001"), uid(), startedAt, startedAt + 30 * 60'000,
+                           std::nullopt, std::nullopt, ClosedBy::stale};
+  CHECK(crossing.error == BatchLogError::overlap);
+  CHECK_EQ(crossing.overlapping, std::optional<Session>(walkedAway));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+}

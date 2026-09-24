@@ -344,6 +344,14 @@ public:
       for (const Session& old : next.sessions)
         if (old.id == batch.sessionId) return {std::nullopt, {}, BatchLogError::idTaken};
       if (imported->routine && !imported->plan) return {std::nullopt, {}, BatchLogError::unknownRoutine};
+      std::vector<Session> logged;
+      for (const Session& old : next.sessions)
+        if (old.user == user) logged.push_back(old);
+      if (const std::optional<Session> crossed = crossedBy(*imported, logged)) {
+        BatchLogOutcome refused{std::nullopt, {}, BatchLogError::overlap};
+        refused.overlapping = crossed;
+        return refused;
+      }
       next.sessions.push_back(*imported);
       next.sessionReceipts.emplace(batch.sessionId, FakeGymStore::SessionReceipt{*imported, batch.sets, true});
       outcome.session = *imported;

@@ -31,6 +31,7 @@ public:
               std::string appBaseUrl);
 
   void startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // POST /v1/gym/sessions
+  void importSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // POST /v1/gym/sessions/import
   void appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                  const std::string& id);                                      // POST /v1/gym/sessions/{id}/sets
   // The two writes no agent may reach.

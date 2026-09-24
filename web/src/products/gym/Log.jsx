@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
-import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import { BodyweightReading, useBodyweight, WeighInChip, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
@@ -34,8 +33,7 @@ export function LogNotOpen({ log, onSignIn }) {
 }
 
 export function LogList({ log, onSignIn }) {
-  const { phase, summaries, older, session } = log;
-  const [refused, setRefused] = useState(false);
+  const { phase, summaries, older } = log;
   // The page, answered TWICE: `sessions` is what the ACCOUNT holds — the page less what the store
   // has answered a delete for — and `shown` is what the withheld window leaves to draw. A session
   // withheld for deletion is off the log for the length of its window, the transient being the only
@@ -63,24 +61,8 @@ export function LogList({ log, onSignIn }) {
           )}
           <BodyweightReading latest={weights.latest} />
         </div>
-        <button
-          type="button"
-          className="gym-door-past"
-          onClick={() => { if (session) setRefused(true); else window.location.hash = BACKFILL_HREF; }}
-        >
-          Add a past workout
-        </button>
+        <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
       </header>
-      {refused && (
-        <section className="gym-refusal">
-          <p className="gym-refusal-title">
-            <span className="gym-live-dot" aria-hidden="true" />
-            {MID_WORKOUT_REFUSAL.title}
-          </p>
-          <p className="gym-refusal-body">{MID_WORKOUT_REFUSAL.body}</p>
-          <button type="button" className="gym-refusal-close" onClick={() => setRefused(false)}>Close</button>
-        </section>
-      )}
       {phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
       {phase === 'failed' && <LogNotOpen log={log} onSignIn={onSignIn} />}
       {/* Off the ACCOUNT: an account holding one session the window has taken off the log is not an

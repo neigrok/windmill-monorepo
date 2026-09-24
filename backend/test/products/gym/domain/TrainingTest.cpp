@@ -2,9 +2,12 @@
 
 #include "test/testing.h"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace wm::gym;
 
@@ -465,4 +468,32 @@ TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
     Exercise{ExerciseId{"ex_11111111"}, "Zercher \xED\xA0\x80 Squat", Pattern::squat,
              Equipment::barbell, 2.5, true};
   }));
+}
+
+TEST(a_past_workout_crosses_the_earliest_finished_session_its_half_open_span_meets) {
+  const auto session = [](std::string id, std::uint64_t startedAtMs,
+                          std::optional<std::uint64_t> finishedAtMs) {
+    return Session{SessionId{std::move(id)}, wm::UserId{"u1"}, startedAtMs, finishedAtMs};
+  };
+  const std::vector<Session> logged{session("ses_bbbbbbbb", 3'000, 4'000),
+                                    session("ses_aaaaaaaa", 1'000, 2'000),
+                                    session("ses_open0001", 5'000, std::nullopt)};
+
+  // Ends touching is no crossing: [2000, 3000) sits exactly between the two.
+  CHECK_EQ(crossedBy(session("ses_import01", 2'000, 3'000), logged), std::optional<Session>());
+  // Crossing both answers the earlier one, whatever order the log arrived in.
+  CHECK_EQ(crossedBy(session("ses_import01", 1'999, 3'001), logged), std::optional<Session>{logged[1]});
+  CHECK_EQ(crossedBy(session("ses_import01", 3'500, 3'600), logged), std::optional<Session>{logged[0]});
+  // An empty span holds its one instant: inside a session, or at its very first moment, is inside it;
+  // at its end, where the half-open span stops, is not.
+  CHECK_EQ(crossedBy(session("ses_import01", 1'500, 1'500), logged), std::optional<Session>{logged[1]});
+  CHECK_EQ(crossedBy(session("ses_import01", 1'000, 1'000), logged), std::optional<Session>{logged[1]});
+  CHECK_EQ(crossedBy(session("ses_import01", 2'000, 2'000), logged), std::optional<Session>());
+  // An empty logged session holds its instant too.
+  CHECK_EQ(crossedBy(session("ses_import01", 6'000, 7'000), {session("ses_empty001", 6'500, 6'500)}),
+           std::optional<Session>{session("ses_empty001", 6'500, 6'500)});
+  // The open session is still being lifted and has no end: nothing is refused on its account.
+  CHECK_EQ(crossedBy(session("ses_import01", 4'500, 9'000), logged), std::optional<Session>());
+  // A session never crosses itself, so a replay of its own id passes.
+  CHECK_EQ(crossedBy(session("ses_aaaaaaaa", 1'000, 2'000), logged), std::optional<Session>());
 }

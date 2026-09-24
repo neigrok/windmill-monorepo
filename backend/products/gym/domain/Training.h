@@ -240,6 +240,13 @@ bool lateSetLands(const Session& session, std::uint64_t completedAtMs);
 // that the end stays at that activity and only the word changes.
 std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t finishedAtMs);
 
+// One visit is one session, so a past workout may not cross one already in the log. Spans are
+// half-open, [startedAt, finishedAt): a workout ending as the next begins crosses nothing, and an empty
+// span still holds its one instant. Only a FINISHED session is in the way — the open one is still
+// being lifted and has no end yet — and a session never crosses itself. The earliest crossed session
+// answers.
+std::optional<Session> crossedBy(const Session& incoming, const std::vector<Session>& logged);
+
 // Clamped to the store's ceiling, so a share minted near the end of time names a holdable instant.
 constexpr std::uint64_t kShareLifetimeMs = 30ull * 24 * 60 * 60 * 1000;
 std::uint64_t shareExpiryAt(std::uint64_t nowMs);

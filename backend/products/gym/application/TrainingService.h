@@ -36,6 +36,16 @@ struct SetWrite {
   std::uint64_t completedAtMs;
 };
 
+// A workout that already happened, written whole: the web's past workout and an agent's import. The
+// routine, when named, is frozen onto the session as its plan and never edited.
+struct SessionImport {
+  SessionId id;
+  std::uint64_t startedAtMs;
+  std::uint64_t finishedAtMs;
+  std::optional<RoutineId> routine;
+  std::vector<SetWrite> sets;
+};
+
 // Refusals cross as values the HTTP edge maps to statuses; InvalidTraining stays reserved for
 // malformed input. idTaken: a client-minted id is already spent, never by whom, so absent stays
 // byte-identical to forbidden. alreadyOpen is reachable only by a caller that said it would not
@@ -99,8 +109,8 @@ public:
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
   BatchLogOutcome appendSets(const UserId& user, const SessionId& session, const std::vector<SetWrite>& sets);
-  BatchLogOutcome importSession(const UserId& user, const SessionStart& start, std::uint64_t finishedAtMs,
-                                 const std::vector<SetWrite>& sets);
+  // Leaves the open session alone and refuses a span crossing a finished one (`overlap`).
+  BatchLogOutcome importSession(const UserId& user, const SessionImport& incoming);
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
 

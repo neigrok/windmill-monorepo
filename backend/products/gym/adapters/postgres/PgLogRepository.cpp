@@ -358,6 +358,10 @@ BatchLogOutcome PgLogRepository::writeBatch(const UserId& user, const SetBatch& 
 
   BatchLogOutcome outcome;
   if (imported) {
+    // Every import of one account queues here, so the overlap read below sees whatever the import
+    // ahead of it committed. Taken before the replay check: a replay is answered as the stored row,
+    // never as crossing itself or the hour that filled in since.
+    txn.exec_params("SELECT pg_advisory_xact_lock(hashtext('gym_import'), hashtext($1))", user.str());
     if (const auto replay = importReplay()) return *replay;
     const pqxx::result reservation = txn.exec_params(
         "INSERT INTO gym_write_receipts (kind,id,user_id,session_id,request_hash) VALUES ('session',$1,$2::uuid,$1,$3) "
@@ -367,6 +371,28 @@ BatchLogOutcome PgLogRepository::writeBatch(const UserId& user, const SetBatch& 
       return {std::nullopt, {}, BatchLogError::idTaken};
     }
     if (imported->routine && !imported->plan) return {std::nullopt, {}, BatchLogError::unknownRoutine};
+    // Only the span is read; the upper end rides the (user_id, started_at) index. A session may run
+    // any length, so nothing bounds how early one reaching into the span began.
+    const pqxx::result window = txn.exec_params(
+        "SELECT id, (extract(epoch from started_at) * 1000)::bigint AS started_ms, "
+        "(extract(epoch from finished_at) * 1000)::bigint AS finished_ms FROM gym_sessions WHERE user_id = $1::uuid "
+        "AND started_at <= to_timestamp($3::bigint / 1000.0) "
+        "AND (finished_at IS NULL OR finished_at >= to_timestamp($2::bigint / 1000.0))",
+        user.str(), static_cast<long long>(imported->startedAtMs),
+        static_cast<long long>(*imported->finishedAtMs));
+    std::vector<Session> logged;
+    for (const auto& row : window) {
+      std::optional<std::uint64_t> finished;
+      if (!row["finished_ms"].is_null()) finished = instantFrom(row["finished_ms"]);
+      logged.emplace_back(SessionId{row["id"].as<std::string>()}, user, instantFrom(row["started_ms"]), finished);
+    }
+    if (const std::optional<Session> crossed = crossedBy(*imported, logged)) {
+      const pqxx::result whole = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+          " FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid", crossed->id.str(), user.str());
+      BatchLogOutcome refused{std::nullopt, {}, BatchLogError::overlap};
+      refused.overlapping = sessionFrom(whole[0]);
+      return refused;
+    }
     pqxx::params params;
     params.append(imported->id.str());
     params.append(user.str());

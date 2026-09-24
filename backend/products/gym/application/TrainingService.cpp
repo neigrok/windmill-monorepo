@@ -96,27 +96,32 @@ BatchLogOutcome TrainingService::appendSets(const UserId& user, const SessionId&
   return log_.appendSets(user, SetBatch{session, std::move(sets), clock_.nowMs()});
 }
 
-BatchLogOutcome TrainingService::importSession(const UserId& user, const SessionStart& start,
-                                               std::uint64_t finishedAtMs,
-                                               const std::vector<SetWrite>& incoming) {
+// The span, then each set against it; the log it must fit into is the store's to check, under the
+// same lock as the write. Staleness is settled first, so a workout walked away from counts as the
+// finished thing it is. The plan is frozen only from a routine this account can read; a routine it
+// cannot is the store's `unknownRoutine`, answered after a replay has had its chance.
+BatchLogOutcome TrainingService::importSession(const UserId& user, const SessionImport& incoming) {
   const std::uint64_t nowMs = clock_.nowMs();
-  Session session{start.id, user, start.startedAtMs, finishedAtMs, start.routine, std::nullopt, ClosedBy::finish};
-  if (!canFinishAt(session, finishedAtMs) || finishedAtMs > nowMs)
-    throw InvalidTraining("finishedAt must be at or after startedAt and no later than now");
+  Session session{incoming.id, user, incoming.startedAtMs, incoming.finishedAtMs, incoming.routine,
+                  std::nullopt, ClosedBy::finish};
+  if (!canFinishAt(session, incoming.finishedAtMs))
+    throw InvalidTraining("finishedAt must be at or after startedAt");
+  if (incoming.finishedAtMs > nowMs) throw InvalidTraining("finishedAt cannot be in the future");
   std::vector<Set> sets;
-  for (std::size_t i = 0; i < incoming.size(); ++i) {
-    const SetWrite& row = incoming[i];
+  for (std::size_t i = 0; i < incoming.sets.size(); ++i) {
+    const SetWrite& row = incoming.sets[i];
     try {
-      sets.emplace_back(row.id, start.id, row.exercise, 0, row.weightKg, row.reps,
+      sets.emplace_back(row.id, incoming.id, row.exercise, 0, row.weightKg, row.reps,
                         row.kind, row.rpe, row.note, row.completedAtMs);
     } catch (const InvalidTraining& error) {
       throw InvalidTraining("sets[" + std::to_string(i) + "] (" + row.id.str() + "): " + error.what());
     }
   }
-  const SetBatch batch{start.id, std::move(sets), nowMs, true};
+  const SetBatch batch{incoming.id, std::move(sets), nowMs, true};
   batch.checkInterval(session, true);
-  if (start.routine) {
-    const std::optional<Routine> routine = program_.routine(user, *start.routine);
+  settleOpen(log_, user, nowMs);
+  if (incoming.routine) {
+    const std::optional<Routine> routine = program_.routine(user, *incoming.routine);
     if (routine) session.plan = snapshotOf(*routine);
   }
   return log_.importSession(session, batch);

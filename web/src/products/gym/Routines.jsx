@@ -3,9 +3,9 @@ import { Button, Icon, Input, Menu, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  alsoReadsLabel, cappedName, entryLabel, isNameOverCap, isUntested, MOVEMENTS_HREF, movementOf,
-  nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref, routineMetaLabel, ROUTINES_HREF,
-  schemeAgrees, showsNameCount, threadHref, UNTESTED,
+  alsoReadsLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, isNeverTrained, MOVEMENTS_HREF,
+  movementOf, nameCountLabel, nameOfMovement, NEVER_TRAINED_ALONE, NEW_ROUTINE_ID, routineHref,
+  routineMetaLabel, ROUTINES_HREF, schemeAgrees, showsNameCount, threadHref,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
@@ -104,7 +104,10 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
               </a>
               <Menu
                 label={`More for ${routine.name}`}
-                items={[{ label: 'Delete', run: () => remove(routine) }]}
+                items={[
+                  { label: 'Log past', run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
+                  { label: 'Delete', run: () => remove(routine) },
+                ]}
               />
             </li>
           ))}
@@ -232,9 +235,9 @@ export function RoutineEditor({ id, log }) {
       </header>
       {missing && <p className="gym-editor-missing">{missing}</p>}
 
-      {!fresh && (isUntested(view.data) || built) && (
+      {!fresh && (isNeverTrained(view.data) || built) && (
         <p className="gym-editor-meta">
-          {isUntested(view.data) && <Tag size="sm">{UNTESTED}</Tag>}
+          {isNeverTrained(view.data) && <Tag size="sm">{NEVER_TRAINED_ALONE}</Tag>}
           {built && <span>{built}</span>}
         </p>
       )}

@@ -67,20 +67,21 @@ std::vector<std::string> batchIds(const Json::Value& args, const char* field) {
 }
 
 ToolResult batchLog(TrainingService& training, const UserId& caller, const Json::Value& args, bool imported) {
-  if (!args["sets"].isArray() || (!imported && args["sets"].empty()) || args["sets"].size() > kMaxSetBatch)
-    return ToolResult::failure(std::string("sets must contain ") + (imported ? "0" : "1") + " to 200 rows");
-  std::vector<SetWrite> sets;
-  for (Json::ArrayIndex i = 0; i < args["sets"].size(); ++i) {
-    try { sets.push_back(parseSetWrite(args["sets"][i])); }
-    catch (const InvalidTraining& error) { throw InvalidTraining("sets[" + std::to_string(i) + "]: " + error.what()); }
-  }
   std::string sessionId;
+  std::vector<SetWrite> sets;
   BatchLogOutcome outcome;
   if (imported) {
-    const SessionStart start = parseSessionStart(args);
-    sessionId = start.id.str();
-    outcome = training.importSession(caller, start, parseFinish(args), sets);
+    const SessionImport incoming = parseSessionImport(args);
+    sessionId = incoming.id.str();
+    sets = incoming.sets;
+    outcome = training.importSession(caller, incoming);
   } else {
+    if (!args["sets"].isArray() || args["sets"].empty() || args["sets"].size() > kMaxSetBatch)
+      return ToolResult::failure("sets must contain 1 to 200 rows");
+    for (Json::ArrayIndex i = 0; i < args["sets"].size(); ++i) {
+      try { sets.push_back(parseSetWrite(args["sets"][i])); }
+      catch (const InvalidTraining& error) { throw InvalidTraining("sets[" + std::to_string(i) + "]: " + error.what()); }
+    }
     if (const auto bad = idArgument(args, "sessionId", "Call list_sessions or start_session.", sessionId))
       return ToolResult::failure(*bad);
     outcome = training.appendSets(caller, SessionId{sessionId}, sets);
@@ -95,6 +96,10 @@ ToolResult batchLog(TrainingService& training, const UserId& caller, const Json:
       case BatchLogError::deleted: reason = "the set was deleted; do not recreate it with another id"; break;
       case BatchLogError::payloadConflict: reason = "the id was accepted with different data; reuse the original request for retries"; break;
       case BatchLogError::idTaken: reason = "the id is already spent and cannot be used for this request"; break;
+      case BatchLogError::overlap:
+        reason = "those times cross workout " + outcome.overlapping->id.str() +
+                 ", already in the log; one visit is one workout, so read it with get_sessions before choosing other times";
+        break;
       case BatchLogError::none: break;
     }
     if (outcome.errorIndex)

@@ -90,6 +90,47 @@ SetWrite parseSetWrite(const Json::Value& body) {
   return write;
 }
 
+// Field-strict at both levels, where a start and a lone set are not: a whole workout written at once
+// is the one body a misspelled field would silently empty. Each set is then read as any set is.
+SessionImport parseSessionImport(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("an import must be a json object");
+  for (const std::string& field : body.getMemberNames()) {
+    if (field == "id" || field == "startedAt" || field == "finishedAt" || field == "routineId" ||
+        field == "sets")
+      continue;
+    throw InvalidTraining("unknown import field \"" + field +
+                          "\". An import takes: id, startedAt, finishedAt, routineId, sets.");
+  }
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  SessionImport incoming{SessionId{body["id"].asString()}, instantOf(body, "startedAt"),
+                         instantOf(body, "finishedAt"), std::nullopt, {}};
+  if (body.isMember("routineId") && !body["routineId"].isNull()) {
+    if (!body["routineId"].isString()) throw InvalidTraining("routineId must be a string");
+    incoming.routine = RoutineId{body["routineId"].asString()};
+  }
+  if (!body["sets"].isArray() || body["sets"].size() > kMaxSetBatch)
+    throw InvalidTraining("sets must contain 0 to 200 rows");
+  for (Json::ArrayIndex i = 0; i < body["sets"].size(); ++i) {
+    const Json::Value& set = body["sets"][i];
+    const std::string path = "sets[" + std::to_string(i) + "]: ";
+    if (set.isObject())
+      for (const std::string& field : set.getMemberNames()) {
+        if (field == "id" || field == "exerciseId" || field == "weightKg" || field == "reps" ||
+            field == "completedAt" || field == "kind" || field == "rpe" || field == "note")
+          continue;
+        throw InvalidTraining(path + "unknown set field \"" + field +
+                              "\". A set takes: id, exerciseId, weightKg, reps, completedAt, kind, "
+                              "rpe, note.");
+      }
+    try {
+      incoming.sets.push_back(parseSetWrite(set));
+    } catch (const InvalidTraining& error) {
+      throw InvalidTraining(path + error.what());
+    }
+  }
+  return incoming;
+}
+
 // Every field is optional and checked for presence alone, so a `null` weight is a type error;
 // `"rpe": null` is the exception and removes one.
 SetFix parseSetFix(const Json::Value& body) {

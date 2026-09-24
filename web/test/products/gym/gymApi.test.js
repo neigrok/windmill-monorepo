@@ -55,14 +55,14 @@ function flagsOf(error) {
     code: error.code,
     terminal: error.terminal,
     retryable: error.retryable,
-    sessionFinished: error.sessionFinished,
     setIdTaken: error.setIdTaken,
     sessionIdTaken: error.sessionIdTaken,
     unknownExercise: error.unknownExercise,
     routineIdTaken: error.routineIdTaken,
     exerciseIdTaken: error.exerciseIdTaken,
     sessionOpen: error.sessionOpen,
-    sessionAlreadyOpen: error.sessionAlreadyOpen,
+    sessionDeleted: error.sessionDeleted,
+    sessionOverlap: error.sessionOverlap,
     fixUnreadable: error.fixUnreadable,
     setNotFound: error.setNotFound,
     proposalSuperseded: error.proposalSuperseded,
@@ -200,14 +200,14 @@ test('lastTime — a movement no catalog holds is the one refusal, and it is the
       code: 'unknown-exercise',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: true,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -217,19 +217,26 @@ test('lastTime — a movement no catalog holds is the one refusal, and it is the
   });
 });
 
-test('appendSet — a replay of a stored set answers 200 with the stored row, finished or not', async () => {
-  const stored = {
-    id: 'set_1', exerciseId: 'back-squat', setNumber: 3, weightKg: 82.5, reps: 8,
-    kind: 'working', note: '', completedAt: 1_900_000_300_000,
+test('importSession — one past workout in one POST, and the stored session back in the shape its own read has', async () => {
+  const workout = {
+    id: 'ses_1',
+    startedAt: 1_900_000_000_000,
+    finishedAt: 1_900_003_600_000,
+    routineId: 'rt_push_a',
+    sets: [{ id: 'set_1', exerciseId: 'back-squat', weightKg: 82.5, reps: 8, completedAt: 1_900_001_800_000, kind: 'working' }],
   };
-  serve(ok(stored));
-  assert.deepEqual(await gymApi.appendSet('ses_1', { id: 'set_1', exerciseId: 'back-squat', weightKg: 82.5, reps: 8, completedAt: 1_900_000_300_000 }), stored);
+  const stored = {
+    session: { id: 'ses_1', startedAt: 1_900_000_000_000, finishedAt: 1_900_003_600_000, routineId: 'rt_push_a', plan: { routine: 'Push A', entries: [] } },
+    sets: [{ id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 82.5, reps: 8, kind: 'working', note: '', completedAt: 1_900_001_800_000 }],
+  };
+  serve({ ok: true, status: 201, json: async () => stored });
+  assert.deepEqual(await gymApi.importSession(workout), stored);
   assert.deepEqual(wireOf(calls[0]), {
-    path: '/v1/gym/sessions/ses_1/sets',
+    path: '/v1/gym/sessions/import',
     method: 'POST',
     credentials: 'include',
     contentType: 'application/json',
-    body: '{"id":"set_1","exerciseId":"back-squat","weightKg":82.5,"reps":8,"completedAt":1900000300000}',
+    body: '{"id":"ses_1","startedAt":1900000000000,"finishedAt":1900003600000,"routineId":"rt_push_a","sets":[{"id":"set_1","exerciseId":"back-squat","weightKg":82.5,"reps":8,"completedAt":1900001800000,"kind":"working"}]}',
   });
 });
 
@@ -260,14 +267,14 @@ test('fix-unreadable — a fix the store would not take is terminal, and retryin
       code: 'fix-unreadable',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: true,
       setNotFound: false,
       proposalSuperseded: false,
@@ -288,14 +295,14 @@ test('set-not-found — one answer for all four ways a set can fail to be in tha
       code: 'set-not-found',
       terminal: false,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: true,
       proposalSuperseded: false,
@@ -340,37 +347,9 @@ test('deleteSet — a store that failed is retryable, and it is the only non-204
   });
 });
 
-test('session-finished — the code, not the sentence, says this set will never land here', async () => {
-  serve(refusal(409, 'this session was closed at 18:42', 'session-finished'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_new' }), (error) => {
-    assert.deepEqual(flagsOf(error), {
-      name: 'GymError',
-      status: 409,
-      message: 'this session was closed at 18:42',
-      detail: 'this session was closed at 18:42',
-      code: 'session-finished',
-      terminal: true,
-      retryable: false,
-      sessionFinished: true,
-      setIdTaken: false,
-      sessionIdTaken: false,
-      unknownExercise: false,
-      routineIdTaken: false,
-      exerciseIdTaken: false,
-      sessionOpen: false,
-      sessionAlreadyOpen: false,
-      fixUnreadable: false,
-      setNotFound: false,
-      proposalSuperseded: false,
-      proposalSettled: false,
-    });
-    return true;
-  });
-});
-
 test('set-id-taken — the code says mint a fresh set id, so a reword can never drop the set', async () => {
   serve(refusal(409, 'that identifier already names a set', 'set-id-taken'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 409,
@@ -379,14 +358,14 @@ test('set-id-taken — the code says mint a fresh set id, so a reword can never 
       code: 'set-id-taken',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: true,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -398,7 +377,7 @@ test('set-id-taken — the code says mint a fresh set id, so a reword can never 
 
 test('session-id-taken — the code says mint a fresh session id', async () => {
   serve(refusal(409, 'that identifier is already in use', 'session-id-taken'));
-  await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1_900_000_000_000 }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 409,
@@ -407,14 +386,14 @@ test('session-id-taken — the code says mint a fresh session id', async () => {
       code: 'session-id-taken',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: true,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -426,7 +405,7 @@ test('session-id-taken — the code says mint a fresh session id', async () => {
 
 test('unknown-exercise — a 400 with a repair of its own: reload the catalog, never retry this body', async () => {
   serve(refusal(400, 'that movement is not in the catalog', 'unknown-exercise'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1', exerciseId: 'zercher-squat' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [{ id: 'set_1', exerciseId: 'zercher-squat' }] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 400,
@@ -435,14 +414,14 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
       code: 'unknown-exercise',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: true,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -454,14 +433,13 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
 
 test('a codeless refusal still classifies by the sentence it shipped with', async () => {
   const sentences = [
-    [409, 'that session is finished', 'session-finished'],
     [409, 'that set id is already used', 'set-id-taken'],
     [409, 'that session id is taken', 'session-id-taken'],
     [400, 'no such exercise', 'unknown-exercise'],
   ];
   for (const [status, sentence, code] of sentences) {
     serve(refusal(status, sentence));
-    await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+    await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
       assert.deepEqual(flagsOf(error), {
         name: 'GymError',
         status,
@@ -470,14 +448,14 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
         code,
         terminal: true,
         retryable: false,
-        sessionFinished: code === 'session-finished',
         setIdTaken: code === 'set-id-taken',
         sessionIdTaken: code === 'session-id-taken',
         unknownExercise: code === 'unknown-exercise',
         routineIdTaken: code === 'routine-id-taken',
         exerciseIdTaken: code === 'exercise-id-taken',
         sessionOpen: code === 'session-open',
-        sessionAlreadyOpen: code === 'session-already-open',
+        sessionDeleted: code === 'session-deleted',
+        sessionOverlap: code === 'session-overlap',
         fixUnreadable: false,
         setNotFound: false,
         proposalSuperseded: false,
@@ -490,7 +468,7 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
 
 test('a 409 with an unknown code, or none at all, is terminal but unrepairable', async () => {
   serve(refusal(409, 'that routine is already running', 'routine-running'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 409,
@@ -499,14 +477,14 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       code: 'routine-running',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -516,7 +494,7 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
   });
 
   serve(refusal(409, 'that routine is already running'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 409,
@@ -525,14 +503,14 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       code: '',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -544,7 +522,7 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
 
 test('400 is terminal and 5xx is retryable — a busy store never reads as a bad set', async () => {
   serve(refusal(400, 'could not read that set'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 400,
@@ -553,14 +531,14 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       code: '',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -570,7 +548,7 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
   });
 
   serve(refusal(503, 'could not store that set'));
-  await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 503,
@@ -579,14 +557,14 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       code: '',
       terminal: false,
       retryable: true,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -608,14 +586,14 @@ test('a refusal with no readable body still carries its status', async () => {
       code: '',
       terminal: false,
       retryable: true,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -636,14 +614,14 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       code: '',
       terminal: false,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -652,24 +630,24 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
     return true;
   });
 
-  serve(refusal(404, 'no such session'));
-  await assert.rejects(() => gymApi.finishSession('ses_gone', { finishedAt: 1_900_000_000_000 }), (error) => {
+  serve(refusal(404, 'no such routine'));
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, routineId: 'rt_gone', sets: [] }), (error) => {
     assert.deepEqual(flagsOf(error), {
       name: 'GymError',
       status: 404,
-      message: 'no such session',
-      detail: 'no such session',
+      message: 'no such routine',
+      detail: 'no such routine',
       code: '',
       terminal: false,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -677,32 +655,6 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
     });
     return true;
   });
-});
-
-test('startSession — routineId travels, and an unasked option is absent rather than false', async () => {
-  const open = {
-    id: 'ses_1',
-    startedAt: 1_900_000_000_000,
-    routineId: 'rt_push_a',
-    plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180 }] },
-  };
-  serve(ok(open));
-  assert.deepEqual(await gymApi.startSession({ id: 'ses_1', startedAt: 1_900_000_000_000, routineId: 'rt_push_a' }), open);
-  assert.deepEqual(wireOf(calls[0]), {
-    path: '/v1/gym/sessions',
-    method: 'POST',
-    credentials: 'include',
-    contentType: 'application/json',
-    body: '{"id":"ses_1","startedAt":1900000000000,"routineId":"rt_push_a"}',
-  });
-
-  serve(ok(open));
-  await gymApi.startSession({ id: 'ses_1', startedAt: 1_900_000_000_000 });
-  assert.equal(wireOf(calls[0]).body, '{"id":"ses_1","startedAt":1900000000000}');
-
-  serve(ok(open));
-  await gymApi.startSession({ id: 'ses_2', startedAt: 1_900_000_000_000, joinOpenSession: false, routineId: 'rt_push_a' });
-  assert.equal(wireOf(calls[0]).body, '{"id":"ses_2","startedAt":1900000000000,"joinOpenSession":false,"routineId":"rt_push_a"}');
 });
 
 test('createExercise — a movement the lifter minted, with the equipment default left out', async () => {
@@ -924,14 +876,14 @@ test('session-open — a discard against a live session is refused, and it is no
       code: 'session-open',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: true,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -1135,14 +1087,14 @@ test('proposal-superseded and proposal-settled — the world moved, and neither 
       code: 'proposal-superseded',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: true,
@@ -1161,14 +1113,14 @@ test('proposal-superseded and proposal-settled — the world moved, and neither 
       code: 'proposal-settled',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -1248,14 +1200,14 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       code: 'routine-id-taken',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: true,
       exerciseIdTaken: false,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -1274,14 +1226,14 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       code: 'exercise-id-taken',
       terminal: true,
       retryable: false,
-      sessionFinished: false,
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
       routineIdTaken: false,
       exerciseIdTaken: true,
       sessionOpen: false,
-      sessionAlreadyOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: false,
       fixUnreadable: false,
       setNotFound: false,
       proposalSuperseded: false,
@@ -1304,14 +1256,14 @@ test('unknown-exercise — a routine entry can reach the same refusal a set can'
         code: 'unknown-exercise',
         terminal: true,
         retryable: false,
-        sessionFinished: false,
         setIdTaken: false,
         sessionIdTaken: false,
         unknownExercise: true,
         routineIdTaken: false,
         exerciseIdTaken: false,
         sessionOpen: false,
-        sessionAlreadyOpen: false,
+        sessionDeleted: false,
+        sessionOverlap: false,
         fixUnreadable: false,
         setNotFound: false,
         proposalSuperseded: false,
@@ -1339,14 +1291,14 @@ test('the three routine-era refusals classify from the sentence alone as well', 
         code,
         terminal: true,
         retryable: false,
-        sessionFinished: false,
         setIdTaken: false,
         sessionIdTaken: false,
         unknownExercise: false,
         routineIdTaken: code === 'routine-id-taken',
         exerciseIdTaken: code === 'exercise-id-taken',
         sessionOpen: code === 'session-open',
-        sessionAlreadyOpen: code === 'session-already-open',
+        sessionDeleted: code === 'session-deleted',
+        sessionOverlap: code === 'session-overlap',
         fixUnreadable: false,
         setNotFound: false,
         proposalSuperseded: false,
@@ -1357,41 +1309,37 @@ test('the three routine-era refusals classify from the sentence alone as well', 
   }
 });
 
-test('session-already-open — a backfill that met a live workout is its own refusal, not a 409', async () => {
-  for (const answer of [
-    refusal(409, 'another session is already open', 'session-already-open'),
-    refusal(409, 'another session is already open'),
-  ]) {
-    serve(answer);
-    await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1, joinOpenSession: false }), (error) => {
-      assert.deepEqual(flagsOf(error), {
-        name: 'GymError',
-        status: 409,
-        message: 'another session is already open',
-        detail: 'another session is already open',
-        code: 'session-already-open',
-        terminal: true,
-        retryable: false,
-        sessionFinished: false,
-        setIdTaken: false,
-        sessionIdTaken: false,
-        unknownExercise: false,
-        routineIdTaken: false,
-        exerciseIdTaken: false,
-        sessionOpen: false,
-        sessionAlreadyOpen: true,
-        fixUnreadable: false,
-        setNotFound: false,
-        proposalSuperseded: false,
-        proposalSettled: false,
-      });
-      return true;
+test('session-overlap — the store names the finished session the times cross, and the two spent-id codes of an import', async () => {
+  const crossed = { id: 'ses_phone', startedAt: 1_900_000_000_000, finishedAt: 1_900_003_000_000 };
+  serve({ ok: false, status: 409, json: async () => ({ code: 'session-overlap', error: 'these times cross a session already in the log', sessionId: 'ses_phone', session: crossed }) });
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
+    assert.deepEqual({ ...flagsOf(error), overlapping: error.overlapping }, {
+      name: 'GymError',
+      status: 409,
+      message: 'these times cross a session already in the log',
+      detail: 'these times cross a session already in the log',
+      code: 'session-overlap',
+      terminal: true,
+      retryable: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionDeleted: false,
+      sessionOverlap: true,
+      fixUnreadable: false,
+      setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
+      overlapping: crossed,
     });
-  }
-  serve(refusal(409, 'that session id is taken', 'session-id-taken'));
-  await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1, joinOpenSession: false }), (error) => {
-    assert.equal(error.sessionAlreadyOpen, false);
-    assert.equal(error.sessionIdTaken, true);
+    return true;
+  });
+  serve(refusal(409, 'that workout was discarded', 'session-deleted'));
+  await assert.rejects(() => gymApi.importSession({ id: 'ses_1', startedAt: 1, finishedAt: 2, sets: [] }), (error) => {
+    assert.deepEqual([error.sessionDeleted, error.sessionOverlap, error.overlapping], [true, false, null]);
     return true;
   });
 });

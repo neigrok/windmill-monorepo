@@ -543,7 +543,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     }
     const char* description =
         imported ? "Import one already-completed workout and up to 200 performed sets in one transaction. "
-                   "All set times must fall inside its interval, with no future facts. Leaves the live workout alone. "
+                   "All set times must fall inside its interval, with no future facts. Leaves the live workout alone; refused if it crosses a finished one. "
                    "An exact id/body retry returns current status without duplicating or restoring corrected/deleted data; a changed request conflicts."
         : write ? "Log 1..200 ordered performed sets into one workout atomically. Every item is validated; one bad row commits nothing. "
                   "Exact id/body retries return current status, including deleted rows, without changing them. Reusing an id with different data conflicts. "

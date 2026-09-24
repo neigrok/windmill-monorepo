@@ -105,6 +105,82 @@ void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&&
   cb(jsonResponse(toJson(*outcome.session)));
 }
 
+// A past workout written whole: it lands with every set or not at all, and answers in the shape
+// `GET /v1/gym/sessions/{id}` does — 201 when it landed now, 200 when this exact import landed
+// before. A refusal naming one set says which as `sets[i] (id)`.
+void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  std::optional<SessionImport> incoming;
+  BatchLogOutcome outcome;
+  try {
+    incoming = parseSessionImport(*json);
+    outcome = training_->importSession(*caller, *incoming);
+  } catch (const InvalidTraining& refused) {
+    cb(error(drogon::k400BadRequest, refused.what()));
+    return;
+  }
+  const std::string where = outcome.errorIndex
+      ? "sets[" + std::to_string(*outcome.errorIndex) + "] (" +
+            incoming->sets[*outcome.errorIndex].id.str() + "): "
+      : "";
+  switch (outcome.error) {
+    case BatchLogError::none: break;
+    case BatchLogError::overlap: {
+      // The crossed session travels whole, so the refusal can name it and link to it.
+      Json::Value body(Json::objectValue);
+      body["error"] = "these times cross a session already in the log";
+      body["code"] = "session-overlap";
+      body["sessionId"] = outcome.overlapping->id.str();
+      body["session"] = toJson(*outcome.overlapping);
+      cb(jsonResponse(body, drogon::k409Conflict));
+      return;
+    }
+    case BatchLogError::idTaken:
+    case BatchLogError::payloadConflict:
+      // Spent by another account, or by this one with a different workout: whose is never said.
+      if (outcome.errorIndex)
+        cb(error(drogon::k409Conflict, where + "that set id is already used", "set-id-taken"));
+      else
+        cb(error(drogon::k409Conflict, "that session id is taken", "session-id-taken"));
+      return;
+    case BatchLogError::unknownExercise:
+      cb(error(drogon::k400BadRequest, where + "no such exercise", "unknown-exercise"));
+      return;
+    case BatchLogError::unknownRoutine:
+      // Never-existed and someone else's are one answer.
+      cb(error(drogon::k404NotFound, "no such routine"));
+      return;
+    case BatchLogError::notFound:
+    case BatchLogError::finished:
+    case BatchLogError::deleted:
+      // An append's refusals. An import creates its session, and a deleted set's id is still held by
+      // its receipt, which answers set-id-taken first.
+      cb(error(drogon::k500InternalServerError, "that import failed inside the server"));
+      return;
+  }
+  // The row as it stands now, read the way the session's own route reads it. A replay of an import
+  // since discarded finds nothing, and is not brought back.
+  const std::optional<SessionDetail> stored =
+      outcome.sessionDeleted ? std::nullopt : training_->detail(*caller, incoming->id);
+  if (!stored) {
+    cb(error(drogon::k409Conflict, "that workout was discarded", "session-deleted"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["session"] = toJson(stored->session);
+  body["sets"] = toJson(stored->sets);
+  cb(jsonResponse(body, outcome.replayed ? drogon::k200OK : drogon::k201Created));
+}
+
 void TrainingApi::appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                        const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);

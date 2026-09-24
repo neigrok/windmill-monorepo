@@ -83,6 +83,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         training->startSession(req, std::move(cb));
       },
       {drogon::Post});
+  // A past workout written whole. A static path, so it is matched before the `{id}` routes beside it.
+  app.registerHandler(
+      "/v1/gym/sessions/import",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->importSession(req, std::move(cb));
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/gym/sessions/{id}/sets",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

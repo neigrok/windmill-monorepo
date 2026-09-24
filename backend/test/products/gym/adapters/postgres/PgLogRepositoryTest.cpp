@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <latch>
 #include <optional>
 #include <string>
 #include <thread>
@@ -2026,4 +2027,65 @@ TEST(pg_gym_single_and_import_compete_for_one_durable_set_id_across_sessions) {
     CHECK_FALSE(repo.session(wm::UserId{kUser}, live.id).has_value());
   }
   CHECK_FALSE(repo.setOf(wm::UserId{kUser}, singleSet.id).has_value());
+}
+
+TEST(pg_gym_an_import_crossing_a_finished_session_is_refused_naming_it_and_a_replay_is_not) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const auto finished = [](const std::string& id, std::uint64_t startedAtMs, std::uint64_t finishedAtMs,
+                           const std::string& user) {
+    return Session{SessionId{id}, wm::UserId{user}, startedAtMs, finishedAtMs, std::nullopt, std::nullopt,
+                   ClosedBy::finish};
+  };
+  const Session first = finished("ses_first001", kNow - 20000, kNow - 10000, kUser);
+  const SetBatch firstBatch{first.id, {benchSet("set_first001", 80, kNow - 15000, "ses_first001")}, kNow};
+  CHECK(repo.importSession(first, firstBatch).error == BatchLogError::none);
+  // Another account's hour and this account's open session are nobody's obstacle.
+  const Session theirs = finished("ses_theirs01", kNow - 9000, kNow - 7000, kOther);
+  CHECK(repo.importSession(theirs, SetBatch{theirs.id, {}, kNow, true}).error == BatchLogError::none);
+  repo.insertSession(sessionAt("ses_open0001", kNow - 8500));
+
+  const Session crossing = finished("ses_cross001", kNow - 12000, kNow - 9000, kUser);
+  const BatchLogOutcome refused = repo.importSession(crossing, SetBatch{crossing.id, {}, kNow, true});
+  CHECK(refused.error == BatchLogError::overlap);
+  CHECK_EQ(refused.overlapping, repo.session(wm::UserId{kUser}, first.id));
+  CHECK_FALSE(repo.session(wm::UserId{kUser}, crossing.id).has_value());
+  // Touching ends crosses nothing, and the exact replay of the first answers as itself.
+  const Session touching = finished("ses_touch001", kNow - 10000, kNow - 8000, kUser);
+  CHECK(repo.importSession(touching, SetBatch{touching.id, {}, kNow, true}).error == BatchLogError::none);
+  CHECK(repo.importSession(first, firstBatch).replayed);
+}
+
+// Different imports into one hour, all in flight at once, each on its own pooled connection: the
+// account's lock queues them, so the first to take it lands and every other reads it and is refused.
+TEST(pg_gym_imports_racing_into_one_hour_land_exactly_one) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  constexpr int kRacers = 6;
+  std::vector<BatchLogError> answers(kRacers, BatchLogError::none);
+  std::vector<std::string> thrown(kRacers);
+  std::latch together{kRacers};
+  std::vector<std::thread> racers;
+  for (int at = 0; at < kRacers; ++at)
+    racers.emplace_back([&, at] {
+      const Session racing{SessionId{"ses_race000" + std::to_string(at)}, wm::UserId{kUser},
+                           kNow - 20000 + static_cast<std::uint64_t>(at), kNow - 10000,
+                           std::nullopt, std::nullopt, ClosedBy::finish};
+      together.arrive_and_wait();
+      try {
+        answers[at] = repo.importSession(racing, SetBatch{racing.id, {}, kNow, true}).error;
+      } catch (const std::exception& failed) {
+        thrown[at] = failed.what();
+      }
+    });
+  for (std::thread& racer : racers) racer.join();
+
+  for (int at = 0; at < kRacers; ++at) CHECK_EQ(thrown[at], std::string(""));
+  CHECK_EQ(std::count(answers.begin(), answers.end(), BatchLogError::none), 1);
+  CHECK_EQ(std::count(answers.begin(), answers.end(), BatchLogError::overlap), kRacers - 1);
+  wm::PgLease conn{*wm::pgTestPool()};
+  pqxx::work txn{*conn};
+  CHECK_EQ(txn.exec_params("SELECT count(*) FROM gym_sessions WHERE user_id = $1::uuid", kUser)[0][0].as<int>(), 1);
 }

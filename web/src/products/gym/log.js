@@ -40,7 +40,29 @@ export function finishHref(id) {
   return `#/gym/finish/${id}`;
 }
 
+// `#/gym/backfill` is the routine pick; a routine's id opens its filled form, `free` the empty one.
 export const BACKFILL_HREF = '#/gym/backfill';
+
+export const FREE_SESSION = 'free';
+
+// A form opened from a routine's ⋯ carries that origin in its own hash, so its back link returns to
+// Routines; one with no origin was opened from the pick.
+export const FROM_PICK = 'pick';
+export const FROM_ROUTINE_MENU = 'routines';
+
+export function backfillHref(routineId, from = FROM_PICK) {
+  if (from === FROM_ROUTINE_MENU) return `${BACKFILL_HREF}/${routineId}?from=${FROM_ROUTINE_MENU}`;
+  return `${BACKFILL_HREF}/${routineId}`;
+}
+
+export function backfillTargetOf(hash) {
+  const match = /^#\/gym\/backfill\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
+export function backfillFromOf(hash) {
+  return /^#\/gym\/backfill\/[A-Za-z0-9_-]+\?from=routines$/.test(hash || '') ? FROM_ROUTINE_MENU : FROM_PICK;
+}
 
 // The room is Coach; `#/gym/ask/…` is the older spelling and resolves to the same screens.
 export const COACH_HREF = '#/gym/coach';
@@ -229,10 +251,6 @@ export function durLabel(ms) {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
-// What a form opens on with nothing better to go on — a number to be typed over.
-export const EMPTY_BAR_KG = 20;
-export const EMPTY_BAR_REPS = 5;
-
 // Every printed weight in gym comes through here: display units (units.js), the ladder's rounding
 // grid, and a real U+2212 minus for the band-assisted loads that sit below zero.
 export function fmt(weightKg) {
@@ -339,18 +357,36 @@ export function hasRecord(session) {
   return session?.record === true;
 }
 
-// `lastTrainedAt` is the store's aggregate over the log; its absence IS this state.
-export const UNTESTED = 'untested';
+// `lastTrainedAt` is the store's aggregate over the log; its absence IS this state. Lower-case after
+// a separator, capitalised where it stands alone.
+export const NEVER_TRAINED = 'never trained';
+export const NEVER_TRAINED_ALONE = 'Never trained';
 
-export function isUntested(routine) {
+export function isNeverTrained(routine) {
   return routine?.lastTrainedAt == null;
 }
 
-export function routineMetaLabel(routine, now = Date.now()) {
+function movementsLabel(routine) {
   const count = routine.entries?.length ?? 0;
-  const movements = count === 1 ? '1 movement' : `${count} movements`;
-  if (isUntested(routine)) return `${movements} · ${UNTESTED}`;
-  return `${movements} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
+  return count === 1 ? '1 movement' : `${count} movements`;
+}
+
+export function routineMetaLabel(routine, now = Date.now()) {
+  if (isNeverTrained(routine)) return `${movementsLabel(routine)} · ${NEVER_TRAINED}`;
+  return `${movementsLabel(routine)} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
+}
+
+// `4 movements · 10 sets`, the sets the routine names; an open entry names none.
+export function routineSizeLabel(routine) {
+  const sets = (routine.entries ?? []).reduce((count, entry) => count + (entry.sets?.length ?? 0), 0);
+  if (sets === 0) return movementsLabel(routine);
+  return `${movementsLabel(routine)} · ${setCountLabel(sets)}`;
+}
+
+// The day a routine was last trained, `22 Sep`, or that it never was.
+export function lastTrainedDayLabel(routine) {
+  if (isNeverTrained(routine)) return NEVER_TRAINED_ALONE;
+  return shortDayLabel(routine.lastTrainedAt);
 }
 
 // "No target" has two spellings on the wire: the field omitted, and a zero. Zero is the absence of a
@@ -388,8 +424,9 @@ export function setReading(set) {
 // printing its range `lo–hi` — a placeholder standing as the top: `max` of a reps column, `last` of a
 // load column —
 // and a load column no set names printing nothing. One set inside a strip or a ladder is read by
-// setReading; a scheme of one set is still a scheme, `1 × 5 · 100`.
-export function entryLabel(entry) {
+// setReading; a scheme of one set is still a scheme, `1 × 5 · 100`. `format` spells a load: the
+// account's unit by default, `fmtKg` on a form that is written in kilograms.
+export function entryLabel(entry, format = fmt) {
   if (entry.sets == null) return OPEN_TARGET;
   const { sets } = entry;
   const reps = sets.map((set) => set.reps ?? null);
@@ -401,8 +438,8 @@ export function entryLabel(entry) {
   const known = loads.filter((each) => each != null);
   if (known.length === 0) return `${sets.length} × ${repsColumn}`;
   const loadColumn = loads.every((each) => each === loads[0])
-    ? fmt(loads[0])
-    : `${fmt(Math.min(...known))}–${known.length < loads.length ? 'last' : fmt(Math.max(...known))}`;
+    ? format(loads[0])
+    : `${format(Math.min(...known))}–${known.length < loads.length ? 'last' : format(Math.max(...known))}`;
   return `${sets.length} × ${repsColumn} · ${loadColumn}`;
 }
 

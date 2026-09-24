@@ -21,6 +21,8 @@ namespace wm::gym {
 // never null; note is always present.
 //
 //   session in  : { "id": "ses_…", "startedAt": ms, "joinOpenSession"?: bool, "routineId"?: "rt_…" }
+//   import in   : { "id": "ses_…", "startedAt": ms, "finishedAt": ms, "routineId"?: "rt_…",
+//                   "sets": [ <set in>, … ] }        0 to 200 sets    POST /v1/gym/sessions/import
 //   set in      : { "id": "set_…", "exerciseId": "…", "weightKg": n, "reps": n, "completedAt": ms,
 //                   "kind"?: "warmup"|"working"|"drop"|"failure", "rpe"?: n, "note"?: "…" }
 //   fix in      : { "weightKg"?: n, "reps"?: n, "kind"?: "…", "rpe"?: n|null, "note"?: "…" }
@@ -160,6 +162,8 @@ SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTrai
 // clear), and an empty body is legal.
 SetFix parseSetFix(const Json::Value& body);               // throws InvalidTraining
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
+// Unknown fields are refused at both levels; each set is otherwise read as parseSetWrite reads it.
+SessionImport parseSessionImport(const Json::Value& body); // throws InvalidTraining
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining
 // `position` is not a field here.
 ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source);

@@ -1,9 +1,9 @@
 #include "products/gym/domain/Training.h"
 
-#include <cmath>
-#include <utility>
+#include <algorithm>
 #include <cmath>
 #include <set>
+#include <utility>
 
 namespace wm::gym {
 
@@ -299,6 +299,23 @@ std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t fi
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs) {
   if (!session.finishedAtMs || session.closedBy != ClosedBy::stale) return false;
   return completedAtMs <= *session.finishedAtMs + kAutoCloseMs;
+}
+
+std::optional<Session> crossedBy(const Session& incoming, const std::vector<Session>& logged) {
+  // An empty span still takes up its instant, so it cannot slip in at a session's first moment.
+  const auto endOf = [](const Session& session) {
+    return std::max(session.finishedAtMs.value_or(session.startedAtMs), session.startedAtMs + 1);
+  };
+  std::optional<Session> earliest;
+  for (const Session& session : logged) {
+    if (session.id == incoming.id || !session.finishedAtMs) continue;
+    const bool crosses = session.startedAtMs < endOf(incoming) && incoming.startedAtMs < endOf(session);
+    if (!crosses) continue;
+    if (!earliest || session.startedAtMs < earliest->startedAtMs ||
+        (session.startedAtMs == earliest->startedAtMs && session.id < earliest->id))
+      earliest = session;
+  }
+  return earliest;
 }
 
 std::uint64_t shareExpiryAt(std::uint64_t nowMs) {

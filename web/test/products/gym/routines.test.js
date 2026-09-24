@@ -531,7 +531,7 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
   assert.equal(entryLabel(maxed[1]), '3 × max');
 });
 
-test('saysNeverLogged — an untested routine, and a row that has not been filled in', () => {
+test('saysNeverLogged — a routine never trained, and a row that has not been filled in', () => {
   const built = { id: 'rt_1', name: 'Heavy Thursday', lastTrainedAt: null };
   const kept = { id: 'rt_2', name: 'Push A', lastTrainedAt: null };
   const trained = { id: 'rt_3', name: 'Legs', lastTrainedAt: AT };
