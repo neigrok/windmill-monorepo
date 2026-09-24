@@ -1,10 +1,8 @@
 package works.windmill.gym.domain
 
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.time.temporal.TemporalAdjusters
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -18,29 +16,6 @@ data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>) {
 
     fun sessionEstimate(sessionId: String): Double? = sessions.firstOrNull { it.sessionId == sessionId }
         ?.movements?.mapNotNull { it.estimate?.e1rm }?.maxOrNull()
-
-    fun trainedWeeks(nowMs: Long, zone: ZoneId): Int {
-        val monday = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
-            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        return sessions.filter { it.movements.any { fact -> fact.workingSetCount > 0 } }
-            .map { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() }
-            .filter { !it.isBefore(monday.minusWeeks(3)) && it.isBefore(monday.plusWeeks(1)) }
-            .map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().size
-    }
-
-    fun consistencyWeeks(nowMs: Long, zone: ZoneId): Int? {
-        val weeks = sessions.filter { it.movements.any { fact -> fact.workingSetCount > 0 } }
-            .map { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate()
-                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct()
-        if (weeks.size < 2) return null
-        return trainedWeeks(nowMs, zone).takeIf { it > 0 }
-    }
-
-    fun recentMovements(nowMs: Long, zone: ZoneId): List<MovementProgress> = sessions
-        .flatMap { it.movements }.map { it.exerciseId }.distinct()
-        .map { movement(it).window(nowMs, zone) }.filter { it.sessions.isNotEmpty() }
-        .sortedWith(compareByDescending<MovementProgress> { it.sessions.last().startedAt }
-            .thenBy { it.exerciseId })
 
     companion object {
         fun of(details: List<SessionDetail>, asOf: Long): StatsProgress = StatsProgress(asOf,

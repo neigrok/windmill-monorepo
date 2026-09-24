@@ -7,11 +7,7 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-// Kilograms are the only thing stored: `units` is a display transform at the edge and reaches no write.
-// A PUT replaces the whole document and an omitted field takes its default, and kotlinx omits a value
-// equal to its declared default — so the defaults below must match the server's.
-// Settings edits the rest target. Rest sound and legacy set-confirmation fields round-trip unchanged
-// when another preference is edited; their serialized defaults remain the server's defaults.
+// Kilograms are stored; units only change the reading.
 
 @Serializable(with = UnitsSerializer::class)
 enum class Units(val wire: String) {
@@ -32,8 +28,6 @@ object UnitsSerializer : KSerializer<Units> {
 @Serializable
 data class GymPreferences(
     val units: Units = Units.Kilograms,
-    val restSeconds: Int? = null,
-    val restSound: Boolean = true,
     val confirmHaptic: Boolean = true,
     val confirmSound: Boolean = false,
 )

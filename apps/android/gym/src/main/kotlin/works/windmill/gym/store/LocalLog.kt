@@ -140,7 +140,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: T
                         shelves = shelves + (Seat.of(owner) to target.copy(exercises = target.exercises.orEmpty().filterNot { it.id == value.id } + value))
                     }
                     shelves = shelves + (item.source.seat to source.copy(exercises = source.exercises.orEmpty().filterNot {
-                        it.id == item.id && item.matches(it, Exercise.serializer())
+                        it == value
                     }))
                 }
                 ClaimKind.Routine -> {
@@ -152,7 +152,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: T
                         shelves = shelves + (Seat.of(owner) to target.copy(routines = target.routines.orEmpty().filterNot { it.id == value.id } + value))
                     }
                     shelves = shelves + (item.source.seat to source.copy(routines = source.routines.orEmpty().filterNot {
-                        it.id == item.id && item.matches(it, Routine.serializer())
+                        it == value
                     }))
                 }
                 ClaimKind.Session -> {
@@ -164,7 +164,7 @@ class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: T
                         shelves = shelves + (Seat.of(owner) to target.copy(finished = target.finished.orEmpty().filterNot { it.session.id == value.session.id } + value))
                     }
                     shelves = shelves + (item.source.seat to source.copy(finished = source.finished.orEmpty().filterNot {
-                        it.session.id == item.id && item.matches(it, FinishedSession.serializer())
+                        it == value
                     }))
                 }
                 else -> error("Unsupported local log item.")

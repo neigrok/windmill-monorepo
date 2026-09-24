@@ -1,6 +1,5 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -19,41 +17,21 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
-import android.Manifest
-import android.app.Activity
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.platform.LocalContext
-import works.windmill.gym.notification.WorkoutNotifications
 import works.windmill.gym.domain.WorkoutChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -66,12 +44,10 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     store: TrainingStore,
@@ -84,12 +60,10 @@ fun SettingsScreen(
     accountEmail: String? = null,
     onAccount: () -> Unit = {},
     onClaimSignIn: (String) -> Unit = {},
-    notifications: WorkoutNotifications? = null,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
-    var restOpen by rememberSaveable { mutableStateOf(false) }
     val workout by store.notification.collectAsState()
 
     LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
@@ -107,19 +81,13 @@ fun SettingsScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Text("At the rack", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp),
-                color = skin.inkDim)
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-            SettingsRow("Rest timer", preferences.restSeconds?.let { Readout.clock(it * 1000L) } ?: "Off") {
-                restOpen = true
-            }
             if (workout?.hidden == true) {
                 SettingsRow("Workout hidden", "Show workout") {
                     val key = workout?.key ?: return@SettingsRow
                     val result = store.showWorkout(key, false)
                     if (result is WorkoutChange.Unavailable) say(result.reason)
                 }
-                Text("Rest alerts are paused for this workout.", style = WindmillFont.body(14), color = skin.inkDim)
             }
             store.workoutFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
             HorizontalDivider(color = skin.line)
@@ -130,21 +98,6 @@ fun SettingsScreen(
             store.consentFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
             UnattributedRow(store, isSignedIn, say, onClaimSignIn)
         }
-    }
-    if (restOpen) {
-        RestTimerSheet(
-            seconds = preferences.restSeconds,
-            alerts = {
-                if (notifications != null && (store.planEntry?.restSeconds ?: preferences.restSeconds ?: 0) > 0) {
-                    RestAlerts(store, notifications, say)
-                }
-            },
-            onDismiss = { restOpen = false },
-            onSave = {
-                write(preferences.copy(restSeconds = it))
-                restOpen = false
-            },
-        )
     }
 }
 
@@ -185,7 +138,7 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
 private fun SettingsRow(title: String, meta: String, onOpen: () -> Unit) {
     val skin = LocalGymColors.current
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 70.dp).clickable(role = Role.Button, onClick = onOpen)
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button, onClick = onOpen)
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -196,121 +149,6 @@ private fun SettingsRow(title: String, meta: String, onOpen: () -> Unit) {
         }
         Chevron()
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RestTimerSheet(seconds: Int?, onDismiss: () -> Unit, onSave: (Int?) -> Unit, alerts: @Composable () -> Unit = {}) {
-    val skin = LocalGymColors.current
-    var text by rememberSaveable { mutableStateOf(seconds?.toString().orEmpty()) }
-    val value = text.toIntOrNull()
-    val valid = value != null && value in 15..900
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = skin.surface,
-        scrimColor = skin.scrim,
-    ) {
-            WindmillSheetWindow()
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("Rest timer", style = WindmillFont.display(24), color = skin.ink)
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Seconds") },
-                supportingText = { Text("15–900 seconds") },
-                isError = text.isNotEmpty() && !valid,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                colors = gymFieldColours(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            alerts()
-            Button(
-                onClick = { onSave(value) }, enabled = valid,
-                shape = RoundedCornerShape(WindmillRadius.lg),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            ) { Text("Save", style = WindmillFont.body(16, FontWeight.Bold)) }
-            TextButton(onClick = { onSave(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("Turn off", style = WindmillFont.body(16, FontWeight.Bold))
-            }
-        }
-    }
-}
-
-@Composable
-private fun RestAlerts(store: TrainingStore, notifications: WorkoutNotifications, say: (String?) -> Unit) {
-    val telemetry = LocalTelemetry.current
-    val context = LocalContext.current
-    val skin = LocalGymColors.current
-    val scope = rememberCoroutineScope()
-    val capabilities by notifications.capabilities.collectAsState()
-    val prompt = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
-    var explainAlarm by rememberSaveable { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    val enabled = store.preferences.restSound
-    val gates = capabilities
-    val posting = gates?.let { it.postGranted && it.appEnabled && it.channelEnabled } == true
-    val state = when {
-        !enabled -> "Off"
-        !posting -> "Needs setup"
-        gates?.channelAudible != true -> "Muted"
-        gates.exactAlarms -> "On"
-        else -> "Needs setup"
-    }
-    fun settings(alarm: Boolean) {
-        try { context.startActivity(if (alarm) notifications.alarmSettings() else notifications.notificationSettings()) }
-        catch (error: Exception) {
-            telemetry.failure("gym.openAndroidSettings", error)
-            say("Android settings could not be opened.")
-        }
-    }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notifications.refreshCapabilities()
-        if (granted && notifications.capabilities.value?.exactAlarms != true) explainAlarm = true
-    }
-    fun setup() {
-        val current = notifications.capabilities.value ?: return
-        if (!current.postGranted && Build.VERSION.SDK_INT >= 33) {
-            val activity = context as? Activity
-            if (prompt.getBoolean("requested", false) && activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == false) {
-                settings(false)
-                return
-            }
-            prompt.edit().putBoolean("requested", true).apply()
-            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-        if (!current.appEnabled || !current.channelEnabled || !current.channelAudible) { settings(false); return }
-        if (!current.exactAlarms) explainAlarm = true
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Rest alerts · $state", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-        Text("Uses your notification sound. Android may delay alerts while idle.",
-            style = WindmillFont.body(14), color = skin.inkDim)
-        TextButton(enabled = !busy && gates != null, onClick = {
-            if (!enabled || state == "On") {
-                busy = true
-                val owner = store.accountKey
-                scope.launch {
-                    try {
-                        store.savePreferences(store.preferences.copy(restSound = !enabled))?.let { say(it.line("that setting stayed on this device")) }
-                        if (store.accountKey == owner && store.preferences.restSound && !enabled) setup()
-                    } finally { busy = false }
-                }
-            } else setup()
-        }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(when { busy -> "Saving…"; !enabled -> "Enable"; state == "On" -> "Turn off alerts"; state == "Muted" -> "Sound settings"; else -> "Set up" })
-        }
-    }
-    if (explainAlarm) AlertDialog(onDismissRequest = { explainAlarm = false },
-        title = { Text("Allow rest alerts") },
-        text = { Text("Android needs alarm access to schedule a rest alert. Android may delay it while idle.") },
-        confirmButton = { TextButton(onClick = { explainAlarm = false; settings(true) }) { Text("Open settings") } },
-        dismissButton = { TextButton(onClick = { explainAlarm = false }) { Text("Not now") } })
 }
 
 // What this phone is holding for nobody: a shelf with no name on it, neither handed over nor deleted.

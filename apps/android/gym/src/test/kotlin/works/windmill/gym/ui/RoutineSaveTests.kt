@@ -94,7 +94,8 @@ class RoutineSaveTests {
             assertEquals(original, server.written[original.id])
         } else {
             compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
-            compose.onNodeWithText("Saved push").assertIsDisplayed()
+            compose.onAllNodesWithText("Saved push").assertCountEquals(2)
+            compose.onNode(hasText("Saved push") and hasAnyAncestor(hasTestTag("routine-sheet"))).assertIsDisplayed()
             assertEquals(original.copy(name = "Saved push", revision = 2), server.written[original.id])
         }
         scope.cancel()

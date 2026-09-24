@@ -26,28 +26,25 @@ class SetQueueTests {
         id = id, exerciseId = exerciseId, weightKg = 82.5, reps = 5, completedAtMs = at)
 
     @Test
-    fun theRestOriginAndSelectedMovementSurviveCanonicalRepliesAndReopening() {
+    fun theSelectedMovementAndSetsSurviveCanonicalRepliesAndReopening() {
         val file = queueFile()
         val queue = SetQueue(file)
         queue.hold(Session(id = "live", startedAtMs = 1_000))
-        assertNull(queue.restStartedAtMs)
         queue.choose("bench-press")
         queue.store(aSet("local", at = 2_000), "live", needsPush = true)
         queue.choose("overhead-press")
-        assertEquals(2_000L, queue.restStartedAtMs)
         queue.remint("local", "retry")
         val canonical = aSet("stored", at = 3_000).copy(setNumber = 7)
         queue.appended(canonical, queue.sending(queue.pending.single()))
         queue.store(canonical.copy(completedAtMs = 4_000), "live", needsPush = false)
         queue.flush()
         val reopened = SetQueue(file)
-        assertEquals(listOf("overhead-press", 2_000L, listOf(canonical.copy(completedAtMs = 4_000))),
-            listOf(reopened.chosenMovement, reopened.restStartedAtMs, reopened.sets))
+        assertEquals(listOf("overhead-press", listOf(canonical.copy(completedAtMs = 4_000))),
+            listOf(reopened.chosenMovement, reopened.sets))
         reopened.remapExercise("overhead-press", "canonical-press")
         assertEquals("canonical-press", reopened.chosenMovement)
         reopened.adopt("another")
         assertNull(reopened.chosenMovement)
-        assertNull(reopened.restStartedAtMs)
     }
 
     @Test
@@ -87,7 +84,7 @@ class SetQueueTests {
             """"sessionId":"ses_9","needsPush":true,"remints":0}},"order":["bench-press"],"unclaimed":true}}}"""
         )
         val plan = PlanSnapshot(routine = "Push A", entries = listOf(
-            PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(8, 60.0) }, restSeconds = 90),
+            PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(8, 60.0) }),
             PlanEntry(exerciseId = "chin-up", sets = List(2) { SetTarget() }),
             PlanEntry(exerciseId = "face-pull"),
         ))

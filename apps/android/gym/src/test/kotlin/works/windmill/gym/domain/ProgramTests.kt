@@ -72,66 +72,6 @@ class ProgramTests {
     }
 
     @Test
-    fun testAnUntestedRoutineSaysWhenItWasBuiltAndATrainedOneSaysWhenItRan() {
-        val now = at(2026, 8, 10)
-        val built = Routine(id = "rt_1", name = "Heavy Thursday",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "deadlift")))
-        val history = listOf(RoutineEvent(kind = "created", atMs = at(2026, 8, 9), movements = 4))
-
-        val head = Program.head(built, history, now)
-        assertTrue(head.untested)
-        assertEquals("built yesterday · 4 movements", head.line)
-
-        assertEquals(1, built.entries.size)
-
-        val trained = built.copy(lastTrainedAtMs = at(2026, 8, 9))
-        val ran = Program.head(trained, history, now)
-        assertFalse(ran.untested)
-        assertEquals("1 movement · trained yesterday", ran.line)
-    }
-
-    @Test
-    fun testARoutineWithNoStoredCountSaysWhatItHoldsAndNothingItCannotKnow() {
-        val now = at(2026, 8, 10)
-        val old = Routine(id = "rt_1", name = "Push A",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() }),
-                             RoutineEntry(position = 2, exerciseId = "chin-up")))
-
-        assertEquals("built 1 Jun · 2 movements",
-            Program.head(old, listOf(RoutineEvent(kind = "created", atMs = at(2026, 6, 1))), now).line)
-    }
-
-    @Test
-    fun testWithNoCreatedRowTheHeadFallsBackToWhatTheListsPrint() {
-        val now = at(2026, 8, 10)
-        val shelved = Routine(id = "rt_1", name = "Push A",
-            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget() })))
-
-        val head = Program.head(shelved, emptyList(), now)
-        assertTrue(head.untested)
-        assertEquals("a routine holds movements, never exercises — the 13 Aug vocabulary lock",
-            "1 movement · never trained", head.line)
-    }
-
-    @Test
-    fun testAHistoryRowNamesWhoseHandItWasFromTheAbsenceOfBy() {
-        val now = at(2026, 8, 10)
-        assertEquals("9 Aug · created by you · 4 movements",
-            RoutineEvent(kind = "created", atMs = at(2026, 8, 9), movements = 4).line(now))
-        assertEquals("9 Aug · created by an agent · 4 movements",
-            RoutineEvent(kind = "created", atMs = at(2026, 8, 9), by = "mcp", movements = 4).line(now))
-        assertEquals("9 Aug · created by you",
-            RoutineEvent(kind = "created", atMs = at(2026, 8, 9)).line(now))
-    }
-
-    @Test
-    fun testAnEventThisBuildCannotNameDrawsNoRowAtAll() {
-        assertNull(RoutineEvent(kind = "merged", atMs = 1_000).line(2_000))
-        assertNull("a proposal row with no proposal on it has nothing to say",
-            RoutineEvent(kind = "proposal", atMs = 1_000).line(2_000))
-    }
-
-    @Test
     fun testLeavingARowOpenDropsItsWholeScheme() {
         val draft = RoutineDraft(name = "Heavy Thursday")
             .adding("back-squat")
@@ -213,7 +153,6 @@ class ProgramTests {
         assertEquals("Heavy Thursday", edit.name)
         assertEquals(2, edit.position)
         assertEquals(routine.entries, edit.entries)
-        assertTrue("a day that has run does not say it has never been logged", edit.trained)
     }
 
     @Test
@@ -291,15 +230,15 @@ class ProgramTests {
     @Test
     fun testTheEditSnapshotAndWireGuardSurviveSerializationWithoutMakingAnUntouchedDraftDirty() {
         val routine = Routine("rt_a", "Push", 3, revision = 7, lastTrainedAtMs = 42,
-            entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)), 90)))
+            entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)))))
         val draft = RoutineDraft.of(routine)
         val encoded = json.encodeToString(RoutineDraft.serializer(), draft)
         assertEquals(draft, json.decodeFromString(RoutineDraft.serializer(), encoded))
         assertFalse(draft.changed)
         assertTrue(draft.named("Pull").changed)
-        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}],"revision":7}""",
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}]}],"revision":7}""",
             json.encodeToString(RoutineWrite.serializer(), draft.original!!))
-        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}]}""",
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}]}]}""",
             json.encodeToString(RoutineWrite.serializer(), RoutineWrite(routine)))
     }
 

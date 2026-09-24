@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextReplacement
@@ -99,6 +100,10 @@ class TargetSheetLadderTests {
             )
         }
         compose.onNodeWithText(movement).performClick()
+        val targets = opening.entries.first().sets
+        if (targets.isNotEmpty() && works.windmill.gym.domain.Scheme.straight(targets)) {
+            compose.onNodeWithText("Vary by set").performClick()
+        }
         return { draft }
     }
 
@@ -239,9 +244,10 @@ class TargetSheetLadderTests {
         compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("100")
 
         compose.onNodeWithText(TargetEntry.fill).performClick()
-        compose.onNodeWithText(TargetEntry.rampUp).assertIsEnabled().performClick()
+        compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsEnabled().performClick()
         assertEquals(listOf("5" to "60", "4" to "70", "3" to "80", "2" to "90", "1" to "100"), ladder())
-        compose.onNodeWithText(TargetEntry.rampUp).assertDoesNotExist()
+        compose.onAllNodesWithText(TargetEntry.rampUp).assertCountEquals(1)
+        compose.onNodeWithText(TargetEntry.matchSetOne).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -252,7 +258,7 @@ class TargetSheetLadderTests {
         editor(scope, pushA, "Bench Press")
 
         compose.onNodeWithText(TargetEntry.fill).performClick()
-        compose.onNodeWithText(TargetEntry.rampUp).assertIsNotEnabled()
+        compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsNotEnabled()
         compose.onNodeWithText(TargetEntry.matchSetOne).assertIsEnabled()
         scope.cancel()
     }
@@ -277,7 +283,7 @@ class TargetSheetLadderTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, lowerA, "Back Squat")
 
-        compose.onNodeWithText(TargetEntry.addSet).performClick()
+        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
         assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
         assertEquals(listOf("6", "", ""), head())
         compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
@@ -336,12 +342,12 @@ class TargetSheetLadderTests {
 
         compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
         assertEquals(listOf("5" to "60", "5" to "80"), ladder())
-        compose.onNodeWithText(TargetEntry.addSet).performClick()
+        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
         assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
         assertEquals("3", typed("Sets target"))
-        repeat(2) { compose.onNodeWithText(TargetEntry.addSet).performClick() }
+        repeat(2) { compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick() }
         assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        compose.onNodeWithText(TargetEntry.addSet).performClick()
+        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
         assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
         assertEquals("6", typed("Sets target"))
         scope.cancel()
@@ -446,28 +452,38 @@ class TargetSheetLadderTests {
         scope.cancel()
     }
 
-    // text-budget: at first paint on the ramp the sheet's chrome is the brief's fourteen words. The
-    // movement, the place line, the never-logged line, the numbers and the placeholders — what
-    // empty means — are content.
     @Test
-    fun testTheSheetChromeNamesItsControlsAndLadderColumns() {
+    fun stepperAndLadderNamesExposeBothLevelsOfTheTarget() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         editor(scope, lowerA, "Back Squat")
 
-        val sheet = compose.onNodeWithText("Set · 5 sets").fetchSemanticsNode().root
-        val words = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true)
-            .fetchSemanticsNodes()
-            .filter { it.root == sheet }
-            .flatMap { node -> node.config[SemanticsProperties.Text].map { it.text } }
-        val content = setOf("Back Squat", "1 of 2 · Lower A", "Never logged — these are your numbers.",
-                            TargetEntry.varies, TargetEntry.repsPlaceholder, TargetEntry.weightPlaceholder)
-        val chrome = words.filterNot { it in content || it.all { c -> c.isDigit() || c == '.' } }
-
-        assertEquals(
-            listOf("Cancel", "Every set", "Sets", "Reps", "Weight", "Each set", "Fill", "Set", "Reps", "kg", "Add set", "Set · 5 sets"),
-            chrome,
-        )
-        assertEquals(17, chrome.flatMap { it.split(" ") }.count { it != "·" })
+        compose.onNodeWithContentDescription("Increase Sets").assertExists()
+        compose.onNodeWithContentDescription("Decrease Reps").assertExists()
+        compose.onNodeWithContentDescription("Increase kg").assertExists()
+        compose.onNodeWithText("Vary by set").assertExists()
+        compose.onNodeWithText("Ramp up").assertExists()
+        compose.onNodeWithContentDescription("Set 5 load").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
         scope.cancel()
     }
+    @Test
+    fun integralDecimalCountsGrowEditableRowsAndKeepTheFifthTargetThroughAHiddenTail() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try {
+            val draft = editor(scope, pushA, "Bench Press")
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5.0")
+            assertEquals(List(5) { "8" to "60" }, ladder())
+            compose.onNodeWithContentDescription("Set 5 load").performScrollTo().performTextReplacement("85")
+            compose.onNodeWithContentDescription("Sets target").performScrollTo().performTextReplacement("3")
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5,")
+            assertEquals(List(4) { "8" to "60" } + ("8" to "85"), ladder())
+            compose.onNodeWithContentDescription("Set 5 reps").performScrollTo().performTextReplacement("5")
+            compose.onNodeWithText("Set · 5 sets").performClick()
+            compose.runOnIdle {
+                assertEquals(List(4) { SetTarget(8, 60.0) } + SetTarget(5, 85.0),
+                    draft().entry("bench-press")!!.sets)
+            }
+        } finally { scope.cancel() }
+    }
+
 }

@@ -72,7 +72,7 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val localLog = shelf()
         val settings = settings()
-        settings.save(GymPreferences(units = Units.Pounds, restSeconds = 90))
+        settings.save(GymPreferences(units = Units.Pounds, confirmSound = true))
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
@@ -81,7 +81,7 @@ class ClaimReplayTests {
 
         assertEquals("savePreferences", server.calls.first())
         assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
-        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(true, server.settings?.confirmSound)
         assertFalse("the log took them — nothing is owed", settings.owed)
 
         server.calls.clear()
@@ -94,7 +94,7 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val localLog = shelf()
         val settings = settings()
-        settings.save(GymPreferences(restSeconds = 90))
+        settings.save(GymPreferences(confirmSound = true))
         server.refusePreferences = IOException("offline")
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
@@ -116,7 +116,7 @@ class ClaimReplayTests {
             val server = FakeTraining()
             val settings = settings()
             val queue = queue()
-            settings.save(GymPreferences(restSeconds = 90))
+            settings.save(GymPreferences(confirmSound = true))
             server.refusePreferences = IOException("offline")
             queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
             server.refuseStart = { answer }
@@ -134,13 +134,13 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val settings = settings()
         val queue = queue()
-        settings.save(GymPreferences(restSeconds = 90))
+        settings.save(GymPreferences(confirmSound = true))
         queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
 
         val said = ClaimReplay(server, shelf(), queue, settings, weights()).runPreferences()
 
         assertEquals(listOf("savePreferences"), server.calls)
-        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(true, server.settings?.confirmSound)
         assertFalse(settings.owed)
         assertTrue(said.isEmpty())
     }
@@ -149,15 +149,15 @@ class ClaimReplayTests {
     fun testARackTheLogRefusesOutrightIsSaidAndLetGo() = runTest {
         val server = FakeTraining()
         val settings = settings()
-        settings.save(GymPreferences(restSeconds = 90))
-        server.refusePreferences = refusal(400, code = "rest-target", message = "a rest target runs from 15 to 900 seconds")
+        settings.save(GymPreferences(confirmSound = true))
+        server.refusePreferences = refusal(400, code = "preferences-refused", message = "The preferences could not be saved.")
 
         val outcome = ClaimReplay(server, shelf(), queue(), settings, weights()).run()
 
-        assertEquals(listOf("a rest target runs from 15 to 900 seconds"), outcome.said.map { it.reason })
+        assertEquals(listOf("The preferences could not be saved."), outcome.said.map { it.reason })
         assertFalse("let go — not re-sent on every connect", settings.owed)
         assertEquals("and still drawn, because it is what the lifter chose",
-            90, settings.document.restSeconds)
+            true, settings.document.confirmSound)
         assertFalse("nothing here is worth another pass", outcome.retryable)
     }
 

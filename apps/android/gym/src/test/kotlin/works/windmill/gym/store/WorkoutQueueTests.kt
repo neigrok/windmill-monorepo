@@ -12,10 +12,8 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.ClaimBatch
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.RestAlertCommand
 import works.windmill.gym.domain.WorkoutEvent
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutMoment
@@ -25,7 +23,7 @@ class WorkoutQueueTests {
     @get:Rule val tmp = TemporaryFolder()
 
     @Test
-    fun oneOfferCommitsItsSetHoldRestAndNextRackTogetherAndCannotReturnAfterUndo() {
+    fun oneOfferCommitsItsSetAndNextRackTogetherAndCannotReturnAfterUndo() {
         val file = File(tmp.root, "sets.json")
         var writes = 0
         var nextId = 0
@@ -34,81 +32,49 @@ class WorkoutQueueTests {
         queue.hold(live)
         queue.choose("bench")
         val now = WorkoutMoment(101_000, 1_000, "boot")
-        val prefs = GymPreferences(restSeconds = 90)
-        val first = queue.prepare(null, prefs, now, true) { "set_${++nextId}" }
+        val first = queue.prepare(null, now, true) { "set_${++nextId}" }
         val command = LogSetCommand(WorkoutKey("anon", live.id), requireNotNull(first.offer).id)
         val before = writes
-        assertEquals(LogSetAcceptance.Accepted("set_1"), queue.accept(command, now, null, prefs) { "set_${++nextId}" })
+        assertEquals(LogSetAcceptance.Accepted("set_1"), queue.accept(command, now, null) { "set_${++nextId}" })
         assertEquals(before + 1, writes)
         val set = TrainingSet("set_1", "bench", weightKg = 20.0, reps = 5, completedAtMs = now.wallMs)
         val expected = SetQueue.Entry(set, live.id, true, 0, 101_000, WorkoutEvent(set.id, now), eventOrder = first.revision + 1)
         assertEquals(listOf(expected), queue.pending)
         assertEquals(setOf("set_1"), queue.workout.consumed)
         assertEquals(listOf("set_2", 2, "set_1", now), listOf(queue.workout.offer?.id,
-            queue.workout.offer?.workingOrdinal, queue.workout.rest?.id, queue.workout.rest?.origin))
+            queue.workout.offer?.workingOrdinal, queue.latestSet(now)?.id, queue.latestSet(now)?.origin))
         val reopened = SetQueue(file)
         assertEquals(queue.workout, reopened.workout)
         assertEquals(queue.pending, reopened.pending)
-        assertEquals(LogSetAcceptance.Stale, reopened.accept(command, now, null, prefs) { error("no new ID") })
+        assertEquals(LogSetAcceptance.Stale, reopened.accept(command, now, null) { error("no new ID") })
         reopened.drop("set_1")
-        reopened.prepare(null, prefs, now, true) { "set_${++nextId}" }
+        reopened.prepare(null, now, true) { "set_${++nextId}" }
         assertEquals(emptyList<TrainingSet>(), reopened.sets)
         assertEquals(setOf("set_1"), reopened.workout.consumed)
-        assertEquals(LogSetAcceptance.Stale, SetQueue(file).accept(command, now, null, prefs) { error("no new ID") })
+        assertEquals(LogSetAcceptance.Stale, SetQueue(file).accept(command, now, null) { error("no new ID") })
     }
 
     @Test
-    fun sameBootClockChangePreservesRestButNewBootRetiresTheOldOffer() {
+    fun sameBootClockChangePreservesEventButNewBootRetiresTheOldOffer() {
         val file = File(tmp.root, "sets.json")
         var id = 0
         val queue = SetQueue(file)
         queue.hold(Session("session", 100_000))
         queue.choose("bench")
         val origin = WorkoutMoment(101_000, 1_000, "boot1")
-        val prefs = GymPreferences(restSeconds = 90)
-        queue.prepare(null, prefs, origin, true) { "set_${++id}" }
+        queue.prepare(null, origin, true) { "set_${++id}" }
         queue.accept(LogSetCommand(WorkoutKey("anon", "session"), requireNotNull(queue.workout.offer).id),
-            origin, null, prefs) { "set_${++id}" }
+            origin, null) { "set_${++id}" }
         val afterClockEdit = WorkoutMoment(901_000, 4_000, "boot1")
         val reopened = SetQueue(file)
-        reopened.prepare(null, prefs, afterClockEdit, true) { "set_${++id}" }
-        assertEquals(origin, reopened.workout.rest?.origin)
+        reopened.prepare(null, afterClockEdit, true) { "set_${++id}" }
+        assertEquals(origin, reopened.latestSet(afterClockEdit)?.origin)
         val oldOffer = requireNotNull(reopened.workout.offer)
         val afterBoot = WorkoutMoment(902_000, 100, "boot2")
-        reopened.prepare(null, prefs, afterBoot, true) { "set_${++id}" }
+        reopened.prepare(null, afterBoot, true) { "set_${++id}" }
         assertEquals(listOf("set_1"), reopened.sets.map { it.id })
         assertEquals(LogSetAcceptance.Stale, reopened.accept(LogSetCommand(oldOffer.key, oldOffer.id), afterBoot,
-            null, prefs) { error("no new ID") })
-    }
-
-    @Test
-    fun hiddenOrWithdrawnAlertAuthorityCannotReturnAndTheClaimSurvivesReopening() {
-        val file = File(tmp.root, "sets.json")
-        var id = 0
-        val queue = SetQueue(file)
-        queue.hold(Session("session", 100_000))
-        queue.choose("bench")
-        val key = WorkoutKey("anon", "session")
-        val origin = WorkoutMoment(101_000, 1_000, "boot")
-        val prefs = GymPreferences(restSeconds = 30)
-        queue.prepare(null, prefs, origin, true) { "set_${++id}" }
-        queue.accept(LogSetCommand(key, requireNotNull(queue.workout.offer).id), origin, null, prefs) { "set_${++id}" }
-        queue.control(queue.workout.access(true))
-        val first = requireNotNull(queue.workout.rest)
-        val stale = RestAlertCommand(key, first.id, first.alertRevision)
-        queue.control(queue.workout.visibility(true))
-        queue.control(queue.workout.visibility(false))
-        queue.control(queue.workout.access(false))
-        queue.control(queue.workout.access(true))
-        val due = WorkoutMoment(131_000, 31_000, "boot")
-        assertNull(queue.workout.claim(stale, key, due))
-        val current = requireNotNull(queue.workout.rest)
-        val command = RestAlertCommand(key, current.id, current.alertRevision)
-        queue.control(requireNotNull(queue.workout.claim(command, key, due)))
-        val reopened = SetQueue(file)
-        assertEquals(queue.workout, reopened.workout)
-        assertNull(reopened.workout.claim(command, key, due))
-        assertEquals(setOf("set_1"), reopened.workout.attemptedRest)
+            null) { error("no new ID") })
     }
 
     @Test
@@ -170,66 +136,57 @@ class WorkoutQueueTests {
     fun acceptedOperationOrderWinsAfterBackwardWallChangeAndEqualElapsedTicks() {
         val file = File(tmp.root, "clock.json")
         val queue = SetQueue(file)
-        val prefs = GymPreferences(restSeconds = 90)
         var id = 0
         queue.hold(Session("session", 100_000))
         queue.choose("bench")
         val first = WorkoutMoment(101_000, 1_000, "boot")
-        queue.prepare(null, prefs, first, true) { "set_${++id}" }
+        queue.prepare(null, first, true) { "set_${++id}" }
         val offer = requireNotNull(queue.workout.offer)
-        queue.accept(LogSetCommand(offer.key, offer.id), first, null, prefs) { "set_${++id}" }
+        queue.accept(LogSetCommand(offer.key, offer.id), first, null) { "set_${++id}" }
         val second = WorkoutMoment(51_000, 1_000, "boot")
         val next = requireNotNull(queue.workout.offer)
-        queue.accept(LogSetCommand(next.key, next.id), second, null, prefs) { "set_${++id}" }
+        queue.accept(LogSetCommand(next.key, next.id), second, null) { "set_${++id}" }
         val reopened = SetQueue(file)
-        reopened.prepare(null, prefs, second.copy(elapsedMs = 2_000), true) { "set_${++id}" }
-        assertEquals(listOf("set_2", second, setOf("set_1")), listOf(reopened.workout.rest?.id,
-            reopened.workout.rest?.origin, reopened.workout.attemptedRest))
+        reopened.prepare(null, second.copy(elapsedMs = 2_000), true) { "set_${++id}" }
+        assertEquals(WorkoutEvent("set_2", second), reopened.latestSet(second))
         assertEquals(mapOf("set_1" to 101_000L, "set_2" to 51_000L), reopened.sets.associate { it.id to it.completedAtMs })
     }
 
     @Test
-    fun droppingTheNewestSetRestoresPriorElapsedWithoutMakingItsOldAlertEligibleAgain() {
+    fun droppingTheNewestSetRestoresThePriorEvent() {
         val file = File(tmp.root, "undo.json")
         val queue = SetQueue(file)
-        val prefs = GymPreferences(restSeconds = 90)
         var id = 0
         val origin = WorkoutMoment(101_000, 1_000, "boot")
         queue.hold(Session("session", 100_000))
         queue.choose("bench")
-        queue.prepare(null, prefs, origin, true) { "set_${++id}" }
+        queue.prepare(null, origin, true) { "set_${++id}" }
         val first = requireNotNull(queue.workout.offer)
-        queue.accept(LogSetCommand(first.key, first.id), origin, null, prefs) { "set_${++id}" }
+        queue.accept(LogSetCommand(first.key, first.id), origin, null) { "set_${++id}" }
         val second = requireNotNull(queue.workout.offer)
-        queue.accept(LogSetCommand(second.key, second.id), origin.copy(wallMs = 111_000, elapsedMs = 11_000), null, prefs) { "set_${++id}" }
+        queue.accept(LogSetCommand(second.key, second.id), origin.copy(wallMs = 111_000, elapsedMs = 11_000), null) { "set_${++id}" }
         queue.drop(second.id)
-        queue.prepare(null, prefs, origin.copy(wallMs = 116_000, elapsedMs = 16_000), true) { "set_${++id}" }
-        val rest = requireNotNull(queue.workout.rest)
-        assertEquals(listOf(first.id, origin, true), listOf(rest.id, rest.origin, rest.attempted))
-        val allowed = queue.workout.access(true)
-        queue.control(allowed)
-        assertNull(SetQueue(file).workout.claim(RestAlertCommand(first.key, first.id,
-            requireNotNull(allowed.rest).alertRevision), first.key, origin.copy(wallMs = 191_000, elapsedMs = 91_000)))
+        queue.prepare(null, origin.copy(wallMs = 116_000, elapsedMs = 16_000), true) { "set_${++id}" }
+        assertEquals(WorkoutEvent(first.id, origin), SetQueue(file).latestSet(origin))
         assertEquals(listOf(first.id), queue.sets.map { it.id })
     }
 
     @Test
     fun invalidCommittedNumbersNeverProduceAnOfferOrAcceptAnOldOne() {
         val queue = SetQueue(File(tmp.root, "bounds.json"))
-        val prefs = GymPreferences()
         val now = WorkoutMoment(2_000, 1_000, "boot")
         var id = 0
         queue.hold(Session("session", 1_000))
         queue.choose("bench")
-        queue.prepare(null, prefs, now, true) { "set_${++id}" }
+        queue.prepare(null, now, true) { "set_${++id}" }
         val old = requireNotNull(queue.workout.offer)
         for ((weight, reps) in listOf(20.0 to 100, 500.1 to 8, -500.1 to 8, 20.0 to 0)) {
             queue.control(queue.workout.edit(weight, reps))
-            queue.prepare(null, prefs, now, true) { "set_${++id}" }
+            queue.prepare(null, now, true) { "set_${++id}" }
             assertNull(queue.workout.offer)
             assertEquals(weight, queue.workout.rack?.weightKg)
             assertEquals(reps, queue.workout.rack?.reps)
-            assertEquals(LogSetAcceptance.Stale, queue.accept(LogSetCommand(old.key, old.id), now, null, prefs) { error("stale never mints") })
+            assertEquals(LogSetAcceptance.Stale, queue.accept(LogSetCommand(old.key, old.id), now, null) { error("stale never mints") })
         }
         assertEquals(emptyList<TrainingSet>(), queue.sets)
     }
@@ -252,21 +209,20 @@ class WorkoutQueueTests {
             val queue = SetQueue(file)
             val live = Session("session", 100_000)
             val moment = WorkoutMoment(101_000, 1_000, "boot")
-            val prefs = GymPreferences(restSeconds = 90)
             var id = 0
             queue.hold(live, unclaimed = true); queue.choose("bench")
-            if (!legacy) queue.prepare(null, prefs, moment, true) { "set_${++id}" }
+            if (!legacy) queue.prepare(null, moment, true) { "set_${++id}" }
             val batch = ClaimBatch("batch", queue.claimItems())
-            if (legacy) queue.prepare(null, prefs, moment, true) { "set_${++id}" }
+            if (legacy) queue.prepare(null, moment, true) { "set_${++id}" }
             val old = requireNotNull(queue.workout.offer)
             if (editedAfter) queue.control(queue.workout.edit(92.0, 6))
             queue.adopt("B")
             queue.complete(batch, "B")
-            queue.prepare(null, prefs, moment, true) { "set_${++id}" }
+            queue.prepare(null, moment, true) { "set_${++id}" }
             assertEquals(live, queue.session)
             assertEquals(20.0, queue.workout.rack?.weightKg)
             assertEquals(5, queue.workout.rack?.reps)
-            assertEquals(LogSetAcceptance.Stale, queue.accept(LogSetCommand(old.key, old.id), moment, null, prefs) { error("stale") })
+            assertEquals(LogSetAcceptance.Stale, queue.accept(LogSetCommand(old.key, old.id), moment, null) { error("stale") })
             val source = SetQueue(file)
             if (editedAfter) {
                 assertEquals(live, source.session)

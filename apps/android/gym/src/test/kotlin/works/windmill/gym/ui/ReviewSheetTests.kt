@@ -132,13 +132,13 @@ class ReviewSheetTests {
     // The review fixture: the ramp's shape held and set 4 moved.
     private fun setFourMoved() = ProposalChange(
         position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
-        before = ProposalTargets(ramp, restSeconds = 180),
-        after = ProposalTargets(ramp.mapIndexed { at, set -> if (at == 3) SetTarget(1, 102.5) else set }, restSeconds = 180))
+        before = ProposalTargets(ramp),
+        after = ProposalTargets(ramp.mapIndexed { at, set -> if (at == 3) SetTarget(1, 102.5) else set }))
 
     private fun reshaped() = ProposalChange(
         position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
-        before = ProposalTargets(List(5) { SetTarget(5, 80.0) }, restSeconds = 180),
-        after = ProposalTargets(ramp, restSeconds = 180))
+        before = ProposalTargets(List(5) { SetTarget(5, 80.0) }),
+        after = ProposalTargets(ramp))
 
     // A row as the bridge reads it: every text on the merged node, in order.
     private fun rowSaying(text: String): List<String> =
@@ -179,7 +179,7 @@ class ReviewSheetTests {
         compose.onNodeWithText("Turn this down?").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").performClick()
         compose.onNodeWithText("Turn this down?").assertIsDisplayed()
-        compose.onNodeWithText("Nothing changes, and it stays in the routine’s history as a record.")
+        compose.onNodeWithText("Nothing changes.")
             .assertIsDisplayed()
 
         compose.onNode(hasText("Keep it") and hasAnyAncestor(isDialog())).performClick()
@@ -687,8 +687,8 @@ class ReviewSheetTests {
         val (store, lowerA) = store(scope, server, routine = "Lower A")
         val grown = ProposalChange(
             position = 1, kind = ChangeKind.Retargeted, exerciseId = "back-squat",
-            before = ProposalTargets(List(3) { SetTarget(5, 80.0) }, restSeconds = 180),
-            after = ProposalTargets(ramp, restSeconds = 180))
+            before = ProposalTargets(List(3) { SetTarget(5, 80.0) }),
+            after = ProposalTargets(ramp))
         server.propose(proposal(lowerA, listOf(grown), summary = ""))
         sheet(store, lowerA, mutableListOf())
 

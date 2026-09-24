@@ -2,11 +2,11 @@
 
 Builds the graduated Android canon on `Android · Screens` in Windmill · Gym (`vdmdiKWrmZoS1FtcvJRf6O`).
 The written canon is `docs/design/gym/briefs/15-the-routine.md`, `18-progress.md`, `11-bodyweight.md`
-and `android-delivery.md`. The five drift entries filed 24 September 2026 in
-`docs/design/consistency.md` are the acceptance list: each wave closes its entries.
+and `android-delivery.md`. The five Android drift entries filed 24 September 2026 are closed;
+[the delivery log](gym-android-cleanliness-log.md) records implementation and verification gates.
 
 Scope is Android only (`apps/android`, module `:gym`). iOS and web keep their current screens; the
-phones diverge on these points by the owner's ruling, recorded in the ledger.
+phones diverge on these points by the owner's ruling in the Android canon.
 
 ## Key decisions
 
@@ -82,8 +82,9 @@ store reads. Then release through the Android release flow as one version.
 
 - **Concern 03 (target-entry control)** is an owner decision. It blocks only the inside of
   `TargetBlock`, not wave 4.
-- **Moment history window.** Check that the `StatsProgress` the Log reads spans the whole list,
-  not only a recent window. If it doesn't, older sessions show no moments, and that is a decision
-  to surface, not to patch around.
-- **iOS parity** is not planned here. The ledger records the divergence, and following it on iOS
+- **Moment history window — verified.** `StatsProgress` spans all finished working sets. Moments
+  are limited to the loaded session dates until the final page arrives; the boundary includes rows
+  temporarily held for Undo. [The delivery log](gym-android-cleanliness-log.md) records the paging
+  regression and verification results.
+- **iOS parity** is not planned here. The written canon records the divergence, and following it on iOS
   is a separate owner call.

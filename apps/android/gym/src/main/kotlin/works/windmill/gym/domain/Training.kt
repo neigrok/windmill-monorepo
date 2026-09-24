@@ -128,7 +128,6 @@ object Scheme {
 data class PlanEntry(
     val exerciseId: String,
     val sets: List<SetTarget> = emptyList(),
-    val restSeconds: Int? = null,
 ) {
     val isOpen: Boolean get() = sets.isEmpty()
 }
@@ -138,7 +137,7 @@ data class PlanSnapshot(val routine: String, val entries: List<PlanEntry> = empt
     constructor(routine: Routine) : this(
         routine = routine.name,
         entries = routine.entries.sortedBy { it.position }.map {
-            PlanEntry(exerciseId = it.exerciseId, sets = it.sets, restSeconds = it.restSeconds)
+            PlanEntry(exerciseId = it.exerciseId, sets = it.sets)
         },
     )
 
@@ -288,7 +287,6 @@ data class RoutineEntry(
     val position: Int = 0,
     val exerciseId: String,
     val sets: List<SetTarget> = emptyList(),
-    val restSeconds: Int? = null,
 ) {
     val isOpen: Boolean get() = sets.isEmpty()
 }
@@ -303,19 +301,14 @@ data class Routine(
     val entries: List<RoutineEntry> = emptyList(),
     val revision: Int = 1,
     val pendingProposal: Proposal? = null,
-    // `GET /v1/gym/routines/{id}` carries this; the list read does not. Newest first, `created` last.
-    val history: List<RoutineEvent> = emptyList(),
 ) {
-    // No `lastTrainedAt` is untested; derived so a discarded session takes it back.
-    val untested: Boolean get() = lastTrainedAtMs == null
-
     constructor(write: RoutineWrite) : this(
         id = write.id,
         name = write.name,
         position = write.position,
         entries = write.entries.mapIndexed { index, entry ->
             RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,
-                sets = entry.sets, restSeconds = entry.restSeconds)
+                sets = entry.sets)
         },
     )
 
@@ -329,28 +322,6 @@ data class Routine(
             if (it.position == position) it.copy(sets = Scheme.rounded(sets)) else it
         })
     }
-}
-
-// Newest first, `created` always last. `by` absent is the lifter's own hand; an unknown `kind` draws
-// nothing.
-@Serializable
-data class RoutineEvent(
-    val kind: String = "",
-    @SerialName("at") val atMs: Long = 0,
-    val by: String? = null,
-    val movements: Int? = null,
-    val proposal: Proposal? = null,
-) {
-    fun line(nowMs: Long): String? {
-        if (kind == "proposal") return proposal?.historyLine(nowMs)
-        if (kind != "created") return null
-        val said = mutableListOf(Readout.shortDate(atMs, nowMs))
-        said += if (by == null) "created by you" else "created by an agent"
-        movements?.let { said += if (it == 1) "1 movement" else "$it movements" }
-        return said.joinToString(" · ")
-    }
-
-    val isPending: Boolean get() = proposal?.isPending == true
 }
 
 @Serializable
@@ -671,7 +642,6 @@ data class ExerciseRename(val name: String)
 data class RoutineEntryWrite(
     val exerciseId: String,
     val sets: List<SetTarget> = emptyList(),
-    val restSeconds: Int? = null,
 )
 
 @Serializable
@@ -688,7 +658,7 @@ data class RoutineWrite(
         routine.name,
         routine.position,
         routine.entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
+            RoutineEntryWrite(it.exerciseId, it.sets)
         },
         expectedRevision,
     )

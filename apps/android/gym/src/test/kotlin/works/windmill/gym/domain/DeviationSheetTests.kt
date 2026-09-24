@@ -153,8 +153,7 @@ class DeviationTests {
             id = "ses_4", startedAtMs = 1_000, routineId = "rt_lower_a",
             plan = PlanSnapshot(routine = "Lower A", entries = listOf(
                 PlanEntry(exerciseId = "back-squat", sets = listOf(
-                    SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)),
-                    restSeconds = 180),
+                    SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))),
             ))
         )
         val lifted = listOf(

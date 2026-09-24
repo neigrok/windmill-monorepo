@@ -68,7 +68,6 @@ interface TrainingSyncing {
 
     suspend fun routines(): List<Routine>
 
-    // The one read carrying a routine's history.
     suspend fun routine(id: String): Routine?
 
     suspend fun createRoutine(write: RoutineWrite): Routine
@@ -102,8 +101,7 @@ interface TrainingSyncing {
 
     suspend fun preferences(): GymPreferences
 
-    // Whole-document replace: an omitted field takes its default, which is how off is expressed
-    // (absent `restSeconds` IS off). Draw the reply, never the send.
+    // Preserve preferences owned by other surfaces when replacing the server document.
     suspend fun savePreferences(document: GymPreferences): GymPreferences
 
     // The thread id is the client's: a fresh one opens a conversation, a spent one continues it.

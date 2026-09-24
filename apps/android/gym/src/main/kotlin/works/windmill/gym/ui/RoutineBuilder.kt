@@ -5,14 +5,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,19 +21,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,11 +43,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
@@ -62,20 +55,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -88,32 +77,28 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.TargetEntry
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.net.WindmillJson
 
 // Save enables when the draft is savable — named and holding at least one movement — and for an edit
@@ -130,17 +115,28 @@ fun routineDraftSaver(telemetry: Telemetry): Saver<RoutineDraft?, String> = Save
 )
 
 @Serializable
-private sealed interface BuilderSheet {
+internal sealed interface BuilderSheet {
     @Serializable
-    data class Target(val exerciseId: String, val rows: List<TargetEntry.TypedSet>, val sets: String) : BuilderSheet
+    data class Target(val exerciseId: String, val scheme: TargetEntry.Draft) : BuilderSheet
     @Serializable
     data object Picker : BuilderSheet
 }
 
-private val builderSheetSaver = Saver<BuilderSheet?, String>(
+internal val builderSheetSaver = Saver<BuilderSheet?, String>(
     save = { it?.let { sheet -> WindmillJson.encodeToString(BuilderSheet.serializer(), sheet) } ?: "" },
-    restore = { it.takeIf(String::isNotEmpty)?.let { raw ->
-        WindmillJson.decodeFromString(BuilderSheet.serializer(), raw) } },
+    restore = { raw ->
+        runCatching {
+            val saved = WindmillJson.parseToJsonElement(raw).jsonObject
+            if (saved["type"]?.jsonPrimitive?.content == "works.windmill.gym.ui.BuilderSheet.Target" && "scheme" !in saved) {
+                BuilderSheet.Target(saved.getValue("exerciseId").jsonPrimitive.content,
+                    TargetEntry.Draft(
+                        rows = WindmillJson.decodeFromJsonElement(ListSerializer(TargetEntry.TypedSet.serializer()), saved.getValue("rows")),
+                        sets = saved.getValue("sets").jsonPrimitive.content,
+                        varyBySet = true,
+                    ))
+            } else WindmillJson.decodeFromString(BuilderSheet.serializer(), raw)
+        }.getOrNull()
+    },
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -196,8 +192,7 @@ fun RoutineBuilder(
             savable = draft.savable && draft.changed && !saving,
             onDraft = { if (!saving) onDraft(it) },
             onOpenTarget = { id ->
-                val rows = TargetEntry.rows(draft.entry(id)?.sets.orEmpty())
-                sheet = BuilderSheet.Target(id, rows, rows.size.takeIf { it > 0 }?.toString().orEmpty())
+                sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()))
             },
             onRemove = { onDraft(draft.removing(it)) },
             onAdd = { sheet = BuilderSheet.Picker },
@@ -252,6 +247,10 @@ fun RoutineBuilder(
                         close()
                     },
                     onCreate = { name, equipment, id -> store.create(name, equipment, id) },
+                    onCreateTarget = { exercise, targets ->
+                        onDraft(draft.adding(exercise.id, targets))
+                        close()
+                    },
                     state = pickerState,
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
@@ -327,15 +326,6 @@ private fun BuildStep(
     val scroll = rememberScrollState()
     val edgeSize = with(LocalDensity.current) { 56.dp.toPx() }
     val scrollSpeed = with(LocalDensity.current) { 600.dp.toPx() }
-    var events by remember(draft.id) { mutableStateOf<List<RoutineEvent>>(emptyList()) }
-    var historyFailure by remember(draft.id) { mutableStateOf<WriteFailure?>(null) }
-    LaunchedEffect(draft.id) {
-        val id = draft.id ?: return@LaunchedEffect
-        when (val read = store.routineHistory(id)) {
-            is GymResult.Ok -> { events = read.value.filterNot { it.isPending }; historyFailure = null }
-            is GymResult.Failed -> historyFailure = read.why
-        }
-    }
     fun move(from: Int, to: Int) {
         val rows = currentDraft.entries.sortedBy { it.position }
         if (!editable || from !in rows.indices || to !in rows.indices || from == to) return
@@ -439,7 +429,7 @@ private fun BuildStep(
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                                    Text(Readout.target(entry.sets), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
+                                    Text(Readout.targetWithUnit(entry.sets), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
                                 }
                             }
                         }
@@ -454,21 +444,10 @@ private fun BuildStep(
             }
             Text(said, style = WindmillFont.body(13), color = skin.inkDim,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            if (events.isNotEmpty() || historyFailure != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Recent changes", style = WindmillFont.body(18, FontWeight.Bold), color = skin.ink)
-                    historyFailure?.let { Text(it.line("this routine’s history is out of reach"),
-                        style = WindmillFont.body(14), color = skin.inkDim) }
-                    events.mapNotNull { it.line(System.currentTimeMillis()) }.forEach {
-                        Text(it, style = WindmillFont.body(14), color = skin.inkDim)
-                    }
-                }
-            }
         }
     }
 }
 
-// Raw target rows live on the builder route; committing applies their validated scheme.
 @Composable
 private fun TargetSheet(
     draft: RoutineDraft,
@@ -479,134 +458,14 @@ private fun TargetSheet(
     onSet: (TargetEntry.Reading) -> Unit,
 ) {
     val skin = LocalGymColors.current
-    val exerciseId = state.exerciseId
-    val rows = state.rows
-    val sets = state.sets
-    // Add set was tapped at the ceiling; the next keystroke anywhere on the sheet clears it.
-    var atCeiling by remember(exerciseId) { mutableStateOf(false) }
-    // A deleted row's neighbours are NEW rows with their own settled swipe (`RowSwipe.kt`): the
-    // ladder's row keys carry the count of deletions so no row inherits a spent one.
-    var deletions by remember(exerciseId) { mutableIntStateOf(0) }
-    var fillMenuOnHead by remember { mutableStateOf(false) }
-    var fillMenuOnRow by remember { mutableStateOf<Int?>(null) }
-
-    val bandAssisted = store.catalog.firstOrNull { it.id == exerciseId }?.equipment == "bodyweight"
-    val broadFields = LocalDensity.current.fontScale > 1.3f || LocalConfiguration.current.screenWidthDp < 360
-    val stackedLadder = broadFields && bandAssisted
-    val shown = TargetEntry.shown(rows, sets)
-    val reading = TargetEntry.reading(sets, rows)
-    val refused = reading as? TargetEntry.Reading.Refused
-    val headFault = refused?.takeIf { TargetEntry.inTheHead(it, shown) }
-    val rowFault = refused?.takeIf { headFault == null }
-    val ladderShown = sets.isNotBlank()
-
-    fun count(typed: String) {
-        val count = typed.trim().toIntOrNull()?.takeIf { it in TargetEntry.setsBand }
-        onState(state.copy(sets = typed, rows = count?.let { TargetEntry.grown(rows, it) } ?: rows))
-        atCeiling = false
-    }
-    fun headTyped(reps: String? = null, weight: String? = null) {
-        atCeiling = false
-        onState(state.copy(rows = when {
-            reps != null -> TargetEntry.withReps(rows, reps)
-            weight != null -> TargetEntry.withWeight(rows, weight)
-            else -> rows
-        }))
-    }
-    // The next hidden row is revealed before a new one is copied off the last shown.
-    fun addSet() {
-        if (shown.size >= Program.maxSets) {
-            atCeiling = true
-            return
-        }
-        if (shown.size < rows.size) {
-            onState(state.copy(sets = (shown.size + 1).toString()))
-            return
-        }
-        val grown = TargetEntry.resized(rows, shown.size + 1)
-        onState(state.copy(rows = grown, sets = grown.size.toString()))
-    }
-    fun delete(index: Int) {
-        onState(state.copy(rows = rows.filterIndexed { at, _ -> at != index },
-            sets = (shown.size - 1).takeIf { it > 0 }?.toString().orEmpty()))
-        atCeiling = false
-        deletions += 1
-    }
-    fun rowTyped(index: Int, reps: String = rows[index].reps, weight: String = rows[index].weight) {
-        atCeiling = false
-        onState(state.copy(rows = rows.mapIndexed { at, row -> if (at == index) row.copy(reps = reps, weight = weight) else row }))
-    }
-    // Fill works the shown rows; the hidden tail stands as it was.
-    fun fill(filled: List<TargetEntry.TypedSet>) {
-        onState(state.copy(rows = filled + rows.drop(shown.size)))
-    }
-    val fillMenu: @Composable (Boolean, () -> Unit) -> Unit = { expanded, dismiss ->
-        DropdownMenu(expanded = expanded, onDismissRequest = dismiss) {
-            DropdownMenuItem(
-                text = { Text(TargetEntry.rampUp) },
-                enabled = TargetEntry.canRamp(shown),
-                onClick = {
-                    fill(TargetEntry.rampUp(shown))
-                    dismiss()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(TargetEntry.matchSetOne) },
-                onClick = {
-                    fill(TargetEntry.matchFirst(shown))
-                    dismiss()
-                },
-            )
-        }
-    }
-
-    val countField: @Composable (Modifier) -> Unit = { modifier ->
-        TargetField(
-            label = "Sets",
-            value = sets,
-            placeholder = TargetEntry.setsPlaceholder,
-            decimal = false,
-            bad = headFault?.field == TargetEntry.Field.Sets,
-            description = "Sets target",
-            last = false,
-            modifier = modifier,
-            onTyped = ::count,
-        )
-    }
-    val repsField: @Composable (Modifier) -> Unit = { modifier ->
-        TargetField(
-            label = "Reps",
-            value = TargetEntry.sharedReps(shown),
-            placeholder = if (TargetEntry.repsVary(shown)) TargetEntry.varies else TargetEntry.repsPlaceholder,
-            decimal = false,
-            bad = headFault?.field == TargetEntry.Field.Reps,
-            enabled = ladderShown,
-            description = "Reps target",
-            last = false,
-            modifier = modifier,
-            onTyped = { headTyped(reps = it) },
-        )
-    }
-    val weightField: @Composable (Modifier) -> Unit = { modifier ->
-        TargetField(
-            label = "Weight",
-            value = TargetEntry.sharedWeight(shown),
-            placeholder = if (TargetEntry.weightVaries(shown)) TargetEntry.varies else TargetEntry.weightPlaceholder,
-            decimal = true,
-            bad = headFault?.field == TargetEntry.Field.Weight,
-            enabled = ladderShown,
-            description = "Weight target",
-            last = !ladderShown,
-            modifier = modifier,
-            onTyped = { headTyped(weight = it) },
-        )
-    }
+    val reading = state.scheme.reading
+    val valid = reading !is TargetEntry.Reading.Refused
     Column(Modifier.fillMaxWidth().heightIn(max = pickerMaxHeight()).imePadding().background(skin.surface)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 20.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(Readout.movement(exerciseId, store.catalog), style = WindmillFont.body(22, FontWeight.Bold), color = skin.ink)
-                draft.placeOf(exerciseId)?.let {
+                Text(Readout.movement(state.exerciseId, store.catalog), style = WindmillFont.body(22, FontWeight.Bold), color = skin.ink)
+                draft.placeOf(state.exerciseId)?.let {
                     Text("$it of ${draft.entries.size} · ${draft.name}", style = WindmillFont.body(14), color = skin.inkDim)
                 }
             }
@@ -615,294 +474,19 @@ private fun TargetSheet(
             }
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-            .testTag("target-sheet-body").padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // What leaving the count empty MEANS, said here and nowhere else — the lists behind
-            // this sheet print the compact `open` token per row and no sentence. Said ABOVE the
-            // fields: everything drawn UNDER a field is that field's own note, while this is a
-            // statement about the whole line.
-            if (!ladderShown) {
-                Text(
-                    TargetEntry.openLine,
-                    style = WindmillFont.body(16).copy(lineHeight = 22.sp),
-                    color = skin.inkDim,
-                )
-            }
-            SectionHead(TargetEntry.everySet)
-
-            if (broadFields) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                    countField(Modifier.weight(1f))
-                    repsField(Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                    weightField(Modifier.weight(1f))
-                    if (bandAssisted) SignKey(enabled = ladderShown) {
-                        headTyped(weight = signFlipped(TargetEntry.sharedWeight(shown)))
-                    }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                    countField(Modifier.weight(1f))
-                    repsField(Modifier.weight(1f))
-                    weightField(Modifier.weight(1f))
-                    if (bandAssisted) SignKey(enabled = ladderShown) {
-                        headTyped(weight = signFlipped(TargetEntry.sharedWeight(shown)))
-                    }
-                }
-            }
-
-            // The head's own refusal, under the head; a row's fault is drawn under its row.
-            headFault?.let { FaultLine(it.said) }
-
-            if (ladderShown) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    SectionHead(TargetEntry.setBySet)
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        TextButton(onClick = { fillMenuOnHead = true }) {
-                            Text(TargetEntry.fill, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                        }
-                        fillMenu(fillMenuOnHead) { fillMenuOnHead = false }
-                    }
-                }
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Set", style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.width(40.dp))
-                    if (stackedLadder) {
-                        Text("Targets", style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.weight(1f))
-                    } else {
-                        Text("Reps", style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.weight(1f))
-                        Text("kg", style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.weight(1f))
-                        if (bandAssisted) Spacer(Modifier.width(48.dp))
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    shown.forEachIndexed { index, row ->
-                        key("row-$deletions-$index") {
-                            val fault = rowFault?.takeIf { it.row == index }
-                            val rowReps: @Composable (Modifier) -> Unit = { modifier ->
-                                TargetField(
-                                    label = if (stackedLadder) "Reps" else null,
-                                    value = row.reps,
-                                    placeholder = TargetEntry.repsPlaceholder,
-                                    decimal = false,
-                                    bad = fault?.field == TargetEntry.Field.Reps,
-                                    description = "Set ${index + 1} reps",
-                                    last = false,
-                                    modifier = modifier,
-                                    onTyped = { rowTyped(index, reps = it) },
-                                )
-                            }
-                            val rowWeight: @Composable (Modifier) -> Unit = { modifier ->
-                                TargetField(
-                                    label = if (stackedLadder) "kg" else null,
-                                    value = row.weight,
-                                    placeholder = TargetEntry.weightPlaceholder,
-                                    decimal = true,
-                                    bad = fault?.field == TargetEntry.Field.Weight,
-                                    description = "Set ${index + 1} load",
-                                    last = index == shown.lastIndex,
-                                    modifier = modifier,
-                                    onTyped = { rowTyped(index, weight = it) },
-                                )
-                            }
-                            val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
-                                delete(index)
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-                                SwipeToDismissBox(
-                                    state = swipe,
-                                    enableDismissFromStartToEnd = false,
-                                    // The lane is drawn once the stroke begins: at rest the row says
-                                    // nothing about leaving.
-                                    backgroundContent = {
-                                        if (swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart) RowDeleteGround()
-                                    },
-                                ) {
-                                    Box {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(min = GymTap.minimum)
-                                                .background(skin.surface)
-                                                // Law 1: the swipe is half-built until its custom
-                                                // action exists. The long press is a shortcut to
-                                                // Fill, never the only path, so it carries no
-                                                // action of its own.
-                                                .semantics {
-                                                    customActions = listOf(CustomAccessibilityAction(TargetEntry.delete) {
-                                                        delete(index)
-                                                        true
-                                                    })
-                                                }
-                                                .pointerInput(index) {
-                                                    detectTapGestures(onLongPress = { fillMenuOnRow = index })
-                                                },
-                                        ) {
-                                            Text(
-                                                "${index + 1}",
-                                                style = GymType.numeral(13),
-                                                color = skin.inkDim,
-                                                modifier = Modifier.width(40.dp),
-                                            )
-                                            if (stackedLadder) {
-                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                                    rowReps(Modifier.fillMaxWidth())
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                                                        rowWeight(Modifier.weight(1f))
-                                                        SignKey { rowTyped(index, weight = signFlipped(row.weight)) }
-                                                    }
-                                                }
-                                            } else {
-                                                rowReps(Modifier.weight(1f))
-                                                rowWeight(Modifier.weight(1f))
-                                                if (bandAssisted) SignKey { rowTyped(index, weight = signFlipped(row.weight)) }
-                                            }
-                                        }
-                                        fillMenu(fillMenuOnRow == index) { fillMenuOnRow = null }
-                                    }
-                                }
-                                fault?.let { FaultLine(it.said) }
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .clickable(role = Role.Button, onClick = ::addSet),
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = skin.accent)
-                        Text(TargetEntry.addSet, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                    }
-                    if (atCeiling) FaultLine(TargetEntry.outsideSets)
-                }
-            }
+            .testTag("target-sheet-body").padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 24.dp)) {
+            TargetBlock(state.scheme, { onState(state.copy(scheme = it)) },
+                bandAssisted = store.catalog.firstOrNull { it.id == state.exerciseId }?.equipment == "bodyweight")
         }
-
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .heightIn(min = 56.dp)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (refused == null) skin.accent else skin.raised)
-                .clickable(enabled = refused == null, role = Role.Button) { onSet(reading) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
+                .heightIn(min = 56.dp).clip(RoundedCornerShape(WindmillRadius.lg))
+                .background(if (valid) skin.accent else skin.raised)
+                .clickable(enabled = valid, role = Role.Button) { onSet(reading) },
         ) {
-            Text(
-                TargetEntry.commitLabel(reading),
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = if (refused == null) skin.onAccent else skin.inkDim,
-            )
+            Text(TargetEntry.commitLabel(reading), style = WindmillFont.body(16, FontWeight.Bold),
+                color = if (valid) skin.onAccent else skin.inkDim)
         }
-    }
-}
-
-@Composable
-private fun SectionHead(words: String) {
-    val skin = LocalGymColors.current
-    Text(words, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-}
-
-// One refusal at a time, in the alarm ink, under the field or the row that carries it.
-@Composable
-private fun FaultLine(said: String) {
-    val skin = LocalGymColors.current
-    Text(said, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.alarmInk)
-}
-
-// A sign the lifter can reach without a keyboard that has one. Empty stays empty: a sign with no
-// number behind it is not a load, and an empty load already means `last time`.
-private fun signFlipped(typed: String): String {
-    val text = typed.trim()
-    if (text.isEmpty()) return typed
-    if (text.startsWith("-") || text.startsWith("−")) return text.drop(1)
-    return "−$text"
-}
-
-@Composable
-private fun SignKey(enabled: Boolean = true, onFlip: () -> Unit) {
-    val skin = LocalGymColors.current
-    Box(
-        Modifier
-            .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(skin.raised)
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = KeypadEntry.signName, onClick = onFlip)
-            // The glyph reads as nothing out loud, so the control says what it is — and what a
-            // negative load is, since no sentence beside the fields says it.
-            .semantics(mergeDescendants = true) { contentDescription = KeypadEntry.signName },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = skin.ink)
-    }
-}
-
-// Header and ladder fields share validation, native keyboard actions, and error semantics.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TargetField(
-    label: String?,
-    value: String,
-    placeholder: String,
-    decimal: Boolean,
-    bad: Boolean,
-    description: String,
-    last: Boolean,
-    modifier: Modifier,
-    enabled: Boolean = true,
-    onTyped: (String) -> Unit,
-) {
-    val skin = LocalGymColors.current
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val interaction = remember { MutableInteractionSource() }
-    val colours = gymFieldColours().copy(unfocusedIndicatorColor = Color.Transparent,
-        disabledIndicatorColor = Color.Transparent)
-    val shape = RoundedCornerShape(WindmillRadius.md)
-    val keyboardOptions = KeyboardOptions(
-        keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
-        autoCorrectEnabled = false,
-        imeAction = if (last) ImeAction.Done else ImeAction.Next,
-    )
-    val keyboardActions = KeyboardActions(
-        onNext = { focusManager.moveFocus(FocusDirection.Next) },
-        onDone = { keyboard?.hide() },
-    )
-    // A keystroke that does not fit is refused WHOLE rather than truncated: a field that silently
-    // drops the last character types a number nobody chose.
-    val typed = { it: String -> if (it.length <= 8) onTyped(it) }
-    // `Sets` alone is ambiguous read out of its row; the field says what it targets.
-    val described = Modifier.fillMaxWidth().semantics {
-        contentDescription = description
-        if (bad) error("Check this target")
-    }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (label != null) Text(label, style = WindmillFont.body(14), color = skin.inkDim)
-        BasicTextField(
-            value = value, onValueChange = typed, singleLine = true, enabled = enabled,
-            textStyle = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp, color = skin.ink),
-            keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-            interactionSource = interaction, cursorBrush = SolidColor(skin.accent),
-            modifier = described.heightIn(min = 52.dp),
-            decorationBox = { inner ->
-                OutlinedTextFieldDefaults.DecorationBox(
-                    value = value, innerTextField = inner, enabled = enabled, singleLine = true,
-                    visualTransformation = VisualTransformation.None, interactionSource = interaction,
-                    isError = bad, placeholder = { Text(placeholder, style = WindmillFont.body(16), maxLines = 1) },
-                    colors = colours, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    container = { OutlinedTextFieldDefaults.Container(enabled = enabled, isError = bad, interactionSource = interaction, colors = colours, shape = shape) },
-                )
-            },
-        )
     }
 }

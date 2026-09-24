@@ -103,7 +103,7 @@ import works.windmill.gym.ui.NotesScreen
 import works.windmill.gym.ui.RecordScreen
 import works.windmill.gym.ui.ReviewSheet
 import works.windmill.gym.ui.RoutineBuilder
-import works.windmill.gym.ui.RoutineScreen
+import works.windmill.gym.ui.RoutineSheet
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
@@ -195,7 +195,7 @@ internal fun restoredTab(saved: Any?): Tab =
 internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::restoredTab)
 
 // A session travels as the ROW the list already holds, which carries facts no other read gives back;
-// so does a note, which the list just read and the editor edits whole. A movement, routine and
+// so does a note, which the list just read and the editor edits whole. A movement and
 // thread travel as IDS, because what they say changes under them. `Coach` carries a DRAFT, never the
 // thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
 // not a destination at all: it is a sheet over whichever of these is standing.
@@ -205,8 +205,6 @@ private sealed interface Away {
     data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
     @Serializable
     data class Movement(val exerciseId: String) : Away
-    @Serializable
-    data class Program(val routineId: String) : Away
     @Serializable
     data class Coach(val seed: String = "") : Away
     @Serializable
@@ -282,6 +280,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     var closingFinish by remember { mutableStateOf(false) }
     var away by rememberSaveable(stateSaver = remember(telemetry) { awaySaver(telemetry) }) { mutableStateOf<List<Away>>(emptyList()) }
+    var selectedRoutineId by rememberSaveable { mutableStateOf<String?>(null) }
     var keptRoutine by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
@@ -399,10 +398,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         reviewing != null -> "proposal"
         finished != null -> "finish"
         building != null -> "routine_editor"
+        selectedRoutineId != null -> "routine"
         away.isNotEmpty() -> when (away.last()) {
             is Away.Session -> "session"
             is Away.Movement -> "movement"
-            is Away.Program -> "routine"
             is Away.Coach -> "coach"
             Away.Threads -> "threads"
             is Away.Thread -> "thread"
@@ -447,6 +446,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     LaunchedEffect(store.workoutOpenRequest) {
         if (store.workoutOpenRequest > 0 && store.session != null) {
             away = emptyList()
+            selectedRoutineId = null
             tab = Tab.Routines
         }
     }
@@ -468,6 +468,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             receipts = emptyMap()
             finished = null
             building = null
+            selectedRoutineId = null
             reviewing = null
             finishFailure = null
             note = null
@@ -591,6 +592,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     return@launch
                 }
                 away = emptyList()
+                selectedRoutineId = null
                 tab = Tab.Routines
                 if (notifications != null && Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
@@ -756,7 +758,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     is GymResult.Ok -> {
                         haptics.saved()
                         building = null
-                        away = listOf(Away.Program(written.value.id))
+                        away = emptyList()
+                        selectedRoutineId = written.value.id
                         tab = Tab.Routines
                     }
                 }
@@ -774,6 +777,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         note = null
         store.withhold(Deletion.Routine(routineId, named))
         building = null
+        selectedRoutineId = null
         away = emptyList()
         tab = Tab.Routines
     }
@@ -922,12 +926,23 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 }
             }
 
+            if (building == null) selectedRoutineId?.let { id ->
+                RoutineSheet(
+                    routineId = id,
+                    store = store,
+                    onDismiss = { selectedRoutineId = null },
+                    onStart = { open(it) },
+                    onBuild = { building = it },
+                    starting = starting,
+                    failure = note,
+                )
+            }
+
             val standing = away.lastOrNull()
             // What the way back leads to. Names are read off the store, so a rename moves this row too.
             val beneath = when (val under = away.getOrNull(away.size - 2)) {
                 is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
                 is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
-                is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
                 is Away.Coach -> Ask.title
                 Away.Threads -> Threads.title
                 // The noun, not the thread's title: a title is the lifter's first message verbatim.
@@ -947,7 +962,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 modifier = Modifier.fillMaxSize(),
                 containerColor = skin.canvas,
                 bottomBar = {
-                    val line = note
+                    val line = note.takeIf { selectedRoutineId == null || building != null }
                     if (railUp || line != null || !loggerTransient) {
                         Column(Modifier.fillMaxWidth().background(skin.canvas)) {
                             // Reserve the transient's measured height below screen-owned actions.
@@ -1015,7 +1030,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onBack = { back() },
                         )
                         standing is Away.Settings -> SettingsScreen(
-                            notifications = notifications,
                             store = store,
                             isSignedIn = account.isSignedIn,
                             backTo = beneath,
@@ -1067,22 +1081,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onDiscard = { discard(it) },
                         )
                         }
-                        standing is Away.Program -> RoutineScreen(
-                            routineId = standing.routineId,
-                            store = store,
-                            isSignedIn = account.isSignedIn,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onStart = { routineId -> open(routineId) },
-                            // The page stays underneath, so saving lands back on the routine it came from.
-                            onBuild = { building = it },
-                            onOpenMovement = { look(Away.Movement(it)) },
-                            lookedAt = lookedAtIds,
-                            onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                            // Drawn only where the log carries a thread id: the history row survives the
-                            // conversation's deletion.
-                            onOpenThread = { look(Away.Thread(it)) },
-                        )
                         standing is Away.Bodyweight -> BodyweightScreen(
                             store = store,
                             backTo = beneath,
@@ -1093,7 +1091,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             thread = conversation,
                             conversationId = conversationId,
-                            onOpenRoutine = { look(Away.Program(it)) },
+                            onOpenRoutine = { selectedRoutineId = it },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
@@ -1133,7 +1131,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onThreads = { look(Away.Threads) },
                             onNotes = { look(Away.Notes) },
                             onConnections = { look(Away.Connections) },
-                            onOpenRoutine = { look(Away.Program(it)) },
+                            onOpenRoutine = { selectedRoutineId = it },
                             receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
                             lookedAt = lookedAtIds,
                             backTo = beneath,
@@ -1159,7 +1157,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             thread = conversation,
                             conversationId = conversationId,
-                            onOpenRoutine = { look(Away.Program(it)) },
+                            onOpenRoutine = { selectedRoutineId = it },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
@@ -1187,10 +1185,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             isSignedIn = account.isSignedIn,
                             lookedAt = lookedAtIds,
                             seat = youInitial,
-                            // The only start home offers; a routine's own start lives on its detail page.
+                            // A routine starts from its plan sheet.
                             onJustStart = { open(null) },
                             onBuild = { building = it },
-                            onOpenRoutine = { look(Away.Program(it)) },
+                            onOpenRoutine = { selectedRoutineId = it },
                             onDeleteRoutine = { destroy(it) },
                             onReview = { review(it.id, it.routineId, Reviewing.routines) },
                             onSignIn = { shell.openSignIn(null) },

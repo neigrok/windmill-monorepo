@@ -145,7 +145,7 @@ question in front of an act that has a way back is the ceremony `13-gestures.md`
 
 The logger displays workout elapsed and time since the latest valid set together, counting up. Before any set both use the session start. The compact icon-and-number pair has no visible labels or target bar; spoken names remain. Persisted timestamps, accepted offline sets, deletion/Undo and relaunch semantics are fixed in [feedback-contract.md](../feedback-contract.md).
 
-Existing optional Android rest-alert preferences and notification behavior remain independent of the displayed pair. This UI change introduces no rest feature and removes no existing alert runtime.
+Android has no rest targets or alerts. The displayed elapsed pair is derived from the saved workout and sets.
 
 ## The set kind gets a control that costs no trip
 

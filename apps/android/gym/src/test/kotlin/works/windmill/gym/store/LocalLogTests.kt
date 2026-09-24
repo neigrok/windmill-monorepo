@@ -2,7 +2,11 @@ package works.windmill.gym.store
 
 import java.io.File
 import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimItem
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -77,18 +81,18 @@ class LocalLogTests {
         )
         val ramp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))
         val pushDay = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(3) { SetTarget(8, 60.0) }, restSeconds = 90),
+            RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(3) { SetTarget(8, 60.0) }),
             RoutineEntry(position = 2, exerciseId = "chin-up", sets = List(4) { SetTarget() }),
             RoutineEntry(position = 3, exerciseId = "face-pull"),
         )
         val plan = PlanSnapshot(routine = "Push A", entries = listOf(
-            PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) }, restSeconds = 120),
+            PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) }),
             PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget() }),
             PlanEntry(exerciseId = "face-pull"),
         ))
         fun LocalLog.assertWhole() {
             assertEquals(listOf("Lower A", "Push Day"), routines.map { it.name })
-            assertEquals(listOf(RoutineEntry(position = 1, exerciseId = "back-squat", sets = ramp, restSeconds = 180)), routine("rt_1")!!.entries)
+            assertEquals(listOf(RoutineEntry(position = 1, exerciseId = "back-squat", sets = ramp)), routine("rt_1")!!.entries)
             assertEquals(pushDay, routine("rt_2")!!.entries)
             assertEquals(plan, row("ses_1")!!.session.plan)
             assertEquals(listOf("set_a"), row("ses_1")!!.sets.map { it.id })
@@ -241,6 +245,59 @@ class LocalLogTests {
         assertEquals(listOf("ex_a"), relaunched.exercises.map { it.id })
         assertEquals("A's own work is waiting for A, not lost to close the leak",
             listOf("ses_alice"), relaunched.finished.map { it.session.id })
+    }
+
+    @Test
+    fun legacyFrozenClaimsRemoveOnlyUnchangedSourceFactsAndTransferOnce() {
+        for (editedAfter in listOf(false, true)) {
+            val file = logFile()
+            val routinePayload = """{"id":"routine","name":"Plan","position":0,"revision":4,"entries":[{"position":1,"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}],"history":[{"kind":"created","at":500}]}"""
+            val sessionPayload = """{"session":{"id":"session","startedAt":1000,"finishedAt":2000,"routineId":"routine","plan":{"routine":"Plan","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}],"restSeconds":90}]}},"sets":[{"id":"set","exerciseId":"bench-press","weightKg":60.0,"reps":8,"completedAt":1500}]}"""
+            val raw = """{"shelves":{"anon":{"routines":[$routinePayload],"finished":[$sessionPayload]}}}"""
+            file.writeText(raw)
+            val shelf = LocalLog(file)
+            val routine = Routine("routine", "Plan", 0, entries = listOf(
+                RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)))), revision = 4)
+            val session = LocalLog.FinishedSession(Session("session", 1_000, 2_000, "routine",
+                PlanSnapshot("Plan", listOf(PlanEntry("bench-press", listOf(SetTarget(8, 60.0)))))),
+                listOf(TrainingSet("set", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_500)))
+            assertEquals(listOf(routine.copy(lastTrainedAtMs = 1_000)), shelf.routines)
+            assertEquals(listOf(session), shelf.finished)
+            assertEquals(raw, file.readText())
+            val batch = ClaimBatch("legacy", listOf(
+                ClaimItem(ClaimSource.Anonymous, ClaimKind.Routine, routine.id, claimRevision(routinePayload), routinePayload),
+                ClaimItem(ClaimSource.Anonymous, ClaimKind.Session, session.session.id, claimRevision(sessionPayload), sessionPayload),
+            ))
+            val revisedRoutine = routine.copy(name = "Revised", revision = 5)
+            val revisedSession = session.copy(sets = session.sets.map { it.copy(reps = 10) })
+            if (editedAfter) { shelf.hold(revisedRoutine); shelf.hold(revisedSession) }
+            shelf.adopt("owner")
+            shelf.complete(batch, "owner")
+            assertEquals(listOf(routine.copy(lastTrainedAtMs = 1_000)), shelf.routines)
+            assertEquals(listOf(session), shelf.finished)
+            val saved = file.readText()
+            shelf.complete(batch, "owner")
+            assertEquals(saved, file.readText())
+            assertThrows(IllegalStateException::class.java) { shelf.complete(batch, "another") }
+            shelf.adopt(null)
+            assertEquals(if (editedAfter) listOf(revisedRoutine.copy(lastTrainedAtMs = 1_000)) else emptyList<Routine>(), shelf.routines)
+            assertEquals(if (editedAfter) listOf(revisedSession) else emptyList<LocalLog.FinishedSession>(), shelf.finished)
+        }
+    }
+
+    @Test
+    fun aLegacyClaimStillRequiresTheOriginalPayloadIntegrity() {
+        val file = logFile()
+        val payload = """{"id":"routine","name":"Plan","position":0,"entries":[],"history":[]}"""
+        file.writeText("""{"shelves":{"anon":{"routines":[$payload]}}}""")
+        val shelf = LocalLog(file)
+        val batch = ClaimBatch("tampered", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Routine,
+            "routine", claimRevision(payload), payload.replace("Plan", "Changed"))))
+        shelf.adopt("owner")
+        val before = file.readText()
+        assertThrows(IllegalStateException::class.java) { shelf.complete(batch, "owner") }
+        assertEquals(before, file.readText())
+        assertEquals(emptyList<Routine>(), shelf.routines)
     }
 
     @Test

@@ -122,8 +122,9 @@ rather than that (`13-gestures.md` Law 1). iOS reorders through the platform's `
 **A movement's record has a drawn door that does not cost a draft.** A routine line for a
 never-logged movement is a first-class state here, and every other route on the web to that
 movement's record needs it to have been trained or to stand in a proposal, whose diff rows are
-anchors to the movements they name (`Proposals.jsx:286`). The phones reach it from the routine's own
-screen, whose rows are movement doors (`RoutineScreen.swift:82`, `RoutinesScreen.kt:410-418`). The
+anchors to the movements they name (`Proposals.jsx:286`). iOS reaches it from the routine's own
+screen, whose rows are movement doors (`RoutineScreen.swift:82`). Android reaches Record through
+movement names in session readback on the Log; its routine sheet contains the plan only. The
 web's editor rows are not doors, so the routines home's head draws a **Movements** door beside
 **New** (`Routines.jsx:67`) — the only drawn way there to the movement chooser, and the one door to
 a never-trained movement's record, and to Rename on it, that no proposal has to be standing for.
@@ -189,21 +190,20 @@ waiting routine's row the accent border (`RoutinesScreen.swift:232`, `ui/Routine
 draw a row of their own only for a routine whose waiting proposal is not the card's
 (`RoutinesScreen.swift:226`, `ui/RoutinesScreen.kt:323`).
 
-**The routine's own screen names every movement with its target column and the `· yours` suffix**,
-and each row is that movement's record door (`RoutineScreen.swift:82`, `RoutinesScreen.kt:410-418`).
-On the web that screen is the editor, and its rows are not doors — see the editor's own rule above.
+**The iOS routine screen names every movement with its target column and the `· yours` suffix**,
+and each row is that movement's record door (`RoutineScreen.swift:82`). Android's routine sheet names
+each movement and target without a Record or history door. On the web that screen is the editor,
+and its rows follow the editor's rule above.
 
-**Its settled history is the newest twenty proposals, not all of them**
+**The web and iOS settled history is the newest twenty proposals, not all of them**
 (`kRoutineHistoryProposals`, `backend/products/gym/ports/ProgramRepository.h:48`). No surface writes
 *all*: a routine a connected agent has worked on for a year has more, and this screen is a recent
 record rather than the ledger of every change.
 
 **A history the log could not read is not an empty one, and it says so in one line** —
-*the log didn’t answer — this routine’s history is out of reach*. **The phones share the subject and
-each composes the prefix**, because that sentence is a claim about the log: a read the log REFUSED
+*the log didn’t answer — this routine’s history is out of reach*. On iOS the sentence is a claim about the log: a refused read
 keeps the log's own words, and only silence earns the composed line. iOS holds the bytes as
-`RoutineReadout.historySubject` and builds the rest through `WriteFailure.noAnswer.line`; Android's
-history block draws `why.line(…)` off the failure it was handed. The web needs no such state: its
+`RoutineReadout.historySubject` and builds the rest through `WriteFailure.noAnswer.line`. The web needs no such state: its
 history arrives inside the routine read it already has, so a read that fails has no half to report.
 
 > **Inside a block, that line stands alone.** The *Try again* button belongs to the whole-screen
@@ -222,7 +222,8 @@ screen is for.
 **On a phone it is pinned in the reach band**, not inline in the scroll, so the one thing a lifter
 does with a bar in their hands is reachable at every scroll position
 (`../../guidelines/thumb-reach.md` §3.1, §3.6). iOS draws it that way
-(`RoutineScreen.swift:191-203`); Android still draws it inline and owes the move (ledger `3r`).
+(`RoutineScreen.swift:191-203`); Android pins Start workout and the quiet Edit routine action below
+the sheet's scrolling plan (`RoutineSheet` in `ui/RoutinesScreen.kt`).
 
 ## The strings, pinned
 

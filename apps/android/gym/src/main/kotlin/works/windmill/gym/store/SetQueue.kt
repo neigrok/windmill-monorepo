@@ -19,7 +19,6 @@ import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.LogSetAcceptance
@@ -121,8 +120,7 @@ class SetQueue private constructor(
             if (copy(workout = null) != value.copy(workout = null)) return false
             if (value.workout == null) return workout?.rack?.edited != true
             fun content(state: WorkoutState?): WorkoutState? = state?.copy(revision = 0,
-                rack = state.rack?.copy(revision = 0), offer = null, alertAccess = false,
-                rest = state.rest?.copy(alertRevision = 0))
+                rack = state.rack?.copy(revision = 0), offer = null)
             return content(workout) == content(value.workout)
         }
     }
@@ -214,7 +212,7 @@ class SetQueue private constructor(
         if (nextSeat == seat) return
         val queues = held.queues.mapValues { (key, queue) ->
             if (key != seat && key != nextSeat) queue
-            else queue.copy(workout = queue.workout?.invalidate()?.access(false))
+            else queue.copy(workout = queue.workout?.invalidate())
         }
         if (queues != held.queues) commit(held.copy(queues = queues))
         seat = nextSeat
@@ -244,7 +242,7 @@ class SetQueue private constructor(
             if (owner != null) {
                 val target = queues[Seat.of(owner)] ?: Queued()
                 check(target.isEmpty || target.matchesClaim(value)) { "Finish the account’s current workout before adding this training." }
-                queues = queues + (Seat.of(owner) to value.copy(workout = value.workout?.invalidate()?.access(false)))
+                queues = queues + (Seat.of(owner) to value.copy(workout = value.workout?.invalidate()))
             }
             val source = queues[item.source.seat]
             if (source != null && source.matchesClaim(value)) queues = queues - item.source.seat
@@ -265,11 +263,21 @@ class SetQueue private constructor(
     val workout: WorkoutState get() = mine.workout ?: WorkoutState()
     val writable: Boolean get() = !transferFailed && !unreadable
 
+    fun latestSet(moment: WorkoutMoment): WorkoutEvent? {
+        val live = mine.session ?: return null
+        val entry = mine.entries.values.filter { it.sessionId == live.id && it.owes != Owed.Delete }
+            .maxWithOrNull(compareBy<Entry> { it.eventOrder }
+                .thenBy { it.event?.origin?.bootId == moment.bootId }
+                .thenBy { if (it.event?.origin?.bootId == moment.bootId) it.event.origin.elapsedMs else it.loggedAtMs ?: it.set.completedAtMs })
+            ?: return null
+        return entry.event ?: WorkoutEvent(entry.set.id, WorkoutMoment(entry.loggedAtMs ?: entry.set.completedAtMs, 0, "legacy"))
+    }
+
     fun control(next: WorkoutState) {
         keep(mine.copy(workout = next))
     }
 
-    fun prepare(lastTime: LastTime?, preferences: GymPreferences, moment: WorkoutMoment,
+    fun prepare(lastTime: LastTime?, moment: WorkoutMoment,
         ready: Boolean, mint: () -> String): WorkoutState {
         val live = mine.session ?: return workout
         val entries = mine.entries.mapValues { (_, entry) ->
@@ -278,24 +286,20 @@ class SetQueue private constructor(
                 entry.copy(event = WorkoutEvent(entry.event?.id ?: entry.set.id, oldOrigin.reconciled(moment) ?: oldOrigin))
             }
         }
-        val next = prepared(mine.copy(entries = entries), lastTime, preferences, moment, ready, mint)
+        val next = prepared(mine.copy(entries = entries), lastTime, moment, ready, mint)
         keep(next)
         return requireNotNull(next.workout)
     }
 
-    private fun prepared(queue: Queued, lastTime: LastTime?, preferences: GymPreferences,
+    private fun prepared(queue: Queued, lastTime: LastTime?,
         moment: WorkoutMoment, ready: Boolean, mint: () -> String): Queued {
         val live = queue.session ?: return queue
         val movement = queue.chosenMovement
         val plan = movement?.let { live.plan?.entry(it) }
         val current = queue.entries.values.filter { it.sessionId == live.id && it.owes != Owed.Delete }
-        val event = current.maxWithOrNull(compareBy<Entry> { it.eventOrder }
-            .thenBy { it.event?.origin?.bootId == moment.bootId }
-            .thenBy { if (it.event?.origin?.bootId == moment.bootId) it.event.origin.elapsedMs else it.loggedAtMs ?: it.set.completedAtMs })?.event
-        val target = plan?.restSeconds ?: preferences.restSeconds
         val previous = queue.workout ?: WorkoutState()
         val started = (previous.started ?: WorkoutMoment(live.startedAtMs, 0, "legacy")).reconciled(moment)
-        var state = previous.copy(started = started).reconcile(event, target, preferences.restSound, moment)
+        var state = previous.copy(started = started).reconcile(moment)
         if (movement == null) return queue.copy(workout = state.offered(WorkoutKey(seat, live.id), 0, false, ""))
         val today = current.map { it.set }.filter { it.exerciseId == movement }.sortedBy { it.completedAtMs }
         val savedRack = state.rack
@@ -308,7 +312,7 @@ class SetQueue private constructor(
         return queue.copy(workout = state)
     }
 
-    fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTime: LastTime?, preferences: GymPreferences,
+    fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTime: LastTime?,
         mint: () -> String): LogSetAcceptance {
         val live = mine.session ?: return LogSetAcceptance.Stale
         if (command.key != WorkoutKey(seat, live.id) || !workout.accepts(command)) return LogSetAcceptance.Stale
@@ -321,7 +325,7 @@ class SetQueue private constructor(
         val entry = Entry(set, live.id, needsPush = true, remints = 0, loggedAtMs = moment.wallMs,
             event = WorkoutEvent(offer.id, moment), eventOrder = workout.revision + 1)
         val next = prepared(mine.copy(entries = mine.entries + (set.id to entry), workout = workout.consume(command)),
-            lastTime, preferences, moment, true, mint)
+            lastTime, moment, true, mint)
         keep(next)
         return LogSetAcceptance.Accepted(set.id)
     }
@@ -366,11 +370,6 @@ class SetQueue private constructor(
             val live = mine.session ?: return emptyList()
             return sets(live.id)
         }
-
-    val restStartedAtMs: Long?
-        get() = mine.session?.let { live -> mine.entries.values
-            .filter { it.sessionId == live.id && it.owes != Owed.Delete }
-            .maxOfOrNull { it.loggedAtMs ?: it.set.completedAtMs } }
 
     // A deleted row leaves here at once; its entry survives only to carry the DELETE.
     fun sets(sessionId: String): List<TrainingSet> = mine.entries.values

@@ -21,7 +21,6 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEntryWrite
-import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SessionStart
@@ -89,7 +88,7 @@ class LiveWireTests {
     fun t02_aRoutineRoundTripsAndAnAbsentRepOrLoadStaysAbsent() = runBlocking {
         val write = RoutineWrite(routineId, "Probe Day A", 0, listOf(
             RoutineEntryWrite("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())),
-            RoutineEntryWrite("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120),
+            RoutineEntryWrite("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))),
         ))
         val created = wire.createRoutine(write)
         assertEquals(routineId, created.id)
@@ -97,23 +96,16 @@ class LiveWireTests {
         assertEquals(
             listOf(
                 RoutineEntry(1, "bench-press", listOf(SetTarget(), SetTarget(), SetTarget())),
-                RoutineEntry(2, "back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120),
+                RoutineEntry(2, "back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))),
             ),
             created.entries,
         )
 
-        val rawDetail = api.get<JsonObject>("/v1/gym/routines/$routineId")
-        val createdAt = rawDetail.getValue("history").jsonArray.single()
-            .jsonObject.getValue("at").jsonPrimitive.long
-        assertTrue(createdAt > 0)
-        val detail = created.copy(history = listOf(
-            RoutineEvent("created", createdAt, by = null, movements = 2, proposal = null),
-        ))
-        assertEquals(detail, wire.routine(routineId))
+        assertEquals(created, wire.routine(routineId))
 
         val replaced = wire.replaceRoutine(routineId, RoutineWrite(created))
         assertEquals(created, replaced)
-        assertEquals(detail, wire.routine(routineId))
+        assertEquals(created, wire.routine(routineId))
 
         assertTrue(wire.routines().any { it.id == routineId })
         assertNull("an absent routine folds to null, never throws", wire.routine("rt_probe_a_gone404"))
@@ -131,7 +123,7 @@ class LiveWireTests {
         assertNotNull("a routine start answers with the frozen plan", plan)
         assertEquals("Probe Day A", plan!!.routine)
         assertEquals(PlanEntry("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())), plan.entry("bench-press"))
-        assertEquals(PlanEntry("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), 120), plan.entry("back-squat"))
+        assertEquals(PlanEntry("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))), plan.entry("back-squat"))
 
         val warmup = wire.appendSet(sessionAId,
             SetWrite(warmupId, "bench-press", 40.0, 8, SetKind.Warmup, startA + 60_000))

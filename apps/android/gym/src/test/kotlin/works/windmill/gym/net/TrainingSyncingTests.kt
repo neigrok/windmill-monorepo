@@ -32,7 +32,6 @@ import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -141,7 +140,6 @@ internal class FakeTraining : TrainingSyncing {
     val sets = mutableMapOf<String, MutableList<TrainingSet>>()
     val written = mutableMapOf<String, Routine>()
     val ledger = mutableMapOf<String, Proposal>()
-    val creations = mutableMapOf<String, RoutineEvent>()
     var createdAtMs = 500L
     var settledAtMs = 9_000L
     val lastTimes = mutableMapOf<String, LastTime>()
@@ -368,13 +366,7 @@ internal class FakeTraining : TrainingSyncing {
         calls.add("routine")
         reachable()
         refuseRoutineRead?.let { throw it }
-        val standing = written[id] ?: return null
-        val proposed = ledger.values
-            .filter { it.routineId == id }
-            .sortedByDescending { it.createdAtMs }
-            .map { RoutineEvent(kind = "proposal", atMs = it.createdAtMs, proposal = it) }
-        val born = creations[id] ?: RoutineEvent(kind = "created", atMs = createdAtMs)
-        return standing.copy(history = proposed + born)
+        return written[id]
     }
 
     override suspend fun createRoutine(write: RoutineWrite): Routine {
@@ -385,11 +377,9 @@ internal class FakeTraining : TrainingSyncing {
         val made = Routine(id = write.id, name = write.name, position = write.position,
             entries = write.entries.mapIndexed { index, entry ->
                 RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,
-                    sets = entry.sets, restSeconds = entry.restSeconds)
+                    sets = entry.sets)
             })
         written[made.id] = made
-        creations[made.id] = RoutineEvent(kind = "created", atMs = createdAtMs,
-            movements = write.entries.size)
         return made
     }
 
@@ -464,7 +454,7 @@ internal class FakeTraining : TrainingSyncing {
                 .mapIndexed { index, change ->
                     val asks = change.after ?: ProposalTargets()
                     RoutineEntry(position = index + 1, exerciseId = change.exerciseId,
-                        sets = asks.sets, restSeconds = asks.restSeconds)
+                        sets = asks.sets)
                 },
         )
         written[moved.id] = moved

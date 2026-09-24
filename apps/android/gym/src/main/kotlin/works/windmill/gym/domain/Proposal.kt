@@ -70,11 +70,10 @@ data class ProposalSource(
 }
 
 // The absences: no `sets` is an open line, a set's missing reps is `max` and its missing load is
-// last time, no rest is the global dial. Which SIDE is missing is `kind`.
+// last time. Which SIDE is missing is `kind`.
 @Serializable
 data class ProposalTargets(
     val sets: List<SetTarget> = emptyList(),
-    val restSeconds: Int? = null,
 )
 
 @Serializable(with = ChangeKindSerializer::class)
@@ -247,26 +246,16 @@ data class Proposal(
             return "All ${Readout.spelled(changeCount)} or none. Nothing is applied until you tap."
         }
 
-    fun historyLine(nowMs: Long): String {
-        val on = Readout.shortDate(settledAtMs ?: createdAtMs, nowMs)
-        return when (state) {
-            ProposalState.Applied -> "$on · applied $counted from ${source.name}"
-            ProposalState.Dismissed -> "$on · turned down $counted from ${source.name}"
-            ProposalState.Superseded -> "$on · set aside $counted from ${source.name}"
-            ProposalState.Pending -> "$on · $counted from ${source.name}, waiting"
-        }
-    }
-
     fun settledNote(nowMs: Long): String? {
         val at = settledAtMs ?: return null
         val on = "${Readout.briefDay(at, nowMs)} at ${Readout.time(at)}"
         return when (state) {
             ProposalState.Applied ->
-                "Applied to $routineName $on. Kept on the routine as a dated record — the program’s history, not a toast that disappears."
+                "Applied to $routineName $on."
             ProposalState.Dismissed ->
-                "Turned down $on. Nothing changed, and it stays in the routine’s history as a record."
+                "Turned down $on. Nothing changed."
             ProposalState.Superseded ->
-                "$routineName changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine’s history."
+                "$routineName changed after this was written, so it was set aside $on. None of it was applied."
             ProposalState.Pending -> null
         }
     }
@@ -288,7 +277,7 @@ data class Proposal(
         // in the same words on every surface.
         const val turnDownVerb = "Turn this down"
         const val turnDownAsk = "Turn this down?"
-        const val turnDownBody = "Nothing changes, and it stays in the routine’s history as a record."
+        const val turnDownBody = "Nothing changes."
         const val turnDown = "Turn down"
 
         // The row the review sheet unfolds to the ladder on tap.
@@ -306,15 +295,10 @@ data class Proposal(
                     FieldMove("set ${at + 1}", Readout.setTarget(before.sets[at]), Readout.setTarget(after.sets[at]))
                 } ?: FieldMove(setsLabel, Readout.target(before.sets), Readout.target(after.sets))
             }
-            if (before.restSeconds != after.restSeconds) {
-                moved += FieldMove("rest", restOf(before.restSeconds), restOf(after.restSeconds))
-            }
             return moved
         }
 
         fun asks(targets: ProposalTargets): String = Readout.target(targets.sets)
-
-        fun restOf(seconds: Int?): String = seconds?.let { "${it}s" } ?: "the dial"
     }
 }
 

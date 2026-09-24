@@ -44,13 +44,9 @@ import org.robolectric.shadows.ShadowNotificationManager
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.LogSetOffer
-import works.windmill.gym.domain.RestAlertCommand
 import works.windmill.gym.domain.WorkoutChange
-import works.windmill.gym.domain.WorkoutClock
 import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutMoment
 import works.windmill.gym.domain.WorkoutNotification
-import works.windmill.gym.domain.WorkoutRest
 import works.windmill.gym.store.WorkoutCommands
 
 @RunWith(RobolectricTestRunner::class)
@@ -70,7 +66,7 @@ class WorkoutNotificationsTests {
         val card = f.card()
         assertEquals("Push A", card.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("Overhead Press · 30 kg × 8 · Set 1 of 3", card.extras.getString(Notification.EXTRA_TEXT))
-        assertEquals("Overhead Press · 30 kg × 8\nSet 1 of 3\nRest target · 90s", card.extras.getString(Notification.EXTRA_BIG_TEXT))
+        assertEquals("Overhead Press · 30 kg × 8\nSet 1 of 3", card.extras.getString(Notification.EXTRA_BIG_TEXT))
         assertFalse(card.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
         assertFalse(card.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
         assertTrue(card.flags and Notification.FLAG_ONGOING_EVENT != 0)
@@ -100,29 +96,9 @@ class WorkoutNotificationsTests {
         assertEquals(listOf("log", "seat/α", "session 1", "offer/α 1"), log.savedIntent.data!!.pathSegments)
         if (Build.VERSION.SDK_INT >= 31) assertTrue(card.actions.single().isAuthenticationRequired)
         assertEquals(listOf(true), f.posts.mainThread)
-        assertEquals(WorkoutCapabilities(true, true, true, true, true, null, null, null), f.adapter.capabilities.value)
+        assertEquals(WorkoutCapabilities(true, true, true, null, null, null), f.adapter.capabilities.value)
     }
 
-    @Test fun aRestUsesItsOriginalElapsedAnchorAndClockChangesOnlyRebuildTheWallAnchor() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        assertEquals(997_000L, f.card().`when`)
-        assertTrue(f.card().extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
-        assertFalse(f.card().extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN))
-        assertEquals("Overhead Press · 30 kg × 8\nSet 1 of 3\nRest elapsed\nRest target · 90s", f.card().extras.getString(Notification.EXTRA_BIG_TEXT))
-        val before = f.card()
-        f.now = f.now.copy(wallMs = f.now.wallMs + 60_000, elapsedMs = f.now.elapsedMs + 60_000)
-        f.adapter.refreshCapabilities()
-        runCurrent()
-        assertSame(before, f.card())
-        assertEquals(1, f.posts.cards.size)
-        f.now = f.now.copy(wallMs = f.now.wallMs - 3_600_000)
-        f.adapter.receive(Intent(Intent.ACTION_TIME_CHANGED))
-        assertEquals(997_000L - 3_600_000, f.card().`when`)
-        assertEquals(2, f.posts.cards.size)
-        assertEquals(100_000L, shadowOf(f.alarms).scheduledAlarms.single().triggerAtTime)
-    }
 
     @Test
     @Config(sdk = [26, 30, 31, 34, 35])
@@ -196,12 +172,11 @@ class WorkoutNotificationsTests {
         assertEquals(1, f.posts.cards.size)
     }
 
-    @Test fun hidePersistsAndReentryCannotShowOrScheduleItUntilExplicitShow() = runTest {
+    @Test fun hidePersistsUntilExplicitShowWithoutSchedulingAnAlarm() = runTest {
         val f = Fixture(this)
-        f.rest()
         f.start()
         val hide = shadowOf(f.card().deleteIntent).savedIntent
-        assertEquals(1, shadowOf(f.alarms).scheduledAlarms.size)
+        assertEquals(emptyList<Any>(), shadowOf(f.alarms).scheduledAlarms)
         f.adapter.receive(hide)
         assertTrue(f.commands.notification.value!!.hidden)
         assertNull(f.posts.getNotification("gym_workout", 1))
@@ -213,12 +188,11 @@ class WorkoutNotificationsTests {
         f.commands.setHidden(f.key, false)
         runCurrent()
         assertEquals("Push A", f.card().extras.getString(Notification.EXTRA_TITLE))
-        assertEquals(1, shadowOf(f.alarms).scheduledAlarms.size)
+        assertEquals(emptyList<Any>(), shadowOf(f.alarms).scheduledAlarms)
     }
 
-    @Test fun permissionChannelAndAlarmGatesPreserveOrdinaryFallbackWithoutFakePromotion() = runTest {
+    @Test fun postingPermissionPreservesOrdinaryFallbackWithoutFakePromotion() = runTest {
         val f = Fixture(this)
-        f.rest()
         shadowOf(f.context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         f.start()
         assertFalse(f.adapter.capabilities.value!!.postGranted)
@@ -229,7 +203,6 @@ class WorkoutNotificationsTests {
         f.adapter.refreshCapabilities()
         runCurrent()
         assertEquals("Push A", f.card().extras.getString(Notification.EXTRA_TITLE))
-        assertFalse(f.adapter.capabilities.value!!.exactAlarms)
         assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
         val channel = f.manager.getNotificationChannel("gym_workout")
         channel.setSound(null, null)
@@ -237,7 +210,6 @@ class WorkoutNotificationsTests {
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         f.adapter.refreshCapabilities()
         runCurrent()
-        assertFalse(f.adapter.capabilities.value!!.channelAudible)
         assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
         f.posts.setNotificationsEnabled(false)
         f.adapter.refreshCapabilities()
@@ -248,172 +220,27 @@ class WorkoutNotificationsTests {
         assertEquals(emptyList<String>(), f.commands.accepted)
     }
 
-    @Test fun oneElapsedExactAlarmReplacesTargetsAndNeverRearmsAnOverdueRest() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val first = shadowOf(f.alarms).scheduledAlarms.single()
-        assertEquals(AlarmManager.ELAPSED_REALTIME_WAKEUP, first.type)
-        assertEquals(100_000L, first.triggerAtTime)
-        assertEquals(0L, first.interval)
-        assertEquals(ShadowAlarmManager.WINDOW_EXACT, first.windowLengthMs)
-        assertTrue(first.isAllowWhileIdle)
-        val oldIntent = shadowOf(first.operation).savedIntent
-        val snapshot = f.commands.notification.value!!
-        f.commands.notification.value = snapshot.copy(rest = snapshot.rest!!.copy(targetSeconds = 120, alertRevision = 2))
-        runCurrent()
-        val next = shadowOf(f.alarms).scheduledAlarms.single()
-        assertEquals(130_000L, next.triggerAtTime)
-        assertNotEquals(first.operation, next.operation)
-        f.now = f.now.copy(elapsedMs = 150_000)
-        f.adapter.receive(oldIntent)
-        assertEquals(0, f.commands.claimed)
-        f.commands.notification.value = f.commands.notification.value!!.copy(restAlerts = false)
-        runCurrent()
-        f.commands.notification.value = f.commands.notification.value!!.copy(restAlerts = true)
-        runCurrent()
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-        assertTrue(f.posts.cards.all { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-    }
 
-    @Test fun aDurablyClaimedRestPostsOnceAndItsAttemptDoesNotImmediatelySilenceIt() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.now = f.now.copy(elapsedMs = 100_000, wallMs = 1_087_000)
-        f.adapter.receive(due)
-        runCurrent()
-        assertEquals(1, f.commands.claimed)
-        assertTrue(f.commands.notification.value!!.rest!!.attempted)
-        assertEquals(listOf(true, false), f.posts.cards.map { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-        assertNull(f.card().group)
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-        f.adapter.receive(due)
-        runCurrent()
-        assertEquals(1, f.commands.claimed)
-        assertEquals(2, f.posts.cards.size)
-        f.commands.notification.value = f.commands.notification.value!!.copy(counter = "Set 2 of 3")
-        runCurrent()
-        assertEquals(listOf(true, false, true), f.posts.cards.map { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-        assertTrue(f.posts.mainThread.all { it })
-    }
 
-    @Test fun capabilityLossOrSupersededEventAfterClaimDropsTheEffect() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.now = f.now.copy(elapsedMs = 100_000)
-        val hold = CompletableDeferred<Unit>()
-        f.commands.afterClaim = { hold.await() }
-        val delivery = launch { f.adapter.receive(due) }
-        runCurrent()
-        assertEquals(1, f.commands.claimed)
-        val other = f.commands.notification.value!!.copy(key = WorkoutKey("other owner", "other session"), title = "Pull B", rest = null, offer = null)
-        f.commands.notification.value = other
-        runCurrent()
-        hold.complete(Unit)
-        delivery.join()
-        assertEquals("Pull B", f.card().extras.getString(Notification.EXTRA_TITLE))
-        assertTrue(f.posts.cards.all { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-    }
 
-    @Test fun permissionLossDuringDurableClaimNeverRequestsSound() = runTest {
+
+
+
+
+
+    @Test fun obsoleteRestCallbacksAreIgnoredWithoutPostingOrWriting() = runTest {
         val f = Fixture(this)
-        f.rest()
         f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.now = f.now.copy(elapsedMs = 100_000)
-        f.commands.afterClaim = { ShadowAlarmManager.setCanScheduleExactAlarms(false) }
-        f.adapter.receive(due)
+        val obsolete = Intent("works.windmill.gym.workout.REST_DUE")
+            .setComponent(ComponentName(f.context, WorkoutNotificationReceiver::class.java))
+            .setData(Uri.parse("windmill-workout://internal/rest/seat/session/event/1"))
+        val restores = f.commands.restores
+        f.adapter.receive(obsolete)
         runCurrent()
-        assertEquals(1, f.commands.claimed)
+        assertEquals(restores, f.commands.restores)
+        assertEquals(emptyList<LogSetCommand>(), f.commands.logs)
         assertEquals(1, f.posts.cards.size)
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-    }
-
-    @Test fun observedAccessLossRevokesTheOldCallbackEvenAfterAccessReturns() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val old = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        ShadowAlarmManager.setCanScheduleExactAlarms(false)
-        f.adapter.refreshCapabilities()
-        runCurrent()
-        assertEquals(2L, f.commands.notification.value!!.rest!!.alertRevision)
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-        ShadowAlarmManager.setCanScheduleExactAlarms(true)
-        f.adapter.refreshCapabilities()
-        runCurrent()
-        val current = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        assertEquals(listOf("rest", "seat/α", "session 1", "rest 1", "2"), current.data!!.pathSegments)
-        assertNotEquals(old.data, current.data)
-        f.now = f.now.copy(elapsedMs = 100_000)
-        f.adapter.receive(old)
-        assertEquals(0, f.commands.claimed)
-        assertTrue(f.posts.cards.all { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-        f.adapter.receive(current)
-        assertEquals(1, f.commands.claimed)
-        assertEquals(listOf(true, false), f.posts.cards.map { it.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 })
-    }
-
-    @Test fun cancellationAfterDurableClaimFinishesTheReceiverWithoutRetryingTheLostEffect() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.now = f.now.copy(elapsedMs = 100_000)
-        val hold = CompletableDeferred<Unit>()
-        f.commands.afterClaim = { hold.await() }
-        val owner = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
-        var completions = 0
-        f.newAdapter(owner).dispatch(due) { completions++ }
-        runCurrent()
-        assertTrue(f.commands.notification.value!!.rest!!.attempted)
-        owner.cancel()
-        runCurrent()
-        assertEquals(1, completions)
-        assertEquals(1, f.commands.claimed)
-        assertEquals(1, f.posts.cards.size)
-        f.adapter.receive(due)
-        assertEquals(1, f.commands.claimed)
-        assertEquals(1, f.posts.cards.size)
-        assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-    }
-
-    @Test fun coldDueDeliveryUsesTheSamePortButOrdinaryStartupDoesNotCatchUp() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.adapter.start().cancel()
-        f.now = f.now.copy(elapsedMs = 110_000)
-        val cold = f.newAdapter(backgroundScope)
-        cold.start()
-        runCurrent()
-        assertEquals(0, f.commands.claimed)
-        cold.receive(due)
-        runCurrent()
-        assertEquals(1, f.commands.claimed)
-        assertFalse(f.card().flags and Notification.FLAG_ONLY_ALERT_ONCE != 0)
-        assertEquals(0, f.commands.logs.size)
-    }
-
-    @Test fun aColdClosedWorkoutRejectsTheOldAlarmWithoutAPostOrWrite() = runTest {
-        val f = Fixture(this)
-        f.rest()
-        f.start()
-        val due = shadowOf(shadowOf(f.alarms).scheduledAlarms.single().operation).savedIntent
-        f.adapter.start().cancel()
-        f.commands.notification.value = null
-        val cold = f.newAdapter(backgroundScope)
-        cold.receive(due)
-        assertEquals(1, f.posts.cards.size)
-        assertNull(f.posts.getNotification("gym_workout", 1))
-        assertEquals(0, f.commands.claimed)
-        assertEquals(emptyList<String>(), f.commands.accepted)
+        assertEquals(emptyList<Any>(), shadowOf(f.alarms).scheduledAlarms)
     }
 
     @Test fun dispatchCompletesExactlyOnceForInvalidFailedAndAlreadyCancelledWork() = runTest {
@@ -454,13 +281,8 @@ class WorkoutNotificationsTests {
         assertEquals(emptyList<String>(), f.commands.accepted)
     }
 
-    @Test fun settingsIntentsBelongToThisPackageAndClockUsesElapsedAndBootIdentity() = runTest {
+    @Test fun clockUsesElapsedAndBootIdentity() = runTest {
         val f = Fixture(this)
-        assertEquals(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, f.adapter.notificationSettings().action)
-        assertEquals(f.context.packageName, f.adapter.notificationSettings().getStringExtra(Settings.EXTRA_APP_PACKAGE))
-        assertEquals("gym_workout", f.adapter.notificationSettings().getStringExtra(Settings.EXTRA_CHANNEL_ID))
-        assertEquals(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, f.adapter.alarmSettings().action)
-        assertEquals("package:${f.context.packageName}", f.adapter.alarmSettings().dataString)
         Settings.Global.putInt(f.context.contentResolver, Settings.Global.BOOT_COUNT, 7)
         val clock = AndroidWorkoutClock(f.context)
         val first = clock.now()
@@ -481,11 +303,10 @@ class WorkoutNotificationsTests {
         val activity = ComponentName(context.packageName, "works.windmill.MainActivity")
         val posts = Shadow.extract<Posts>(manager)
         val key = WorkoutKey("seat/α", "session 1")
-        var now = WorkoutMoment(1_000_000, 13_000, "boot:7")
         val commands = Commands(
-            WorkoutNotification(key, "Push A", "Overhead Press", "30 kg × 8", "Set 1 of 3", "Rest target · 90s", null,
-                LogSetOffer(key, "offer/α 1", 4, "overhead-press", 1, 30.0, 8), false, true),
-        ) { now }
+            WorkoutNotification(key, "Push A", "Overhead Press", "30 kg × 8", "Set 1 of 3",
+                LogSetOffer(key, "offer/α 1", 4, "overhead-press", 1, 30.0, 8), false),
+        )
         val adapter: WorkoutNotifications
 
         init {
@@ -496,25 +317,17 @@ class WorkoutNotificationsTests {
             adapter = newAdapter(test.backgroundScope)
         }
 
-        fun newAdapter(scope: CoroutineScope) = WorkoutNotifications(context, commands, scope, WorkoutClock { now }, activity, manager, alarms, keyguard)
+        fun newAdapter(scope: CoroutineScope) = WorkoutNotifications(context, commands, scope, activity, manager, keyguard)
         fun start() { adapter.start(); test.runCurrent() }
         fun card(): Notification = posts.getNotification("gym_workout", 1)!!
-        fun rest() {
-            commands.notification.value = commands.notification.value!!.copy(
-                rest = WorkoutRest("rest 1", WorkoutMoment(997_000, 10_000, "boot:7"), 90, 1, false),
-            )
-        }
     }
 
-    private class Commands(initial: WorkoutNotification, val now: () -> WorkoutMoment) : WorkoutCommands {
+    private class Commands(initial: WorkoutNotification) : WorkoutCommands {
         override val notification = MutableStateFlow<WorkoutNotification?>(initial)
         val logs = mutableListOf<LogSetCommand>()
         val accepted = mutableListOf<String>()
         var restores = 0
-        var claimed = 0
         var beforeRestore: suspend () -> Unit = {}
-        var afterClaim: suspend () -> Unit = {}
-        private var alertAccess: Boolean? = null
         override suspend fun restoreLocal() { restores++; beforeRestore() }
         override suspend fun logSet(command: LogSetCommand): LogSetAcceptance {
             logs += command
@@ -527,34 +340,10 @@ class WorkoutNotificationsTests {
         override suspend fun setHidden(key: WorkoutKey, hidden: Boolean): WorkoutChange {
             val current = notification.value ?: return WorkoutChange.Stale
             if (current.key != key) return WorkoutChange.Stale
-            notification.value = current.copy(hidden = hidden, rest = current.rest?.let {
-                if (current.hidden != hidden) it.copy(alertRevision = it.alertRevision + 1) else it
-            })
+            notification.value = current.copy(hidden = hidden)
             return WorkoutChange.Saved
         }
         override suspend fun openWorkout(key: WorkoutKey) = notification.value?.key == key
-        override suspend fun setAlertAccess(key: WorkoutKey, available: Boolean): WorkoutChange {
-            val current = notification.value ?: return WorkoutChange.Stale
-            if (current.key != key) return WorkoutChange.Stale
-            if (!available && alertAccess != false) {
-                notification.value = current.copy(rest = current.rest?.let { it.copy(alertRevision = it.alertRevision + 1) })
-            }
-            alertAccess = available
-            return WorkoutChange.Saved
-        }
-        override suspend fun claimRest(command: RestAlertCommand): Boolean {
-            val current = notification.value ?: return false
-            val rest = current.rest ?: return false
-            val target = rest.targetSeconds ?: return false
-            if (current.key != command.key || rest.id != command.eventId || rest.alertRevision != command.alertRevision ||
-                current.hidden || !current.restAlerts || rest.attempted || target <= 0 || rest.origin.bootId != now().bootId ||
-                now().elapsedMs < rest.origin.elapsedMs + target * 1_000L
-            ) return false
-            notification.value = current.copy(rest = rest.copy(attempted = true))
-            claimed++
-            afterClaim()
-            return true
-        }
     }
 
     @Implements(NotificationManager::class)

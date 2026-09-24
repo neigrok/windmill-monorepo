@@ -25,7 +25,6 @@ import works.windmill.gym.domain.WorkoutNotification
 import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.RestAlertCommand
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskExchange
@@ -63,7 +62,6 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -132,17 +130,12 @@ class TrainingStore(
     }
     fun revokeWorkoutAuthority() {
         try {
-            if (queue.session != null && queue.writable) queue.control(queue.workout.invalidate().access(false))
+            if (queue.session != null && queue.writable) queue.control(queue.workout.invalidate())
         } catch (error: Exception) {
             reportFailure("gym.revokeWorkoutAuthority", error)
             refuseWorkout()
         }
         workoutFacts.value = null
-    }
-    fun restElapsedMs(): Long? {
-        val origin = queue.workout.rest?.origin ?: return null
-        val at = workoutClock.now()
-        return (at.elapsedMs - origin.elapsedMs).coerceAtLeast(0).takeIf { origin.bootId == at.bootId }
     }
     private var workoutReady = false
     private var localWorkoutAuthorized = true
@@ -181,7 +174,7 @@ class TrainingStore(
         val live = queue.session
         if (live != null) {
             val moment = workoutClock.now()
-            val origin = queue.workout.rest?.origin ?: queue.workout.started
+            val origin = queue.latestSet(moment)?.origin ?: queue.workout.started
             val overAt = if (origin?.bootId == moment.bootId) {
                 origin.wallMs.takeIf { moment.elapsedMs - origin.elapsedMs >= AutoClose.AFTER_MS }
             } else AutoClose.at(live, queue.sets(live.id), moment.wallMs)
@@ -225,7 +218,7 @@ class TrainingStore(
             return LogSetAcceptance.Unavailable(workoutFailure ?: "The workout is not ready.")
         }
         return try {
-            val accepted = queue.accept(command, workoutClock.now(), lastTime, preferences, mintSet)
+            val accepted = queue.accept(command, workoutClock.now(), lastTime, mintSet)
             if (accepted is LogSetAcceptance.Accepted) {
                 telemetry.event("gym_set_logged")
                 drawFromQueue()
@@ -251,34 +244,6 @@ class TrainingStore(
         }
     }
 
-    fun alertAccess(key: WorkoutKey, available: Boolean): WorkoutChange {
-        if (!workoutAuthorized || consentRecoveryBlocked) return WorkoutChange.Unavailable("The account must be restored first.")
-        if (workoutFacts.value?.key != key) return WorkoutChange.Stale
-        return try {
-            queue.control(queue.workout.access(available))
-            refreshWorkout()
-            WorkoutChange.Saved
-        } catch (error: Exception) {
-            reportFailure("gym.alertAccess", error)
-            WorkoutChange.Unavailable(refuseWorkout())
-        }
-    }
-
-    fun claimRest(command: RestAlertCommand): Boolean {
-        if (!workoutAuthorized || consentRecoveryBlocked || !queue.writable) return false
-        val key = workoutFacts.value?.key ?: return false
-        val next = queue.workout.claim(command, key, workoutClock.now()) ?: return false
-        return try {
-            queue.control(next)
-            refreshWorkout()
-            true
-        } catch (error: Exception) {
-            reportFailure("gym.claimRest", error)
-            refuseWorkout()
-            false
-        }
-    }
-
     private fun refreshWorkout() {
         if (!workoutReady) return
         if (!workoutAuthorized || consentRecoveryBlocked) { workoutFacts.value = null; return }
@@ -290,22 +255,17 @@ class TrainingStore(
         }
         val ready = workoutAuthorized && !consentRecoveryBlocked && !isFinishing && queue.writable
         val state = try {
-            if (queue.writable && workoutAuthorized && !consentRecoveryBlocked) queue.prepare(lastTime, preferences, workoutClock.now(), ready, mintSet) else queue.workout
+            if (queue.writable && workoutAuthorized && !consentRecoveryBlocked) queue.prepare(lastTime, workoutClock.now(), ready, mintSet) else queue.workout
         } catch (error: Exception) {
             reportFailure("gym.refreshWorkout", error)
             refuseWorkout()
             return
         }
         rack = state.rack
-        restStartedAtMs = state.rest?.origin?.let { origin ->
-            val at = workoutClock.now()
-            at.wallMs - (at.elapsedMs - origin.elapsedMs)
-        }
         val movement = queue.chosenMovement
         val rows = queue.sets.filter { it.exerciseId == movement }
         workoutFacts.value = WorkoutNotification(WorkoutKey(accountKey, live.id), live,
-            movement?.let { Readout.movement(it, catalog) } ?: "Choose a movement", rows, state,
-            movement?.let { live.plan?.entry(it)?.restSeconds } ?: preferences.restSeconds, ready)
+            movement?.let { Readout.movement(it, catalog) } ?: "Choose a movement", rows, state, ready)
     }
 
     private fun refuseWorkout(): String {
@@ -457,8 +417,6 @@ class TrainingStore(
     var older: Older by mutableStateOf(Older.More)
         private set
     var session: Session? by mutableStateOf(null)                        // the open one, or none
-        private set
-    var restStartedAtMs: Long? by mutableStateOf(null)
         private set
     var sets: List<TrainingSet> by mutableStateOf(emptyList())           // its sets, performed order
         private set
@@ -1437,26 +1395,6 @@ class TrainingStore(
         }
     }
 
-    // Rides on the ROUTINE read rather than a route of its own. A routine the shelf holds has no
-    // history, and that is an answer rather than a failure.
-    suspend fun routineHistory(routineId: String): GymResult<List<RoutineEvent>> {
-        if (localLog.routine(routineId) != null) return GymResult.Ok(emptyList())
-        val seat = owner
-        val log = gym ?: return GymResult.Ok(emptyList())
-        return try {
-            val read = log.routine(routineId)
-                ?: return GymResult.Failed(WriteFailure.Refused("that routine is no longer on the log"))
-            if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while reading"))
-            routines = program.map { if (it.id == read.id) read else it }
-            GymResult.Ok(read.history)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.routineHistory", refusing)
-            GymResult.Failed(WriteFailure(refusing))
-        }
-    }
-
     // Nothing is held: a second visit asks again, because a proposal moves the moment anybody decides
     // anything. Answers with a REASON and never with null.
     suspend fun proposal(id: String): ProposalRead {
@@ -1823,8 +1761,7 @@ class TrainingStore(
         }
     }
 
-    // The routines are NOT re-read: deleting a conversation leaves every change it applied standing
-    // in the routine's history. A 404 answers as success.
+    // Deleting a conversation preserves every applied routine change. A 404 answers as success.
     //
     // The settled delete leaves the READ and not only the drawn rows: a list still holding it once
     // the window closed would put the row back on screen, and the room would go on calling an emptied
@@ -3030,7 +2967,6 @@ class TrainingStore(
     }
 
     private fun drawFromQueue() {
-        restStartedAtMs = queue.restStartedAtMs
         session = queue.session
         sets = queue.sets
         // Seeded from the plan and from what has already been performed, so a session joined from

@@ -2,6 +2,9 @@ package works.windmill.gym.store
 
 import java.io.File
 import works.windmill.gym.domain.ClaimBatch
+import works.windmill.gym.domain.ClaimItem
+import works.windmill.gym.domain.ClaimKind
+import works.windmill.gym.domain.ClaimSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,7 +20,7 @@ class LocalPreferencesTests {
 
     private fun file() = File(tmp.root, "prefs-${System.nanoTime()}.json")
 
-    private val chosen = GymPreferences(units = Units.Pounds, restSeconds = 90, restSound = false)
+    private val chosen = GymPreferences(units = Units.Pounds, confirmSound = true)
 
     @Test
     fun testAnUntouchedSeatOwesTheAccountNothing() {
@@ -107,19 +110,43 @@ class LocalPreferencesTests {
         held.adopt("u1")
         held.save(chosen)
 
-        held.readBack(GymPreferences(restSeconds = 180))
+        held.readBack(GymPreferences(confirmHaptic = false))
         assertEquals(chosen, held.document)
         assertTrue(held.owed)
 
         held.landed(chosen)
-        held.readBack(GymPreferences(restSeconds = 180))
-        assertEquals(180, held.document.restSeconds)
+        held.readBack(GymPreferences(confirmHaptic = false))
+        assertEquals(false, held.document.confirmHaptic)
     }
 
     @Test
-    fun testTheWebsRestDialIsHeldExactlyAsItArrived() {
-        val held = LocalPreferences(file())
-        held.save(GymPreferences(restSeconds = 4_000, restSound = false))
-        assertEquals(GymPreferences(restSeconds = 4_000, restSound = false), held.document)
+    fun aFrozenClaimWithLegacyFieldsMovesOnlyTheRecognizedPreferencesOnce() {
+        val path = file()
+        val payload = """{"units":"lb","restSeconds":90,"restSound":false}"""
+        path.writeText("""{"document":$payload,"owed":true}""")
+        val held = LocalPreferences(path)
+        val batch = ClaimBatch("legacy", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Preferences,
+            "preferences", claimRevision(payload), payload)))
+        held.adopt("owner")
+        held.complete(batch, "owner")
+        assertEquals(GymPreferences(units = Units.Pounds), held.document)
+        assertEquals(emptyList<ClaimItem>(), held.claimItems())
+        val saved = path.readText()
+        held.complete(batch, "owner")
+        assertEquals(saved, path.readText())
+        held.adopt(null)
+        assertEquals(GymPreferences(), held.document)
+    }
+
+    @Test
+    fun storedRestPreferencesAreIgnoredWithoutAMigration() {
+        val path = file()
+        val raw = """{"document":{"restSeconds":90,"restSound":false,"units":"lb"},"owed":true}"""
+        path.writeText(raw)
+        val held = LocalPreferences(path)
+        assertEquals(GymPreferences(units = Units.Pounds), held.document)
+        assertEquals(raw, path.readText())
+        held.save(held.document.copy(units = Units.Kilograms))
+        assertEquals("""{"shelves":{"anon":{"document":{},"owed":true}}}""", path.readText())
     }
 }

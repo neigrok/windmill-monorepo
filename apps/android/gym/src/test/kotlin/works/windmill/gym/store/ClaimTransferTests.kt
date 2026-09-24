@@ -32,7 +32,7 @@ class ClaimTransferTests {
         val movement = Exercise("ex_local", "Local press", custom = true)
         val session = Session("ses_live", startedAtMs = 1_000)
         val weight = WeighIn("2026-09-14", 82.4, 2_000)
-        val settings = GymPreferences(restSeconds = 90)
+        val settings = GymPreferences(confirmSound = true)
         log.hold(movement); queue.hold(session, unclaimed = true); queue.choose(movement.id); queue.flush()
         weights.record(weight); prefs.save(settings)
         val snapshot = log.claimItems() + queue.claimItems() + weights.claimItems() + prefs.claimItems()
@@ -41,7 +41,7 @@ class ClaimTransferTests {
         assertNull(queue.session)
         assertEquals(emptyList<WeighIn>(), weights.entries)
         assertEquals(GymPreferences(), prefs.document)
-        prefs.save(GymPreferences(restSeconds = 180))
+        prefs.save(GymPreferences(confirmHaptic = false))
         log.adopt("b"); queue.adopt("b"); weights.adopt("b"); prefs.adopt("b")
         assertEquals(GymPreferences(), prefs.document)
         assertEquals(snapshot, log.claimItems() + queue.claimItems() + weights.claimItems() + prefs.claimItems())
@@ -70,7 +70,7 @@ class ClaimTransferTests {
             listOf(TrainingSet("set_1", movement.id, weightKg = 20.0, reps = 5, completedAtMs = 1_500)))
         val live = Session("ses_live", startedAtMs = 3_000)
         val weight = WeighIn("2026-09-14", 82.4, 4_000)
-        val settings = GymPreferences(restSeconds = 90)
+        val settings = GymPreferences(confirmSound = true)
         log.hold(movement); log.hold(finished)
         queue.hold(live, unclaimed = true); queue.choose(movement.id); queue.flush()
         weights.record(weight); prefs.save(settings)
@@ -80,7 +80,7 @@ class ClaimTransferTests {
         log.complete(batch, "a")
         log.hold(newer)
         weights.record(weight.copy(weightKg = 83.0, recordedAt = 5_000))
-        prefs.save(settings.copy(restSeconds = 120))
+        prefs.save(settings.copy(confirmHaptic = false))
 
         val reopenedLog = LocalLog(logFile)
         val reopenedQueue = SetQueue(queueFile)
@@ -103,7 +103,7 @@ class ClaimTransferTests {
         assertEquals(listOf(newer), reopenedLog.exercises)
         assertNull(reopenedQueue.session)
         assertEquals(listOf(weight.copy(weightKg = 83.0, recordedAt = 5_000)), reopenedWeights.entries)
-        assertEquals(settings.copy(restSeconds = 120), reopenedPrefs.document)
+        assertEquals(settings.copy(confirmHaptic = false), reopenedPrefs.document)
         assertThrows(IllegalStateException::class.java) { reopenedLog.complete(batch, "b") }
     }
 
@@ -223,7 +223,7 @@ class ClaimTransferTests {
     fun markerOnlyDocumentsRetainACompletedDiscardAcrossRecreation() {
         val movement = Exercise("ex_local", "Local press", custom = true)
         val session = Session("ses_local", startedAtMs = 1_000)
-        val preferences = GymPreferences(restSeconds = 90)
+        val preferences = GymPreferences(confirmSound = true)
         val logFile = File(tmp.root, "log")
         val queueFile = File(tmp.root, "queue")
         val prefsFile = File(tmp.root, "prefs")

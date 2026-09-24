@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -35,6 +36,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
@@ -307,18 +309,12 @@ class RoutinesScreenTests {
         }
         val routineId = store.routines.single().id
         compose.setContent {
-            RoutineScreen(
+            RoutineSheet(
                 routineId = routineId,
                 store = store,
-                isSignedIn = false,
-                backTo = "Routines",
-                onBack = {},
+                onDismiss = {},
                 onStart = { started += it },
                 onBuild = {},
-                onOpenMovement = {},
-                lookedAt = emptySet(),
-                onReview = {},
-                onOpenThread = {},
             )
         }
 
@@ -340,6 +336,7 @@ class RoutinesScreenTests {
 
     @Test
     @Config(qualifiers = "w320dp-h915dp-xhdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun compactDetailGrowsForLongMovementNamesAtDoubleTextAndKeepsPinnedActions() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try {
@@ -347,9 +344,8 @@ class RoutinesScreenTests {
             val secondName = "Standing overhead press with a long movement name"
             val server = FakeTraining().apply {
                 catalog = listOf(Exercise("long-row", firstName), Exercise("long-press", secondName))
-                settings = GymPreferences(restSeconds = null)
                 written["rt_compact"] = Routine("rt_compact", "Compact detail", 0, 1, entries = listOf(
-                    RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0)), restSeconds = 90),
+                    RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0))),
                     RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
                 ))
             }
@@ -358,20 +354,20 @@ class RoutinesScreenTests {
                 LocalBodyweight(File(tmp.root, "bodyweight.json")), scope, sync = { server })
             runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
                 User("u1", "sam@example.com", "Sam"))) }
-            val opened = mutableListOf<String>()
+            val edited = mutableListOf<RoutineDraft>()
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
-                    RoutineScreen("rt_compact", store, true, "Routines", {}, {}, {}, { opened += it }, emptySet(), {}, {})
+                    RoutineSheet("rt_compact", store, {}, {}, { edited += it })
                 }
             }
             val first = compose.onNodeWithText(firstName).performScrollTo().assertIsDisplayed()
-            assertTrue("the long entry expands instead of clipping into68dp: ${first.getBoundsInRoot()}", first.getBoundsInRoot().height > 68.dp)
-            compose.onNodeWithText("Rest 1:30").assertIsDisplayed()
-            first.performClick()
-            compose.onNodeWithText(secondName).performScrollTo().assertIsDisplayed().performClick()
+            assertTrue("the long entry expands instead of clipping into 68dp: ${first.getUnclippedBoundsInRoot()}",
+                first.getUnclippedBoundsInRoot().height > 68.dp)
+            compose.onNodeWithText("Rest 1:30").assertDoesNotExist()
+            compose.onNodeWithText(secondName).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Start workout").assertIsDisplayed()
-            compose.onNodeWithText("Edit routine").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(listOf("long-row", "long-press"), opened) }
+            compose.onNodeWithText("Edit routine").assertIsDisplayed().performClick()
+            compose.runOnIdle { assertEquals(listOf(RoutineDraft.of(server.written.getValue("rt_compact"))), edited) }
         } finally { scope.cancel() }
     }
 }

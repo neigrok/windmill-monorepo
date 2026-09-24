@@ -97,7 +97,7 @@ class LocalPreferences(private val file: File, telemetry: Telemetry = Telemetry.
                 shelves = shelves + (Seat.of(owner) to Shelf(value, owed = true))
             }
             val source = shelves[item.source.seat]?.document
-            if (source != null && item.matches(source, GymPreferences.serializer())) shelves = shelves - item.source.seat
+            if (source == value) shelves = shelves - item.source.seat
         }
         return held.copy(shelves = shelves, claims = held.claims + (batch.id to (owner?.let { "owner:$it" } ?: "discard")))
     }

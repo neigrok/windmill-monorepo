@@ -40,39 +40,25 @@ data class LogSetOffer(
     val reps: Int,
 )
 
-@Serializable
-data class WorkoutRest(
-    val id: String,
-    val origin: WorkoutMoment,
-    val targetSeconds: Int?,
-    val alertRevision: Long,
-    val attempted: Boolean,
-)
-
 data class WorkoutNotification(
     val key: WorkoutKey,
     val title: String,
     val movement: String,
     val rackLine: String,
     val counter: String,
-    val targetLine: String?,
-    val rest: WorkoutRest?,
     val offer: LogSetOffer?,
     val hidden: Boolean,
-    val restAlerts: Boolean,
 ) {
     constructor(key: WorkoutKey, session: Session, movement: String, sets: List<TrainingSet>,
-        state: WorkoutState, targetSeconds: Int?, ready: Boolean) : this(
+        state: WorkoutState, ready: Boolean) : this(
         key, session.plan?.routine ?: "Free session", movement,
         state.rack?.let { "${Readout.weight(it.weightKg)} kg × ${it.reps}" } ?: "Open workout",
         LiveLines.counter(LiveLines.workingCount(sets), state.rack?.exerciseId?.let { session.plan?.entry(it) }),
-        targetSeconds?.takeIf { it > 0 }?.let { "Rest target ${Readout.clock(it * 1_000L)}" },
-        state.rest, state.offer.takeIf { ready }, state.hidden, state.restAlerts,
+        state.offer.takeIf { ready }, state.hidden,
     )
 }
 
 data class LogSetCommand(val key: WorkoutKey, val offerId: String)
-data class RestAlertCommand(val key: WorkoutKey, val eventId: String, val alertRevision: Long)
 
 sealed interface LogSetAcceptance {
     data class Accepted(val setId: String) : LogSetAcceptance
@@ -98,12 +84,8 @@ data class WorkoutState(
     val rack: WorkoutRack? = null,
     val offer: LogSetOffer? = null,
     val consumed: Set<String> = emptySet(),
-    val rest: WorkoutRest? = null,
-    val attemptedRest: Set<String> = emptySet(),
     val editorOpen: Boolean = false,
     val hidden: Boolean = false,
-    val alertAccess: Boolean = false,
-    val restAlerts: Boolean = true,
 ) {
     init { require(version == 1) { "The workout controls use an unsupported format." } }
 
@@ -132,30 +114,11 @@ data class WorkoutState(
 
     fun visibility(hide: Boolean): WorkoutState {
         if (hide == hidden) return this
-        val next = invalidate()
-        return next.copy(hidden = hide, rest = rest?.copy(alertRevision = next.revision))
+        return invalidate().copy(hidden = hide)
     }
 
-    fun access(available: Boolean): WorkoutState {
-        if (available == alertAccess) return this
-        return copy(alertAccess = available, revision = revision + 1,
-            rest = rest?.copy(alertRevision = revision + 1))
-    }
-
-    fun reconcile(event: WorkoutEvent?, target: Int?, sound: Boolean, now: WorkoutMoment): WorkoutState {
-        var next = if (bootId != now.bootId) invalidate().copy(bootId = now.bootId) else this
-        val same = event?.id == next.rest?.id
-        if (!same && next.rest != null) next = next.copy(attemptedRest = next.attemptedRest + requireNotNull(next.rest).id)
-        val origin = if (same) next.rest?.origin else event?.origin
-        val reconciled = origin?.reconciled(now)
-        val positiveTarget = target?.takeIf { it > 0 }
-        val changed = sound != next.restAlerts || (event != null &&
-            (!same || positiveTarget != next.rest?.targetSeconds || reconciled != next.rest?.origin))
-        if (changed) next = next.copy(revision = next.revision + 1)
-        return next.copy(restAlerts = sound, rest = if (event == null || reconciled == null) null else WorkoutRest(
-            event.id, reconciled, positiveTarget, if (changed) next.revision else requireNotNull(next.rest).alertRevision,
-            event.id in next.attemptedRest))
-    }
+    fun reconcile(now: WorkoutMoment): WorkoutState =
+        if (bootId == now.bootId) this else invalidate().copy(bootId = now.bootId)
 
     fun offered(key: WorkoutKey, ordinal: Int, ready: Boolean, id: String): WorkoutState {
         val current = rack
@@ -177,14 +140,5 @@ data class WorkoutState(
     fun consume(command: LogSetCommand): WorkoutState {
         require(accepts(command))
         return invalidate().copy(consumed = consumed + command.offerId)
-    }
-
-    fun claim(command: RestAlertCommand, key: WorkoutKey, now: WorkoutMoment): WorkoutState? {
-        val event = rest ?: return null
-        val target = event.targetSeconds ?: return null
-        if (command.key != key || event.id != command.eventId || event.alertRevision != command.alertRevision ||
-            event.attempted || event.id in attemptedRest || hidden || !restAlerts || !alertAccess ||
-            event.origin.bootId != now.bootId || now.elapsedMs - event.origin.elapsedMs < target * 1_000L) return null
-        return copy(attemptedRest = attemptedRest + event.id, rest = event.copy(attempted = true))
     }
 }

@@ -2,8 +2,6 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -217,36 +215,18 @@ class SettingsScreenTests {
     }
 
     @Test
-    fun restAndUnitEditsKeepLegacyConfirmationAndRestSoundPreferences() {
+    fun unitsRemainEditableWithoutRestControls() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val preferences = GymPreferences(restSeconds = 90, restSound = true,
-            confirmHaptic = true, confirmSound = true)
+        val preferences = GymPreferences(confirmHaptic = true, confirmSound = true)
         val server = FakeTraining().apply { settings = preferences }
         val store = store(scope, server, signedIn = true)
         settings(store, signedIn = true)
 
-        compose.onNodeWithText("Set confirmation").assertDoesNotExist()
-        compose.onNodeWithText("Sound when it ends").assertDoesNotExist()
-        compose.onNodeWithText("1:30").assertIsDisplayed()
-        compose.onNodeWithText("Rest timer").performClick()
-        compose.onNodeWithText("Seconds").performTextReplacement("14")
-        compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithText("Seconds").performTextReplacement("901")
-        compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithText("Seconds").performTextReplacement("120")
-        compose.onNodeWithText("Save").performClick()
-        compose.onNodeWithText("2:00").assertIsDisplayed()
-        compose.runOnIdle {
-            assertEquals(preferences.copy(restSeconds = 120), store.preferences)
-            assertEquals(store.preferences, server.settings)
-        }
-
+        compose.onAllNodesWithText("rest", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onNodeWithText("At the rack").assertDoesNotExist()
         compose.onNodeWithText("lb").performClick()
-        compose.onNodeWithText("Rest timer").performClick()
-        compose.onNodeWithText("Turn off").performClick()
-        compose.onNodeWithText("Off").assertIsDisplayed()
         compose.runOnIdle {
-            assertEquals(preferences.copy(restSeconds = null, units = Units.Pounds), store.preferences)
+            assertEquals(preferences.copy(units = Units.Pounds), store.preferences)
             assertEquals(store.preferences, server.settings)
         }
         scope.cancel()

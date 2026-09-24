@@ -7,7 +7,6 @@ import kotlinx.coroutines.withContext
 import works.windmill.platform.Account
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.RestAlertCommand
 import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutNotification
@@ -18,8 +17,6 @@ interface WorkoutCommands {
     suspend fun logSet(command: LogSetCommand): LogSetAcceptance
     suspend fun setHidden(key: WorkoutKey, hidden: Boolean): WorkoutChange
     suspend fun openWorkout(key: WorkoutKey): Boolean
-    suspend fun claimRest(command: RestAlertCommand): Boolean
-    suspend fun setAlertAccess(key: WorkoutKey, available: Boolean): WorkoutChange
 }
 
 class GymRuntime(
@@ -62,13 +59,4 @@ class GymRuntime(
         true
     }
 
-    override suspend fun claimRest(command: RestAlertCommand): Boolean = withContext(dispatcher) {
-        restoreLocal()
-        store.claimRest(command)
-    }
-
-    override suspend fun setAlertAccess(key: WorkoutKey, available: Boolean): WorkoutChange = withContext(dispatcher) {
-        restoreLocal()
-        store.alertAccess(key, available)
-    }
 }

@@ -81,6 +81,10 @@ class TargetSheetSignKeyTests {
             )
         }
         compose.onNodeWithText(movement).performClick()
+        val targets = opening.entries.first().sets
+        if (targets.isNotEmpty() && works.windmill.gym.domain.Scheme.straight(targets)) {
+            compose.onNodeWithText("Vary by set").performClick()
+        }
         return { draft }
     }
 

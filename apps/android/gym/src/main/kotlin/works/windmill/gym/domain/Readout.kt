@@ -187,12 +187,6 @@ object Readout {
 
     fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
 
-    fun routineLine(routine: Routine, now: Long): String {
-        val movements = Program.movements(routine.entries.size)
-        val trained = routine.lastTrainedAtMs ?: return "$movements · never trained"
-        return "$movements · trained ${ago(trained, now)}"
-    }
-
     fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
 
     fun sessionCount(count: Int): String = if (count == 1) "1 session" else "$count sessions"

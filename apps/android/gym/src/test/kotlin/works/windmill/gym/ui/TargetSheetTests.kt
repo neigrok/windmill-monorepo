@@ -5,6 +5,7 @@ import android.view.WindowInsets
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -102,6 +104,11 @@ class TargetSheetTests {
     private fun openTheSheet() {
         compose.onNodeWithText("Bench Press").performClick()
         compose.onNodeWithText("Set · ", substring = true).assertIsDisplayed()
+        val count = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode()
+            .config[SemanticsProperties.EditableText].text
+        if (count.isNotBlank() && compose.onAllNodesWithContentDescription("Set 1 reps").fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithText("Vary by set").performClick()
+        }
     }
 
     // Back, the scrim or the handle — a test takes the one the platform draws.

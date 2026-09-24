@@ -1,17 +1,17 @@
 package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,12 +27,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -50,19 +52,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
-import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.RoutineEvent
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.design.WindmillSheetWindow
 
 // Planning stays in the top bar; Start logging stays within reach.
 @Composable
@@ -146,7 +145,7 @@ fun RoutinesScreen(
                         SwipeableRoutineRow(
                             routine = routine,
                             standingProposalId = standing?.id,
-                            nowMs = nowMs,
+                            catalog = store.catalog,
                             onOpenRoutine = onOpenRoutine,
                             onDelete = { onDeleteRoutine(routine.id) },
                             onReview = onReview,
@@ -181,7 +180,7 @@ fun RoutinesScreen(
 private fun SwipeableRoutineRow(
     routine: Routine,
     standingProposalId: String?,
-    nowMs: Long,
+    catalog: List<Exercise>,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
@@ -198,7 +197,7 @@ private fun SwipeableRoutineRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = { RowDeleteGround() },
     ) {
-        RoutineRow(routine, standingProposalId, nowMs, onOpenRoutine, onDelete, onReview)
+        RoutineRow(routine, standingProposalId, catalog, onOpenRoutine, onDelete, onReview)
     }
 }
 
@@ -209,7 +208,7 @@ private fun SwipeableRoutineRow(
 private fun RoutineRow(
     routine: Routine,
     standingProposalId: String?,
-    nowMs: Long,
+    catalog: List<Exercise>,
     onOpenRoutine: (String) -> Unit,
     onDelete: () -> Unit,
     onReview: (Proposal) -> Unit,
@@ -226,7 +225,9 @@ private fun RoutineRow(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(routine.name, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-            Text(Readout.routineLine(routine, nowMs), style = WindmillFont.body(13), color = skin.inkDim)
+            Text(routine.entries.sortedBy { it.position }.take(2)
+                .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
+                style = WindmillFont.body(13), color = skin.inkDim)
             waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
         }
         Box {
@@ -264,192 +265,83 @@ private fun ClaimCard(onSignIn: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: (String) -> Unit) {
-    val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
-        .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(entry.exerciseId) }
-        .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(32.dp).background(skin.raised, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-            Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(Readout.movement(entry.exerciseId, store.catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-            val target = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg" else ""
-            Text(target, style = GymType.numeral(13), color = skin.inkDim)
-            (entry.restSeconds ?: store.preferences.restSeconds)?.let {
-                Text("Rest ${Readout.clock(it * 1000L)}", style = WindmillFont.body(13), color = skin.inkDim)
-            }
-        }
-    }
-}
-
-// History is one read and holds both kinds: the day being created, and every proposal since.
-@Composable
-fun RoutineScreen(
+fun RoutineSheet(
     routineId: String,
     store: TrainingStore,
-    isSignedIn: Boolean,
-    backTo: String,
-    onBack: () -> Unit,
+    onDismiss: () -> Unit,
     onStart: (String) -> Unit,
     onBuild: (RoutineDraft) -> Unit,
-    onOpenMovement: (String) -> Unit,
-    lookedAt: Set<String>,
-    onReview: (Proposal) -> Unit,
-    onOpenThread: (String) -> Unit,
+    starting: Boolean = false,
+    failure: String? = null,
 ) {
     val skin = LocalGymColors.current
-    val nowMs = System.currentTimeMillis()
     val routine = store.routine(routineId)
-    var history by remember(routineId) { mutableStateOf<List<RoutineEvent>>(emptyList()) }
-    var unread by remember(routineId) { mutableStateOf<WriteFailure?>(null) }
-
-    LaunchedEffect(routineId, isSignedIn, routine?.revision, routine?.pendingProposal?.id) {
-        when (val read = store.routineHistory(routineId)) {
-            is GymResult.Ok -> {
-                history = read.value
-                unread = null
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = skin.surface,
+        scrimColor = skin.scrim,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = {
+            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
             }
-            is GymResult.Failed -> unread = read.why
-        }
-    }
-
-    GymScreen(
-        title = "Routine",
-        onBack = onBack,
-        backTo = backTo,
-        bottomBar = {
+        },
+        modifier = Modifier.testTag("routine-sheet"),
+    ) {
+        WindmillSheetWindow()
+        Column(Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
+                    .verticalScroll(rememberScrollState()).padding(horizontal = GymLayout.gutter)
+                    .padding(top = 8.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (routine == null) {
+                    Text(
+                        "That routine is no longer in your program. Everything you logged against it is still in the log.",
+                        style = WindmillFont.body(16).copy(lineHeight = 24.sp),
+                        color = skin.inkDim,
+                    )
+                } else {
+                    Text(routine.name, style = WindmillFont.display(28), color = skin.ink)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.raised),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        routine.entries.sortedBy { it.position }.forEach { entry ->
+                            Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).background(skin.surface)
+                                .semantics(mergeDescendants = true) {}
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Box(Modifier.size(32.dp).background(skin.raised, RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center) {
+                                    Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(Readout.movement(entry.exerciseId, store.catalog),
+                                        style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                                    val target = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg" else ""
+                                    Text(target, style = GymType.numeral(13), color = skin.inkDim)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (routine != null) {
-                Column(Modifier.fillMaxWidth().background(skin.canvas).padding(horizontal = 20.dp)
-                    .padding(top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onStart(routine.id) }, shape = RoundedCornerShape(16.dp),
+                Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
+                    .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+                    Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
                     }
-                    TextButton(onClick = { onBuild(RoutineDraft.of(routine)) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    TextButton(onClick = { onBuild(RoutineDraft.of(routine)) }, enabled = !starting,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }
-                }
-            }
-        },
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = 8.dp, bottom = GymLayout.scrollTailBand),
-        ) {
-            if (routine == null) {
-                Text(
-                    "That routine is no longer in your program. Everything you logged against it is still in the log.",
-                    style = WindmillFont.body(16).copy(lineHeight = 24.sp),
-                    color = skin.inkDim,
-                )
-                return@Column
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(routine.name, style = WindmillFont.display(28), color = skin.ink)
-                val targets = routine.entries.sumOf { it.sets.size }
-                val summary = listOf(Program.movements(routine.entries.size), Readout.setCount(targets)).joinToString(" · ")
-                Text(summary, style = WindmillFont.body(14), color = skin.inkDim)
-                routine.lastTrainedAtMs?.let {
-                    Text("Last trained ${Readout.date(it)}", style = WindmillFont.body(14), color = skin.inkDim)
-                }
-            }
-
-            routine.pendingProposal?.let { waiting ->
-                ProposalCard(waiting, routine.name, nowMs, stillWaiting = waiting.id in lookedAt,
-                    onReview = { onReview(waiting) })
-            }
-
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface),
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                routine.entries.sortedBy { it.position }.forEach { entry ->
-                    EntryRow(entry, store, onOpenMovement)
-                }
-            }
-
-            History(history, unread, nowMs, onReview, onOpenThread)
-        }
-    }
-}
-
-// Newest first, the creation row always last and not a door. The `Coach ›` door is drawn only where the
-// source carries a thread, and a history that could not be read is not an empty one.
-@Composable
-private fun History(
-    events: List<RoutineEvent>,
-    unread: WriteFailure?,
-    nowMs: Long,
-    onReview: (Proposal) -> Unit,
-    onOpenThread: (String) -> Unit,
-) {
-    val skin = LocalGymColors.current
-    val drawn = events.filterNot { it.isPending }.mapNotNull { event ->
-        event.line(nowMs)?.let { event to it }
-    }
-    if (drawn.isEmpty() && unread == null) return
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text("History", style = GymType.numeral(11), color = skin.inkDim)
-        if (unread != null) {
-            Text(
-                unread.line("this routine’s history is out of reach"),
-                style = GymType.numeral(12),
-                color = skin.inkDim,
-            )
-        }
-        drawn.forEach { (event, line) ->
-            val diff = event.proposal
-            val conversation = diff?.source?.conversation
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum)
-                    .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
-                    .padding(start = WindmillSpace.x3),
-            ) {
-                Text(
-                    line,
-                    style = GymType.numeral(12).copy(lineHeight = 18.sp),
-                    color = skin.inkDim,
-                    modifier = Modifier
-                        .weight(1f)
-                        .then(
-                            if (diff == null) Modifier
-                            else Modifier.clickable(
-                                role = Role.Button,
-                                onClickLabel = "review this change",
-                            ) { onReview(diff) },
-                        ),
-                )
-                conversation?.let { threadId ->
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .heightIn(min = GymTap.minimum)
-                            .clickable(role = Role.Button) { onOpenThread(threadId) }
-                            .padding(horizontal = WindmillSpace.x2),
-                    ) {
-                        Text(
-                            "Coach ›",
-                            style = GymType.numeral(11, FontWeight.Bold),
-                            color = skin.accent,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                if (diff != null && conversation == null) {
-                    Chevron(Modifier.padding(end = WindmillSpace.x3))
                 }
             }
         }

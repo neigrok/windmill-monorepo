@@ -45,7 +45,7 @@ class PlanningWritesTests {
     @Test
     fun originalRevisionSurvivesCacheRefreshAndAStaleRefusalPreservesTheDraft() = runTest {
         val original = Routine("rt_a", "Push", 0, revision = 4, entries = listOf(
-            RoutineEntry(1, "bench-press", List(3) { SetTarget(8, 60.0) }, restSeconds = 90)))
+            RoutineEntry(1, "bench-press", List(3) { SetTarget(8, 60.0) })))
         val advanced = original.copy(name = "Push elsewhere", revision = 5)
         val calls = mutableListOf<RoutineWrite>()
         val server = FakeTraining().apply { written[original.id] = original }
@@ -197,45 +197,6 @@ class PlanningWritesTests {
             assertEquals(emptyList<Routine>(), LocalLog(File(tmp.root, "local.json"), "b").routines)
             assertTrue(serverB.written.isEmpty())
         }
-    }
-    @Test
-    fun detailReloadRefreshesTheNextEditWithoutReplacingTheOpenDraftSnapshot() = runTest {
-        val original = Routine("rt_a", "Push", revision = 4, entries = listOf(RoutineEntry(exerciseId = "bench-press")))
-        val server = FakeTraining().apply { written[original.id] = original }
-        val store = store(mapOf("a" to server))
-        store.connect(account("a"))
-        val openDraft = RoutineDraft.of(store.routine(original.id)!!).named("My draft")
-        val current = original.copy(name = "Server edit", revision = 5)
-        server.written[original.id] = current
-        val history = (store.routineHistory(original.id) as GymResult.Ok).value
-        assertEquals(current.copy(history = history), store.routine(original.id))
-        assertEquals(RoutineDraft.of(original).named("My draft"), openDraft)
-        val reopened = RoutineDraft.of(store.routine(original.id)!!)
-        assertEquals(RoutineWrite(current, expectedRevision = 5), reopened.original)
-        assertFalse(reopened.changed)
-    }
-
-    @Test
-    fun aDetailReloadFromThePreviousAccountCannotRefreshTheNewAccountsCache() = runTest {
-        val original = Routine("rt_a", "Only A", entries = listOf(RoutineEntry(exerciseId = "bench-press")))
-        val serverA = FakeTraining().apply { written[original.id] = original }
-        val serverB = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        val boundary = object : TrainingSyncing by serverA {
-            override suspend fun routine(id: String): Routine? {
-                val read = serverA.routine(id)
-                gate.await()
-                return read
-            }
-        }
-        val store = store(mapOf("a" to boundary, "b" to serverB))
-        store.connect(account("a"))
-        val read = async { store.routineHistory(original.id) }
-        runCurrent()
-        store.connect(account("b"))
-        gate.complete(Unit)
-        assertEquals(GymResult.Failed(WriteFailure.Refused("the account changed while reading")), read.await())
-        assertEquals(emptyList<Routine>(), store.routines)
     }
 
 }

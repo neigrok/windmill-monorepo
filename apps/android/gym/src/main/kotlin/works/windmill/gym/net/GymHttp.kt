@@ -2,6 +2,12 @@ package works.windmill.gym.net
 
 import java.io.IOException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
@@ -43,6 +49,7 @@ import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
+import works.windmill.gym.domain.RoutineEntryWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionFinish
@@ -120,8 +127,22 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun createRoutine(write: RoutineWrite): Routine =
         api.send<Routine>("POST", "/v1/gym/routines", write, operation = "gym_create_routine")
 
-    override suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine =
-        api.send<Routine>("PUT", "/v1/gym/routines/$id", write, operation = "gym_replace_routine")
+    override suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine {
+        val current = api.get<JsonObject>("/v1/gym/routines/$id", operation = "gym_routine")
+        val storedEntries = current.getValue("entries").jsonArray.associate { value ->
+            val entry = value.jsonObject
+            entry.getValue("exerciseId").jsonPrimitive.content to entry
+        }
+        val draft = WindmillJson.encodeToJsonElement(RoutineWrite.serializer(), write).jsonObject
+        val entries = write.entries.map { entry ->
+            val owned = WindmillJson.encodeToJsonElement(RoutineEntryWrite.serializer(), entry).jsonObject
+            val retained = storedEntries[entry.exerciseId].orEmpty() - setOf("exerciseId", "sets", "position")
+            JsonObject(retained + owned)
+        }
+        val retained = current - setOf("id", "name", "position", "entries", "revision")
+        val next = JsonObject(retained + draft + ("entries" to JsonArray(entries)))
+        return api.send<Routine>("PUT", "/v1/gym/routines/$id", next, operation = "gym_replace_routine")
+    }
 
     override suspend fun deleteRoutine(id: String) {
         api.send<Unit>("DELETE", "/v1/gym/routines/$id", operation = "gym_delete_routine")
@@ -160,10 +181,15 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun preferences(): GymPreferences =
         api.get<GymPreferences>("/v1/gym/preferences", operation = "gym_preferences")
 
-    // WindmillJson omits a value equal to its declared default; the route reads an omitted field as
-    // that default.
-    override suspend fun savePreferences(document: GymPreferences): GymPreferences =
-        api.send<GymPreferences>("PUT", "/v1/gym/preferences", document, operation = "gym_save_preferences")
+    override suspend fun savePreferences(document: GymPreferences): GymPreferences {
+        val current = api.get<JsonObject>("/v1/gym/preferences", operation = "gym_preferences")
+        val next = JsonObject(current + mapOf(
+            "units" to JsonPrimitive(document.units.wire),
+            "confirmHaptic" to JsonPrimitive(document.confirmHaptic),
+            "confirmSound" to JsonPrimitive(document.confirmSound),
+        ))
+        return api.send<GymPreferences>("PUT", "/v1/gym/preferences", next, operation = "gym_save_preferences")
+    }
 
     // A 404 here means the route is absent from the deployment, not a missing object.
     override suspend fun ask(question: AskQuestion): AskAnswer {

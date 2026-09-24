@@ -4,7 +4,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Nothing this app holds may ride a backup: cloud backup, adb and device transfer are all closed. -->
     <application
@@ -33,11 +32,6 @@
             </intent-filter>
         </activity>
         <receiver android:name="works.windmill.gym.notification.WorkoutNotificationReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
     </application>
 </manifest>

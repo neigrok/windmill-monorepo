@@ -1,6 +1,5 @@
 package works.windmill.app
 
-import android.app.AlarmManager
 import android.app.Application
 import android.app.KeyguardManager
 import android.app.NotificationManager
@@ -77,10 +76,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             authorityAvailable = { sessions.localSession !is LocalSession.Unresolved },
             cachedAccount = { local.user?.let { works.windmill.platform.Account(auth.accountApi(it), it, verified = false,
                 locallyTrusted = local is LocalSession.Owned, telemetry = telemetry) } }, authorityRevision = { auth.identityRevision })
-        workoutNotifications = WorkoutNotifications(this, gym, scope, clock,
+        workoutNotifications = WorkoutNotifications(this, gym, scope,
             ComponentName(this, MainActivity::class.java),
             getSystemService(NotificationManager::class.java),
-            getSystemService(AlarmManager::class.java),
             getSystemService(KeyguardManager::class.java), telemetry = telemetry)
         workoutNotifications.start()
         scope.launch {

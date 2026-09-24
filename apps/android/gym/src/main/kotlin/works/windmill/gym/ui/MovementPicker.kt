@@ -78,6 +78,9 @@ import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TheSix
+import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.domain.TargetEntry
+import works.windmill.platform.net.WindmillJson
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -206,6 +209,7 @@ class MovementPickerState(
     requestId: String = "",
     refusal: String? = null,
     createOpen: Boolean = false,
+    scheme: TargetEntry.Draft = TargetEntry.Draft(),
 ) {
     var createOpen by mutableStateOf(createOpen)
     var query by mutableStateOf(query)
@@ -214,14 +218,18 @@ class MovementPickerState(
     var requestId by mutableStateOf(requestId)
     var refusal by mutableStateOf(refusal)
     var busy by mutableStateOf(false)
+    var scheme by mutableStateOf(scheme)
 
     companion object {
         val saver = listSaver<MovementPickerState, Any>(
             save = { listOf(it.query, it.createName.orEmpty(), it.createName != null,
-                it.equipment, it.requestId, it.refusal.orEmpty(), it.createOpen) },
+                it.equipment, it.requestId, it.refusal.orEmpty(), it.createOpen,
+                WindmillJson.encodeToString(TargetEntry.Draft.serializer(), it.scheme)) },
             restore = { MovementPickerState(it[0] as String,
                 (it[1] as String).takeIf { _ -> it[2] as Boolean }, it[3] as String,
-                it[4] as String, (it[5] as String).takeIf(String::isNotEmpty), it[6] as Boolean) },
+                it[4] as String, (it[5] as String).takeIf(String::isNotEmpty), it[6] as Boolean,
+                it.getOrNull(7)?.let { raw -> WindmillJson.decodeFromString(TargetEntry.Draft.serializer(), raw as String) }
+                    ?: TargetEntry.Draft()) },
         )
     }
 }
@@ -241,6 +249,7 @@ fun MovementPicker(
     title: String,
     onPick: (String) -> Unit,
     onCreate: suspend (name: String, equipment: String, id: String) -> GymResult<Exercise>,
+    onCreateTarget: ((Exercise, List<SetTarget>) -> Unit)? = null,
     modifier: Modifier = Modifier,
     sessions: List<SessionSummary> = emptyList(),
     subtitle: String? = null,
@@ -318,6 +327,7 @@ fun MovementPicker(
                     state.equipment = Exercise.loadings.first()
                     state.requestId = Ids.exercise()
                     state.refusal = null
+                    state.scheme = TargetEntry.Draft()
                 }
                 createReady = false
                 state.createOpen = true
@@ -340,9 +350,12 @@ fun MovementPicker(
                 name = name, onName = { state.createName = Program.capped(it); state.refusal = null },
                 equipment = state.equipment, onEquipment = { state.equipment = it; state.refusal = null },
                 busy = state.busy, refusal = state.refusal,
+                scheme = state.scheme.takeIf { onCreateTarget != null },
+                onScheme = { if (!state.busy) { state.scheme = it; state.refusal = null } },
                 onCancel = { state.createOpen = false },
                 onCreate = {
-                    if (!state.busy) {
+                    val targets = state.scheme.reading as? TargetEntry.Reading.Scheme
+                    if (!state.busy && (onCreateTarget == null || targets != null)) {
                         state.busy = true
                         scope.launch {
                             try {
@@ -351,7 +364,8 @@ fun MovementPicker(
                                         state.createOpen = false
                                         state.createName = null
                                         state.refusal = null
-                                        onPick(result.value.id)
+                                        if (onCreateTarget == null) onPick(result.value.id)
+                                        else onCreateTarget(result.value, targets!!.sets)
                                     }
                                     is GymResult.Failed -> state.refusal = result.why.line("“$name” wasn’t created")
                                 }
@@ -372,6 +386,8 @@ private fun CreateMovementSheet(
     onEquipment: (String) -> Unit,
     busy: Boolean,
     refusal: String?,
+    scheme: TargetEntry.Draft?,
+    onScheme: (TargetEntry.Draft) -> Unit,
     onCancel: () -> Unit,
     onCreate: () -> Unit,
 ) {
@@ -390,7 +406,7 @@ private fun CreateMovementSheet(
             }
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            .padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             PlanningNameField(name, onName, "Movement name", "", enabled = !busy, container = skin.raised,
                 modifier = Modifier.focusRequester(focus))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -416,12 +432,20 @@ private fun CreateMovementSheet(
                     }
                 }
             }
+            scheme?.let {
+                TargetBlock(it, onScheme, enabled = !busy, bandAssisted = equipment == "bodyweight")
+                if (it.reading == TargetEntry.Reading.Open) {
+                    Text("Choose at least one set.", style = WindmillFont.body(14), color = skin.alarmInk)
+                }
+            }
             refusal?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
         }
-        Button(onClick = onCreate, enabled = Program.named(name) != null && !busy,
+        Button(onClick = onCreate, enabled = Program.named(name) != null && !busy &&
+            (scheme == null || scheme.reading is TargetEntry.Reading.Scheme),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).heightIn(min = 56.dp)) {
-            Text(if (busy) "Creating…" else "Create and add", style = WindmillFont.body(16, FontWeight.Bold))
+            Text(if (busy) "Creating…" else if (scheme != null) "Add to routine" else "Create and add",
+                style = WindmillFont.body(16, FontWeight.Bold))
         }
     }
 }

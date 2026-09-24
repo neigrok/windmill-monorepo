@@ -1,7 +1,6 @@
 package works.windmill.gym.notification
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,7 +10,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
@@ -32,9 +30,7 @@ import kotlinx.coroutines.withContext
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.R
 import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.RestAlertCommand
 import works.windmill.gym.domain.WorkoutClock
-import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutMoment
 import works.windmill.gym.domain.WorkoutNotification
@@ -48,8 +44,6 @@ data class WorkoutCapabilities(
     val postGranted: Boolean,
     val appEnabled: Boolean,
     val channelEnabled: Boolean,
-    val channelAudible: Boolean,
-    val exactAlarms: Boolean,
     val promotionAllowed: Boolean?,
     val promotable: Boolean?,
     val promoted: Boolean?,
@@ -82,10 +76,8 @@ class WorkoutNotifications(
     context: Context,
     private val commands: WorkoutCommands,
     private val scope: CoroutineScope,
-    private val clock: WorkoutClock,
     private val activity: ComponentName,
     private val notificationManager: NotificationManager,
-    private val alarmManager: AlarmManager,
     private val keyguardManager: KeyguardManager,
     private val telemetry: Telemetry = Telemetry.None,
 ) {
@@ -94,8 +86,7 @@ class WorkoutNotifications(
     private val measured = MutableStateFlow<WorkoutCapabilities?>(null)
     val capabilities: StateFlow<WorkoutCapabilities?> = measured.asStateFlow()
     private var collector: Job? = null
-    private var rendered: Card? = null
-    private var alarm: RestAlertCommand? = null
+    private var rendered: WorkoutNotification? = null
     private var channelReady = false
     private var restored = false
 
@@ -144,62 +135,26 @@ class WorkoutNotifications(
     }
 
     suspend fun receive(intent: Intent) = withContext(Dispatchers.Main.immediate) {
-        val systemRefresh = intent.action == Intent.ACTION_TIME_CHANGED ||
-            intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
-        val command = decode(intent)
-        if (command == null && !systemRefresh) return@withContext
-        if (command != null && intent.component != receiver) return@withContext
+        val command = decode(intent) ?: return@withContext
+        if (intent.component != receiver) return@withContext
         commands.restoreLocal()
         restored = true
         createChannel()
-        if (systemRefresh) {
-            reconcile(clockChanged = intent.action == Intent.ACTION_TIME_CHANGED)
-            return@withContext
-        }
         when (command) {
             is Command.Log -> {
                 if (!keyguardManager.isDeviceLocked) commands.logSet(command.value)
             }
             is Command.Hide -> commands.setHidden(command.key, true)
-            is Command.Rest -> {
-                if (alertAccess() && commands.claimRest(command.value)) {
-                    val current = commands.notification.value
-                    val after = measure()
-                    if (current != null && current.key == command.value.key &&
-                        current.rest?.id == command.value.eventId && current.rest.alertRevision == command.value.alertRevision &&
-                        !current.hidden && current.restAlerts && after.canAlert
-                    ) {
-                        val card = card(current, clock.now())
-                        post(card, audible = true)
-                    }
-                }
-            }
             else -> Unit
         }
         reconcile()
     }
 
-    fun notificationSettings(): Intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-        .putExtra(Settings.EXTRA_CHANNEL_ID, CHANNEL)
-
-    fun alarmSettings(): Intent = if (Build.VERSION.SDK_INT >= 31) {
-        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-            .setData(Uri.fromParts("package", context.packageName, null))
-    } else {
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            .setData(Uri.fromParts("package", context.packageName, null))
-    }
-
     private fun createChannel() {
         if (channelReady) return
         notificationManager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Workout", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                setSound(
-                    Settings.System.DEFAULT_NOTIFICATION_URI,
-                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
-                )
+            NotificationChannel(CHANNEL, "Workout", NotificationManager.IMPORTANCE_LOW).apply {
+                setSound(null, null)
                 enableVibration(false)
             },
         )
@@ -217,10 +172,6 @@ class WorkoutNotifications(
             ) == PackageManager.PERMISSION_GRANTED,
             appEnabled = notificationManager.areNotificationsEnabled(),
             channelEnabled = channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE,
-            channelAudible = channel != null && channel.importance >= NotificationManager.IMPORTANCE_DEFAULT &&
-                channel.sound != null,
-            exactAlarms = Build.VERSION.SDK_INT < 31 || runCatching { alarmManager.canScheduleExactAlarms() }
-                .onFailure { telemetry.failure("gym.notification.alarmAccess", it) }.getOrDefault(false),
             promotionAllowed = if (Build.VERSION.SDK_INT >= 36) runCatching {
                 notificationManager.canPostPromotedNotifications()
             }.onFailure { telemetry.failure("gym.notification.capabilities", it) }.getOrNull() else null,
@@ -235,102 +186,39 @@ class WorkoutNotifications(
         return result
     }
 
-    private suspend fun reconcile(clockChanged: Boolean = false) {
+    private fun reconcile() {
         if (!restored) return
-        val canAlert = alertAccess()
         val snapshot = commands.notification.value
-        val access = measured.value ?: return
-        if (snapshot == null || snapshot.hidden || !access.canPost) {
-            cancelAlarm(snapshot?.rest?.let { RestAlertCommand(snapshot.key, it.id, it.alertRevision) })
+        if (snapshot == null || snapshot.hidden || !measure().canPost) {
             notificationManager.cancel(CHANNEL, ID)
             rendered = null
             measure()
             return
         }
-        val now = clock.now()
-        val card = card(snapshot, now, clockChanged)
-        if (card != rendered) post(card, audible = false)
-        val rest = snapshot.rest
-        val target = rest?.targetSeconds
-        val command = rest?.let { RestAlertCommand(snapshot.key, it.id, it.alertRevision) }
-        val due = if (rest != null && target != null && target > 0) {
-            rest.origin.elapsedMs + target.toLong() * 1_000
-        } else null
-        val eligible = canAlert && snapshot.restAlerts && rest != null && !rest.attempted &&
-            rest.origin.bootId == now.bootId && rest.origin.elapsedMs <= now.elapsedMs && due != null
-        if (!eligible || command != alarm) cancelAlarm(command.takeIf { !eligible })
-        if (!eligible || command == null || due <= now.elapsedMs || alarm == command) return
-        try {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, due, pending(Command.Rest(command)))
-            alarm = command
-        } catch (error: SecurityException) {
-            telemetry.failure("gym.notification.schedule", error)
-            measure()
-        }
-    }
-
-    private suspend fun alertAccess(): Boolean {
-        while (true) {
-            val before = measure()
-            val key = commands.notification.value?.key ?: return false
-            val result = commands.setAlertAccess(key, before.canAlert)
-            val after = measure()
-            if (commands.notification.value?.key != key || before.canAlert != after.canAlert) continue
-            return result == WorkoutChange.Saved && after.canAlert
-        }
-    }
-
-    private fun cancelAlarm(current: RestAlertCommand? = null) {
-        alarm?.let { alarmManager.cancel(pending(Command.Rest(it))) }
-        if (current != null && current != alarm) alarmManager.cancel(pending(Command.Rest(current)))
-        alarm = null
-    }
-
-    private fun card(snapshot: WorkoutNotification, now: WorkoutMoment, clockChanged: Boolean = false): Card {
-        val origin = snapshot.rest?.origin?.takeIf { it.bootId == now.bootId && it.elapsedMs <= now.elapsedMs }
-        val previous = rendered?.takeIf { it.key == snapshot.key && it.origin == origin }
-        val whenMs = if (origin == null) null else if (!clockChanged && previous != null) previous.whenMs else {
-            now.wallMs - (now.elapsedMs - origin.elapsedMs)
-        }
-        return Card(
-            snapshot.key, snapshot.title, snapshot.movement, snapshot.rackLine, snapshot.counter,
-            snapshot.targetLine, origin, whenMs,
-            snapshot.offer?.takeIf { it.key == snapshot.key }?.let { LogSetCommand(it.key, it.id) },
-        )
-    }
-
-    private fun post(card: Card, audible: Boolean) {
-        val details = listOfNotNull(
-            "${card.movement} · ${card.rackLine}", card.counter,
-            if (card.origin != null) "Rest elapsed" else null, card.targetLine,
-        ).joinToString("\n")
-        val action = card.offer?.let { Command.Log(it) } ?: Command.Open(card.key)
-        val builder = NotificationCompat.Builder(context, CHANNEL)
+        if (snapshot == rendered) return
+        val offer = snapshot.offer?.takeIf { it.key == snapshot.key }?.let { LogSetCommand(it.key, it.id) }
+        val action = offer?.let { Command.Log(it) } ?: Command.Open(snapshot.key)
+        val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.gym_nav_log)
-            .setContentTitle(card.title)
-            .setContentText("${card.movement} · ${card.rackLine} · ${card.counter}")
-            .setStyle(NotificationCompat.BigTextStyle().bigText(details))
+            .setContentTitle(snapshot.title)
+            .setContentText("${snapshot.movement} · ${snapshot.rackLine} · ${snapshot.counter}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("${snapshot.movement} · ${snapshot.rackLine}\n${snapshot.counter}"))
             .setOngoing(true)
-            .setOnlyAlertOnce(!audible)
-            .setSilent(!audible)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setRequestPromotedOngoing(true)
-            .setContentIntent(pending(Command.Open(card.key)))
-            .setDeleteIntent(pending(Command.Hide(card.key)))
-            .setShowWhen(card.whenMs != null)
-            .setUsesChronometer(card.whenMs != null)
-            .setChronometerCountDown(false)
+            .setContentIntent(pending(Command.Open(snapshot.key)))
+            .setDeleteIntent(pending(Command.Hide(snapshot.key)))
+            .setShowWhen(false)
             .addAction(
-                NotificationCompat.Action.Builder(0, if (card.offer == null) "Open workout" else "Log set", pending(action))
-                    .setAuthenticationRequired(card.offer != null && Build.VERSION.SDK_INT >= 31).build(),
-            )
-        card.whenMs?.let(builder::setWhen)
-        val notification = builder.build()
-        val access = measure(notification)
-        if (if (audible) !access.canAlert else !access.canPost) return
+                NotificationCompat.Action.Builder(0, if (offer == null) "Open workout" else "Log set", pending(action))
+                    .setAuthenticationRequired(offer != null && Build.VERSION.SDK_INT >= 31).build(),
+            ).build()
+        if (!measure(notification).canPost) return
         try {
-            if (rendered?.key != card.key) notificationManager.cancel(CHANNEL, ID)
+            if (rendered?.key != snapshot.key) notificationManager.cancel(CHANNEL, ID)
             notificationManager.notify(CHANNEL, ID, notification)
-            rendered = card
+            rendered = snapshot
         } catch (error: SecurityException) {
             telemetry.failure("gym.notification.post", error)
             rendered = null
@@ -366,9 +254,6 @@ class WorkoutNotifications(
             "open" -> if (parts.size == 3) Command.Open(key) else null
             "log" -> if (parts.size == 4) Command.Log(LogSetCommand(key, parts[3])) else null
             "hide" -> if (parts.size == 3) Command.Hide(key) else null
-            "rest" -> if (parts.size == 5) parts[4].toLongOrNull()?.takeIf {
-                it >= 0 && it.toString() == parts[4]
-            }?.let { Command.Rest(RestAlertCommand(key, parts[3], it)) } else null
             else -> null
         } ?: return null
         if (intent.action != PREFIX + command.action) return null
@@ -382,23 +267,10 @@ class WorkoutNotifications(
         return command
     }
 
-    private data class Card(
-        val key: WorkoutKey,
-        val title: String,
-        val movement: String,
-        val rackLine: String,
-        val counter: String,
-        val targetLine: String?,
-        val origin: WorkoutMoment?,
-        val whenMs: Long?,
-        val offer: LogSetCommand?,
-    )
-
     private sealed class Command(val action: String, val segments: List<String>) {
         class Open(val key: WorkoutKey) : Command("OPEN", listOf("open", key.ownerKey, key.sessionId))
         class Log(val value: LogSetCommand) : Command("LOG_SET", listOf("log", value.key.ownerKey, value.key.sessionId, value.offerId))
         class Hide(val key: WorkoutKey) : Command("HIDE", listOf("hide", key.ownerKey, key.sessionId))
-        class Rest(val value: RestAlertCommand) : Command("REST_DUE", listOf("rest", value.key.ownerKey, value.key.sessionId, value.eventId, value.alertRevision.toString()))
     }
 
     companion object {
@@ -409,4 +281,3 @@ class WorkoutNotifications(
 }
 
 private val WorkoutCapabilities.canPost: Boolean get() = postGranted && appEnabled && channelEnabled
-private val WorkoutCapabilities.canAlert: Boolean get() = canPost && channelAudible && exactAlarms

@@ -27,8 +27,8 @@ class PreferencesOwnershipTests {
     @Test
     fun aLatePreferenceReplyCannotChangeTheNextOwnersDocumentOrOwedBit() = runTest {
         val file = File(tmp.root, "prefs")
-        val a = GymPreferences(restSeconds = 90)
-        val b = GymPreferences(restSeconds = 180)
+        val a = GymPreferences(confirmSound = true)
+        val b = GymPreferences(confirmHaptic = false)
         val preferences = LocalPreferences(file).apply { adopt("b"); landed(b) }
         val serverA = FakeTraining()
         val serverB = FakeTraining().apply { settings = b }
@@ -58,8 +58,8 @@ class PreferencesOwnershipTests {
     @Test
     fun aNewPreferenceIntentWaitsForReplayAndItsOlderReplyCannotSettleTheNewDocument() = runTest {
         val file = File(tmp.root, "prefs")
-        val old = GymPreferences(restSeconds = 90)
-        val latest = GymPreferences(restSeconds = 180)
+        val old = GymPreferences(confirmSound = true)
+        val latest = GymPreferences(confirmHaptic = false)
         val preferences = LocalPreferences(file).apply { adopt("a"); save(old) }
         val server = FakeTraining()
         val release = CompletableDeferred<Unit>()

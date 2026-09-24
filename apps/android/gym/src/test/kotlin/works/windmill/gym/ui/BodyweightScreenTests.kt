@@ -37,6 +37,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.LogReadout
 import works.windmill.gym.domain.ChartWindow
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.WriteFailure
@@ -96,7 +97,7 @@ class BodyweightScreenTests {
     }
 
     @Test
-    fun theLogHeadDrawsNoReadingUntilThereIsAWeighInAndThenItsAge() {
+    fun aWeighInAppearsAsADatedMomentEvenWithoutAWorkout() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
         val doors = mutableListOf<String>()
@@ -107,9 +108,9 @@ class BodyweightScreenTests {
         compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed()
 
         runBlocking { store.weighIn(today.minusDays(3).toString(), 82.4) }
-        compose.onNodeWithText("82.4 kg").assertIsDisplayed()
-        compose.onNodeWithText("3 days ago").assertIsDisplayed()
-        compose.onNodeWithText("82.4 kg").performClick()
+        compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
+        compose.onNodeWithText(works.windmill.gym.domain.LogReadout.day(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
+        compose.onNodeWithText("Weighed in · 82.4 kg").performClick()
         compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         scope.cancel()
     }
@@ -133,7 +134,7 @@ class BodyweightScreenTests {
             assertEquals(listOf("putBodyweight"), server.calls.filter { it == "putBodyweight" })
             assertEquals(82.4, server.weighIns.getValue(today.toString()).weightKg, 0.0)
         }
-        compose.onNodeWithText("82.4 kg").assertIsDisplayed()
+        compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
         scope.cancel()
     }
 
@@ -170,17 +171,25 @@ class BodyweightScreenTests {
     }
 
     @Test
-    fun signedOutAWeighInLivesOnTheDeviceAndTheReadingDrawsIt() {
+    fun signedOutAWeighInLivesOnTheDeviceAndDrawsADatedMoment() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = store(scope, server = null)
-        log(store, mutableListOf())
+        val doors = mutableListOf<String>()
+        log(store, doors)
 
         compose.onNodeWithText(Bodyweight.chip).performClick()
         compose.onNodeWithContentDescription(weightField).performTextInput("81")
         compose.onNodeWithText(Bodyweight.save).performClick()
 
-        compose.runOnIdle { assertEquals(81.0, store.latestWeighIn!!.weightKg, 0.0) }
-        compose.onNodeWithText("81 kg").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(today.toString(), store.latestWeighIn!!.dateLocal)
+            assertEquals(81.0, store.latestWeighIn!!.weightKg, 0.0)
+            assertEquals(listOf(store.latestWeighIn!!), LocalBodyweight(File(tmp.root, "bodyweight.json")).entries)
+        }
+        compose.onNodeWithText("Weighed in · 81 kg").assertIsDisplayed()
+        compose.onNodeWithText(LogReadout.day(today, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
+        compose.onNodeWithText("Weighed in · 81 kg").performClick()
+        compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         scope.cancel()
     }
 
@@ -384,8 +393,7 @@ class BodyweightScreenTests {
         scope.cancel()
     }
 
-    // B2's client half on the screens: a row the log served dated past this phone's today is neither
-    // the reading at the head of the log nor a dot on the chart.
+    // A served future row is not a chart point or a Log moment.
     @Test
     fun aServedFutureRowIsNeitherTheReadingNorADot() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -411,17 +419,28 @@ class BodyweightScreenTests {
     }
 
     @Test
-    fun theLogHeadReadsThePastWeighInOverAServedFutureOne() {
+    fun theLogDrawsThePastWeighInMomentAndExcludesAServedFutureOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeTraining()
         val tomorrow = today.plusDays(1)
-        server.weighIns[tomorrow.toString()] = WeighIn(tomorrow.toString(), 90.0, 5_000)
-        server.weighIns[today.minusDays(3).toString()] = WeighIn(today.minusDays(3).toString(), 82.4, 4_000)
+        val past = today.minusDays(3)
+        val futureEntry = WeighIn(tomorrow.toString(), 90.0, 5_000)
+        val pastEntry = WeighIn(past.toString(), 82.4, 4_000)
+        server.weighIns[tomorrow.toString()] = futureEntry
+        server.weighIns[past.toString()] = pastEntry
         val store = store(scope, server)
-        log(store, mutableListOf())
+        val doors = mutableListOf<String>()
+        log(store, doors)
 
-        compose.onNodeWithText("82.4 kg").assertIsDisplayed()
-        compose.onNodeWithText("90 kg", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
+        compose.onNodeWithText(LogReadout.day(past, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
+        compose.onNodeWithText("Weighed in · 90 kg").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf(pastEntry, futureEntry), store.bodyweight.sortedBy { it.dateLocal })
+            assertEquals(pastEntry, store.latestWeighIn)
+        }
+        compose.onNodeWithText("Weighed in · 82.4 kg").performClick()
+        compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         scope.cancel()
     }
 

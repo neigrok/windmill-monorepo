@@ -80,22 +80,6 @@ import works.windmill.platform.design.WindmillSheetBack
 import works.windmill.platform.design.WindmillSheetWindow
 
 @Composable
-fun BodyweightReading(latest: WeighIn?, nowMs: Long, onOpen: () -> Unit) {
-    val held = latest ?: return
-    val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
-        .clickable(role = Role.Button, onClickLabel = "open bodyweight", onClick = onOpen)
-        .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${Bodyweight.kilograms(held.weightKg)} kg", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
-            Text(Bodyweight.age(held.date, Bodyweight.today(nowMs)), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-        }
-        Chevron()
-    }
-}
-
-@Composable
 fun WeighInChip(onOpen: () -> Unit) {
     val skin = LocalGymColors.current
     Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),

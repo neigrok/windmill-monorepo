@@ -64,7 +64,6 @@ class GymRuntimeTests {
         val cold = GymRuntime(next, { null }, { true }, StandardTestDispatcher(testScheduler))
         assertEquals(LogSetAcceptance.Stale, cold.logSet(command))
         assertEquals(listOf(original), next.sets)
-        assertEquals(3_000L, next.restElapsedMs())
         assertEquals(listOf(original), SetQueue(file).sets)
     }
 
@@ -75,7 +74,7 @@ class GymRuntimeTests {
         val queue = SetQueue(file)
         queue.hold(Session("session", 100_000))
         queue.choose("bench-press")
-        queue.prepare(null, GymPreferences(), moment, true) { "old-offer" }
+        queue.prepare(null, moment, true) { "old-offer" }
         val before = file.readText()
         val blocked = GymRuntime(store(SetQueue(file), backgroundScope, WorkoutClock { moment }),
             { null }, { false }, StandardTestDispatcher(testScheduler))
@@ -167,7 +166,7 @@ class GymRuntimeTests {
             local.hold(previous)
             val preferencesFile = File(tmp.root, "direct-prefs")
             val preferences = LocalPreferences(preferencesFile)
-            preferences.adopt("A"); preferences.save(GymPreferences(restSeconds = 90))
+            preferences.adopt("A"); preferences.save(GymPreferences(confirmSound = true))
             val store = TrainingStore(queue, DeviceCopy(File(tmp.root, "direct-copy")),
                 local, preferences,
                 LocalBodyweight(File(tmp.root, "direct-weight")), backgroundScope, now = { moment.wallMs },
@@ -198,7 +197,7 @@ class GymRuntimeTests {
                 store.fixSet("session-A", accepted.id, SetFix(weightKg = 40.0)))
             assertEquals(WriteFailure.Refused("the account changed while deleting"), store.deleteSet("session-A", accepted.id))
             assertFalse(store.discard("past-A"))
-            assertTrue(store.savePreferences(GymPreferences(restSeconds = 180)) is WriteFailure.Refused)
+            assertTrue(store.savePreferences(GymPreferences(confirmHaptic = false)) is WriteFailure.Refused)
             store.connect(Account(auth.accountApi(ana), ana))
             assertEquals("u.A", store.accountKey)
             assertEquals(preferencesBefore, preferencesFile.readText())
@@ -235,7 +234,7 @@ class GymRuntimeTests {
         var owner: String? = null
         val local = LocalLog(File(tmp.root, "local-preflight"))
         val preferences = LocalPreferences(File(tmp.root, "prefs-preflight"))
-        preferences.save(GymPreferences(restSeconds = 90))
+        preferences.save(GymPreferences(confirmSound = true))
         val store = TrainingStore(queue, DeviceCopy(File(tmp.root, "copy-preflight")), local,
             preferences, LocalBodyweight(File(tmp.root, "weight-preflight")),
             backgroundScope, now = { moment.wallMs }, workoutClock = WorkoutClock { moment }, sync = { wire })
@@ -243,9 +242,7 @@ class GymRuntimeTests {
         runtime.restoreLocal()
         val first = requireNotNull(runtime.notification.value?.offer)
         assertEquals(LogSetAcceptance.Accepted(first.id), runtime.logSet(LogSetCommand(first.key, first.id)))
-        assertEquals(WorkoutChange.Saved, runtime.setAlertAccess(first.key, true))
         val original = TrainingSet(first.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
-        val rest = requireNotNull(runtime.notification.value?.rest)
         val old = requireNotNull(runtime.notification.value?.offer)
         val flow = requireNotNull(store.requestClaimSignIn())
         store.approveSignIn("B", flow)
@@ -269,12 +266,9 @@ class GymRuntimeTests {
         val claimed = SetQueue(file, "B")
         assertEquals("the claim delivers the set at once", listOf(original.copy(setNumber = 1)), claimed.sets)
         assertEquals(emptyList<SetQueue.Entry>(), claimed.pending)
-        assertEquals(rest.id, runtime.notification.value?.rest?.id)
-        assertEquals(rest.origin, runtime.notification.value?.rest?.origin)
-        assertEquals(first.id, claimed.workout.rest?.id)
+        assertEquals(first.id, claimed.latestSet(moment)?.id)
         assertNull(SetQueue(file).session)
         moment = moment.copy(wallMs = moment.wallMs + 90_000, elapsedMs = moment.elapsedMs + 90_000)
-        assertFalse(runtime.claimRest(RestAlertCommand(old.key, rest.id, rest.alertRevision)))
     }
 
     @Test
@@ -309,34 +303,51 @@ class GymRuntimeTests {
                 assertEquals(listOf(TrainingSet(offer.id, "bench-press", weightKg = 20.0, reps = 5,
                     completedAtMs = moment.wallMs)), reopened.sets)
                 assertEquals(setOf(offer.id), reopened.workout.consumed)
-                assertEquals(offer.id, reopened.workout.rest?.id)
+                assertEquals(offer.id, reopened.latestSet(moment)?.id)
             }
         }
     }
 
     @Test
-    fun coldAutoCloseRejectsAnOldScheduledCallbackWithoutAClaimOrNewWorkout() = runTest {
+    fun aLegacyWorkoutWithARecentSetStaysOpenAcrossUpgradeAndWallClockChanges() = runTest {
+        val started = 1_000_000L
+        val setAt = started + AutoClose.AFTER_MS
+        val set = TrainingSet("recent", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = setAt)
+        for (wallShift in listOf(0L, -3_600_000L)) {
+            val file = File(tmp.root, "legacy-$wallShift")
+            file.writeText("""{"queues":{"anon":{"session":{"id":"session","startedAt":$started},"entries":{"recent":{"set":{"id":"recent","exerciseId":"bench-press","weightKg":60.0,"reps":8,"completedAt":$setAt},"sessionId":"session","needsPush":true,"remints":0,"loggedAtMs":$setAt,"event":{"id":"recent","origin":{"wallMs":$setAt,"elapsedMs":14401000,"bootId":"boot"}},"eventOrder":3}},"order":["bench-press"],"chosenMovement":"bench-press","unclaimed":true,"workout":{"bootId":"boot","started":{"wallMs":$started,"elapsedMs":1000,"bootId":"boot"},"rest":{"id":"recent","origin":{"wallMs":$setAt,"elapsedMs":14401000,"bootId":"boot"},"targetSeconds":90,"alertRevision":3,"attempted":false}}}}}""")
+            val now = WorkoutMoment(setAt + 60_000 + wallShift, 14_461_000, "boot")
+            val coldStore = store(SetQueue(file), backgroundScope, WorkoutClock { now })
+            val cold = GymRuntime(coldStore, { null }, { true }, StandardTestDispatcher(testScheduler))
+            cold.restoreLocal()
+            assertEquals(Session("session", started), coldStore.session)
+            assertEquals(listOf(set), coldStore.sets)
+            assertEquals("session", cold.notification.value?.key?.sessionId)
+            assertEquals(Session("session", started), SetQueue(file).session)
+        }
+    }
+
+    @Test
+    fun coldAutoCloseRetiresTheOldWorkoutWithoutLosingSets() = runTest {
         var moment = WorkoutMoment(101_000, 1_000, "boot")
         val file = File(tmp.root, "sets")
         val queue = SetQueue(file)
         queue.hold(Session("session", 100_000), unclaimed = true)
         queue.choose("bench-press")
         val prefs = LocalPreferences(File(tmp.root, "prefs"))
-        prefs.save(GymPreferences(restSeconds = 90))
+        prefs.save(GymPreferences(confirmSound = true))
         val first = store(queue, backgroundScope, WorkoutClock { moment })
         val runtime = GymRuntime(first, { null }, { true }, StandardTestDispatcher(testScheduler))
         runtime.restoreLocal()
         val offer = requireNotNull(runtime.notification.value?.offer)
         runtime.logSet(LogSetCommand(offer.key, offer.id))
-        runtime.setAlertAccess(offer.key, true)
-        val rest = requireNotNull(runtime.notification.value?.rest)
         moment = moment.copy(wallMs = moment.wallMs + AutoClose.AFTER_MS, elapsedMs = moment.elapsedMs + AutoClose.AFTER_MS)
         val coldStore = store(SetQueue(file), backgroundScope, WorkoutClock { moment })
         val cold = GymRuntime(coldStore, { null }, { true }, StandardTestDispatcher(testScheduler))
-        assertFalse(cold.claimRest(RestAlertCommand(offer.key, rest.id, rest.alertRevision)))
+        cold.restoreLocal()
         assertNull(cold.notification.value)
         val snapshot = file.readText()
-        assertFalse(cold.claimRest(RestAlertCommand(offer.key, rest.id, rest.alertRevision)))
+        cold.restoreLocal()
         assertFalse(cold.openWorkout(offer.key))
         assertEquals(snapshot, file.readText())
         val saved = requireNotNull(LocalLog(File(tmp.root, "log")).detail("session"))

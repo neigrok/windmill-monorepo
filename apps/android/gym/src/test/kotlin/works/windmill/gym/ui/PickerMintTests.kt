@@ -157,7 +157,7 @@ class PickerMintTests {
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
         hideSearchIme()
         compose.waitForIdle()
-        compose.onNodeWithText("Create and add").performClick()
+        compose.onNodeWithText("Add to routine").performClick()
         compose.waitForIdle()
 
         compose.runOnIdle {

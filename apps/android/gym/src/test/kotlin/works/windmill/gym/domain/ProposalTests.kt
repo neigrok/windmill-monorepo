@@ -18,8 +18,8 @@ class ProposalTests {
     private val threeDaysAgoMs = nowMs - 3 * 86_400_000
 
     // A straight scheme of `sets` sets, each `reps` × `weightKg`.
-    private fun targets(sets: Int, reps: Int? = null, weightKg: Double? = null, restSeconds: Int? = null) =
-        ProposalTargets(sets = List(sets) { SetTarget(reps, weightKg) }, restSeconds = restSeconds)
+    private fun targets(sets: Int, reps: Int? = null, weightKg: Double? = null) =
+        ProposalTargets(sets = List(sets) { SetTarget(reps, weightKg) })
 
     private val lowerARamp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
                                     SetTarget(1, 100.0), SetTarget(5, 80.0))
@@ -178,8 +178,8 @@ class ProposalTests {
     @Test
     fun testASchemeThatChangedShapePrintsBothSchemesAndNothingElseThatHeld() {
         val moved = Proposal.moves(
-            before = targets(5, 5, 80.0, restSeconds = 180),
-            after = ProposalTargets(sets = lowerARamp, restSeconds = 180))
+            before = targets(5, 5, 80.0),
+            after = ProposalTargets(sets = lowerARamp))
 
         assertEquals(listOf(FieldMove("sets", "5 × 5 · 80", "5 × 1–5 · 60–100")), moved)
         assertEquals("nothing moved", emptyList<FieldMove>(),
@@ -222,9 +222,7 @@ class ProposalTests {
         assertEquals(
             listOf(FieldMove("sets", "open", "3 × 8 · 60")),
             Proposal.moves(ProposalTargets(), targets(3, 8, 60.0)))
-        assertEquals(
-            listOf(FieldMove("rest", "the dial", "180s")),
-            Proposal.moves(targets(3, 8, 60.0), targets(3, 8, 60.0, restSeconds = 180)))
+        assertEquals(emptyList<FieldMove>(), Proposal.moves(targets(3, 8, 60.0), targets(3, 8, 60.0)))
         assertEquals("3 × 10 · 24", Proposal.asks(targets(3, 10, 24.0)))
         assertEquals("open", Proposal.asks(ProposalTargets()))
         assertEquals("sets", Proposal.setsLabel)
@@ -342,37 +340,17 @@ class ProposalTests {
     }
 
     @Test
-    fun testEveryDecisionKeepsADatedRowThatSaysWhoAndWhat() {
-        val settled = threeDaysAgoMs                                 // 29 Jul 2025
-        val applied = proposal(changeCount = 3, state = ProposalState.Applied, settledAtMs = settled)
-        assertEquals("29 Jul · applied 3 changes from Claude", applied.historyLine(nowMs))
-
-        val dismissed = proposal(changeCount = 3, state = ProposalState.Dismissed, settledAtMs = settled)
-        assertEquals("29 Jul · turned down 3 changes from Claude", dismissed.historyLine(nowMs))
-
-        val superseded = proposal(changeCount = 3, state = ProposalState.Superseded, settledAtMs = settled)
-        assertEquals("29 Jul · set aside 3 changes from Claude", superseded.historyLine(nowMs))
-
-        val removed = proposal(changeCount = 6, intent = ProposalIntent.Remove,
-            state = ProposalState.Applied, settledAtMs = settled)
-        assertEquals("29 Jul · applied a removal from Claude", removed.historyLine(nowMs))
-
-        val waiting = proposal(changeCount = 1, source = ProposalSource())
-        assertEquals("31 Jul · 1 change from your connected agent, waiting", waiting.historyLine(nowMs))
-    }
-
-    @Test
     fun testASettledProposalSaysWhatHappenedAndAPendingOneSaysNothing() {
         val settled = threeDaysAgoMs
         val on = "29 Jul at ${Readout.time(settled)}"
         assertEquals(
-            "Applied to Push A $on. Kept on the routine as a dated record — the program’s history, not a toast that disappears.",
+            "Applied to Push A $on.",
             proposal(state = ProposalState.Applied, settledAtMs = settled).settledNote(nowMs))
         assertEquals(
-            "Turned down $on. Nothing changed, and it stays in the routine’s history as a record.",
+            "Turned down $on. Nothing changed.",
             proposal(state = ProposalState.Dismissed, settledAtMs = settled).settledNote(nowMs))
         assertEquals(
-            "Push A changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine’s history.",
+            "Push A changed after this was written, so it was set aside $on. None of it was applied.",
             proposal(state = ProposalState.Superseded, settledAtMs = settled).settledNote(nowMs))
         assertTrue(proposal(state = ProposalState.Dismissed, settledAtMs = nowMs)
             .settledNote(nowMs)!!.startsWith("Turned down today at ${Readout.time(nowMs)}."))
@@ -402,7 +380,7 @@ class ProposalTests {
         val whole = WindmillJson.decodeFromString<Proposal>(wire)
 
         assertEquals(listOf("bench-press", "incline-db-press", "cable-fly"), whole.drawn.map { it.exerciseId })
-        assertEquals(ProposalTargets(sets = listOf(SetTarget(5, 82.5), SetTarget(3, 87.5)), restSeconds = 180),
+        assertEquals(ProposalTargets(sets = listOf(SetTarget(5, 82.5), SetTarget(3, 87.5))),
             whole.changes[0].after)
         assertEquals(listOf(FieldMove("set 2", "82.5 × 5", "87.5 × 3")),
             Proposal.moves(whole.changes[0].before!!, whole.changes[0].after!!))
@@ -429,7 +407,7 @@ class ProposalTests {
     fun testTurningDownIsConfirmedInTheSameWordsAsEverySurface() {
         assertEquals("Turn this down", Proposal.turnDownVerb)
         assertEquals("Turn this down?", Proposal.turnDownAsk)
-        assertEquals("Nothing changes, and it stays in the routine’s history as a record.", Proposal.turnDownBody)
+        assertEquals("Nothing changes.", Proposal.turnDownBody)
         assertEquals("Turn down", Proposal.turnDown)
     }
 

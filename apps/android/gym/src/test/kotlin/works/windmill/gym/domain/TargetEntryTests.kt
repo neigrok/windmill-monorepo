@@ -198,7 +198,7 @@ class TargetEntryTests {
     @Test
     fun testTheRowsOfASchemeAreItsSetsAsText() {
         assertEquals(listOf(TypedSet("5", "60"), TypedSet("", "82.5"), TypedSet("8", ""), TypedSet("8", "−20")),
-                     TargetEntry.rows(listOf(SetTarget(5, 60.0), SetTarget(null, 82.5), SetTarget(8), SetTarget(8, -20.0))))
+                     TargetEntry.Draft(listOf(SetTarget(5, 60.0), SetTarget(null, 82.5), SetTarget(8), SetTarget(8, -20.0))).rows)
     }
 
     @Test
@@ -259,7 +259,6 @@ class TargetEntryTests {
         assertEquals("open", TargetEntry.setsPlaceholder)
         assertEquals("max", TargetEntry.repsPlaceholder)
         assertEquals("last time", TargetEntry.weightPlaceholder)
-        assertEquals("Every set", TargetEntry.everySet)
         assertEquals("Each set", TargetEntry.setBySet)
         assertEquals("Add set", TargetEntry.addSet)
         assertEquals("Fill", TargetEntry.fill)

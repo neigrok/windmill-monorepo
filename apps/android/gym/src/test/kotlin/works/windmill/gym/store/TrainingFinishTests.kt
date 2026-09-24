@@ -125,7 +125,7 @@ class TrainingFinishTests {
         }
     }
 
-    @Test fun aDelayedFinishedPageCannotCloseTheNextWorkoutOrReplaceItsRestAndOffer() = runTest {
+    @Test fun aDelayedFinishedPageCannotCloseTheNextWorkoutOrReplaceItsOffer() = runTest {
         val server = FakeTraining()
         val gate = CompletableDeferred<Unit>()
         var holdRefresh = false
@@ -154,7 +154,6 @@ class TrainingFinishTests {
         val live = store.session!!
         val rows = store.sets.toList()
         val notification = store.notification.value!!
-        val rest = store.restStartedAtMs
         val queueFile = tmp.root.walkTopDown().single { it.name == "queue" }
         val queue = queueFile.readText()
         gate.complete(Unit)
@@ -164,7 +163,6 @@ class TrainingFinishTests {
         assertEquals(live, store.session)
         assertEquals(rows, store.sets)
         assertEquals(notification, store.notification.value)
-        assertEquals(rest, store.restStartedAtMs)
         assertEquals(queue, queueFile.readText())
         assertEquals(receipt.detail, store.retainedSession(receipt.detail))
         assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session, live.id to live), server.stored)
@@ -245,7 +243,6 @@ class TrainingFinishTests {
         assertEquals(notification, store.notification.value)
         assertEquals(history, store.allSessions)
         assertEquals(queue, queueFile.readText())
-        assertEquals(1_000L, store.restStartedAtMs)
         assertEquals(next, server.stored.getValue(next.id))
         assertEquals(listOf(nextSet), server.sets.getValue(next.id))
     }

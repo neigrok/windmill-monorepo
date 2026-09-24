@@ -46,7 +46,6 @@ import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
@@ -1964,7 +1963,7 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = false))
 
-        assertNull(store.savePreferences(GymPreferences(units = Units.Pounds, restSeconds = 90)))
+        assertNull(store.savePreferences(GymPreferences(units = Units.Pounds, confirmSound = true)))
         assertEquals(Units.Pounds, store.preferences.units)
         assertTrue("nobody to tell yet", server.settingsWritten.isEmpty())
 
@@ -1974,20 +1973,20 @@ class TrainingStoreTests {
         relaunched.connect(account(signedIn = true))
 
         assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
-        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(true, server.settings?.confirmSound)
         assertEquals(Units.Pounds, relaunched.preferences.units)
     }
 
     @Test
     fun testAnAccountsOwnSettingsArriveOnConnectAndAreNotOverwrittenByAFreshPhone() = runTest {
         val server = FakeTraining()
-        server.settings = GymPreferences(units = Units.Pounds, restSeconds = 180)
+        server.settings = GymPreferences(units = Units.Pounds, confirmHaptic = false)
 
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
         assertEquals(Units.Pounds, store.preferences.units)
-        assertEquals(180, store.preferences.restSeconds)
+        assertEquals(false, store.preferences.confirmHaptic)
         assertTrue("a phone with nothing to say says nothing", server.settingsWritten.isEmpty())
     }
 
@@ -1998,15 +1997,15 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
 
         server.online = false
-        val failed = store.savePreferences(GymPreferences(restSeconds = 90))
+        val failed = store.savePreferences(GymPreferences(confirmSound = true))
 
         assertEquals(WriteFailure.NoAnswer, failed)
-        assertEquals("the row on screen is the one the lifter chose", 90, store.preferences.restSeconds)
+        assertEquals("the row on screen is the one the lifter chose", true, store.preferences.confirmSound)
 
         server.online = true
         val relaunched = makeStore(sync = server)
         relaunched.connect(account(signedIn = true))
-        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(true, server.settings?.confirmSound)
     }
 
     @Test
@@ -2031,7 +2030,7 @@ class TrainingStoreTests {
         server.started.clear()
 
         server.refusePreferences = refusal(404, message = "no such route")
-        assertEquals(WriteFailure.Refused("no such route"), store.savePreferences(GymPreferences(restSeconds = 90)))
+        assertEquals(WriteFailure.Refused("no such route"), store.savePreferences(GymPreferences(confirmSound = true)))
 
         advanceTimeBy(20_100)
         runCurrent()
@@ -2040,12 +2039,12 @@ class TrainingStoreTests {
             List(6) { "savePreferences" }, server.calls)
         assertTrue("the waiting start was never re-sent behind it", server.started.isEmpty())
         assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
-        assertEquals("and the row on screen is still the lifter's", 90, store.preferences.restSeconds)
+        assertEquals("and the row on screen is still the lifter's", true, store.preferences.confirmSound)
 
         server.refusePreferences = null
         advanceTimeBy(4_100)
         runCurrent()
-        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(true, server.settings?.confirmSound)
         server.calls.clear()
         advanceTimeBy(60_000)
         runCurrent()
@@ -2318,7 +2317,6 @@ class TrainingStoreTests {
         assertTrue(store.pendingProposals.isEmpty())
         assertTrue("nothing on the wire at all", server.calls.isEmpty())
 
-        assertEquals(GymResult.Ok(emptyList<RoutineEvent>()), store.routineHistory(store.routines.single().id))
         assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")),
             store.applyProposal("prop_1"))
         assertTrue("still nothing on the wire", server.calls.isEmpty())
@@ -2428,8 +2426,7 @@ class TrainingStoreTests {
         assertTrue(store.pendingProposals.isEmpty())
         assertEquals("the routine did not move", 1, store.routine("rt_1")?.revision)
         assertEquals("Push A", store.routine("rt_1")?.name)
-        assertEquals(listOf("prop_1"),
-            (store.routineHistory("rt_1") as GymResult.Ok).value.mapNotNull { it.proposal?.id })
+        assertEquals(ProposalState.Dismissed, server.ledger.getValue("prop_1").state)
     }
 
     @Test
@@ -2636,7 +2633,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testDeletingAThreadLeavesTheChangeItAppliedInTheRoutinesHistory() = runTest {
+    fun testDeletingAThreadPreservesTheAppliedProposal() = runTest {
         val server = FakeTraining()
         server.written["rt_1"] = aRoutine()
         server.propose(aProposal().copy(source = ProposalSource(door = "ask", thread = "thr_1")))
@@ -2647,8 +2644,7 @@ class TrainingStoreTests {
 
         assertEquals(GymResult.Ok(Unit), store.deleteThread("thr_1"))
 
-        val history = (store.routineHistory("rt_1") as GymResult.Ok).value
-        val row = history.mapNotNull { it.proposal }.single { it.id == "prop_1" }
+        val row = server.ledger.getValue("prop_1")
         assertEquals(ProposalState.Applied, row.state)
         assertEquals("the row still says the change came from Ask", "ask", row.source.door)
         assertEquals("the door onto the conversation is gone with it", null, row.source.conversation)
@@ -2770,7 +2766,7 @@ class TrainingStoreTests {
         assertEquals(lines, saved.entries.sortedBy { it.position })
         assertTrue("an open row stays open", saved.entries.single { it.exerciseId == "barbell-row" }.isOpen)
         assertTrue("it is on the list the moment it lands", store.routines.any { it.id == saved.id })
-        assertTrue("and it has never been trained", saved.untested)
+        assertNull("and it has never been trained", saved.lastTrainedAtMs)
         assertEquals(lines, server.written.getValue(saved.id).entries.sortedBy { it.position })
     }
 
@@ -2822,40 +2818,6 @@ class TrainingStoreTests {
         assertEquals("its lines came through untouched",
             listOf("bench-press"), store.routine("rt_1")?.entries?.map { it.exerciseId })
         assertEquals(ProposalState.Superseded, server.ledger.getValue("prop_1").state)
-    }
-
-    @Test
-    fun testTheRoutinesHistoryCarriesItsCreationAndItsProposalsInOneRead() = runTest {
-        val server = FakeTraining()
-        server.written["rt_1"] = aRoutine()
-        server.propose(aProposal())
-        server.creations["rt_1"] = RoutineEvent(kind = "created", atMs = 3_000, movements = 4)
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-
-        val history = (store.routineHistory("rt_1") as GymResult.Ok).value
-
-        assertEquals(listOf("proposal", "created"), history.map { it.kind })
-        assertEquals("the created row is last and carries the count it was built with",
-            4, history.last().movements)
-        assertNull("nobody's hand but the lifter's", history.last().by)
-        assertEquals("prop_1", history.first().proposal?.id)
-    }
-
-    @Test
-    fun testAHistoryThatCouldNotBeReadIsNotAnEmptyOne() = runTest {
-        val server = FakeTraining()
-        server.written["rt_1"] = aRoutine()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-
-        server.refuseRoutineRead = storageFailure
-        assertEquals(GymResult.Failed(WriteFailure.Refused("internal error")),
-            store.routineHistory("rt_1"))
-
-        server.refuseRoutineRead = null
-        server.online = false
-        assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.routineHistory("rt_1"))
     }
 
     @Test
@@ -2968,25 +2930,25 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAShelfRoutineTrainedOnThisDeviceIsNoLongerUntested() = runTest {
+    fun testAShelfRoutineTracksItsLastWorkoutAndClearsItOnDiscard() = runTest {
         val store = makeStore(sync = null, mintSession = { "ses_local" })
         store.connect(account(signedIn = false))
         val routine = (store.saveRoutine(RoutineDraft(name = "Heavy Thursday")
             .adding("deadlift")) as GymResult.Ok).value
 
-        assertTrue(store.routines.single().untested)
+        assertNull(store.routines.single().lastTrainedAtMs)
 
         store.start(routine.id)
         store.choose("deadlift")
         store.logSet(weightKg = 140.0, reps = 5)
         store.finish()
 
-        assertFalse("a session ran under it, and the shelf can see that",
-            store.routines.single().untested)
+        assertNotNull("a session ran under it, and the shelf can see that",
+            store.routines.single().lastTrainedAtMs)
         assertEquals(store.recent.single().startedAtMs, store.routines.single().lastTrainedAtMs)
 
         store.discard(store.recent.single().id)
-        assertTrue(store.routines.single().untested)
+        assertNull(store.routines.single().lastTrainedAtMs)
     }
 
     @Test
@@ -3146,7 +3108,7 @@ class TrainingStoreTests {
         val online = makeStore(sync = server)
         online.connect(account(signedIn = true))
         online.loadLastSets()
-        online.savePreferences(GymPreferences(restSeconds = 90))
+        online.savePreferences(GymPreferences(confirmSound = true))
         assertEquals(listOf("Push Day"), online.routines.map { it.name })
 
         server.online = false
@@ -3156,7 +3118,7 @@ class TrainingStoreTests {
             listOf("Push Day"), basement.routines.map { it.name })
         assertEquals("the names too", "Flat press", basement.catalog.first { it.id == "bench-press" }.name)
         assertEquals("and the seat's own rack, never deleted by an offline connect",
-            90, basement.preferences.restSeconds)
+            true, basement.preferences.confirmSound)
         basement.loadLastSets()
         assertEquals("the picker's meta from the copy, not sixty rows of silence",
             mapOf("bench-press" to LastSet("bench-press", 82.5, 5, atMs = 900)), basement.lastSets)
@@ -3485,7 +3447,6 @@ class TrainingStoreTests {
         assertNull(store.releaseUnattributed())
         assertEquals("ses_before", store.session?.id)
     }
-
 
     @Test
     fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHolding() = runTest {

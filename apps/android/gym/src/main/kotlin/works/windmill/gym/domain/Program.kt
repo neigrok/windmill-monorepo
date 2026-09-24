@@ -53,20 +53,6 @@ object Program {
     // The TRIMMED name is compared, since that is what writes.
     fun renamed(from: String, typed: String): String? = named(typed)?.takeIf { it != from }
 
-    data class Head(val untested: Boolean, val line: String)
-
-    fun head(routine: Routine, history: List<RoutineEvent>, nowMs: Long): Head {
-        val built = history.firstOrNull { it.kind == "created" }
-        if (!routine.untested || built == null) {
-            return Head(routine.untested, Readout.routineLine(routine, nowMs))
-        }
-        val said = mutableListOf("built ${Readout.recentDay(built.atMs, nowMs)}")
-        said += movements(built.movements ?: routine.entries.size)
-        return Head(untested = true, line = said.joinToString(" · "))
-    }
-
-    fun movements(count: Int): String = if (count == 1) "1 movement" else "$count movements"
-
     fun overlay(stored: List<Routine>, pending: List<Routine>): List<Routine> {
         val local = pending.associateBy { it.id }
         return stored.map { local[it.id] ?: it } + pending.filter { row -> stored.none { it.id == row.id } }
@@ -112,7 +98,6 @@ object TargetEntry {
     // same one on every surface.
     const val openLine = "You decide the numbers at the rack."
 
-    const val everySet = "Every set"
     const val setBySet = "Each set"
     const val addSet = "Add set"
     const val fill = "Fill"
@@ -129,6 +114,50 @@ object TargetEntry {
     data class TypedSet(val reps: String = "", val weight: String = "") {
         constructor(set: SetTarget) :
             this(set.reps?.toString() ?: "", set.weightKg?.let(Readout::weight) ?: "")
+    }
+
+    @Serializable
+    data class Draft(
+        val rows: List<TypedSet> = List(3) { TypedSet(reps = "10") },
+        val sets: String = "3",
+        val varyBySet: Boolean = false,
+    ) {
+        constructor(targets: List<SetTarget>) : this(
+            rows = targets.map(::TypedSet),
+            sets = targets.size.takeIf { it > 0 }?.toString().orEmpty(),
+            varyBySet = targets.isNotEmpty() && !Scheme.straight(targets),
+        )
+
+        val reading: Reading get() = reading(sets, rows)
+
+        fun withCount(typed: String): Draft {
+            val count = whole(typed, setsBand, outsideSets).whole
+            return copy(sets = typed, rows = count?.let { grown(rows, it) } ?: rows)
+        }
+
+        fun stepped(field: Field, direction: Int): Draft {
+            val shown = shown(rows, sets)
+            val typed = when (field) {
+                Field.Sets -> sets
+                Field.Reps -> sharedReps(shown)
+                Field.Weight -> sharedWeight(shown)
+            }
+            val current = if (typed.isBlank()) 0.0 else
+                typed.trim().replace('−', '-').replace(',', '.').toDoubleOrNull() ?: return this
+            if (!current.isFinite()) return this
+            val next = when (field) {
+                Field.Sets -> (current + direction).coerceIn(0.0, Program.maxSets.toDouble())
+                Field.Reps -> (current + direction).coerceIn(0.0, Program.maxReps.toDouble())
+                Field.Weight -> Ladder.bump(current, direction, big = false).coerceIn(-maxWeightKg, maxWeightKg)
+            }
+            if (field != Field.Weight && current != kotlin.math.floor(current)) return this
+            val value = if (next == 0.0) "" else Readout.weight(next)
+            return when (field) {
+                Field.Sets -> withCount(value)
+                Field.Reps -> copy(rows = withReps(rows, value))
+                Field.Weight -> copy(rows = withWeight(rows, value))
+            }
+        }
     }
 
     sealed interface Reading {
@@ -221,8 +250,6 @@ object TargetEntry {
         return Scheme.rampUp(rows.map { set(it) ?: SetTarget() }).map(::TypedSet)
     }
 
-    fun rows(sets: List<SetTarget>): List<TypedSet> = sets.map(::TypedSet)
-
     // The commit button's tail, in the words the row itself will print: `open` · `5 × 5 · 80` on a
     // straight scheme · `5 sets` where the sets disagree · none while something is refused, when the
     // button reads `Set` alone and is disabled.
@@ -287,7 +314,6 @@ data class RoutineDraft(
     val name: String = "",
     val position: Int = 0,
     val entries: List<RoutineEntry> = emptyList(),
-    val trained: Boolean = false,
     val original: RoutineWrite? = null,
     val creationId: String? = null,
 ) {
@@ -300,9 +326,9 @@ data class RoutineDraft(
 
     fun named(to: String): RoutineDraft = copy(name = Program.capped(to))
 
-    fun adding(exerciseId: String): RoutineDraft {
+    fun adding(exerciseId: String, targets: List<SetTarget> = emptyList()): RoutineDraft {
         if (full || entries.any { it.exerciseId == exerciseId }) return this
-        return copy(entries = entries + RoutineEntry(position = entries.size + 1, exerciseId = exerciseId))
+        return copy(entries = entries + RoutineEntry(position = entries.size + 1, exerciseId = exerciseId, sets = Scheme.rounded(targets)))
     }
 
     fun removing(exerciseId: String): RoutineDraft =
@@ -336,7 +362,7 @@ data class RoutineDraft(
     // Every routine write is a WHOLE document, and a line's position is its place in the day.
     val write: List<RoutineEntryWrite>
         get() = entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
+            RoutineEntryWrite(it.exerciseId, it.sets)
         }
 
     private fun mapping(exerciseId: String, move: (RoutineEntry) -> RoutineEntry): RoutineDraft =
@@ -351,7 +377,6 @@ data class RoutineDraft(
             name = routine.name,
             position = routine.position,
             entries = routine.entries.sortedBy { it.position },
-            trained = !routine.untested,
             original = RoutineWrite(routine, routine.revision),
         )
     }

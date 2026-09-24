@@ -24,7 +24,7 @@ private val lowerARamp = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarge
 
 private const val lowerARampWire =
     """{"position":1,"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},""" +
-        """{"reps":3,"weightKg":90.0},{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}],"restSeconds":180}"""
+        """{"reps":3,"weightKg":90.0},{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}]}"""
 
 class TrainingWireTests {
     @Test
@@ -44,7 +44,7 @@ class TrainingWireTests {
         assertTrue(session.isOpen)
         assertEquals("rt_1", session.routineId)
         assertEquals("Push A", session.plan?.routine)
-        assertEquals(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) }, restSeconds = 180),
+        assertEquals(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) }),
                      session.plan?.entry("bench-press"))
     }
 
@@ -54,7 +54,6 @@ class TrainingWireTests {
                                           """{"exerciseId":"chin-up","sets":[{"reps":8},{"reps":8},{"reps":8}]}""")
 
         assertEquals(PlanEntry(exerciseId = "chin-up", sets = List(3) { SetTarget(reps = 8) }), entry)
-        assertNull(entry.restSeconds)
     }
 
     @Test
@@ -73,7 +72,7 @@ class TrainingWireTests {
 
     @Test
     fun testTheRampEncodesToItsExactBytesAndRoundTrips() {
-        val entry = RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180)
+        val entry = RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp)
 
         val written = WindmillJson.encodeToString(RoutineEntry.serializer(), entry)
         assertEquals(lowerARampWire, written)
@@ -87,9 +86,9 @@ class TrainingWireTests {
     fun testTheContractsWholeNumberSpellingReadsAsTheSameScheme() {
         val read = WindmillJson.decodeFromString(RoutineEntry.serializer(),
             """{"position":1,"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":60},{"reps":5,"weightKg":80},""" +
-                """{"reps":3,"weightKg":90},{"reps":1,"weightKg":100},{"reps":5,"weightKg":80}],"restSeconds":180}""")
+                """{"reps":3,"weightKg":90},{"reps":1,"weightKg":100},{"reps":5,"weightKg":80}]}""")
 
-        assertEquals(RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180), read)
+        assertEquals(RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp), read)
     }
 
     @Test
@@ -100,8 +99,6 @@ class TrainingWireTests {
             WindmillJson.encodeToString(PlanEntry.serializer(), PlanEntry(exerciseId = "face-pull")))
         assertEquals("""{"exerciseId":"face-pull"}""",
             WindmillJson.encodeToString(RoutineEntryWrite.serializer(), RoutineEntryWrite(exerciseId = "face-pull")))
-        assertEquals("""{"restSeconds":90}""",
-            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(restSeconds = 90)))
         assertEquals("{}", WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets()))
 
         assertTrue(WindmillJson.decodeFromString(RoutineEntry.serializer(), """{"position":2,"exerciseId":"face-pull"}""").isOpen)
@@ -109,11 +106,11 @@ class TrainingWireTests {
     }
 
     @Test
-    fun testAProposalSideEncodesItsSchemeAndItsRest() {
+    fun testAProposalSideEncodesItsScheme() {
         assertEquals(
             """{"sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},{"reps":3,"weightKg":90.0},""" +
-                """{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}],"restSeconds":180}""",
-            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = lowerARamp, restSeconds = 180)))
+                """{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}]}""",
+            WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = lowerARamp)))
         assertEquals("""{"sets":[{"weightKg":100.0}]}""",
             WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets(sets = listOf(SetTarget(weightKg = 100.0)))))
         assertEquals("""{"sets":[{"reps":5}]}""",
@@ -300,7 +297,7 @@ class TrainingWireTests {
         assertEquals(1_754_300_000_000L, routine.lastTrainedAtMs)
         assertEquals(
             listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
-                                sets = List(3) { SetTarget(5, 82.5) }, restSeconds = 180)),
+                                sets = List(3) { SetTarget(5, 82.5) })),
             routine.entries)
     }
 
@@ -479,7 +476,7 @@ class RoutineWriteTests {
         SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
 
     private val lowerA = Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
-        RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180),
+        RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp),
         RoutineEntry(position = 2, exerciseId = "barbell-row"),
     ))
 
@@ -540,7 +537,7 @@ class RoutineWriteTests {
 
         assertEquals(
             Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", sets = heavierTop, restSeconds = 180),
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = heavierTop),
                 RoutineEntry(position = 2, exerciseId = "barbell-row"),
             )),
             retargeted)
@@ -576,7 +573,7 @@ class PrefillTests {
 
     private val pushA = PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })
 
-    private val lowerA = PlanEntry(exerciseId = "back-squat", sets = lowerARamp, restSeconds = 180)
+    private val lowerA = PlanEntry(exerciseId = "back-squat", sets = lowerARamp)
 
     @Test
     fun testWithNoPlanAndNoHistoryThePadOpensOnTheEmptyBar() {

@@ -1,7 +1,6 @@
 package works.windmill.gym.domain
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import works.windmill.platform.net.WindmillJson
 
@@ -19,14 +18,10 @@ class PreferencesTests {
     }
 
     @Test
-    fun testTheWebsRestDialPassesThroughUntouched() {
-        assertEquals("{}", encoded(GymPreferences(restSeconds = null)))
-        assertEquals("""{"restSeconds":120}""", encoded(GymPreferences(restSeconds = 120)))
-        assertNull(decoded("""{"restSound":true}""").restSeconds)
-        assertEquals(180, decoded("""{"restSeconds":180}""").restSeconds)
-        assertEquals(4_000, decoded("""{"restSeconds":4000}""").restSeconds)
-        assertEquals("""{"restSeconds":5,"restSound":false}""",
-                     encoded(GymPreferences(restSeconds = 5, restSound = false)))
+    fun restFieldsFromOtherSurfacesAreIgnoredAndNeverStored() {
+        val document = decoded("""{"restSeconds":180,"restSound":false,"units":"lb"}""")
+        assertEquals(GymPreferences(units = Units.Pounds), document)
+        assertEquals("""{"units":"lb"}""", encoded(document))
     }
 
     @Test

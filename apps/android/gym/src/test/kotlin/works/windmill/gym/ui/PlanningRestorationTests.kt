@@ -131,7 +131,7 @@ class PlanningRestorationTests {
         hideSearchIme()
         compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher 🏋 carry")
         compose.onNodeWithText("Dumbbell").assertIsSelected()
-        compose.onNodeWithText("Create and add").performClick()
+        compose.onNodeWithText("Add to routine").performClick()
         compose.waitForIdle()
         assertEquals(listOf("Zercher 🏋 carry"), draft.entries.map { id -> store.catalog.single { it.id == id.exerciseId }.name })
         assertEquals(listOf("dumbbell"), store.catalog.filter { it.custom }.map { it.equipment })
@@ -273,6 +273,22 @@ class PlanningRestorationTests {
         compose.onNodeWithContentDescription("Movement name").assertTextEquals("Ring Row")
         compose.onNode(hasText("Bodyweight") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).assertIsSelected()
         compose.onNodeWithText("Create and add").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    fun legacyTargetStatePreservesRawAndHiddenRowsAndMalformedStateCloses() {
+        val saved = """{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":[{"reps":"8","weight":"−10"},{"reps":"six","weight":"25..5"}],"sets":"1"}"""
+        val expected = BuilderSheet.Target("chin-up", TargetEntry.Draft(
+            rows = listOf(TargetEntry.TypedSet("8", "−10"), TargetEntry.TypedSet("six", "25..5")),
+            sets = "1", varyBySet = true,
+        ))
+        assertEquals(expected, builderSheetSaver.restore(saved))
+        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading)
+        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, TargetEntry.notANumber),
+            (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading)
+        assertNull(builderSheetSaver.restore("""{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":42,"sets":"1"}"""))
+        assertNull(builderSheetSaver.restore("not json"))
+        assertNull(builderSheetSaver.restore(""))
     }
 
 }

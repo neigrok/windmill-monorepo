@@ -87,9 +87,14 @@ settings remain available signed out.
 The account sheet receives Gym settings and Connected log destinations through product-neutral
 `ShellActions`. Gym owns their route callbacks; the sheet finishes dismissal before navigation.
 `GymRoom` retains the originating tab and Back stack. Settings is reached from the account sheet
-or the active workout’s gear. It contains units, rest timer, Notes,
+or the active workout’s gear. It contains units, Notes,
 Connected log and Account. There is no Kind or set-confirmation sound/haptic control. Selecting lb
 retains the explicit notice that this phone still displays kg.
+
+Routines open a plan sheet over their caller. The sheet offers Start workout and Edit routine;
+routine history is not part of the sheet or editor. Row menus offer Delete. The Log weaves a pure,
+weekly-capped moment projection among sessions; only one moment expands at a time, and Weigh in
+stays pinned. A session's movement names keep Record reachable independently of moments.
 
 Coach's current and retained conversations share `AskScreen`, `CoachComposer` and `CoachAnswer`.
 History is editable and paged. Long press, a tap or the accessibility Copy action copies either
@@ -198,20 +203,20 @@ readings freeze at session finish. The pair wraps when large text needs more wid
 
 The application owns one local workout runtime. Notification receivers restore that same runtime
 without starting HTTP authentication. The queue commits the exact offered set, consumed action
-and original rest timer together before reporting success, and the set is sent at once. Editing
+and its event timestamp together before reporting success, and the set is sent at once. Editing
 the rack, changing movement, finishing or changing account makes old actions ineligible.
 
-Android renders the stock ongoing workout card and count-up chronometer. Supported systems may
+Android renders a stock ongoing workout card with routine, movement, rack and set counter. Supported systems may
 promote it to a Live Update; eligibility, user permission and actual promotion are separate facts.
 The ordinary card uses the same workout state. Log set requires unlock and current action identity.
-Dismissing the card hides it for that workout and pauses rest alerts; Show workout in settings is
+Dismissing the card hides it for that workout; Show workout in settings is
 the explicit way to restore it.
 
-Rest alerts are optional, use the notification channel's sound and require notification access
-plus exact-alarm access on Android 12+. No inexact or overdue catch-up alarm is substituted. Each
-rest event permits at most one durable alert attempt; a process failure before alarm registration
-or between claiming and posting can lose that alert. Android sound, DND and idle policy remain
-authoritative. Logging itself has no confirmation sound or vibration.
+Android has no rest target, rest alert or exact-alarm permission. The logger retains workout elapsed
+and time since the latest set. Preference and routine writes preserve unowned server fields at the
+HTTP boundary through a fresh preservation read before each replacement; an unavailable read
+prevents the write. Old local rest keys are ignored without migration. Logging has no confirmation
+sound or vibration.
 
 ## CI and releases
 

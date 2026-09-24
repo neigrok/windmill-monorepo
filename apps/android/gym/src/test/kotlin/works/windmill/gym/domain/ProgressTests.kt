@@ -37,7 +37,7 @@ class ProgressTests {
     }
 
     @Test
-    fun chartThresholdAndLifetimePeakAreSeparateFromUncappedRecentMovements() {
+    fun chartThresholdAndLifetimePeakAreSeparateFromTheRecentWindow() {
         val zone = ZoneId.of("UTC")
         val today = LocalDate.of(2026, 9, 14)
         fun at(days: Long) = today.minusDays(days).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -48,7 +48,6 @@ class ProgressTests {
             })
         }
         val progress = StatsProgress(at(0), sessions)
-        assertEquals(17, progress.recentMovements(at(0), zone).size)
         val full = progress.movement("m0")
         val window = full.window(at(0), zone)
         assertEquals("s0", full.best?.id)
@@ -58,33 +57,6 @@ class ProgressTests {
         assertFalse(window.copy(sessions = window.sessions.drop(1)).hasChart(zone))
         assertFalse(window.copy(sessions = window.sessions.mapIndexed { i, row -> if (i == 0) row.copy(startedAt = at(20)) else row }).hasChart(zone))
         assertEquals(100.0, progress.sessionEstimate("s4"))
-    }
-
-    @Test
-    fun localMondayWeeksUseCalendarBoundariesAcrossDaylightSavingAndIndependentPages() {
-        val zone = ZoneId.of("America/New_York")
-        fun at(day: String, hour: Long = 12) = LocalDate.parse(day).atStartOfDay(zone).plusHours(hour).toInstant().toEpochMilli()
-        val fact = MovementSessionFact("bench", 1, PerformedFact("set", 100.0, 1))
-        val progress = StatsProgress(at("2026-03-16"), listOf(
-            ProgressSession("too-old", at("2026-02-22", 23), listOf(fact)),
-            ProgressSession("a", at("2026-02-23", 0), listOf(fact)),
-            ProgressSession("b", at("2026-03-02"), listOf(fact)),
-            ProgressSession("c", at("2026-03-08", 23), listOf(fact)),
-            ProgressSession("d", at("2026-03-09", 0), listOf(fact)),
-            ProgressSession("e", at("2026-03-16", 0), listOf(fact))))
-        assertEquals(4, progress.trainedWeeks(at("2026-03-16"), zone))
-        assertEquals(3, progress.copy(sessions = progress.sessions.filterNot { it.sessionId == "e" }).trainedWeeks(at("2026-03-16"), zone))
-    }
-    @Test
-    fun oneRecentWeekIsShownAfterTheAccountHasTrainedInTwoLifetimeWeeks() {
-        val zone = ZoneId.of("UTC")
-        val now = LocalDate.of(2026, 9, 14).atStartOfDay(zone).toInstant().toEpochMilli()
-        val fact = MovementSessionFact("bench", 1, PerformedFact("set", 100.0, 1))
-        val one = ProgressSession("recent", now, listOf(fact))
-        val old = ProgressSession("old", now - 180L * 86_400_000, listOf(fact))
-        assertNull(StatsProgress(now, listOf(one)).consistencyWeeks(now, zone))
-        assertEquals(1, StatsProgress(now, listOf(old, one)).consistencyWeeks(now, zone))
-        assertNull(StatsProgress(now, listOf(old, old.copy(sessionId = "older", startedAt = old.startedAt - 7L * 86_400_000))).consistencyWeeks(now, zone))
     }
 
 }
