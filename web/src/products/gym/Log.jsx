@@ -77,7 +77,7 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
   useEffect(() => {
     const node = index.current;
     if (!node || edit || history.phase !== 'ready') return;
-    const page = node.closest?.('.gym-root');
+    const page = node.closest?.('.gym-scroll, .gym-root');
     if (indexPosition.current.node !== node || indexPosition.current.key !== indexKey || indexPosition.current.selected !== selected || indexPosition.current.reader !== Boolean(sessionId)) {
       indexPosition.current = { node, key: indexKey, selected, reader: Boolean(sessionId), pending: true };
     }
@@ -107,7 +107,7 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
   }, [indexKey, selected, sessionId, edit, history.data, history.phase, history.more, indexPositions, pagePositions]);
   useEffect(() => {
     if (sessionId || !pagePositions) return;
-    const page = index.current?.closest?.('.gym-root');
+    const page = index.current?.closest?.('.gym-scroll, .gym-root');
     if (!page) return;
     const remember = () => { if (!indexPosition.current.pending) pagePositions.set(indexKey, page.scrollTop); };
     page.addEventListener('scroll', remember);

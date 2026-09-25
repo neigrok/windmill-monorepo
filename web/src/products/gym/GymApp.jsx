@@ -116,32 +116,33 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   const content = React.useRef(null);
   const pageKey = screen === 'log' ? historyHref(historyQuery(hash), { selected: null }) : hash.split('?')[0];
   React.useLayoutEffect(() => {
-    const root = content.current?.closest('.gym-root');
-    if (!root) return;
-    root.scrollTop = 0;
-    return () => { if (screen === 'log') pagePositions.current.set(pageKey, root.scrollTop); };
+    const page = content.current;
+    if (!page) return;
+    page.scrollTop = 0;
   }, [pageKey, screen]);
 
   return (
-    <>
+    <div className="gym-room">
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
+      <div ref={content} className="gym-scroll">
+        <main className={`gym-column${columnClass(screen)}`}>
+          {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
+          {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} onSignIn={onSignIn} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
+          {screen === 'bodyweight' && <BodyweightScreen log={log} />}
+          {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
+          {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
+          {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
+          {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
+          {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
+          {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
+          {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
+          {screen === 'notes' && <Notes log={log} />}
+          {screen === 'share-log' && <LogShareScreen log={log} />}
+        </main>
+      </div>
       <TabBar screen={tabOf(screen)} />
-      <main ref={content} className={`gym-column${columnClass(screen)}`}>
-        {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
-        {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} onSignIn={onSignIn} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
-        {screen === 'bodyweight' && <BodyweightScreen log={log} />}
-        {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
-        {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
-        {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
-        {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
-        {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
-        {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
-        {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
-        {screen === 'notes' && <Notes log={log} />}
-        {screen === 'share-log' && <LogShareScreen log={log} />}
-      </main>
       <Transient transient={log.transient} />
-    </>
+    </div>
   );
 }
 

@@ -45,14 +45,15 @@ test('every list of a routine’s entries is keyed on the position as well as th
   assert.equal(source.includes('key={entry.exerciseId}'), false);
 });
 
-test('gym top navigation stays before the content on pushed pages', () => {
+test('gym navigation stays below the scrollable content on pushed pages', () => {
   const app = read('GymApp.jsx');
   const content = app.search(/<main[^>]*className=\{`gym-column/);
-  assert.ok(content >= 0 && app.indexOf('<TabBar screen={tabOf(screen)} />') < content);
+  assert.ok(content >= 0 && app.indexOf('<TabBar screen={tabOf(screen)} />') > app.indexOf('</main>', content));
+  assert.equal(app.includes('<div ref={content} className="gym-scroll">'), true);
   assert.equal(app.includes('<nav className="gym-tabs" aria-label="Gym">'), true);
   assert.equal(app.includes("aria-current={screen === tab.screen ? 'page' : undefined}"), true);
   assert.equal(app.includes('TabRail'), false);
-  assert.equal(/\.gym-tabs \{[^}]*height: var\(--gym-tabs-height\);/.test(read('gym.css')), true);
+  assert.equal(/\.gym-tabs \{[^}]*height: var\(--gym-bottom-panel-height\);[^}]*justify-content: center;/.test(read('gym.css')), true);
 });
 
 test('the three tabs preserve their order and every pushed destination maps to a room', () => {
@@ -1053,7 +1054,7 @@ test('at the narrow width the past workout’s Save band pins to the bottom on t
     position: sticky;
     bottom: 0;
     z-index: 1;
-    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    padding: 12px 0 calc(12px + var(--content-safe-area-bottom, env(safe-area-inset-bottom)));
     background: var(--gym-canvas);
   }
 }`), true);

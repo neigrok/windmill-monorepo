@@ -323,7 +323,10 @@ test('an index return restores its scoped offset after paging enough history and
   const log = roomLog();
   const first = renderHook(t, () => LogList({ log, positions, pagePositions }));
   const aside = () => findByClass(first.tree, 'gym-history-index')[0];
-  const node = { scrollHeight: 1000, clientHeight: 400, scrollTop: 0, closest: () => page };
+  const node = { scrollHeight: 1000, clientHeight: 400, scrollTop: 0, closest: (selector) => {
+    assert.equal(selector, '.gym-scroll, .gym-root');
+    return page;
+  } };
   aside().ref.current = node;
   pending[0]({ ...empty, sessions: [{ id: 'new' }], next: { before: 10, beforeId: 'new' } });
   await settle();
@@ -349,4 +352,37 @@ test('an index return restores its scoped offset after paging enough history and
   await settle();
   assert.equal(nextNode.scrollTop, 1100);
   assert.equal(page.scrollTop, 450);
+});
+
+test('opening a short reader keeps the history page offset for the return', async (t) => {
+  browserWith();
+  const history = { sessions: [{ id: 'latest' }, { id: 'oldest' }], summary: { sessions: 2, sets: 6, reps: 48 }, months: [], exercises: [], routines: [], next: null };
+  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => url.includes('/history') ? history : { entries: [], latest: null } });
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const pagePositions = new Map();
+  const listeners = new Map();
+  const page = { scrollHeight: 1400, clientHeight: 700, scrollTop: 0, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) };
+  const node = { scrollHeight: 900, clientHeight: 900, scrollTop: 0, querySelector: () => null, closest: () => page };
+  const log = roomLog();
+  let sessionId = null;
+  const view = renderHook(t, () => LogList({ log, sessionId, pagePositions }));
+  findByClass(view.tree, 'gym-history-index')[0].ref.current = node;
+  await settle();
+
+  page.scrollTop = 495;
+  listeners.get('scroll')();
+  assert.deepEqual([...pagePositions], [['#/gym/log', 495]]);
+
+  sessionId = 'oldest';
+  page.scrollHeight = 700;
+  page.scrollTop = 0;
+  view.redraw();
+  assert.deepEqual([...pagePositions], [['#/gym/log', 495]]);
+  assert.equal(listeners.has('scroll'), false);
+
+  sessionId = null;
+  page.scrollHeight = 1400;
+  view.redraw();
+  assert.equal(page.scrollTop, 495);
+  assert.deepEqual([...pagePositions], [['#/gym/log', 495]]);
 });
