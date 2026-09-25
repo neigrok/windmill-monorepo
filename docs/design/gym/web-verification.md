@@ -31,9 +31,11 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 - Public reader primitives take an explicit kilogram unit; an owner’s pounds preference cannot change shared labels or values.
 - The shared Daylight PR token is `gold700` (`#6E5217`), with at least 4.60:1 contrast on tested Gym surfaces. Figma’s Gym library is published with no pending changes.
 
-## Pending gates
+## Release
 
-Frontend CI and deployment verification are pending. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295). Read-only production checks return the expected 401 for unsigned history and 404 for an unknown shared log.
+Frontend commit `5efa002f` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36113745867), including all 1,826 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
+
+Read-only production verification confirms the frontend release SHA and `GymApp-B6QjXZFm.js` match the deployed CI build. Anonymous history returns 401 and an unknown shared log returns 404. The unavailable recipient page renders at 1440 and 390 with no horizontal overflow or unexpected browser errors. Evidence is in `/private/tmp/windmill-gym-web-verify/production-smoke.json` and the paired `production-recipient` captures. All web implementation and release gates are complete.
 
 [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378254) also passes. [iOS CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378273) builds the app and passes crash-report tests, but its package suite fails `RoutineReadoutTests.testTheUnreadHistoryLineIsTheOneTheOtherPhoneDraws`. That test searches Android source for a routine-history sentence removed by the existing Android implementation. Neither native tree changes in this release. The native follow-up is recorded in dogfood node `gym-ios-retired-routine-history-test`.
 
