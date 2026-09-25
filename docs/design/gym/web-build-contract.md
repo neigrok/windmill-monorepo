@@ -56,6 +56,8 @@ The fourteen current `Gym/Web/*` styles:
 | Figure Small | JetBrains Mono /400 | 13/18 |
 | Stat | JetBrains Mono /500 | 28/32 |
 
+The narrow conflict comparison uses the 32/40 Title style.
+
 Use existing token aliases, not these verification hex values as new literals. Instrument: canvas #0b1111, surface #161c1d, line #202627, strong line #2a3133, ink #f1f0eb, dim #b6b5af, faint #727771, brand #5fcdb4, accent ink #1b1408, PR #d9b04c. Daylight: canvas #ebe7e3, surface #f8f6f4, ink #1a1918, dim #4c4744, faint #625c58, brand #4c4374, accent ink white. Colour is bound to Gym · Colour; spaces/radii/measures to Gym · Metrics.
 
 Card radius 16 is the general rule. Existing progress cards, editable rows and local action-band buttons bind radius/md 12. Spacing follows 4px increments: 32px between sections, 24px within sections and 8/12/16px between related elements. Do not flatten all component radii to one value.
@@ -72,7 +74,7 @@ Screenshots and full design contexts were retrieved for `470:34`, `470:21`, `475
 
 ## Implementation decisions
 
-- Two boards explicitly depict Daylight Routines (`476:1082` and `476:1115`). Every other board is exported and compared using both Instrument and Daylight mode tokens. The Gym library is published to Sam Gold's team; Manage libraries confirms No changes after the token and Logger component update.
+- Two boards explicitly depict Daylight Routines (`476:1082` and `476:1115`). Every other board is exported and compared using both Instrument and Daylight mode tokens. The shared shadow and warning bindings added for content parity are local to the Gym file and are not published.
 - The implementation uses current mode tokens in both themes. Temporary Figma mode overrides are restored after exporting the references.
 - The Routines open menus in Instrument and Daylight contain Log past followed by Delete.
 - Literal catalog spelling is current data: the editor/default fixture says Chin Up while some record fixtures say Chin-up. Do not rename backend records to imitate fixture typography.

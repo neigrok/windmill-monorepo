@@ -2297,23 +2297,25 @@ runtime evidence and remaining visual gate. Catalog spelling stays `Chin Up`; fi
 do not rename stored movements. Native lag and the independent F53 archive and F5 unused-glow
 follow-ups remain recorded separately.
 
-**F58 · Gym web content proportions** → implemented; release verification pending. Focused content
+**F58 · Gym web content proportions** → deployed and verified as `aa78df1d`. Focused content
 uses a centered 640px measure; the routine editor uses 360px movements, a 32px gap and a 420px task
 pane. The Log retains its centered 1024px workspace. Movement totals, local actions, routine-owned
 pending reviews, content-sized desktop Apply and consistent field/row/chart recipes are implemented.
 Independent review, simplification and the full 1,832-test build cover the changed code. The
-102-board matrix compares exact viewport states in both themes. Navigation remains protected under
+102-board matrix compares 202 exact viewport/theme states locally and against the deployed
+frontend using isolated local fixtures. Live read-only anonymous checks also pass. Navigation remains protected under
 F59, so the 62 Ready / 40 Built statuses do not imply complete screen parity.
 [web-verification.md](gym/web-verification.md) records the current evidence and release gate.
 Tracking node: `gym-web-proportions-implementation-2026-09-25`.
 
 **F59 · Gym web navigation source of truth** → deferred by the owner. Runtime navigation remains
 unchanged during the content proportion pass. The narrow Coach shortcuts, contextual rail, public
-reader header/navigation, back-link glyphs and header treatment under narrow sheet scrims differ
-from parts of the drawings. Existing Rename, More movement facts and contextual Log/Workout
+reader header/navigation, back-link glyphs, header treatment under narrow sheet scrims and the
+action footer on an owner Log with no filter matches differ from parts of the drawings. Existing Rename, More movement facts and contextual Log/Workout
 controls also remain available where a drawing omits them. The next navigation pass must reconcile
 these deliberately retained capabilities before claiming a complete screen-for-screen match.
 [web-parity-review.md](gym/web-parity-review.md) records the content and verification boundaries.
+Tracking node: `gym-web-navigation-parity-deferred`.
 
 ## Gym web past workout · 24 September 2026
 
@@ -2424,9 +2426,9 @@ then. Tracking node: `gym-android-coach-stream-markdown`.
 runtime matrix covers every web board at its drawn dimensions. Content implementation is tracked
 under F58; protected navigation keeps the complete screen gate open under F59.
 Routines has its own Daylight
-drawings (`476:1082`, `476:1115`); the other layouts use the approved mode tokens. The Gym library
-is published to Sam Gold's team, including gold-700 and the Logger component with unused properties
-removed; Manage libraries confirms No changes. Both Routines open menus contain Log past and
+drawings (`476:1082`, `476:1115`); the other layouts use the approved mode tokens. The published Gym library
+includes gold-700 and the Logger component. The shadow and warning bindings added for content
+parity are local to the Gym file and are not published. Both Routines open menus contain Log past and
 Delete. [web-build-contract.md](gym/web-build-contract.md) maps the evidence. Native PR token lag
 and unused glow values are tracked independently in F4 and F5.
 

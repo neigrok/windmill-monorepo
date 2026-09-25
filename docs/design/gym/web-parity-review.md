@@ -21,6 +21,6 @@ Numeric fields size from their value, including decimals and negative loads. Met
 
 ## Protected navigation differences
 
-The runtime's narrow Coach shortcuts, contextual rail, public reader header/navigation and back-link glyphs have differences from the drawings. Narrow sheet scrims also treat the shared header differently. These remain outside the content changes while the navigation source-of-truth decision is pending. The shared header and bottom navigation match their pre-change runtime geometry, typography, colors and labels at 1440px and 390px.
+The runtime's narrow Coach shortcuts, contextual rail, public reader header/navigation and back-link glyphs have differences from the drawings. Narrow sheet scrims also treat the shared header differently. The owner Log hides its Weigh in / Add past workout footer when filters have no matches; the narrow drawing retains those actions. These remain outside the content changes while the navigation source-of-truth decision is pending. The shared header and bottom navigation match their pre-change runtime geometry, typography, colors and labels at 1440px and 390px.
 
 Existing capabilities such as Rename, More movement facts and contextual Log/Workout options remain available. A drawing that omits an existing capability is not authorization to remove it.

@@ -32,6 +32,7 @@ A wave that seems to need a different answer stops and asks the owner.
 **Design system**
 
 - Type is the fourteen `Gym/Web/*` styles; a title is Baloo 2 32/40, 28/36 narrow.
+  The narrow conflict comparison retains its drawn 32/40 title.
 - Colour, radius, space and measure are tokens: reading measure 640, figures 420, 4px scale, card
   radius 16.
 - One numeric row language ([web-form.md](web-form.md)): values edited in place, `Add set` last, `×`
@@ -63,7 +64,7 @@ The running comparison and release evidence are in [web-verification.md](web-ver
 | Coach | Inline Apply/Turn this down and persisted decision receipts |
 | Notes | Titled editor, disclosure and shared Coach navigation |
 | Sharing | Whole/range snapshot/live links, recipient preview, expiration and revocation |
-| Daylight | Shared theme tokens, accessible PR ink and published Gym Figma library |
+| Daylight | Shared theme tokens, accessible PR ink and Gym-local component bindings |
 
 ## Waves
 
@@ -98,7 +99,7 @@ then what reads further, then what leaves the app.
 | W5 · Coach and Notes | Inline proposals with receipt, review dialog deleted; composer below the conversation; active-workout refusal and mirror; note editor title and disclosure | Needs W3's routine diff and the W1 shell |
 | W6 · Exploring the log | Filters that read their value, density, the 2024 date jump, the movement record's dot chart | Builds on the W2 split |
 | W7 · Sharing | Log share links (snapshot / live, whole / range), revoke, the recipient's read-only log | Needs backend work and the W6 reader |
-| W8 · Daylight and library | Light theme across every screen; Figma library republished | Last, once layouts stop moving |
+| W8 · Daylight and library | Light theme across every screen; publish verified library changes | Last, once layouts stop moving |
 
 Each wave closes with its boards moved to Built in Figma and its ledger entries closed.
 
@@ -129,5 +130,6 @@ Each wave closes with its boards moved to Built in Figma and its ledger entries 
 - The desktop movement picker occupies the editor’s right pane; narrow uses a sheet.
 - A saved past workout opens the log with that workout selected.
 - Catalog spelling is preserved, including `Chin Up`.
-- Native time inputs follow the system’s 12- or 24-hour presentation.
+- Native time inputs follow the system’s 12- or 24-hour presentation while editing;
+  resting labels use 24-hour formatting.
 - The retired `Boards` page remains a separate design-led archive decision (ledger F53).
