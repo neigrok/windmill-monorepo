@@ -4044,7 +4044,7 @@ button.gym-set:focus-visible .gym-set-fix {
   .gym-history-actions .gym-history-weigh, .gym-history-actions .gym-door-past { display: none; }
   .gym-log-footer { display: flex; gap: 8px; position: fixed; box-sizing: border-box; height: var(--gym-log-footer-height); left: 0; right: 0; bottom: var(--gym-bottom-panel-height, 0px); padding: 16px; background: var(--gym-canvas); z-index: 4; }
   .gym-log-footer .gym-history-weigh, .gym-log-footer .gym-door-past { min-height: 54px; padding: 14px 16px; text-align: center; }
-  .gym-log-footer .gym-door-past { flex: 1; white-space: nowrap; }
+  .gym-log-footer .gym-door-past { flex: 1; justify-content: center; white-space: nowrap; }
   .gym-room:has(.gym-log-screen:not(.has-session) .gym-log-footer) .gym-toast-slot { bottom: calc(var(--gym-bottom-panel-height) + var(--gym-log-footer-height) + 12px); }
   .gym-log-screen:not(.has-session):has(.gym-log-footer) { padding-bottom: 72px; }
   .gym-history-filters { flex-wrap: nowrap; }
