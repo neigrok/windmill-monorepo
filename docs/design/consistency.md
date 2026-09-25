@@ -2232,10 +2232,10 @@ tapping is four. `gym/web-form.md` closes that question for web only: the ladder
 So a lifter who plans on the phone and edits on the desk meets two different heads on the same
 sheet. Closing it means either ruling the field off all three surfaces or restoring it on web.
 
-**F39 · a narrow gym board's rows sit 4px left of the nav above them** → fix toward the shell.
-`Gym / Set row` Width=narrow is 358 (390 − 2×16) and every narrow board on the gym proposal page
-draws its content at a 16px margin, while `Web shell / Narrow` insets its own nav at 20. One of the
-two numbers is wrong for every product that mounts in that shell, so the shell owns the call.
+**F39 · a narrow gym board's rows sit 4px left of its product tabs** → gym design follow-up.
+`Gym / Set row` Width=narrow is 358 (390 − 2×16), while Gym tabs use 20px insets. The shared
+app header uses 12px side insets and centered room links at narrow widths. The remaining 4px
+product-tab/content alignment belongs to Gym, not the shared app header.
 
 **F40 · the shared `Button` wears the global terracotta inside every product room** → fix toward the
 design system. `470:635` / `470:638` / `470:641` in the Gym file bind the remote global `brand/base`,
@@ -2418,3 +2418,17 @@ and unused glow values are tracked independently in F4 and F5.
 **Gym web · Coach chrome** → drawings reconciled with the [feedback contract](gym/feedback-contract.md). All eight conversation boards include History and More; the six editable conversation states include Add photo and omit the standing allowance. The active-workout states retain their refusal. Existing inline proposal masters and the 640px conversation measure remain the reference. All four conversation-state pairs pass runtime verification in both themes under F57.
 
 **Gym workout correction · native display names** → open iOS and Android follow-up. The session response has an optional `routineName` for a corrected workout's display name. Web uses it without changing the frozen plan or living routine. Phone readers that derive the title only from the frozen plan show its original name; both native readers need to prefer the explicit session display name, including an empty name for a free session.
+
+### Shared shell clay tokens · published library follow-up
+
+The published Design System `surface/card` variable (`VariableID:1:66`, key
+`f5e7a675adcd56fc6c985da0c7d8341fca46caac`) imports Dark as `#17120B`; current web clay
+card and the source file's seat-popover drawing use `#171719`. Design System owner: reconcile
+the published value in [the shared library](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2).
+
+Gym's web shell uses local `shell/clay/*` aliases for its account seat, matching current web
+Light/Dark roles: card `#FFFFFF/#171719`, border `#E5D9C0/#222224`, tertiary ink
+`#92805F/#7E7C77`. Imported `border/subtle` (`VariableID:1:71`) and `text/tertiary`
+(`VariableID:1:76`) returned IDs that failed to resolve in a subsequent Figma call; this is an
+import persistence/resolution issue, not evidence that the source variables are missing. The
+local aliases keep all 88 authenticated Gym web mockups bound and visually verified.

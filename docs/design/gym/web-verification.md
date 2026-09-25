@@ -24,7 +24,7 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 
 ## Review observations
 
-- The shared shell supports a neutral desk layout option. Product navigation and gym measures remain in the gym module.
+- All app rooms use one shared header. Product navigation and gym measures remain in the gym module; Coach derives its available height from the room and product tabs.
 - Owner and recipient history must share filtering and reader primitives while keeping recipient data restricted by the server.
 - Full-workout correction requires one atomic request and a stable request identity; independently saving edited sets does not satisfy its Save action.
 - Correction parsing preserves valid historical values and exact timestamps, including ambiguous DST instants. Progress reads use request epochs so late responses cannot replace newer facts.
@@ -33,9 +33,13 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 
 ## Release
 
-Frontend commit `5efa002f` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36113745867), including all 1,826 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
+Frontend commit `dd41d93d` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36121339512), including all 1,826 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
 
-Read-only production verification confirms the frontend release SHA and `GymApp-B6QjXZFm.js` match the deployed CI build. Anonymous history returns 401 and an unknown shared log returns 404. The unavailable recipient page renders at 1440 and 390 with no horizontal overflow or unexpected browser errors. Evidence is in `/private/tmp/windmill-gym-web-verify/production-smoke.json` and the paired `production-recipient` captures. All web implementation and release gates are complete.
+Read-only production verification at `https://windmill.works/app/gym` confirms the deployed
+`index-DMljCTtL.js` bundle and shared 52px header, visible brand mark, centered four-room
+navigation and avatar. The signed-out page passes desktop and 320px checks with no horizontal
+overflow. At 320px the mark occupies x12–44, room links x54.93–265.07 and avatar x278–308.
+The authenticated behavior is covered by the isolated local checks below.
 
 [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378254) also passes. [iOS CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378273) builds the app and passes crash-report tests, but its package suite fails `RoutineReadoutTests.testTheUnreadHistoryLineIsTheOneTheOtherPhoneDraws`. That test searches Android source for a routine-history sentence removed by the existing Android implementation. Neither native tree changes in this release. The native follow-up is recorded in dogfood node `gym-ios-retired-routine-history-test`.
 
@@ -62,3 +66,30 @@ Desktop recipient scope filters select the first matching workout when the link 
 The active-workout Coach state is verified at both widths and in both themes. `qa-coach-active-final.mjs` creates a temporary Push A workout with two logged sets, captures `coach-workout-final-{dark,light}-{1440,390}.png`, and verifies the refusal has no composer or proposal action. View workout reveals and focuses a read-only mirror built from the frozen plan and actual sets; Notes remains reachable, and saved thread messages and receipts remain readable. No model request is sent. The script finishes and deletes its temporary workout. The final focused Coach, proposal and screen-contract run passes 142 tests, including retained drafts, workout changes during deferred photo preparation/load/upload, paused retries, and ambiguous-plan mirror handling; its output is `/tmp/gym-active-final.log`.
 
 Adversarial checks cover workout transitions across each awaited photo boundary: prepared bytes stay local, a loaded photo does not start uploading, and a completed upload does not send a question while training. The current workout state is checked after each awaited boundary before the next remote operation. Extra working sets and warmups consume no targets from another movement; the mirror ordinal comes from remaining frozen-plan slots.
+
+## Shared app header
+
+The gym room uses the same 52px header as Home, Roadmap and Journal: approved Windmill mark,
+centered room links and a 30px account avatar. Gym tabs begin at y52; content begins at y156 on
+desktop and y136 on narrow screens. Coach derives its minimum height from the available gym
+root and product tabs, including the standalone route's own header.
+
+The local PostgreSQL/backend/Vite checks use an isolated account. All four room links select
+the expected route and keep the same header. Checks at 1440, 390 and 320px cover Instrument
+and Daylight, account appearance controls, signed-out chrome, the three Gym tabs, and the
+pushed New routine page. At 320px the mark, room links and avatar have separate bounds and
+the document has no horizontal overflow. Coach ends 12px above the viewport bottom at 1440 ×
+900 and 390 × 844; its composer remains visible at 320 × 740. The active-workout state and
+expanded read-only mirror fit at 390px without a composer or horizontal overflow. Temporary
+fixture data is removed after verification.
+
+The full production build passes all 1,826 tests with zero failures or skips. The backend server
+target rebuilds successfully. Adversarial review finds no actionable issue; the simplification
+pass removes the unused shell layout variant and consolidates Coach height rules. This keeps
+header geometry in the shared shell and product layout inside Gym.
+
+Figma shell components `468:2` and `468:13` propagate to all 88 authenticated web boards. Their
+content starts at y156/y136; Coach gains 28px of available height while retaining its bottom
+composer position. Four final renders cover desktop Log, desktop Routines, narrow Daylight
+Routines and narrow Coach; all pass visual inspection. The 14 public/preview boards and native
+boards keep their own chrome. Evidence: `/tmp/windmill-gym-header-figma-final-{0,1,2,3}.png`.

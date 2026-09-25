@@ -72,7 +72,7 @@ then what reads further, then what leaves the app.
 
 | Wave | Delivers | Why here |
 |---|---|---|
-| W1 · Shell | Header and tabs as drawn on every gym page, pushed pages included; page measures and content start (184 / 164) | Every board sits in it; nothing else can turn Built first |
+| W1 · Shell | Header and tabs as drawn on every gym page, pushed pages included; page measures and content start (156 / 136) | Every board sits in it; nothing else can turn Built first |
 | W2 · The log split | History index + workout reader + progress cards on desktop; narrow reader on its own screen; Saved lands in the split | Past workout, record and Coach all land here |
 | W3 · Routines and editor | Routines home as drawn; editor split with the ladder pane, `Every set` / `Set by set`, picker in the pane, conflict state | The plan is the unit everything else refers to |
 | W4 · Correcting | Edit workout and fix set in place with the editable number; the keypad sheet retires | Reuses the W2 reader and the past-workout number row |

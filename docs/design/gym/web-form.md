@@ -37,13 +37,14 @@ A board is wrong if its content is shorter than two thirds of its frame. The ans
 column — it is the split. On desktop the routine editor is **movements left (read), the selected
 movement's ladder right (figures)**; there is no sheet. Narrow keeps the sheet.
 
-Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The `Web shell` insets its own nav
-at 20, so a narrow board's rows sit 4px left of the nav above them; the shell owns that reconciliation
-and it is ledgered as F39.
+Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The shared app header uses
+12px side insets at narrow widths. Gym tabs use 20px insets; their 4px offset from product content
+is ledgered as F39.
 
-Vertical: 8px grid. Editable and movement row heights are 44 and 56; the history index uses 48. Section gap 32. A board with no chrome starts its
-content at 96; every board on the proposal page carries the `Web shell`, so content starts one section
-gap below it — 184 on desktop, 164 on narrow. The action band sits at the foot of the **content**, not
+Vertical: 8px grid. Editable and movement row heights are 44 and 56; the history index uses 48.
+Section gap 32. Authenticated boards carry the `Web shell`; their content starts one section
+gap below it — 156 on desktop, 136 on narrow. Public recipient and preview boards use their
+own header and content measurements. The action band sits at the foot of the **content**, not
 the viewport, and never floats over empty canvas.
 
 ## The numeric row
