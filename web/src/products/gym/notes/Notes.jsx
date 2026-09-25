@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import '../coach/coach.css';
+import './notes.css';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF } from '../log.js';
@@ -14,6 +15,10 @@ import {
   orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
+
+function countReadout(label) {
+  return label.split(/(\d+)/).map((part, index) => index % 2 ? <span key={index}>{part}</span> : part);
+}
 
 // Reached only signed in, like the Coach room it is a door off. The list is the store's order; a
 // drag moves it here first and the store's answer replaces it.
@@ -89,18 +94,19 @@ export function Notes({ log }) {
     );
   }
 
-  const open = (note) => setEditing(note);
-  const fresh = (title = '') => open({ id: mintNoteId(), title, body: '', fresh: true });
+  const fresh = (title = '') => setEditing({ id: mintNoteId(), title, body: '', fresh: true });
 
   return (
     <section className="gym-notes">
       <CoachNavigation active="notes" noteCount={notes.length} />
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
-      <header className="gym-notes-head">
-        <h1 className="gym-title">{NOTES_TITLE}</h1>
-        <p className="gym-notes-sub">{HEAD_LINE}</p>
+      <header className="gym-notes-heading">
+        <div className="gym-notes-head">
+          <h1 className="gym-title">{NOTES_TITLE}</h1>
+          <p className="gym-notes-sub">{HEAD_LINE}</p>
+        </div>
+        <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
       </header>
-      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
 
       {view.phase === 'loading' && held === null && <p className="gym-quiet">Opening your notes…</p>}
       {view.phase === 'failed' && held === null && (
@@ -128,12 +134,13 @@ export function Notes({ log }) {
             </ul>
           )}
 
-          {shown.length > 0 && <NoteList notes={shown} onOpen={open} onMove={move} />}
-          {shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
-
-          {isFull(notes)
-            ? <p className="gym-notes-full">{FULL_LINE}</p>
-            : <button type="button" className="gym-notes-add" onClick={() => fresh()}>{ADD_VERB}</button>}
+          {shown.length > 0 && <NoteList notes={shown} onOpen={setEditing} onMove={move} />}
+          <div className="gym-notes-footer">
+            {shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
+            {isFull(notes)
+              ? <p className="gym-notes-full">{FULL_LINE}</p>
+              : <button type="button" className="gym-notes-add" onClick={() => fresh()}>{ADD_VERB}</button>}
+          </div>
         </>
       )}
     </section>
@@ -194,8 +201,11 @@ function NoteList({ notes, onOpen, onMove }) {
                 ⠿
               </button>
               <button type="button" className="gym-note-row" onClick={() => onOpen(note)}>
-                <span className="gym-note-title">{note.title}</span>
-                {meta && <span className="gym-note-meta">{meta}</span>}
+                <span className="gym-note-summary">
+                  <span className="gym-note-title">{note.title}</span>
+                  {meta && <span className="gym-note-meta">{meta}</span>}
+                </span>
+                <span className="gym-note-chevron" aria-hidden="true">›</span>
               </button>
             </li>
           );
@@ -233,39 +243,45 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
   };
 
   return (
-    <section className="gym-note-editor">
+    <section className={`gym-note-editor${note.fresh ? ' is-new' : ''}`}>
       <CoachNavigation active="notes" noteCount={noteCount} />
       <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
-      <header className="gym-editor-head"><h1 className="gym-title">{note.fresh ? 'New note' : 'Edit note'}</h1></header>
-      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
-      <label className="gym-note-label" htmlFor="gym-note-title">Title</label>
-
-      {/* No maxLength: a sixty-first character is taken and counted, and the store's refusal is shown. */}
-      <input
-        id="gym-note-title"
-        className="gym-note-title-input"
-        value={title}
-        placeholder="Title"
-        aria-label="Note title"
-        onChange={(event) => setTitle(event.target.value)}
-        autoFocus
-      />
-      {showsTitleCount(title) && (
-        <p className={isTitleOverCap(title) ? 'gym-note-count is-over' : 'gym-note-count'}>{titleCountLabel(title)}</p>
-      )}
-      <label className="gym-note-label" htmlFor="gym-note-body">What Coach should know</label>
-      <textarea
-        id="gym-note-body"
-        className="gym-note-body"
-        value={body}
-        rows={8}
-        placeholder="What Coach should know"
-        aria-label="Note body"
-        onChange={(event) => setBody(event.target.value)}
-      />
-      {showsByteCount(body) && (
-        <p className={isBodyOverCap(body) ? 'gym-note-count is-over' : 'gym-note-count'}>{byteCountLabel(body)}</p>
-      )}
+      <header className="gym-notes-heading">
+        <h1 className="gym-title">{note.fresh ? 'New note' : 'Edit note'}</h1>
+        <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
+      </header>
+      <div className="gym-note-fields">
+        <div className="gym-note-field">
+          <label className="gym-note-label" htmlFor="gym-note-title">Title</label>
+          <input
+            id="gym-note-title"
+            className="gym-note-title-input"
+            value={title}
+            placeholder="Give this note a title"
+            aria-label="Note title"
+            onChange={(event) => setTitle(event.target.value)}
+            autoFocus
+          />
+          {showsTitleCount(title) && (
+            <p className={isTitleOverCap(title) ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(titleCountLabel(title))}</p>
+          )}
+        </div>
+        <div className="gym-note-field">
+          <label className="gym-note-label" htmlFor="gym-note-body">What Coach should know</label>
+          <textarea
+            id="gym-note-body"
+            className="gym-note-body"
+            value={body}
+            rows={8}
+            placeholder="Write a note for Coach"
+            aria-label="Note body"
+            onChange={(event) => setBody(event.target.value)}
+          />
+          {showsByteCount(body) && (
+            <p className={isBodyOverCap(body) ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(byteCountLabel(body))}</p>
+          )}
+        </div>
+      </div>
       {refused && <p className="gym-editor-missing">{refused}</p>}
 
       {/* One press. The window holds the delete, the editor is left in the same act, and the room's

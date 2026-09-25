@@ -287,6 +287,7 @@ test('history uses server scope totals and names the unit once, with no legacy s
   assert.deepEqual(findByClass(view.tree, 'gym-log-count').map(textOf), ['2 workouts · 12 sets · 84 reps · loads in kg']);
   const rows = elementsOf(HistoryIndex({ sessions: summaries })).filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow');
   assert.deepEqual(rows.map((row) => findByClass(row.type(row.props), 'gym-row-facts').map(textOf)), [['9 sets2,160'], ['3 sets1,380']]);
+  assert.deepEqual(rows.map((row) => findByClass(row.type(row.props), 'gym-row-when').map(textOf)), [['7 Sep'], ['24 Aug']]);
 });
 
 

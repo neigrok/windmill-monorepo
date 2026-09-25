@@ -21,6 +21,7 @@ test('setup previews without mutation, requires a successful read, and retries c
   const { LogShareScreen } = await loadScreen('products/gym/share/LogShare.jsx');
   const screen = renderHook(t, () => LogShareScreen());
   await settle();
+  assert.equal(findByClass(screen.tree, 'gym-share-active').length, 0);
   button(screen.tree, 'Preview').props.onClick();
   assert.deepEqual(requests, []);
   assert.equal(button(screen.tree, 'Create link').props.disabled, true);
@@ -88,6 +89,10 @@ test('shared collapsed and expanded sets stay in kilograms without changing the 
   assert.deepEqual(findByClass(screen.tree, 'gym-share-scheme').map(textOf), ['2 × 8 · 60']);
   findByClass(screen.tree, 'gym-share-scheme')[0].props.onClick();
   assert.deepEqual(elementsOf(findByClass(screen.tree, 'gym-share-sets')[0]).filter((element) => element.type === 'li').map(textOf), ['60×8', '60×8']);
+  assert.equal(findByClass(screen.tree, 'gym-movement-expand')[0].props['aria-label'], 'Collapse Bench Press');
+  findByClass(screen.tree, 'gym-movement-expand')[0].props.onClick();
+  assert.deepEqual(findByClass(screen.tree, 'gym-share-scheme').map(textOf), ['2 × 8 · 60']);
+  assert.equal(findByClass(screen.tree, 'gym-movement-expand')[0].props['aria-expanded'], false);
   assert.equal(weightUnit(), 'lb');
 });
 

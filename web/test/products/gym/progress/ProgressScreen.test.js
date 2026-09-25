@@ -24,8 +24,8 @@ test('all-time chart table and gap labels keep years across a multiyear horizon'
   const screen = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log: { progress: { phase: 'ready', data: { sessions } } } }));
   elementsOf(screen.tree).find((each) => each.type === 'button' && textOf(each) === 'All').props.onClick();
   const chart = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'DotChart');
-  assert.deepEqual(elementsOf(screen.tree).filter((each) => each.type === 'td').map(textOf), ['10 Jun 2024', '60 × 8', '76', '3 Mar 2026', '60 × 8', '76']);
+  assert.deepEqual(elementsOf(screen.tree).filter((each) => each.type === 'td').map(textOf), ['10 Jun 2024', '60×8', '76.0', '3 Mar 2026', '60×8', '76.0']);
   assert.equal(chart.props.formatDate(sessions[0].startedAt), '10 Jun 2024');
-  assert.equal(chart.props.gapLabel(chart.props.points[0], chart.props.points[1]), 'no session · 10 Jun 2024 – 3 Mar 2026');
+  assert.equal(chart.props.gapLabel(chart.props.points[0], chart.props.points[1]), 'No session · 10 Jun 2024–3 Mar 2026');
   assert.equal(chart.props.points[0].label, '76 kg est · 10 Jun 2024 · 60 × 8');
 });

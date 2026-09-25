@@ -31,9 +31,14 @@
 
 .gym-column {
   box-sizing: border-box;
-  max-width: calc(var(--gym-measure-desk) + 32px);
+  width: 100%;
+  max-width: calc(var(--gym-measure-read) + 32px);
   margin: 0 auto;
   padding: 32px 16px;
+}
+.gym-column.has-desk,
+.gym-column.has-coach {
+  max-width: calc(var(--gym-measure-desk) + 32px);
 }
 
 /* A room's page title and a record's name are one face: the family's display title, one step
@@ -1548,11 +1553,9 @@ button.gym-set:focus-visible .gym-set-fix {
 
 /* ── Add a past workout ────────────────────────────────────── */
 
-/* The form on the figures measure and the focused movement's source beside it, on the desk. */
-@media (min-width: 1024px) {
-  .gym-column.has-desk {
-    max-width: 1056px;
-  }
+.gym-routine-pick {
+  max-width: var(--gym-measure-read);
+  margin-inline: auto;
 }
 .gym-past-top {
   display: flex;
@@ -1571,6 +1574,9 @@ button.gym-set:focus-visible .gym-set-fix {
 /* The routine pick — the log's index row. */
 .gym-index {
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   max-width: 640px;
   margin: 0;
   padding: 0;
@@ -1578,9 +1584,11 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-index-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 0 14px;
   color: var(--gym-ink);
   text-decoration: none;
   transition: background var(--duration-fast) var(--ease-standard);
@@ -1595,15 +1603,16 @@ button.gym-set:focus-visible .gym-set-fix {
   gap: 8px;
 }
 .gym-index-name {
-  font-size: 15px;
+  font: 600 15px/22px var(--font-body);
 }
 .gym-index-when {
-  font-size: 12px;
+  font: 400 13px/18px var(--font-body);
   color: var(--gym-ink-faint);
 }
 .gym-index-facts {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--gym-ink-dim);
   font-variant-numeric: tabular-nums;
 }
@@ -1635,22 +1644,25 @@ button.gym-set:focus-visible .gym-set-fix {
   gap: 8px;
 }
 .gym-chip {
-  height: 40px;
+  height: 38px;
   padding: 0 12px;
   border: 1px solid var(--gym-line-strong);
   border-radius: var(--radius-full);
   background: transparent;
   color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 14px;
+  font: 700 14px/20px var(--font-body);
   cursor: pointer;
 }
 .gym-chip.is-on {
+  height: 36px;
+  border: 0;
   border-color: transparent;
   background: var(--color-brand-soft);
   color: var(--gym-ink);
   font-weight: 700;
 }
+.gym-past-days .gym-past-link { min-height: 38px; padding: 0 0 0 8px; font: 700 14px/20px var(--font-body); }
+
 /* The native date field sits under its chip, reached through the chip. */
 .gym-past-day-field {
   position: absolute;
@@ -1680,15 +1692,20 @@ button.gym-set:focus-visible .gym-set-fix {
   text-decoration: none;
   cursor: pointer;
 }
-/* The start field wears the editable number's underline, and its focus grows the same way. */
+.gym-past-time { position: relative; display: block; width: 64px; }
+.gym-past-time:focus-within { width: 136px; }
+.gym-past-time-value { position: absolute; top: 4px; left: 8px; color: var(--gym-ink); font: 400 16px/20px var(--font-mono); pointer-events: none; }
+.gym-past-time:focus-within .gym-past-time-value { visibility: hidden; }
 .gym-past-start {
-  height: 40px;
-  padding: 0 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 8px 8px;
   border: none;
   border-bottom: 1px solid var(--gym-line);
   border-radius: 0;
   background: linear-gradient(var(--color-brand), var(--color-brand)) center bottom / 0% 2px no-repeat;
-  color: var(--gym-ink);
+  color: transparent;
   font-family: var(--font-mono);
   font-size: 16px;
   font-variant-numeric: tabular-nums;
@@ -1698,9 +1715,12 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-root[data-theme="light"] .gym-past-start {
   color-scheme: light;
 }
+.gym-past-start::-webkit-calendar-picker-indicator { opacity: 0; }
 .gym-past-start:focus {
   outline: none;
+  color: var(--gym-ink);
 }
+.gym-past-start:focus::-webkit-calendar-picker-indicator { opacity: 1; }
 .gym-past-start:focus-visible {
   background-size: 100% 2px;
 }
@@ -1713,10 +1733,10 @@ button.gym-set:focus-visible .gym-set-fix {
 
 /* The unit, named once, over every row. */
 .gym-past-units {
+  font: 400 13px/18px var(--font-mono);
   margin: 0 0 8px;
   padding-left: 12px;
   font-family: var(--font-mono);
-  font-size: 12px;
   color: var(--gym-ink-faint);
   word-spacing: 4px;
 }
@@ -1730,15 +1750,14 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-past-line {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-height: 56px;
-  border-left: 2px solid transparent;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border: 0;
   transition: background var(--duration-fast) var(--ease-standard);
 }
-.gym-past-line:hover { background: var(--gym-surface); }
+.gym-past-line:hover .gym-past-name { background: var(--gym-surface); }
 @media (min-width: 801px) {
-  .gym-past-movement.is-focused .gym-past-line { background: var(--gym-surface); border-left-color: var(--color-brand); }
+  .gym-past-movement.is-focused .gym-past-name { background: var(--gym-surface); border-left-color: var(--color-brand); }
 }
 .gym-past-name {
   flex: 1;
@@ -1746,22 +1765,23 @@ button.gym-set:focus-visible .gym-set-fix {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: 8px 12px;
-  border: none;
+  gap: 2px;
+  height: 56px;
+  box-sizing: border-box;
+  justify-content: center;
+  padding: 0 12px;
+  border: 0;
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.gym-past-movement-name {
-  font-size: 15px;
-}
+.gym-past-movement-name { font: 600 15px/22px var(--font-body); }
 .gym-past-scheme,
 .gym-past-mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
+  font: 400 13px/18px var(--font-mono);
   color: var(--gym-ink-dim);
   font-variant-numeric: tabular-nums;
 }
@@ -1771,14 +1791,14 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-past-rail-tick {
   width: 2px;
-  height: 12px;
+  height: 10px;
   border-radius: var(--radius-full);
   background: var(--gym-ink-dim);
 }
 .gym-past-drop,
 .gym-past-set-drop {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   flex: none;
   border: none;
   border-radius: var(--radius-full);
@@ -1790,6 +1810,7 @@ button.gym-set:focus-visible .gym-set-fix {
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
+.gym-past-set-drop { margin-left: auto; }
 .gym-past-line:hover .gym-past-drop,
 .gym-past-line:focus-within .gym-past-drop,
 .gym-past-set:hover .gym-past-set-drop,
@@ -1835,11 +1856,13 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-past-tick {
   width: 2px;
-  height: 12px;
+  height: 10px;
   flex: none;
   border-radius: var(--radius-full);
   background: var(--gym-line-strong);
 }
+
+.gym-past-set .gym-num { box-sizing: border-box; width: max(48px, calc(var(--gym-number-chars, 2) * 1ch + 16px)); height: 36px; padding-bottom: 8px; }
 
 /* The editable number: the underline grows from the centre when it takes the focus. */
 .gym-num {
@@ -1908,27 +1931,27 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-past-refusal-title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 700;
+  font: 700 14px/20px var(--font-body);
 }
 .gym-past-refusal-body {
   margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font: 400 14px/21px var(--font-body);
   color: var(--gym-ink-dim);
 }
 .gym-past-refusal-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 4px;
+  gap: 24px;
+  margin-top: 8px;
+  padding-top: 4px;
 }
 .gym-past-refusal-open,
 .gym-past-refusal-fix {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 20px;
   padding: 0;
+  font: 700 14px/20px var(--font-body);
 }
 .gym-past-refusal-fix {
   color: var(--gym-ink);
@@ -1938,8 +1961,8 @@ button.gym-set:focus-visible .gym-set-fix {
 @media (max-width: 480px) {
   .gym-past-days .gym-past-link {
     flex-basis: 100%;
-    min-height: 36px;
-    padding: 0;
+    min-height: 20px;
+    padding: 0 0 0 8px;
     text-align: left;
   }
 }
@@ -1951,24 +1974,26 @@ button.gym-set:focus-visible .gym-set-fix {
   gap: 16px;
   margin-top: 24px;
 }
-/* At the shell's narrow width a form that outgrows the screen keeps its Save in reach: the band
-   pins to the bottom on the page's own ground, and sits at the foot of the content when it fits. */
+/* Save stays above the transient's own row, whose height can grow with its message. */
 @media (max-width: 480px) {
   .gym-save {
     position: sticky;
     bottom: 0;
     z-index: 1;
-    padding: 12px 0 calc(12px + var(--content-safe-area-bottom, env(safe-area-inset-bottom)));
+    padding: 0 0 12px;
     background: var(--gym-canvas);
   }
-}
-/* The transient clears the sticky Save band as well as the bottom navigation. */
-@media (max-width: 480px) {
-  .gym-root:has(.gym-save) .gym-toast-slot {
-    bottom: calc(var(--gym-bottom-panel-height, 0px) + 80px + var(--content-safe-area-bottom, env(safe-area-inset-bottom)));
+  .gym-room:has(.gym-save) .gym-own-header { order: -3; }
+  .gym-room:has(.gym-save) .gym-scroll { order: -2; }
+  .gym-room:has(.gym-save) .gym-toast-slot {
+    position: static;
+    flex: none;
+    order: -1;
+    transform: none;
+    align-self: center;
   }
-  .gym-column:has(.gym-save) {
-    padding-bottom: 160px;
+  .gym-room:has(.gym-save) .gym-toast-slot:not(:empty) {
+    margin-bottom: 12px;
   }
 }
 .gym-save-note {
@@ -2010,23 +2035,21 @@ button.gym-set:focus-visible .gym-set-fix {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 16px;
   padding: 24px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--gym-surface);
 }
-.gym-past-card-title {
+.gym-past-card-title { margin: 0; font: 700 17px/24px var(--font-body); }
+.gym-past-card-line {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-}
-.gym-past-card-line,
-.gym-past-last {
-  margin: 0;
-  font-size: 14px;
+  font: 400 14px/21px var(--font-body);
   color: var(--gym-ink-dim);
 }
+.gym-past-card > a { padding: 12px 20px !important; font: 700 14px/20px var(--font-body) !important; }
+.gym-past-last { margin: 0; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
 .gym-past-target {
+  line-height: 18px;
   align-self: stretch;
   display: flex;
   justify-content: space-between;
@@ -2040,13 +2063,14 @@ button.gym-set:focus-visible .gym-set-fix {
   padding: 0 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 16px;
+  gap: 4px;
+  font: 400 16px/20px var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+.gym-past-lifted li { padding-block: 2px; }
 .gym-past-caption {
-  margin: 4px 0 0;
+  margin: 0;
+  line-height: 16px;
   font-size: 12px;
   color: var(--gym-ink-faint);
 }
@@ -2054,6 +2078,7 @@ button.gym-set:focus-visible .gym-set-fix {
 @media (max-width: 1023px) {
   .gym-past {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: 24px;
   }
   .gym-past-side {
     display: contents;
@@ -2766,215 +2791,6 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink-dim);
 }
 
-
-/* ── Notes — what the lifter writes for Coach ─────────────── */
-.gym-notes {
-  padding-bottom: 24px;
-}
-.gym-notes-head {
-  margin: 8px 0 18px;
-}
-.gym-notes-sub {
-  margin: 2px 0 0;
-  font-size: 14px;
-  line-height: 21px;
-  color: var(--gym-ink-dim);
-}
-/* The one fact a lifter would not guess, said in a panel of its own under the head. */
-.gym-notes-disclosure {
-  margin: 0 0 18px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  background: var(--gym-surface);
-  font-size: 14px;
-  line-height: 21px;
-  color: var(--gym-ink);
-}
-.gym-notes-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.gym-note {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
-}
-/* Lifted under the finger, and must not be caught by the pointer test of the rows it passes over. */
-.gym-note.is-dragging {
-  position: relative;
-  z-index: 3;
-  pointer-events: none;
-}
-.gym-note.is-dragging .gym-note-row {
-  border-color: var(--color-brand);
-  box-shadow: var(--shadow-md);
-}
-.gym-note-rail {
-  flex: none;
-  width: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--gym-ink-faint);
-  font: inherit;
-  font-size: 15px;
-  cursor: grab;
-  /* The browser must not take the drag for a scroll. */
-  touch-action: none;
-}
-.gym-note.is-dragging .gym-note-rail {
-  pointer-events: auto;
-  cursor: grabbing;
-}
-.gym-note-row {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-height: 52px;
-  padding: 11px 14px;
-  border: 1px solid var(--gym-line);
-  border-radius: var(--radius-md);
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.gym-note-row:hover {
-  background: var(--gym-raised);
-  border-color: var(--gym-line-strong);
-}
-/* An empty row with a placeholder in it is an offer, not a note. */
-.gym-note-row.is-placeholder {
-  width: 100%;
-  border-style: dashed;
-  background: transparent;
-}
-.gym-note-row.is-placeholder .gym-note-title {
-  color: var(--gym-ink-faint);
-  font-weight: 600;
-}
-.gym-note-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gym-note-meta {
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--gym-ink-faint);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gym-notes-caption {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--gym-ink-faint);
-}
-.gym-notes-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  margin-top: 12px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.gym-notes-add:hover {
-  background: var(--gym-raised);
-  border-color: var(--color-brand);
-  color: var(--gym-ink);
-}
-/* The ceiling, said in the body face at the moment it bites. */
-.gym-notes-full {
-  margin: 12px 0 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--gym-ink-dim);
-}
-.gym-note-editor .gym-editor-head {
-  justify-content: flex-end;
-}
-.gym-note-title-input {
-  box-sizing: border-box;
-  width: 100%;
-  height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--gym-line);
-  border-radius: var(--radius-md);
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-}
-.gym-note-body {
-  box-sizing: border-box;
-  width: 100%;
-  margin-top: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--gym-line);
-  border-radius: var(--radius-md);
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 14.5px;
-  line-height: 1.5;
-  resize: vertical;
-}
-.gym-note-title-input:focus,
-.gym-note-body:focus {
-  outline: none;
-  border-color: var(--color-brand);
-}
-/* Drawn from the last fifth only; a short note carries no chrome. */
-.gym-note-count {
-  margin: 6px 0 0;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
-  font-variant-numeric: tabular-nums;
-}
-.gym-note-count.is-over {
-  color: var(--alarm-ink);
-}
-.gym-note-delete {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin-top: 18px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--alarm-ink);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
 
 /* ── A confirmation — the turn-down, and it is the only one the room asks ── */
 .gym-confirm {
@@ -3849,7 +3665,6 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 
 /* The web frame: scrollable content above a persistent, centred gym panel. */
-.gym-column:not(.has-desk):not(.has-coach) > * { max-width: var(--gym-measure-read); }
 .gym-own-header {
   box-sizing: border-box;
   flex: none;
@@ -3908,46 +3723,39 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-log-screen .gym-door-past { background: var(--color-brand); color: var(--gym-on-accent); border-color: transparent; }
 .gym-history-filters { min-height: 44px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .gym-history-filter { display: inline-flex; align-items: center; max-width: 100%; background: var(--gym-surface); border-radius: var(--gym-card-radius); }
+.gym-history-select { position: relative; min-width: 0; max-width: 210px; border-radius: inherit; }
+.gym-history-select > span { display: block; box-sizing: border-box; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 8px 16px; color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); }
+.gym-history-select:focus-within { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+.gym-history-filter .gym-history-select select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .gym-history-filter select { appearance: none; max-width: 210px; min-height: 36px; border: 0; padding: 8px 12px; border-radius: inherit; background: transparent; color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); }
 .gym-history-filter option { background: var(--gym-surface); color: var(--gym-ink); }
 .gym-history-filter button { min-width: 32px; min-height: 36px; border: 0; background: transparent; color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-log-screen .gym-log-count { margin: 0; font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); }
 .gym-consistency { margin: 0; color: var(--gym-ink-faint); font: 400 13px/18px var(--font-body); }
-.gym-history-empty { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; box-sizing: border-box; width: min(640px, 100%); padding: 24px; border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); }
+.gym-history-empty { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; box-sizing: border-box; width: min(640px, 100%); padding: 24px; border-radius: var(--gym-card-radius); box-shadow: inset 0 0 0 1px var(--gym-line); background: var(--gym-surface); }
 .gym-history-empty p { margin: 0; color: var(--gym-ink-dim); font: 700 17px/24px var(--font-body); }
+.gym-root .gym-history-empty > button { height: 44px; padding: 10px 20px !important; border: 0 !important; }
 .gym-history-workspace { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
 .gym-history-index { max-height: min(780px, 80vh); overflow-y: auto; }
 .gym-history-year h2 { margin: 0 0 4px; color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); }
-.gym-history-year + .gym-history-year { margin-top: 16px; }
+.gym-history-year + .gym-history-year { margin-top: 4px; }
 .gym-history-index .gym-sessions { gap: 4px; }
-.gym-history-index .gym-row { min-height: 48px; box-sizing: border-box; justify-content: center; padding: 5px 12px; border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; }
+.gym-history-index .gym-row { min-height: 56px; box-sizing: border-box; justify-content: center; padding: 5px 12px; border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; }
 .gym-history-index .gym-row:hover { background: var(--gym-surface); }
 .gym-history-index .gym-row.is-selected { border-left-color: var(--color-brand); background: var(--gym-surface); }
-.gym-history-index .gym-row-title { font-weight: 600; }
-.gym-history-index .gym-row-when { margin-left: 0; }
-.gym-history-index .gym-row-facts { gap: 8px; margin-top: 2px; font-size: 13px; }
+.gym-history-index .gym-row-title { font: 600 15px/22px var(--font-body); }
+.gym-history-index .gym-row-when { margin-left: 0; font: 400 13px/18px var(--font-body); }
+.gym-history-index .gym-row-facts { gap: 8px; margin-top: 2px; font: 400 13px/18px var(--font-mono); }
 .gym-history-index .gym-row-facts span + span::before { content: '·'; margin-right: 8px; }
 .gym-history-index.is-compact .gym-row { min-height: 44px; }
 .gym-history-index.is-compact .gym-row-facts { display: none; }
 .gym-history-detail { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .gym-history-reader { min-width: 0; }
-.gym-history-reader .gym-detail-head { margin-bottom: 24px; }
+.gym-history-reader .gym-detail-head { margin-bottom: 0; }
 .gym-history-reader .gym-title { font: 700 32px/40px var(--font-display); }
 .gym-history-reader .gym-share { margin-top: 24px; }
 .gym-history-reader .gym-detail-discard { margin-top: 16px; }
 .gym-section-title { margin: 0; font: 700 17px/24px var(--font-body); }
-.gym-progress { display: flex; flex-direction: column; gap: 16px; }
-.gym-progress-grid { columns: 2; column-gap: 24px; }
-.gym-progress-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; margin-bottom: 24px; break-inside: avoid; border-radius: var(--gym-card-radius); border: 1px solid var(--gym-line); background: var(--gym-surface); color: var(--gym-ink-dim); text-decoration: none; }
-.gym-progress-card h3 { margin: 0; display: flex; justify-content: space-between; gap: 12px; color: var(--gym-ink); font: 600 15px/22px var(--font-body); }
-.gym-progress-card p { margin: 0; font: 400 13px/18px var(--font-mono); }
-.gym-progress-card .gym-progress-window, .gym-progress-card .gym-progress-count { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
-.gym-progress-card .gym-progress-sparse { font: 400 13px/18px var(--font-body); }
-.gym-progress-card .is-record { color: var(--pr-ink); }
-.gym-record-chart { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 20px; border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); }
-.gym-window { display: flex; gap: 8px; }
-.gym-window button { min-height: 36px; padding: 6px 16px; border: 1px solid transparent; border-radius: var(--gym-card-radius); background: var(--gym-surface); color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); cursor: pointer; }
-.gym-window button[aria-pressed='true'] { border-color: var(--color-brand); color: var(--gym-ink); }
 .gym-scheme-row { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 0; background: transparent; color: var(--gym-ink); text-align: left; font: 400 13px/18px var(--font-mono); cursor: pointer; }
 .gym-scheme-row:hover { background: var(--gym-surface); }
 .gym-set-rail { display: inline-flex; flex: none; gap: 4px; min-width: 10px; align-items: center; }
@@ -3957,55 +3765,68 @@ button.gym-set:focus-visible .gym-set-fix {
   .gym-history-workspace { display: flex; flex-direction: column-reverse; gap: 24px; }
   .gym-history-index { width: 100%; max-height: none; }
   .gym-history-detail { width: 100%; }
-  .gym-progress-grid { columns: 1; }
   .gym-history-reader { display: none; }
   .gym-log-screen.has-session > :not(.gym-history-workspace),
   .gym-log-screen.has-session .gym-history-index,
   .gym-log-screen.has-session .gym-progress { display: none; }
   .gym-log-screen.has-session .gym-history-reader { display: block; border: 0; padding: 0; }
   .gym-history-filter select { max-width: 170px; }
-  .gym-record-chart { padding: 16px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gym-num, .gym-row, .gym-set, .gym-scheme-row { transition: none; animation: none; }
 }
 .gym-correction-form { display: flex; flex-direction: column; gap: 16px; }
 .gym-correction-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
-.gym-correction-row .gym-num { width: 6ch; min-width: 48px; }
-.gym-correction-row .gym-num[aria-invalid='true'] { border-color: var(--alarm-ink); }
 .gym-number-times { color: var(--gym-ink-faint); font: 400 16px/20px var(--font-mono); }
-.gym-correction-actions { display: flex; justify-content: space-between; gap: 16px; }
+.gym-correction-actions { display: flex; align-items: center; justify-content: flex-end; gap: 24px; }
 .gym-reader-top-back, .gym-reader-edit-narrow { display: none; }
-.gym-workout-note { margin: 8px 0 32px; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
-.gym-workout-desk { display: grid; grid-template-columns: 420px 420px; gap: 32px; justify-content: space-between; align-items: start; }
+.gym-workout-note { margin: 2px 0 0; color: var(--gym-ink-dim); font: 400 14px/20px var(--font-body); }
+.gym-workout-desk { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start; }
 .gym-correction-form fieldset { display: flex; flex-direction: column; gap: 24px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .gym-correction-form fieldset:disabled input, .gym-correction-form fieldset:disabled .gym-workout-add { color: var(--gym-ink-faint); cursor: default; }
 .gym-correction-form fieldset:disabled .gym-correction-row .gym-set-rail { opacity: .4; }
 .gym-correction-actions > button:disabled { background: var(--color-brand) !important; color: var(--gym-on-accent) !important; opacity: .6; }
 
-.gym-workout-fields { display: grid; grid-template-columns: 140px 132px 132px; gap: 8px; }
+.gym-workout-fields { display: grid; grid-template-columns: minmax(0, 140fr) repeat(2, minmax(0, 132fr)); gap: 8px; }
 .gym-workout-fields label { display: flex; flex-direction: column; gap: 8px; font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
-.gym-workout-fields input { box-sizing: border-box; min-height: 36px; width: 100%; min-width: 0; border: 0; border-bottom: 1px solid var(--gym-line-strong); border-radius: 0; padding: 4px 0 8px; background: transparent; color: var(--gym-ink); font: 400 16px/24px var(--font-body); }
+.gym-workout-fields input { box-sizing: border-box; height: 36px; width: 100%; min-width: 0; border: 0; border-bottom: 1px solid var(--gym-line-strong); border-radius: 0; padding: 0 0 8px; background: transparent; color: var(--gym-ink); font: 400 16px/24px var(--font-body); }
 .gym-workout-fields input:focus { outline: 0; border-bottom: 2px solid var(--color-brand); }
+.gym-workout-local { position: relative; }
+.gym-workout-local-value { position: absolute; top: 24px; left: 0; color: var(--gym-ink); font: 400 16px/24px var(--font-body); pointer-events: none; }
+.gym-workout-fields .gym-workout-local input { color: transparent; }
+.gym-workout-local input::-webkit-calendar-picker-indicator { opacity: 0; }
+.gym-workout-local:focus-within .gym-workout-local-value { visibility: hidden; }
+.gym-workout-fields .gym-workout-local:focus-within input { color: var(--gym-ink); }
+.gym-workout-local:focus-within input::-webkit-calendar-picker-indicator { opacity: 1; }
+.gym-correction-form fieldset:disabled .gym-workout-local-value { color: var(--gym-ink-faint); }
+.gym-correction-form fieldset:disabled .gym-workout-local input { color: transparent; }
 .gym-workout-unit { margin: 0; color: var(--gym-ink-faint); font: 600 12px/16px var(--font-body); }
-.gym-workout-movement { display: flex; flex-direction: column; gap: 4px; }
+.gym-workout-sets, .gym-workout-movements { display: flex; flex-direction: column; gap: 8px; }
+.gym-workout-sets > .gym-workout-unit { box-sizing: border-box; min-height: 20px; padding-left: 12px; font: 400 13px/18px var(--font-mono); }
+.gym-workout-movement { display: flex; flex-direction: column; }
+.gym-workout-movement:has(.gym-workout-set) { padding-bottom: 8px; }
 .gym-workout-movement h2 { margin-bottom: 8px; font: 600 15px/22px var(--font-body); }
 .gym-workout-remove { margin-left: auto; min-width: 36px; min-height: 36px; padding: 0; border: 0; background: transparent; color: var(--gym-ink-faint); font: 400 20px var(--font-mono); cursor: pointer; }
 .gym-workout-set-note { color: var(--gym-ink-faint); margin: 0 0 8px 22px; font-size: 13px; }
-.gym-workout-add { min-height: 44px; border: 0; background: transparent; color: var(--color-brand); text-align: left; font: 700 14px/20px var(--font-body); cursor: pointer; }
+.gym-workout-add { min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--color-brand); text-align: left; font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-workout-picker { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .gym-workout-picker select { padding: 12px; border: 1px solid var(--gym-line); border-radius: var(--radius-md); background: var(--gym-surface); color: var(--gym-ink); font: inherit; }
-.gym-workout-totals { padding: 20px; border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); }
-.gym-workout-totals dl { display: flex; gap: 20px; margin: 16px 0; }
-.gym-workout-totals dl > div { display: flex; flex-direction: column-reverse; }
+.gym-workout-totals { box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; box-shadow: inset 0 0 0 1px var(--gym-line); border-radius: var(--radius-md); background: var(--gym-surface); }
+.gym-workout-totals dl { display: flex; flex-wrap: wrap; gap: 16px 44px; margin: 0; }
+.gym-workout-totals dl > div { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; }
+.gym-workout-totals dl > div + div::before { content: '·'; position: absolute; left: -24px; top: 0; color: var(--gym-ink-faint); font: 700 17px/24px var(--font-body); }
 .gym-workout-totals dt { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
 .gym-workout-totals dd { margin: 0; font: 500 28px/32px var(--font-mono); }
-.gym-workout-totals > p { font-size: 13px; color: var(--gym-ink-dim); }
+.gym-workout-totals > p { margin: 0; color: var(--gym-ink-dim); font: 400 13px/18px var(--font-body); }
+.gym-workout-totals > .gym-workout-unit { color: var(--gym-ink-faint); font: 600 12px/16px var(--font-body); }
+.gym-workout-totals .gym-short-discard { margin: 0; padding: 0; min-height: 20px; border: 0; background: transparent; color: var(--alarm-ink); font: 700 14px/20px var(--font-body); }
+.gym-workout-totals .gym-short-discard:disabled { color: var(--gym-ink-faint); cursor: default; }
 .gym-workout-cancel { align-self: center; color: var(--gym-ink-dim); text-decoration: none; }
-@media (max-width: 1000px) { .gym-workout-desk { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; } }
 @media (max-width: 800px) {
   .gym-workout-desk { display: flex; flex-direction: column; gap: 32px; }
   .gym-workout-desk > * { width: 100%; box-sizing: border-box; }
+  .gym-workout-totals .gym-short-discard { min-height: 44px; }
+  .gym-correction-actions { justify-content: space-between; }
 }
 .gym-date-jump { position: relative; }
 .gym-history-filter .gym-date-trigger { padding: 8px 16px; }
@@ -4019,21 +3840,23 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-date-choices button[aria-pressed='true'] { border-color: var(--color-brand); color: var(--gym-ink); }
 .gym-clear-filters { border: 0; background: transparent; color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-reader-nav { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.gym-reader-nav button, .gym-reader-nav a { background: transparent; border: 0; color: var(--gym-ink-dim); font: 600 15px/22px var(--font-body); text-decoration: none; cursor: pointer; padding: 10px 20px; }
-.gym-reader-nav button:disabled { opacity: .45; cursor: default; }
+.gym-reader-nav button, .gym-reader-nav a { background: transparent; border: 0; color: var(--gym-ink-dim); font: 700 16px/24px var(--font-body); text-decoration: none; cursor: pointer; padding: 10px 20px; }
+.gym-reader-nav button:disabled { opacity: .35; cursor: default; }
 .gym-reader-nav a { border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); }
-.gym-reader-totals { display: flex; gap: 32px; margin: 20px 0 0; }
-.gym-reader-totals > div { flex: 1; display: flex; flex-direction: column-reverse; gap: 2px; }
+.gym-reader-totals { display: flex; gap: 32px; margin: 24px 0 0; }
+.gym-reader-totals > div { display: flex; flex-direction: column-reverse; gap: 2px; }
 .gym-reader-totals dt { color: var(--gym-ink-faint); font: 400 12px/16px var(--font-body); }
 .gym-reader-totals dd { margin: 0; color: var(--gym-ink); font: 500 28px/32px var(--font-mono); }
-.gym-history-reader .gym-exercise { margin-top: 32px; }
-.gym-history-reader .gym-exercise-head { min-height: 32px; gap: 8px; margin-bottom: 0; }
+.gym-history-reader .gym-exercise { margin: 32px 0 0; }
+.gym-history-reader .gym-exercise-head { min-height: 32px; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 12px; margin-bottom: 0; }
 .gym-history-reader .gym-exercise-name { font: 700 17px/24px var(--font-body); }
-.gym-movement-expand { width: 24px; min-height: 32px; border: 0; background: transparent; color: var(--gym-ink-faint); font-size: 20px; cursor: pointer; }
-.gym-movement-totals { margin-left: auto; font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); white-space: nowrap; }
+.gym-movement-expand, .gym-movement-state { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 12px; min-height: 32px; }
+.gym-movement-expand { padding: 0; border: 0; background: transparent; color: var(--gym-ink-faint); cursor: pointer; }
+.gym-movement-totals { font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); white-space: nowrap; }
 .gym-history-reader .gym-set, .gym-history-reader .gym-scheme-row { box-sizing: border-box; min-height: 44px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.gym-history-reader .gym-set { align-items: center; gap: 4px; }
 .gym-history-reader .gym-set-load { font: 400 16px/20px var(--font-mono); }
-.gym-history-reader .gym-sets { gap: 0; border: 0; border-radius: 0; background: transparent; overflow: visible; }
+.gym-history-reader .gym-sets { max-width: var(--gym-measure-figures); gap: 0; border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .gym-workout-more { margin-top: 32px; font: 400 13px/18px var(--font-body); color: var(--gym-ink-faint); }
 .gym-workout-more summary { cursor: pointer; }
 .gym-progress-head { display: flex; flex-direction: column; gap: 8px; }
@@ -4053,63 +3876,56 @@ button.gym-set:focus-visible .gym-set-fix {
   .gym-reader-nav button { padding: 0; min-height: 44px; }
   .gym-reader-nav .gym-reader-edit { display: none; }
   .gym-reader-nav .gym-reader-top-back { display: inline-flex; padding: 0; border: 0; background: transparent; color: var(--text-link); font-weight: 400; }
-  .gym-reader-edit-narrow { display: inline-flex; align-self: flex-start; min-height: 44px; box-sizing: border-box; padding: 10px 20px; border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); color: var(--gym-ink); text-decoration: none; font: 700 16px/24px var(--font-body); }
+  .gym-reader-edit-narrow { display: inline-flex; align-items: center; align-self: flex-start; height: 44px; margin-top: 16px; box-sizing: border-box; padding: 0 20px; border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); background: var(--gym-surface); color: var(--gym-ink); text-decoration: none; font: 700 16px/24px var(--font-body); }
   .gym-log-screen:not(.has-session) .gym-reader-nav { display: none; }
   .gym-log-screen.has-session .gym-progress-head { display: none; }
   .gym-history-reader .gym-title { font-size: 28px; line-height: 36px; }
-  .gym-history-reader .gym-exercise-name { font-size: 15px; }
-  .gym-movement-totals { font-size: 12px; }
+  .gym-reader-totals { gap: 16px; }
+  .gym-reader-totals > div { flex: 1; }
 }
-.gym-workout-editor > .gym-back { margin-bottom: 32px; }
-.gym-workout-editor .gym-workout-note { margin-top: 0; }
+.gym-workout-editor { display: flex; flex-direction: column; gap: 32px; max-width: 872px; margin-inline: auto; }
+.gym-workout-editor > .gym-back { align-self: flex-start; }
+.gym-workout-editor .gym-correction-form { gap: 24px; }
 .gym-workout-movement-head { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0 12px; border: 0; background: transparent; color: var(--gym-ink); text-align: left; cursor: pointer; }
 .gym-workout-movement-head strong { display: block; font: 600 15px/22px var(--font-body); }
 .gym-workout-scheme { display: block; margin-top: 2px; font: 400 13px/18px var(--font-mono); }
 .gym-workout-movement-head:hover { background: var(--gym-surface); }
 .gym-workout-movement .gym-correction-row { gap: 8px; }
-.gym-workout-movement .gym-num { width: 48px; min-height: 36px; }
+.gym-workout-movement > .gym-workout-add { display: flex; align-items: center; gap: 8px; padding: 0; }
+.gym-workout-movement > .gym-workout-add::before { content: ''; width: 2px; height: 10px; background: var(--color-brand); }
+.gym-workout-movement .gym-num { box-sizing: border-box; width: max(48px, calc(var(--gym-number-chars, 2) * 1ch + 16px)); height: 36px; padding-bottom: 8px; }
+.gym-workout-movement .gym-correction-row .gym-set-rail { min-width: 2px; width: 2px; }
 .gym-workout-set:hover { background: var(--gym-surface); border-radius: var(--radius-md); }
 .gym-workout-remove { opacity: 0; transition: opacity 150ms var(--ease-standard); }
 .gym-workout-set:hover .gym-workout-remove, .gym-workout-set:focus-within .gym-workout-remove { opacity: 1; }
 @media (hover: none) { .gym-workout-remove { opacity: 1; } }
 
-.gym-history-end { margin: 12px 0 0; color: var(--gym-ink-dim); font: 400 13px/18px var(--font-body); }
+.gym-history-end { margin: 4px 0 0; color: var(--gym-ink-dim); font: 400 13px/18px var(--font-body); }
 .gym-log-options { margin-top: 8px; color: var(--gym-ink-faint); font: 400 13px/18px var(--font-body); }
 .gym-log-options summary { cursor: pointer; }
 .gym-log-options[open] { display: flex; flex-wrap: wrap; gap: 16px; }
 .gym-history-reader .gym-detail-when { margin-top: 12px; font: 400 14px/21px var(--font-body); }
 .gym-past-top > .gym-back { margin-bottom: 24px; }
 
-.gym-record-screen .gym-record-sub { margin: 16px 0 24px; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
-.gym-movement-progress { display: flex; flex-direction: column; gap: 16px; }
-.gym-record-chart h2 { margin: 0; color: var(--gym-ink); font: 600 15px/22px var(--font-body); }
-.gym-record-chart p { margin: 0; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
-.gym-record-chart .gym-chart-disclosure { color: var(--gym-ink-faint); }
-.gym-record-latest { margin: 0; font: 400 16px/24px var(--font-mono); }
-.gym-record-best { margin: 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
-.gym-record-series { width: min(460px, 100%); border: 1px solid var(--gym-line); border-radius: var(--gym-card-radius); padding: 20px; background: var(--gym-surface); border-spacing: 0; text-align: left; }
-.gym-record-series th { height: 32px; font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
-.gym-record-series td { height: 44px; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
-.gym-record-series td:nth-child(2) { font: 400 16px/24px var(--font-mono); color: var(--gym-ink); }
-.gym-record-series td:last-child, .gym-record-series th:last-child { text-align: right; }
-.gym-record-series td:last-child { font-family: var(--font-mono); }
-.gym-record-series td.is-record { color: var(--pr-ink); }
+.gym-record-screen .gym-record-sub { margin: 16px 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
 .gym-record-more { margin-top: 24px; color: var(--gym-ink-dim); }
 .gym-record-more summary { cursor: pointer; font-size: 13px; }
 
 .gym-set-warmup .gym-set-rail i { background: var(--warmup-ink); }
 
-.gym-history-index.is-dense .gym-row { min-height: 56px; }
 .gym-history-filter:has(button[aria-label^='Clear']) { box-shadow: inset 0 0 0 1px var(--color-brand); color: var(--gym-ink); }
+.gym-history-filter:has(button[aria-label^='Clear']) .gym-date-trigger,
+.gym-history-filter:has(button[aria-label^='Clear']) .gym-history-select > span { padding-right: 8px; color: var(--gym-ink); }
 .gym-date-scrim, .gym-date-handle { display: none; }
 @media (max-width: 800px) {
   .gym-log-screen.has-history-focus:not(.has-session) .gym-history-detail,
   .gym-log-screen:has(.gym-date-popover):not(.has-session) .gym-history-detail { display: none; }
-  .gym-workout-fields { grid-template-columns: minmax(0, 1fr) 132px 124px; }
-  .gym-record-chart .dot-chart-readout.is-hint { visibility: hidden; }
+  .gym-workout-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gym-workout-date-year { display: none; }
+  .gym-workout-editor, .gym-workout-editor .gym-correction-form, .gym-correction-form fieldset { gap: 16px; }
+  .gym-workout-note { font-size: 13px; line-height: 18px; }
   .gym-column:has(.gym-history-empty) { padding-bottom: 16px; }
-  .gym-history-empty { min-height: calc(100dvh - 336px); justify-content: center; align-items: center; text-align: center; border: 0; background: transparent; }
-  .gym-past-start { box-sizing: border-box; width: 136px; }
+  .gym-history-empty { min-height: calc(100dvh - 336px); justify-content: center; align-items: center; text-align: center; box-shadow: none; background: transparent; }
   .gym-past-duration { gap: 4px; }
   .gym-past-duration .gym-chip { padding-inline: 8px; }
   .gym-date-layer { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; }
@@ -4118,11 +3934,13 @@ button.gym-set:focus-visible .gym-set-fix {
   .gym-date-handle { display: block; width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--gym-line-strong); }
 }
 @media (max-width: 380px) {
+  .gym-workout-totals dl { column-gap: 24px; }
+  .gym-workout-totals dl > div + div::before { left: -14px; }
   .gym-workout-fields { grid-template-columns: 1fr 1fr; }
   .gym-workout-fields label:first-child { grid-column: 1 / -1; }
 }
 
-.gym-fix-page { display: flex; flex-direction: column; gap: 32px; }
+.gym-fix-page { display: flex; flex-direction: column; gap: 32px; max-width: var(--gym-measure-figures); margin-inline: auto; }
 .gym-fix-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .gym-fix-head .gym-title { margin: 0; }
 .gym-fix-sub { margin: 2px 0 0; color: var(--gym-ink-dim); font: 400 14px/20px var(--font-body); }
@@ -4133,17 +3951,19 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-fix-movement { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 56px; padding-left: 14px; }
 .gym-fix-movement h2 { margin: 0; font: 600 15px/22px var(--font-body); }
 .gym-fix-movement p { margin: 0; font: 400 13px/18px var(--font-mono); }
-.gym-fix-sibling, .gym-fix-row { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; gap: 8px; padding: 4px; font: 400 16px/20px var(--font-mono); }
-.gym-fix-row { background: var(--gym-surface); border-radius: var(--radius-md); }
+.gym-fix-sibling, .gym-fix-row { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; gap: 8px; padding: 0; font: 400 16px/20px var(--font-mono); }
+.gym-fix-sibling { gap: 4px; }
+.gym-fix-row { background: var(--gym-surface); border-radius: var(--radius-sm); }
+.gym-fix-row .gym-set-rail { min-width: 2px; width: 2px; }
 .gym-fix-row .gym-set-rail i { background: transparent; border: 1px solid var(--color-brand); box-sizing: border-box; }
-.gym-fix-row .gym-num { box-sizing: border-box; width: 64px; min-width: 48px; height: 36px; border-bottom-color: var(--gym-line-strong); }
-.gym-fix-row .gym-num[aria-invalid='true'] { border-bottom: 2px solid var(--alarm-ink); }
+.gym-fix-row .gym-num { box-sizing: border-box; width: max(48px, calc(var(--gym-number-chars, 2) * 1ch + 16px)); min-width: 48px; height: 36px; padding-bottom: 8px; border-bottom-color: var(--gym-line-strong); }
+.gym-correction-row .gym-num[aria-invalid='true'], .gym-fix-row .gym-num[aria-invalid='true'] { border-bottom: 2px solid var(--alarm-ink); background-image: linear-gradient(var(--alarm-ink), var(--alarm-ink)); }
 .gym-fix-remove { margin-left: auto; width: 24px; min-height: 36px; padding: 0; border: 0; background: transparent; color: var(--gym-ink-faint); font: 400 18px/24px var(--font-body); cursor: pointer; }
 .gym-fix-refusal { margin: 0; padding: 0 0 4px 12px; color: var(--alarm-ink); font: 400 13px/18px var(--font-body); }
 .gym-fix-extra { display: flex; flex-direction: column; gap: 12px; padding: 0 0 12px 12px; }
 .gym-fix-effort, .gym-fix-note { display: flex; flex-direction: column; gap: 8px; color: var(--gym-ink-faint); font: 600 12px/16px var(--font-body); }
 .gym-fix-ratings { display: flex; flex-wrap: wrap; gap: 4px; }
-.gym-fix-ratings button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: var(--radius-full); background: var(--gym-raised); color: var(--gym-ink-dim); font: 400 13px/18px var(--font-mono); cursor: pointer; }
+.gym-fix-ratings button { min-height: 24px; padding: 3px 8px; border: 0; border-radius: var(--radius-full); background: var(--gym-raised); color: var(--gym-ink-dim); font: 400 13px/18px var(--font-mono); cursor: pointer; }
 .gym-fix-ratings button:first-child { padding-inline: 12px; font: 600 12px/16px var(--font-body); }
 .gym-fix-ratings button[aria-pressed='true'] { box-shadow: inset 0 0 0 1.5px var(--color-brand); color: var(--color-brand); }
 .gym-fix-note > span { display: flex; justify-content: space-between; gap: 8px; }
@@ -4153,12 +3973,13 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-fix-note textarea[aria-invalid='true'] { border-bottom-color: var(--alarm-ink); }
 .gym-fix-note-caption { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .gym-fix-proof { margin: 0; color: var(--gym-ink-dim); font: 400 13px/18px var(--font-body); }
-.gym-fix-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; }
+.gym-fix-actions { display: flex; align-items: center; justify-content: flex-end; gap: 24px; min-height: 44px; }
 .gym-fix-delete { color: var(--alarm-ink); }
-.gym-fix-actions > button[type='submit'] { min-height: 44px; line-height: 20px; }
+.gym-fix-actions > button[type='submit'], .gym-correction-actions > button[type='submit'] { min-height: 44px; height: 44px; padding: 0 20px !important; border-radius: var(--radius-md) !important; font: 600 15px/22px var(--font-body) !important; }
 @media (max-width: 800px) {
   .gym-past-top { margin-bottom: 16px; }
   .gym-past-top > .gym-back { margin-bottom: 8px; }
   .gym-fix-page { gap: 16px; }
+  .gym-fix-actions { justify-content: space-between; }
   .gym-fix-sub { font-size: 13px; line-height: 18px; }
 }

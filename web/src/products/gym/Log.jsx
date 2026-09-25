@@ -9,7 +9,7 @@ import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fixSetHref, fromSession,
   groupByExercise, isFinished, logWhenLabel, NO_ROUTINE, planFrozenLabel, recordHref,
-  routineNameOf, sessionHref, setLoadLabel, timeLabel, tonnageLabel,
+  routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel,
 } from './log.js';
 import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
@@ -165,10 +165,13 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
 export function HistoryFilter({ label, value, options, onChange }) {
   const values = options.some((option) => String(option.id) === String(value)) || !value ? options : [{ id: value, name: value }, ...options];
   return <span className="gym-history-filter">
-    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-      <option value="">{label}</option>
-      {values.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-    </select>
+    <span className="gym-history-select">
+      <span aria-hidden="true">{value ? values.find((option) => String(option.id) === String(value))?.name : label}</span>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{label}</option>
+        {values.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+      </select>
+    </span>
     {value && <button type="button" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => onChange('')}>×</button>}
   </span>;
 }
@@ -185,7 +188,7 @@ export function HistoryIndex({ sessions, selected, filters = {}, hrefOf = null, 
 function SessionRow({ summary, selected, href, unit }) {
   const facts = [typeof summary.workingSetCount === 'number' ? `${summary.workingSetCount} sets` : null, tonnageLabel(summary.tonnageKg, unit)].filter(Boolean);
   return <li><a className={`gym-row${selected ? ' is-selected' : ''}`} href={href} aria-current={selected ? 'page' : undefined}>
-    <div className="gym-row-head"><span className="gym-row-title">{summary.routineName || routineNameOf(summary) || NO_ROUTINE}</span><span className="gym-row-when">{logWhenLabel(summary)}</span></div>
+    <div className="gym-row-head"><span className="gym-row-title">{summary.routineName || routineNameOf(summary) || NO_ROUTINE}</span><span className="gym-row-when">{isFinished(summary) ? shortDayLabel(summary.startedAt) : logWhenLabel(summary)}</span></div>
     {facts.length > 0 && <div className="gym-row-facts">{facts.map((fact) => <span key={fact}>{fact}</span>)}</div>}
     {closedOnItsOwn(summary) && <div className="gym-row-closed">{CLOSED_ITSELF_NOTE}</div>}
   </a></li>;
@@ -304,6 +307,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
                 <a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id, `${sessionHref(id)}?from=${encodeURIComponent(from)}`))}>{names.get(exerciseId) ?? exerciseId}</a>
               </h2>
               {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${names.get(exerciseId) ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
+              {!scheme && <span className="gym-movement-state" aria-hidden="true"><img src={new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
               <span className="gym-movement-totals">{movementTotals.reps} reps · {group.filter((set) => set.kind === 'working').every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageLabel(movementTotals.tonnageKg) ?? '0'} ${weightUnit()}`}</span>
             </div>
             {collapsed && <button type="button" className="gym-scheme-row" aria-expanded="false" onClick={() => setExpanded((current) => new Set(current).add(exerciseId))}>

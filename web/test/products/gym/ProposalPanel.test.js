@@ -87,14 +87,50 @@ test('the in-flight decision disables both mutations, and live workout context r
   assert.equal(findByClass(screen.tree, 'gym-proposal-caveat').length, 0);
 });
 
-test('external proposals expand inline from a compact routine summary and stay visible after the list refresh', async (t) => {
+test('a pending review belongs to its routine card and remains open after applying a removal refreshes the list', async (t) => {
   browserWith();
-  const { PendingProposals } = await loadScreen('products/gym/Proposals.jsx');
-  let routines = [{ id: 'r1', name: 'Push A', pendingProposal: proposal({ source: { door: 'mcp', name: 'Trainer' } }) }];
-  const screen = renderHook(t, () => PendingProposals({ routines, log: roomLog(), onChanged() {} }));
-  const card = elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPreview');
-  card.props.onExpand('p1');
-  routines = []; screen.redraw();
-  const panel = elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPanel');
+  const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
+  let routines = [{ id: 'r1', name: 'Push A', entries: [], pendingProposal: proposal({ source: { door: 'mcp', name: 'Trainer' } }) }];
+  t.mock.method(gymApi, 'routines', async () => routines);
+  const screen = renderHook(t, () => RoutinesList({ log: roomLog() }));
+  await settle();
+  const cards = findByClass(screen.tree, 'gym-routine');
+  assert.equal(cards.length, 1);
+  const preview = elementsOf(cards[0]).find((element) => element.type?.name === 'ProposalPreview');
+  assert.equal(preview.props.routine.id, 'r1');
+  assert.equal(findByClass(screen.tree, 'gym-proposals').length, 0);
+  preview.props.onExpand('p1');
+  let panel = elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPanel');
   assert.equal(panel.props.id, 'p1');
+  assert.equal(elementsOf(screen.tree).filter((element) => element.type?.name === 'ProposalPreview').length, 0);
+  routines = [];
+  panel.props.onChanged();
+  await settle();
+  panel = elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPanel');
+  assert.equal(panel.props.id, 'p1');
+  assert.equal(findByClass(screen.tree, 'gym-routine').length, 0);
+});
+
+test('a direct proposal can switch to another routine review and follows the next proposal route', async (t) => {
+  browserWith();
+  const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
+  t.mock.method(gymApi, 'routines', async () => [
+    { id: 'r1', name: 'Push A', entries: [], pendingProposal: proposal() },
+    { id: 'r2', name: 'Pull A', entries: [], pendingProposal: proposal({ id: 'p2', routineId: 'r2' }) },
+  ]);
+  let reviewing = 'p1';
+  const screen = renderHook(t, () => RoutinesList({ log: roomLog(), reviewing }));
+  await settle();
+  const panelId = () => elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPanel')?.props.id;
+  assert.equal(panelId(), 'p1');
+  elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPreview').props.onExpand('p2');
+  assert.equal(panelId(), 'p2');
+  reviewing = null;
+  screen.redraw();
+  await settle();
+  assert.equal(panelId(), undefined);
+  reviewing = 'p1';
+  screen.redraw();
+  await settle();
+  assert.equal(panelId(), 'p1');
 });

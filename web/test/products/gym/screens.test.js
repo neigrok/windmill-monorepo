@@ -68,8 +68,7 @@ test('the three tabs preserve their order and every pushed destination maps to a
 test('the live mirror heads the routines home and keeps its charter: no Finish, no countdown, the words when idle', () => {
   const routines = read('Routines.jsx');
   assert.equal(routines.includes('<LiveMirror log={log} onSignIn={onSignIn} />'), true);
-  assert.ok(routines.indexOf('<LiveMirror') < routines.indexOf('<PendingProposals'));
-  assert.ok(routines.indexOf('<PendingProposals') < routines.indexOf('<ul className="gym-routines">'));
+  assert.ok(routines.indexOf('<LiveMirror') < routines.indexOf('<ul className="gym-routines">'));
   assert.equal(routines.includes("import { LiveMirror } from './Mirror.jsx';"), true);
   const mirror = speech('Mirror.jsx');
   assert.equal(mirror.includes('Not training now.'), true);
@@ -100,7 +99,7 @@ test('every exercise name a lifter can see is a link to that movement’s record
   assert.equal(editor.includes('recordHref'), false);
   assert.equal(editor.includes('<button type="button" className="gym-entry-body" onClick={() => onTarget(index)}>'), true);
   assert.equal(editor.includes('<span className="gym-entry-name">'), true);
-  assert.equal(editor.includes('<span className="gym-entry-target">{entryLabel(entry)}</span>'), true);
+  assert.equal(editor.includes('<span className="gym-entry-target"><SchemeReadout entry={entry} /></span>'), true);
   assert.equal(/onClick=\{[^}]*\}\s*>\s*\{nameOfMovement/.test(editor), false, 'never a span with onClick');
 
   // The record page and Rename keep a drawn door: `MOVEMENTS_HREF` beside `New` on the routines
@@ -170,8 +169,9 @@ test('Coach answer receipts come from the server, separately from the live worko
 
 test('the receipt is always visible and the step list collapses behind it', () => {
   const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('<summary className="gym-coach-read">{read}</summary>'), true);
-  assert.equal(room.includes('<p className="gym-coach-read">{read}</p>'), true, 'a list of nothing readable still draws the receipt');
+  assert.equal(room.includes('<summary className="gym-coach-read"><span>{readText}</span>'), true);
+  assert.equal(room.includes('<span className="gym-coach-step-count">'), true);
+  assert.equal(room.includes('<p className="gym-coach-read">{readText}</p>'), true, 'a list of nothing readable still draws the receipt');
   assert.equal(room.includes('<details className="gym-coach-trace">'), true);
   assert.equal(room.includes('<p className="gym-coach-steps">{steps}</p>'), true);
   assert.equal(room.includes('<details open'), false, 'the trace opens on a tap, never by default');
@@ -526,7 +526,7 @@ test('every byte counter in this room goes alarm past its bound, in one shared s
   // And the ink is the token, never a literal: one value moves all four.
   const css = read('gym.css');
   assert.equal(css.includes('.gym-name-count.is-over {\n  color: var(--alarm-ink);\n}'), true);
-  assert.equal(css.includes('.gym-note-count.is-over {\n  color: var(--alarm-ink);\n}'), true);
+  assert.equal(read('notes/notes.css').includes('.gym-note-count.is-over { color: var(--alarm-ink); }'), true);
 });
 
 const gymFiles = () => {
@@ -700,10 +700,13 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(app.includes("{screen === 'notes' && <Notes log={log} />}"), true);
   const notes = read('notes/Notes.jsx');
   assert.equal(notes.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
-  assert.equal(notes.includes(`<h1 className="gym-title">{NOTES_TITLE}</h1>
-        <p className="gym-notes-sub">{HEAD_LINE}</p>
-      </header>
-      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>`), true);
+  assert.equal(notes.includes(`<header className="gym-notes-heading">
+        <div className="gym-notes-head">
+          <h1 className="gym-title">{NOTES_TITLE}</h1>
+          <p className="gym-notes-sub">{HEAD_LINE}</p>
+        </div>
+        <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
+      </header>`), true);
   assert.equal(notes.includes('{PLACEHOLDER_TITLES.map((title) => ('), true);
   assert.equal(notes.includes("onClick={() => fresh(title)}"), true);
   assert.equal(notes.includes('{shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
@@ -712,7 +715,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(notes.includes('{showsByteCount(body) && ('), true);
   // A sixty-first character is taken and counted, then refused by the store in its own words.
   assert.equal(notes.includes('{showsTitleCount(title) && ('), true);
-  assert.equal(notes.includes('{titleCountLabel(title)}'), true);
+  assert.equal(notes.includes('{countReadout(titleCountLabel(title))}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'notes-full') onStale();"), true, 'a full account re-reads the list behind the editor');
@@ -1054,16 +1057,15 @@ test('at the narrow width the past workout’s Save band pins to the bottom on t
     position: sticky;
     bottom: 0;
     z-index: 1;
-    padding: 12px 0 calc(12px + var(--content-safe-area-bottom, env(safe-area-inset-bottom)));
+    padding: 0 0 12px;
     background: var(--gym-canvas);
-  }
-}`), true);
+  }`), true);
   assert.equal(read('backfill/Backfill.jsx').includes('<div className="gym-save">'), true);
 });
 
 test('the routine editor and the note editor carry their back link on its own line, above the head', () => {
   const routine = read('Routines.jsx');
-  assert.equal(routine.indexOf('<Back href={ROUTINES_HREF}>Routines</Back>', routine.indexOf('className="gym-plan-editor"')) < routine.indexOf('<header className={`gym-editor-head'), true);
+  assert.equal(routine.indexOf('<Back href={ROUTINES_HREF}>Routines</Back>', routine.indexOf('className={`gym-plan-editor')) < routine.indexOf('<header className={`gym-editor-head'), true);
   assert.equal(read('notes/Notes.jsx').includes(`      <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
-      <header className="gym-editor-head">`), true);
+      <header className="gym-notes-heading">`), true);
 });

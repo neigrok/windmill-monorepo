@@ -225,8 +225,9 @@ test('interactive reading is opt-in, keeps pinned axes and releases its readout 
 test('compact axes use the plot edges and interactive gap captions stay clear of the pinned axis', async (t) => {
   browserWith();
   const { DotChart, dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
-  const layout = dotChartLayout({ ...words, compact: true, height: 64, fontSize: 13, points: [{ at: AUG(1), value: 66 }, { at: AUG(20), value: 76 }] });
-  assert.deepEqual(layout.yTicks.map(({ value, y }) => ({ value, y })), [{ value: 64.5, y: 38 }, { value: 77.5, y: 14 }]);
+  const layout = dotChartLayout({ ...words, compact: true, height: 90, fontSize: 13, points: [{ at: AUG(1), value: 66 }, { at: AUG(20), value: 76 }] });
+  assert.deepEqual(layout.yTicks.map(({ value, y }) => ({ value, y })), [{ value: 60, y: 64 }, { value: 80, y: 0 }]);
+  assert.deepEqual(layout.plot, { left: 30, right: 560, top: 0, bottom: 64 });
   const screen = renderHook(t, () => DotChart({ ...words, interactive: true, axisFontSize: 13,
     domain: { from: new Date(2025, 0, 1).getTime(), to: AUG(30) },
     points: [{ at: AUG(1), value: 82, label: 'first' }, { at: AUG(9), value: 82, label: 'last' }],
@@ -238,6 +239,34 @@ test('compact axes use the plot edges and interactive gap captions stay clear of
   }
 });
 
+test('compact rounded endpoints enclose flat, negative and large series without changing full charts', async () => {
+  const { dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  for (const [values, endpoints] of [
+    [[76, 76], [75, 77]],
+    [[0, 0], [-1, 1]],
+    [[-5, -3], [-6, -2]],
+    [[-1e12, 1e12], [-2e12, 2e12]],
+  ]) {
+    const layout = dotChartLayout({ ...words, compact: true, height: 90, points: values.map((value, index) => ({ at: AUG(index + 1), value })) });
+    assert.deepEqual(layout.yTicks.map(tick => tick.value), endpoints);
+    for (const dot of layout.dots) assert(dot.y > layout.plot.top && dot.y < layout.plot.bottom && Number.isFinite(dot.x));
+  }
+  const full = dotChartLayout({ ...words, points: [{ at: AUG(1), value: 66 }, { at: AUG(20), value: 76 }] });
+  assert.deepEqual(full.plot, { left: 46, right: 546, top: 14, bottom: 194 });
+  assert.deepEqual(full.yTicks.map(tick => tick.value), [65, 70, 75]);
+});
+
+test('compact endpoint dots fit inside the viewport while dates retain their domain positions', async () => {
+  const { dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  const points = [{ at: AUG(1), value: 66 }, { at: AUG(2), value: 70 }, { at: AUG(3), value: 76 }];
+  const layout = dotChartLayout({ ...words, compact: true, width: 280, height: 90, points });
+  assert.deepEqual(layout.dots.map(dot => dot.x), [30, 155, 277.5]);
+  assert.deepEqual([layout.xTicks[0].x, layout.xTicks.at(-1).x], [30, 280]);
+  assert.equal(layout.segments.at(-1).x2 + 2.5, 280);
+  const bounded = dotChartLayout({ ...words, compact: true, width: 280, height: 90, points, domain: { from: AUG(1), to: AUG(4) } });
+  assert.equal(bounded.dots.at(-1).x, 30 + 250 * 2 / 3);
+});
+
 test('interactive points and focus rings have space inside the pinned axis edge', async (t) => {
   browserWith();
   const { DotChart } = await loadScreen('design-system/charts/DotChart.jsx');
@@ -246,4 +275,25 @@ test('interactive points and focus rings have space inside the pinned axis edge'
   const edge = elementsOf(axes).find((each) => each.type === 'rect').props.width;
   const first = elementsOf(screen.tree).find((each) => each.type === 'g' && each.props['aria-label'] === 'first');
   assert.equal(elementsOf(first).find((each) => each.type === 'circle').props.cx - edge, 14);
+});
+
+test('minimal full charts keep endpoint axes, every gap below the plot and keyboard reading', async (t) => {
+  browserWith();
+  const { DotChart, dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  const points = [{ at: AUG(1), value: 66, label: 'first' }, { at: AUG(30), value: 76, label: 'last' }];
+  for (const width of [310, 984]) {
+    const layout = dotChartLayout({ ...words, width, points, minimal: true, fontSize: 13 });
+    assert.deepEqual(layout.plot, { left: 32, right: width - 16, top: 20, bottom: 180 });
+    assert.deepEqual(layout.yTicks.map(({ value, y }) => ({ value, y })), [{ value: 60, y: 180 }, { value: 80, y: 20 }]);
+  }
+  const screen = renderHook(t, () => DotChart({ ...words, points, minimal: true, interactive: true, axisFontSize: 13 }));
+  const plot = () => elementsOf(screen.tree).find(each => each.type === 'svg');
+  assert.equal(elementsOf(plot()).filter(each => each.type === 'line').length, 0, 'no grid or line across a missing interval');
+  assert.deepEqual(findByClass(screen.tree, 'dot-chart-gap').map(textOf), ['no weigh-in · 1 Aug – 30 Aug']);
+  assert.deepEqual(elementsOf(plot()).filter(each => each.type === 'circle' && each.props.fill === 'var(--color-brand)').map(each => each.props.r), ['4', '4']);
+  plot().props.onKeyDown({ key: 'ArrowLeft', preventDefault() {} });
+  assert.equal(plot().props['aria-label'], 'chart. first');
+  assert.equal(findByClass(screen.tree, 'dot-chart-readout').map(textOf)[0], 'first');
+  const axes = elementsOf(screen.tree).find(each => each.type === 'svg' && each.props['aria-hidden']);
+  assert.deepEqual(elementsOf(axes).filter(each => each.type === 'text').map(textOf), ['60', '80', '1 Aug', '30 Aug']);
 });

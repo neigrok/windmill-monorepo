@@ -1,6 +1,6 @@
 # Gym web build contract
 
-Audit of [Web · Gym](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=466-132), 25 September 2026. The page contains 102 implementation boards in 51 desktop/narrow pairs: Plan 20, Record 42, Coach 14, Share 26. **62 boards are Ready; 40 remain Built.** Ready marks approved content proportion changes awaiting implementation. Start and Components are reference sections, not implementation boards.
+Audit of [Web · Gym](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=466-132), 26 September 2026. The page contains 102 implementation boards in 51 desktop/narrow pairs: Plan 20, Record 42, Coach 14, Share 26. **62 boards are Ready; 40 remain Built.** Content proportions are implemented. Ready statuses remain while the protected navigation differences in F59 prevent complete screen acceptance. Start and Components are reference sections, not implementation boards.
 
 The acceptance gate is the [implementation plan](web-implementation-plan.md): running local web with live fixture data, at 1440 and 390, checked against each board. A code change or a passing unit test alone does not qualify a board as Built. The status-node column identifies the instance to update after that evidence exists.
 
@@ -14,7 +14,7 @@ Coach, Notes and populated past-workout forms retain their centered 1024px works
 The routine editor is centered at x314/w812: 360px movements +32px gap +420px targets. A back link
 remains a 44px row before the title and follows its content container. Shared header and
 bottom-navigation geometry are unchanged.
-These measurements describe the drawings; Ready geometry still requires runtime comparison.
+These measurements describe the content contract. The current runtime comparisons and release gate are recorded in [web-verification.md](web-verification.md).
 
 | Surface | Figma layout |
 |---|---|
@@ -29,7 +29,7 @@ These measurements describe the drawings; Ready geometry still requires runtime 
 | Share setup 1440, `508:1353` | Content x400/y84/w640; sections gap24; scope and update choices precede privacy panel and Preview. |
 | Recipient log 1440, `524:2705` | Public header x208/y36/h24; snapshot line y82; content x208/y132/w1024. No authenticated shell or write controls. |
 
-Set rows use a 10px rail with 2px ticks. Load × reps uses JetBrains Mono; the multiplication sign is faint. Equal sets collapse to a scheme; variable sets remain rows. Units appear once in a column head or total. Add set is last. Row actions reveal on hover/focus, not layout shift. History rows are 48px in the actual index component (an exception to the generic 44/56 rule in web-form.md).
+Set rows use a 10px rail with 2px ticks. Load × reps uses JetBrains Mono; the multiplication sign is faint. Equal sets collapse to a scheme; variable sets remain rows. Units appear once in a column head or total. Add set is last. Row actions reveal on hover/focus, not layout shift. History rows are 56px with 4px between rows and year groups.
 
 The Log header uses a 20px share icon in a 44px target with accessible name and tooltip
 `Share log`. Desktop places Weigh in beside Add past workout in that header; narrow screens
@@ -72,42 +72,29 @@ Screenshots and full design contexts were retrieved for `470:34`, `470:21`, `475
 
 ## Implementation decisions
 
-- Full Daylight drawings exist only for Routines (`476:1082` and `476:1115`). The additional W8 runtime matrix verifies the other layouts with Daylight mode tokens. The Gym library is published to Sam Gold's team; Manage libraries confirms No changes after the token and Logger component update.
-- The implementation uses current mode tokens for Daylight layouts without full drawings. The runtime theme matrix below is verified in addition to the two drawn Daylight routine boards.
+- Two boards explicitly depict Daylight Routines (`476:1082` and `476:1115`). Every other board is exported and compared using both Instrument and Daylight mode tokens. The Gym library is published to Sam Gold's team; Manage libraries confirms No changes after the token and Logger component update.
+- The implementation uses current mode tokens in both themes. Temporary Figma mode overrides are restored after exporting the references.
 - The Routines open menus in Instrument and Daylight contain Log past followed by Delete.
 - Literal catalog spelling is current data: the editor/default fixture says Chin Up while some record fixtures say Chin-up. Do not rename backend records to imitate fixture typography.
-- Native time inputs keep the user's system clock convention. The stored-hour disclosure must reflect the actual selected value; a 24-hour picture alone does not require a custom time widget.
+- Native time inputs keep the user's system clock convention while editing. Backfill shows its selected value in a 24-hour resting label and the stored-hour disclosure.
 - Shared shell components `468:2` and `468:13` retain the shared app header and place Gym navigation at the bottom. Their descriptions and Gym Tab `4:7` describe the current placement and content y84. The board status column distinguishes approved drawings from verified implementation.
 - The two Saved backfill boards reuse the current selected-reader composition (`470:34` and `470:47`) with the saved Undo receipt. Saving opens that reader; the form does not introduce a second workout presentation.
 - The narrow New routine drawing includes the same required name input as desktop, with the missing-name reason beside Save. The input reuses the compact library component.
 - Correction specimens use the current totals copy without set-kind terminology; both pending action specimens read Saving.
 - All eight Coach conversation boards follow the current [feedback contract](feedback-contract.md): History and More in the heading, Add photo in the composer, and contextual limits. The composed boards reuse the quiet navigation control and system-bound Lucide icons. Runtime conversations retain their history, and deletion belongs in More. Content-sized desktop Apply and local spacing belong to the Ready visual gate.
 
-## Figma proportion check
+## Content and theme verification
 
-The design reports cover all 62 changed boards: 20 Plan, 17 Record, 7 Coach and 18 Share. Independent
-readback confirms the 102 status tags, unchanged geometry for all 88 authenticated shell instances,
-and unchanged dimensions for all 102 boards. Back-link semantics and existing prototype actions
-are preserved. Representative desktop and narrow screenshots were reviewed, including six sets,
-conflict recovery, workout correction, Notes and sharing. This is Figma verification; the Ready
-boards still need application implementation and runtime comparison.
+All 102 implementation boards have fresh 1× references and state-specific runtime captures.
+The matrix compares 202 primary renders: both themes for 100 boards and Daylight for the two
+explicit Daylight boards. Independent visual review distinguishes fixture data, focus and native
+editing states from layout defects. Header, navigation, back-link and board-dimension fingerprints
+remain protected during reference corrections.
 
-## Daylight runtime matrix
-
-Each capture stem below has both 1440 and 390 widths. Daylight runtime evidence covers the
-approved mode tokens, legible ink and quiet surfaces. Boards marked Ready need another geometry
-comparison in both themes after implementation; the captures do not satisfy that gate. Native
-token lag and unused library glow values remain separate ledger entries.
-
-| Surface | Verified Daylight evidence | Remaining gate |
-|---|---|---|
-| Routines and editing | `routines-daylight-final-{w}`, `accepted-editor-light-{w}`, `accepted-new-routine-light-{w}`, `{picker,sixsets,copydown}-final-light-{w}` | Ready geometry: see board acceptance map. |
-| Log, reader, correction and movement | `final-log-light-{w}`, `qa-reader-selected-light-{w}`, `final-correction-light-{w}`, `movement-final-light-{w}`, `fix-refused-final-light-{w}`, `correction-saving-{top-final,final}-light-{w}` | Ready geometry: see board acceptance map. |
-| Notes | `accepted-notes-light-{w}`, `accepted-note-existing-light-{w}`, `accepted-note-new-light-{w}` | Ready geometry: see board acceptance map. |
-| Coach | `coach-{proposal,applied,dismissed,workout}-final-light-{w}` | Ready geometry: see board acceptance map. |
-| Backfill | `backfill-{picker,prefilled,empty,free,edited}-final-light-{w}`, `backfill-edited-bottom-final-light-{w}`, `backfill-time-final-light-1440`, `backfill-time-width-final-light-390`, `backfill-overlap-bottom-final-light-{w}`, `backfill-saved-final-light-{w}` | Ready geometry: see board acceptance map. |
-| Sharing setup and links | `w7-setup-{all-snapshot,all-live,range-snapshot,range-live}-light-{w}`, `w7-{active,revoked}-light-{w}` | Ready geometry: see board acceptance map. |
-| Public log | `w7-recipient-{default,selected,previous,zero,revoked,date-2024,filtered-2024}-light-{w}`, `w7-preview-{snapshot,footer}-light-{w}` | Ready geometry: see board acceptance map. |
+The content pass uses the centered measures, grouped actions and consistent field, row and chart
+recipes above. Existing capabilities remain available. Complete screen acceptance is separate:
+F59 records the protected navigation differences, so this pass does not promote Ready to Built.
+[web-verification.md](web-verification.md) records the current build, checks and deployment.
 
 ## Board acceptance map
 
@@ -135,8 +122,8 @@ W1 applies to every authenticated board. The principal wave counts are W2 24, W3
 | Plan / New routine / Picker / 390 | `480:1504` | **Ready** · `804:5850` | W3 | Search and select movements in narrow sheet. |
 | Plan / Routine editor / Conflict / 1440 | `475:1238` | **Ready** · `804:5853` | W3 | Keep draft; show latest routine; explicit conflict recovery. |
 | Plan / Routine editor / Conflict / 390 | `862:7478` | **Ready** · `862:7543` | W3 | Keep draft; show latest routine; explicit conflict recovery. |
-| Plan / Routine editor / Copy-down / 1440 | `485:1341` | **Ready** · `804:5841` | W3 | Fill menu copies load/reps down without changing mode. |
-| Plan / Routine editor / Copy-down / 390 | `480:1614` | **Ready** · `804:5844` | W3 | Fill menu copies load/reps down without changing mode. |
+| Plan / Routine editor / Copy-down / 1440 | `485:1341` | **Ready** · `804:5841` | W3 | Every set applies 80 kg to all five Back Squat sets while preserving their reps. |
+| Plan / Routine editor / Copy-down / 390 | `480:1614` | **Ready** · `804:5844` | W3 | Every set applies 80 kg to all five Back Squat sets while preserving their reps. |
 | Plan / Routine editor / Default / 1440 | `475:1050` | **Ready** · `804:5826` | W3 | 360px movement list +32px gap +420px ladder pane; persistent draft. |
 | Plan / Routine editor / Default / 390 | `475:1106` | **Ready** · `804:5829` | W3 | Movement list; selected targets open in sheet; persistent draft. |
 | Plan / Routine editor / Ladder / 1440 | `485:1254` | **Ready** · `804:5835` | W3 | Variable per-set targets; Every set and Set by set both visible. |
@@ -220,72 +207,30 @@ W1 applies to every authenticated board. The principal wave counts are W2 24, W3
 
 ## Runtime evidence gate
 
-Local screenshot evidence lives in `/private/tmp/windmill-gym-web-verify`. The table preserves the
-verified runtime state and behavior for all 51 pairs and identifies which drawing widths still
-need implementation and comparison. A capture alone is not a visual pass. Ready boards do not
-claim a runtime match to their new content proportions. Invalid-route screenshots are excluded.
+Evidence lives in `/tmp/gym-parity-2026-09-25`. Each board ID maps to
+`figma-<id>-light.png` or `figma-<id>.png` and a state-specific runtime capture. The
+`matrix.ndjson` metadata records dimensions, content bounds, browser errors and overflow checks.
+The production comparison uses `production-<id>-<theme>.png` only after deployment verification.
+A screenshot or a successful deployment alone does not establish visual acceptance.
 
-F4 is verified independently: runtime PR ink resolves to `#D9B04C` in Instrument and `#6E5217` in Daylight. The current log, reader, and correction routes were captured in both themes at both widths with no horizontal overflow and no browser exceptions. The state-specific evidence is recorded below.
+| Area | Boards | Independent acceptance |
+|---|---:|---|
+| Plan | 20 | `review-plan.json`: routines, empty, editor, picker, ladder, conflict and Daylight |
+| Record | 42 | `record-acceptance.json`: history, filters, density, movement, correction and past workout |
+| Coach and Notes | 14 | `review-coach-share.json`: proposal, receipts, active workout, list and editors |
+| Share | 26 | `review-coach-share.json`: setup, preview, link lifecycle and anonymous reader |
 
-| Board pair | Nodes 1440 / 390 | Runtime captures (`{w}` = 1440 and 390) | Remaining gate |
-|---|---|---|---|
-| Coach / Conversation / Applied | `473:285` / `473:350` | `coach-applied-final-dark-{w}.png` | Built. Both themes and inline applied receipt verified; owner confirmed exact mutation and fixture restoration. |
-| Coach / Conversation / Proposal | `471:522` / `471:537` | `coach-proposal-final-dark-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Both themes, inline diff, Apply, decline, current feedback chrome and composer verified. |
-| Coach / Conversation / Turned down | `493:1404` / `493:1488` | `coach-dismissed-final-dark-{w}.png` | Built. Both themes and faint receipt verified; decline leaves routine unchanged. |
-| Coach / Conversation / Workout in progress | `473:331` / `473:393` | `coach-workout-final-dark-{w}.png` | Built. Both themes, actual two-set session, frozen-plan mirror, refusal, View workout focus/reveal and Notes access verified; no composer, Apply, live controls or model requests. Temporary session removed. |
-| Coach / Note editor / Existing note | `472:251` / `472:317` | `accepted-note-existing-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Visual form and near-limit byte meter pass in both themes; owner verified edit/delete/retention. |
-| Coach / Note editor / New note | `482:1099` / `482:1136` | `accepted-note-new-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Clean new form and disabled Save pass in both themes; owner verified create/cancel. |
-| Coach / Notes / Default | `472:215` / `472:281` | `notes-list-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Canvas rows, active rail, typography and disclosure compared at both widths; Notes CRUD/reorder verified by owner. |
-| Plan / New routine / Default | `480:1556` / `862:7256` | `routine-unnamed-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Unnamed Bench Press draft, three targets, name input, disabled Save reason and narrow adjacent Draft verified. |
-| Plan / New routine / Picker | `862:7370` / `480:1504` | `picker-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Six plain movement rows, search, plus affordance, New movement and desktop pane/narrow sheet verified. |
-| Plan / Routine editor / Conflict | `475:1238` / `862:7478` | `conflict-live-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both comparisons and differences verified; conflict-footer-live captures show reachable recovery actions. Keep both preserves saved version. |
-| Plan / Routine editor / Copy-down | `485:1341` / `480:1614` | `copydown-live-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Load copied into all six rows, equal-set summary and closed shared editor structure verified. |
-| Plan / Routine editor / Default | `475:1050` / `475:1106` | `editor-closed-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Desktop split, narrow movement list, selected target editing, Save and retained draft verified. |
-| Plan / Routine editor / Ladder | `485:1254` / `480:1387` | `ladder-live-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Variable targets, Every set and Set by set, narrow sheet and Save verified. |
-| Plan / Routine editor / Six sets | `862:7051` / `475:1156` | `sixsets-live-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Six editable rows, Add set last and narrow Set action verified. |
-| Plan / Routines / Daylight | `476:1082` / `476:1115` | `routines-daylight-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Mode palette, compact cards, grouped rails and pill New routine verified at both widths. |
-| Plan / Routines / Default | `475:892` / `475:945` | `routine-menu-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Compact cards, grouped rail, pill New routine and contextual menu verified. |
-| Plan / Routines / Empty | `475:992` / `475:1024` | `routines-empty-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Centered quiet empty copy and New routine action verified; narrow 500px card. |
-| Record / Add past workout / Edited | `834:7731` / `834:7956` | `backfill-edited-final-dark-{w}.png` | Built. Both themes, copy-down, fourth set, added movement with committed 40×10, removed-movement Undo and enabled eight-set Save verified; bottom-final captures include the full form. |
-| Record / Add past workout / Free session | `835:7226` / `835:7323` | `backfill-free-final-dark-{w}.png` | Built. Both themes, last-time movement prefill, plain narrow row and enabled Save verified; routine remains unchanged. |
-| Record / Add past workout / From a routine | `832:7458` / `835:15047` | `routine-menu-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: 180×98 Log past/Delete menu and prefilled route verified; live plan stays unchanged. |
-| Record / Add past workout / No routines | `835:7387` / `835:7438` | `backfill-no-routines-final-{w}.png` | Built. Empty-routine disclosure, Build a routine, usable free form and disabled empty Save verified. |
-| Record / Add past workout / Overlap refusal | `835:6896` / `835:7075` | `backfill-overlap-bottom-final-dark-{w}.png` | Built. Both themes, actual conflicting session disclosure, retained three-movement draft, recovery actions and disabled Save verified; top form is in backfill-overlap-final captures. |
-| Record / Add past workout / Pick routine | `834:7279` / `834:7339` | `backfill-picker-final-dark-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Both themes, routine rows, narrow Back/title spacing and Free session alternative verified. |
-| Record / Add past workout / Prefilled | `834:7393` / `834:7576` | `backfill-prefilled-final-dark-{w}.png` | Built. Both themes, targets and last-time rail, one-tap day, narrow plain rows and truthful default-hour disclosure verified. |
-| Record / Add past workout / Saved | `835:7481` / `835:7623` | `backfill-saved-final-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, top-of-page selected landing, actual 9/66/2160 totals, three movements and saved Undo receipt verified; scratch workouts cleaned. |
-| Record / Add past workout / Time changed | `835:6578` / `835:6751` | `backfill-time-final-dark-{w}.png` | Built. Native 18:15, duration and matching 18:15–19:15 disclosure verified in both themes. Narrow final evidence is backfill-time-width-final-{dark,light}-390; full PM segment and duration group fit. |
-| Record / Edit workout / Default | `482:1175` / `862:7838` | `final-correction-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Columns, native time field and editable rows verified in both themes; root passed add/edit/save/readback. |
-| Record / Edit workout / Saving | `862:7983` / `482:1269` | `correction-saving-final-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, retained 62.5 edit, nine disabled inputs in faint ink, disabled Saving action, visible footer and successful correction persistence verified; top-final captures include shell. |
-| Record / Fix set / Refused load | `482:1224` / `482:1312` | `fix-refused-final-dark-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Both themes, dedicated page, neighboring sets, retained 625 and focused inline refusal, RPE chips and underlined note verified. |
-| Record / Log / 2024 daily density | `521:2521` / `862:7546` | `final-density-2024-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: 366-workout scope, month groups and narrow history verified; root passed clearing scope. |
-| Record / Log / 2024 filter | `518:2442` / `518:2569` | `final-log-2024-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Scoped counts/history, desktop first matching selection and narrow history-first layout verified. |
-| Record / Log / Daily density | `519:2166` / `519:2797` | `final-density-default-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: 982-workout fixture, month groups, desktop reader and narrow history verified; root passed deep navigation. |
-| Record / Log / Default | `470:8` / `470:21` | `final-log-default-{w}.png` | Built. Desktop split and narrow progress-first layout verified; compact labels no longer collide. |
-| Record / Log / Jump to date | `518:2340` / `518:2395` | `final-date-jump-{w}.png` | Built. Desktop 420px popover and narrow bottom sheet/scrim verified; root passed year/filter behavior. |
-| Record / Log / No matches | `518:2615` / `518:2658` | `final-log-no-matches-{w}.png` | Built. Known movement/year zero state, clear action and desktop/narrow composition verified. |
-| Record / Log / Previous workout | `517:2282` / `517:2441` | `final-reader-previous-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Previous selection and actual sets verified; no extra Progress below reader. |
-| Record / Log / Workout selected | `470:34` / `470:47` | `final-reader-selected-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Selected row, reader, previous/next and narrow Edit action verified. |
-| Record / Movement record / From workout | `470:60` / `470:73` | `movement-final-dark-{w}.png` | Built. Both themes, origin/scroll reset, 12-week chart/table and All eight-session series verified; complete dots and cross-year labels pass in movement-all-final captures. |
-| Share / Link / Active | `508:1814` / `508:1888` | `w7-active-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, scoped receipt, long-link ellipsis, full copied URL and revoke behavior verified. |
-| Share / Link / Revoked | `508:1855` / `508:1923` | `share-revoked-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Receipt card, full-width narrow New link and anonymous unavailable behavior verified. |
-| Share / Preview / Default | `524:3765` / `524:3906` | `w7-preview-snapshot-dark-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Both themes, scope and reader preview, no create mutation before confirmation, and reachable Create link footer verified in w7-preview-footer captures. |
-| Share / Recipient log / 2024 filter | `524:3470` / `524:3563` | `w7-recipient-filtered-2024-dark-{w}.png` | **Ready at 1440; 390 Built.** Runtime evidence: Both themes, two-workout scope, desktop first matching June 10 reader and narrow history-only layout verified. |
-| Share / Recipient log / Default | `524:2705` / `524:2860` | `recipient-final-{w}.png` | Built. Anonymous all-history snapshot, desktop progress split, narrow history, body scope totals and three filters verified. |
-| Share / Recipient log / Jump to date | `524:3372` / `524:3425` | `w7-recipient-date-2024-dark-{w}.png` | Built. Both themes, loaded two-row history, selected year, desktop popover and narrow bottom sheet verified. |
-| Share / Recipient log / No matches | `524:3607` / `524:3648` | `recipient-empty-final-{w}.png` | Built. Desktop zero card, narrow centered zero region, brand Clear filters and no Progress verified. |
-| Share / Recipient log / Previous workout | `524:3184` / `524:3309` | `recipient-previous-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Previous session and actual sets, selected history, scope disclosure and dedicated narrow reader verified. |
-| Share / Recipient log / Workout selected | `524:2936` / `524:3091` | `recipient-reader-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Anonymous selected reader, scope disclosure, teal completed-set marks and narrow The log navigation verified. |
-| Share / Setup / Date range · live | `513:1938` / `513:2100` | `share-range-final-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Date range/live selection, native dates, privacy disclosure and visible narrow Preview verified. |
-| Share / Setup / Date range · snapshot | `513:1825` / `513:1999` | `w7-setup-range-snapshot-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, native dates, scoped counts, snapshot selection and visible narrow Preview verified. |
-| Share / Setup / Entire history · live | `513:1886` / `513:2054` | `w7-setup-all-live-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, live selection and update disclosure, privacy and visible narrow Preview verified. |
-| Share / Setup / Entire history · snapshot | `508:1353` / `508:1407` | `w7-setup-all-snapshot-dark-{w}.png` | **Ready at 1440 and 390.** Runtime evidence: Both themes, all-history snapshot default, privacy disclosure and visible narrow Preview verified. |
+The state and behavior assertions run against isolated local accounts. The production frontend
+check identifies deployed assets and runs those bytes against the same fixtures; separate
+read-only production checks cover anonymous access and refusals. See
+[web-verification.md](web-verification.md) for the exact current result and its limits.
 
-## Structure observations · 25 September 2026
+## Structure observations
 
-- Outer layout width and intrinsic reading/figure limits have separate responsibilities. The
-  focused, editor and history compositions belong in Gym; their widths do not alter shared chrome.
-- Routine identity and its pending review belong to one card. The implementation should retain one
-  routine entry and compose its review state inside it.
-- Auto-layout gaps and padding carry section rhythm. New runtime comparisons must cover sparse
-  pages and six-set/error states so compact forms remain complete without an occupancy quota.
+- Outer workspace width and intrinsic reading/figure limits have separate responsibilities.
+  Focused, editor and history compositions belong in Gym; their widths do not alter shared chrome.
+- Routine identity and its pending review share one card.
+- Notes and Progress presentation live in their feature folders. Shared chart presentation is an
+  explicit option and does not change the Bodyweight consumer.
+- Verification includes sparse pages, six-set and error states, long forms and intermediate widths.
+  A layout that fits a reference viewport still needs its actions checked at shorter heights.

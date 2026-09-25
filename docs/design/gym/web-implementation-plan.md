@@ -67,6 +67,25 @@ The running comparison and release evidence are in [web-verification.md](web-ver
 
 ## Waves
 
+### Content proportion parity
+
+The content proportion implementation covers every current board, including the 62 Ready drawings in the
+[build contract](web-build-contract.md). Navigation stays fixed under F59. Current acceptance and release evidence are recorded in
+[web-verification.md](web-verification.md). Implementation is divided by feature ownership:
+
+| Area | Content contract | Acceptance evidence |
+|---|---|---|
+| Planning | Center focused content; use the 360/32/420 editor and 420/32/420 conflict comparison; merge pending reviews into their routine cards; group actions and spacing | All 20 Plan boards, including Daylight, empty, picker, conflict, ladder and six-set states |
+| Record | Group movement information and totals; center correction forms and routine choice; preserve the meaningful past-workout split | All 42 Record boards, including saved, saving, refused values, filters and dense history |
+| Coach, Notes and sharing | Content-sized desktop Apply; consistent Notes groups; centered sharing forms; shared reader geometry | All 14 Coach and 26 Share boards, including receipts, active workout, anonymous preview and recipient states |
+
+For each board, compare a fresh Figma reference with the running page at the drawing's viewport
+size and fixture state. Check both themes, content bounds, typography, control dimensions,
+scroll reachability, and existing interactions. An independent diff review and simplification
+pass precede the full web build and local end-to-end checks. After deployment, verify the deployed
+release and assets and repeat the rendered checks against that production frontend. Ready becomes
+Built only after the corresponding evidence exists; deployment alone does not establish parity.
+
 Order: the frame every board sits in, then the log (the hub most flows land on), then what writes,
 then what reads further, then what leaves the app.
 

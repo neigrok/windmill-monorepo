@@ -1,0 +1,48 @@
+.gym-root .gym-notes, .gym-root .gym-note-editor { position: relative; display: flex; flex-direction: column; gap: 32px; width: 640px; max-width: 100%; }
+.gym-root .gym-notes { padding-bottom: 24px; }
+.gym-root .gym-notes > .gym-back, .gym-root .gym-note-editor > .gym-back { align-self: flex-start; margin: 0; }
+.gym-root .gym-notes-heading { display: flex; flex-direction: column; gap: 16px; }
+.gym-root .gym-notes-head { margin: 0; }
+.gym-root .gym-notes-sub { margin: 2px 0 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
+.gym-root .gym-notes-disclosure { margin: 0; padding: 12px 16px; border-radius: var(--radius-md); background: var(--gym-surface); box-shadow: inset 0 0 0 1px var(--gym-line); color: var(--gym-ink); font: 400 14px/21px var(--font-body); }
+.gym-root .gym-notes-rows { display: flex; flex-direction: column; gap: 0; list-style: none; margin: 0; padding: 0; }
+.gym-root .gym-note { display: flex; align-items: stretch; box-sizing: border-box; height: 56px; gap: 12px; border-bottom: 1px solid var(--gym-line); border-radius: var(--radius-lg); }
+.gym-root .gym-note.is-dragging { position: relative; z-index: 3; pointer-events: none; }
+.gym-root .gym-note.is-dragging .gym-note-row { border-color: var(--color-brand); box-shadow: var(--shadow-md); }
+.gym-root .gym-note-rail { flex: none; display: flex; align-items: center; justify-content: center; width: 24px; padding: 0; border: 0; background: transparent; color: var(--gym-ink-faint); font: inherit; font-size: 14px; cursor: grab; touch-action: none; }
+.gym-root .gym-note.is-dragging .gym-note-rail { pointer-events: auto; cursor: grabbing; }
+.gym-root .gym-note-row { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 12px; height: 56px; min-height: 56px; padding: 8px 0; border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--gym-ink); font: inherit; text-align: left; cursor: pointer; }
+.gym-root .gym-note-row:hover { background: var(--gym-raised); }
+.gym-root .gym-note-row.is-placeholder { width: 100%; }
+.gym-root .gym-note-row.is-placeholder .gym-note-title { color: var(--gym-ink-faint); }
+.gym-root .gym-note-summary { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.gym-root .gym-note-title, .gym-root .gym-note-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gym-root .gym-note-title { font: 600 15px/22px var(--font-body); }
+.gym-root .gym-note-meta { color: var(--gym-ink-dim); font: 400 13px/18px var(--font-body); }
+.gym-root .gym-note-chevron { color: var(--gym-ink-faint); font: 400 16px/24px var(--font-body); }
+.gym-root .gym-notes-caption, .gym-root .gym-notes-full { margin: 0; font: 400 13px/18px var(--font-body); }
+.gym-root .gym-notes-caption { color: var(--gym-ink-faint); }
+.gym-root .gym-notes-full { color: var(--gym-ink-dim); }
+.gym-root .gym-notes-add { display: flex; align-items: center; justify-content: flex-start; width: auto; min-height: 44px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-brand); font: 700 14px var(--font-body); cursor: pointer; }
+.gym-root .gym-notes-add::before { content: '+ '; white-space: pre; }
+.gym-root .gym-notes-add:hover { background: var(--gym-raised); color: var(--gym-ink); }
+.gym-root .gym-note-fields { display: flex; flex-direction: column; gap: 24px; }
+.gym-root .gym-note-field, .gym-root .gym-notes-footer { display: flex; flex-direction: column; gap: 8px; }
+.gym-root .gym-note-label { display: block; margin: 0; color: var(--gym-ink-faint); font: 600 12px/16px var(--font-body); }
+.gym-root .gym-note-title-input { box-sizing: border-box; width: 100%; height: 36px; padding: 0 0 8px; border: 0; border-bottom: 1px solid var(--gym-line-strong); border-radius: 0; background: transparent; color: var(--gym-ink); font: 400 16px/24px var(--font-body); }
+.gym-root .gym-note-body { box-sizing: border-box; width: 100%; height: 200px; margin: 0; padding: 12px 16px; border: 1px solid var(--gym-line-strong); border-radius: var(--radius-md); background: transparent; color: var(--gym-ink); font: 400 14px/21px var(--font-body); resize: vertical; }
+.gym-root .gym-note-editor.is-new .gym-note-body { height: 248px; }
+.gym-root .gym-note-title-input:focus, .gym-root .gym-note-body:focus { outline: none; border-color: var(--color-brand); }
+.gym-root .gym-note-count { margin: 0; text-align: right; color: var(--gym-ink-faint); font: 400 12px/18px var(--font-body); font-variant-numeric: tabular-nums; }
+.gym-root .gym-note-count > span { font-family: var(--font-mono); }
+.gym-root .gym-note-count.is-over { color: var(--alarm-ink); }
+.gym-root .gym-note-delete { position: relative; display: inline-flex; align-items: center; align-self: flex-start; min-height: 20px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--alarm-ink); font: 700 14px/20px var(--font-body); cursor: pointer; }
+.gym-root .gym-note-delete::before { content: ''; position: absolute; inset: -12px 0; }
+.gym-root .gym-note-actions { display: flex; align-items: center; justify-content: flex-end; gap: 24px; margin: 0; }
+.gym-root .gym-note-actions > button { min-height: 44px; font: 600 15px/22px var(--font-body); }
+.gym-root .gym-note-actions > button:first-child { background: transparent; border: 0; padding: 0; color: var(--gym-ink-dim); cursor: pointer; }
+.gym-root .gym-note-actions > button:last-child { height: 44px; padding: 0 20px !important; border: 0 !important; border-radius: var(--radius-md) !important; box-shadow: none !important; font: 600 15px/22px var(--font-body) !important; }
+@media (max-width: 799px) {
+  .gym-root .gym-note-editor .gym-note-body, .gym-root .gym-note-editor.is-new .gym-note-body { height: 180px; }
+  .gym-root .gym-note-actions { justify-content: space-between; }
+}

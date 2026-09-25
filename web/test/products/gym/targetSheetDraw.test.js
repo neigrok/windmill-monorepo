@@ -142,6 +142,10 @@ test('the ramp fixture: head varies · varies, five rows, commit `Set · 5 sets`
   type(sheet.tree, 'Reps', '5');
   assert.deepEqual(rows(sheet.tree).map(([reps]) => reps), ['5', '5', '5', '5', '5']);
   assert.equal(field(sheet.tree, 'Reps').props.value, '5');
+  assert.deepEqual(rows(sheet.tree).map((_, index) => field(sheet.tree, `Set ${index + 1} load`).props.changed), [false, false, false, false, false]);
+  type(sheet.tree, 'Weight · kg', '80');
+  assert.deepEqual(rows(sheet.tree).map(([reps, load]) => [reps, load]), [['5', '80'], ['5', '80'], ['5', '80'], ['5', '80'], ['5', '80']]);
+  assert.deepEqual(rows(sheet.tree).map((_, index) => field(sheet.tree, `Set ${index + 1} load`).props.changed), [true, true, true, true, true]);
 });
 
 test('Fill: Ramp up interpolates between the two ends, and Match set 1 is the way back to a straight scheme', async (t) => {
@@ -240,5 +244,8 @@ test('the sheet owns the sentence; the list never draws a copy, open row or not'
   assert.deepEqual(drawn(editor.tree, 'gym-open-line'), []);
   assert.deepEqual(handed(editor.tree, 'onTarget').props.entries, [RAMP]);
   const list = handed(editor.tree, 'onTarget');
-  assert.deepEqual(drawn(renderHook(t, () => list.type(list.props)).tree, 'gym-entry-target'), ['5 × 1–5 · 60–100']);
+  const listTree = renderHook(t, () => list.type(list.props)).tree;
+  const readout = elementsOf(listTree).find((each) => each.type?.name === 'SchemeReadout');
+  assert.equal(textOf(readout.type(readout.props)), '5 × 1–5 · 60–100');
+  assert.equal(textOf(readout.type({ entry: { exerciseId: 'chin-up', sets: [{ reps: 8 }, { reps: 8 }, { reps: 8 }] } })), '3 × 8 · last');
 });

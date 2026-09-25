@@ -8,8 +8,11 @@ import {
   withRow, withRowAdded, withRowRemoved, withSignFlipped,
 } from '../routines.js';
 
-export function TargetEditor({ movement, place, entry, equipment, neverLogged, onSet, onClose, onDraft = null, pane = false }) {
+export function TargetEditor({ movement, place, panePlace = place, entry, equipment, neverLogged, onSet, onClose, onDraft = null, pane = false }) {
   const [fields, setFields] = useState(() => targetFieldsOf(entry));
+  const initial = useRef(fields).current;
+  const originalRows = ladderOf(initial);
+  const originalHead = headOf(initial);
   const ids = useId();
   const change = (next) => {
     setFields(next);
@@ -44,9 +47,9 @@ export function TargetEditor({ movement, place, entry, equipment, neverLogged, o
       <div className={pane ? "gym-target" : "gym-sheet gym-target"} role={pane ? "region" : "dialog"} aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-target-movement">{movement}</span>
-          <span className="gym-target-place">{place}</span>
+          <span className="gym-target-place"><span className="gym-target-sheet-place">{place}</span>{pane && <span className="gym-target-pane-place">{panePlace}</span>}</span>
           <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
-            <Icon name="x" size={15} />
+            <Icon name="x" size={12} />
           </button>
         </div>
         {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
@@ -83,8 +86,8 @@ export function TargetEditor({ movement, place, entry, equipment, neverLogged, o
               <h3 className="gym-sheet-section-title">{SET_BY_SET}</h3>
               <FillMenu
                 items={[
-                  { label: RAMP_UP, disabled: rampDisabled(fields), run: () => change(withRampUp(fields)) },
-                  { label: MATCH_SET_ONE, disabled: false, run: () => change(withMatchedToFirst(fields)) },
+                  { label: RAMP_UP, description: 'Interpolate set 1 to set n', disabled: rampDisabled(fields), run: () => change(withRampUp(fields)) },
+                  { label: MATCH_SET_ONE, description: 'Write set 1 into every row', disabled: false, run: () => change(withMatchedToFirst(fields)) },
                 ]}
               />
             </div>
@@ -98,6 +101,7 @@ export function TargetEditor({ movement, place, entry, equipment, neverLogged, o
                       id={rowId(index, 'reps')}
                       ariaLabel={`Set ${index + 1} reps`}
                       value={row.reps}
+                      changed={row.reps !== originalRows[index]?.reps || Boolean(head.reps.value && head.reps.value !== originalHead.reps.value)}
                       placeholder={MAX_PLACEHOLDER}
                       inputMode="numeric"
                       error={rowRefusal(index, 'reps')}
@@ -109,6 +113,7 @@ export function TargetEditor({ movement, place, entry, equipment, neverLogged, o
                       id={rowId(index, 'weight')}
                       ariaLabel={`Set ${index + 1} load`}
                       value={row.weight}
+                      changed={row.weight !== originalRows[index]?.weight || Boolean(head.weight.value && head.weight.value !== originalHead.weight.value)}
                       placeholder={LAST_TIME_PLACEHOLDER}
                       inputMode="decimal"
                       error={rowRefusal(index, 'weight')}
@@ -122,7 +127,7 @@ export function TargetEditor({ movement, place, entry, equipment, neverLogged, o
                     aria-label={`Delete set ${index + 1}`}
                     onClick={() => change(withRowRemoved(fields, index))}
                   >
-                    <Icon name="x" size={15} />
+                    <Icon name="x" size={12} />
                   </button>
                 </li>
               ))}
@@ -184,7 +189,8 @@ function FillMenu({ items }) {
               disabled={item.disabled}
               onClick={() => { setOpen(false); item.run(); }}
             >
-              {item.label}
+              <span>{item.label}</span>
+              <span className="gym-fill-description">{item.description}</span>
             </button>
           ))}
         </span>
@@ -194,10 +200,10 @@ function FillMenu({ items }) {
 }
 
 
-function EditableNumber({ id, label, ariaLabel, value, placeholder, inputMode, error, onChange, trailing }) {
+function EditableNumber({ id, label, ariaLabel, value, placeholder, inputMode, error, onChange, trailing, changed = false }) {
   const generated = useId();
   const inputId = id ?? generated;
-  return <div className="gym-plan-number">
+  return <div className={`gym-plan-number${changed ? ' is-changed' : ''}`} style={{ '--gym-number-chars': Math.max(2, String(value || placeholder || '').length) }}>
     {label && <label htmlFor={inputId}>{label}</label>}
     <div className="gym-plan-number-field">
       <input id={inputId} aria-label={ariaLabel} value={value} placeholder={placeholder}

@@ -33,7 +33,7 @@ function tabOf(screen) {
 
 function columnClass(screen) {
   if (screen === 'coach' || screen === 'thread') return ' has-coach';
-  if (['backfill', 'log', 'session', 'routine', 'record', 'share-log'].includes(screen)) return ' has-desk';
+  if (['backfill', 'log', 'session', 'routine', 'record', 'share-log', 'notes'].includes(screen)) return ' has-desk';
   return '';
 }
 

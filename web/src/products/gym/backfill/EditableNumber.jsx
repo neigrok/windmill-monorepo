@@ -47,7 +47,7 @@ export function EditableNumber({ value, field, label, stepKg = null, lift = null
   return (
     <input
       className={classes}
-      style={{ width: `${Math.max(3, shown.length) + 1}ch`, ...(lift ? { '--lift-delay': `${lift.delay}ms` } : {}) }}
+      style={{ '--gym-number-chars': Math.max(2, shown.length), ...(lift ? { '--lift-delay': `${lift.delay}ms` } : {}) }}
       data-field={field}
       inputMode={field === 'load' ? 'decimal' : 'numeric'}
       aria-label={label}

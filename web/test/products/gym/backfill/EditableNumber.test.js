@@ -85,5 +85,5 @@ test('a carried number wears one of two lift names, so the next carry restarts i
   const second = await cell(t, { value: 60, lift: { stamp: 2, delay: 0 } });
   assert.equal(second.input().className, 'gym-num is-lifted-0');
   const still = await cell(t, { value: 60 });
-  assert.deepEqual([still.input().className, still.input().style], ['gym-num', { width: '4ch' }]);
+  assert.deepEqual([still.input().className, still.input().style], ['gym-num', { '--gym-number-chars': 2 }]);
 });

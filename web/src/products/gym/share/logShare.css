@@ -1,24 +1,30 @@
-.gym-log-share { max-width: 688px; }
-.gym-log-share > .gym-title, .gym-share-preview > .gym-title { margin-top: 24px; }
-.gym-share-subtitle { margin: 4px 0 32px; color: var(--gym-ink-dim); font-size: 14px; }
-.gym-share-choice { border: 0; margin: 24px 0 8px; padding: 0; display: flex; gap: 16px; }
-.gym-share-choice legend { font-size: 14px; color: var(--gym-ink-dim); margin-bottom: 8px; }
-.gym-share-choice button { min-height: 44px; min-width: 180px; border: 1px solid transparent; border-radius: var(--radius-lg); padding: 8px 20px; background: transparent; color: var(--gym-ink); font: 600 15px/22px var(--font-body); cursor: pointer; }
+.gym-log-share { display: flex; flex-direction: column; gap: 24px; width: 640px; max-width: 100%; margin-inline: auto; }
+.gym-log-share > .gym-back { align-self: flex-start; margin: 0; }
+.gym-share-heading { display: flex; flex-direction: column; gap: 4px; }
+.gym-share-subtitle { margin: 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
+.gym-log-share.is-link .gym-share-subtitle { color: var(--gym-ink); font: 600 15px/22px var(--font-body); }
+.gym-share-scope { display: flex; flex-direction: column; gap: 24px; }
+.gym-share-group, .gym-share-disclosure { display: flex; flex-direction: column; gap: 8px; }
+.gym-share-choice { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; gap: 12px; }
+.gym-share-choice legend { padding: 0; font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); margin-bottom: 8px; }
+.gym-share-choice button { height: 44px; width: 180px; border: 1px solid transparent; border-radius: var(--radius-lg); padding: 8px 20px; background: transparent; color: var(--gym-ink); font: 700 16px/24px var(--font-body); cursor: pointer; }
+.gym-share-choice button + button { width: 160px; }
 .gym-share-choice button[aria-pressed='true'] { background: var(--gym-surface); border-color: var(--color-brand); }
-.gym-share-meta { color: var(--gym-ink-dim); font-size: 14px; line-height: 21px; }
-.gym-share-disclosure { margin: 24px 0; padding: 16px; background: var(--gym-surface); border-radius: var(--radius-lg); font-size: 14px; }
-.gym-share-disclosure p { color: var(--gym-ink-dim); margin: 8px 0 0; }
-.gym-share-dates { display: flex; gap: 16px; }
-.gym-share-dates label { display: flex; flex-direction: column; gap: 8px; color: var(--gym-ink-dim); font-size: 13px; }
+.gym-share-meta { margin: 0; color: var(--gym-ink-dim); font-size: 14px; line-height: 21px; }
+.gym-share-disclosure { margin: 0; padding: 16px; background: var(--gym-surface); box-shadow: inset 0 0 0 1px var(--gym-line); border-radius: var(--radius-lg); font: 400 14px/21px var(--font-body); }
+.gym-share-disclosure strong { font: 600 15px/22px var(--font-body); }
+.gym-share-disclosure p { color: var(--gym-ink-dim); margin: 0; }
+.gym-share-dates { display: flex; gap: 12px; }
+.gym-share-dates label { display: flex; flex-direction: column; gap: 8px; width: 240px; min-width: 0; color: var(--gym-ink-faint); font: 600 12px/16px var(--font-body); }
 .gym-share-dates input, .gym-share-url { border: 1px solid var(--gym-line-strong); border-radius: var(--radius-md); background: var(--gym-surface); color: var(--gym-ink); font: inherit; padding: 12px; max-width: 100%; box-sizing: border-box; color-scheme: dark; }
+.gym-share-dates input { width: 100%; height: 36px; padding: 0 0 8px; border-width: 0 0 1px; border-radius: 0; background: transparent; font: 400 16px/24px var(--font-body); }
 [data-theme='light'] .gym-share-dates input { color-scheme: light; }
 .gym-share-url { width: 100%; min-width: 0; text-overflow: ellipsis; }
-.gym-share-active { margin-top: 40px; }
+.gym-share-active { margin-top: 8px; }
 .gym-share-active h2 { font-size: 17px; line-height: 24px; }
 .gym-share-active-row { display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%; border: 0; border-bottom: 1px solid var(--gym-line); background: none; padding: 16px 0; font: inherit; color: var(--gym-ink); cursor: pointer; }
 .gym-share-active-row > span:last-child { font-size: 13px; color: var(--gym-ink-faint); }
-.gym-share-link-actions, .gym-share-preview-actions { display: flex; align-items: center; gap: 24px; margin-top: 24px; }
-.gym-share-link-actions a { color: var(--color-brand); }
+.gym-share-preview-actions { display: flex; align-items: center; justify-content: flex-start; gap: 24px; margin-top: 24px; }
 .gym-share-revoke { border: 0; background: none; padding: 0; margin-top: 32px; color: var(--alarm-ink); font: inherit; cursor: pointer; }
 .gym-public-log { max-width: 1056px; box-sizing: border-box; margin: 0 auto; padding: 36px 16px; }
 .gym-public-head { display: flex; align-items: center; gap: 16px; margin-bottom: 40px; }
@@ -26,55 +32,55 @@
 .gym-public-head > span:last-child, .gym-public-scope { font-size: 14px; color: var(--gym-ink-dim); }
 .gym-public-scope { margin: 0 0 32px; }
 .gym-read-only-log > .gym-title { margin-bottom: 16px; }
-.gym-public-private { margin-top: 64px; font-size: 13px; color: var(--gym-ink-faint); }
-.gym-share-preview-actions { justify-content: space-between; }
+.gym-public-private { margin: 16px 0 0; font: 400 13px/18px var(--font-body); color: var(--gym-ink-faint); }
 .gym-share-preview { position: fixed; inset: 0; z-index: 100; width: 100vw; height: 100dvh; max-width: none; max-height: none; box-sizing: border-box; margin: 0; padding: 0; border: 0; color: var(--gym-ink); overflow: auto; background: var(--gym-canvas); outline: 0; }
 .gym-share-preview-content { max-width: 1056px; box-sizing: border-box; margin: 0 auto; padding: 48px 16px; }
 .gym-share-preview .gym-public-head .gym-back { margin-left: auto; min-height: 20px; padding: 0; }
-.gym-share-preview .gym-share-preview-actions { justify-content: flex-start; }
 .gym-share-preview .gym-share-preview-actions > button { min-width: 180px; }
-.gym-share-link-card { padding: 20px; border: 1px solid var(--gym-line); border-radius: var(--radius-lg); background: var(--gym-surface); margin: 24px 0; }
-.gym-share-link-card > p:first-child { margin-top: 0; }
-.gym-share-link-card > p:last-child { margin-bottom: 0; }
-.gym-share-link-card .gym-share-url { border: 0; background: none; padding: 12px 0; margin: 8px 0 20px; }
-.gym-share-view { display: inline-block; border: 1px solid var(--gym-line-strong); border-radius: 16px; padding: 10px 28px; color: var(--gym-ink); font-weight: 700; text-decoration: none; }
-.gym-share-link-card .gym-share-revoke { margin: 0; padding: 12px 28px; border-radius: 16px; background: var(--gym-canvas); color: var(--gym-ink); font-weight: 700; }
+.gym-share-link-card { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; box-shadow: inset 0 0 0 1px var(--gym-line); border-radius: var(--radius-lg); background: var(--gym-surface); margin: 0; font: 400 14px/21px var(--font-body); }
+.gym-share-link-card > p { margin: 0; }
+.gym-share-link-card > p:first-child { font: 600 15px/22px var(--font-body); }
+.gym-share-link-card .gym-share-url { height: 45px; border: 0; background: none; padding: 12px 0; margin: 0; }
+.gym-share-view, .gym-share-link-card .gym-share-revoke { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 20px; border-radius: var(--radius-lg); color: var(--gym-ink); font: 700 16px/24px var(--font-body); }
+.gym-share-view { width: 180px; border: 1px solid var(--gym-line-strong); text-decoration: none; }
+.gym-share-link-card .gym-share-revoke { width: 140px; margin: 0; border: 0; background: var(--gym-canvas); }
 .gym-reader-neighbors { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-.gym-reader-neighbors button, .gym-shared-back { border: 0; background: none; padding: 8px 0; font: inherit; color: var(--color-brand); cursor: pointer; }
+.gym-reader-neighbors button { border: 0; background: none; padding: 8px 0; font: inherit; color: var(--color-brand); cursor: pointer; }
 .gym-reader-neighbors button:disabled { color: var(--gym-ink-faint); cursor: default; }
 .gym-shared-back { display: none; }
-.gym-share-movement { margin-top: 40px; padding: 0; }
-.gym-share-movement h3 { margin: 0 0 16px; font-size: 17px; }
-.gym-share-scheme { display: flex; align-items: center; gap: 16px; font-family: var(--font-mono); }
+.gym-share-movement { margin-top: 32px; padding: 0; }
+.gym-share-movement h3 { margin: 0; font: 700 17px/24px var(--font-body); }
+.gym-share-scheme { display: flex; align-items: center; gap: 12px; height: 44px; font: 400 13px/18px var(--font-mono); }
 .gym-share-ticks { display: flex; gap: 4px; }
 .gym-share-ticks i, .gym-share-sets i { display: inline-block; width: 2px; height: 10px; background: var(--color-brand); }
 .gym-share-sets { list-style: none; margin: 0; padding: 0; }
-.gym-share-sets li { display: flex; align-items: center; gap: 16px; min-height: 44px; font-family: var(--font-mono); }
-.gym-share-movement header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
-.gym-share-movement header p { font-size: 12px; color: var(--gym-ink-faint); margin: 0; }
-button.gym-share-scheme, .gym-share-collapse { background: none; border: 0; padding: 0; color: var(--gym-ink); cursor: pointer; }
-.gym-share-collapse { margin-top: 12px; color: var(--color-brand); font-size: 13px; }
-.gym-root .gym-log-share > button { min-width: 180px; }
+.gym-share-sets li { display: flex; align-items: center; gap: 12px; min-height: 44px; font: 400 16px/20px var(--font-mono); }
+.gym-share-set-line { display: flex; align-items: center; gap: 4px; }
+.gym-share-set-times { color: var(--gym-ink-faint); }
+.gym-share-movement header { display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; min-height: 32px; }
+.gym-share-movement header p { font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); margin: 0; }
+button.gym-share-scheme { background: none; border: 0; padding: 0; color: var(--gym-ink); cursor: pointer; }
+.gym-root .gym-log-share > button, .gym-root .gym-share-scope > button { align-self: flex-start; width: 180px; height: 44px; padding: 0 20px !important; }
 
-.gym-share-dates input { border-width: 0 0 1px; border-radius: 0; background: transparent; }
 .gym-public-consistency { display: none; }
 
 .gym-share-preview .gym-public-head { min-height: 20px; margin-bottom: 24px; }
-.gym-shared-reader .gym-detail-when { font: 400 14px/21px var(--font-body); }
+.gym-shared-reader > .gym-detail-when { margin: 12px 0 0; font: 400 14px/21px var(--font-body); }
+.gym-shared-reader > .gym-reader-totals { margin-top: 24px; }
 
-.gym-read-only-log .gym-log-count { font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); }
+.gym-read-only-log .gym-log-count { margin: 0 0 16px; font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); }
 
 @media (max-width: 799px) {
   .gym-public-log { padding-top: 24px; }
-  .gym-share-choice { gap: 8px; margin-top: 24px; }
-  .gym-share-choice button { min-width: 0; flex: 1; padding: 8px 12px; }
-  .gym-share-dates > label { width: calc(50% - 8px); }
+  .gym-log-share:not(.is-link), .gym-share-scope { gap: 16px; }
+  .gym-share-choice button { min-width: 0; flex: 1 1 0; padding: 8px 12px; }
+  .gym-share-dates > label { flex: 1; }
   .gym-read-only-log .gym-history-workspace { display: flex; flex-direction: column-reverse; }
   .gym-read-only-log.has-session .gym-history-index { display: none; }
   .gym-read-only-log .gym-history-detail { display: block; width: 100%; }
   .gym-shared-back { display: block; }
   .gym-reader-neighbors { font-size: 13px; align-items: center; gap: 12px; margin-bottom: 24px; }
-  .gym-root .gym-log-share > button { width: 100%; min-height: 54px; }
+  .gym-root .gym-log-share > button, .gym-root .gym-share-scope > button { width: 100%; height: 54px; }
   .gym-read-only-log:not(.has-session) .gym-history-detail { display: none; }
   .gym-public-consistency { display: block; margin: 16px 0; font-size: 14px; color: var(--gym-ink-dim); }
   .gym-read-only-log.has-session > .gym-title,
@@ -88,9 +94,4 @@ button.gym-share-scheme, .gym-share-collapse { background: none; border: 0; padd
   .gym-share-preview-content { padding: 24px 16px 100px; }
   .gym-share-preview .gym-share-preview-actions { position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 16px 20px; background: var(--gym-canvas); }
   .gym-share-preview .gym-share-preview-actions > button { width: 100%; min-height: 54px; }
-  .gym-log-share > .gym-title { margin-top: 16px; }
-  .gym-share-subtitle { margin-bottom: 24px; }
-  .gym-share-choice legend { font-size: 12px; line-height: 18px; }
-  .gym-share-meta { margin: 8px 0; }
-  .gym-share-disclosure { margin: 24px 0; padding: 12px 16px; }
-  .gym-share-dates input { padding: 8px 0; } }
+}

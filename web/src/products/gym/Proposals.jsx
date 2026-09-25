@@ -10,24 +10,15 @@ import {
 import { useGymRead } from './useGymRead.js';
 import './coach/coach.css';
 
-export function PendingProposals({ routines, log, onChanged }) {
-  const [expanded, setExpanded] = useState(null);
-  const waiting = (routines ?? []).filter((routine) => routine.pendingProposal && routine.pendingProposal.id !== expanded);
-  return <section className="gym-proposals">
-    {waiting.map((routine) => <ProposalPreview key={routine.id} routine={routine} onExpand={setExpanded} log={log} />)}
-    {expanded && <ProposalPanel key={expanded} id={expanded} log={log} onChanged={onChanged} />}
-  </section>;
-}
-
 export function ProposalPreview({ routine, onExpand, log }) {
   const id = routine.pendingProposal.id;
   const view = useGymRead(() => gymApi.proposal(id), [id]);
   const changed = view.data ? diffRows(view.data).filter((row) => row.kind !== 'kept') : [];
-  return <article className="gym-proposal-card">
-    <header><span className="gym-proposal-name">{routine.name}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
+  return <section className="gym-routine-review" aria-label={`Pending change to ${routine.name}`}>
+    <header><span className="gym-proposal-name">{countedLabel(routine.pendingProposal)}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
     {changed.length ? <ul className="gym-diff">{changed.slice(0, 3).map((row, index) => <li className={`gym-diff-row is-${row.kind}`} key={index}><DiffRow row={row} catalog={log.catalog} /></li>)}</ul> : <p className="gym-proposal-line">{summaryLine(routine.pendingProposal, routine.name)}</p>}
     {changed.length > 3 && <p className="gym-share-meta">{changed.length - 3} more changes</p>}
-  </article>;
+  </section>;
 }
 
 export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inConversation = false }) {
@@ -76,7 +67,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
       ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
       : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
     {pending ? <div className="gym-proposal-band">
-      <Button full disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
+      <Button disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
       <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? 'Logged sets stay unchanged.' : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
     </div> : <p className="gym-coach-receipt" role="status">{proposal.state === 'applied'

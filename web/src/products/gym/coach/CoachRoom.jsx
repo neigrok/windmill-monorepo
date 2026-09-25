@@ -202,12 +202,14 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
   };
   const receipt = turn.receipt ?? turn;
   const read = readLine(receipt.read);
+  const figureText = (value) => value?.split(/([+-]?\d+(?:\.\d+)?)/).map((part, index) => index % 2 ? <span className="gym-coach-figure" key={index}>{part}</span> : part);
+  const readText = figureText(read);
   const steps = stepsLine(receipt.steps);
   return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
     {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
     {turn.from !== 'lifter' && read && (steps ? <details className="gym-coach-trace">
-      <summary className="gym-coach-read">{read}</summary><p className="gym-coach-steps">{steps}</p>
-    </details> : <p className="gym-coach-read">{read}</p>)}
+      <summary className="gym-coach-read"><span>{readText}</span>{' '}<span className="gym-coach-step-count"><span className="gym-coach-figure">{receipt.steps?.length ?? 0}</span> {receipt.steps?.length === 1 ? 'step' : 'steps'} <span aria-hidden="true">›</span></span></summary><p className="gym-coach-steps">{steps}</p>
+    </details> : <p className="gym-coach-read">{readText}</p>)}
     {text && <>
       <p className="gym-coach-text" tabIndex={0}
         onContextMenu={(event) => { event.preventDefault(); setOpen(true); }}
@@ -225,7 +227,7 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
             event.preventDefault(); setOpen(true);
           }
           if (event.key === 'Escape') setOpen(false);
-        }}>{text}</p>
+        }}>{figureText(text)}</p>
       <button ref={copyButton} type="button" className="gym-coach-copy"
         aria-label={`Copy ${turn.from === 'lifter' ? 'your' : 'Coach'} message`} onClick={copy}
         onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); box.current?.querySelector('.gym-coach-text')?.focus(); } }}>Copy</button>

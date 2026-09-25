@@ -3,7 +3,7 @@ import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason } from '../gymApi.js';
 import { HistoryFilter, HistoryIndex } from '../Log.jsx';
-import { groupByExercise, shortDayLabel } from '../log.js';
+import { groupByExercise } from '../log.js';
 import { historyQuery, historyTotals } from '../logbook/history.js';
 import { useHistory, useHistoryDates } from '../logbook/useHistory.js';
 import { DateJump } from '../logbook/DateJump.jsx';
@@ -11,7 +11,7 @@ import { mintId } from '../mint.js';
 import { ProgressCards } from '../progress/Progress.jsx';
 import { consistencyLine } from '../progress/progress.js';
 import { useGymRead } from '../useGymRead.js';
-import { logShareDescription, logShareRequest, publicLogHref, shareHistoryScope, sharedSetScheme } from './logShare.js';
+import { logShareDescription, logShareRequest, publicLogHref, shareHistoryScope, sharedSetScheme, shareDateLabel } from './logShare.js';
 import { logShareApi } from './logShareApi.js';
 import './logShare.css';
 
@@ -49,7 +49,7 @@ export function LogShareScreen() {
     return () => {
       window.removeEventListener('keydown', key, true);
       if (opener?.isConnected && opener !== document.body) opener.focus();
-      else globalThis.requestAnimationFrame?.(() => document.querySelector?.('.gym-log-share > button')?.focus());
+      else globalThis.requestAnimationFrame?.(() => document.querySelector?.('.gym-share-scope > button')?.focus());
     };
   }, [Boolean(preview)]);
   const change = (fields) => { setDraft({ ...draft, ...fields }); setPreview(null); identity.current = null; setNote(''); };
@@ -75,14 +75,14 @@ export function LogShareScreen() {
     catch (error) { setNote(`The link wasn’t revoked — ${failureReason(error)}.`); }
     setBusy(false);
   };
-  if (detail) return <section className="gym-log-share">
+  if (detail) return <section className="gym-log-share is-link">
     <Back href="#/gym/log">The log</Back>
-    <h1 className="gym-title">Share log</h1><p className="gym-share-subtitle">{detail.revoked ? 'Link revoked' : 'Link ready'}</p>
+    <header className="gym-share-heading"><h1 className="gym-title">Share log</h1><p className="gym-share-subtitle">{detail.revoked ? 'Link revoked' : 'Link ready'}</p></header>
     <div className="gym-share-link-card">
       {detail.revoked ? <><p>This link no longer opens your log.</p><p className="gym-share-meta">Anyone who saved the link loses access.</p></> : <>
-        <p>{logShareDescription(detail)}</p>
-        {detailHistory.data?.summary && <p className="gym-share-meta">{detailHistory.data.summary.sessions} completed workouts{detailHistory.data.sessions[0] ? ` through ${shortDayLabel(detailHistory.data.sessions[0].startedAt)}` : ''}.</p>}
-        <p className="gym-share-meta">Expires {new Date(detail.expiresAt).toLocaleDateString()}.</p>
+        <p>{detail.scope === 'all' ? `Entire history · ${detail.mode === 'live' ? 'Live updates' : 'Snapshot'}` : logShareDescription(detail)}</p>
+        {detailHistory.data?.summary && <p className="gym-share-meta">{detailHistory.data.summary.sessions} completed workouts{detailHistory.data.sessions[0] ? ` through ${shareDateLabel(detailHistory.data.sessions[0].startedAt)}` : ''}.</p>}
+        <p className="gym-share-meta">Expires {shareDateLabel(detail.expiresAt)}.</p>
         <input className="gym-share-url" readOnly aria-label="Share link" value={detail.url} onFocus={(event) => event.target.select()} />
         <a className="gym-share-view" href={detail.url} target="_blank" rel="noreferrer">View shared log</a>
         <p className="gym-share-meta">Anyone with the link can read it.</p>
@@ -105,26 +105,31 @@ export function LogShareScreen() {
   </dialog>;
   return <section className="gym-log-share">
     <Back href="#/gym/log">The log</Back>
-    <h1 className="gym-title">Share log</h1>{draft.scope === 'all' && <p className="gym-share-subtitle">Let someone read your training.</p>}
-    <fieldset className="gym-share-choice"><legend>History</legend>
-      {[['all', 'Entire history'], ['range', 'Date range']].map(([value, label]) => <button type="button" key={value} aria-pressed={draft.scope === value} onClick={() => change({ scope: value })}>{label}</button>)}
-    </fieldset>
-    {draft.scope === 'range' && <div className="gym-share-dates"><label>From<input type="date" value={draft.from} onChange={(event) => change({ from: event.target.value })} /></label><label>Through<input type="date" value={draft.until} onChange={(event) => change({ until: event.target.value })} /></label></div>}
-    {historyCount.data?.summary && <p className="gym-share-meta">{historyCount.data.summary.sessions} completed workouts{historyCount.data.sessions[0] ? ` through ${shortDayLabel(historyCount.data.sessions[0].startedAt)}` : ''}.</p>}
-    <fieldset className="gym-share-choice"><legend>Updates</legend>
-      {[['snapshot', 'Snapshot'], ['live', 'Live updates']].map(([value, label]) => <button type="button" key={value} aria-pressed={draft.mode === value} onClick={() => change({ mode: value })}>{label}</button>)}
-    </fieldset>
-    <p className="gym-share-meta">{draft.mode === 'snapshot' ? 'New workouts stay private.' : draft.scope === 'range' ? 'Workouts and corrections in this range update the link.' : 'New workouts and corrections update the link.'}</p>
-    <div className="gym-share-disclosure"><strong>Workouts and sets</strong><p>Movements, load, reps, dates and duration.</p><p>Notes and Coach chats stay private.</p></div>
-    <p className="gym-share-meta">Anyone with the link can read it.</p><p className="gym-share-meta">Expires after 30 days. Revoke anytime.</p>
-    {note && <p role="alert">{note}</p>}
-    <Button onClick={openPreview}>Preview</Button>
-    <section className="gym-share-active"><h2>Active links</h2>
+    <header className="gym-share-heading"><h1 className="gym-title">Share log</h1><p className="gym-share-subtitle">Let someone read your training.</p></header>
+    <div className="gym-share-scope">
+      <div className="gym-share-group">
+        <fieldset className="gym-share-choice"><legend>History</legend>
+          {[['all', 'Entire history'], ['range', 'Date range']].map(([value, label]) => <button type="button" key={value} aria-pressed={draft.scope === value} onClick={() => change({ scope: value })}>{label}</button>)}
+        </fieldset>
+        {draft.scope === 'range' && <div className="gym-share-dates"><label>From<input type="date" value={draft.from} onChange={(event) => change({ from: event.target.value })} /></label><label>Through<input type="date" value={draft.until} onChange={(event) => change({ until: event.target.value })} /></label></div>}
+        {historyCount.data?.summary && <p className="gym-share-meta">{historyCount.data.summary.sessions} completed workouts{historyCount.data.sessions[0] ? ` through ${shareDateLabel(historyCount.data.sessions[0].startedAt)}` : ''}.</p>}
+      </div>
+      <div className="gym-share-group">
+        <fieldset className="gym-share-choice"><legend>Updates</legend>
+          {[['snapshot', 'Snapshot'], ['live', 'Live updates']].map(([value, label]) => <button type="button" key={value} aria-pressed={draft.mode === value} onClick={() => change({ mode: value })}>{label}</button>)}
+        </fieldset>
+        <p className="gym-share-meta">{draft.mode === 'snapshot' ? 'New workouts stay private.' : draft.scope === 'range' ? 'Workouts and corrections in this range update the link.' : 'New workouts and corrections update the link.'}</p>
+      </div>
+      <div className="gym-share-disclosure"><strong>Workouts and sets</strong><p>Movements, load, reps, dates and duration.</p><p>Notes and Coach chats stay private.</p></div>
+      <div className="gym-share-group"><p className="gym-share-meta">Anyone with the link can read it.</p><p className="gym-share-meta">Expires after 30 days. Revoke anytime.</p></div>
+      {note && <p role="alert">{note}</p>}
+      <Button onClick={openPreview}>Preview</Button>
+    </div>
+    {(active.phase !== 'ready' || active.data?.length > 0) && <section className="gym-share-active"><h2>Active links</h2>
       {active.phase === 'loading' && <p>Opening your links…</p>}
       {active.phase === 'failed' && <Button variant="secondary" onClick={active.retry}>Retry links</Button>}
-      {active.data?.length === 0 && <p className="gym-share-meta">No active links.</p>}
-      {active.data?.map((share) => <button type="button" className="gym-share-active-row" key={share.id} onClick={() => setDetail(share)}><span>{logShareDescription(share)}</span><span>Expires {new Date(share.expiresAt).toLocaleDateString()} ›</span></button>)}
-    </section>
+      {active.data?.map((share) => <button type="button" className="gym-share-active-row" key={share.id} onClick={() => setDetail(share)}><span>{logShareDescription(share)}</span><span>Expires {shareDateLabel(share.expiresAt)} ›</span></button>)}
+    </section>}
   </section>;
 }
 
@@ -179,7 +184,7 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
   const consistency = consistencyLine(history.data?.progress);
   const progressLog = { progress: { phase: 'ready', data: history.data?.progress }, catalog: history.data?.exercises ?? [] };
   return <div className={`gym-read-only-log${selected ? ' has-session' : ''}`}>
-    {share && <p className="gym-public-scope">{logShareDescription(share)}{share.mode === 'snapshot' && share.createdAt ? ` · through ${shortDayLabel(share.createdAt)}` : ''}</p>}
+    {share && <p className="gym-public-scope">{logShareDescription(share)}{share.mode === 'snapshot' && share.createdAt ? ` · through ${shareDateLabel(share.createdAt)}` : ''}</p>}
     <h1 className="gym-title">Training log</h1>
     <div className="gym-history-filters">
       <DateJump year={filters.year} month={filters.month} months={dates.months} failure={dates.failure} onRetry={dates.retry} onChange={(change) => move({ ...change, selected: null })} />
@@ -203,7 +208,7 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
         {filters.selected && !selected ? <p className="gym-quiet">{history.data?.next ? 'Opening the selected workout…' : 'That workout is not in this shared history.'}</p> : selected ? <SharedWorkoutReader catalog={history.data?.exercises ?? []} session={selected} previous={sessions[sessions.indexOf(selected) + 1]} next={sessions[sessions.indexOf(selected) - 1]} onSelect={(id) => move({ selected: id })} onBack={() => move({ selected: null })} hasOlder={Boolean(history.data?.next)} onOlder={() => setOlderFor(selected.id)} olderBusy={Boolean(olderFor)} /> : <><div className="gym-progress-head"><h2 className="gym-section-title">Progress</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div><ProgressCards log={progressLog} readOnly unit="kg" /></>}
       </div>
     </div>}
-    <p className="gym-public-private">Coach and Notes are not shared.</p>
+    {!preview && <p className="gym-public-private">Coach and Notes are not shared.</p>}
   </div>;
 }
 
@@ -219,18 +224,20 @@ export function SharedWorkoutReader({ catalog = [], session, previous, next, onS
       <button type="button" disabled={!next} onClick={() => onSelect(next.id)}>Next<span className="gym-reader-nav-long"> workout</span> →</button>
     </nav>
     <h2 className="gym-title">{session.routineName || 'Free session'}</h2>
-    <p className="gym-detail-when">{date} · {clock(session.startedAt)}–{clock(session.finishedAt)} · {Math.max(0, Math.round((session.finishedAt - session.startedAt) / 60000))} min</p>
-    <dl className="gym-reader-totals"><div><dt>Sets</dt><dd>{session.workingSetCount ?? session.setCount}</dd></div><div><dt>Reps</dt><dd>{session.reps}</dd></div><div><dt>Volume · kg</dt><dd>{number.format(session.tonnageKg)}</dd></div></dl>
+    <p className="gym-detail-when">{date} · {clock(session.startedAt)}–{clock(session.finishedAt)}</p>
+    <dl className="gym-reader-totals"><div><dt>sets</dt><dd>{session.workingSetCount ?? session.setCount}</dd></div><div><dt>reps</dt><dd>{session.reps}</dd></div><div><dt>kg external</dt><dd>{number.format(session.tonnageKg)}</dd></div></dl>
     {groupByExercise(session.sets ?? []).map(([exerciseId, sets]) => {
       const scheme = sharedSetScheme(sets);
+      const collapsed = scheme && !expanded.has(exerciseId);
       const totals = session.movements?.find((movement) => movement.exerciseId === exerciseId);
       const bodyweight = catalog.find((movement) => movement.id === exerciseId)?.equipment === 'bodyweight';
       return <section className="gym-share-movement" key={exerciseId}>
-        <header><h3>{sets[0].exercise}</h3>{totals && <p>{totals.reps} reps · {bodyweight && totals.tonnageKg === 0 ? 'bodyweight' : `${number.format(totals.tonnageKg)} kg`}</p>}</header>
-        {scheme && !expanded.has(exerciseId) ? <button type="button" className="gym-share-scheme" aria-label={`Show every set of ${sets[0].exercise}`} onClick={() => setExpanded((current) => new Set([...current, exerciseId]))}><span className="gym-share-ticks" aria-hidden="true">{sets.map((set) => <i key={set.id} />)}</span>{scheme}<img src={new URL('../logbook/assets/expand.svg', import.meta.url).href} width="10" height="5" alt="" /></button> : <>
-          <ul className="gym-share-sets">{sets.map((set) => <li key={set.id}><i aria-hidden="true" /><span>{set.weightKg === 0 ? 'bodyweight' : number.format(set.weightKg)}</span><span>×</span><span>{set.reps}</span>{set.rpe != null && <span>RPE {set.rpe}</span>}</li>)}</ul>
-          {scheme && <button type="button" className="gym-share-collapse" onClick={() => setExpanded((current) => { const next = new Set(current); next.delete(exerciseId); return next; })}>Collapse sets</button>}
-        </>}
+        <header>
+          <h3>{sets[0].exercise}</h3>
+          {scheme ? <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sets[0].exercise}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('../logbook/assets/expand.svg', import.meta.url).href : new URL('../logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button> : <span className="gym-movement-state" aria-hidden="true"><img src={new URL('../logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
+          {totals && <p>{totals.reps} reps · {bodyweight && totals.tonnageKg === 0 ? 'bodyweight' : `${number.format(totals.tonnageKg)} kg`}</p>}
+        </header>
+        {collapsed ? <button type="button" className="gym-share-scheme" aria-expanded="false" aria-label={`Show every set of ${sets[0].exercise}`} onClick={() => setExpanded((current) => new Set([...current, exerciseId]))}><span className="gym-share-ticks" aria-hidden="true">{sets.map((set) => <i key={set.id} />)}</span>{scheme}</button> : <ul className="gym-share-sets">{sets.map((set) => <li key={set.id}><i aria-hidden="true" /><span className="gym-share-set-line"><span>{set.weightKg === 0 ? 'bodyweight' : number.format(set.weightKg)}</span><span className="gym-share-set-times">×</span><span>{set.reps}</span></span>{set.rpe != null && <span>RPE {set.rpe}</span>}</li>)}</ul>}
       </section>;
     })}
     {(session.sets ?? []).length === 0 && <p>No sets in this workout.</p>}

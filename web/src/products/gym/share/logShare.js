@@ -25,8 +25,11 @@ export function shareHistoryScope(share, filters = {}) {
 export function logShareDescription(share) {
   const mode = share.mode === 'live' ? 'Live updates' : 'Snapshot';
   if (share.scope !== 'range') return `${mode} · entire history`;
-  const day = (at) => new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-  return `${mode} · ${day(share.from)} – ${day(share.until - 1)}`;
+  return `${mode} · ${shareDateLabel(share.from)} – ${shareDateLabel(share.until - 1)}`;
+}
+
+export function shareDateLabel(at) {
+  return new Date(at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export function publicLogHref(token, filters = {}) {

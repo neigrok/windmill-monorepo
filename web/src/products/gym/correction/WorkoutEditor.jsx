@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason, gymApi } from '../gymApi.js';
-import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref } from '../log.js';
+import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
 import { mintId } from '../mint.js';
 import { workoutTotals } from '../logbook/history.js';
 import { correctionDraft, correctionScheme, correctionWrite } from './correction.js';
@@ -19,6 +19,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   const back = `${sessionHref(session.id)}?from=${encodeURIComponent(from)}`;
   const totals = workoutTotals(sets);
   const name = routineNameOf(session) ?? NO_ROUTINE;
+  const date = draft.date ? new Date(`${draft.date}T12:00`) : null;
   useEffect(() => {
     if (!failure) return;
     form.current?.querySelector(failure.setId ? `[data-set="${failure.setId}"] [name="${failure.field}"]` : `[name="${failure.field}"]`)?.focus();
@@ -59,34 +60,40 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   };
   return <section className="gym-workout-editor">
     <Back href={back}>{name}</Back>
-    <h1 className="gym-title">Edit workout</h1>
-    <p className="gym-workout-note">{name} · {dayLabel(session.startedAt)}</p>
+    <header>
+      <h1 className="gym-title">Edit workout</h1>
+      <p className="gym-workout-note">{name} · {dayLabel(session.startedAt)}</p>
+    </header>
     <div className="gym-workout-desk">
       <form ref={form} onSubmit={save} className="gym-correction-form">
         <fieldset disabled={busy}>
           <div className="gym-workout-fields">
             <label>Routine<input name="routineName" value={draft.routineName} onChange={(event) => setDraft({ ...draft, routineName: event.target.value })} /></label>
-            <label>Date<input name="date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
-            <label>Start<input name="time" type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /></label>
+            <label className="gym-workout-local">Date<input name="date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{date && <>{shortDayLabel(date)}<span className="gym-workout-date-year"> {date.getFullYear()}</span></>}</span></label>
+            <label className="gym-workout-local">Start<input name="time" type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{draft.time}</span></label>
           </div>
-          <p className="gym-workout-unit">kg × reps</p>
-          {groupByExercise(draft.sets).map(([exerciseId, group]) => <section className="gym-workout-movement" key={exerciseId}>
-            <button type="button" className="gym-workout-movement-head" aria-expanded={selected === exerciseId} onClick={() => setSelected(selected === exerciseId ? null : exerciseId)}>
-              <span><strong>{names.get(exerciseId) ?? exerciseId}</strong><span className="gym-workout-scheme">{correctionScheme(group)}</span></span>
-              {selected !== exerciseId && <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>}
-            </button>
-            {selected === exerciseId && group.map((set, index) => <div key={set.id} className="gym-workout-set" data-set={set.id}>
-              <div className="gym-correction-row">
-                <span className="gym-set-rail" aria-label={`Set ${index + 1} of ${group.length}`}><i /></span>
-                <input className="gym-num" name="weightKg" inputMode="decimal" aria-label={`${names.get(exerciseId)} set ${index + 1} load in kg`} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
-                <span className="gym-number-times">×</span>
-                <input className="gym-num" name="reps" inputMode="numeric" aria-label={`${names.get(exerciseId)} set ${index + 1} reps`} value={set.fields.reps} aria-invalid={failure?.setId === set.id && failure.field === 'reps'} onChange={(event) => updateSet(set.id, 'reps', event.target.value)} />
-                <button type="button" className="gym-workout-remove" aria-label={`Delete ${names.get(exerciseId)} set ${index + 1}`} onClick={() => setDraft({ ...draft, sets: draft.sets.filter((row) => row.id !== set.id) })}>×</button>
-              </div>
-              {(set.fields.note || set.fields.rpe) && <p className="gym-workout-set-note">{[set.fields.rpe && `RPE ${set.fields.rpe}`, set.fields.note].filter(Boolean).join(' · ')}</p>}
-            </div>)}
-            {selected === exerciseId && <button type="button" className="gym-workout-add" onClick={() => addSet(exerciseId)}>+ Add set</button>}
-          </section>)}
+          <div className="gym-workout-sets">
+            <p className="gym-workout-unit">kg × reps</p>
+            <div className="gym-workout-movements">
+              {groupByExercise(draft.sets).map(([exerciseId, group]) => <section className="gym-workout-movement" key={exerciseId}>
+                <button type="button" className="gym-workout-movement-head" aria-expanded={selected === exerciseId} onClick={() => setSelected(selected === exerciseId ? null : exerciseId)}>
+                  <span><strong>{names.get(exerciseId) ?? exerciseId}</strong><span className="gym-workout-scheme">{correctionScheme(group)}</span></span>
+                  {selected !== exerciseId && <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>}
+                </button>
+                {selected === exerciseId && group.map((set, index) => <div key={set.id} className="gym-workout-set" data-set={set.id}>
+                  <div className="gym-correction-row">
+                    <span className="gym-set-rail" aria-label={`Set ${index + 1} of ${group.length}`}><i /></span>
+                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={`${names.get(exerciseId)} set ${index + 1} load in kg`} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
+                    <span className="gym-number-times">×</span>
+                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.reps.length) }} name="reps" inputMode="numeric" aria-label={`${names.get(exerciseId)} set ${index + 1} reps`} value={set.fields.reps} aria-invalid={failure?.setId === set.id && failure.field === 'reps'} onChange={(event) => updateSet(set.id, 'reps', event.target.value)} />
+                    <button type="button" className="gym-workout-remove" aria-label={`Delete ${names.get(exerciseId)} set ${index + 1}`} onClick={() => setDraft({ ...draft, sets: draft.sets.filter((row) => row.id !== set.id) })}>×</button>
+                  </div>
+                  {(set.fields.note || set.fields.rpe) && <p className="gym-workout-set-note">{[set.fields.rpe && `RPE ${set.fields.rpe}`, set.fields.note].filter(Boolean).join(' · ')}</p>}
+                </div>)}
+                {selected === exerciseId && <button type="button" className="gym-workout-add" onClick={() => addSet(exerciseId)}>+ Add set</button>}
+              </section>)}
+            </div>
+          </div>
           <button type="button" className="gym-workout-add" onClick={() => setPick(!pick)}>+ Add movement</button>
           {pick && <label className="gym-workout-picker">Movement<select value="" onChange={(event) => { if (event.target.value) addSet(event.target.value); }}><option value="">Choose a movement</option>{catalog.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>}
         </fieldset>
@@ -97,7 +104,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
         <p className="gym-workout-unit">SAVED · {dayLabel(session.startedAt).toUpperCase()}</p>
         <dl>{[[totals.sets, 'sets'], [totals.reps, 'reps'], [Number(fmtKg(totals.tonnageKg)).toLocaleString('en'), 'kg external']].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <p>These are this workout’s own numbers.</p>
-        <button type="button" className="gym-short-discard" onClick={onDelete}>Delete workout</button>
+        <button type="button" className="gym-short-discard" disabled={busy} onClick={onDelete}>Delete workout</button>
       </aside>
     </div>
   </section>;

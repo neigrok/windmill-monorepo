@@ -64,7 +64,7 @@ function RoutinePick({ log }) {
     .sort((left, right) => left.position - right.position);
   if (program.length === 0) return <PastWorkout opening={freeDraft()} back={LOG_BACK} log={log} noRoutines />;
   return (
-    <>
+    <section className="gym-routine-pick">
       <header className="gym-past-top">
         <Back href={LOG_BACK.href}>{LOG_BACK.label}</Back>
         <h1 className="gym-title">Add a past workout</h1>
@@ -83,7 +83,7 @@ function RoutinePick({ log }) {
         ))}
       </ul>
       <a className="gym-index-free" href={backfillHref(FREE_SESSION)}>+ Free session</a>
-    </>
+    </section>
   );
 }
 
@@ -347,18 +347,21 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
             </div>
             {opened && (
               <div className="gym-past-clock">
-                <input
-                  ref={startField}
-                  className="gym-past-start"
-                  type="time"
-                  aria-label="Start time"
-                  autoFocus={!clock}
-                  value={clockValue}
-                  onChange={(event) => {
-                    const [hour, minute] = event.target.value.split(':');
-                    if (hour !== undefined && minute !== undefined) changeClock({ hour: Number(hour), minute: Number(minute) });
-                  }}
-                />
+                <span className="gym-past-time">
+                  <input
+                    ref={startField}
+                    className="gym-past-start"
+                    type="time"
+                    aria-label="Start time"
+                    autoFocus={!clock}
+                    value={clockValue}
+                    onChange={(event) => {
+                      const [hour, minute] = event.target.value.split(':');
+                      if (hour !== undefined && minute !== undefined) changeClock({ hour: Number(hour), minute: Number(minute) });
+                    }}
+                  />
+                  <span className="gym-past-time-value" aria-hidden="true">{clockValue}</span>
+                </span>
                 <span className="gym-past-for">for</span>
                 <span className="gym-past-duration" role="group" aria-label="Duration">{DURATION_CHIPS.map((chip) => (
                   <button

@@ -41,9 +41,9 @@ export function FixSheet({ set, sets = [set], movement, session, onSave, onDelet
         {group.map((row) => row.id !== set.id ? <div key={row.id} className="gym-fix-sibling"><span className="gym-set-rail" aria-hidden="true"><i /></span><span>{setLoadLabel(row, 'kg')}</span></div> : <React.Fragment key={row.id}>
           <div className="gym-fix-row">
             <span className="gym-set-rail" aria-hidden="true"><i /></span>
-            <input className="gym-num" name="weightKg" inputMode="decimal" aria-label="Load in kg" aria-invalid={failure?.field === 'weightKg'} aria-describedby={failure?.field === 'weightKg' ? 'gym-fix-refusal' : undefined} value={draft.weightKg} onChange={(event) => update('weightKg', event.target.value)} />
+            <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, draft.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label="Load in kg" aria-invalid={failure?.field === 'weightKg'} aria-describedby={failure?.field === 'weightKg' ? 'gym-fix-refusal' : undefined} value={draft.weightKg} onChange={(event) => update('weightKg', event.target.value)} />
             <span className="gym-number-times" aria-hidden="true">×</span>
-            <input className="gym-num" name="reps" inputMode="numeric" aria-label="Reps" aria-invalid={failure?.field === 'reps'} aria-describedby={failure?.field === 'reps' ? 'gym-fix-refusal' : undefined} value={draft.reps} onChange={(event) => update('reps', event.target.value)} />
+            <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, draft.reps.length) }} name="reps" inputMode="numeric" aria-label="Reps" aria-invalid={failure?.field === 'reps'} aria-describedby={failure?.field === 'reps' ? 'gym-fix-refusal' : undefined} value={draft.reps} onChange={(event) => update('reps', event.target.value)} />
             <button type="button" className="gym-fix-remove" aria-label="Delete set" onClick={onDelete}>×</button>
           </div>
           {failure && failure.field !== 'note' && <p id="gym-fix-refusal" className="gym-fix-refusal" role="alert">{failure.reason}</p>}

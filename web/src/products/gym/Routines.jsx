@@ -9,7 +9,7 @@ import {
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { mintId } from './mint.js';
-import { PendingProposals, ProposalPanel } from './Proposals.jsx';
+import { ProposalPreview, ProposalPanel } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
@@ -23,6 +23,8 @@ import './planning/planning.css';
 
 export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const view = useGymRead(() => gymApi.routines(), []);
+  const [reviewId, setReviewId] = useState(reviewing);
+  useEffect(() => setReviewId(reviewing), [reviewing]);
 
   const gone = log.gone('routine');
   const hidden = log.hidden('routine');
@@ -49,8 +51,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
       </header>
       {log.session && <LiveMirror log={log} onSignIn={onSignIn} />}
 
-      {view.phase === 'ready' && <PendingProposals routines={routines} log={log} onChanged={view.refresh} />}
-      {reviewing && <ProposalPanel key={reviewing} id={reviewing} log={log} onChanged={view.refresh} />}
+      {reviewId && <ProposalPanel key={reviewId} id={reviewId} log={log} onChanged={view.refresh} />}
       {view.phase === 'loading' && <p className="gym-quiet">Opening your routines…</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
@@ -68,9 +69,9 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
       {view.phase === 'ready' && routines.length > 0 && (
         <ul className="gym-routines">
           {routines.map((routine) => (
-            <li className="gym-routine" key={routine.id}>
+            <li className={`gym-routine${routine.pendingProposal ? ' has-proposal' : ''}`} key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? `Trained ${agoLabel(routine.lastTrainedAt)}` : 'Never trained'}</span></span>
+                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">Trained </span>{agoLabel(routine.lastTrainedAt)}</> : 'Never trained'}</span></span>
                 <span className="gym-routine-card-body"><span className="gym-routine-meta">{(routine.entries ?? []).map((entry) => nameOfMovement(log.catalog, entry.exerciseId)).join(' · ')}</span>
                 <span className="gym-routine-rails" aria-hidden="true">{(routine.entries ?? []).map((entry, index) => <span key={index}>{Array.from({ length: entry.sets?.length ?? 1 }, (_, tick) => <i key={tick} />)}</span>)}</span></span>
               </a>
@@ -81,6 +82,7 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
                   { label: 'Delete', run: () => remove(routine) },
                 ]}
               />
+              {routine.pendingProposal && routine.pendingProposal.id !== reviewId && <ProposalPreview routine={routine} onExpand={setReviewId} log={log} />}
             </li>
           ))}
         </ul>
@@ -175,13 +177,18 @@ export function RoutineEditor({ id, log }) {
   };
 
   if (conflict?.entries) return <section className="gym-plan-versions">
-    <p className="gym-plan-kicker">{view.data.name}</p><h1 className="gym-title">Two versions</h1>
-    <p className="gym-plan-version-intro">Your draft and the saved routine differ. Nothing is thrown away.</p>
+    <header className="gym-plan-version-heading"><p className="gym-plan-kicker">{view.data.name}</p><h1 className="gym-title">Two versions</h1>
+    <p className="gym-plan-version-intro">Your draft and the saved routine differ. Nothing is thrown away.</p></header>
     <section className="gym-plan-differences"><h2>What differs</h2>
-      {routineConflictRows(view.data, draft, conflict).map((row, index) => <div key={index}><span>{row.label ?? nameOfMovement(log.catalog, row.exerciseId)}</span><span className="gym-plan-change-values">{row.before} → <strong>{row.after}</strong></span><small>{row.source}</small></div>)}
+      {routineConflictRows(view.data, draft, conflict).map((row, index) => {
+        const before = row.exerciseId && row.before.match(/^(\d+ × [^·]+) · (.+)$/);
+        const after = row.exerciseId && row.after.match(/^(\d+ × [^·]+) · (.+)$/);
+        const sameScheme = before && after && before[1] === after[1];
+        return <div key={index}><span>{row.label ?? nameOfMovement(log.catalog, row.exerciseId)}</span><span className="gym-plan-change-values">{sameScheme ? before[2] : row.before} → <strong>{sameScheme ? after[2] : row.after}</strong></span><small>{row.source}</small></div>;
+      })}
     </section>
     <div className="gym-plan-version-columns">{[['Your draft', draft], ['Saved routine', conflict]].map(([label, routine]) => <section key={label}>
-      <h2>{label}</h2>{routine.entries.map((entry, index) => <div className="gym-plan-version-entry" key={index}><p>{nameOfMovement(log.catalog, entry.exerciseId)}</p><span>{entryLabel(entry)}</span></div>)}
+      <h2>{label}</h2>{routine.entries.map((entry, index) => <div className="gym-plan-version-entry" key={index}><p>{nameOfMovement(log.catalog, entry.exerciseId)}</p><SchemeReadout entry={entry} compareTo={view.data.entries[index]?.exerciseId === entry.exerciseId ? view.data.entries[index] : null} /></div>)}
     </section>)}</div>
     <div className="gym-plan-version-actions"><a href={ROUTINES_HREF}>Use saved only</a><Button disabled={saving} onClick={async () => {
       if (saving) return;
@@ -195,7 +202,7 @@ export function RoutineEditor({ id, log }) {
   </section>;
 
   return (
-    <section className="gym-plan-editor">
+    <section className={`gym-plan-editor${fresh ? ' is-new' : ''}`}>
       <Back href={ROUTINES_HREF}>Routines</Back>
       <header className={`gym-editor-head${fresh ? ' is-new' : ''}`}>
         {fresh ? <h1 className="gym-title">New routine</h1> : <span className="gym-editor-name-field">
@@ -237,7 +244,7 @@ export function RoutineEditor({ id, log }) {
             onRemove={(index) => { dropEntry(index); setTarget(null); setTargetOpen(false); setTargetInvalid(false); }}
           />
           <button type="button" className="gym-plan-add-movement" onClick={() => { if (targetInvalid) { log.say('Check the current movement targets first.'); return; } setQuery(''); setPicking(true); setTargetOpen(false); }}>
-            + Add movement
+            <span aria-hidden="true">+</span> Add movement
           </button>
         </div>
         <aside className={`gym-plan-detail${targetOpen || picking ? ' is-open' : ''}`}>
@@ -247,6 +254,7 @@ export function RoutineEditor({ id, log }) {
               pane
               movement={nameOfMovement(log.catalog, draft.entries[target].exerciseId)}
               place={entryPlaceLabel(target, draft.entries.length, draft.name)}
+              panePlace={`Movement ${target + 1} of ${draft.entries.length}${view.data.lastTrainedAt ? ` · trained ${agoLabel(view.data.lastTrainedAt)}` : ' · never logged'}`}
               entry={draft.entries[target]}
               equipment={movementOf(log.catalog, draft.entries[target].exerciseId)?.equipment ?? null}
               neverLogged={saysNeverLogged(view.data, draft.entries[target])}
@@ -270,13 +278,15 @@ export function RoutineEditor({ id, log }) {
           )}
         </aside>
       </div>
-      <div className="gym-plan-actions">
-        <a href={ROUTINES_HREF}>Cancel</a>
-        <div className="gym-plan-save-area">{missing && <p className="gym-editor-missing">{missing}</p>}
-        <Button disabled={Boolean(missing) || saving || Boolean(conflict)}
-          onClick={async () => { if (await commit()) window.location.hash = ROUTINES_HREF; }}>
-          {saving ? 'Saving…' : 'Save routine'}
-        </Button></div>
+      <div className="gym-plan-commit">
+        <div className="gym-plan-actions">
+          <a href={ROUTINES_HREF}>Cancel</a>
+          <Button disabled={Boolean(missing) || saving || Boolean(conflict)}
+            onClick={async () => { if (await commit()) window.location.hash = ROUTINES_HREF; }}>
+            {saving ? 'Saving…' : 'Save routine'}
+          </Button>
+        </div>
+        {missing && <p className="gym-editor-missing">{missing}</p>}
       </div>
     </section>
   );
@@ -344,7 +354,7 @@ function EntryList({ entries, catalog, selected, onMove, onTarget, onRemove }) {
                 {nameOfMovement(catalog, entry.exerciseId)}
                 {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
               </span>
-              <span className="gym-entry-target">{entryLabel(entry)}</span>
+              <span className="gym-entry-target"><SchemeReadout entry={entry} /></span>
             </button>
             <button
               type="button"
@@ -352,7 +362,7 @@ function EntryList({ entries, catalog, selected, onMove, onTarget, onRemove }) {
               onClick={() => onRemove(index)}
               aria-label={`Remove ${nameOfMovement(catalog, entry.exerciseId)}`}
             >
-              <Icon name="x" size={15} />
+              <Icon name="x" size={12} />
             </button>
           </li>
         ))}
@@ -361,4 +371,11 @@ function EntryList({ entries, catalog, selected, onMove, onTarget, onRemove }) {
       <p className="gym-said" role="status">{rail.said}</p>
     </>
   );
+}
+
+function SchemeReadout({ entry, compareTo = null }) {
+  const readout = (target) => `${entryLabel(target)}${target.sets?.length && target.sets.every((set) => set.weightKg == null) ? ' · last' : ''}`.split(/(\s[×·]\s|–)/);
+  const parts = readout(entry);
+  const original = compareTo ? readout(compareTo) : null;
+  return <span className="gym-plan-scheme">{parts.map((part, index) => <span key={index} className={index % 2 ? 'is-separator' : original && part !== original[index] ? 'is-changed' : undefined}>{part}</span>)}</span>;
 }
