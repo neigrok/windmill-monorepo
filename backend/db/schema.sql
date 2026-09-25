@@ -1137,6 +1137,49 @@ create table if not exists gym_session_shares (
 );
 create index if not exists gym_session_shares_user on gym_session_shares (user_id);
 
+alter table gym_sessions add column if not exists display_name text;
+create table if not exists gym_correction_receipts (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  session_id text not null,
+  request_hash text not null
+);
+create index if not exists gym_correction_receipts_owner on gym_correction_receipts(user_id);
+alter table gym_sessions add column if not exists history_routine_id text;
+update gym_sessions set history_routine_id = routine_id
+  where history_routine_id is null and routine_id is not null;
+create or replace function gym_preserve_routine_identity() returns trigger language plpgsql as $$
+begin
+  if NEW.routine_id is not null then NEW.history_routine_id := NEW.routine_id; end if;
+  return NEW;
+end;
+$$;
+create or replace trigger gym_session_routine_identity before insert or update of routine_id on gym_sessions
+  for each row execute function gym_preserve_routine_identity();
+
+create table if not exists gym_log_shares (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  token text not null unique,
+  mode text not null check (mode in ('snapshot','live')),
+  scope text not null check (scope in ('all','range')),
+  from_ms bigint not null,
+  until_ms bigint not null,
+  created_ms bigint not null,
+  expires_ms bigint not null,
+  revoked_ms bigint,
+  check (from_ms < until_ms)
+);
+create index if not exists gym_log_shares_owner on gym_log_shares(user_id,created_ms desc);
+create table if not exists gym_log_share_sessions (
+  share_id text not null references gym_log_shares(id) on delete cascade,
+  id text not null,
+  started_ms bigint not null,
+  workout jsonb not null,
+  primary key (share_id,id)
+);
+create index if not exists gym_log_share_sessions_history on gym_log_share_sessions(share_id,started_ms desc,id desc);
+
 -- One row per account, not per device. `units` is a display transform and nothing else: every
 -- weight in this schema is kilograms and no read is scoped by it. Every default here also sits in
 -- products/gym/domain/Preferences.h, which is what a client that has never written is served: the

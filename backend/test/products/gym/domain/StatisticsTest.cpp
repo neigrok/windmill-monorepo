@@ -154,7 +154,8 @@ TEST(gym_progress_estimate_boundaries_keep_every_performed_fact) {
     std::optional<EstimatedFact> estimate;
     if (example.estimate) estimate = EstimatedFact{set, *example.estimate};
     const StatsProgress expected{2'000, {{SessionId{"ses_00000001"}, 1'000,
-        {{ExerciseId{"bench-press"}, 1, set, estimate}}}}};
+        {{ExerciseId{"bench-press"}, 1, set, estimate,
+          example.weightKg == 0 ? std::optional<PerformedFact>{set} : std::nullopt}}}}};
 
     CHECK_EQ(statsProgress({{SessionId{"ses_00000001"}, 1'000, ExerciseId{"bench-press"}, set}}, 2'000),
              expected);
@@ -197,7 +198,7 @@ TEST(gym_progress_keeps_signed_zero_and_low_effort_movements_without_estimates) 
 
   CHECK_EQ(statsProgress(history, 2'000), (StatsProgress{2'000, {{session, 1'000, {
       {ExerciseId{"chin-up"}, 2, history[1].performed, std::nullopt},
-      {ExerciseId{"dip"}, 1, history[2].performed, std::nullopt},
+      {ExerciseId{"dip"}, 1, history[2].performed, std::nullopt, history[2].performed},
       {ExerciseId{"press"}, 1, history[3].performed, std::nullopt}}}}}));
 }
 
@@ -235,4 +236,19 @@ TEST(gym_progress_preserves_distinct_session_ids_at_the_same_instant) {
 
 TEST(gym_progress_of_an_empty_log_retains_only_the_read_instant) {
   CHECK_EQ(statsProgress({}, 2'000), (StatsProgress{2'000, {}}));
+}
+
+TEST(gym_progress_bodyweight_most_reps_stays_independent_of_added_load_and_effort) {
+  const SessionId session{"ses_00000001"};
+  const ExerciseId exercise{"chin-up"};
+  const PerformedFact added{SetId{"set_00000001"}, 10, 6, {}};
+  const PerformedFact best{SetId{"set_00000002"}, 0, 14, 6};
+  const PerformedFact tie{SetId{"set_00000003"}, 0, 14, 9};
+  const PerformedFact assisted{SetId{"set_00000004"}, -20, 20, {}};
+  const auto progress = statsProgress({{session,1000,exercise,added},{session,1000,exercise,best},
+      {session,1000,exercise,tie},{session,1000,exercise,assisted}}, 2000);
+  REQUIRE_EQ(progress.sessions.size(), 1u);
+  REQUIRE_EQ(progress.sessions[0].movements.size(), 1u);
+  CHECK_EQ(progress.sessions[0].movements[0].heaviest, added);
+  CHECK_EQ(progress.sessions[0].movements[0].mostReps, std::optional<PerformedFact>{best});
 }

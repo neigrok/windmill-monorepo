@@ -155,12 +155,14 @@ struct Session {
   std::optional<RoutineId> routine;
   std::optional<PlanSnapshot> plan;
   std::optional<ClosedBy> closedBy;
+  std::optional<std::string> displayName;
 
   Session(SessionId id, UserId user, std::uint64_t startedAtMs,
           std::optional<std::uint64_t> finishedAtMs = std::nullopt,
           std::optional<RoutineId> routine = std::nullopt,
           std::optional<PlanSnapshot> plan = std::nullopt,
-          std::optional<ClosedBy> closedBy = std::nullopt);
+          std::optional<ClosedBy> closedBy = std::nullopt,
+          std::optional<std::string> displayName = std::nullopt);
 
   bool operator==(const Session&) const = default;
 };

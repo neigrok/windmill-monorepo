@@ -111,6 +111,7 @@ struct MovementSessionFact {
   int workingSetCount;
   PerformedFact heaviest;
   std::optional<EstimatedFact> estimate;
+  std::optional<PerformedFact> mostReps;
 
   bool operator==(const MovementSessionFact&) const = default;
 };

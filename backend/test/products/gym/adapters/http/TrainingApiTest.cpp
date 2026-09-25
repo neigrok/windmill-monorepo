@@ -2199,3 +2199,100 @@ TEST(gym_import_replayed_after_the_workout_was_discarded_is_409_and_never_brings
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"code":"session-deleted","error":"that workout was discarded"})"));
   CHECK(h.repo.db.sessions.empty());
 }
+
+TEST(gym_history_http_reads_whole_scope_and_rejects_malformed_filters) {
+  Harness h;
+  h.signIn("history-cookie");
+  trainedThrough(h, "history-cookie", "ses_history01", 1'700'000'000'000, 2);
+  auto request = getRequest("/v1/gym/history", "history-cookie");
+  request->setParameter("limit", "1");
+  const auto response = send(h.training, &TrainingApi::history, request);
+  REQUIRE_EQ(response->statusCode(), drogon::k200OK);
+  const auto body = bodyOf(response);
+  CHECK_EQ(wm::dump(body["summary"]), "{\"reps\":16,\"sessions\":1,\"sets\":2,\"tonnageKg\":1320.0}");
+  CHECK(body["next"].isNull());
+  for (const auto& [name, value] : std::vector<std::pair<std::string,std::string>>{
+      {"limit", "0"}, {"limit", "201"}, {"from", "bad"}, {"until", "0"},
+      {"beforeId", "ses_history01"}, {"before", "1700000000000"}, {"exercise", "bad' OR true"}}) {
+    auto invalid = getRequest("/v1/gym/history", "history-cookie");
+    invalid->setParameter(name, value);
+    CHECK_EQ(send(h.training, &TrainingApi::history, invalid)->statusCode(), drogon::k400BadRequest);
+  }
+  CHECK_EQ(send(h.training, &TrainingApi::history, getRequest("/v1/gym/history"))->statusCode(),
+           drogon::k401Unauthorized);
+}
+
+TEST(gym_log_share_http_mints_replays_lists_revokes_and_never_exposes_private_fields) {
+  Harness h;
+  h.signIn("share-cookie");
+  trainedThrough(h, "share-cookie", "ses_history01", 1'700'000'000'000, 1);
+  h.repo.db.sets[0].note = "private medical details";
+  const Json::Value input = wm::parse(R"({"id":"share_history01","mode":"snapshot","scope":"all"})");
+  const auto created = send(h.training, &TrainingApi::createLogShare,
+      postRequest("/v1/gym/log-shares", input, "share-cookie"));
+  REQUIRE_EQ(created->statusCode(), drogon::k201Created);
+  const auto share = bodyOf(created);
+  const auto replay = send(h.training, &TrainingApi::createLogShare,
+      postRequest("/v1/gym/log-shares", input, "share-cookie"));
+  CHECK_EQ(wm::dump(bodyOf(replay)), wm::dump(share));
+  CHECK_EQ(share["url"].asString(), "https://windmill.works/#/gym/shared-log/" + share["token"].asString());
+  const auto publicRead = send(h.training, &TrainingApi::sharedHistory,
+      getRequest("/v1/gym/shared-logs/" + share["token"].asString()), share["token"].asString());
+  REQUIRE_EQ(publicRead->statusCode(), drogon::k200OK);
+  CHECK_EQ(publicRead->getHeader("Cache-Control"), "no-store");
+  const auto page = bodyOf(publicRead);
+  CHECK_EQ(wm::dump(page["sessions"][0]),
+      "{\"exerciseNames\":[\"Bench Press\"],\"finishedAt\":1700003600000,\"id\":\"ses_history01\",\"movements\":[{\"exerciseId\":\"bench-press\",\"reps\":8,\"sets\":1,\"tonnageKg\":660.0}],\"reps\":8,\"routineName\":\"\",\"setCount\":1,\"sets\":[{\"completedAt\":1700000060000,\"exercise\":\"Bench Press\",\"exerciseId\":\"bench-press\",\"id\":\"set_history011\",\"reps\":8,\"setNumber\":1,\"weightKg\":82.5}],\"startedAt\":1700000000000,\"tonnageKg\":660.0,\"workingSetCount\":1}");
+  CHECK_EQ(wm::dump(page["share"]), wm::dump(wm::parse(
+      "{\"createdAt\":" + share["createdAt"].asString() + ",\"expiresAt\":" + share["expiresAt"].asString() +
+      ",\"mode\":\"snapshot\",\"scope\":\"all\"}")));
+  const auto list = send(h.training, &TrainingApi::listLogShares,
+      getRequest("/v1/gym/log-shares", "share-cookie"));
+  REQUIRE_EQ(bodyOf(list)["shares"].size(), 1u);
+  CHECK_EQ(wm::dump(bodyOf(list)["shares"][0]), wm::dump(share));
+  CHECK_EQ(send(h.training, &TrainingApi::revokeLogShare,
+      deleteRequest("/v1/gym/log-shares/share_history01", "share-cookie"),
+      std::string{"share_history01"})->statusCode(), drogon::k204NoContent);
+  const auto revoked = send(h.training, &TrainingApi::sharedHistory,
+      getRequest("/v1/gym/shared-logs/" + share["token"].asString()), share["token"].asString());
+  const auto absent = send(h.training, &TrainingApi::sharedHistory,
+      getRequest("/v1/gym/shared-logs/absent"), std::string{"absent"});
+  CHECK_EQ(revoked->statusCode(), drogon::k404NotFound);
+  CHECK_EQ(wm::dump(bodyOf(revoked)), wm::dump(bodyOf(absent)));
+  CHECK_EQ(send(h.training, &TrainingApi::createLogShare,
+      postRequest("/v1/gym/log-shares", input, "share-cookie"))->statusCode(), drogon::k409Conflict);
+}
+
+TEST(gym_atomic_correction_http_keeps_frozen_plan_clears_rpe_and_refreshes_the_name_etag) {
+  Harness h;
+  const auto user = h.signIn("correction-cookie");
+  h.clock.now = 1'700'000'100'000;
+  const SessionId id{"ses_correct01"};
+  h.repo.db.sessions.push_back(Session{id, user, 1'700'000'000'000, 1'700'000'003'000,
+      {}, PlanSnapshot{"Original routine", {}}});
+  h.repo.db.sets.push_back(Set{SetId{"set_correct01"}, id, ExerciseId{"bench-press"}, 1, 80, 8,
+      SetKind::working, 8, "private", 1'700'000'001'000});
+  const auto before = send(h.training, &TrainingApi::getSession,
+      getRequest("/v1/gym/sessions/" + id.str(), "correction-cookie"), id.str());
+  Json::Value request = wm::parse(R"({"requestId":"fix_correct01","startedAt":1700000000000,"finishedAt":1700000003000,"routineName":"Historical name","sets":[{"id":"set_correct01","exerciseId":"bench-press","setNumber":1,"weightKg":80,"reps":8,"rpe":null,"note":"","completedAt":1700000001000}]})");
+  const auto response = send(h.training, &TrainingApi::correctSession,
+      postRequest("/v1/gym/sessions/" + id.str() + "/corrections", request, "correction-cookie"), id.str());
+  REQUIRE_EQ(response->statusCode(), drogon::k200OK);
+  auto expected = wm::parse(R"({"replayed":false,"session":{"id":"ses_correct01","startedAt":1700000000000,"finishedAt":1700000003000,"routineName":"Historical name","plan":{"routine":"Original routine","entries":[]}},"sets":[{"id":"set_correct01","exerciseId":"bench-press","setNumber":1,"weightKg":80.0,"reps":8,"kind":"working","note":"","completedAt":1700000001000}]})");
+  CHECK_EQ(wm::dump(bodyOf(response)), wm::dump(expected));
+  auto cached = getRequest("/v1/gym/sessions/" + id.str(), "correction-cookie");
+  cached->addHeader("If-None-Match", before->getHeader("ETag"));
+  const auto after = send(h.training, &TrainingApi::getSession, cached, id.str());
+  CHECK_EQ(after->statusCode(), drogon::k200OK);
+  CHECK(after->getHeader("ETag") != before->getHeader("ETag"));
+  request["requestId"] = "fix_correct02";
+  request["routineName"] = "Name only";
+  REQUIRE_EQ(send(h.training, &TrainingApi::correctSession,
+      postRequest("/v1/gym/sessions/" + id.str() + "/corrections", request, "correction-cookie"), id.str())->statusCode(), drogon::k200OK);
+  cached->addHeader("If-None-Match", after->getHeader("ETag"));
+  CHECK_EQ(send(h.training, &TrainingApi::getSession, cached, id.str())->statusCode(), drogon::k200OK);
+  request["requestId"] = "fix_bad00001";
+  request["sets"][0]["kind"] = "working";
+  CHECK_EQ(send(h.training, &TrainingApi::correctSession,
+      postRequest("/v1/gym/sessions/" + id.str() + "/corrections", request, "correction-cookie"), id.str())->statusCode(), drogon::k400BadRequest);
+}

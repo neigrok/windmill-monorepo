@@ -182,10 +182,11 @@ SetTarget::SetTarget(std::optional<int> reps, std::optional<double> weightKg)
 
 Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
                  std::optional<std::uint64_t> finishedAtMs, std::optional<RoutineId> routine,
-                 std::optional<PlanSnapshot> plan, std::optional<ClosedBy> closedBy)
+                 std::optional<PlanSnapshot> plan, std::optional<ClosedBy> closedBy,
+                 std::optional<std::string> displayName)
     : id(std::move(id)), user(std::move(user)), startedAtMs(startedAtMs),
       finishedAtMs(finishedAtMs), routine(std::move(routine)), plan(std::move(plan)),
-      closedBy(closedBy) {
+      closedBy(closedBy), displayName(std::move(displayName)) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad session id");
   if (this->user.empty()) throw InvalidTraining("a session belongs to an account");
   if (startedAtMs == 0 || startedAtMs > kMaxInstantMs)

@@ -50,6 +50,12 @@ public:
                       const std::string& id);                                 // DELETE /v1/gym/sessions/{id}
   void lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/last?exercise=
   void lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/exercises/last
+  void correctSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id);
+  void history(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
+  void createLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
+  void listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
+  void revokeLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id);
+  void sharedHistory(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& token);
   void stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // GET  /v1/gym/stats
   void shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                     const std::string& id);                                   // POST /v1/gym/sessions/{id}/share

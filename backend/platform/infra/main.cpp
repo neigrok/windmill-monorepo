@@ -181,7 +181,9 @@ int main() {
                 {"gym_routines", "user_id"},          // gym
                 {"gym_proposals", "user_id"},         // gym
                 {"gym_proposal_changes", "user_id"},  // gym
-                {"gym_session_shares", "user_id"},    // gym
+                {"gym_session_shares", "user_id"},
+                {"gym_log_shares", "user_id"},
+                {"gym_correction_receipts", "user_id"},    // gym
                 {"gym_ask_generations", "user_id"},
                 {"gym_ask_attachments", "user_id"},
                 {"gym_ask_deleted_threads", "user_id"},

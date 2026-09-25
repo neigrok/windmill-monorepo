@@ -133,6 +133,15 @@ public:
   std::optional<Review> review(const UserId& user, const SessionId& session);
   DiscardOutcome discard(const UserId& user, const SessionId& session);
 
+  CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
+      const SessionCorrectionIn& incoming);
+  HistoryPage history(const UserId& user, const HistoryQuery& query);
+  std::optional<LogShare> shareLog(const UserId& user, const std::string& id, LogShareMode mode,
+      bool range, std::uint64_t fromMs, std::uint64_t untilMs);
+  std::vector<LogShare> logShares(const UserId& user);
+  void revokeLogShare(const UserId& user, const std::string& id);
+  std::optional<SharedHistory> sharedHistory(const std::string& token, const HistoryQuery& query);
+
   Statistics statistics(const UserId& user);
   StatsProgress progress(const UserId& user);
   // Absent means this account's catalog holds no such movement.

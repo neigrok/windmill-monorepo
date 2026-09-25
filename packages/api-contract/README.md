@@ -1,7 +1,7 @@
 # api-contract
 
-Wire shapes shared across backend, web and native — checked in as data and run as a test by every
-surface that implements them, so drift fails CI.
+Wire shapes shared across backend, web and native. Executable fixtures are tested by each implementing
+surface; written contracts specify API behavior and compatibility.
 
 ## `genesis.js`
 
@@ -28,3 +28,9 @@ Read as a test — each from this file in the repo, never a bundled copy — by:
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
 - `apps/ios/WindmillKit/Tests/WindmillGymTests/LadderTests.swift` → `apps/ios/WindmillKit/Sources/WindmillGym/Ladder.swift`
 - `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Ladder.kt`
+
+## `gym-history.md`
+
+Filtered workout history, complete scope totals and progress, local month indexes, snapshot/live log
+links and atomic workout corrections. Backend HTTP and Postgres tests cover the contract; legacy
+phone session and workout-share routes keep their existing fields.

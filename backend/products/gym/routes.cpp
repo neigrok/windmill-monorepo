@@ -351,6 +351,31 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       },
       {drogon::Get});
 
+  app.registerHandler("/v1/gym/sessions/{id}/corrections",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->correctSession(req, std::move(cb), id);
+      }, {drogon::Post});
+  app.registerHandler("/v1/gym/history",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->history(req, std::move(cb));
+      }, {drogon::Get});
+  app.registerHandler("/v1/gym/log-shares",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->createLogShare(req, std::move(cb));
+      }, {drogon::Post});
+  app.registerHandler("/v1/gym/log-shares",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->listLogShares(req, std::move(cb));
+      }, {drogon::Get});
+  app.registerHandler("/v1/gym/log-shares/{id}",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->revokeLogShare(req, std::move(cb), id);
+      }, {drogon::Delete});
+  app.registerHandler("/v1/gym/shared-logs/{token}",
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& token) {
+        training->sharedHistory(req, std::move(cb), token);
+      }, {drogon::Get});
+
   // Ask, and the only conditional mount in the product. No vendor key means no Ask: the path does not
   // exist, `POST` to it 404s like any other unrouted path, and every client hides the door on that
   // answer. A route that existed only to say "not available" would be a promise this deployment

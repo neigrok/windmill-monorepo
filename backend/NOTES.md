@@ -114,3 +114,17 @@ elsewhere and win where they disagree: `SPEC.md`, `AUTH.md`, `AUTHZ.md`, `db/sch
   tree itself.
 - An offline flush logs one coarse headline for many coalesced gestures.
 - `test/golden` covers hlc / element-set / version-vector, not the title / delta round-trip.
+
+## Gym history
+
+- `packages/api-contract/gym-history.md` pins filtered history, scoped log links and atomic workout
+  corrections. Legacy phone endpoints retain their response fields; the new historical name is an
+  optional `routineName` override, independent of the frozen plan.
+- History response pagination is bounded. Complete totals, identity facets and optional progress
+  still read all safe facts in the filtered scope; page size does not bound aggregate work.
+- `history_routine_id` preserves filter identity after routine deletion. Sessions whose routines were
+  deleted before that column was populated have no recoverable routine ID; a display name cannot
+  safely reconstruct one.
+- Correction receipts retain request identity after workout deletion. A retry reads current rows and
+  never applies an older correction over a later one. Frozen log-share facts are independent of
+  subsequent workout corrections and deletions.

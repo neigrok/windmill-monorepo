@@ -277,4 +277,44 @@ std::optional<SharedSession> TrainingService::shared(const std::string& token) {
   return log_.sharedSession(token, clock_.nowMs());
 }
 
+CorrectionOutcome TrainingService::correctSession(const UserId& user, const SessionId& session,
+    const SessionCorrectionIn& incoming) {
+  if (!wellFormedId(incoming.requestId)) throw InvalidTraining{"bad correction request id"};
+  return log_.correctSession(user, session, incoming, clock_.nowMs());
+}
+
+HistoryPage TrainingService::history(const UserId& user, const HistoryQuery& query) {
+  query.validate();
+  settleOpen(log_, user, clock_.nowMs());
+  HistoryQuery read = query;
+  read.asOfMs = clock_.nowMs();
+  return log_.history(user, read);
+}
+
+std::optional<LogShare> TrainingService::shareLog(const UserId& user, const std::string& id,
+    LogShareMode mode, bool range, std::uint64_t fromMs, std::uint64_t untilMs) {
+  const auto now = clock_.nowMs();
+  LogShare share{id, user, tokens_.mint().secret, mode, range, fromMs, untilMs, now,
+                 shareExpiryAt(now)};
+  share.validate();
+  settleOpen(log_, user, now);
+  return log_.createLogShare(share);
+}
+
+std::vector<LogShare> TrainingService::logShares(const UserId& user) {
+  return log_.logShares(user, clock_.nowMs());
+}
+
+void TrainingService::revokeLogShare(const UserId& user, const std::string& id) {
+  log_.revokeLogShare(user, id);
+}
+
+std::optional<SharedHistory> TrainingService::sharedHistory(const std::string& token,
+    const HistoryQuery& query) {
+  query.validate();
+  HistoryQuery read = query;
+  read.asOfMs = clock_.nowMs();
+  return log_.sharedHistory(token, read, read.asOfMs);
+}
+
 }

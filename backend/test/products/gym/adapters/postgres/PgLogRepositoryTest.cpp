@@ -102,7 +102,7 @@ TEST(pg_gym_progress_reads_raw_finished_working_sets_with_owner_and_effort_intac
       {SessionId{"ses_pg000001"}, began, {
           {ExerciseId{"bench-press"}, 3, expected[0].performed, EstimatedFact{expected[2].performed, 114}},
           {ExerciseId{"chin-up"}, 1, expected[3].performed, std::nullopt},
-          {ExerciseId{"pull-up"}, 1, expected[4].performed, std::nullopt}}}}}));
+          {ExerciseId{"pull-up"}, 1, expected[4].performed, std::nullopt, expected[4].performed}}}}}));
 }
 
 TEST(pg_gym_progress_preserves_tied_session_identity_and_current_corrections_and_deletions) {

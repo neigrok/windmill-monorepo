@@ -64,6 +64,49 @@ SessionStart parseSessionStart(const Json::Value& body) {
   return start;
 }
 
+SessionCorrectionIn parseSessionCorrection(const Json::Value& body, const SessionId& session) {
+  if (!body.isObject() || !body["requestId"].isString() || !body["routineName"].isString() ||
+      !body["sets"].isArray()) throw InvalidTraining{"could not read that correction"};
+  for (const std::string& field : body.getMemberNames()) {
+    if (field == "requestId" || field == "startedAt" || field == "finishedAt" ||
+        field == "routineName" || field == "sets") continue;
+    throw InvalidTraining{"unknown correction field"};
+  }
+  SessionCorrectionIn incoming{body["requestId"].asString(), instantOf(body, "startedAt"),
+      instantOf(body, "finishedAt"), body["routineName"].asString(), {}};
+  for (const Json::Value& row : body["sets"]) {
+    if (!row.isObject() || !row["setNumber"].isInt()) throw InvalidTraining{"bad corrected set"};
+    for (const std::string& field : row.getMemberNames()) {
+      if (field == "id" || field == "exerciseId" || field == "setNumber" || field == "weightKg" ||
+          field == "reps" || field == "rpe" || field == "note" || field == "completedAt") continue;
+      throw InvalidTraining{"unknown corrected set field"};
+    }
+    const SetWrite set = parseSetWrite(row);
+    incoming.sets.push_back(CorrectionSetIn{Set{set.id, session, set.exercise, row["setNumber"].asInt(),
+        set.weightKg, set.reps, SetKind::working, set.rpe, set.note, set.completedAtMs},
+        row.isMember("rpe"), row.isMember("note")});
+  }
+  return incoming;
+}
+
+Json::Value toJson(const SessionCorrectionIn& incoming) {
+  Json::Value body(Json::objectValue);
+  body["requestId"] = incoming.requestId;
+  body["startedAt"] = Json::UInt64(incoming.startedAtMs);
+  body["finishedAt"] = Json::UInt64(incoming.finishedAtMs);
+  body["routineName"] = incoming.routineName;
+  body["sets"] = Json::Value(Json::arrayValue);
+  for (const CorrectionSetIn& row : incoming.sets) {
+    Json::Value set = toJson(row.set);
+    set.removeMember("kind");
+    if (!row.noteNamed) set.removeMember("note");
+    if (row.rpeNamed && !row.set.rpe) set["rpe"] = Json::Value();
+    if (!row.rpeNamed) set.removeMember("rpe");
+    body["sets"].append(set);
+  }
+  return body;
+}
+
 SetWrite parseSetWrite(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a set must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
@@ -369,6 +412,7 @@ Json::Value toJson(const Session& session) {
   if (session.finishedAtMs) body["finishedAt"] = Json::Value::UInt64(*session.finishedAtMs);
   if (session.routine) body["routineId"] = session.routine->str();
   if (session.plan) body["plan"] = toJson(*session.plan);
+  if (session.displayName) body["routineName"] = *session.displayName;
   return body;
 }
 
@@ -956,6 +1000,7 @@ Json::Value toJson(const StatsProgress& progress) {
       movement["exerciseId"] = fact.exercise.str();
       movement["workingSetCount"] = fact.workingSetCount;
       movement["heaviest"] = performedJson(fact.heaviest);
+      if (fact.mostReps) movement["mostReps"] = performedJson(*fact.mostReps);
       if (fact.estimate) {
         movement["estimate"] = performedJson(fact.estimate->performed);
         movement["estimate"]["e1rm"] = fact.estimate->e1rm;

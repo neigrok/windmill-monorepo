@@ -356,12 +356,12 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
-  // A weak tag over three terms: both session instants and a fold of the rendered sets. startedAt
-  // leads, so a session discarded and recreated under the same id never 304s as the dead workout.
-  const Json::Value sets = toJson(detail->sets);
+  Json::Value body(Json::objectValue);
+  body["session"] = toJson(detail->session);
+  body["sets"] = toJson(detail->sets);
   const std::string tag = "W/\"" + std::to_string(detail->session.startedAtMs) + "-" +
-                          std::to_string(detail->session.finishedAtMs.value_or(0)) + "-" +
-                          std::to_string(fold(dump(sets))) + "\"";
+      std::to_string(detail->session.finishedAtMs.value_or(0)) + "-" +
+      std::to_string(fold(dump(body))) + "\"";
   if (ifNoneMatchAccepts(req->getHeader("if-none-match"), tag)) {
     auto unchanged = drogon::HttpResponse::newHttpResponse();
     unchanged->setStatusCode(drogon::k304NotModified);
@@ -371,9 +371,6 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(unchanged);
     return;
   }
-  Json::Value body(Json::objectValue);
-  body["session"] = toJson(detail->session);
-  body["sets"] = sets;
   drogon::HttpResponsePtr response = jsonResponse(body);
   response->addHeader("ETag", tag);
   cb(response);
@@ -520,6 +517,52 @@ void TrainingApi::sharedSession(const drogon::HttpRequestPtr&, HttpCallback&& cb
     return;
   }
   cb(jsonResponse(toJson(*shared)));
+}
+
+void TrainingApi::correctSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+    const std::string& id) {
+  const auto caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to correct your workout"));
+    return;
+  }
+  const auto json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  try {
+    const auto outcome = training_->correctSession(*caller, SessionId{id},
+        parseSessionCorrection(*json, SessionId{id}));
+    switch (outcome.error) {
+      case CorrectionError::notFound:
+        cb(error(drogon::k404NotFound, "no such session")); return;
+      case CorrectionError::open:
+        cb(error(drogon::k409Conflict, "finish the workout before correcting it", "session-open")); return;
+      case CorrectionError::idTaken:
+        cb(error(drogon::k409Conflict, "that set id is already used", "set-id-taken")); return;
+      case CorrectionError::payloadConflict:
+        cb(error(drogon::k409Conflict, "that correction request has already been used", "correction-conflict")); return;
+      case CorrectionError::unknownExercise:
+        cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise")); return;
+      case CorrectionError::overlap: {
+        Json::Value body(Json::objectValue);
+        body["error"] = "these times cross a session already in the log";
+        body["code"] = "session-overlap";
+        body["sessionId"] = outcome.overlapping->id.str();
+        body["session"] = toJson(*outcome.overlapping);
+        cb(jsonResponse(body, drogon::k409Conflict)); return;
+      }
+      case CorrectionError::none: break;
+    }
+    Json::Value body(Json::objectValue);
+    body["session"] = toJson(*outcome.session);
+    body["sets"] = toJson(outcome.sets);
+    body["replayed"] = outcome.replayed;
+    cb(jsonResponse(body));
+  } catch (const InvalidTraining& invalid) {
+    cb(error(drogon::k400BadRequest, invalid.what(), "invalid-correction"));
+  }
 }
 
 }

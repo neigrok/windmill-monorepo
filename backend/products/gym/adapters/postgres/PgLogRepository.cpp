@@ -24,7 +24,7 @@ namespace wm::gym {
 
 namespace {
 constexpr std::string_view kSessionColumns =
-    "id, user_id, routine_id, coalesce(plan::text, '') AS plan, "
+    "id, user_id, routine_id, coalesce(plan::text, '') AS plan, display_name, "
     "(extract(epoch from started_at) * 1000)::bigint AS started_ms, "
     "(extract(epoch from finished_at) * 1000)::bigint AS finished_ms, coalesce(closed_by, '') AS closed_by";
 
@@ -52,7 +52,9 @@ Session sessionFrom(const Row& row) {
                  UserId{row["user_id"].template as<std::string>()},
                  instantFrom(row["started_ms"]), finished, routine,
                  planFrom(parse(row["plan"].template as<std::string>())),
-                 closedByFromStored(row["closed_by"].template as<std::string>())};
+                 closedByFromStored(row["closed_by"].template as<std::string>()),
+                 row["display_name"].is_null() ? std::nullopt :
+                   std::optional<std::string>{row["display_name"].template as<std::string>()}};
 }
 
 template <typename Row>
@@ -696,7 +698,8 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
     pqxx::work txn{*conn};
     pqxx::result sessions = txn.exec_params(
         "SELECT " + std::string(kSessionColumns) +
-            ", CASE WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' "
+            ", CASE WHEN display_name IS NOT NULL THEN display_name "
+            "WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' "
             "       ELSE '' END AS routine "
             "FROM gym_sessions WHERE user_id = $1::uuid AND id = ("
             "  SELECT s.id FROM gym_sessions s "
@@ -1031,7 +1034,8 @@ std::optional<SharedSession> PgLogRepository::sharedSession(const std::string& t
         "SELECT s.id AS session_id, s.user_id AS owner, "
         "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
         "       (extract(epoch from s.finished_at) * 1000)::bigint AS finished_ms, "
-        "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
+        "       CASE WHEN s.display_name IS NOT NULL THEN s.display_name "
+        "WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
         "            ELSE '' END AS routine "
         "FROM gym_session_shares sh JOIN gym_sessions s ON s.id = sh.session_id "
         "WHERE sh.token = $1 AND sh.expires_at > to_timestamp($2::bigint / 1000.0)",
@@ -1064,6 +1068,79 @@ std::optional<SharedSession> PgLogRepository::sharedSession(const std::string& t
                           sessions[0]["routine"].as<std::string>(), std::move(sets)};
   }
   return found;
+}
+
+CorrectionOutcome PgLogRepository::correctSession(const UserId& user, const SessionId& id,
+    const SessionCorrectionIn& incoming, std::uint64_t nowMs) {
+  const std::string hash = requestHash(toJson(incoming));
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params("SELECT pg_advisory_xact_lock(hashtext('gym_import'),hashtext($1))", user.str());
+  const auto sessions = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+      " FROM gym_sessions WHERE id=$1 AND user_id=$2::uuid FOR UPDATE", id.str(), user.str());
+  if (sessions.empty()) return {std::nullopt, {}, CorrectionError::notFound};
+  const Session stored = sessionFrom(sessions[0]);
+  std::vector<Set> current;
+  const auto rows = txn.exec_params("SELECT " + std::string(kSetColumns) +
+      " FROM gym_sets WHERE session_id=$1 AND user_id=$2::uuid ORDER BY completed_at,set_number,id",
+      id.str(), user.str());
+  for (const auto& row : rows) current.push_back(setFrom(row));
+  const auto reserved = txn.exec_params("INSERT INTO gym_correction_receipts(id,user_id,session_id,request_hash) "
+      "VALUES($1,$2::uuid,$3,$4) ON CONFLICT(id) DO NOTHING RETURNING id", incoming.requestId, user.str(), id.str(), hash);
+  if (reserved.empty()) {
+    const auto receipt = txn.exec_params("SELECT user_id::text,session_id,request_hash FROM gym_correction_receipts WHERE id=$1",
+                                         incoming.requestId);
+    if (receipt[0]["user_id"].as<std::string>() != user.str() ||
+        receipt[0]["session_id"].as<std::string>() != id.str() || receipt[0]["request_hash"].as<std::string>() != hash)
+      return {std::nullopt, {}, CorrectionError::payloadConflict};
+    return {stored, current, CorrectionError::none, true};
+  }
+  if (!stored.finishedAtMs) return {std::nullopt, {}, CorrectionError::open};
+  const SessionCorrectionBatch batch{stored, current, incoming, nowMs};
+  const auto spans = txn.exec_params("SELECT " + std::string(kSessionColumns) +
+      " FROM gym_sessions WHERE user_id=$1::uuid AND finished_at IS NOT NULL "
+      "AND started_at<=to_timestamp($3::bigint/1000.0) AND finished_at>=to_timestamp($2::bigint/1000.0)",
+      user.str(), incoming.startedAtMs, incoming.finishedAtMs);
+  std::vector<Session> logged;
+  for (const auto& row : spans) logged.push_back(sessionFrom(row));
+  if (const auto overlap = crossedBy(batch.session, logged))
+    return {std::nullopt, {}, CorrectionError::overlap, false, overlap};
+  std::vector<Set> ordered = batch.sets;
+  std::sort(ordered.begin(), ordered.end(), [](const Set& a, const Set& b) { return a.id < b.id; });
+  for (const Set& set : ordered) {
+    if (!namesVisibleMovement(txn, user.str(), set.exercise))
+      return {std::nullopt, {}, CorrectionError::unknownExercise};
+    if (std::any_of(current.begin(), current.end(), [&](const Set& before) { return before.id == set.id; })) continue;
+    const auto reservation = txn.exec_params(
+        "INSERT INTO gym_write_receipts(kind,id,user_id,session_id,request_hash) VALUES('set',$1,$2::uuid,$3,$4) "
+        "ON CONFLICT(kind,id) DO NOTHING RETURNING id", set.id.str(), user.str(), id.str(), setRequestHash(set));
+    if (reservation.empty()) return {std::nullopt, {}, CorrectionError::idTaken};
+    const auto taken = txn.exec_params("SELECT 1 FROM gym_sets WHERE id=$1 UNION ALL "
+        "SELECT 1 FROM gym_set_revisions WHERE set_id=$1 AND deleted LIMIT 1", set.id.str());
+    if (!taken.empty()) return {std::nullopt, {}, CorrectionError::idTaken};
+  }
+  for (const auto& [sets, deleted] : {std::pair{&batch.replaced, false}, std::pair{&batch.removed, true}}) {
+    for (const Set& before : *sets)
+      txn.exec_params("INSERT INTO gym_set_revisions(" + std::string(kRevisionColumns) + ") "
+          "SELECT " + std::string(kRevisionSource) + ",$4::boolean FROM gym_sets "
+          "WHERE id=$1 AND session_id=$2 AND user_id=$3::uuid", before.id.str(), id.str(), user.str(), deleted);
+  }
+  txn.exec_params("DELETE FROM gym_sets WHERE session_id=$1 AND user_id=$2::uuid", id.str(), user.str());
+  for (const Set& set : batch.sets) {
+    pqxx::params params;
+    params.append(set.id.str()); params.append(id.str()); params.append(user.str());
+    params.append(set.exercise.str()); params.append(set.setNumber); params.append(set.weightKg);
+    params.append(set.reps); params.append(toString(set.kind));
+    if (set.rpe) params.append(*set.rpe); else params.append();
+    params.append(set.note); params.append(set.completedAtMs);
+    txn.exec("INSERT INTO gym_sets(id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,rpe,note,completed_at) "
+        "VALUES($1,$2,$3::uuid,$4,$5,$6,$7,$8,$9,$10,to_timestamp($11::bigint/1000.0))", params);
+  }
+  txn.exec_params("UPDATE gym_sessions SET started_at=to_timestamp($3::bigint/1000.0),"
+      "finished_at=to_timestamp($4::bigint/1000.0),display_name=$5,closed_by='finish' WHERE id=$1 AND user_id=$2::uuid",
+      id.str(), user.str(), batch.session.startedAtMs, *batch.session.finishedAtMs, *batch.session.displayName);
+  txn.commit();
+  return {batch.session, batch.sets};
 }
 
 }

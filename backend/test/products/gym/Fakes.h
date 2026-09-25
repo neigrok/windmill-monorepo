@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 #include "products/gym/ports/AskAgent.h"
 #include "products/gym/ports/AskThreadRepository.h"
 #include "products/gym/ports/BodyweightRepository.h"
@@ -546,7 +548,7 @@ public:
     std::sort(block.begin(), block.end(),
               [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
     // The name comes off the session's own frozen snapshot.
-    return {LastTime{*newest, newest->plan ? newest->plan->routineName : "", block},
+    return {LastTime{*newest, newest->displayName.value_or(newest->plan ? newest->plan->routineName : ""), block},
             LastTimeError::none};
   }
 
@@ -749,6 +751,116 @@ public:
     return log;
   }
 
+  struct CorrectionReceipt { UserId user; SessionId session; SessionCorrectionIn request; };
+  std::map<std::string, CorrectionReceipt> correctionReceipts;
+
+  CorrectionOutcome correctSession(const UserId& user, const SessionId& id,
+      const SessionCorrectionIn& incoming, std::uint64_t nowMs) override {
+    const auto stored = session(user, id);
+    if (!stored) return {std::nullopt, {}, CorrectionError::notFound};
+    const auto current = setsOf(id);
+    const auto receipt = correctionReceipts.find(incoming.requestId);
+    if (receipt != correctionReceipts.end()) {
+      if (receipt->second.user != user || receipt->second.session != id || receipt->second.request != incoming)
+        return {std::nullopt, {}, CorrectionError::payloadConflict};
+      return {stored, current, CorrectionError::none, true};
+    }
+    if (!stored->finishedAtMs) return {std::nullopt, {}, CorrectionError::open};
+    const SessionCorrectionBatch batch{*stored, current, incoming, nowMs};
+    std::vector<Session> logged;
+    for (const Session& session : db.sessions) if (session.user == user) logged.push_back(session);
+    if (const auto overlap = crossedBy(batch.session, logged))
+      return {std::nullopt, {}, CorrectionError::overlap, false, overlap};
+    for (const Set& set : batch.sets) {
+      if (!db.nameOf(user, set.exercise)) return {std::nullopt, {}, CorrectionError::unknownExercise};
+      if (std::any_of(current.begin(), current.end(), [&](const auto& before) { return before.id == set.id; })) continue;
+      if (db.setReceipts.contains(set.id) ||
+          std::any_of(db.sets.begin(), db.sets.end(), [&](const auto& held) { return held.id == set.id; }) ||
+          std::any_of(db.kept.begin(), db.kept.end(), [&](const auto& held) { return held.deleted && held.set.id == set.id; }))
+        return {std::nullopt, {}, CorrectionError::idTaken};
+    }
+    for (const Set& set : batch.replaced) db.kept.push_back({set, false});
+    for (const Set& set : batch.removed) db.kept.push_back({set, true});
+    std::erase_if(db.sets, [&](const auto& set) { return set.session == id; });
+    for (const Set& set : batch.sets) {
+      db.sets.push_back(set);
+      db.setReceipts.emplace(set.id, FakeGymStore::SetReceipt{user, set});
+    }
+    for (Session& session : db.sessions) if (session.id == id) session = batch.session;
+    correctionReceipts.emplace(incoming.requestId, CorrectionReceipt{user,id,incoming});
+    return {batch.session, batch.sets};
+  }
+
+  std::vector<LogShare> logShareRows;
+  std::map<std::string, std::vector<HistoryWorkout>> logSnapshots;
+  std::set<std::string> revokedLogShares;
+
+  HistoryPage history(const UserId& user, const HistoryQuery& query) override {
+    std::vector<HistoryWorkout> workouts;
+    for (const Session& session : db.sessions) {
+      if (session.user != user || !session.finishedAtMs) continue;
+      HistoryWorkout workout{session.id.str(), session.startedAtMs, *session.finishedAtMs,
+          session.routine ? session.routine->str() : "", session.displayName.value_or(session.plan ? session.plan->routineName : ""), {}};
+      for (const Set& set : setsOf(session.id))
+        workout.sets.push_back(HistorySet{set.id.str(), set.exercise.str(),
+            db.nameOf(user, set.exercise).value_or(""), set.setNumber, set.weightKg, set.reps,
+            set.rpe, set.completedAtMs, set.kind == SetKind::working});
+      workouts.push_back(std::move(workout));
+    }
+    return historyPage(std::move(workouts), query);
+  }
+
+  std::optional<LogShare> createLogShare(const LogShare& incoming) override {
+    for (const LogShare& held : logShareRows) {
+      if (held.id != incoming.id) continue;
+      if (!held.sameRequest(incoming) || held.expiresAtMs <= incoming.createdAtMs ||
+          revokedLogShares.contains(held.id)) return std::nullopt;
+      return held;
+    }
+    logShareRows.push_back(incoming);
+    if (incoming.mode == LogShareMode::snapshot) {
+      HistoryQuery query = incoming.constrain(HistoryQuery{});
+      query.limit = 200;
+      for (;;) {
+        const HistoryPage page = history(incoming.user, query);
+        auto& rows = logSnapshots[incoming.id];
+        rows.insert(rows.end(), page.sessions.begin(), page.sessions.end());
+        if (!page.hasMore) break;
+        query.beforeMs = page.sessions.back().startedAtMs;
+        query.beforeId = page.sessions.back().id;
+      }
+    }
+    return incoming;
+  }
+
+  std::vector<LogShare> logShares(const UserId& user, std::uint64_t nowMs) override {
+    std::vector<LogShare> rows;
+    for (const LogShare& share : logShareRows)
+      if (share.user == user && share.expiresAtMs > nowMs && !revokedLogShares.contains(share.id))
+        rows.push_back(share);
+    std::reverse(rows.begin(), rows.end());
+    return rows;
+  }
+
+  void revokeLogShare(const UserId& user, const std::string& id) override {
+    for (const LogShare& share : logShareRows)
+      if (share.user == user && share.id == id) {
+        revokedLogShares.insert(id);
+        logSnapshots.erase(id);
+      }
+  }
+
+  std::optional<SharedHistory> sharedHistory(const std::string& token,
+      const HistoryQuery& query, std::uint64_t nowMs) override {
+    for (const LogShare& share : logShareRows) {
+      if (share.token != token || share.expiresAtMs <= nowMs || revokedLogShares.contains(share.id)) continue;
+      if (share.mode == LogShareMode::snapshot)
+        return SharedHistory{share, historyPage(logSnapshots[share.id], share.constrain(query))};
+      return SharedHistory{share, history(share.user, share.constrain(query))};
+    }
+    return std::nullopt;
+  }
+
   std::vector<ProgressSet> progressHistory(const UserId& user) override {
     std::vector<ProgressSet> history;
     for (const auto& [session, set] : workingSetsOfFinished(user))
@@ -802,13 +914,70 @@ public:
                                     set.rpe, set.note, set.completedAtMs});
         }
         return SharedSession{ran.startedAtMs, ran.finishedAtMs,
-                             ran.plan ? ran.plan->routineName : "", std::move(block)};
+                             ran.displayName.value_or(ran.plan ? ran.plan->routineName : ""), std::move(block)};
       }
     }
     return std::nullopt;
   }
 
 private:
+  static HistoryPage historyPage(std::vector<HistoryWorkout> workouts, const HistoryQuery& query) {
+    std::sort(workouts.begin(), workouts.end(), [](const auto& a, const auto& b) {
+      return std::pair(a.startedAtMs, a.id) > std::pair(b.startedAtMs, b.id);
+    });
+    HistoryPage page;
+    std::vector<ProgressSet> facts;
+    std::map<std::string, HistoryFacet> exercises;
+    std::map<std::string, HistoryFacet> routines;
+    std::map<std::string, int> months;
+    for (const auto& workout : workouts) {
+      if (workout.startedAtMs < query.fromMs || workout.startedAtMs >= query.untilMs ||
+          (!query.routine.empty() && workout.routineId != query.routine)) continue;
+      if (!query.exercise.empty() && std::none_of(workout.sets.begin(), workout.sets.end(),
+          [&](const auto& set) { return set.exerciseId == query.exercise; })) continue;
+      for (const auto& set : workout.sets)
+        if (set.working) facts.push_back(ProgressSet{SessionId{workout.id}, workout.startedAtMs,
+            ExerciseId{set.exerciseId}, PerformedFact{SetId{set.id}, set.weightKg, set.reps, set.rpe}});
+      const auto totals = workout.totals();
+      ++page.summary.sessions;
+      page.summary.sets += totals.sets;
+      page.summary.reps += totals.reps;
+      page.summary.tonnageKg += totals.tonnageKg;
+      const std::chrono::year_month_day date{std::chrono::floor<std::chrono::days>(
+          std::chrono::sys_time<std::chrono::milliseconds>{std::chrono::milliseconds{workout.startedAtMs}})};
+      const unsigned month = unsigned(date.month());
+      ++months[std::to_string(int(date.year())) + "-" + (month < 10 ? "0" : "") + std::to_string(month)];
+      std::set<std::string> seen;
+      for (const auto& set : workout.sets) {
+        if (!seen.insert(set.exerciseId).second) continue;
+        auto& facet = exercises[set.exerciseId];
+        facet.id = set.exerciseId;
+        facet.name = set.exercise;
+        ++facet.sessions;
+      }
+      if (!workout.routineId.empty()) {
+        auto& facet = routines[workout.routineId];
+        if (facet.id.empty()) facet = HistoryFacet{workout.routineId, workout.routineName, 0};
+        ++facet.sessions;
+      }
+      if (std::pair(workout.startedAtMs, workout.id) >= std::pair(query.beforeMs, query.beforeId)) continue;
+      if (page.sessions.size() < static_cast<std::size_t>(query.limit)) page.sessions.push_back(workout);
+      else page.hasMore = true;
+    }
+    for (auto row = months.rbegin(); row != months.rend(); ++row)
+      page.months.push_back(HistoryMonth{row->first, row->second});
+    for (const auto& [id, facet] : exercises) page.exercises.push_back(facet);
+    for (const auto& [id, facet] : routines) page.routines.push_back(facet);
+    if (query.includeProgress) {
+      std::sort(facts.begin(), facts.end(), [](const auto& a, const auto& b) {
+        return std::tuple(a.startedAtMs,a.session.str(),a.exercise.str(),a.performed.set.str()) <
+               std::tuple(b.startedAtMs,b.session.str(),b.exercise.str(),b.performed.set.str());
+      });
+      page.progress = statsProgress(facts, query.asOfMs);
+    }
+    return page;
+  }
+
   // This account's working sets in its FINISHED sessions only, each carrying the session it was lived in.
   std::vector<std::pair<Session, Set>> workingSetsOfFinished(const UserId& user) const {
     std::vector<std::pair<Session, Set>> lived;

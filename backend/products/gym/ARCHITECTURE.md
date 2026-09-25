@@ -25,7 +25,7 @@ arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
   and there is no apply tool at any grant level.
 - **No visibility column.** Every owner route is `WHERE user_id = :caller`, and absent is
   byte-identical to forbidden on all of them. The one non-owner reader comes through a separate table
-  (`gym_session_shares`) and one unauthenticated route that reads nothing else.
+  (`gym_session_shares`, `gym_log_shares`) and token-scoped readers that read no private Notes or Coach data.
 - **Gym publishes, gym never imports.** No cross-product read.
 - **Billing gates nothing here.** Gym holds no plan enum; every route answers a signed-in lifter, Coach
   included. `AskService::ask` reads `Entitlements::aiAllowanceFor`; a gate would be one refusal on
@@ -261,6 +261,26 @@ create table if not exists gym_session_shares (
   stored **in the clear rather than as a digest**, because the mint must hand back the same link on a
   repeat. Lifetime is `kShareLifetimeMs` (30 days). **Revocation is deleting the row**; it rides the
   session's cascade and is in `PgAccountFootprint`'s owned list.
+
+### Log history and scoped links
+
+`GET /v1/gym/history` reads completed workouts with full-scope date, movement and routine filters,
+descending keyset pagination, aggregate counts, time-zone-aware month indexes and identity facets. The safe
+projection excludes set notes, account identity, private Notes, Coach and frozen planned targets.
+`projection=progress` adds the complete qualified progress series for the same scope; pagination
+does not narrow that series. The wire contract is `packages/api-contract/gym-history.md`.
+
+`gym_log_shares` grants a thirty-day snapshot or live link over all history or a half-open date
+range. `gym_log_share_sessions` holds only safe frozen facts, independent of workout deletion.
+Public filters intersect the granted range. Revocation erases snapshots and retains a spent request
+ID so retries cannot recreate a revoked capability. Account deletion cascades both tables.
+
+Whole-workout corrections use one transaction and a `gym_correction_receipts` request ID. The
+owner advisory lock shared with imports serializes interval checks; the workout lock precedes set
+writes. `SessionCorrectionBatch` validates and derives replacement sets and audit revisions. Replay
+reads current rows without applying again. Kinds are preserved, added sets are working, and removed
+IDs stay spent. `gym_sessions.display_name` overrides historical display independently of the frozen
+plan; `history_routine_id` retains filter identity after the living routine is deleted.
 
 ### 3.5 Set revisions
 

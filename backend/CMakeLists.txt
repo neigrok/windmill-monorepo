@@ -94,6 +94,8 @@ add_library(windmill_gym
   products/gym/domain/Proposal.cpp
   products/gym/domain/Thread.cpp
   products/gym/domain/Review.cpp
+  products/gym/domain/Correction.cpp
+  products/gym/domain/History.cpp
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
   products/gym/domain/ReadReceipt.cpp
@@ -184,6 +186,8 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ProposalTest.cpp
   test/products/gym/domain/ThreadTest.cpp
   test/products/gym/domain/ReviewTest.cpp
+  test/products/gym/domain/CorrectionTest.cpp
+  test/products/gym/domain/HistoryTest.cpp
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp
   test/products/gym/domain/ReadReceiptTest.cpp
@@ -318,7 +322,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   # route seam.
   # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
   target_sources(windmill_gym PRIVATE
+    products/gym/adapters/json/HistoryJson.cpp
     products/gym/adapters/json/TrainingJson.cpp
+    products/gym/adapters/postgres/PgLogHistory.cpp
     products/gym/adapters/postgres/PgLogRepository.cpp
     products/gym/adapters/postgres/PgCatalogRepository.cpp
     products/gym/adapters/postgres/PgProgramRepository.cpp
@@ -326,6 +332,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/gym/adapters/postgres/PgPreferencesRepository.cpp
     products/gym/adapters/postgres/PgNotesRepository.cpp
     products/gym/adapters/postgres/PgBodyweightRepository.cpp
+    products/gym/adapters/http/TrainingHistoryApi.cpp
     products/gym/adapters/http/TrainingApi.cpp
     products/gym/adapters/http/CatalogApi.cpp
     products/gym/adapters/http/ProgramApi.cpp
@@ -432,6 +439,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/http/AskApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
     test/products/gym/application/AskServiceTest.cpp
+    test/products/gym/adapters/postgres/PgLogHistoryTest.cpp
     test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgProgramRepositoryTest.cpp

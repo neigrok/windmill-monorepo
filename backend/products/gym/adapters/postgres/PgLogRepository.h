@@ -34,6 +34,14 @@ public:
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) override;
   std::optional<Set> updateSet(const UserId& user, const Set& corrected) override;
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override;
+  CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
+      const SessionCorrectionIn& incoming, std::uint64_t nowMs) override;
+  HistoryPage history(const UserId& user, const HistoryQuery& query) override;
+  std::optional<LogShare> createLogShare(const LogShare& share) override;
+  std::vector<LogShare> logShares(const UserId& user, std::uint64_t nowMs) override;
+  void revokeLogShare(const UserId& user, const std::string& id) override;
+  std::optional<SharedHistory> sharedHistory(const std::string& token,
+      const HistoryQuery& query, std::uint64_t nowMs) override;
   LogPage log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;

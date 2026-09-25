@@ -1,5 +1,7 @@
 #pragma once
 
+#include "products/gym/domain/Correction.h"
+#include "products/gym/domain/History.h"
 #include "products/gym/domain/Record.h"
 #include "products/gym/domain/Review.h"
 #include "products/gym/domain/Statistics.h"
@@ -53,7 +55,7 @@ struct LogPage {
 
 // The most recent FINISHED session holding a non-warmup set of the movement, and its sets of that
 // movement in set_number order; most recent is (startedAt, id). `sets` is never empty. routineName
-// is the name frozen in the session's plan snapshot ("" when ad-hoc), never the routine's name today.
+// is the historical display override or frozen plan name ("" when ad-hoc), never the routine's name today.
 struct LastTime {
   Session session;
   std::string routineName;
@@ -161,6 +163,16 @@ struct SharedSession {
   bool operator==(const SharedSession&) const = default;
 };
 
+enum class CorrectionError { none, notFound, open, idTaken, payloadConflict, unknownExercise, overlap };
+
+struct CorrectionOutcome {
+  std::optional<Session> session;
+  std::vector<Set> sets;
+  CorrectionError error = CorrectionError::none;
+  bool replayed = false;
+  std::optional<Session> overlapping;
+};
+
 // Sessions, their sets, what corrections left behind, and the workout share, which goes with the
 // session. Every read and write is owner-scoped by the UserId it carries; absent is byte-identical
 // to forbidden. insertSession and insertSet are idempotent by client-minted id: they no-op on
@@ -198,6 +210,15 @@ struct LogRepository {
   // Neither write is refused for a finished session.
   virtual std::optional<Set> updateSet(const UserId& user, const Set& corrected) = 0;
   virtual void deleteSet(const UserId& user, const SessionId& session, const SetId& id) = 0;
+
+  virtual CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
+      const SessionCorrectionIn& incoming, std::uint64_t nowMs) = 0;
+  virtual HistoryPage history(const UserId& user, const HistoryQuery& query) = 0;
+  virtual std::optional<LogShare> createLogShare(const LogShare& share) = 0;
+  virtual std::vector<LogShare> logShares(const UserId& user, std::uint64_t nowMs) = 0;
+  virtual void revokeLogShare(const UserId& user, const std::string& id) = 0;
+  virtual std::optional<SharedHistory> sharedHistory(const std::string& token,
+      const HistoryQuery& query, std::uint64_t nowMs) = 0;
 
   virtual LogPage log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;

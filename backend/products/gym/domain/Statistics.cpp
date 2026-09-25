@@ -78,6 +78,9 @@ StatsProgress statsProgress(const std::vector<ProgressSet>& history, std::uint64
          set.set.str() < heaviest.set.str()))
       movement.heaviest = set;
 
+    if (set.weightKg == 0 && (!movement.mostReps || set.reps > movement.mostReps->reps ||
+        (set.reps == movement.mostReps->reps && set.set.str() < movement.mostReps->set.str())))
+      movement.mostReps = set;
     if (set.weightKg <= 0 || set.reps < 1 || set.reps > 10 || (set.rpe && *set.rpe < 7)) continue;
     const double estimate = set.reps == 1 ? set.weightKg : set.weightKg * (1.0 + set.reps / 30.0);
     if (!movement.estimate || estimate > movement.estimate->e1rm ||

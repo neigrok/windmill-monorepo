@@ -36,6 +36,8 @@ inline void reset() {
   w.exec("DELETE FROM gym_routine_creations WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_write_receipts WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   // FK order, and the routines before the exercises: an entry references a movement.
+  w.exec("DELETE FROM gym_correction_receipts WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_log_shares WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_set_revisions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sets WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
