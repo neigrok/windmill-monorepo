@@ -2232,11 +2232,6 @@ tapping is four. `gym/web-form.md` closes that question for web only: the ladder
 So a lifter who plans on the phone and edits on the desk meets two different heads on the same
 sheet. Closing it means either ruling the field off all three surfaces or restoring it on web.
 
-**F39 · a narrow gym board's rows sit 4px left of its product tabs** → gym design follow-up.
-`Gym / Set row` Width=narrow is 358 (390 − 2×16), while Gym tabs use 20px insets. The shared
-app header uses 12px side insets and centered room links at narrow widths. The remaining 4px
-product-tab/content alignment belongs to Gym, not the shared app header.
-
 **F40 · the shared `Button` wears the global terracotta inside every product room** → fix toward the
 design system. `470:635` / `470:638` / `470:641` in the Gym file bind the remote global `brand/base`,
 so a library CTA renders terracotta on gym's verdigris ground. Three redraw waves each worked around

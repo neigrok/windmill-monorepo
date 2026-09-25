@@ -38,12 +38,13 @@ column — it is the split. On desktop the routine editor is **movements left (r
 movement's ladder right (figures)**; there is no sheet. Narrow keeps the sheet.
 
 Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The shared app header uses
-12px side insets at narrow widths. Gym tabs use 20px insets; their 4px offset from product content
-is ledgered as F39.
+12px side insets at narrow widths. The three Gym navigation controls form a centered group
+in a 64px bottom panel; the panel also consumes the bottom safe-area inset.
 
 Vertical: 8px grid. Editable and movement row heights are 44 and 56; the history index uses 48.
 Section gap 32. Authenticated boards carry the `Web shell`; their content starts one section
-gap below it — 156 on desktop, 136 on narrow. Public recipient and preview boards use their
+gap below the 52px header, at y84 on desktop and narrow screens. The content scroll region ends
+above the bottom navigation panel. Public recipient and preview boards use their
 own header and content measurements. The action band sits at the foot of the **content**, not
 the viewport, and never floats over empty canvas.
 

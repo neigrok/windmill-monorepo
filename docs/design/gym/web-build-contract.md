@@ -6,18 +6,18 @@ The acceptance gate is the [implementation plan](web-implementation-plan.md): ru
 
 ## Shared frame and measurements
 
-All authenticated boards inherit W1. The shared app header is 52px high, with a 30px Windmill mark, centered Home/Roadmap/Journal/Gym links and a 30px account avatar. Side insets are 16px desktop and 12px at widths up to 480px. Gym tabs begin at y52, use 32px gaps and 50px links, and occupy 72px desktop or 52px at widths up to 800px. Their desktop interior is 1024px at x208 on a 1440px board; narrow tabs use 20px insets. Combined header and tabs measure 1440 × 124 or 390 × 104. Active tab uses brand ink, inactive tabs faint ink. Pushed pages retain the tabs. The runtime header also consumes the top safe-area inset.
+All authenticated boards inherit W1. The shared app header is 52px high, with a 30px Windmill mark, centered Home/Roadmap/Journal/Gym links and a 30px account avatar. Side insets are 16px desktop and 12px at widths up to 480px. Routines, The log and Coach sit in a 64px bottom panel with a subtle top border; their group is centered horizontally, with 32px gaps and 50px touch targets. Active controls use brand ink, inactive controls faint ink. Pushed pages retain the bottom navigation. The runtime header consumes the top safe-area inset; the bottom panel consumes the bottom safe-area inset. Content scrolls in the space between them.
 
-Content begins at y156 desktop and y136 narrow. Narrow content x16/w358. Desktop read-only and prose pages begin x208 with 640px reading measure; figures use 420px. The log uses a 1024px workspace. The routine editor uses 1092px: 640px movements +32px gap +420px targets, aligned x208 rather than centered independently. A back link is a 44px row before the title.
+Content begins at y84 on both desktop and narrow screens. Narrow content x16/w358. Desktop read-only and prose pages begin x208 with 640px reading measure; figures use 420px. The log uses a 1024px workspace. The routine editor uses 1092px: 640px movements +32px gap +420px targets, aligned x208 rather than centered independently. A back link is a 44px row before the title.
 
 | Surface | Observed layout |
 |---|---|
-| Log selected 1440, `470:34` | Content x208/y156/w1024; index320 +24 gap +reader680; navigation44 high, reader with 12px gaps. |
-| Log default 390, `470:21` | Content x16/y136/w358, gap16; progress before history. Progress cards gap24. History index is scrollable. Main footer action54 high. |
+| Log selected 1440, `470:34` | Content x208/y84/w1024; index320 +24 gap +reader680; navigation44 high, reader with 12px gaps. |
+| Log default 390, `470:21` | Content x16/y84/w358, gap16; progress before history. Progress cards gap24. History index is scrollable. Main footer action54 high. |
 | Routine editor 1440, `475:1050` | Split 640/32/420; ladder rows44 with4px gaps; content action band44 high. |
-| Edit workout 1440, `482:1175` | Content x208/y156/w1024, section gaps32; editable form420; saved summary420 in right column; action band at content foot. |
-| Coach 1440, `471:522` | Conversation x208/y156/w640; side rail x880/y156/w352; region gap16 and rail gap24. |
-| Share setup 1440, `508:1353` | Content x208/y156; sections gap24; scope and update choices precede privacy panel and Preview. |
+| Edit workout 1440, `482:1175` | Content x208/y84/w1024, section gaps32; editable form420; saved summary420 in right column; action band at content foot. |
+| Coach 1440, `471:522` | Conversation x208/y84/w640; side rail x880/y84/w352; region gap16 and rail gap24. |
+| Share setup 1440, `508:1353` | Content x208/y84; sections gap24; scope and update choices precede privacy panel and Preview. |
 | Recipient log 1440, `524:2705` | Public header x208/y36/h24; snapshot line y82; content x208/y132/w1024. No authenticated shell or write controls. |
 
 Set rows use a 10px rail with 2px ticks. Load × reps uses JetBrains Mono; the multiplication sign is faint. Equal sets collapse to a scheme; variable sets remain rows. Units appear once in a column head or total. Add set is last. Row actions reveal on hover/focus, not layout shift. History rows are 48px in the actual index component (an exception to the generic 44/56 rule in web-form.md).
@@ -64,7 +64,7 @@ Screenshots and full design contexts were retrieved for `470:34`, `470:21`, `475
 - The Routines open menus in Instrument and Daylight contain Log past followed by Delete.
 - Literal catalog spelling is current data: the editor/default fixture says Chin Up while some record fixtures say Chin-up. Do not rename backend records to imitate fixture typography.
 - Native time inputs keep the user's system clock convention. The stored-hour disclosure must reflect the actual selected value; a 24-hour picture alone does not require a custom time widget.
-- Shared shell component descriptions `468:2`, `468:13`, and Gym Tab `4:7` now describe the current header tabs and narrow y136. The board status column records the current verified build state.
+- Shared shell components `468:2` and `468:13` retain the shared app header and place Gym navigation at the bottom. Their descriptions and Gym Tab `4:7` describe the current placement and content y84. The board status column records the current verified build state.
 - The two Saved backfill boards reuse the current selected-reader composition (`470:34` and `470:47`) with the saved Undo receipt. Saving opens that reader; the form does not introduce a second workout presentation.
 - The narrow New routine drawing includes the same required name input as desktop, with the missing-name reason beside Save. The input reuses the compact library component.
 - Correction specimens use the current totals copy without set-kind terminology; both pending action specimens read Saving.

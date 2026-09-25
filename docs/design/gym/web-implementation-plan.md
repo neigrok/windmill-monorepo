@@ -53,7 +53,7 @@ The running comparison and release evidence are in [web-verification.md](web-ver
 
 | Area | Implemented behavior |
 |---|---|
-| Shell | Persistent rooms header and top Gym tabs, including pushed pages |
+| Shell | Persistent rooms header and centered bottom Gym navigation, including pushed pages |
 | Routines | Movement names, tick rails, contextual Log past/Delete and New routine |
 | Routine editor | Desktop movements/targets split; narrow sheets; set ladders; two-version conflict recovery |
 | The log | History/reader split, complete filters and facets, paging, date jump and density |
@@ -72,7 +72,7 @@ then what reads further, then what leaves the app.
 
 | Wave | Delivers | Why here |
 |---|---|---|
-| W1 · Shell | Header and tabs as drawn on every gym page, pushed pages included; page measures and content start (156 / 136) | Every board sits in it; nothing else can turn Built first |
+| W1 · Shell | Header and tabs as drawn on every gym page, pushed pages included; page measures and content start (84 on both widths) | Every board sits in it; nothing else can turn Built first |
 | W2 · The log split | History index + workout reader + progress cards on desktop; narrow reader on its own screen; Saved lands in the split | Past workout, record and Coach all land here |
 | W3 · Routines and editor | Routines home as drawn; editor split with the ladder pane, `Every set` / `Set by set`, picker in the pane, conflict state | The plan is the unit everything else refers to |
 | W4 · Correcting | Edit workout and fix set in place with the editable number; the keypad sheet retires | Reuses the W2 reader and the past-workout number row |

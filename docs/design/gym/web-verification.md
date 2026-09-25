@@ -12,7 +12,7 @@ The local Postgres-backed server and Vite use ports 8088 and 5173. Verification 
 
 ## Evidence
 
-The full `npm run build` passes 1,826 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The release log is `/private/tmp/windmill-gym-web-verify/web-release-build-final.log`.
+The full `npm run build` passes 1,827 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The release log is `/private/tmp/windmill-gym-web-verify/web-release-build-final.log`.
 
 Seventeen live history and sharing assertions pass: authenticated history; complete totals across keyset pages; date scope; public snapshot reads; absence of private fields; range confinement; immutable snapshots after an owner correction; live updates; exact request replay; changed-payload refusal; revocation; and revoked-ID refusal.
 
@@ -24,7 +24,7 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 
 ## Review observations
 
-- All app rooms use one shared header. Product navigation and gym measures remain in the gym module; Coach derives its available height from the room and product tabs.
+- All app rooms use one shared header. Product navigation and gym measures remain in the gym module; Coach fills the content scroller between the header and bottom navigation.
 - Owner and recipient history must share filtering and reader primitives while keeping recipient data restricted by the server.
 - Full-workout correction requires one atomic request and a stable request identity; independently saving edited sets does not satisfy its Save action.
 - Correction parsing preserves valid historical values and exact timestamps, including ambiguous DST instants. Progress reads use request epochs so late responses cannot replace newer facts.
@@ -33,13 +33,13 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 
 ## Release
 
-Frontend commit `dd41d93d` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36121339512), including all 1,826 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
+Frontend commit `37ef0b73` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36122780796), including all 1,827 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
 
-Read-only production verification at `https://windmill.works/app/gym` confirms the deployed
-`index-DMljCTtL.js` bundle and shared 52px header, visible brand mark, centered four-room
-navigation and avatar. The signed-out page passes desktop and 320px checks with no horizontal
-overflow. At 320px the mark occupies x12–44, room links x54.93–265.07 and avatar x278–308.
-The authenticated behavior is covered by the isolated local checks below.
+Read-only production asset verification confirms `index-fLy_czoC.js` loads
+`GymApp-CcDJrTrN.js` and `GymApp-GVGVAG1M.css`. The Gym bundle includes the separate room
+and scroll region; its stylesheet contains the 64px panel and 86px action footer and is
+byte-identical to the verified local build. The shared header remains unchanged. Signed-in
+bottom-navigation behavior is verified against the isolated local account below.
 
 [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378254) also passes. [iOS CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378273) builds the app and passes crash-report tests, but its package suite fails `RoutineReadoutTests.testTheUnreadHistoryLineIsTheOneTheOtherPhoneDraws`. That test searches Android source for a routine-history sentence removed by the existing Android implementation. Neither native tree changes in this release. The native follow-up is recorded in dogfood node `gym-ios-retired-routine-history-test`.
 
@@ -67,29 +67,37 @@ The active-workout Coach state is verified at both widths and in both themes. `q
 
 Adversarial checks cover workout transitions across each awaited photo boundary: prepared bytes stay local, a loaded photo does not start uploading, and a completed upload does not send a question while training. The current workout state is checked after each awaited boundary before the next remote operation. Extra working sets and warmups consume no targets from another movement; the mirror ordinal comes from remaining frozen-plan slots.
 
-## Shared app header
+## Shared header and bottom navigation
 
 The gym room uses the same 52px header as Home, Roadmap and Journal: approved Windmill mark,
-centered room links and a 30px account avatar. Gym tabs begin at y52; content begins at y156 on
-desktop and y136 on narrow screens. Coach derives its minimum height from the available gym
-root and product tabs, including the standalone route's own header.
+centered room links and a 30px account avatar. Routines, The log and Coach form a centered
+group in a 64px bottom panel. The page scrolls between the header and panel; content starts
+at y84 on both desktop and narrow screens. Coach fills that scroll region, with the composer
+above the bottom panel. The panel also consumes the bottom safe-area inset.
 
-The local PostgreSQL/backend/Vite checks use an isolated account. All four room links select
-the expected route and keep the same header. Checks at 1440, 390 and 320px cover Instrument
-and Daylight, account appearance controls, signed-out chrome, the three Gym tabs, and the
-pushed New routine page. At 320px the mark, room links and avatar have separate bounds and
-the document has no horizontal overflow. Coach ends 12px above the viewport bottom at 1440 ×
-900 and 390 × 844; its composer remains visible at 320 × 740. The active-workout state and
-expanded read-only mirror fit at 390px without a composer or horizontal overflow. Temporary
-fixture data is removed after verification.
+The bottom-navigation build passes all 1,827 web tests, Vite and the landing-shell/sitemap
+build. The backend server target rebuilds successfully. Independent review and local checks
+cover the final diff. The local account contains 12 workouts and one routine.
 
-The full production build passes all 1,826 tests with zero failures or skips. The backend server
-target rebuilds successfully. Adversarial review finds no actionable issue; the simplification
-pass removes the unused shell layout variant and consolidates Coach height rules. This keeps
-header geometry in the shared shell and product layout inside Gym.
+At 1440 × 900, the header occupies y0–52, the scroll region y52–836 and the bottom panel
+y836–900. The three controls span x612.35–827.64, centered at x720. At 320 × 568, the panel
+occupies y504–568 and the controls span x52.35–267.64, centered at x160, with no horizontal
+overflow. Instrument and Daylight checks cover navigation, routine editing, Log and Coach;
+page actions and the composer remain reachable within the bounded scroll region on short
+phone screens.
 
-Figma shell components `468:2` and `468:13` propagate to all 88 authenticated web boards. Their
-content starts at y156/y136; Coach gains 28px of available height while retaining its bottom
-composer position. Four final renders cover desktop Log, desktop Routines, narrow Daylight
-Routines and narrow Coach; all pass visual inspection. The 14 public/preview boards and native
-boards keep their own chrome. Evidence: `/tmp/windmill-gym-header-figma-final-{0,1,2,3}.png`.
+The narrow Log returns to its retained 495px scroll offset after opening and leaving a short
+workout reader. Discard and Undo restore the temporary workout. At 390 × 844, the Undo toast
+ends at y682, the action footer starts at y694 and ends at y780, and navigation fills y780–844.
+The fixture data is removed after verification.
+
+The frame owns layout and the Log owns history scroll persistence. One content scroller and
+shared panel/footer dimensions keep navigation, Coach, actions and transient feedback separate
+without competing viewport offsets or scroll writers.
+
+Both Figma shell masters and all 88 authenticated web boards retain the shared header and
+place the existing navigation controls at the bottom. Every board has an explicit content
+scroll region, content y84 and a 64px bottom panel. Representative desktop Log, narrow
+Daylight Routines, Coach and long Log renders pass visual inspection. The 14 public/preview
+boards and native designs retain their own structure. Evidence is
+`/tmp/windmill-gym-bottom-figma-{0,1,2,3}.png`.
