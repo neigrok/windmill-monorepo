@@ -32,6 +32,11 @@ passes comparison at both widths.
 
 - Type uses the fourteen `Gym/Web/*` styles; a title is Baloo 2 Bold 32/40, 28/36 narrow.
 - Colour binds to `Gym · Colour`; radius, space and the two measures bind to `Gym · Metrics`.
+- Outer containers are centered independently: Fix set 420px, focused pages 640px, routine editor
+  812px, comparison states 872px, and Log, Coach, Notes and populated past-workout forms 1024px.
+  Reading and numeric content keep their own 640px and 420px limits.
+- Section gaps are 32px, section interiors 24px, and related elements 8/12/16px. Use auto-layout
+  spacing; short content may leave quiet canvas below it.
 - The back link is `Gym / Back link` (`797:11866`): leading, above the title, naming its destination
   in two words at most.
 - The unit is named once per surface, in a column head or a totals line, never on a row.
@@ -43,15 +48,16 @@ passes comparison at both widths.
 
 ## The screens
 
-- **Routines.** The card is the door to a draft editor. On desktop the editor is a split — movements
-  left, the selected movement's ladder right — so targets have no sheet; the movement picker takes the
-  same right pane. Narrow opens the ladder and the picker in a sheet. `Every set` and `Set by set` are
-  two zooms on one scheme, both always drawn. A stale save keeps the draft and offers it against the
-  latest routine.
+- **Routines.** Each routine has one card, including its pending change review. The card is the door
+  to a draft editor. Desktop centers a 360px movement index, 32px gap and 420px ladder pane; the
+  movement picker takes that same right pane. Narrow opens the ladder and the picker in a sheet.
+  `Every set` and `Set by set` are two zooms on one scheme, both always drawn. A stale save keeps the
+  draft and offers it against the latest routine in two 420px columns with a 32px gap. Cancel and
+  Save form one local action group.
 - **The log.** On desktop a split: the history index left, the workout reader and progress cards in the
-  detail pane; narrow puts progress above the history and opens a workout on its own screen. Filters
-  read their value. The door is `Add past workout`. Back from a movement record returns to where it was
-  opened.
+  detail pane; narrow puts progress above the history and opens a workout on its own screen.
+  Movement totals sit beside their movement name. Filters read their value. The door is `Add past
+  workout`. Back from a movement record returns to where it was opened.
 - **Add a past workout.** Pick a routine, get the form filled — targets, then last time — change what
   differed, save once; the day is one tap and the Save note states the stored hour
   ([brief 20](briefs/20-past-workout.md)). After Save, desktop shows the log split with the new row
@@ -59,9 +65,11 @@ passes comparison at both widths.
 - **Edit workout and fix set.** A saved workout is corrected in its own place; a refused value keeps
   what was typed and reopens the field that failed.
 - **Coach.** Every proposed change is inline in the conversation, `Apply` beneath it and `Turn this
-  down` beneath that ([brief 09](briefs/09-coach.md)); the same message becomes the receipt. A diff row
-  counts entries, not sets.
-- **Notes.** Titled Notes, with the disclosure that a connected agent can read them beneath the title.
+  down` beneath that ([brief 09](briefs/09-coach.md)); the same message becomes the receipt. Desktop
+  Apply fits its label and padding. A diff row counts entries, not sets.
+- **Notes.** A 640px reading region beside its 352px Rooms and connected-tools rail, centered
+  together with a 32px gap. The connected-agent disclosure sits beneath the Notes title. The note
+  editor groups its local actions.
 - **Sharing.** A log leaves by a link the lifter creates and revokes — a snapshot or a live link, the
   whole history or a range; the recipient's view is read-only. The implemented contract is in
   [Training history exploration and coach sharing](log-exploration.md).

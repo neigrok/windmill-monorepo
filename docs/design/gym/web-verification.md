@@ -1,6 +1,6 @@
 # Gym web verification
 
-The acceptance inventory is [web-build-contract.md](web-build-contract.md). All 102 Figma boards are Built after comparison with the running desktop and narrow screens, with additional Daylight coverage. This record describes checks run on 25 September 2026; release results are recorded below.
+The current board statuses and remaining visual gates are in [web-build-contract.md](web-build-contract.md). This record describes runtime checks run on 25 September 2026, including desktop, narrow and additional Daylight coverage; release results are recorded below. The approved Figma proportion changes require implementation and a fresh comparison for the boards marked Ready. This evidence does not establish a runtime match to those drawings.
 
 ## Local fixtures
 

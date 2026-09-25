@@ -2289,13 +2289,24 @@ status to say they are superseded. They are the only consumers of `Gym/Archive/T
 the rest mix Nunito prose with mono numerals in one run, which a style would flatten. Twelve sheet
 radii (20–26) and six mixed-corner nodes stay raw because `Gym · Metrics` has no sheet radius.
 
-**F57 · Gym web implementation acceptance** → verified: 102 Built, zero Ready. Final Figma readback
-confirms every implementation board on Web · Gym is Built. All 51 desktop/narrow pairs were checked
-against the running local web with live fixtures at 1440 and 390. The additional Daylight matrix
-and published Gym library complete W8. [web-build-contract.md](gym/web-build-contract.md) records
-the per-board evidence, measurements and accepted current compositions. Catalog spelling stays
-`Chin Up`; fixture drawings do not rename stored movements. Native lag and the independent F53
-archive and F5 unused-glow follow-ups remain recorded separately.
+**F57 · Gym web implementation acceptance** → runtime functionality and themes verified; the
+approved proportion drawings require implementation under F58. Live-fixture evidence covers all
+51 desktop/narrow pairs at 1440 and 390, with an additional Daylight matrix.
+[web-build-contract.md](gym/web-build-contract.md) records each board's current Built/Ready status,
+runtime evidence and remaining visual gate. Catalog spelling stays `Chin Up`; fixture drawings
+do not rename stored movements. Native lag and the independent F53 archive and F5 unused-glow
+follow-ups remain recorded separately.
+
+**F58 · Gym web content proportions** → Figma approved; web implementation open. The form contract
+centers focused 640px content and the 812px routine editor (360px movements +32px gap +420px task),
+keeps the Log's centered 1024px workspace, and groups movement totals and local actions. A routine
+owns its pending change review; desktop Apply is content-sized. Section gaps use 32/24px and
+related elements use 8/12/16px. The shared header, bottom navigation and back-link semantics are
+unchanged. Gym web implementation owner: apply the Ready boards in
+[web-build-contract.md](gym/web-build-contract.md), preserve their behavior contracts, and compare
+the running result at 1440 and 390 in both themes before restoring Built. Existing runtime
+captures verify the shipping geometry and behavior; they do not verify these drawing changes.
+Tracking node: `gym-web-proportions-implementation-2026-09-25`.
 
 ## Gym web past workout · 24 September 2026
 
@@ -2402,15 +2413,16 @@ surfaces adopt the same block typography and pacing rule; the Android choices ar
 then. Tracking node: `gym-android-coach-stream-markdown`.
 
 
-**Gym web · Daylight coverage** → verified. All 102 boards in 51 width pairs are Built; the additional
-Daylight runtime matrix covers the shared layouts at 1440 and 390. Routines has its own Daylight
+**Gym web · Daylight coverage** → runtime palette and behavior verified. The additional Daylight
+runtime matrix covers the shared layouts at 1440 and 390; Ready geometry remains open under F58.
+Routines has its own Daylight
 drawings (`476:1082`, `476:1115`); the other layouts use the approved mode tokens. The Gym library
 is published to Sam Gold's team, including gold-700 and the Logger component with unused properties
 removed; Manage libraries confirms No changes. Both Routines open menus contain Log past and
 Delete. [web-build-contract.md](gym/web-build-contract.md) maps the evidence. Native PR token lag
 and unused glow values are tracked independently in F4 and F5.
 
-**Gym web · Coach chrome** → drawings reconciled with the [feedback contract](gym/feedback-contract.md). All eight conversation boards include History and More; the six editable conversation states include Add photo and omit the standing allowance. The active-workout states retain their refusal. Existing inline proposal masters and the 640px conversation measure remain the reference. All four conversation-state pairs pass runtime verification in both themes under F57.
+**Gym web · Coach chrome** → drawings follow the [feedback contract](gym/feedback-contract.md). All eight conversation boards include History and More; the six editable conversation states include Add photo and omit the standing allowance. The active-workout states retain their refusal and the conversation keeps its 640px measure. Runtime chrome and conversation behavior pass in both themes under F57; the Ready content proportions require the separate visual gate in F58.
 
 **Gym workout correction · native display names** → open iOS and Android follow-up. The session response has an optional `routineName` for a corrected workout's display name. Web uses it without changing the frozen plan or living routine. Phone readers that derive the title only from the frozen plan show its original name; both native readers need to prefer the explicit session display name, including an empty name for a free session.
 

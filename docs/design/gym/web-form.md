@@ -7,42 +7,42 @@ Obeys `../brand-foundations.md`, `../guidelines/motion-language.md`, `../guideli
 `briefs/15-the-routine.md`, `briefs/16-the-workout.md`, `briefs/17-set-targets.md`,
 `briefs/18-progress.md`.
 
-## The fault
+## Composition
 
-One measure carries every screen. A 1024px column holds a routine name, three movement rows and a
-button, so a movement's name and its own Target control sit 700px apart and the eye travels the
-width of the page to join two things that belong together. Below the last row, 500px of canvas is
-empty. That distance — not the palette, not the type — is what reads as scattered.
+Center each outer content container within the viewport. Text, movement names and numeric groups
+remain left-aligned within it. The amount of content determines the page's height; a short form or
+empty state does not need filler to occupy the viewport.
 
-Under it, three habits:
+Outer layout and intrinsic content measure are separate rules. A wider workspace may contain a
+640px reading region and a 420px numeric form without stretching either one.
 
-- **Words do numbers' work.** `3 movements · 9 sets`, `Remove` nine times, `Set` as a column of
-  ordinals, `kg` on every row, `Every set / Set by set` as a mode switch.
-- **Repetition stands in for pattern.** Three identical set rows print `8 · 60 kg` three times where
-  the scheme says `3 × 8 · 60` once, and the one set that differs looks like the two that do not.
-- **Nothing has state.** One focus underline across the whole page. No hover, no pressed, no
-  changed, no saved.
+| Desktop layout | Outer width | Composition |
+|---|---:|---|
+| Figures | 420 | Standalone Fix set form; x510 at 1440 |
+| Focused | 640 | Routines, routine choice and standalone sharing forms; x400 at 1440 |
+| Routine editor | 812 | 360px movement index +32px gap +420px selected-movement task; x314 at 1440 |
+| Comparison | 872 | Two 420px regions +32px gap for Edit workout or routine conflict; x284 at 1440 |
+| Log | 1024 | 320px history index +24px gap +680px detail; x208 at 1440 |
+| Coach and Notes | 1024 | 640px main +32px gap +352px context/navigation rail; x208 at 1440 |
+| Past workout form | 1024 | 420px form +32px gap +572px reference; x208 at 1440 |
 
-## Measures
+The reading measure is at most 640px; figures are at most 420px. These are content limits, not
+compulsory control widths. The routine editor and movement picker share the selected-movement
+pane on desktop; narrow keeps its target and picker sheets.
 
-Three, and nothing between them.
-
-| measure | width | carries |
-|---|---|---|
-| **read** | 640 | prose, list rows, cards, a conversation |
-| **figures** | 420 | a ladder, a set table, a stat trio, a form |
-| **desk** | full, split | the log and the routine editor on desktop only |
-
-A board is wrong if its content is shorter than two thirds of its frame. The answer is never a wider
-column — it is the split. On desktop the routine editor is **movements left (read), the selected
-movement's ladder right (figures)**; there is no sheet. Narrow keeps the sheet.
+Related controls stay with their subject. The routine editor groups Cancel and Save with a 24px
+gap at the foot of its 420px task pane. Movement totals sit beside their name.
+Desktop Apply buttons fit their label and padding; narrow buttons may fill the available width.
+A pending routine change belongs inside that routine's card, with its review state and diff.
 
 Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The shared app header uses
 12px side insets at narrow widths. The three Gym navigation controls form a centered group
 in a 64px bottom panel; the panel also consumes the bottom safe-area inset.
 
-Vertical: 8px grid. Editable and movement row heights are 44 and 56; the history index uses 48.
-Section gap 32. Authenticated boards carry the `Web shell`; their content starts one section
+Vertical: 32px between sections, 24px inside sections, and 8/12/16px between related elements,
+using auto-layout gaps and padding. Editable and movement row heights are 44 and 56; the history
+index uses 48. Card radius is 16; editable rows, progress cards and action-band buttons retain 12.
+Authenticated boards carry the `Web shell`; their content starts one section
 gap below the 52px header, at y84 on desktop and narrow screens. The content scroll region ends
 above the bottom navigation panel. Public recipient and preview boards use their
 own header and content measurements. The action band sits at the foot of the **content**, not
