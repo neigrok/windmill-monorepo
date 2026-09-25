@@ -42,7 +42,6 @@
 .gym-root .gym-plan-home .gym-proposal-card .gym-diff-moves { display: inline-flex; flex-direction: row; margin: 0; flex-basis: auto; }
 .gym-root .gym-plan-home .gym-proposal-line { margin: 12px 0 0; }
 .gym-root .gym-plan-home .gym-proposal-card .gym-diff-field { margin: 0; }
-.gym-root .gym-column.has-coach { height: auto; min-height: calc(100dvh - 152px); }
 .gym-root .gym-proposal-inline .gym-diff-row { padding: 0; border: 0; border-radius: 0; background: transparent; }
 .gym-root .gym-proposal-inline .gym-diff { margin: 0; gap: 4px; }
 .gym-root .gym-proposal-inline .gym-diff-row.is-retargeted { flex-wrap: nowrap; }
@@ -96,11 +95,9 @@
 .gym-root .gym-coach-mirror-rail { display: flex; gap: 4px; }
 .gym-root .gym-coach-workout-mirror > .gym-coach-workout-meta { margin-top: 8px; }
 @media (max-width: 799px) {
-  .gym-root .gym-column.has-coach { min-height: calc(100dvh - 132px); }
   .gym-root .gym-proposal-inline .gym-diff-row.is-retargeted { flex-wrap: wrap; }
   .gym-root .gym-note-editor .gym-note-body { height: 180px; }
   .gym-root .gym-note-actions { margin-top: 24px; }
-  .gym-root .gym-coach.is-workout { min-height: calc(100dvh - 180px); }
   .gym-root .gym-coach.is-workout > .gym-coach-workout { flex: 1; justify-content: center; }
   .gym-root .gym-coach-workout:not(.is-expanded) .gym-coach-workout-mirror { display: none; }
   .gym-root .gym-coach.is-workout > .gym-coach-workout.is-expanded { justify-content: flex-start; }

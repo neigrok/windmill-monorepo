@@ -52,7 +52,7 @@ test('gym top navigation stays before the content on pushed pages', () => {
   assert.equal(app.includes('<nav className="gym-tabs" aria-label="Gym">'), true);
   assert.equal(app.includes("aria-current={screen === tab.screen ? 'page' : undefined}"), true);
   assert.equal(app.includes('TabRail'), false);
-  assert.equal(/\.gym-tabs \{[^}]*height: 72px;/.test(read('gym.css')), true);
+  assert.equal(/\.gym-tabs \{[^}]*height: var\(--gym-tabs-height\);/.test(read('gym.css')), true);
 });
 
 test('the three tabs preserve their order and every pushed destination maps to a room', () => {

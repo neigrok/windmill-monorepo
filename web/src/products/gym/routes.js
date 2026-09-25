@@ -85,7 +85,6 @@ export const gymRoutes = {
   },
   shell: {
     room: '/app/gym',
-    layout: 'desk',
     // The module the boot preloads this room from (scripts/appBoot.js); checked by test/shell-boundaries.
     module: 'src/products/gym/GymApp.jsx',
     scope: { brand: 'gym' },

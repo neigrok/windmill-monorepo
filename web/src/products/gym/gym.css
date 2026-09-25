@@ -3,6 +3,8 @@
 /* Everything below paints with the tokens gymTokens.css declares and stays scoped under .gym-root. */
 
 .gym-root {
+  --gym-header-height: 80px;
+  --gym-tabs-height: 72px;
   position: fixed;
   inset: 0;
   overflow-y: auto;
@@ -10,6 +12,10 @@
   background: var(--gym-canvas);
   color: var(--gym-ink);
   font-family: var(--font-body);
+}
+
+.gym-root[data-chrome='shell'] {
+  --gym-header-height: 0px;
 }
 
 .gym-column {
@@ -2439,13 +2445,10 @@ button.gym-set:focus-visible .gym-set-fix {
 /* ── Coach ──────────────────────────────────────────────────── */
 .gym-column.has-coach {
   box-sizing: border-box;
-  height: calc(100dvh - 72px);
+  min-height: calc(100% - var(--gym-header-height) - var(--gym-tabs-height));
   display: flex;
   flex-direction: column;
   padding-bottom: 12px;
-}
-.gym-column.has-coach:has(.gym-thread) {
-  height: 100dvh;
 }
 .gym-coach,
 .gym-column.has-coach > .gym-thread {
@@ -3857,7 +3860,7 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-column:not(.has-desk):not(.has-coach) > * { max-width: var(--gym-measure-read); }
 .gym-own-header {
   box-sizing: border-box;
-  height: 80px;
+  height: var(--gym-header-height);
   padding: 24px 16px 16px;
   max-width: 1056px;
   margin: 0 auto;
@@ -3869,7 +3872,7 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-tabs {
   box-sizing: border-box;
   max-width: 1056px;
-  height: 72px;
+  height: var(--gym-tabs-height);
   padding: 0 16px 22px;
   margin: 0 auto;
   display: flex;
@@ -3887,7 +3890,6 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-tabs a[aria-current='page'] { color: var(--color-brand); }
 .gym-tabs a:hover { color: var(--gym-ink); }
 .gym-tabs a:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 4px; }
-.gym-column.has-coach, .gym-column.has-coach:has(.gym-thread) { height: calc(100dvh - 152px); }
 .gym-log-screen { display: flex; flex-direction: column; gap: 16px; }
 .gym-log-screen .gym-head { width: 100%; margin: 0; align-items: center; justify-content: space-between; }
 .gym-history-actions { display: flex; gap: 8px; }
@@ -3952,8 +3954,8 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-set-rail i { display: block; width: 2px; height: 10px; background: var(--color-brand); }
 
 @media (max-width: 800px) {
-  .gym-tabs { height: 52px; padding: 0 20px 2px; }
-  .gym-column.has-coach, .gym-column.has-coach:has(.gym-thread) { height: calc(100dvh - 132px); }
+  .gym-root { --gym-tabs-height: 52px; }
+  .gym-tabs { padding: 0 20px 2px; }
   .gym-history-workspace { display: flex; flex-direction: column-reverse; gap: 24px; }
   .gym-history-index { width: 100%; max-height: none; }
   .gym-history-detail { width: 100%; }
