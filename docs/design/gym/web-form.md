@@ -46,7 +46,9 @@ Section gap 32. Authenticated boards carry the `Web shell`; their content starts
 gap below the 52px header, at y84 on desktop and narrow screens. The content scroll region ends
 above the bottom navigation panel. Public recipient and preview boards use their
 own header and content measurements. The action band sits at the foot of the **content**, not
-the viewport, and never floats over empty canvas.
+the viewport. The narrow Log keeps its entry actions in an 86px footer directly above the
+bottom navigation: Weigh in beside Add past workout, both 54px high. On desktop the pair sits
+in the Log header. Share log is a 20px share icon in a 44px target, with an accessible name.
 
 ## The numeric row
 

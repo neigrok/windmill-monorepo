@@ -56,7 +56,7 @@ The running comparison and release evidence are in [web-verification.md](web-ver
 | Shell | Persistent rooms header and centered bottom Gym navigation, including pushed pages |
 | Routines | Movement names, tick rails, contextual Log past/Delete and New routine |
 | Routine editor | Desktop movements/targets split; narrow sheets; set ladders; two-version conflict recovery |
-| The log | History/reader split, complete filters and facets, paging, date jump and density |
+| The log | History/reader split, filters and facets, paging, date jump and density; Weigh in beside Add past workout, icon-only Share log |
 | Movement record | Interactive dot chart and actual-set facts under brief 18 |
 | Edit workout / fix set | Atomic whole-workout correction and inline numeric fields |
 | Past workout | Stated time and duration, overlap refusal, save opens selected log reader |

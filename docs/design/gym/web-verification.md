@@ -12,7 +12,7 @@ The local Postgres-backed server and Vite use ports 8088 and 5173. Verification 
 
 ## Evidence
 
-The full `npm run build` passes 1,827 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The current release log is the successful [Web Deploy run](https://github.com/neigrok/windmill-monorepo/actions/runs/36122780796).
+The full `npm run build` passes 1,827 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The current release log is the successful [Web Deploy run](https://github.com/neigrok/windmill-monorepo/actions/runs/36124412138).
 
 Seventeen live history and sharing assertions pass: authenticated history; complete totals across keyset pages; date scope; public snapshot reads; absence of private fields; range confinement; immutable snapshots after an owner correction; live updates; exact request replay; changed-payload refusal; revocation; and revoked-ID refusal.
 
@@ -33,13 +33,13 @@ The 982-workout history read returned 50 rows with complete totals in 81 ms. Its
 
 ## Release
 
-Frontend commit `37ef0b73` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36122780796), including all 1,827 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
+Frontend commit `b5be6760` has passed [Web Deploy](https://github.com/neigrok/windmill-monorepo/actions/runs/36124412138), including all 1,827 tests with zero failures or skips. The backend commit `ba94a169` has passed [Backend CI/CD](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378351) and [Deploy to VPS](https://github.com/neigrok/windmill-monorepo/actions/runs/36113038295).
 
-Read-only production asset verification confirms `index-fLy_czoC.js` loads
-`GymApp-CcDJrTrN.js` and `GymApp-GVGVAG1M.css`. The Gym bundle includes the separate room
-and scroll region; its stylesheet contains the 64px panel and 86px action footer and is
-byte-identical to the verified local build. The shared header remains unchanged. Signed-in
-bottom-navigation behavior is verified against the isolated local account below.
+Read-only production asset verification confirms `index-CtOR4frV.js` loads
+`GymApp-CPx5_R0S.js` and `GymApp-Cohytv1C.css`. The Gym bundle includes adjacent weigh-in
+actions and the accessible share icon; its stylesheet is byte-identical to the verified local
+build. The shared header and centered bottom navigation remain unchanged. Signed-in behavior
+is verified against the isolated local accounts below.
 
 [Android CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378254) also passes. [iOS CI](https://github.com/neigrok/windmill-monorepo/actions/runs/36112378273) builds the app and passes crash-report tests, but its package suite fails `RoutineReadoutTests.testTheUnreadHistoryLineIsTheOneTheOtherPhoneDraws`. That test searches Android source for a routine-history sentence removed by the existing Android implementation. Neither native tree changes in this release. The native follow-up is recorded in dogfood node `gym-ios-retired-routine-history-test`.
 
@@ -101,3 +101,34 @@ scroll region, content y84 and a 64px bottom panel. Representative desktop Log, 
 Daylight Routines, Coach and long Log renders pass visual inspection. The 14 public/preview
 boards and native designs retain their own structure. Evidence is
 `/tmp/windmill-gym-bottom-figma-{0,1,2,3}.png`.
+
+## Log entry and share controls
+
+Weigh in sits beside Add past workout in the desktop header and narrow footer. Share log
+uses the shared 20px Share2 icon in a 44px target, with an accessible name and tooltip.
+Log options keep the latest bodyweight reading and density control. Both responsive entry
+buttons open the same sheet and save through the existing bodyweight flow.
+
+The full build passes all 1,827 tests, Vite, landing shells and sitemap; the backend server
+target rebuilds successfully. Independent review passes after updating the three held-delete
+integration cases to use the moved button. The simplification removes the unused chip
+component and styles, while keeping a single sheet state and shared action styling.
+
+Local browser checks cover Instrument and Daylight at 1440px and phone widths of 390px
+and 320px. The 390px footer remains 86px high: Weigh in is 100.36px wide, Add past workout
+is 249.64px wide, with an 8px gap and 54px heights. At 320px, Add past workout is 179.64px
+wide; neither label wraps and there is no horizontal overflow. The footer remains above
+the centered bottom navigation. A final narrow check confirms the flexible Add past workout
+label is centered within 0.004px of its button midpoint.
+
+Saving a temporary 72.5kg weigh-in updates the latest reading. Both entry buttons open their
+intended screens, and the share icon opens setup without creating a link. A fresh reload
+after the test run clears the development hot-reload context error; repeated navigation
+and weigh-in opening add no console errors. The temporary account and its data are removed.
+
+Figma updates cover 15 authenticated boards: nine desktop and six narrow. The shared share
+action (`925:9711`) has a 44px target and 20px icon; the footer action component (`925:9720`)
+keeps an 86px band, 54px buttons and an 8px gap. Instrument and temporary Daylight renders
+pass visual inspection; temporary QA boards are removed. Public, native and Share-page
+content keep their existing structure. Evidence is
+`/tmp/windmill-gym-log-actions-figma-{0,1,2,3}.png`.

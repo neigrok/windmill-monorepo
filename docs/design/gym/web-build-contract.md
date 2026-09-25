@@ -13,7 +13,7 @@ Content begins at y84 on both desktop and narrow screens. Narrow content x16/w35
 | Surface | Observed layout |
 |---|---|
 | Log selected 1440, `470:34` | Content x208/y84/w1024; index320 +24 gap +reader680; navigation44 high, reader with 12px gaps. |
-| Log default 390, `470:21` | Content x16/y84/w358, gap16; progress before history. Progress cards gap24. History index is scrollable. Main footer action54 high. |
+| Log default 390, `470:21` | Content x16/y84/w358, gap16; progress before history. Progress cards gap24. History index is scrollable. Weigh in and Add past workout sit beside each other, 54px high in the 86px footer above navigation. |
 | Routine editor 1440, `475:1050` | Split 640/32/420; ladder rows44 with4px gaps; content action band44 high. |
 | Edit workout 1440, `482:1175` | Content x208/y84/w1024, section gaps32; editable form420; saved summary420 in right column; action band at content foot. |
 | Coach 1440, `471:522` | Conversation x208/y84/w640; side rail x880/y84/w352; region gap16 and rail gap24. |
@@ -21,6 +21,10 @@ Content begins at y84 on both desktop and narrow screens. Narrow content x16/w35
 | Recipient log 1440, `524:2705` | Public header x208/y36/h24; snapshot line y82; content x208/y132/w1024. No authenticated shell or write controls. |
 
 Set rows use a 10px rail with 2px ticks. Load × reps uses JetBrains Mono; the multiplication sign is faint. Equal sets collapse to a scheme; variable sets remain rows. Units appear once in a column head or total. Add set is last. Row actions reveal on hover/focus, not layout shift. History rows are 48px in the actual index component (an exception to the generic 44/56 rule in web-form.md).
+
+The Log header uses a 20px share icon in a 44px target with accessible name and tooltip
+`Share log`. Desktop places Weigh in beside Add past workout in that header; narrow screens
+place the pair in the footer. Log options retain the latest bodyweight reading and density control.
 
 ## Type and colour
 
@@ -157,7 +161,7 @@ W1 applies to every authenticated board. The principal wave counts are W2 24, W3
 | Record / Log / Daily density / 1440 | `519:2166` | **Built** · `804:5899` | W6 | 982-workout fixture groups dense history; bounded scrolling/paging. |
 | Record / Log / Daily density / 390 | `519:2797` | **Built** · `804:5902` | W6 | 982-workout fixture groups dense history; bounded scrolling/paging. |
 | Record / Log / Default / 1440 | `470:8` | **Built** · `804:5863` | W2 | History index320 +24 gap +680 progress pane. |
-| Record / Log / Default / 390 | `470:21` | **Built** · `804:5866` | W2 | Progress cards before history; footer Add past workout for owner. |
+| Record / Log / Default / 390 | `470:21` | **Built** · `804:5866` | W2 | Progress cards before history; footer Weigh in beside Add past workout for owner. |
 | Record / Log / Jump to date / 1440 | `518:2340` | **Built** · `804:5881` | W6 | Date jump opens, selects range, and preserves remaining filters. |
 | Record / Log / Jump to date / 390 | `518:2395` | **Built** · `804:5884` | W6 | Date jump opens, selects range, and preserves remaining filters. |
 | Record / Log / No matches / 1440 | `518:2615` | **Built** · `804:5893` | W6 | Honest zero state; clear filters restores history. |
