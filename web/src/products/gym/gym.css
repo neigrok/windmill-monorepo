@@ -3716,7 +3716,7 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink-faint);
 }
 
-/* ── Bodyweight — the reading at the head of the log, the chip in the reach band, the chart ── */
+/* Bodyweight: the latest reading, entry sheet and chart. */
 .gym-bodyweight-reading {
   display: inline-block;
   margin-top: 4px;
@@ -3728,25 +3728,6 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-bodyweight-reading:hover {
   color: var(--gym-ink);
-}
-/* Pinned above the tab bar, at every scroll position; the log's only primary action. */
-.gym-reach { display: inline-flex; }
-.gym-reach-chip {
-  pointer-events: auto;
-  min-height: 46px;
-  padding: 0 22px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: var(--radius-full);
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-  box-shadow: var(--shadow-lg);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.gym-reach-chip:hover {
-  border-color: var(--color-brand);
 }
 .gym-sheet.gym-weigh {
   padding-bottom: 34px;
@@ -3909,9 +3890,9 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-tabs a:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 4px; }
 .gym-log-screen { display: flex; flex-direction: column; gap: 16px; }
 .gym-log-screen .gym-head { width: 100%; margin: 0; align-items: center; justify-content: space-between; }
-.gym-history-actions { display: flex; gap: 8px; }
+.gym-history-actions { display: flex; align-items: center; gap: 8px; }
 .gym-log-footer { display: none; }
-.gym-history-share, .gym-log-screen .gym-door-past {
+.gym-history-share, .gym-history-weigh, .gym-log-screen .gym-door-past {
   min-height: 44px;
   box-sizing: border-box;
   padding: 10px 20px;
@@ -3922,6 +3903,8 @@ button.gym-set:focus-visible .gym-set-fix {
   text-decoration: none;
   font: 700 16px/24px var(--font-body);
 }
+.gym-history-share { display: inline-flex; flex: none; width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; }
+.gym-history-weigh { cursor: pointer; white-space: nowrap; }
 .gym-log-screen .gym-door-past { background: var(--color-brand); color: var(--gym-on-accent); border-color: transparent; }
 .gym-history-filters { min-height: 44px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .gym-history-filter { display: inline-flex; align-items: center; max-width: 100%; background: var(--gym-surface); border-radius: var(--gym-card-radius); }
@@ -4058,12 +4041,12 @@ button.gym-set:focus-visible .gym-set-fix {
   .gym-progress-head h2 { display: none; }
   .gym-log-screen .gym-head { display: grid; grid-template-columns: 1fr auto; align-items: center; }
   .gym-history-actions { display: contents; }
-  .gym-history-actions .gym-door-past { display: none; }
-  .gym-log-footer { display: block; position: fixed; box-sizing: border-box; height: var(--gym-log-footer-height); left: 0; right: 0; bottom: var(--gym-bottom-panel-height, 0px); padding: 16px; background: var(--gym-canvas); z-index: 4; }
-  .gym-log-footer .gym-door-past { display: block; min-height: 54px; padding: 14px 16px; text-align: center; }
+  .gym-history-actions .gym-history-weigh, .gym-history-actions .gym-door-past { display: none; }
+  .gym-log-footer { display: flex; gap: 8px; position: fixed; box-sizing: border-box; height: var(--gym-log-footer-height); left: 0; right: 0; bottom: var(--gym-bottom-panel-height, 0px); padding: 16px; background: var(--gym-canvas); z-index: 4; }
+  .gym-log-footer .gym-history-weigh, .gym-log-footer .gym-door-past { min-height: 54px; padding: 14px 16px; text-align: center; }
+  .gym-log-footer .gym-door-past { flex: 1; white-space: nowrap; }
   .gym-room:has(.gym-log-screen:not(.has-session) .gym-log-footer) .gym-toast-slot { bottom: calc(var(--gym-bottom-panel-height) + var(--gym-log-footer-height) + 12px); }
   .gym-log-screen:not(.has-session):has(.gym-log-footer) { padding-bottom: 72px; }
-  .gym-history-share { min-height: 44px; padding: 10px 16px; font-size: 14px; }
   .gym-history-filters { flex-wrap: nowrap; }
   .gym-history-filter select { max-width: 128px; padding: 8px; font-size: 13px; }
   .gym-reader-nav { gap: 24px; }

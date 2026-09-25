@@ -1020,7 +1020,7 @@ function weighInsOnTheWire(entries, { deleteStatus = 204 } = {}) {
 }
 
 // Both screens that read the series, in one room: the chart owns one instance of `useBodyweight` and
-// the log's head owns a second, and the hide is inside the hook precisely so the two never disagree.
+// the log owns a second, and the hide is inside the hook precisely so the two never disagree.
 async function weighInRoom(t, entries, options = {}) {
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
@@ -1036,14 +1036,12 @@ async function weighInRoom(t, entries, options = {}) {
   const reading = () => named(view.tree.logScreen, 'BodyweightReading');
   const chart = () => named(view.tree.chart, 'DotChart');
   const sheet = () => named(view.tree.chart, 'WeighInSheet');
-  // The chip in the log's reach band, which opens a sheet on any date — the one door that can write
-  // the day a delete is holding.
-  const chip = () => named(view.tree.logScreen, 'WeighInChip');
-  const chipSheet = () => named(view.tree.logScreen, 'WeighInSheet');
+  const weighButton = () => findByClass(view.tree.logScreen, 'gym-history-weigh')[0];
+  const logSheet = () => named(view.tree.logScreen, 'WeighInSheet');
   // Every quiet line the chart screen is drawing: its stance about the account, and its line about
   // the window it is showing.
   const quiet = () => findByClass(view.tree.chart, 'gym-quiet').map(textOf);
-  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, chip, chipSheet, quiet };
+  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, weighButton, logSheet, quiet };
 }
 
 test('a weigh-in delete is one press, closes the sheet over the transient, and drops the dot AND the log’s head reading together', async (t) => {
@@ -1154,9 +1152,9 @@ test('a weigh-in written again on a day whose delete is still holding takes that
   await settle();
   assert.equal(room.log().transient.action.label, 'Undo');
 
-  room.chip().props.onOpen();
+  room.weighButton().props.onClick();
   await settle();
-  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
   await settle();
   assert.equal(room.log().held.length, 0, 'writing the day again IS the way back');
 
@@ -1180,9 +1178,9 @@ test('a weigh-in written again on a day whose delete already settled is drawn: t
   assert.deepEqual(room.onTheLog(), [], 'the store took it, and the room records the date gone');
   assert.equal(room.chart(), undefined);
 
-  room.chip().props.onOpen();
+  room.weighButton().props.onClick();
   await settle();
-  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
   await settle();
 
   assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
@@ -1215,9 +1213,9 @@ test('a weigh-in written again while the delete’s send is still in the air is 
   t.mock.timers.tick(UNDO_MS);
   await settle();
 
-  room.chip().props.onOpen();
+  room.weighButton().props.onClick();
   await settle();
-  assert.equal(await room.chipSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
   await settle();
 
   answerTheDelete();

@@ -956,21 +956,21 @@ test('a routine’s name moves with its own document, and claims nothing about w
   assert.equal(speech('Routines.jsx').includes('unchanged'), false);
 });
 
-test('bodyweight: the reading heads the log, the chip is the one door in the reach band, and the chart is the design system’s', () => {
+test('bodyweight: the log actions open one sheet, the reading stays in options, and the chart is the design system’s', () => {
   const log = read('Log.jsx');
   assert.equal(log.includes('<BodyweightReading latest={weights.latest} />'), true);
   assert.ok(log.indexOf('gym-log-options') < log.indexOf('<BodyweightReading'), 'the reading is in log options');
-  assert.equal(log.includes('<WeighInChip onOpen={() => setWeighing(true)} />'), true);
+  assert.equal((log.match(/className="gym-history-weigh"/g) ?? []).length, 2);
   assert.equal((log.match(/<WeighInSheet/g) ?? []).length, 1);
   const screen = read('bodyweight/Bodyweight.jsx');
   assert.equal(screen.includes("import { Button, DotChart, Tabs } from '../../../design-system/index.js';"), true);
   assert.equal(fs.existsSync(path.join(GYM, '../../design-system/charts/DotChart.jsx')), true, 'a new primitive, authored in the design system');
   assert.equal(/Keypad|LADDER|ladder|gym-rungs|record-bar/.test(screen), false, 'no ladder, no keypad, no bar chart');
-  assert.equal(screen.includes('<WeighInChip'), false, 'no second door on the chart screen');
+  assert.equal(screen.includes('gym-history-weigh'), false, 'no second door on the chart screen');
   assert.equal(screen.includes('inputMode="decimal"'), true);
   assert.equal(screen.includes('type="date"'), true);
   assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen log={log} />}"), true);
-  // Both answers off the ROOM's registers, once each: the log's head holds the second instance of
+  // Both answers off the ROOM's registers, once each: the log holds the second instance of
   // this hook, and a day recorded per instance would leave the two disagreeing about the account.
   assert.equal(screen.includes("const gone = log.gone('bodyweight');"), true);
   assert.equal(screen.includes("const hidden = log.hidden('bodyweight');"), true);

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button } from '../../design-system/index.js';
+import { Button, Icon } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
-import { BodyweightReading, useBodyweight, WeighInChip, WeighInSheet } from './bodyweight/Bodyweight.jsx';
+import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
+import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
 import {
@@ -120,7 +121,8 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
       <header className="gym-head gym-log-head">
         <h1 className="gym-title">The log</h1>
         <div className="gym-history-actions">
-          <a className="gym-history-share" href="#/gym/share-log">Share log</a>
+          <a className="gym-history-share" href="#/gym/share-log" aria-label="Share log" title="Share log"><Icon name="share" size={20} /></a>
+          <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
           <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
         </div>
       </header>
@@ -150,8 +152,11 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
           <ProgressCards log={log} from={{ screen: 'log', href: from }} /></>}
         </div>
       </div>}
-      {!noMatches && <><details className="gym-log-options"><summary>Log options</summary><BodyweightReading latest={weights.latest} /><WeighInChip onOpen={() => setWeighing(true)} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? 'Comfortable rows' : 'Compact rows'}</button></details>
-      <footer className="gym-log-footer"><a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a></footer></>}
+      {!noMatches && <><details className="gym-log-options"><summary>Log options</summary><BodyweightReading latest={weights.latest} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? 'Comfortable rows' : 'Compact rows'}</button></details>
+      <footer className="gym-log-footer">
+        <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
+        <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
+      </footer></>}
       {weighing && <WeighInSheet onSave={async (write) => { const refused = await weights.save(write); if (!refused) setWeighing(false); return refused; }} onClose={() => setWeighing(false)} />}
     </section>
   );

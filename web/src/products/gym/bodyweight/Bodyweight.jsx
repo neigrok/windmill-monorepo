@@ -20,8 +20,8 @@ import {
 // what state a screen is in (`13-gestures.md`).
 //
 // What a delete has done is read off the ROOM's two registers and never recorded per instance,
-// because the log's head holds a second instance of this hook: a record kept here would leave the
-// head drawing a weigh-in the chart has dropped, or the chart calling an account empty that the head
+// because the log holds a second instance of this hook: a record kept here would leave the
+// log drawing a weigh-in the chart has dropped, or the chart calling an account empty that the log
 // is reading a number off. A weigh-in's id is its local date — the one id in this room a lifter can
 // write again, which takes the delete back and puts the day back in both answers at once.
 export function useBodyweight(log) {
@@ -68,20 +68,11 @@ export function useBodyweight(log) {
   };
 }
 
-// The quiet line at the head of the log: the last number and its age, or nothing at all.
+// The latest recorded weight and its age, shown in the log options.
 export function BodyweightReading({ latest, now = Date.now() }) {
   const line = readingLine(latest, now);
   if (!line) return null;
   return <a className="gym-bodyweight-reading" href={BODYWEIGHT_HREF}>{line}</a>;
-}
-
-// The only door onto entering a weigh-in, pinned in the reach band of the log.
-export function WeighInChip({ onOpen }) {
-  return (
-    <div className="gym-reach">
-      <button type="button" className="gym-reach-chip" onClick={onOpen}>{WEIGH_IN_VERB}</button>
-    </div>
-  );
 }
 
 // One sheet for entering, correcting and deleting: a plain decimal field in the account's unit, a
@@ -166,7 +157,7 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
 }
 
 // The chart: a dot per weigh-in in a stated window, and the repair path behind each dot. No second
-// door onto a new weigh-in here; that is the chip on the log, one back away.
+// door onto a new weigh-in here; that is the Weigh in action on the log, one back away.
 export function BodyweightScreen({ log }) {
   const weights = useBodyweight(log);
   const [windowId, setWindowId] = useState(DEFAULT_WINDOW);

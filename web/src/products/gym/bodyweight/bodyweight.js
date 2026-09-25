@@ -1,4 +1,4 @@
-// The pure rules behind a weigh-in: the reading at the head of the log, the field's refusals, the
+// The pure rules behind a weigh-in: the latest reading in the log, the field's refusals, the
 // write the wire takes, the chart's window and its words. One row per local calendar date, the date
 // IS the identity, kilograms on the wire, the display unit on the screen. Nothing here trends,
 // projects or grades a series: the chart draws the numbers the lifter typed and no others.

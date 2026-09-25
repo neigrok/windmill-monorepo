@@ -35,10 +35,9 @@ function weighInsOnTheWire(entries, { putStatus = 200, putBody = null } = {}) {
 const quietLog = () => roomLog();
 
 const sheetOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'WeighInSheet');
-const chipOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'WeighInChip');
 const chartOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'DotChart');
 
-test('the log’s head reads the last weigh-in and its age, and draws nothing at all without one', async (t) => {
+test('the log options read the last weigh-in and its age, and draw nothing at all without one', async (t) => {
   browserWith();
   weighInsOnTheWire([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
@@ -54,20 +53,26 @@ test('the log’s head reads the last weigh-in and its age, and draws nothing at
   assert.equal(BodyweightReading({ latest: null }), null, 'no dash, no zero, nothing');
 });
 
-test('the chip in the reach band is the one door onto a weigh-in; saving sends the row and the head reads it back', async (t) => {
+test('the log actions open one weigh-in sheet beside Add past workout and read the saved weight back', async (t) => {
   browserWith();
   const wire = weighInsOnTheWire([]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
   await settle();
-  const chip = chipOf(screen.tree);
-  const { WeighInChip } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
-  assert.equal(textOf(findByClass(WeighInChip({ onOpen: () => {} }), 'gym-reach-chip')[0]), 'Weigh in');
+  const header = findByClass(screen.tree, 'gym-history-actions')[0];
+  const footer = findByClass(screen.tree, 'gym-log-footer')[0];
+  for (const actions of [header, footer]) {
+    assert.deepEqual(elementsOf(actions).filter((each) => each.type === 'button' || each.props.className === 'gym-door-past').map(textOf), ['Weigh in', 'Add past workout']);
+  }
+  assert.equal(findByClass(findByClass(screen.tree, 'gym-log-options')[0], 'gym-history-weigh').length, 0);
+  const share = findByClass(header, 'gym-history-share')[0];
+  assert.deepEqual([share.props.href, share.props['aria-label'], share.props.title, textOf(share)], ['#/gym/share-log', 'Share log', 'Share log', '']);
+  assert.deepEqual([share.props.children.type.name, share.props.children.props], ['Icon', { name: 'share', size: 20 }]);
   assert.equal(sheetOf(screen.tree), undefined);
-  chip.props.onOpen();
+  findByClass(header, 'gym-history-weigh')[0].props.onClick();
   const sheet = sheetOf(screen.tree);
   assert.notEqual(sheet, undefined);
-  assert.equal(sheet.props.fixedDate ?? null, null, 'from the chip the date is free and defaults to today');
+  assert.equal(sheet.props.fixedDate ?? null, null, 'a new weigh-in defaults to today and allows another date');
   assert.equal(sheet.props.onDelete ?? null, null, 'nothing to delete yet');
 
   const refused = await sheet.props.onSave({ dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
@@ -76,7 +81,10 @@ test('the chip in the reach band is the one door onto a weigh-in; saving sends t
   assert.equal(sheetOf(screen.tree), undefined, 'the sheet closes on a landed write');
   const reading = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
   assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
-  assert.equal(elementsOf(screen.tree).filter((each) => typeof each.type === 'function' && each.type.name === 'WeighInChip').length, 1, 'one door, at every scroll position');
+  findByClass(footer, 'gym-history-weigh')[0].props.onClick();
+  assert.equal(elementsOf(screen.tree).filter((each) => typeof each.type === 'function' && each.type.name === 'WeighInSheet').length, 1);
+  sheetOf(screen.tree).props.onClose();
+  assert.equal(sheetOf(screen.tree), undefined);
   assert.equal(findByClass(screen.tree, 'gym-keypad').length, 0);
 });
 
@@ -86,7 +94,7 @@ test('a refused save shows the store’s own sentence in the sheet and leaves it
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
   await settle();
-  chipOf(screen.tree).props.onOpen();
+  findByClass(screen.tree, 'gym-history-weigh')[0].props.onClick();
   const refused = await sheetOf(screen.tree).props.onSave({ dateLocal: TODAY, weightKg: 420, recordedAt: 7 });
   assert.equal(refused, 'Between 20 and 400 kg — check the number.');
   assert.notEqual(sheetOf(screen.tree), undefined);
@@ -106,7 +114,7 @@ test('the sheet: a plain decimal field with no hint, a date defaulting to today,
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input')[0].props.value, TODAY);
   assert.equal(findByClass(screen.tree, 'gym-weigh-date-input')[0].props.max, TODAY, 'the picker’s range ends today');
   assert.equal(findByClass(screen.tree, 'gym-rungs').length, 0, 'no ladder');
-  assert.equal(findByClass(screen.tree, 'gym-weigh-delete').length, 0, 'nothing to delete from the chip');
+  assert.equal(findByClass(screen.tree, 'gym-weigh-delete').length, 0, 'nothing to delete from a new weigh-in');
 
   findByClass(screen.tree, 'gym-weigh-save')[0].props.onClick();
   await settle();
@@ -186,7 +194,7 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   assert.equal(chart.props.rule, undefined, 'a gap in the line reads as a gap; no legend explains it');
   assert.equal(chart.props.joins, joinsAcross, 'segments join by calendar days, not elapsed hours');
   assert.equal(chart.props.domain.to, new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime());
-  assert.equal(chipOf(screen.tree), undefined, 'no second door onto a new weigh-in');
+  assert.equal(findByClass(screen.tree, 'gym-history-weigh').length, 0, 'no second door onto a new weigh-in');
 
   const tabs = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'Tabs');
   assert.deepEqual(tabs.props.tabs, [{ value: '90', label: '90 days' }, { value: 'all', label: 'All' }]);
@@ -211,7 +219,7 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   assert.equal(sheetOf(screen.tree), undefined);
 });
 
-test('a served row dated after the device’s local today is never the reading at the log’s head and never a dot', async (t) => {
+test('a served row dated after the device’s local today is never the log’s latest reading and never a dot', async (t) => {
   browserWith();
   const forecast = { dateLocal: '2031-01-05', weightKg: 70, recordedAt: 9 };
   weighInsOnTheWire([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, forecast]);
