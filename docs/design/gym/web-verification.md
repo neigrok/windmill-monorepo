@@ -12,7 +12,7 @@ The local Postgres-backed server and Vite use ports 8088 and 5173. Verification 
 
 ## Evidence
 
-The full `npm run build` passes 1,827 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The release log is `/private/tmp/windmill-gym-web-verify/web-release-build-final.log`.
+The full `npm run build` passes 1,827 web tests with zero failures or skipped cases, builds the Vite production bundle and emits all three asserted landing shells and the sitemap. The current release log is the successful [Web Deploy run](https://github.com/neigrok/windmill-monorepo/actions/runs/36122780796).
 
 Seventeen live history and sharing assertions pass: authenticated history; complete totals across keyset pages; date scope; public snapshot reads; absence of private fields; range confinement; immutable snapshots after an owner correction; live updates; exact request replay; changed-payload refusal; revocation; and revoked-ID refusal.
 
