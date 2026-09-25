@@ -66,30 +66,6 @@ test('the rack keypad draws the four refusals, and the band it names is the logg
   }
 });
 
-test('the fix sheet is at the rack, so both its numerals raise the keypad', async (t) => {
-  browserWith();
-  const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
-  const { Keypad } = await loadScreen('products/gym/logger/Keypad.jsx');
-  const set = { id: 'set_1', exerciseId: 'back-squat', setNumber: 2, weightKg: 100, reps: 5, kind: 'working' };
-  const drawn = renderHook(t, () => FixSheet({
-    set, movement: { id: 'back-squat', name: 'Back Squat' }, session: null,
-    onSave: () => {}, onDelete: () => {}, onClose: () => {},
-  }));
-  const padOf = () => elementsOf(drawn.tree).find((each) => each.type === Keypad);
-  const tap = (className) => elementsOf(drawn.tree).find((each) => each.props?.className === className).props.onClick();
-
-  assert.equal(padOf(), undefined, 'the sheet opens on its numbers, not on a pad');
-  tap('gym-fix-weight');
-  assert.equal(padOf().props.mode, 'weight');
-  assert.equal(padOf().props.current, 100);
-  assert.equal(padOf().props.editing, true);
-  padOf().props.onCancel();
-
-  tap('gym-fix-value');
-  assert.equal(padOf().props.mode, 'reps');
-  assert.equal(padOf().props.current, 5);
-});
-
 test('the rack keypad names both its glyphs — ± `Flip the sign — band-assisted`, ⌫ `Delete` — and no digit', async (t) => {
   browserWith();
   const { Keypad } = await loadScreen('products/gym/logger/Keypad.jsx');
@@ -130,7 +106,7 @@ test('the rack keypad names both its glyphs — ± `Flip the sign — band-assis
   );
 });
 
-test('the rack keypad’s scrim cancels — on the fix sheet and on the backfill form, valid buffer or not', async (t) => {
+test('the rack keypad’s scrim cancels — on the backfill form, valid buffer or not', async (t) => {
   browserWith();
   const { Keypad } = await loadScreen('products/gym/logger/Keypad.jsx');
   // 12-native-idiom's vocabulary rule: an outside tap is one word in this room, and every other

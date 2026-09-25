@@ -1,8 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
+import '../coach/coach.css';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF } from '../log.js';
+import { CoachNavigation } from '../coach/CoachNavigation.jsx';
 import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
 import { useGymRead } from '../useGymRead.js';
@@ -73,6 +75,7 @@ export function Notes({ log }) {
     return (
       <NoteEditor
         note={editing}
+        noteCount={notes.length}
         onClose={() => setEditing(null)}
         onSaved={(stored) => {
           setEditing(null);
@@ -91,6 +94,7 @@ export function Notes({ log }) {
 
   return (
     <section className="gym-notes">
+      <CoachNavigation active="notes" noteCount={notes.length} />
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-notes-head">
         <h1 className="gym-title">{NOTES_TITLE}</h1>
@@ -207,7 +211,7 @@ function NoteList({ notes, onOpen, onMove }) {
 // Over the bound the store refuses, and its sentence is shown in place; nothing here rewrites it.
 // A refusal for a full account (`notes-full`) means the list behind the editor is behind the store:
 // `onStale` re-reads it while the editor stays open with the sentence.
-export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
+export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete, onStale }) {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [saving, setSaving] = useState(false);
@@ -230,16 +234,15 @@ export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
 
   return (
     <section className="gym-note-editor">
+      <CoachNavigation active="notes" noteCount={noteCount} />
       <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
-      <header className="gym-editor-head">
-        {/* Tappable at every length: over the bound it refuses in place with the store's own
-            sentence, so nothing here is ever silently dead. It says it is busy while the save is in
-            the air, because it stays tappable through it. */}
-        <Button size="md" variant={ready ? 'primary' : 'secondary'} ariaBusy={saving} onClick={save}>Save</Button>
-      </header>
+      <header className="gym-editor-head"><h1 className="gym-title">{note.fresh ? 'New note' : 'Edit note'}</h1></header>
+      <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
+      <label className="gym-note-label" htmlFor="gym-note-title">Title</label>
 
       {/* No maxLength: a sixty-first character is taken and counted, and the store's refusal is shown. */}
       <input
+        id="gym-note-title"
         className="gym-note-title-input"
         value={title}
         placeholder="Title"
@@ -250,7 +253,9 @@ export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
       {showsTitleCount(title) && (
         <p className={isTitleOverCap(title) ? 'gym-note-count is-over' : 'gym-note-count'}>{titleCountLabel(title)}</p>
       )}
+      <label className="gym-note-label" htmlFor="gym-note-body">What Coach should know</label>
       <textarea
+        id="gym-note-body"
         className="gym-note-body"
         value={body}
         rows={8}
@@ -268,6 +273,10 @@ export function NoteEditor({ note, onClose, onSaved, onDelete, onStale }) {
       {!note.fresh && (
         <button type="button" className="gym-note-delete" onClick={() => onDelete(note)}>{DELETE_VERB}</button>
       )}
+      <div className="gym-note-actions">
+        <button type="button" onClick={onClose}>Cancel</button>
+        <Button disabled={!ready} ariaBusy={saving} onClick={save}>{saving ? 'Saving…' : 'Save note'}</Button>
+      </div>
     </section>
   );
 }

@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { useHistory, useHistoryDates } from '../../../../src/products/gym/logbook/useHistory.js';
+import { renderHook, settle } from '../harness.mjs';
+
+test('history appends once and a changed filter never draws or appends an old scope', async (t) => {
+  const reads = [];
+  const api = { history: (query) => new Promise((resolve, reject) => reads.push({ query, resolve, reject })) };
+  let filters = {};
+  const screen = renderHook(t, () => useHistory(filters, 0, api));
+  reads[0].resolve({ sessions: [{ id: 'latest' }], next: { before: 2, beforeId: 'latest' } });
+  await settle();
+  const first = screen.log.load();
+  const duplicate = screen.log.load();
+  assert.equal(reads.length, 2);
+  assert.equal(await duplicate, undefined);
+  reads[1].resolve({ sessions: [{ id: 'older' }], next: { before: 1, beforeId: 'older' } });
+  await first;
+  assert.deepEqual(screen.log.data.sessions, [{ id: 'latest' }, { id: 'older' }]);
+  const stale = screen.log.load();
+  filters = { exercise: 'squat' };
+  screen.redraw();
+  assert.deepEqual({ phase: screen.log.phase, data: screen.log.data }, { phase: 'loading', data: null });
+  reads[2].resolve({ sessions: [{ id: 'stale' }], next: null });
+  await stale;
+  assert.equal(screen.log.data, null);
+  reads[3].reject(new Error('offline'));
+  await settle();
+  assert.deepEqual({ phase: screen.log.phase, data: screen.log.data, failure: screen.log.failure }, { phase: 'failed', data: null, failure: true });
+  screen.log.retry();
+  reads[4].resolve({ sessions: [{ id: 'squat' }], next: null });
+  await settle();
+  assert.deepEqual(screen.log.data.sessions, [{ id: 'squat' }]);
+});
+
+test('date facets ignore date selection, track other filters and carry the local time zone', async (t) => {
+  const reads = [];
+  const api = { history: (query) => new Promise((resolve) => reads.push({ query, resolve })) };
+  let filters = { year: 2024, month: 3, exercise: 'bench' };
+  const screen = renderHook(t, () => useHistoryDates(filters, 0, api));
+  assert.deepEqual(reads[0].query, { exercise: 'bench', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, limit: 1 });
+  reads[0].resolve({ months: [{ month: '2026-09', sessions: 3 }, { month: '2024-03', sessions: 2 }] });
+  await settle();
+  filters = { ...filters, year: 2026, month: 9 };
+  screen.redraw();
+  assert.equal(reads.length, 1);
+  assert.deepEqual(screen.log.months, [{ month: '2026-09', sessions: 3 }, { month: '2024-03', sessions: 2 }]);
+  filters = { ...filters, routine: 'pull' };
+  screen.redraw();
+  assert.deepEqual(screen.log.months, []);
+  reads[1].resolve({ months: [{ month: '2026-09', sessions: 1 }] });
+  await settle();
+  assert.deepEqual(screen.log.months, [{ month: '2026-09', sessions: 1 }]);
+});

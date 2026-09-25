@@ -36,7 +36,7 @@ export function forgetCoachDraft(accountId, threadId) {
   }
 }
 
-export function useCoachConversation({ accountId, initialThread, api = gymApi, photos = coachPhotos }) {
+export function useCoachConversation({ accountId, initialThread, workoutInProgress = false, api = gymApi, photos = coachPhotos }) {
   const [state, setState] = useState(() => {
     const stored = readCoachDraft(accountId, initialThread?.id);
     const generation = initialThread?.generation;
@@ -54,6 +54,8 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
     };
   });
   const current = useRef(state);
+  const workout = useRef(workoutInProgress);
+  workout.current = workoutInProgress;
   const mounted = useRef(true);
   const active = useRef(false);
   const stream = useRef(null);
@@ -99,13 +101,18 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
   };
 
   const uploadPhoto = async (photo = current.current.photo) => {
-    if (!photo || upload.current) return false;
+    if (workout.current || !photo || upload.current) return false;
     const thread = current.current.thread;
     const controller = new AbortController();
     upload.current = controller;
     change({ photo: { ...photo, status: 'uploading', progress: 0, note: '' } });
     try {
       const blob = await photos.load(accountId, thread, photo.id);
+      if (!mounted.current || current.current.photo?.id !== photo.id) return false;
+      if (workout.current) {
+        change({ photo: { ...photo, status: 'draft', progress: 0, note: '' } });
+        return false;
+      }
       if (!blob) throw new Error('Choose the photo again to upload it.');
       const metadata = await api.uploadCoachPhoto(thread, photo.id, blob, {
         signal: controller.signal,
@@ -128,7 +135,7 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
   };
 
   const selectPhoto = async (file) => {
-    if (!file || !accountId || current.current.request || current.current.photo || current.current.photoBusy) return;
+    if (workout.current || !file || !accountId || current.current.request || current.current.photo || current.current.photoBusy) return;
     change({ photoBusy: true, note: '' });
     let id;
     try {
@@ -146,6 +153,7 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
         await photos.remove(accountId, current.current.thread, id);
         return;
       }
+      if (workout.current) return;
       await uploadPhoto(photo);
     } catch (error) {
       if (mounted.current) change({ note: id ? 'Your browser couldn’t save this photo. Allow local storage and try again.' : error.message });
@@ -155,7 +163,7 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
   };
 
   const send = async (retryTurn) => {
-    if (active.current || current.current.phase !== 'ready' || current.current.closed) return;
+    if (workout.current || active.current || current.current.phase !== 'ready' || current.current.closed) return;
     if (!accountId) { change({ note: 'Confirming your account. Try again in a moment.' }); return; }
     let request = current.current.request;
     const retry = Boolean(request || retryTurn);
@@ -172,6 +180,7 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
     if (current.current.photo && current.current.photo.status !== 'ready') {
       if (!await uploadPhoto()) return;
     }
+    if (workout.current || !mounted.current) return;
     if (!request) {
       const question = current.current.draft.trim();
       const photo = current.current.photo;
@@ -291,10 +300,10 @@ export function useCoachConversation({ accountId, initialThread, api = gymApi, p
   }, []);
 
   useEffect(() => {
-    if (!state.pending || state.busy) return undefined;
+    if (workoutInProgress || !state.pending || state.busy) return undefined;
     const timer = setTimeout(() => sendRef.current(), Math.min(1000 * (2 ** state.attempt), 15000));
     return () => clearTimeout(timer);
-  }, [state.pending, state.busy, state.attempt]);
+  }, [state.pending, state.busy, state.attempt, workoutInProgress]);
 
   const older = async () => {
     if (!current.current.nextCursor || current.current.olderBusy) return;

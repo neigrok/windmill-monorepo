@@ -91,25 +91,11 @@ async function coachRoom(t, open) {
   };
 }
 
-// A row and the delete block are each their own component, so the tree holds them as elements: a
-// row's props are what the list handed it, and the block is drawn by calling it.
 const componentIn = (tree, name) => elementsOf(tree)
   .filter((each) => typeof each.type === 'function' && each.type.name === name);
 
 const titles = (tree) => componentIn(tree, 'ThreadRow').map((each) => each.props.thread.title);
-
-const deleteVerb = (tree) => {
-  const block = componentIn(tree, 'DeleteThread')[0];
-  if (!block) return undefined;
-  return findByClass(block.type(block.props), 'gym-thread-delete-verb')[0];
-};
-
-// Nothing stands over the button: what the delete leaves behind rides the window instead.
-const deleteNote = (tree) => {
-  const block = componentIn(tree, 'DeleteThread')[0];
-  if (!block) return undefined;
-  return findByClass(block.type(block.props), 'gym-thread-delete-note')[0];
-};
+const deleteAction = (tree) => componentIn(tree, 'CoachRoom')[0]?.props.onDelete;
 
 const deletes = (wire) => wire.filter((line) => line.startsWith('DELETE'));
 
@@ -121,10 +107,10 @@ test('deleting a conversation is one press: no arm, no confirmation, and nothing
 
   // One press and one label: the second tap the old delete asked for is gone, and with it the
   // sentence that promised no way back.
-  const verb = deleteVerb(room.detail());
-  assert.equal(textOf(verb), 'Delete this conversation');
-  assert.equal(deleteNote(room.detail()), undefined, 'and no caption stands over it saying what the delete leaves behind');
-  verb.props.onClick();
+  const remove = deleteAction(room.detail());
+  assert.equal(typeof remove, 'function');
+  assert.equal(findByClass(room.detail(), 'gym-thread-delete-note').length, 0);
+  remove();
   await settle();
 
   assert.deepEqual(deletes(wire), [], 'withheld means NOT SENT');
@@ -173,7 +159,7 @@ test('the row is off the list at once, and the window runs the full nine seconds
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   assert.deepEqual(titles(room.list()), ['Heavier bench?', 'More rows?'], 'the row left the list at once');
@@ -201,11 +187,11 @@ test('the list’s stance reads the store: every conversation held draws no empt
   const quiet = () => findByClass(room.list(), 'gym-quiet').map(textOf);
   assert.deepEqual(quiet(), []);
 
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await room.walkTo('thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await room.walkTo('thr_1');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   assert.deepEqual(titles(room.list()), [], 'all three rows are off the list, which is all the window decides');
@@ -227,7 +213,7 @@ test('Undo puts the conversation back at its own position, and the delete is nev
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
   assert.deepEqual(titles(room.list()), ['Heavier bench?', 'More rows?']);
 
@@ -247,10 +233,10 @@ test('two conversations deleted in one second are held together, and both come b
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_3');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await room.walkTo('thr_1');
   t.mock.timers.tick(400);
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   assert.equal(room.log().transient.text, '2 deleted.');
@@ -278,10 +264,10 @@ test('two windows left to run send two deletes, each on its own clock', async (t
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_3');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await room.walkTo('thr_1');
   t.mock.timers.tick(400);
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   // The second delete did not shorten the first's clock, and the first did not lengthen the second's.
@@ -302,7 +288,7 @@ test('the window follows the lifter off the screen that opened it, and the room 
   browserWith();
   const wire = threadsOnTheWire();
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
 
   // Off that conversation and onto another: the window is the room's, not the screen's, and walking
   // away settles nothing.
@@ -332,13 +318,13 @@ test('a conversation the window is holding is not walked back into', async (t) =
   browserWith();
   threadsOnTheWire();
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   // A back gesture may not open a room the room says is deleted, however readable the store still
   // finds it.
   assert.equal(findByClass(room.detail(), 'gym-thread-name').length, 0);
-  assert.equal(deleteVerb(room.detail()), undefined);
+  assert.equal(deleteAction(room.detail()), undefined);
   assert.equal(textOf(findByClass(room.detail(), 'gym-quiet')[0]), THREAD_ABSENT);
   assert.equal(THREAD_ABSENT, 'That conversation isn’t here any more.');
 
@@ -354,7 +340,7 @@ test('a conversation still open when its own window closes says it is gone, and 
   browserWith();
   threadsOnTheWire();
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await room.drain();
 
   // The clock fired under a screen still on that conversation: the read it holds is a conversation
@@ -368,7 +354,7 @@ test('a delete the store refuses says the conversation is still here, and the ro
   browserWith();
   const wire = threadsOnTheWire({ deleteStatus: 500 });
   const room = await coachRoom(t, 'thr_2');
-  deleteVerb(room.detail()).props.onClick();
+  deleteAction(room.detail())();
   await settle();
 
   t.mock.timers.tick(UNDO_MS);

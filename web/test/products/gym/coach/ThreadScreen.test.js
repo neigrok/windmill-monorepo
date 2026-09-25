@@ -36,40 +36,16 @@ function threadOnTheWire(stored) {
   };
 }
 
-test('a stored thread’s pending proposal row reads still waiting, before the review opens and after it closes', async (t) => {
+test('legacy thread proposal references render the shared inline proposal panel', async (t) => {
   browserWith();
   const { ThreadDetail } = await loadScreen('products/gym/coach/Threads.jsx');
   threadOnTheWire(thread());
   const screen = renderHook(t, () => ThreadDetail({ id: 'thr_1', log: quiet }));
   await settle();
-  const line = () => textOf(findByClass(screen.tree, 'gym-history-line')[0]);
-  assert.equal(line(), '2 changes to Push A · still waiting');
-  const row = findByClass(screen.tree, 'gym-history-row')[0];
-  row.props.onClick({ preventDefault() {} });
-  assert.equal(findByClass(screen.tree, 'gym-history-line').length, 1);
-  const review = screen.tree.props.children.find((child) => child && typeof child.type === 'function' && child.type.name === 'ProposalReview');
-  assert.ok(review, 'the review opens over the thread');
-  review.props.onClose();
-  assert.equal(line(), '2 changes to Push A · still waiting', 'closing decides nothing and the row says so');
-  assert.equal(line().includes('pending'), false);
-});
-
-test('a settled proposal row reads its state, in the chip’s words', async (t) => {
-  browserWith();
-  const { ThreadDetail } = await loadScreen('products/gym/coach/Threads.jsx');
-  threadOnTheWire(thread({
-    outcome: { kind: 'applied', changes: 2, routineId: 'rt_push', routine: 'Push A' },
-    proposals: [
-      { id: 'prop_1', state: 'applied', changeCount: 2, routineId: 'rt_push', routine: 'Push A', createdAt: 1_755_000_000_000 },
-      { id: 'prop_0', state: 'dismissed', changeCount: 1, routineId: 'rt_push', routine: 'Push A', createdAt: 1_754_000_000_000 },
-    ],
-  }));
-  const screen = renderHook(t, () => ThreadDetail({ id: 'thr_1', log: quiet }));
-  await settle();
-  assert.deepEqual(findByClass(screen.tree, 'gym-history-line').map(textOf), [
-    '2 changes to Push A · applied',
-    '1 change to Push A · turned down',
-  ]);
+  const { elementsOf } = await import('../harness.mjs');
+  const panels = elementsOf(screen.tree).filter((element) => element.type?.name === 'ProposalPanel');
+  assert.deepEqual(panels.map((panel) => panel.props.id), ['prop_1']);
+  assert.equal(findByClass(screen.tree, 'gym-history-row').length, 0);
 });
 
 test('history pages beyond 200 conversations using the server cursor and retains row identity', async (t) => {

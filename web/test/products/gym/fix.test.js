@@ -2,62 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  deletedLine, deleteFailure, fixDraftOf, fixFailure, fixOf, fixSubtitle, isSetNoteOverCap,
-  keepsItsOwnNumbers, NO_RPE_LABEL, RPE_MAX, RPE_MIN, RPE_RUNGS,
+  deletedLine, deleteFailure, fixFailure, fixOf, fixSubtitle, isSetNoteOverCap,
+  NO_RPE_LABEL, RPE_MAX, RPE_MIN, RPE_RUNGS,
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
-  showsSetNoteCount, UNDO_MS, withReps, withWeight,
+  showsSetNoteCount, UNDO_MS,
 } from '../../../src/products/gym/fix.js';
 import { GymError } from '../../../src/products/gym/gymApi.js';
-import { ladderLabels } from '../../../src/products/gym/logger/ladder.js';
+import { readSetFields, setFields } from '../../../src/products/gym/correction/correction.js';
+
+const actualDraft = (set) => readSetFields(setFields(set)).value;
 
 const SET = {
   id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4,
   kind: 'working', rpe: 8.5, note: 'felt heavy', completedAt: 1_900_000_300_000,
 };
 
-const SESSION = {
-  id: 'ses_1',
-  startedAt: 1_900_000_000_000,
-  finishedAt: 1_900_003_600_000,
-  plan: { routine: 'Push A', entries: [{ exerciseId: 'overhead-press', sets: 5, reps: 5, weightKg: 45 }] },
-};
-
 test('the draft opens on the set as it stands, every field the sheet can touch and no other', () => {
-  assert.deepEqual(fixDraftOf(SET), {
+  assert.deepEqual(actualDraft(SET), {
     weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy',
   });
-  assert.deepEqual(fixOf(SET, fixDraftOf(SET)), {});
+  assert.deepEqual(fixOf(SET, actualDraft(SET)), {});
   // An unrated set opens on null and an unwritten note on the empty string — what each field draws
   // as absent, and what tells `fixOf` neither was touched.
   const plain = { ...SET, rpe: undefined, note: undefined };
-  assert.deepEqual(fixDraftOf(plain), { weightKg: 47.5, reps: 4, rpe: null, note: '' });
-  assert.deepEqual(fixOf(plain, fixDraftOf(plain)), {});
-});
-
-test('the weight moves on the logger’s own ladder, which at 47.5 kg is −5 · −2.5 · +2.5 · +5', () => {
-  const draft = fixDraftOf(SET);
-  assert.deepEqual(ladderLabels(draft.weightKg), ['−5', '−2.5', '+2.5', '+5']);
-  const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withWeight(draft, -1, true), { weightKg: 42.5, reps: 4, ...rated });
-  assert.deepEqual(withWeight(draft, -1, false), { weightKg: 45, reps: 4, ...rated });
-  assert.deepEqual(withWeight(draft, 1, false), { weightKg: 50, reps: 4, ...rated });
-  assert.deepEqual(withWeight(draft, 1, true), { weightKg: 52.5, reps: 4, ...rated });
-});
-
-test('an assisted load steps by magnitude, so the sheet needs no sign to know which way is lighter', () => {
-  const assisted = fixDraftOf({ ...SET, weightKg: -20 });
-  assert.deepEqual(ladderLabels(assisted.weightKg), ['−5', '−2.5', '+1', '+2.5']);
-  const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withWeight(assisted, 1, false), { weightKg: -19, reps: 4, ...rated });
-  assert.deepEqual(withWeight(assisted, -1, false), { weightKg: -22.5, reps: 4, ...rated });
-});
-
-test('the rep stepper climbs from one and cannot be walked below it', () => {
-  const draft = fixDraftOf(SET);
-  const rated = { rpe: 8.5, note: 'felt heavy' };
-  assert.deepEqual(withReps(draft, 1), { weightKg: 47.5, reps: 5, ...rated });
-  assert.deepEqual(withReps({ ...draft, reps: 1 }, -1), { weightKg: 47.5, reps: 1, ...rated });
-  assert.deepEqual(withReps({ ...draft, reps: 0 }, -1), { weightKg: 47.5, reps: 1, ...rated });
+  assert.deepEqual(actualDraft(plain), { weightKg: 47.5, reps: 4, rpe: null, note: '' });
+  assert.deepEqual(fixOf(plain, actualDraft(plain)), {});
 });
 
 test('a fix carries the fields that moved and nothing else', () => {
@@ -70,13 +39,13 @@ test('a fix carries the fields that moved and nothing else', () => {
 test('a fix never names the kind, so the kind the store holds stands whatever the set was', () => {
   for (const kind of ['warmup', 'working', 'drop', 'failure']) {
     const set = { ...SET, kind };
-    assert.deepEqual(fixDraftOf(set), { weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy' });
-    assert.deepEqual(fixOf(set, { ...fixDraftOf(set), reps: 6 }), { reps: 6 });
+    assert.deepEqual(actualDraft(set), { weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy' });
+    assert.deepEqual(fixOf(set, { ...actualDraft(set), reps: 6 }), { reps: 6 });
   }
 });
 
 test('clearing an rpe or a note is NAMED, and a field nobody touched is not named at all', () => {
-  const draft = fixDraftOf(SET);
+  const draft = actualDraft(SET);
   // Named null clears an rpe; named empty clears a note. The store reads exactly that.
   assert.deepEqual(fixOf(SET, { ...draft, rpe: null }), { rpe: null });
   assert.deepEqual(fixOf(SET, { ...draft, note: '' }), { note: '' });
@@ -86,8 +55,8 @@ test('clearing an rpe or a note is NAMED, and a field nobody touched is not name
   // A set that never had either: the two absences are the draft's own, so nothing is named — an
   // empty note sent as `""` would clear a note on another device that wrote one since.
   const plain = { ...SET, rpe: undefined, note: undefined };
-  assert.deepEqual(fixOf(plain, fixDraftOf(plain)), {});
-  assert.deepEqual(fixOf(plain, { ...fixDraftOf(plain), reps: 6 }), { reps: 6 });
+  assert.deepEqual(fixOf(plain, actualDraft(plain)), {});
+  assert.deepEqual(fixOf(plain, { ...actualDraft(plain), reps: 6 }), { reps: 6 });
   // The wire carries the key: an absent field and a null one are different documents.
   assert.equal(JSON.stringify(fixOf(SET, { ...draft, rpe: null })), '{"rpe":null}');
   assert.equal(JSON.stringify(fixOf(SET, { ...draft, note: '' })), '{"note":""}');
@@ -101,7 +70,7 @@ test('the rpe band is six to ten by halves, counted off the band and led by no r
   assert.equal(NO_RPE_LABEL, 'Not rated');
 });
 
-test('a set note is a record, said so under the field, and refused here because the store’s reply cannot say why', () => {
+test('set-note descriptions and byte limits distinguish records from Coach instructions', () => {
   assert.equal(SET_NOTE_LABEL, 'Set note');
   assert.equal(SET_NOTE_CAPTION, 'A record for you — not an instruction to Coach.');
   assert.equal(SET_NOTE_BYTES, 4000);
@@ -132,39 +101,22 @@ test('a set note is a record, said so under the field, and refused here because 
   }
 });
 
-test('a weight that only differs below the grid has not moved', () => {
+test('untouched actual loads retain precision and a deliberately edited load is written', () => {
   const set = { ...SET, weightKg: 47.502 };
-  assert.deepEqual(fixOf(set, fixDraftOf(set)), {});
-  assert.deepEqual(fixOf(set, { ...fixDraftOf(set), weightKg: 47.5 }), {});
-});
-
-test('a set that reached the sheet with no weight at all is still not reported as moved', () => {
-  const weightless = { ...SET, weightKg: undefined };
-  assert.deepEqual(fixOf(weightless, fixDraftOf(weightless)), {});
-  assert.deepEqual(
-    fixOf(weightless, { ...fixDraftOf(weightless), reps: 6 }),
-    { reps: 6 },
-  );
+  assert.deepEqual(fixOf(set, actualDraft(set)), {});
+  assert.deepEqual(fixOf(set, { ...actualDraft(set), weightKg: 47.5 }), { weightKg: 47.5 });
 });
 
 test('an rpe the sheet has no seat for is left exactly where it stood', () => {
-  // The store's band is 1–10 and the sheet's is 6–10 by halves, so a set rated 5 by another client
-  // draws no selected seat. Untouched, it is not named on the wire and the rating survives.
   const odd = { ...SET, rpe: 5 };
-  assert.equal(fixDraftOf(odd).rpe, 5);
+  assert.equal(actualDraft(odd).rpe, 5);
   assert.equal(RPE_RUNGS.includes(5), false);
-  assert.deepEqual(fixOf(odd, fixDraftOf(odd)), {});
+  assert.deepEqual(fixOf(odd, actualDraft(odd)), {});
 });
 
 test('the sheet names the set it is over, and a set the store never numbered is named by its movement', () => {
   assert.equal(fixSubtitle('Overhead Press', SET), 'Overhead Press · set 3');
   assert.equal(fixSubtitle('Overhead Press', { ...SET, setNumber: undefined }), 'Overhead Press');
-});
-
-test('the line beside Delete names the routine, and says nothing at all when there is none', () => {
-  assert.equal(keepsItsOwnNumbers(SESSION), 'Push A keeps its own numbers');
-  assert.equal(keepsItsOwnNumbers({ ...SESSION, plan: null }), null);
-  assert.equal(keepsItsOwnNumbers({ ...SESSION, plan: { entries: [] } }), null);
 });
 
 test('the delete says which set left, in the log’s own spelling', () => {

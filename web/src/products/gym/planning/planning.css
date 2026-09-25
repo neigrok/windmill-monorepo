@@ -1,0 +1,145 @@
+.gym-root .gym-routines { gap: 12px; }
+.gym-root .gym-routine-rails { display: flex; gap: 16px; margin-top: 4px; }
+.gym-root .gym-routine-rails > span { display: flex; gap: 4px; }
+.gym-root .gym-routine-rails i { width: 2px; height: 10px; background: var(--gym-line-strong); }
+.gym-root .gym-plan-editor { width: 100%; }
+.gym-plan-draft > span { border-color: transparent !important; }
+.gym-root .gym-plan-editor > .gym-editor-head { margin: 24px 0 56px; justify-content: flex-start; }
+.gym-root .gym-plan-editor .gym-editor-name-field { flex: none; display: inline-grid; position: relative; max-width: calc(100% - 64px); }
+.gym-root .gym-plan-name-measure { grid-area: 1 / 1; visibility: hidden; white-space: pre; font: 700 32px/40px var(--font-display); }
+.gym-root .gym-plan-editor .gym-editor-name-field input { position: absolute; inset: 0; min-width: 0; width: 100%; font: 700 32px/40px var(--font-display); padding: 0; border: 0; background: transparent; }
+.gym-root .gym-plan-kicker { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--gym-ink-faint); }
+.gym-root .gym-plan-split { display: grid; grid-template-columns: minmax(0, 640px) minmax(280px, 420px); gap: 32px; }
+.gym-root .gym-plan-movements, .gym-root .gym-plan-detail { min-width: 0; }
+.gym-root .gym-plan-editor .gym-entry { border: 0; border-radius: 0; min-height: 56px; padding: 0; gap: 4px; background: transparent; flex-wrap: nowrap; height: 56px; }
+.gym-root .gym-plan-editor .gym-entry-body { border-left: 2px solid transparent; min-height: 56px; padding: 6px 12px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; height: 56px; box-sizing: border-box; }
+.gym-root .gym-plan-editor .gym-entry.is-selected .gym-entry-body { background: var(--gym-surface); border-left-color: var(--color-brand); }
+.gym-root .gym-plan-editor .gym-entry-drop { opacity: 0; }
+.gym-root .gym-plan-editor .gym-entry:hover .gym-entry-drop, .gym-root .gym-plan-editor .gym-entry:focus-within .gym-entry-drop { opacity: 1; }
+.gym-root .gym-plan-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 32px; }
+.gym-root .gym-plan-actions > a { color: var(--gym-ink-dim); text-decoration: none; }
+.gym-root .gym-target-pane .gym-target { width: 100%; }
+.gym-root .gym-target-pane .gym-sheet-head { padding: 0; margin: 0 0 24px; display: grid; grid-template-columns: 1fr auto; }
+.gym-root .gym-target-pane .gym-target-place { grid-column: 1; margin: 0; font-size: 13px; line-height: 18px; }
+.gym-root .gym-target-pane .gym-sheet-close { display: none; }
+.gym-root .gym-target-pane .gym-target-never { margin-top: -16px; }
+.gym-root .gym-target-pane .gym-sheet-section { margin: 0 0 24px; padding: 0; border: 0; }
+.gym-root .gym-target-pane .gym-sheet-section-head { margin-bottom: 8px; }
+.gym-root .gym-target-pane .gym-target-head > * { min-width: 0; flex: 1; }
+.gym-root .gym-target-pane .gym-ladder-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0; border: 0; border-radius: var(--radius-md); height: 44px; }
+.gym-root .gym-ladder-tick { width: 2px; height: 10px; background: var(--gym-line-strong); margin-right: 6px; order: -3; }
+.gym-root .gym-target-pane .gym-ladder-field { width: 64px; flex: 0 0 64px; }
+.gym-root .gym-target-pane .gym-ladder-field.is-load { order: -2; position: relative; margin-right: 16px; }
+.gym-root .gym-target-pane .gym-ladder-field.is-load::after { content: '×'; color: var(--gym-ink-faint); position: absolute; right: -14px; top: 10px; }
+.gym-root .gym-target-pane .gym-ladder-drop { margin-left: auto; opacity: 0; }
+.gym-root .gym-target-pane .gym-ladder-add { border: 1px dashed var(--gym-line-strong); border-radius: var(--radius-md); height: 44px; width: 100%; text-align: left; padding-left: 16px; }
+.gym-root .gym-target-pane .gym-target-done { display: none; }
+.gym-root .gym-picker.is-pane { position: static; width: 100%; max-width: none; max-height: 70vh; box-shadow: none; padding: 0; background: transparent; border: 0; }
+.gym-root .gym-plan-conflict { padding: 16px; margin-bottom: 24px; background: var(--gym-surface); border: 1px solid var(--gym-line-strong); border-radius: var(--radius-lg); }
+.gym-root .gym-plan-conflict h2, .gym-root .gym-plan-conflict h3 { font-size: 17px; }
+@media (min-width: 1200px) { .gym-root .gym-plan-editor { width: 1092px; }
+}
+@media (prefers-reduced-motion: no-preference) { .gym-plan-editor .gym-entry-body { transition: background 150ms; }
+}
+.gym-root .gym-plan-name { border: 0; outline: none; background: transparent; color: var(--gym-ink); width: 100%; }
+.gym-root .gym-plan-number { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gym-root .gym-plan-number label { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
+.gym-root .gym-plan-number-field { display: flex; align-items: center; min-height: 36px; border-bottom: 1px solid var(--gym-line-strong); }
+.gym-root .gym-plan-number input { background: transparent; width: 100%; min-width: 0; border: 0; border-radius: 0; outline: none; padding: 8px; color: var(--gym-ink); font: 400 16px/20px var(--font-mono); }
+.gym-root .gym-plan-number input:focus { box-shadow: 0 1px var(--color-brand); }
+.gym-root .gym-plan-number input[aria-invalid] { color: var(--alarm-ink); }
+.gym-root .gym-plan-number p { margin: 0; font-size: 12px; color: var(--alarm-ink); }
+.gym-root .gym-plan-add-movement { display: block; box-sizing: border-box; width: 100%; margin-top: 8px; padding: 0 20px; height: 56px; background: transparent; border: 1px dashed var(--gym-line-strong); border-radius: 12px; text-align: left; color: var(--gym-ink); font: 600 15px/22px var(--font-body); cursor: pointer; }
+
+.gym-root .gym-plan-home .gym-log-head { margin-bottom: 32px; }
+.gym-root .gym-plan-home:has(.gym-plan-empty) .gym-log-head { margin-bottom: 20px; }
+.gym-root .gym-plan-home .gym-head-doors { gap: 12px; }
+.gym-root .gym-plan-home .gym-door-past { border: 0; padding: 0; min-height: 0; color: var(--gym-ink-dim); }
+.gym-root .gym-plan-home .gym-routine { min-height: 105px; border: 1px solid var(--gym-line); align-items: center; }
+.gym-root .gym-plan-home .gym-routine-open { padding: 24px 0 24px 24px; gap: 10px; }
+.gym-root .gym-plan-home .gym-routine-card-head { display: flex; justify-content: space-between; gap: 16px; }
+.gym-root .gym-plan-home .gym-routine-name { font-size: 17px; line-height: 24px; font-weight: 700; }
+.gym-root .gym-plan-home .gym-routine-trained { font-size: 13px; color: var(--gym-ink-faint); white-space: nowrap; }
+.gym-root .gym-plan-home .gym-routine-card-body { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.gym-root .gym-plan-home .gym-routine-meta { font-size: 14px; line-height: 21px; }
+.gym-root .gym-plan-home .gym-routine-rails { margin: 0; gap: 8px; }
+.gym-root .gym-plan-home .gym-routine-rails i { background: var(--gym-ink-dim); }
+.gym-root .gym-plan-home .gym-routine > .wm-menu { align-self: flex-start; margin: 24px 12px 0; }
+.gym-root .gym-plan-home .gym-routine .wm-menu-open { border-left: 0; }
+.gym-root .gym-plan-editor .gym-entry-name { flex: none; font-size: 15px; line-height: 22px; }
+.gym-root .gym-plan-editor .gym-entry-target { padding: 0; min-height: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 18px; }
+.gym-root .gym-target-pane .gym-target-movement { font: 700 17px/24px var(--font-body); }
+.gym-root .gym-target-pane .gym-sheet-section-title { font: 600 12px/16px var(--font-body); text-transform: none; letter-spacing: 0; }
+.gym-root .gym-target-pane .gym-target-fields { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: flex-start; align-items: flex-end; gap: 24px; margin: 0; }
+.gym-root .gym-target-pane .gym-target-head { display: flex; flex: 0 1 244px; margin: 0; padding: 0; gap: 24px; border: 0; order: -1; }
+.gym-root .gym-target-pane .gym-target-head > :first-child { order: 1; }
+.gym-root .gym-target-pane .gym-ladder { gap: 4px; }
+.gym-root .gym-target-pane .gym-ladder-row:hover .gym-ladder-drop, .gym-root .gym-target-pane .gym-ladder-row:focus-within .gym-ladder-drop { opacity: 1; }
+.gym-root .gym-target-pane .gym-fill-open { min-height: 20px; position: relative; }
+.gym-root .gym-target-pane .gym-fill-open::before { content: ''; position: absolute; inset: -12px 0; }
+.gym-root .gym-plan-empty { height: 560px; box-sizing: border-box; border-radius: var(--radius-lg); background: var(--gym-surface); display: flex; align-items: center; justify-content: center; flex-direction: column; }
+.gym-root .gym-plan-empty p { margin: 0 0 24px; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
+.gym-root .gym-plan-editor > .gym-editor-head.is-new { justify-content: space-between; max-width: 640px; margin-bottom: 24px; }
+.gym-root .gym-plan-new-name { max-width: 640px; margin-bottom: 32px; }
+.gym-plan-new-name label { display: block; margin-bottom: 8px; color: var(--gym-ink-faint); font-size: 12px; }
+.gym-plan-new-name input { box-sizing: border-box; width: 100%; border: 0; border-bottom: 1px solid var(--gym-line-strong); border-radius: 0; padding: 8px 0; background: transparent; color: var(--gym-ink); font: 400 16px/24px var(--font-body); outline: none; }
+.gym-plan-new-name input:focus { border-bottom-color: var(--color-brand); }
+.gym-plan-save-area { display: flex; align-items: center; gap: 16px; }
+.gym-plan-save-area .gym-editor-missing { margin: 0; max-width: 240px; }
+.gym-root .gym-picker.is-pane .gym-picker-row { box-sizing: border-box; min-height: 56px; padding: 16px 0; font-size: 15px; font-weight: 400; flex-direction: row; justify-content: space-between; align-items: center; }
+.gym-root .gym-picker.is-pane .gym-picker-group { font: 400 12px/18px var(--font-body); letter-spacing: 0; text-transform: none; margin: 16px 0 0; }
+.gym-picker-plus { color: var(--gym-ink-faint); }
+.gym-picker-new { padding: 8px 0; margin-top: 16px; border: 0; background: transparent; color: var(--color-brand); font: 400 14px/22px var(--font-body); cursor: pointer; }
+.gym-root .gym-plan-home .wm-menu-list { width: 180px; min-width: 180px; box-sizing: border-box; padding: 8px; }
+.gym-root .gym-plan-home .wm-menu-item:last-child { color: var(--alarm-ink); }
+
+.gym-new-routine-small { display: none; }
+
+.gym-root .gym-plan-versions { width: 872px; max-width: 100%; }
+.gym-plan-version-intro { font-size: 14px; color: var(--gym-ink-dim); }
+.gym-plan-differences { max-width: 640px; margin-top: 32px; }
+.gym-plan-differences h2 { margin: 0 0 12px; color: var(--gym-ink-faint); font: 400 12px/16px var(--font-body); }
+.gym-plan-differences > div { display: flex; align-items: center; gap: 12px; min-height: 56px; box-sizing: border-box; margin-top: 8px; padding: 16px; border-radius: 12px; background: var(--gym-surface); font-size: 14px; }
+.gym-plan-change-values { color: var(--gym-ink-faint); font-family: var(--font-mono); }
+.gym-plan-change-values strong { color: var(--color-brand); font-weight: 400; }
+.gym-plan-differences small { margin-left: auto; color: var(--gym-ink-faint); font-size: 12px; }
+.gym-plan-version-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; }
+.gym-plan-version-columns h2 { padding-bottom: 12px; border-bottom: 1px solid var(--gym-line); font: 400 15px/22px var(--font-body); }
+.gym-plan-version-entry { padding: 8px 14px; }
+.gym-plan-version-entry p { margin: 0 0 4px; font-size: 14px; }
+.gym-plan-version-entry > span { font: 400 13px/18px var(--font-mono); color: var(--gym-ink-dim); }
+.gym-plan-version-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; }
+.gym-plan-version-actions a { color: var(--gym-ink-dim); text-decoration: none; font-size: 14px; }
+@media (max-width: 799px) {
+  .gym-root .gym-plan-split { display: block; }
+  .gym-plan-detail { display: none; }
+  .gym-plan-detail.is-open { display: block; position: fixed; inset: 0; z-index: 70; background: var(--gym-scrim); }
+  .gym-plan-detail.is-open > * { position: absolute; bottom: 0; left: 0; right: 0; background: var(--gym-surface); padding: 24px 16px; max-height: 88dvh; overflow: auto; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .gym-root .gym-target-pane .gym-sheet-close { display: block; grid-column: 2; grid-row: 1; }
+  .gym-root .gym-target-pane .gym-target-done { display: block; }
+  .gym-root .gym-plan-editor .gym-entry-drop { opacity: 1; }
+  .gym-root .gym-plan-editor .gym-editor-name-field input { font-size: 28px; line-height: 36px; }
+  .gym-root .gym-plan-editor > .gym-editor-head { margin-bottom: 24px; }
+  .gym-root .gym-plan-home .gym-routine { height: 94px; min-height: 94px; }
+  .gym-root .gym-plan-home .gym-routine-open { padding: 16px 0 16px 16px; gap: 10px; }
+  .gym-root .gym-plan-home .gym-routine-card-head { flex-direction: row; align-items: baseline; gap: 8px; }
+  .gym-root .gym-plan-home .gym-routine-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gym-root .gym-plan-home .gym-routine-trained { font-size: 12px; }
+  .gym-root .gym-plan-home .gym-routine-card-body { flex-wrap: nowrap; gap: 12px; }
+  .gym-root .gym-plan-home .gym-routine-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gym-root .gym-plan-home .gym-routine-rails { flex: none; }
+  .gym-root .gym-plan-home .gym-routine > .wm-menu { margin: 12px 6px 0; }
+  .gym-plan-save-area { align-items: flex-end; flex-direction: column; gap: 8px; }
+  .gym-plan-save-area .gym-editor-missing { max-width: 190px; text-align: right; }
+  .gym-root .gym-plan-editor .gym-plan-name-measure { font-size: 28px; line-height: 36px; }
+  .gym-root .gym-plan-home .gym-head-doors { gap: 8px; }
+  .gym-root .gym-target-pane .gym-ladder-drop { opacity: 1; }
+  .gym-root .gym-plan-empty { height: 500px; }
+  .gym-new-routine-wide { display: none; }
+  .gym-new-routine-small { display: block; margin-top: 24px; }
+  .gym-new-routine-small > a, .gym-root .gym-plan-empty > a { height: 54px; border-radius: 27px !important; }
+  .gym-root .gym-plan-editor > .gym-editor-head.is-new { justify-content: flex-start; }
+  .gym-root .gym-plan-home .gym-title { white-space: nowrap; }
+  .gym-root .gym-plan-detail.is-open > .gym-picker.is-pane { position: absolute; inset: auto 0 0; width: 100%; box-sizing: border-box; max-height: 88dvh; overflow: auto; background: var(--gym-surface); padding: 24px 20px; border-radius: 20px 20px 0 0; }
+  .gym-plan-version-columns { grid-template-columns: 1fr; }
+  .gym-plan-differences > div { flex-wrap: wrap; } }

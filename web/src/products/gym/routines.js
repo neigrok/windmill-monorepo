@@ -6,10 +6,8 @@
 
 import { round, snap } from './logger/ladder.js';
 import {
-  entryLabel, groupByExercise, isNeverTrained, OPEN_TARGET, proposalHref, schemeAgrees, shortDayLabel,
-  weekdayName, workingSetsOf,
+  entryLabel, groupByExercise, isNeverTrained, OPEN_TARGET, schemeAgrees, workingSetsOf,
 } from './log.js';
-import { conversationOf, historyLabel, isPending, sourceLabel } from './proposals.js';
 
 // THE ROUTINE TARGET'S BANDS, and nothing else's. A set may ask for 1–100 reps (Routine.cpp:23) and a
 // scheme holds 1–20 sets; the LIVE LOGGER's reps band is 1–99 and lives in logger/entry.js, which
@@ -407,41 +405,31 @@ export function entryPlaceLabel(index, count, routineName) {
   return `${index + 1} of ${count} · ${named}`;
 }
 
-// The count is the store's `movements` — the lines the routine was created with — and is absent where
-// none was stored; today's entry count is not a substitute. Past six days the weekday alone repeats.
-const WEEKDAY_MS = 6 * 86400000;
-
-export function builtLabel(routine, now = Date.now()) {
-  const created = (routine?.history ?? []).find((row) => row.kind === 'created');
-  if (!created) return null;
-  const when = now - created.at >= WEEKDAY_MS ? shortDayLabel(created.at) : weekdayName(created.at);
-  if (created.movements == null) return `built ${when}`;
-  const movements = created.movements === 1 ? '1 movement' : `${created.movements} movements`;
-  return `built ${when} · ${movements}`;
-}
-
-// Two kinds of row, newest first, the `created` row always last and always there. A created row with
-// no `by` is the lifter's own hand, and the absence is the whole claim.
-export function historyRows(routine) {
-  return (routine?.history ?? []).map((row, index) => {
-    if (row.kind === 'created') {
-      const what = row.by == null ? 'created by you' : `created by ${sourceLabel({ door: row.by })}`;
-      const movements = row.movements == null ? null : `${row.movements} movements`;
-      return {
-        key: `created-${index}`,
-        pending: false,
-        href: null,
-        line: [shortDayLabel(row.at), what, movements].filter((part) => part != null).join(' · '),
-      };
+export function routineConflictRows(base, draft, saved) {
+  const entriesByPlace = (entries) => {
+    const count = new Map();
+    return new Map(entries.map((entry) => {
+      const occurrence = (count.get(entry.exerciseId) ?? 0) + 1;
+      count.set(entry.exerciseId, occurrence);
+      return [`${entry.exerciseId}:${occurrence}`, entry];
+    }));
+  };
+  const original = entriesByPlace(base.entries);
+  const reading = (entry) => {
+    const sets = entry.sets && !schemeAgrees(entry.sets) ? entry.sets.map((set) => `${set.weightKg ?? 'last'} × ${set.reps ?? 'max'}`).join(' · ') : entryLabel(entry);
+    return `${sets}${entry.restSeconds == null ? '' : ` · rest ${entry.restSeconds}s`}`;
+  };
+  return [['Yours', draft], ['Saved', saved]].flatMap(([source, version]) => {
+    const rows = [];
+    if (base.name !== version.name) rows.push({ source, label: 'Name', before: base.name, after: version.name });
+    const next = entriesByPlace(version.entries);
+    const sameMovements = original.size === next.size && [...original.keys()].every((key) => next.has(key));
+    if (sameMovements && [...original.keys()].join('|') !== [...next.keys()].join('|')) rows.push({ source, label: 'Order', before: 'Original order', after: 'Reordered' });
+    for (const key of new Set([...original.keys(), ...next.keys()])) {
+      const before = original.get(key), after = next.get(key);
+      if (before && after && reading(before) === reading(after)) continue;
+      rows.push({ source, exerciseId: after?.exerciseId ?? before.exerciseId, before: before ? reading(before) : 'Not in routine', after: after ? reading(after) : 'Removed' });
     }
-    // `source.thread` absent means there is nothing to open; the row still names the door.
-    return {
-      key: row.proposal.id,
-      pending: isPending(row.proposal),
-      href: proposalHref(row.proposal.id),
-      thread: conversationOf(row.proposal.source),
-      line: historyLabel(row.proposal),
-    };
+    return rows;
   });
 }
-

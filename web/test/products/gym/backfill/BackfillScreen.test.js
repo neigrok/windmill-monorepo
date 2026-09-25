@@ -274,7 +274,7 @@ test('Save writes the whole workout in one request, reads Saved for 900ms, then 
   assert.deepEqual(said, []);
 
   t.mock.timers.tick(900);
-  assert.equal(window.location.hash, `#/gym/session/${stored.id}`);
+  assert.equal(window.location.hash, `#/gym/session/${stored.id}?from=%23%2Fgym%2Flog`);
   assert.deepEqual(said, [['Push A is in the log.', 'Undo']]);
 });
 
@@ -307,7 +307,7 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
   saveButton(view.tree).props.onClick();
   await settle();
   t.mock.timers.tick(900);
-  const saved = window.location.hash.slice('#/gym/session/'.length);
+  const saved = window.location.hash.slice('#/gym/session/'.length).split('?')[0];
   assert.deepEqual(said.map(([text, action]) => [text, action.label]), [['Free session is in the log.', 'Undo']]);
   said[0][1].run();
   assert.equal(window.location.hash, '#/gym/log');
@@ -492,7 +492,7 @@ test('a save whose reply was lost, then a time moved and saved again, lands once
   assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00'], 'the note reads what the store holds');
   assert.equal(textOf(saveButton(view.tree)), 'Saved · 9 sets');
   t.mock.timers.tick(900);
-  assert.equal(window.location.hash, `#/gym/session/${first.id}`);
+  assert.equal(window.location.hash, `#/gym/session/${first.id}?from=%23%2Fgym%2Flog`);
   assert.deepEqual(said.slice(1), [['Push A was already in the log — the changes made after that save were not written.', 'Undo']]);
 });
 
@@ -665,6 +665,7 @@ test('the log’s door to a past workout is a plain link, open while a workout r
   const running = { id: 'ses_live', startedAt: NOW };
   const view = renderHook(t, () => LogList({ log: roomLog({ session: running, summaries: [running] }), onSignIn: () => {} }));
   assert.deepEqual(findByClass(view.tree, 'gym-door-past').map((door) => [door.type, door.props.href, textOf(door)]), [
+    ['a', '#/gym/backfill', 'Add past workout'],
     ['a', '#/gym/backfill', 'Add past workout'],
   ]);
 });

@@ -131,6 +131,114 @@ test('the empty room has a composer and only History and More navigation', async
   assert.equal(findByClass(drawn, 'gym-coach-note').length, 0);
 });
 
+test('an open workout replaces the composer with truthful read-only context while preserving historical messages', async (t) => {
+  browserWith();
+  const { CoachRoom, CoachBody, CoachMessage, WorkoutInProgress } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const log = roomLog({ session: { id: 'ses_live', startedAt: 1000, plan: { routine: 'Push', entries: [{ exerciseId: 'bench', sets: [{ weightKg: 60, reps: 8 }, { weightKg: 60, reps: 8 }] }] } },
+    catalog: [{ id: 'bench', name: 'Bench Press' }], sets: [{ id: 'set_1', exerciseId: 'bench', weightKg: 62.5, reps: 7, kind: 'working', setNumber: 1, completedAt: 2000 }] });
+  const room = renderHook(t, () => CoachRoom({ log, accountId: 'alice' }));
+  assert.equal(elementsOf(room.tree).some((element) => element.type === CoachBody), false);
+  const refused = elementsOf(room.tree).find((element) => element.type === WorkoutInProgress);
+  const body = renderHook(t, () => refused.type(refused.props)).tree;
+  assert.equal(findByClass(body, 'gym-coach-compose').length, 0);
+  assert.deepEqual(elementsOf(body).filter((element) => element.type === 'button').map(textOf), ['View workout']);
+  assert.equal(textOf(findByClass(body, 'gym-coach-workout-card')[0]), `Workout in progressYour workout is on your phone. This room is here when it is over.Push · started ${new Date(1000).getHours().toString().padStart(2, '0')}:${new Date(1000).getMinutes().toString().padStart(2, '0')} · 1 set loggedView workoutNotes ›Notes are yours to write while you train. Nothing here reads a log that is still being written.`);
+  assert.deepEqual(elementsOf(body).filter((element) => element.type === 'li').map(textOf), ['62.5 × 7', '60 × 8']);
+  const turn = { position: 0, from: 'ask', text: 'A saved answer.', receipt: { proposals: ['prop_1'] } };
+  const history = renderHook(t, () => CoachRoom({ log, accountId: 'alice', initialThread: { id: 'thr_old', turns: [turn] } }));
+  assert.equal(elementsOf(history.tree).find((element) => element.type === CoachMessage).props.turn, turn);
+  const historicalBody = elementsOf(history.tree).find((element) => element.type === CoachBody);
+  assert.equal(renderHook(t, () => historicalBody.type(historicalBody.props)).tree.type, WorkoutInProgress);
+});
+
+test('workout refusal pauses sends, retries and photo uploads without losing the draft or request', async (t) => {
+  browserWith();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let live = true;
+  const calls = [];
+  const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', workoutInProgress: live,
+    initialThread: { id: 'thr_old', turns: [], generation: { id: 'gen_1', requestId: 'ask_1', question: 'What next?', at: 100, status: 'running' } },
+    api: { ask: async (...args) => { calls.push(args.slice(0, 3)); return { answer: 'Keep going.', read: { sets: 1, sessions: 1, weeks: 1 } }; } } }));
+  await room.tree.send();
+  await room.tree.selectPhoto({});
+  assert.equal(await room.tree.uploadPhoto({ id: 'photo_1' }), false);
+  t.mock.timers.tick(30_000); await settle();
+  assert.deepEqual(calls, []);
+  assert.equal(room.tree.draft, 'What next?');
+  assert.equal(room.tree.request.requestId, 'ask_1');
+  live = false; room.redraw();
+  t.mock.timers.tick(1000); await settle();
+  assert.deepEqual(calls, [['thr_old', 'What next?', 'ask_1']]);
+  assert.equal(room.tree.request, null);
+});
+
+test('a workout starting during photo load or upload preserves the request and stops the next remote operation', async (t) => {
+  for (const pauseAt of ['load', 'upload']) {
+    browserWith();
+    let live = false;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const calls = [];
+    const blob = new Blob(['PNG!']);
+    const photo = { id: 'img_saved', mediaType: 'image/png', bytes: blob.size, width: 2, height: 3 };
+    const request = { thread: 'thr_saved', requestId: 'ask_saved', question: 'Review this', at: 100, attachmentIds: [photo.id] };
+    window.localStorage.setItem(coachDraftKey('alice', 'thr_saved'), JSON.stringify({ thread: 'thr_saved', turns: [], draft: request.question, photo, request }));
+    const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', initialThread: { id: 'thr_saved', turns: [] }, workoutInProgress: live,
+      photos: { load: async () => { if (pauseAt === 'load') await gate; return blob; }, remove: async () => calls.push('remove') },
+      api: { uploadCoachPhoto: async () => { calls.push('upload'); if (pauseAt === 'upload') await gate; return photo; },
+        ask: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
+    }));
+    const send = room.tree.send();
+    await settle();
+    live = true; room.redraw(); release();
+    await send;
+    assert.deepEqual(calls, pauseAt === 'load' ? [] : ['upload'], pauseAt);
+    assert.equal(room.tree.draft, 'Review this');
+    assert.deepEqual(room.tree.request, request);
+    assert.equal(room.tree.photo.id, photo.id);
+    assert.equal(room.tree.photo.status, pauseAt === 'load' ? 'draft' : 'ready');
+    assert.deepEqual(room.tree.turns.map((turn) => turn.text), ['Review this']);
+    assert.deepEqual(readCoachDraft('alice', 'thr_saved').request, request);
+    live = false; room.redraw();
+    await room.tree.send(); await settle();
+    assert.deepEqual(calls, ['upload', 'ask', 'remove']);
+    assert.equal(room.tree.request, null);
+    room.unmount();
+  }
+});
+
+test('a photo prepared after training starts is retained locally and only uploads after training ends', async (t) => {
+  browserWith();
+  let live = false;
+  let release;
+  const prepared = new Promise((resolve) => { release = resolve; });
+  const blobs = new Map();
+  const calls = [];
+  const blob = new Blob(['PNG!']);
+  const metadata = { mediaType: 'image/png', bytes: blob.size, width: 2, height: 3 };
+  const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', workoutInProgress: live,
+    photos: { prepare: async () => prepared, save: async (account, thread, id, bytes) => blobs.set(id, bytes),
+      load: async (account, thread, id) => blobs.get(id), remove: async (account, thread, id) => blobs.delete(id) },
+    api: { uploadCoachPhoto: async (thread, id) => { calls.push('upload'); return { ...metadata, id }; },
+      ask: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
+  }));
+  room.tree.setDraft('Review this');
+  const selection = room.tree.selectPhoto(blob);
+  live = true; room.redraw(); release({ ...metadata, blob });
+  await selection;
+  assert.deepEqual(calls, []);
+  assert.equal(room.tree.draft, 'Review this');
+  assert.equal(room.tree.photo.status, 'draft');
+  assert.equal(blobs.get(room.tree.photo.id), blob);
+  assert.equal(readCoachDraft('alice').photo.id, room.tree.photo.id);
+  await room.tree.send();
+  assert.deepEqual(calls, []);
+  live = false; room.redraw();
+  await room.tree.send();
+  assert.deepEqual(calls, ['upload', 'ask']);
+  assert.equal(room.tree.photo, null);
+});
+
 test('both speakers copy only visible text with line breaks through long press, context menu and keyboard', async (t) => {
   browserWith();
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -520,4 +628,16 @@ test('a missing photo refusal reuploads retained bytes and retries the same immu
     assert.equal(room.tree.photo, null);
     room.unmount();
   }
+});
+
+test('a stored conversation exposes its withheld delete action through More', async (t) => {
+  browserWith();
+  const { CoachRoom } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  let removed = 0;
+  const room = renderHook(t, () => CoachRoom({ log: roomLog(), accountId: 'alice', initialThread: { id: 'thread', turns: [] }, onDelete: () => removed++ }));
+  const menu = elementsOf(room.tree).find((element) => element.type?.name === 'Menu');
+  assert.deepEqual(menu.props.items.map((item) => item.label), ['Notes', 'Connected log', 'Account', 'Delete this conversation', 'New chat']);
+  menu.props.items.find((item) => item.label === 'Delete this conversation').run();
+  assert.equal(removed, 1);
+  assert.equal(findByClass(room.tree, 'gym-thread-delete-verb').length, 0);
 });

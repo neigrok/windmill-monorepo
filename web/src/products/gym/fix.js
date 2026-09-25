@@ -1,6 +1,5 @@
 import { failureReason } from './gymApi.js';
-import { routineNameOf, setLoadLabel } from './log.js';
-import { bump, bumpReps, round } from './logger/ladder.js';
+import { setLoadLabel } from './log.js';
 
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so
 // the band is the only thing this file states — and the leading seat is no rpe at all, because a set
@@ -16,8 +15,7 @@ export const RPE_RUNGS = Array.from(
 export const NO_RPE_LABEL = 'Not rated';
 
 // A SET NOTE is a record of what a set felt like, and the prompt reads it as data. A note (the Notes
-// screen) is directive text Coach follows. The caption is what keeps the two apart on this screen,
-// and it is the reason the field exists here rather than under the word `note` alone.
+// screen) is directive text Coach follows. The field description keeps the two apart.
 export const SET_NOTE_LABEL = 'Set note';
 export const SET_NOTE_CAPTION = 'A record for you — not an instruction to Coach.';
 
@@ -49,9 +47,6 @@ export function isSetNoteOverCap(note) {
   return setNoteBytes(note) > SET_NOTE_BYTES;
 }
 
-// The field takes the keystroke and says why it cannot be saved; the Save waits for it. The sentence
-// takes the shape the store's own notes bound already says — `a note runs to 500 bytes`, which
-// reaches this screen as a refusal detail — and is short enough to stand beside the counter at 390px.
 export function setNoteRefusal(note) {
   if (!isSetNoteOverCap(note)) return null;
   return `A set note runs to ${SET_NOTE_BYTES} bytes.`;
@@ -62,38 +57,9 @@ export function setNoteRefusal(note) {
 // transient itself when its last clock closes, and never on a sentence's clock.
 export const UNDO_MS = 9000;
 
-// Rounded onto the ladder's grid so comparisons against the stored value are like for like. An
-// unrated set opens on null and an unwritten note on the empty string, which is what each field
-// draws as absent — and what `fixOf` compares against to know neither was touched.
-export function fixDraftOf(set) {
-  return {
-    weightKg: round(set.weightKg),
-    reps: set.reps,
-    rpe: set.rpe ?? null,
-    note: set.note ?? '',
-  };
-}
-
-export function withWeight(draft, direction, big) {
-  return { ...draft, weightKg: bump(draft.weightKg, direction, big) };
-}
-
-// The store refuses reps < 1.
-export function withReps(draft, direction) {
-  return { ...draft, reps: bumpReps(draft.reps, direction) };
-}
-
-// Only changed fields go on the wire; omitted ones keep their stored value. A set's kind is not
-// correctable here, so a fix never names it and the stored kind stands.
-// `Object.is` on the weight so a NaN on both sides is not reported as moved.
-//
-// The two nullable fields are where an omission and a clearing must not be confused: an rpe is
-// cleared by NAMING it null and a note by naming it the empty string, while a field nobody touched
-// is not named at all. The store reads exactly that — `rpeNamed` on one side, an empty note on the
-// other (Training.h `SetFix`).
 export function fixOf(set, draft) {
   const fix = {};
-  if (!Object.is(draft.weightKg, round(set.weightKg))) fix.weightKg = draft.weightKg;
+  if (!Object.is(draft.weightKg, set.weightKg)) fix.weightKg = draft.weightKg;
   if (draft.reps !== set.reps) fix.reps = draft.reps;
   if (draft.rpe !== (set.rpe ?? null)) fix.rpe = draft.rpe;
   if (draft.note !== (set.note ?? '')) fix.note = draft.note;
@@ -103,12 +69,6 @@ export function fixOf(set, draft) {
 export function fixSubtitle(movement, set) {
   if (set.setNumber == null) return movement;
   return `${movement} · set ${set.setNumber}`;
-}
-
-export function keepsItsOwnNumbers(session) {
-  const routine = routineNameOf(session);
-  if (!routine) return null;
-  return `${routine} keeps its own numbers`;
 }
 
 export function deletedLine(set) {

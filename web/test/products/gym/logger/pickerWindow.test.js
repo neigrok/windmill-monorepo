@@ -122,3 +122,31 @@ test('a picker opened before the log answers freezes on the first read that ANSW
     'Face Pull', 'Back Squat', 'Bench Press', 'Deadlift', 'Overhead Press', 'Barbell Row',
   ]);
 });
+
+test('planning offers six named shortcuts and searches the full catalog before creating a movement', async (t) => {
+  browserWith();
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ movements: [] }) });
+  const { MovementPicker } = await loadScreen('products/gym/logger/MovementPicker.jsx');
+  const catalog = [
+    { id: 'back-squat', name: 'Back Squat' }, { id: 'bench-press', name: 'Bench Press' },
+    { id: 'deadlift', name: 'Deadlift' }, { id: 'overhead-press', name: 'Overhead Press' },
+    { id: 'barbell-row', name: 'Barbell Row' }, { id: 'chin-up', name: 'Chin Up' },
+    { id: 'face-pull', name: 'Face Pull' },
+  ];
+  let query = '';
+  const picked = [];
+  const screen = renderHook(t, () => MovementPicker({ pane: true, catalog, query,
+    onQuery: (value) => { query = value; }, onPick: (id) => picked.push(id), onCreate: () => {}, onClose: () => {} }));
+  await settle();
+  const rows = () => elementsOf(screen.tree).filter((element) => element.props?.className === 'gym-picker-row');
+  assert.deepEqual(rows().map((row) => elementsOf(row).find((element) => element.props?.className === 'gym-picker-named').props.children[0]), catalog.slice(0, 6).map((row) => row.name));
+  assert.equal(elementsOf(screen.tree).some((element) => element.props?.className === 'gym-picker-group'), true);
+  assert.equal(elementsOf(screen.tree).some((element) => element.props?.className === 'gym-picker-meta'), false);
+  query = 'face'; screen.redraw();
+  assert.equal(rows().length, 1);
+  rows()[0].props.onClick();
+  assert.deepEqual(picked, ['face-pull']);
+  elementsOf(screen.tree).find((element) => element.props?.className === 'gym-picker-new').props.onClick();
+  const creator = elementsOf(screen.tree).find((element) => element.type?.name === 'NewMovement');
+  assert.deepEqual(creator.props.draft, { name: 'face', equipment: 'barbell' });
+});

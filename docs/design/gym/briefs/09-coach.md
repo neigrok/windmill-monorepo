@@ -23,28 +23,23 @@ nothing, because it is a record.
 
 ## The loop — four beats
 
-The same four beats on every surface. Only beat two changes container.
+The same four beats on every surface. Web keeps the diff, decision and receipt inline; the phones
+open a review sheet.
 
 ### One · the turn
 
-Coach answers in prose. If it minted something, **one** proposal card follows, carrying the summary
-it wrote, the counted changes, and a single affordance: **Review**.
+Coach answers in prose. On web, one inline proposal follows with the routine name, counted changes,
+full diff, **Apply** and **Turn this down**. The decision replaces its actions with a receipt in the
+same place. A routines-home preview opens the inline panel through **Review**.
 
-The card carries no Apply button — `../../guidelines/thumb-reach.md` forbids a committing button
-inside a card in a scroll — and Review is a link rather than a filled button.
+On the phones, the proposal card carries its summary, counted changes and **Review**. It has no
+Apply button: `../../guidelines/thumb-reach.md` keeps the committing action in the review sheet's
+pinned band. Android's skim shows at most three changed rows and a *+ N more* line; iOS's shows no
+diff rows. The complete routine and kept runs belong to the sheet.
 
-**The card is a skim; the document is drawn once, behind Review.** Where a card draws diff rows at
-all it draws the **changed** ones, at most three, with one *+ N more* line beneath them: the web's
-and Android's do, iOS's draws none. Kept rows, kept runs and the whole run the routine takes on
-belong to the review sheet, which is the screen that asks for a decision.
-
-**How much a proposal is, is one phrase, and a removal is not a count.** The rule is a **slot**, not
-a requirement on every card: where a card says how much, it says it on its own line under the
-summary and never in the eyebrow. The Coach card says it, because the proposal has just been minted
-and nothing else on that turn measures it. On the routines home the phones' standing cards say it
-too, and the web's says the **consequence** instead — `intentLine`, what applying would do to the
-routine the card is sitting beside — and says how much nowhere; whether that card owes the phrase as
-well is a copy owner's call the ledger holds (`3u`).
+**The count describes the proposed change.** Web's inline heading combines the routine name and
+counted phrase; routines-home previews show changed rows or the proposal summary. Phone cards
+place the counted phrase on its own line below the summary. A removal reads *a removal*.
 
 **A removal reads *a removal* and never a count.** The domain forces `standing == 0` for a removal,
 so every base entry arrives as a `removed` change and a count would say *12 changes* for a proposal
@@ -55,28 +50,17 @@ still count a removal and are owed the branch: iOS's two proposal cards, which d
 `changes` beside *still waiting*, and every surface's conversation rows, whose wire rows carry no
 intent to ask (ledger `3l`, which also records the one card that keeps the phrase in its eyebrow
 row). Whether that line names the routine a second time is a copy owner's call the ledger holds
-(`3j`): the web's card draws the phrase alone, Android's draws *`<routine>` · `<counted>` ·
-waiting*, and the eyebrow above both has already said the name.
+(`3j`): Android draws *`<routine>` · `<counted>` · waiting* after its eyebrow has named the routine. Web's inline heading names the routine once beside the count.
 
-**The eyebrow names the routine — `Proposal · <routine name>` — on the card and on the review sheet,
-on all three surfaces**, and on Android in the thread as well. Who wrote it is a different fact with
-its own home: the review sheet's header, and the routine's history row. The name is a lifter-typed
-string of up to 60 code points, so the eyebrow **holds one line**: the name truncates and the stamp
-beside it keeps its room. **The review sheet's head is the one place it may take two.** An eyebrow
-shares its row with a stamp and a clipped name there costs a reader nothing they cannot get one tap
-away; the head is the screen the routine is decided on, and clipping the name hides the subject of
-the decision.
+**The proposal names its routine.** Web's inline heading reads *<routine> · <counted>*; its routine
+name truncates on one line. Phone cards and review sheets use *Proposal · <routine name>*; the
+review sheet's heading may take two lines. The source attribution remains separate from the routine
+name.
 
-**The promise under the card is drawn while the proposal waits, and dropped once it is decided.**
-*Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.* is
-a claim about what Apply will do, and it is spent the moment Apply has been taken or turned down.
-What survives the decision is the door to the rows the card counted, which every surface keeps.
-Built on all three: the web's `{pending && …}` in `CoachProposal`, `(found?.state ?? .pending) ==
-.pending` around `Text(Ask.proposalNote)` in `AskScreen.swift`, and `if (proposal.isPending)` around
-`Ask.promise` in `ui/AskScreen.kt`. **A decision is the only thing that spends it, and an unread
-proposal is not one.** Where the room cannot yet name the state — the read in flight, or failed, or
-the row gone from the log — the web and Android draw no card to promise on, and iOS, whose card is
-built from the id alone, keeps the promise standing over the Review door it is offering.
+**Pending promises disappear when the decision is settled.** Web draws *Logged sets stay unchanged.*
+for a revision, and the intent-specific atomic promise for a removal. Its actions become the server's
+applied or turned-down receipt. Phone cards retain their promise while pending and remove it after
+the decision. A read still in flight is not a settled decision.
 
 **One proposal per turn.** An answer *can* mint several, and two on the same routine kill each other:
 the supersede runs before the second lands, so the first is dead while both ids come back. A second
@@ -94,49 +78,46 @@ Every surface shows the server's sentence as sent; local words only for a reply 
 
 ### Two · the review
 
-Review opens the diff **over** the conversation — an iOS sheet, an Android modal bottom sheet **with**
-its drag handle, a web dialog. Never a push: a push says *you have left*, a sheet says *you are
-deciding, and you will be back*. The loop is the product, so the navigation has to agree with it.
+Web renders the complete diff inline with collapsed kept runs, one Apply button, its atomic promise
+and a plain **Turn this down** action. It has no review dialog or scroll-to-end gate. Both actions
+are disabled during the request; the server's refusal stays beside the proposal.
+
+On the phones, Review opens the diff **over** the conversation: an iOS sheet or Android modal bottom
+sheet with its drag handle. Closing returns to the same conversation without deciding. The following
+sheet and scroll-gate rules apply to iOS and Android.
 
 **No fixed partial detent.** A routine holds up to fifty entries and the summary runs to four hundred
 model-written characters, so the diff is unbounded — and a half-height detent does not grow with the
 system's text size, so at the larger accessibility sizes the visible diff goes to zero while Apply
 stays enabled. The iOS sheet is `.large` only; Android's skips the partial state. **Apply is never
-reachable while the diff is clipped:** on every surface it stays disabled until the diff has been
+reachable while the diff is clipped:** on both phones it stays disabled until the diff has been
 scrolled to its end, or fits without scrolling. A kept run unfolding past the height already seen
 clips the diff again, so it takes Apply away until the new end is seen — and scrolling back up never
-re-locks it, because that end has been seen. **All three surfaces spend that rule**, each with its
-own measure of the end: `Dialog`'s `seenHeight` on the web, `seenExtent` on Android,
-`ReviewGate.seenAt` on iOS. The web's design-system `Dialog` carries the gate for any dialog that
-asks for it.
+re-locks it, because that end has been seen. **Both phones enforce that rule**, with `seenExtent` on Android and `ReviewGate.seenAt` on iOS.
 
 **And the gate says why, on the screen and not only to a screen reader:**
 
 > **Scroll to the end to apply.**
 
-Six words, byte-identical on all three (`APPLY_HINT` in `proposals.js`, `Proposal.applyHint` in
-`Proposal.swift` and `Proposal.kt`), inside `../../guidelines/text-budget.md`'s refusal row
+Six words, byte-identical on both phones (`Proposal.applyHint` in `Proposal.swift` and `Proposal.kt`), inside `../../guidelines/text-budget.md`'s refusal row
 because it names the way out rather than only refusing. It is driven off the **gate alone**, never
 off whatever else has Apply inert: while an apply request is in flight Apply is shut for a different
 reason, and a sentence bound to the disabled state would tell a lifter to read further while the
 write is already going. So it is the sentence while the diff is unseen and nothing once it has been
 seen, whatever the request is doing.
 
-**Both channels, on every surface: the pixels, and the control that is refusing.** iOS hands
+**Both channels, on both phones: the pixels, and the control that is refusing.** iOS hands
 VoiceOver the button's `accessibilityHint` and hides the drawn row from the semantics tree, so the
 sentence is said once. Android puts it on the Apply box as `stateDescription` **and** leaves the
 drawn row in the tree while the gate is shut, so TalkBack meets it twice — the same fact on one
-channel twice, which is what this programme is against (ledger `4m`). The web points Apply's
-`aria-describedby` at the drawn line itself, so there is one node and one reading. The web's Apply is
-**`aria-disabled` with a no-op handler and never `disabled`**, because `disabled` drops it out of the
-tab order and a keyboard reader would never reach the control whose refusal is written beneath it.
+channel twice, which is what this programme is against (ledger `4m`).
 
 **Kept rows have one shape everywhere.** Changed rows at full weight; every run of kept rows as a
 collapsed count **in its own place** — *"and 7 lines unchanged"*, *"and 1 line unchanged"* — tappable
 to unfold where it stands. The rows are the document as well as the diff, and a lifter deciding needs
 to see the run the routine takes on, not only what moved, in the order it will apply.
 
-**The model's prose is attributed to whoever wrote it.** The summary sits in a quoted block under a
+**The phone review attributes the model's prose to whoever wrote it.** The summary sits in a quoted block under a
 kicker, visually separate from the counted rows: **Coach wrote:** for a proposal that came through the
 Coach door; **<name> wrote:** for one that came over MCP from a source with a name — the agent's own,
 else the connection's, as the byline *from Claude Desktop* already reads; **Your agent wrote:** for
@@ -146,7 +127,7 @@ case, never uppercased. The sheet never puts two kinds of truth under one pair o
 **Three exits, not two.** Closing the sheet — swipe, scrim, back, × — **decides nothing**: the proposal
 stays pending, and the card it was opened from reads *still waiting*.
 
-**The band holds one button, and it is Apply.** Its label carries the count the store will apply —
+**The phone review band holds one button, and it is Apply.** Its label carries the count the store will apply —
 **Apply all N**, **Apply** when N is 1, **Remove <routine>** for a removal — and never a number the
 screen counted for itself. Turning a proposal down is a **plain text row beneath it**, not the left
 half of a pair. A pair puts the one irreversible act exactly where a lifter's hand expects *cancel*,
@@ -156,7 +137,7 @@ single primary, which is also what the reach law asks for; two full-strength but
 weight is a failure to decide. The atomic promise — *All N or none. Nothing is applied until you
 tap.* — is always drawn, never toggled, so the band's height never changes.
 
-**The band's order is four things, and it is the same four on all three surfaces: Apply · the gate's
+**The phone band's order is four things on iOS and Android: Apply · the gate's
 refusal · the atomic promise · turn down.** The promise is inside the band because a promise that
 scrolls with the diff is not pinned, and above turn-down because below it puts the last word under
 the irreversible act.
@@ -164,27 +145,25 @@ the irreversible act.
 **The refusal's slot is held open in both states**, empty once the diff has been seen and empty
 again while the apply request runs, so Apply never moves under a thumb already reaching for it. It
 holds in the returning direction too — a kept run unfolding past the end already seen shuts the gate
-again on every surface, and the sentence comes back into a slot that was already its size.
+again on both phones, and the sentence comes back into a slot that was already its size.
 
-**"Turn this down"** stays destructive and stays confirmed, and the confirmation's words are pinned
-on every surface: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
-record.* / **Turn down** (destructive) · **Keep it**.
+**"Turn this down"** is confirmed on iOS and Android. The phone confirmation reads: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
+record.* / **Turn down** (destructive) · **Keep it**. Web settles directly from the inline action and replaces it with the turned-down receipt; it adds no confirmation dialog.
 
-**One word for one act.** Wherever a lifter reads the settled state of a turned-down proposal it is
-*turned down* — the chip *Turned down*, the history line *turned down N changes from …*, the thread
-outcome *N changes turned down*, and the settled sentence *"Turned down {when}. Nothing changed, and
-it stays in the routine’s history as a record."* — on all three surfaces. No route reopens a settled
-proposal, so the copy promises no way back, and the confirmation guards an act that really is
-irreversible. The wire state `dismissed` and the route `/dismiss` are machine tokens and stay.
+**One word for one act.** Every surface calls the settled decision *turned down*. Web's inline
+receipt reads *Turned down · nothing changed.* Phone history and settled-proposal views keep that
+same term. No route reopens a settled proposal, so the copy promises no way back. The phone
+confirmation guards that irreversible decision. The wire state `dismissed` and route `/dismiss`
+are machine tokens and stay.
 
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
-mid-workout changes nothing about the workout in progress. While a session is open the web's dialog
+mid-workout changes nothing about the workout in progress. Outside the refused Coach room, a pending inline proposal on web
 carries *"You are mid-workout. Applying changes next time, not this session."* That state exists on
 the web only: both phones draw the logger over every other screen while a session is open, so no
 review is reachable there mid-workout, and they draw nothing for it — a board that drew the caveat on
 a phone would be drawing a state the phone cannot reach.
 
-That line sits **above the diff, never inside the pinned band.** A line that appears and disappears
+That line sits **above the inline diff, never inside its action band.** A line that appears and disappears
 inside the band moves the Apply button, so the same tap lands somewhere different depending on
 whether a workout is running. The band's height is constant; the caveat is content.
 
@@ -195,14 +174,15 @@ merged over. All of it lands or none of it does.
 
 ### Four · the return
 
-The sheet closes onto what opened it and a **receipt line** lands under the proposal's card in the
-Coach room, or under its row in a stored thread:
+On web, the inline proposal replaces its actions with the stored outcome. Reopening the conversation
+reloads that proposal's state and renders the same outcome. On the phones, the sheet closes onto
+what opened it and a receipt line lands under the proposal card or stored-thread row:
 
 > **Applied · Push A · 4 changes**
 
 *1 change* when one; **Applied · Push A · routine removed** for a removal. Turning down writes
-*"Turned down · nothing changed."* Where there is no thread to land in — the web's routines home, or
-a proposal opened from an outside link — the same line is said through the room's transient.
+*"Turned down · nothing changed."* A phone proposal opened outside a thread uses the room's
+transient for that return receipt.
 
 The receipt is **derived from the server's reply, never from the model's prose** — the routine's name
 as it now stands (else the name it had) and the store's own change count. A model that mis-states
@@ -211,10 +191,10 @@ server can stand behind: the diff rows carry an exercise id and never a movement
 5 × 3 at 90"* is reachable only when exactly one field of one movement moved. That is a special
 case, never the shape of the rule.
 
-**The receipt is ephemeral, and it is not dressed up as history.** Nothing writes a turn on apply,
-and the thread's stored shape carries no settled-at, so the receipt lives in the screen that drew it:
-on reopening a thread it is gone, and nothing pretends otherwise. The durable ledger row is the
-deferred programme (`../BUILD.md`, B12); the boards state the receipt is ephemeral until it lands.
+**A proposal outcome and a chronological receipt turn are distinct.** Web restores the inline
+outcome from the proposal's stored state. Phone return receipts remain ephemeral; the separate
+thread ledger row is deferred in `../BUILD.md`, B12. No surface invents a historical conversation
+turn from a transient receipt.
 
 ## The verbs
 

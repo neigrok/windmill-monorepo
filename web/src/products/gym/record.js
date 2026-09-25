@@ -1,15 +1,7 @@
-// A movement's record as pure rules: which blocks there is anything to draw, and how a number becomes
-// a bar. Every number arrives already made off the wire; nothing here is arithmetic about training.
-// Epley is undefined at or below zero load and the wire says so by omission — a bodyweight or
-// band-assisted movement carries no `bestE1rm`, no `e1rmSeries` and no `records`, and draws no tile,
-// no chart and no dash inside a chart frame. The bar scale starts at zero: a bar's length is its value.
-
 import {
   agoLabel, e1rmLabel, fmt, NO_ROUTINE, routineNameOf, ROUTINES_HREF, sessionHref, setLoadLabel, shortDayLabel,
 } from './log.js';
 import { weightUnit } from './units.js';
-
-const round2 = (value) => Math.round(value * 100) / 100;
 
 const countLabel = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
@@ -63,31 +55,6 @@ export function tilesOf(record, now) {
   return tiles;
 }
 
-// Bars, never a line: a line between discrete sessions implies days that never happened. Null when
-// there is nothing to plot, and the page then draws no frame, no axis and no empty box.
-export function chartOf(record, now) {
-  const series = record.e1rmSeries ?? [];
-  if (series.length === 0) return null;
-  const top = Math.max(...series.map((point) => point.e1rm));
-  // Written as `!(top > 0)` and not `top <= 0`: a point with no estimate makes the top NaN, every
-  // comparison with NaN is false, and the bars would come out `height:NaN%`.
-  if (!(top > 0)) return null;
-  // At most one gold bar, and a best set older than this window leaves none at all.
-  const standingAt = record.bestE1rm?.at ?? null;
-  return {
-    bars: series.map((point) => ({
-      at: point.at,
-      pct: round2((point.e1rm / top) * 100),
-      standing: point.at === standingAt,
-      label: `${whenOf(point.at, now)} · ${setLoadLabel(point)} · ${e1rmLabel(point.e1rm)}`,
-    })),
-    top,
-    // The ends of the window, spelled as the days actually on screen.
-    from: shortDayLabel(series[0].at),
-    to: shortDayLabel(series[series.length - 1].at),
-  };
-}
-
 // Every session that beat every session before it, newest first, over the whole log.
 export function recordsOf(record, now) {
   return (record.records ?? []).map((mark, index) => ({
@@ -116,9 +83,10 @@ export function daysOf(record, now) {
 // by its routine, which only the session's own read knows: without that read, or when it found no
 // session, the link says `The workout`.
 export function backOf(from, session = null) {
+  if (from.screen === 'log') return { href: from.href ?? '#/gym/log', label: 'The log' };
   if (from.screen !== 'session') return { href: ROUTINES_HREF, label: 'Routines' };
-  if (session === null) return { href: sessionHref(from.id), label: 'The workout' };
-  return { href: sessionHref(from.id), label: routineNameOf(session) ?? NO_ROUTINE };
+  if (session === null) return { href: from.href ?? sessionHref(from.id), label: 'The workout' };
+  return { href: from.href ?? sessionHref(from.id), label: routineNameOf(session) ?? NO_ROUTINE };
 }
 
 // A name is a label on a stable id, so renaming never forks a record. A row with nothing to prove is
@@ -152,7 +120,6 @@ export function recordView(record, { now = Date.now() } = {}) {
     // A movement nobody has worked draws no tiles, no chart and no lists.
     logged: inTheLog(record),
     tiles: tilesOf(record, now),
-    chart: chartOf(record, now),
     records: recordsOf(record, now),
     days: daysOf(record, now),
   };

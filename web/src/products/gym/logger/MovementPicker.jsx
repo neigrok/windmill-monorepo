@@ -17,7 +17,7 @@ import {
 // behind it keeps moving — the mirror's poll lands a finished session, Older appends a page — and
 // the six may not reshuffle under a finger that is already reaching for one of them.
 export function MovementPicker({
-  catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements',
+  catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements', pane = false,
 }) {
   const held = useRef([]);
   if (held.current.length === 0) held.current = sessions.slice(0, TRAINED_WINDOW);
@@ -31,16 +31,17 @@ export function MovementPicker({
       <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
         <span className="gym-picker-named">
           {each.name}
-          {each.custom && <span className="gym-picker-tag">yours</span>}
-          {each.alias && <span className="gym-picker-alias">{`was “${each.alias}”`}</span>}
+          {!pane && each.custom && <span className="gym-picker-tag">yours</span>}
+          {!pane && each.alias && <span className="gym-picker-alias">{`was “${each.alias}”`}</span>}
         </span>
-        {meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
+        {!pane && meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
+        {pane && <span className="gym-picker-plus" aria-hidden="true">+</span>}
       </button>
     </li>
   );
 
   return (
-    <div className="gym-picker" role="dialog" aria-label={title}>
+    <div className={pane ? "gym-picker is-pane" : "gym-picker"} role={pane ? "region" : "dialog"} aria-label={title}>
       <div className="gym-picker-head">
         <span className="gym-picker-title">{title}</span>
         <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
@@ -61,17 +62,13 @@ export function MovementPicker({
           <ul className="gym-picker-list">{featured.map(row)}</ul>
         </>
       )}
-      {/* The six are a shortcut, never a replacement for browsing: the whole catalogue follows them. */}
-      <ul className="gym-picker-list">{matches.map(row)}</ul>
+      {(!pane || query.trim() !== '') && <ul className="gym-picker-list">{matches.map(row)}</ul>}
       {empty && <p className="gym-picker-empty">{empty}</p>}
-      {create && onCreate && (
-        <Button
-          full
-          variant="secondary"
-          onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}
-        >
-          {create}
-        </Button>
+      {onCreate && (pane || create) && (
+        pane ? <button type="button" className="gym-picker-new"
+          onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}>New movement</button>
+          : <Button full variant="secondary"
+            onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}>{create}</Button>
       )}
       {minting && (
         <NewMovement

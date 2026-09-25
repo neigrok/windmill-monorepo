@@ -1,272 +1,91 @@
-import React, { useId, useState } from 'react';
-import { Button, Dialog } from '../../design-system/index.js';
+import React, { useState } from 'react';
+import { Button } from '../../design-system/index.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
-  applyLabel, APPLY_HINT, atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, diffRows,
-  documentLine, intentLine, isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, REVIEW_VERB,
-  settledLine, sourceLabel, stateChip, STILL_WAITING, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB,
-  wroteKicker,
+  atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
+  isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine,
+  sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
+import './coach/coach.css';
 
-// The standing surface for a proposal with no conversation to appear in — one minted over MCP —
-// drawn at the head of the routines home off the list's own read. Review opens the dialog over the
-// home; settling says its receipt in the one voice, and `onChanged` re-reads the list whenever the
-// dialog settled the proposal or learned it had moved. ONE card per waiting routine on this screen
-// and no mark on the row repeating it: the card names the routine it touches, which is what a mark
-// was for. The routine's own screen draws the proposal again as a dated history row, which is a
-// different fact.
 export function PendingProposals({ routines, log, onChanged }) {
-  const [reviewing, setReviewing] = useState(null);
-  const waiting = (routines ?? []).filter((routine) => routine.pendingProposal);
-  // The dialog stands outside the cards: a re-read that drops the card it was opened from (the
-  // proposal moved underneath it) must not take the dialog and its refusal down with it.
-  return (
-    <>
-      {waiting.length > 0 && (
-        <section className="gym-proposals">
-          {waiting.map((routine) => (
-            <ProposalCard key={routine.id} routine={routine} onReview={setReviewing} />
-          ))}
-        </section>
-      )}
-      {reviewing && (
-        <ProposalReview
-          key={reviewing}
-          id={reviewing}
-          log={log}
-          onClose={() => setReviewing(null)}
-          onChanged={onChanged}
-          onSettled={(receipt) => {
-            setReviewing(null);
-            log.say(receiptLine(receipt));
-            onChanged();
-          }}
-        />
-      )}
-    </>
-  );
+  const [expanded, setExpanded] = useState(null);
+  const waiting = (routines ?? []).filter((routine) => routine.pendingProposal && routine.pendingProposal.id !== expanded);
+  return <section className="gym-proposals">
+    {waiting.map((routine) => <ProposalPreview key={routine.id} routine={routine} onExpand={setExpanded} log={log} />)}
+    {expanded && <ProposalPanel key={expanded} id={expanded} log={log} onChanged={onChanged} />}
+  </section>;
 }
 
-function ProposalCard({ routine, onReview }) {
-  const head = routine.pendingProposal;
-  const consequence = intentLine(head, routine.name);
-  return (
-    <article className="gym-proposal-card">
-      <p className="gym-proposal-kicker">
-        <ProposalDot />
-        <span className="gym-proposal-name">{`Proposal · ${routine.name}`}</span>
-        <span className="gym-proposal-when">{`${STILL_WAITING} · ${arrivedLabel(head.createdAt)}`}</span>
-      </p>
-      <p className="gym-proposal-line">{summaryLine(head, routine.name)}</p>
-      {consequence && <p className="gym-proposal-intent">{consequence}</p>}
-      <ReviewDoor head={head} onReview={onReview} />
-    </article>
-  );
-}
-
-// The card's one affordance. A link, so the routable address survives a middle-click; a tap opens
-// the dialog in place with no hash change.
-export function ReviewDoor({ head, onReview }) {
-  return (
-    <a
-      className="gym-proposal-review"
-      href={proposalHref(head.id)}
-      onClick={(event) => { event.preventDefault(); onReview(head.id); }}
-    >
-      {REVIEW_VERB}
-    </a>
-  );
-}
-
-export function ProposalDot() {
-  return <span className="gym-proposal-dot" aria-hidden="true" />;
-}
-
-// The review: a dialog over whatever opened it. Closing it decides nothing. The band holds Apply,
-// gated until the diff has been seen to its end, and the plain text row beneath it turns the
-// proposal down behind its confirmation. `onSettled` receives `{ verb, proposal }` off the server's
-// reply, which is what the receipt is derived from. `onChanged` fires when a refusal taught the dialog
-// the proposal had moved underneath it, so the card behind it never outlives what it just learned.
-export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }) {
+export function ProposalPreview({ routine, onExpand, log }) {
+  const id = routine.pendingProposal.id;
   const view = useGymRead(() => gymApi.proposal(id), [id]);
-  // Minted per dialog: the routines home can hold two of these at once — one opened from a card and
-  // one from the address — and a shared id would describe Apply by the other dialog's gate.
-  const gateSlotId = useId();
-  // A refused settle re-reads; the re-read replaces the first.
+  const changed = view.data ? diffRows(view.data).filter((row) => row.kind !== 'kept') : [];
+  return <article className="gym-proposal-card">
+    <header><span className="gym-proposal-name">{routine.name}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
+    {changed.length ? <ul className="gym-diff">{changed.slice(0, 3).map((row, index) => <li className={`gym-diff-row is-${row.kind}`} key={index}><DiffRow row={row} catalog={log.catalog} /></li>)}</ul> : <p className="gym-proposal-line">{summaryLine(routine.pendingProposal, routine.name)}</p>}
+    {changed.length > 3 && <p className="gym-share-meta">{changed.length - 3} more changes</p>}
+  </article>;
+}
+
+export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inConversation = false }) {
+  const view = useGymRead(() => gymApi.proposal(id), [id]);
   const [settled, setSettled] = useState(null);
-  const [deciding, setDeciding] = useState(false);
-  const [turningDown, setTurningDown] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
   const [refusal, setRefusal] = useState('');
-
   const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
   const pending = proposal ? isPending(proposal) : false;
-  const midWorkout = Boolean(log.session) && pending;
-  // Position is part of a row's identity: never reorder or filter these rows; a kept run folds in place.
   const rows = proposal ? collapseKept(diffRows(proposal), expanded) : [];
-  const documentNote = proposal ? documentLine(proposal) : null;
-  const wrote = (proposal?.summary ?? '').trim();
 
-  const settle = async (verb) => {
-    if (deciding || !proposal) return;
-    setDeciding(true);
+  const decide = async (verb) => {
+    if (busy || !pending) return;
+    setBusy(true);
     setRefusal('');
-    const reread = (sentence) => {
-      setSettled(null);
-      view.retry();
-      onChanged?.();
-      setRefusal(sentence);
-    };
     try {
-      const answer = verb === 'apply'
-        ? await gymApi.applyProposal(proposal.id)
-        : await gymApi.dismissProposal(proposal.id);
-      onSettled({ verb, proposal: answer.proposal ?? proposal });
-      return;
+      const answer = verb === 'apply' ? await gymApi.applyProposal(id) : await gymApi.dismissProposal(id);
+      const stored = answer?.proposal ?? { ...proposal, state: verb === 'apply' ? 'applied' : 'dismissed' };
+      setSettled(stored);
+      onSettled?.({ verb, proposal: stored });
+      onChanged?.();
     } catch (error) {
-      // On an applied removal a 404 means the same as success: the routine and its ledger went.
-      if (verb === 'apply' && proposal.intent === 'remove' && error.status === 404) {
-        onSettled({ verb, proposal });
-        return;
+      if (error.proposalSuperseded || error.proposalSettled || error.status === 404) {
+        view.refresh();
+        onChanged?.();
       }
-      // The server's sentence where it sent one; the room's words only for a reply that carried none.
-      const said = typeof error.detail === 'string' && error.detail !== '' ? error.detail : null;
-      if (error.proposalSuperseded) reread(said ?? `${proposal.baseName} changed after this was written. Nothing from it was applied.`);
-      else if (error.proposalSettled) reread(said ?? 'That proposal was already decided somewhere else.');
-      else if (error.status === 404) reread(said ?? 'That proposal isn’t in your program any more.');
-      else setRefusal(said ?? `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
+      setRefusal(error.detail || `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
+    } finally {
+      setBusy(false);
     }
-    setDeciding(false);
-    setTurningDown(false);
   };
 
-  const band = ({ seen }) => {
-    if (turningDown) {
-      return (
-        <section className="gym-confirm gym-proposal-confirm">
-          <p className="gym-confirm-title">{TURN_DOWN_CONFIRM.title}</p>
-          <p className="gym-confirm-body">{TURN_DOWN_CONFIRM.body}</p>
-          <div className="gym-finish-foot">
-            <button type="button" className="gym-confirm-keep" onClick={() => setTurningDown(false)}>{TURN_DOWN_CONFIRM.keep}</button>
-            <button
-              type="button"
-              className={deciding ? 'gym-confirm-do is-inert' : 'gym-confirm-do'}
-              onClick={() => settle('dismiss')}
-            >
-              {TURN_DOWN_CONFIRM.confirm}
-            </button>
-          </div>
-        </section>
-      );
-    }
-    // `aria-disabled` and a no-op click, never `disabled`: a disabled button leaves the tab order,
-    // so a keyboard reader would never land on the control whose refusal is drawn beneath it.
-    return (
-      <div className="gym-proposal-band">
-        <button
-          type="button"
-          className={!seen || deciding ? 'gym-proposal-apply is-inert' : 'gym-proposal-apply'}
-          aria-disabled={!seen || deciding}
-          aria-describedby={gateSlotId}
-          aria-busy={deciding}
-          onClick={() => { if (!seen || deciding) return; settle('apply'); }}
-        >
-          {applyLabel(proposal)}
-        </button>
-        {/* The gate's sentence, in a slot drawn in both states and held open by its own CSS, so
-            Apply never moves — including the return, when a kept run unfolds past the height
-            already seen and the gate shuts again.
-            `aria-hidden` so the sentence is read ONCE: a reader traversing the band would otherwise
-            meet it here and again as Apply's description. Accname §4.1 skips a hidden node only when
-            it is not the direct target of `aria-labelledby`/`aria-describedby`, so the description
-            still computes off this node, which is why hiding it is safe. */}
-        <p className="gym-proposal-gate" id={gateSlotId} aria-hidden="true">{seen ? '' : APPLY_HINT}</p>
-        <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>
-        <button type="button" className="gym-proposal-turn-down" onClick={() => setTurningDown(true)}>
-          {TURN_DOWN_VERB}
-        </button>
-      </div>
-    );
-  };
+  if (!proposal) return <article className="gym-coach-proposal">
+    <p>{view.phase === 'loading' ? 'Opening the proposal…' : view.phase === 'absent' ? 'That proposal isn’t in your program.' : 'The proposal didn’t load.'}</p>
+    {view.phase === 'failed' && <Button variant="secondary" onClick={view.retry}>Retry</Button>}
+    {refusal && <p role="alert">{refusal}</p>}
+  </article>;
 
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={proposal ? `Proposal · ${proposal.baseName}` : 'Proposal'}
-      width={560}
-      padding="var(--space-5)"
-      gate="scrolled"
-      footer={pending ? band : null}
-    >
-      <div className="gym-proposal-dialog">
-        {view.phase === 'loading' && !settled && <p className="gym-quiet">Opening the proposal…</p>}
-        {view.phase === 'absent' && !settled && <p className="gym-quiet">That proposal isn’t in your program.</p>}
-        {view.phase === 'failed' && !settled && (
-          <p className="gym-read-failed">
-            The proposal didn’t load.
-            <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
-          </p>
-        )}
-        {proposal && (
-          <>
-            <header className="gym-proposal-head">
-              <div className="gym-proposal-titles">
-                <p className="gym-proposal-from">
-                  {`from ${sourceLabel(proposal.source)}  ·  ${arrivedLabel(proposal.createdAt)}`}
-                </p>
-                {conversationOf(proposal.source) && (
-                  <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>
-                    {CONVERSATION_VERB} ›
-                  </a>
-                )}
-              </div>
-              <span className={`gym-proposal-chip is-${proposal.state}`}>{stateChip(proposal)}</span>
-            </header>
-
-            {midWorkout && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
-
-            {/* The writer's own words, attributed and apart from the counted rows. With none, the card's
-                own sentence stands as ours. */}
-            {wrote !== '' ? (
-              <blockquote className="gym-proposal-wrote">
-                <p className="gym-proposal-wrote-kicker">{wroteKicker(proposal.source)}</p>
-                <p className="gym-proposal-wrote-text">{wrote}</p>
-              </blockquote>
-            ) : (
-              <p className="gym-proposal-summary">{summaryLine(proposal, proposal.baseName)}</p>
-            )}
-
-            {documentNote && <p className="gym-diff-caption">{documentNote}</p>}
-            <ul className="gym-diff">
-              {rows.map((row, index) => (
-                row.kind === 'kept-run' ? (
-                  <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}>
-                    <button type="button" className="gym-diff-unfold" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>
-                      {keptRunLabel(row.rows.length)}
-                    </button>
-                  </li>
-                ) : (
-                  <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
-                    <DiffRow row={row} catalog={log.catalog} unfold />
-                  </li>
-                )
-              ))}
-            </ul>
-
-            {!pending && <p className="gym-proposal-settled">{settledLine(proposal)}</p>}
-          </>
-        )}
-        {refusal && <p className="gym-proposal-refusal">{refusal}</p>}
-      </div>
-    </Dialog>
-  );
+  return <article className={`gym-coach-proposal gym-proposal-inline is-${proposal.state}`}>
+    <p className="gym-proposal-kicker"><span className="gym-proposal-name">{proposal.baseName}</span><span>{` · ${countedLabel(proposal)}`}</span></p>
+    {proposal.source?.door !== 'ask' && <p className="gym-proposal-from">{`from ${sourceLabel(proposal.source)} · ${arrivedLabel(proposal.createdAt)}`}</p>}
+    {!inConversation && conversationOf(proposal.source) && <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>{CONVERSATION_VERB}</a>}
+    {log.session && pending && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
+    <ul className="gym-diff">{rows.map((row, index) => row.kind === 'kept-run'
+      ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
+      : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
+    {pending ? <div className="gym-proposal-band">
+      <Button full disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
+      <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? 'Logged sets stay unchanged.' : atomicLine(proposal)}</p>
+      <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
+    </div> : <p className="gym-coach-receipt" role="status">{proposal.state === 'applied'
+      ? receiptLine({ verb: 'apply', proposal }) : proposal.state === 'dismissed'
+        ? receiptLine({ verb: 'dismiss', proposal }) : `${stateChip(proposal)} · nothing applied.`}</p>}
+    {refusal && <p className="gym-proposal-refusal" role="alert">{refusal}</p>}
+  </article>;
 }
 
-// Hook-free on purpose: the card and a test call it as a plain function. The one piece with state —
-// a scheme's ladder folding open — is its own child, drawn only where `unfold` is asked for.
 export function DiffRow({ row, catalog, unfold = false }) {
   if (row.kind === 'renamed') {
     return (
@@ -333,21 +152,18 @@ export function DiffRow({ row, catalog, unfold = false }) {
       <span className="gym-diff-moves">
         {row.moves.map((move) => (
           <span className="gym-diff-move" key={move.field}>
-            <span className="gym-diff-field">{move.field}</span>
-            <Move from={move.from} to={move.to} />
+            <span className="gym-diff-field">{move.field === 'sets' ? '' : move.field}</span>
+            <Move from={move.from} to={move.to} compact={move.field === 'sets'} />
           </span>
         ))}
       </span>
-      {unfold && row.moves.filter((move) => move.ladder).map((move) => (
+      {unfold && row.moves.filter((move) => move.ladder && (new Set(move.ladder.from).size > 1 || new Set(move.ladder.to).size > 1)).map((move) => (
         <SchemeUnfold key={move.field} ladder={move.ladder} />
       ))}
     </>
   );
 }
 
-// A scheme that changed shape reads as its readout on the row; a lifter deciding on a ramp has to
-// see the ramp, so the ladder folds open under it, one row per set, either side of the arrow. The
-// card never draws this: the card is a skim and the dialog is the document.
 export const UNFOLD_LADDER = 'set by set';
 
 function SchemeUnfold({ ladder }) {
@@ -372,12 +188,14 @@ function SchemeUnfold({ ladder }) {
   );
 }
 
-function Move({ from, to }) {
+function Move({ from, to, compact = false }) {
+  const prefix = from.lastIndexOf(' · ');
+  const after = compact && prefix > 0 && from.slice(0, prefix) === to.slice(0, prefix) ? to.slice(prefix + 3) : to;
   return (
     <>
       <span className="gym-diff-was">{from}</span>
       <span className="gym-diff-arrow" aria-hidden="true">→</span>
-      <span className="gym-diff-is">{to}</span>
+      <span className="gym-diff-is">{after}</span>
     </>
   );
 }

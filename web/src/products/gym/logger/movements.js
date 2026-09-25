@@ -1,8 +1,7 @@
 import { agoLabel, setLoadLabel } from '../log.js';
 
-// A TYPED query is capped: seven rows are a shortlist, and dumping the catalogue under three letters
-// is not an answer. An EMPTY query is not capped at all — it opens on the six and then hands over the
-// whole catalogue, because a picker that shows only six has removed the ability to find the seventh.
+// Typed searches return seven matches. Empty queries return the six shortcuts and the remaining
+// catalogue separately; the planning pane draws the shortcuts and searches the whole catalogue.
 export const PICKER_MATCHES = 7;
 export const PICKER_FEATURED = 6;
 

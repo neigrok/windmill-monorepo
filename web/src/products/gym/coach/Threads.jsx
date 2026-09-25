@@ -2,15 +2,14 @@ import React, { useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
-import { COACH_HREF, proposalHref, THREADS_HREF, threadHref } from '../log.js';
-import { changeLabel, isPending, receiptLine, stateChip, STILL_WAITING } from '../proposals.js';
-import { ProposalReview } from '../Proposals.jsx';
+import { COACH_HREF, THREADS_HREF, threadHref } from '../log.js';
+import { ProposalPanel } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import { CoachRoom } from './CoachRoom.jsx';
 import { forgetCoachDraft } from './useCoachConversation.js';
 import {
-  askedLabel, DELETE_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
+  askedLabel, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip, outcomeLine,
   THREAD_ABSENT, THREAD_DELETE_DETAIL, THREAD_DELETED, THREAD_FAILED, threadDeleteFailure,
   THREADS_FAILED, THREADS_TITLE,
 } from './threads.js';
@@ -106,11 +105,6 @@ function ThreadRow({ thread }) {
 
 export function ThreadDetail({ id, log, accountId }) {
   const view = useGymRead(() => gymApi.thread(id, { limit: 50 }), [id]);
-  const [reviewing, setReviewing] = useState(null);
-  // Receipts by proposal id, held for this visit only: the thread's stored shape carries no
-  // settled-at, so on reopening they are gone and nothing pretends otherwise.
-  const [receipts, setReceipts] = useState(() => new Map());
-
   // The window is holding this conversation's delete, so it is as gone from here as it is from the
   // list — a back gesture may not walk into a room the room says is deleted. The transient carries
   // the only way back, and it follows the lifter here.
@@ -144,64 +138,6 @@ export function ThreadDetail({ id, log, accountId }) {
   }
 
   const thread = view.data;
-  return (
-    <section className="gym-thread">
-      <h2 className="gym-thread-name gym-visually-hidden">{thread.title}</h2>
-
-      <CoachRoom key={thread.id} log={log} accountId={accountId} initialThread={thread} />
-
-      {thread.proposals?.length > 0 && !thread.turns?.some((turn) => turn.receipt?.proposals?.length) && (
-        <section className="gym-thread-proposals">
-          <h2 className="gym-history-head">What it proposed</h2>
-          <ul className="gym-history-rows">
-            {thread.proposals.map((head) => (
-              <li key={head.id}>
-                <a
-                  className="gym-history-row"
-                  href={proposalHref(head.id)}
-                  onClick={(event) => { event.preventDefault(); setReviewing(head.id); }}
-                >
-                  <span className="gym-history-line">
-                    {`${changeLabel(head.changeCount)} to ${head.routine} · ${isPending(head) ? STILL_WAITING : stateChip(head)?.toLowerCase()}`}
-                  </span>
-                  <span className="gym-history-go" aria-hidden="true">›</span>
-                </a>
-                {receipts.get(head.id) && <p className="gym-coach-receipt" role="status">{receipts.get(head.id)}</p>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {reviewing && (
-        <ProposalReview
-          key={reviewing}
-          id={reviewing}
-          log={log}
-          onClose={() => setReviewing(null)}
-          onChanged={view.refresh}
-          onSettled={(settled) => {
-            setReceipts((held) => new Map(held).set(reviewing, receiptLine(settled)));
-            setReviewing(null);
-            view.refresh();
-          }}
-        />
-      )}
-
-      <DeleteThread id={thread.id} log={log} accountId={accountId} />
-    </section>
-  );
-}
-
-// Withheld like every other delete in this room, and a conversation lives only on the store — which
-// is exactly why it is HELD and not sent: an Undo offered over a send already made would be a lie.
-// The lifter is put back on the list at once, nothing reaches the store for the length of the
-// window, and the room's transient carries the only way back. Nothing is confirmed, because a
-// question in front of an act that can be undone is ceremony (13-gestures.md Law 2).
-//
-// What the delete leaves behind rides the window as its `detail`, so it is read at the moment of the
-// act rather than standing over the button on every visit.
-function DeleteThread({ id, log, accountId }) {
   const remove = () => {
     log.withhold({
       kind: 'thread',
@@ -213,10 +149,19 @@ function DeleteThread({ id, log, accountId }) {
     });
     window.location.hash = THREADS_HREF;
   };
-
   return (
-    <section className="gym-thread-delete">
-      <button type="button" className="gym-thread-delete-verb" onClick={remove}>{DELETE_VERB}</button>
+    <section className="gym-thread">
+      <h2 className="gym-thread-name gym-visually-hidden">{thread.title}</h2>
+
+      <CoachRoom key={thread.id} log={log} accountId={accountId} initialThread={thread} onDelete={remove} />
+
+      {thread.proposals?.length > 0 && !thread.turns?.some((turn) => turn.receipt?.proposals?.length) && (
+        <section className="gym-thread-proposals">
+          <h2 className="gym-history-head">What it proposed</h2>
+          {thread.proposals.map((head) => <ProposalPanel key={head.id} id={head.id} log={log} onChanged={view.refresh} />)}
+        </section>
+      )}
+
     </section>
   );
 }

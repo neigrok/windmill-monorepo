@@ -54,11 +54,11 @@ function dateTicks(domain, formatDate) {
 // Every gap whose label did not fit in place gets a line beneath the axis: the first line where it
 // clears the label placed before it, its midpoint clamped so it stays inside the frame. Gaps come
 // in x order, so one pass places them all. Returns how many lines were used.
-function placeBeneath(gaps, width) {
+function placeBeneath(gaps, width, glyphWidth = GLYPH_PX) {
   const edges = [];
   for (const gap of gaps) {
     if (gap.fits) continue;
-    const half = (gap.label.length * GLYPH_PX) / 2;
+    const half = (gap.label.length * glyphWidth) / 2;
     const mid = Math.min(Math.max(gap.mid, half), width - half);
     let row = edges.findIndex((edge) => mid - half > edge + LABEL_GUTTER);
     if (row === -1) {
@@ -77,22 +77,25 @@ function placeBeneath(gaps, width) {
 // caller asked for; the layout's own `height` adds a line per row of gap labels beneath the axis.
 // No points is an empty layout: no axis, no tick, nothing that reads as a measurement.
 export function dotChartLayout({
-  points, domain = null, joins, width, height, formatValue, formatDate, gapLabel,
+  points, domain = null, joins, width, height, formatValue, formatDate, gapLabel, fontSize = 10.5, compact = false, edgeInset = 0,
 }) {
   const sorted = [...points].sort((a, b) => a.at - b.at);
   if (sorted.length === 0) {
     const plot = { left: MARGIN.left, right: width - MARGIN.right, top: MARGIN.top, bottom: height - MARGIN.bottom };
     return { plot, dots: [], segments: [], gaps: [], yTicks: [], xTicks: [], gapRows: 0, height };
   }
+  const glyphWidth = GLYPH_PX * fontSize / 10.5;
   const xDomain = domain ?? { from: sorted[0].at, to: sorted[sorted.length - 1].at };
   const yDomain = valueDomain(sorted.map((point) => point.value));
-  const ticks = valueTicks(yDomain, formatValue);
+  const ticks = compact
+    ? [yDomain.min, yDomain.max].map((value) => ({ value, label: formatValue(value) }))
+    : valueTicks(yDomain, formatValue);
   // The axis column is as wide as its widest label, so a unit on the labels never runs under the plot.
   const widest = Math.max(...ticks.map((tick) => tick.label.length));
-  const left = Math.max(MARGIN.left, Math.ceil(widest * GLYPH_PX) + AXIS_PAD);
+  const left = Math.max(MARGIN.left, Math.ceil(widest * glyphWidth) + AXIS_PAD);
   const plot = { left, right: width - MARGIN.right, top: MARGIN.top, bottom: height - MARGIN.bottom };
   const xSpan = Math.max(xDomain.to - xDomain.from, 1);
-  const x = (at) => plot.left + ((at - xDomain.from) / xSpan) * (plot.right - plot.left);
+  const x = (at) => plot.left + edgeInset + ((at - xDomain.from) / xSpan) * (plot.right - plot.left - edgeInset * 2);
   const y = (value) => plot.bottom - ((value - yDomain.min) / (yDomain.max - yDomain.min)) * (plot.bottom - plot.top);
 
   const dots = sorted.map((point) => ({ x: x(point.at), y: y(point.value), point }));
@@ -113,10 +116,10 @@ export function dotChartLayout({
       mid: (from.x + to.x) / 2,
       row: null,
       label,
-      fits: label.length * GLYPH_PX <= (to.x - from.x) - 16,
+      fits: label.length * glyphWidth <= (to.x - from.x) - 16,
     });
   }
-  const gapRows = placeBeneath(gaps, width);
+  const gapRows = placeBeneath(gaps, width, glyphWidth);
   return {
     plot,
     dots,
@@ -146,9 +149,12 @@ const label = {
 // there is a repair path and an image where there is not, named by the caller's `label`.
 export function DotChart({
   points, domain = null, joins, gapLabel, formatValue, formatDate, caption, onPick = null,
-  height = 220, ariaLabel = 'chart',
+  height = 220, axisFontSize = 10.5, ariaLabel = 'chart', interactive = false, compact = false, pointPitch = 0, holdMs = 1500,
 }) {
   const host = useRef(null);
+  const viewport = useRef(null);
+  const drag = useRef(null);
+  const clear = useRef(null);
   const [width, setWidth] = useState(560);
   const [focused, setFocused] = useState(null);
 
@@ -163,29 +169,82 @@ export function DotChart({
     return () => observer.disconnect();
   }, []);
 
-  const layout = dotChartLayout({ points, domain, joins, width, height, formatValue, formatDate, gapLabel });
+  const plotWidth = interactive ? Math.max(width, new Set(points.map((point) => point.at)).size * pointPitch + 60) : width;
+  const layout = dotChartLayout({ points, domain, joins, width: plotWidth, height, formatValue, formatDate, gapLabel: compact ? () => '' : gapLabel, fontSize: axisFontSize, compact, edgeInset: interactive ? 14 : 0 });
+  useEffect(() => {
+    if (interactive && viewport.current) viewport.current.scrollLeft = plotWidth;
+  }, [interactive, plotWidth, domain?.from]);
+  useEffect(() => () => { if (clear.current !== null) clearTimeout(clear.current); }, []);
+  const select = (index) => {
+    if (clear.current !== null) clearTimeout(clear.current);
+    clear.current = null;
+    setFocused(index);
+  };
+  const release = () => {
+    if (!interactive) return;
+    drag.current = null;
+    if (clear.current !== null) clearTimeout(clear.current);
+    clear.current = setTimeout(() => { clear.current = null; setFocused(null); }, holdMs);
+  };
+  const hover = (event) => {
+    if (!interactive || !layout.dots.length) return;
+    if (drag.current) {
+      if (viewport.current) viewport.current.scrollLeft = drag.current.scroll - (event.clientX - drag.current.x);
+      return;
+    }
+    const box = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - box.left) * plotWidth / box.width;
+    let nearest = 0;
+    for (let index = 1; index < layout.dots.length; index += 1) {
+      if (Math.abs(layout.dots[index].x - x) < Math.abs(layout.dots[nearest].x - x)) nearest = index;
+    }
+    select(nearest);
+  };
+  const axisText = { ...text, fontSize: axisFontSize };
   const pick = (point) => { if (onPick) onPick(point); };
+  const yTicks = layout.yTicks;
+  const frameHeight = compact || interactive ? height : layout.height;
+  const xTicks = compact ? layout.xTicks.filter((_, index) => index === 0 || index === layout.xTicks.length - 1) : layout.xTicks;
 
   return (
     <figure style={{ margin: 0, fontFamily: 'var(--font-body)', color: 'var(--text-secondary)' }}>
       {caption && (
         <figcaption style={{ ...label, display: 'block', marginBottom: 6 }}>{caption}</figcaption>
       )}
-      <div ref={host} style={{ width: '100%' }}>
-        <svg width={width} height={layout.height} viewBox={`0 0 ${width} ${layout.height}`} role="group" aria-label={ariaLabel} style={{ display: 'block', maxWidth: '100%' }}>
-          {layout.yTicks.map((tick) => (
+      {interactive && <p className={`dot-chart-readout${focused == null ? ' is-hint' : ''}`} aria-live="polite" style={{ ...label, minHeight: 32, margin: '0 0 4px' }}>{focused != null ? layout.dots[focused]?.point.label : 'Hover or use ← → to read a session'}</p>}
+      <div ref={host} style={{ width: '100%', position: 'relative' }}>
+        <div ref={viewport} style={{ overflowX: interactive ? 'auto' : 'hidden', overscrollBehaviorX: 'contain' }}>
+        <svg width={plotWidth} height={frameHeight} viewBox={`0 0 ${plotWidth} ${frameHeight}`} role="group" aria-label={interactive && focused != null ? `${ariaLabel}. ${layout.dots[focused]?.point.label ?? ''}` : ariaLabel} tabIndex={interactive ? 0 : undefined}
+          onPointerMove={interactive ? hover : undefined}
+          onPointerDown={(event) => {
+            if (!interactive) return;
+            hover(event);
+            drag.current = { x: event.clientX, scroll: viewport.current?.scrollLeft ?? 0 };
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          }}
+          onPointerUp={interactive ? release : undefined} onPointerCancel={interactive ? release : undefined} onPointerLeave={() => { if (interactive && !drag.current) release(); }}
+          onKeyDown={(event) => {
+            if (!interactive || !layout.dots.length || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+            event.preventDefault();
+            const next = Math.max(0, Math.min(layout.dots.length - 1, (focused ?? layout.dots.length - 1) + (event.key === 'ArrowLeft' ? -1 : 1)));
+            select(next);
+            if (viewport.current) viewport.current.scrollLeft = layout.dots[next].x - width / 2;
+          }}
+          style={{ display: 'block', maxWidth: interactive ? 'none' : '100%', touchAction: interactive ? 'pan-x' : undefined, cursor: interactive ? 'grab' : undefined }}>
+
+          {yTicks.map((tick) => (
             <g key={`y-${tick.value}`}>
               <line x1={layout.plot.left} x2={layout.plot.right} y1={tick.y} y2={tick.y} stroke="var(--border-subtle)" strokeWidth="1" />
-              <text x={layout.plot.left - 8} y={tick.y + 3.5} textAnchor="end" style={text}>{tick.label}</text>
+              {!interactive && <text x={layout.plot.left - 8} y={tick.y + 3.5} textAnchor="end" style={axisText}>{tick.label}</text>}
             </g>
           ))}
-          {layout.xTicks.map((tick, index) => (
+          {!interactive && xTicks.map((tick, index) => (
             <text
               key={`x-${tick.at}-${index}`}
               x={tick.x}
               y={layout.plot.bottom + 17}
-              textAnchor={index === 0 ? 'start' : (index === layout.xTicks.length - 1 ? 'end' : 'middle')}
-              style={text}
+              textAnchor={index === 0 ? 'start' : (index === xTicks.length - 1 ? 'end' : 'middle')}
+              style={axisText}
             >
               {tick.label}
             </text>
@@ -193,8 +252,8 @@ export function DotChart({
           {layout.segments.map((segment, index) => (
             <line key={`s-${index}`} x1={segment.x1} y1={segment.y1} x2={segment.x2} y2={segment.y2} stroke="var(--color-brand)" strokeWidth="1.5" strokeOpacity="0.55" />
           ))}
-          {layout.gaps.map((gap, index) => (gap.fits ? (
-            <text key={`g-${index}`} x={gap.mid} y={gap.y + 3.5} textAnchor="middle" style={text}>{gap.label}</text>
+          {!compact && layout.gaps.map((gap, index) => (gap.fits ? (
+            <text key={`g-${index}`} x={gap.mid} y={gap.y + 3.5} textAnchor="middle" style={axisText}>{gap.label}</text>
           ) : (
             <g key={`g-${index}`}>
               <line
@@ -207,32 +266,41 @@ export function DotChart({
                 strokeDasharray="3 3"
                 strokeOpacity="0.7"
               />
-              <text x={gap.mid} y={layout.plot.bottom + 17 + (gap.row + 1) * GAP_ROW_PX} textAnchor="middle" style={text}>{gap.label}</text>
+              {!interactive && <text x={gap.mid} y={layout.plot.bottom + 17 + (gap.row + 1) * GAP_ROW_PX} textAnchor="middle" style={axisText}>{gap.label}</text>}
             </g>
           )))}
           {layout.dots.map((dot, index) => (
             <g
               key={dot.point.key ?? `${dot.point.at}-${index}`}
               role={onPick ? 'button' : 'img'}
-              tabIndex={onPick ? 0 : undefined}
+              tabIndex={onPick || interactive ? 0 : undefined}
               aria-label={dot.point.label}
               onClick={() => pick(dot.point)}
               onKeyDown={(event) => {
+                if (interactive && ['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 pick(dot.point);
               }}
-              onFocus={() => setFocused(index)}
+              onFocus={() => select(index)}
               onBlur={() => setFocused(null)}
               style={{ cursor: onPick ? 'pointer' : 'default', outline: 'none' }}
             >
+              <title>{dot.point.label}</title>
               <circle cx={dot.x} cy={dot.y} r="14" fill="transparent" />
               {focused === index && <circle cx={dot.x} cy={dot.y} r="8" fill="none" stroke="var(--color-brand)" strokeWidth="1.5" />}
-              <circle cx={dot.x} cy={dot.y} r="4.5" fill="var(--color-brand)" />
+              <circle cx={dot.x} cy={dot.y} r="4.5" fill={dot.point.color ?? 'var(--color-brand)'} />
             </g>
           ))}
         </svg>
+        </div>
+        {interactive && <svg aria-hidden="true" width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', maxWidth: '100%' }}>
+          <rect x="0" y="0" width={layout.plot.left} height={height} fill="var(--surface-card)" />
+          {yTicks.map((tick) => <text key={tick.value} x={layout.plot.left - 8} y={tick.y + 3.5} textAnchor="end" style={axisText}>{tick.label}</text>)}
+          {[layout.xTicks[0], layout.xTicks.at(-1)].filter(Boolean).map((tick, index) => <text key={`${tick.at}-${index}`} x={index === 0 ? layout.plot.left : width - MARGIN.right} y={layout.plot.bottom + 17} textAnchor={index === 0 ? 'start' : 'end'} style={axisText}>{tick.label}</text>)}
+        </svg>}
       </div>
+      {interactive && !compact && layout.gaps.filter((gap) => !gap.fits).map((gap, index) => <p key={index} className="dot-chart-gap" style={{ ...label, fontSize: axisFontSize, lineHeight: "18px", margin: "4px 0 0", overflowWrap: "anywhere" }}>{gap.label}</p>)}
     </figure>
   );
 }

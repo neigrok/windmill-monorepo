@@ -254,15 +254,15 @@ test('a routine delete taken back is never sent, and the row is back on the home
 // 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
 // The sharpest instance in the room, because this stance carries an ACT: every other one only says
 // something that is wrong.
-test('the home’s empty stance and its Build a routine read the store: a held delete of the only routine offers no act, and the settled one does', async (t) => {
+test('the home’s empty stance and its new routine action read the store: a held delete of the only routine offers no act, and the settled one does', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
   const wire = routinesOnTheWire();
   const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
   await settle();
-  const quiet = () => findByClass(home.screen(), 'gym-quiet').map(textOf);
-  const build = () => elementsOf(home.screen())
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'Button' && textOf(each.props.children) === 'Build a routine');
+  const quiet = () => findByClass(home.screen(), 'gym-plan-empty').map(textOf);
+  const build = () => elementsOf(findByClass(home.screen(), 'gym-plan-empty')[0])
+    .filter((each) => typeof each.type === 'function' && each.type.name === 'Button' && textOf(each.props.children) === 'New routine');
   assert.deepEqual(quiet(), []);
   assert.deepEqual(build(), []);
 
@@ -277,7 +277,7 @@ test('the home’s empty stance and its Build a routine read the store: a held d
   // The read this home holds was taken while the routine was there and is never taken again, so the
   // stance becomes true only because the settled delete leaves the READ as well as the drawn rows.
   assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
-  assert.deepEqual(quiet(), ['Write your first training day.']);
+  assert.deepEqual(quiet(), ['No routines yet. Build the first one.']);
   assert.equal(build().length, 1, 'the store answered, and only now is the offer honest');
 });
 
@@ -560,6 +560,7 @@ function finishOnTheWire({ deleteStatus = 204 } = {}) {
     wire.push(`${options.method ?? 'GET'} ${path}`);
     if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
     if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
+    if (path.startsWith('/history?')) return { ok: true, status: 200, json: async () => ({ sessions: [session], months: [], next: null }) };
     if (path === '/sessions/ses_1' && options.method === 'DELETE') {
       return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
     }
@@ -695,48 +696,22 @@ test('the open session’s detail draws no discard: the phone owns it', async (t
   assert.equal(findByClass(detail.screen(), 'gym-short-discard').length, 0);
 });
 
-test('a session the window is holding is off the log, and on it again the moment the delete is taken back', async (t) => {
+test('history hides pending sessions immediately and restores them on Undo without a new read', async (t) => {
   browserWith();
-  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ weighIns: [], latest: null }) });
-  const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const summaries = [
-    { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000, routine: 'Push A' },
-    { id: 'ses_2', startedAt: 1_754_900_000_000, finishedAt: 1_754_903_600_000, routine: 'Pull A' },
+  const sessions = [
+    { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000, routineName: 'Push A' },
+    { id: 'ses_2', startedAt: 1_754_900_000_000, finishedAt: 1_754_903_600_000, routineName: 'Pull A' },
   ];
-  const held = [{ key: 'session:ses_1', kind: 'session', id: 'ses_1', line: 'Session deleted.', at: 1, settling: false }];
-  const draw = (log) => renderHook(t, () => LogList({ log, onSignIn: () => {} })).tree;
-  // A row is its own component, so the tree holds it as an element and its props are what the list
-  // handed it.
-  const rows = (tree) => elementsOf(tree)
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow')
-    .map((each) => each.props.summary.id);
-
-  const one = draw(roomLog({ summaries, held }));
-  assert.deepEqual(rows(one), ['ses_2']);
-  // The count captions the rows a reader can see, so it follows the window down with them: `N
-  // sessions · N weeks loaded` is a reading of the list under it and never a claim about the account.
-  assert.deepEqual(findByClass(one, 'gym-log-count').map(textOf), [loadedLine(1, 1)]);
-  assert.deepEqual(findByClass(draw(roomLog({ summaries, held: [] })), 'gym-log-count').map(textOf), [loadedLine(2, 1)]);
-
-  // The only session there is, withheld: the row is off the log, and the log says nothing about the
-  // account — which still holds it, and hands it back on Undo. The stance is proved both ways in
-  // `the log's empty stance reads the store…` below.
-  const alone = draw(roomLog({ summaries: [summaries[0]], held }));
-  assert.deepEqual(rows(alone), []);
-  assert.deepEqual(findByClass(alone, 'gym-quiet').map(textOf), []);
-
-  assert.deepEqual(rows(draw(roomLog({ summaries, held: [] }))), ['ses_1', 'ses_2']);
-
-  // `first session · …` names the day training started, which is the account's and not the drawn
-  // list's: a window holding the bottom row may not promote the row above it to the first one.
-  const bottom = [{ key: 'session:ses_2', kind: 'session', id: 'ses_2', line: 'Session deleted.', at: 1, settling: false }];
-  const held2 = draw(roomLog({ summaries, held: bottom }));
-  assert.deepEqual(rows(held2), ['ses_1']);
-  // The foot is its own component, so the list's tree holds it as an element: drawing it is calling it.
-  const foot = elementsOf(held2).find((each) => typeof each.type === 'function' && each.type.name === 'LogFoot');
-  assert.equal(foot.props.oldest.id, 'ses_2');
-  assert.equal(textOf(findByClass(foot.type(foot.props), 'gym-log-bottom')[0]), firstSessionLabel(summaries[1].startedAt));
-  assert.notEqual(firstSessionLabel(summaries[1].startedAt), firstSessionLabel(summaries[0].startedAt));
+  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => url.includes('/history') ? { sessions, months: [], next: null } : { entries: [], latest: null } });
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  let held = [{ key: 'session:ses_1', kind: 'session', id: 'ses_1', line: 'Session deleted.', at: 1, settling: false }];
+  const screen = renderHook(t, () => LogList({ log: roomLog({ held }), onSignIn() {} }));
+  await settle();
+  const rows = () => elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions.map((session) => session.id);
+  assert.deepEqual(rows(), ['ses_2']);
+  held = [];
+  screen.redraw();
+  assert.deepEqual(rows(), ['ses_1', 'ses_2']);
 });
 
 // The log's own instance of the law, and the half without which the fix is worse than the defect:
@@ -755,6 +730,7 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
     if (path === '/bodyweight') return { ok: true, status: 200, json: async () => ({ entries: [], latest: null }) };
     if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
     if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
+    if (path.startsWith('/history?')) return { ok: true, status: 200, json: async () => ({ sessions: [session], months: [], next: null }) };
     if (path === '/sessions/ses_1' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
     if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [] }) };
     if (path === '/sessions/ses_1/review') {
@@ -778,8 +754,7 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
   });
   await settle();
   const quiet = () => findByClass(view.tree.logScreen, 'gym-quiet').map(textOf);
-  const rows = () => elementsOf(view.tree.logScreen)
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow').length;
+  const rows = () => elementsOf(view.tree.logScreen).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions.length;
   const short = () => {
     const element = elementsOf(view.tree.finish).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
     return element.type(element.props);

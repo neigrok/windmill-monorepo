@@ -85,9 +85,9 @@ planning sheet inherited from it is the refusals, pinned below.
 - **Add movement** is the last row of that list, not a floating button.
 - **Duplicate** has one home and it is the routine **row's** overflow, the menu that also carries
   **Delete** (`13-gestures.md` Law 1). The editor draws neither, save iOS's copy of the draft above.
-- **History** is a section, not an inline aside — on the web and iOS. **Android's editor draws
-  none** (graduated 2026-09-24, board `820:5572`): the routine is the plan and nothing else, so the
-  editor is the name and the movements, and what changed a routine is read in Coach's threads.
+- **History** stays a section on iOS. **Web and Android editors draw none**: the routine is the
+  plan, so the editor is the name and the movements, and what changed a routine is read in Coach's
+  threads. The Web · Gym editor boards and Android board `820:5572` carry this composition.
 
 **The reorder handle is a control, not only a grip, and it answers three paths.** On the web it is a
 real `<button>` whose accessible name says the row *and* its place — `Move Back Squat, 2 of 3`. The

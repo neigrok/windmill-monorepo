@@ -12,7 +12,7 @@ test.afterEach(() => { global.fetch = realFetch; });
 // Save is the design system's Button — a component element in a shallow render, so it is found by
 // what it says rather than by a class.
 const saveOf = (tree) => elementsOf(tree)
-  .find((each) => typeof each.type === 'function' && each.props.children === 'Save');
+  .find((each) => typeof each.type === 'function' && each.props.children === 'Save note');
 
 // The notes wire: GET /notes serves `stored`; a PUT on one note answers from `onSave`.
 function notesOnTheWire({ stored = [], onSave }) {
@@ -64,7 +64,7 @@ test('a pasted sixty-one-character title is taken whole, counted in alarm, and r
   assert.equal(counter.props.className.includes('is-over'), true);
 
   const save = saveOf(screen.tree);
-  assert.equal(save.props.disabled, undefined, 'Save stays tappable over the cap');
+  assert.equal(save.props.disabled, false, 'Save stays tappable over the cap');
   save.props.onClick();
   await settle();
 

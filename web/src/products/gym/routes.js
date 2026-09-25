@@ -3,7 +3,7 @@
 
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
-import { sharedTokenOf } from './log.js';
+import { sharedLogTokenOf, sharedTokenOf } from './log.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -85,12 +85,13 @@ export const gymRoutes = {
   },
   shell: {
     room: '/app/gym',
+    layout: 'desk',
     // The module the boot preloads this room from (scripts/appBoot.js); checked by test/shell-boundaries.
     module: 'src/products/gym/GymApp.jsx',
-    scope: { theme: 'dark', brand: 'gym' },
+    scope: { brand: 'gym' },
     // A shared workout's link must never be upgraded into the room: whoever opens it may have no
     // account, so the app's rail and a Sign in seat may not be drawn around it.
-    bare: (hash) => sharedTokenOf(hash) != null,
+    bare: (hash) => sharedTokenOf(hash) != null || sharedLogTokenOf(hash) != null,
     // Every surface derives gym's state from this word; nothing outside this line spells it by hand.
     status: 'open',
     landingHref: '/gym',

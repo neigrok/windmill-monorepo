@@ -78,7 +78,7 @@ test('only the spelling and the weigh-in call the conversion, and no module that
     .filter((file) => /\binDisplayUnit\b/.test(fs.readFileSync(file, 'utf8')))
     .map((file) => path.relative(GYM, file))
     .sort();
-  assert.deepEqual(callers, ['bodyweight/bodyweight.js', 'log.js', 'units.js']);
+  assert.deepEqual(callers, ['bodyweight/bodyweight.js', 'log.js', 'progress/progress.js', 'units.js']);
 
   const writers = ['gymApi.js', 'backfill/draft.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
   const reaching = writers.filter((file) => /from '\.\.?\/?[a-z/]*units\.js'/.test(read(file)));
@@ -93,9 +93,10 @@ test('only the spelling and the weigh-in call the conversion, and no module that
 });
 
 test('every field a lifter types into spells the kilogram, not the reading', () => {
-  const fields = ['backfill/draft.js', 'FixSheet.jsx', 'logger/entry.js'];
+  const fields = ['backfill/draft.js', 'logger/entry.js'];
   const wrong = fields.filter((file) => !/\bfmtKg\b/.test(read(file)) || /\bfmt\(/.test(read(file)));
   assert.deepEqual(wrong, []);
+  assert.equal(/\bfmt\(|inDisplayUnit|fromDisplayUnit/.test(read('correction/correction.js')), false);
   assert.equal(/\bfmt\(/.test(read('backfill/Backfill.jsx')), false, 'the past workout draws its numbers through draft.js');
   // The target sheet's field is text the lifter types over: it is spelled by String and by nothing
   // else, so no transform can reach it on the way in or out.
@@ -108,14 +109,14 @@ test('every kilogram field on a screen carries the word kg', () => {
   // The past workout names it once, in the column head over every row, and in each cell's name.
   assert.equal(read('backfill/Backfill.jsx').includes('kg <span className="gym-past-times">×</span> reps'), true);
   assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', spoken: 'load in kg' },"), true);
-  assert.equal(read('FixSheet.jsx').includes('<span className="gym-fix-unit">kg</span>'), true);
+  assert.equal(read('FixSheet.jsx').includes('aria-label="Load in kg"'), true);
   // The unit rides in the field beside the sign control, and neither is part of the field's name.
-  assert.equal(read('Routines.jsx').includes('<span className="gym-target-unit">kg</span>'), true);
+  assert.equal(read('planning/TargetEditor.jsx').includes('label="Weight · kg"'), true);
   assert.equal(read('logger/entry.js').includes("WEIGHT_UNIT = 'kg'"), true);
 });
 
 test('the two sheets that stand over a converted reading say what the other numeral is', () => {
-  for (const file of ['FixSheet.jsx', 'Routines.jsx']) {
+  for (const file of ['FixSheet.jsx', 'planning/TargetEditor.jsx']) {
     assert.equal(read(file).includes('alsoReadsLabel('), true, file);
   }
   assert.equal(read('backfill/Backfill.jsx').includes('alsoReadsLabel'), false);

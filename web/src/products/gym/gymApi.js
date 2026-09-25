@@ -227,6 +227,10 @@ export const gymApi = {
     return json(await call('/sessions/import', { method: 'POST', body: JSON.stringify(workout) }));
   },
 
+  async correctSession(sessionId, correction) {
+    return json(await call(`/sessions/${sessionId}/corrections`, { method: 'POST', body: JSON.stringify(correction) }));
+  },
+
   async fixSet(sessionId, setId, fix) {
     return json(await call(`/sessions/${sessionId}/sets/${setId}`, {
       method: 'PATCH',
@@ -245,6 +249,15 @@ export const gymApi = {
     if (limit !== undefined) query.set('limit', String(limit));
     const suffix = query.toString();
     return (await json(await call(`/sessions${suffix ? `?${suffix}` : ''}`))).sessions;
+  },
+
+  async history(filters = {}) {
+    const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''));
+    return json(await call(`/history${query.size ? `?${query}` : ''}`));
+  },
+
+  async progress() {
+    return json(await call('/stats?projection=progress'));
   },
 
   async session(id, { etag } = {}) {

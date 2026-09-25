@@ -290,7 +290,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     const name = draft.name ?? NO_ROUTINE;
     const form = window.location.hash;
     savedTimer.current = setTimeout(() => {
-      if (window.location.hash === form) window.location.hash = sessionHref(sessionId);
+      if (window.location.hash === form) window.location.hash = `${sessionHref(sessionId)}?from=${encodeURIComponent('#/gym/log')}`;
       log.say(already ? alreadySavedLine(name) : inTheLogLine(name), {
         action: { label: UNDO_LABEL, run: () => discard(sessionId) },
       });
@@ -360,7 +360,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                   }}
                 />
                 <span className="gym-past-for">for</span>
-                {DURATION_CHIPS.map((chip) => (
+                <span className="gym-past-duration" role="group" aria-label="Duration">{DURATION_CHIPS.map((chip) => (
                   <button
                     key={chip.minutes}
                     type="button"
@@ -370,7 +370,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                   >
                     {chip.label}
                   </button>
-                ))}
+                ))}</span>
               </div>
             )}
           </div>

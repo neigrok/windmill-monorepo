@@ -102,10 +102,11 @@ all. The routine is frozen onto the session as its plan and **the routine itself
 logging a day is not changing the plan. Its `trained …` line moves only if this is now its newest
 session.
 
-The button reads `Saved · 9 sets` for 900ms, then the session opens: on desktop the log's split with
-the new row selected (`today · 12:00`), on narrow the session detail, whose meta reads
-`Today · 1h 00m · 9 working · 2,220 kg` under `plan snapshot · frozen 12:00`. The transient
-*Push A is in the log.* · `Undo` gives the discard its usual window.
+The button reads `Saved · 9 sets` for 900ms, then the session opens in the log's current selected
+reader: the new row selected in the desktop split, or the dedicated workout reader on narrow.
+Its stored date and time, set and rep totals, external volume and actual movement rows use the same
+readout as any other completed workout. The transient *Push A is in the log.* · `Undo` gives the
+discard its usual window.
 
 **Overlap is refused only against a time the lifter set.** One that crosses a session in the log —
 the open one included, from its start until now — is refused in place, Save inert, with the log's

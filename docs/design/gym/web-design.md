@@ -24,8 +24,9 @@ named `Area / Screen / State / Width`.
 - **Built** — matches what ships on the web.
 - **Ready** — approved; build from this board.
 
-A superseded board leaves the page. Every board is Ready today: the shipped web still draws the layout
-these boards replace, and a board turns Built when the web matches it.
+A superseded board leaves the page. The current per-board statuses and runtime evidence are in
+[web-build-contract.md](web-build-contract.md). A board turns Built after its running implementation
+passes comparison at both widths.
 
 ## Rules every board follows
 
@@ -62,7 +63,7 @@ these boards replace, and a board turns Built when the web matches it.
   counts entries, not sets.
 - **Notes.** Titled Notes, with the disclosure that a connected agent can read them beneath the title.
 - **Sharing.** A log leaves by a link the lifter creates and revokes — a snapshot or a live link, the
-  whole history or a range; the recipient's view is read-only. The backend gaps are in
+  whole history or a range; the recipient's view is read-only. The implemented contract is in
   [Training history exploration and coach sharing](log-exploration.md).
 
 ## Prototype and fixture

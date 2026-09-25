@@ -1,6 +1,6 @@
 # Training history exploration and coach sharing
 
-Status: Figma design proposal, 9 September 2026. Backend capabilities below are source-inspected, not performance-tested.
+Status: implemented history and sharing contract. Local functional and density checks are recorded in [web-verification.md](web-verification.md); the per-board acceptance inventory is [web-build-contract.md](web-build-contract.md).
 
 ## Reading years of training
 
@@ -10,24 +10,24 @@ Date navigation jumps to a year/month without repeated Load older actions. Movem
 
 The reader leads with actual sets, reps, load and exercise totals. Planned targets remain separate reference values. e1RM is an optional per-movement estimate, not a workout-wide progress score. External volume is weight multiplied by reps, excludes bodyweight itself and is not a claim of improved performance. Scope summaries must use complete server aggregates with the same filters as the index.
 
-Dense numeric tables use compact editable values on owner entry screens. Read-only history uses the same alignment without edit affordances. Short forms retain ordinary inputs. Inline controls and dedicated screens avoid modal dialogs.
+Dense numeric tables use compact editable values on owner entry screens. Read-only history uses the same alignment without edit affordances. Short forms retain ordinary inputs. Owner values are corrected inline. The narrow date jump and recipient preview use modal layers with focus restoration.
 
 ## Sharing with a human coach
 
 Sharing is read-only and scoped explicitly to the entire history or a date range. A snapshot and ongoing updates are distinct choices; selecting a date range must not silently enable future updates. Preview shows the recipient's view before a link is created. The active state exposes the scope, expiration and revoke action.
 
-The proposed link grants access to anyone who possesses it; the UI states this plainly. AI Coach conversations and private Notes are excluded. Only completed workout data is in scope. Any future optional notes or bodyweight sharing must be enforced by the server, not hidden only in the UI. No real share link is created by the Figma prototype.
+The link grants access to anyone who possesses it; the UI states this plainly. AI Coach conversations and private Notes are excluded. Only completed workout data is in scope. Any future optional notes or bodyweight sharing must be enforced by the server, not hidden only in the UI. No real share link is created by the Figma prototype.
 
-## Implementation gaps
+## Implemented contract
 
-- The owner sessions endpoint offers descending keyset pagination through `before`, `beforeId` and `limit`, with a maximum of 200 rows per request. It lacks full-history date-range, movement and routine filters, year/month indexes, facet counts and total result counts.
-- Deep navigation needs stable cursors and persistent selection. The current web reload path retains at most 200 summaries, which can lose deeper exploration context.
-- Movement filtering needs stable IDs and explicit semantics for renamed movements and deleted routines; display names are insufficient identities.
-- Lifetime statistics are currently unbounded. The explorer needs bounded aggregates that share the index's filter and authorization rules. The record endpoint does not yet provide arbitrary history windows.
-- Current sharing covers one workout for 30 days and reads its current values. It is not a frozen snapshot. Multi-workout scopes, public pagination/filtering, snapshot semantics and share management require backend work.
-- Current metrics still depend on Kind/working-set classification. The proposed removal of Kind requires an explicit migration and aggregation rule before implementation.
+- `GET /history` applies date, movement and routine filters to the whole authorized history. Stable descending cursors page at most 200 workouts; totals, facets and local year/month counts cover the complete filtered scope.
+- Selection and filters travel in the URL. Owner index offsets survive movement-record and correction navigation. A deep link loads the required pages before bringing its selected workout into view.
+- Movement and routine filters use stable IDs. Workout corrections can change the displayed routine name without changing the frozen plan or living routine.
+- The progress projection uses the same filtered and authorized history. Estimates remain per movement; bodyweight-only movements report actual reps instead of fabricated external-load estimates.
+- Log links support whole-history or date-range scope, frozen snapshots or live updates, anonymous paging/filtering, and revocation. Links expire after 30 days. Recipient data excludes Coach conversations, private Notes and set notes.
+- Working-set classification remains a backend aggregation rule. Web planning and correction do not expose Kind; correcting an existing set preserves its classification, and a new set is working.
 
-Evidence: `web/src/products/gym/gymApi.js`, `useTrainingLog.js`; `backend/products/gym/adapters/http/TrainingApi.cpp`, `adapters/postgres/PgLogRepository.cpp`, `domain/Record.h`, `domain/Training.h`, and `adapters/json/TrainingJson.cpp`.
+The wire contract is [gym-history.md](../../../packages/api-contract/gym-history.md). The existing single-workout link remains available separately.
 
 ## Synthetic review data
 

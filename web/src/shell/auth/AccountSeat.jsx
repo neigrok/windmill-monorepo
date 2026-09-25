@@ -12,7 +12,7 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row.
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy, appearance = true }) {
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy, appearance = true, display = 'avatar' }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -152,8 +152,8 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
         onPointerCancel={() => setPressed(false)}
         style={{
           position: 'relative',
-          width: size,
-          height: size,
+          width: display === 'label' ? 'auto' : size,
+          height: display === 'label' ? 40 : size,
           padding: 0,
           border: 'none',
           borderRadius: 'var(--radius-full)',
@@ -163,6 +163,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           transition: 'transform var(--duration-fast) var(--ease-standard)',
         }}
       >
+        {display === 'label' ? <span style={{ color: 'var(--text-primary)', font: '700 13px/18px var(--font-body)' }}>Account</span> : <>
         <span
           style={{
             position: 'absolute',
@@ -199,6 +200,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             <Avatar name={name} size={size} />
           </span>
         )}
+        </>}
       </button>
 
       {open && (

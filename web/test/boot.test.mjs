@@ -111,14 +111,8 @@ test('every open product names a room and a brand with a ground of its own', () 
   assert.deepEqual(wrong, []);
 });
 
-// A room that PINS its skin must boot in it. Gym is the instrument whatever the device prefers,
-// and the boot reads that pin from the same registry line the shell does — so the one room where a
-// stored 'light' would be wrong is the one room that never reads it.
-test('a pinned room boots in its pin, and an unpinned one is left to the device', () => {
-  const pinned = PRODUCTS.filter((product) => product.shell.scope.theme);
-  const following = PRODUCTS.filter((product) => !product.shell.scope.theme);
-  assert.deepEqual(pinned.map((p) => [p.id, p.shell.scope.theme]), [['gym', 'dark']]);
-  assert.deepEqual(following.map((p) => p.id), ['roadmap', 'journal']);
+test('all product rooms follow the chosen appearance', () => {
+  assert.deepEqual(PRODUCTS.map((product) => [product.id, product.shell.scope.theme ?? null]), [['roadmap', null], ['journal', null], ['gym', null]]);
 });
 
 // index.html is not only the app's document. It is every /t/:id share page — the backend splices a
@@ -251,12 +245,11 @@ test('an unpinned room reads the stored choice, then the device, then light', ()
   assert.equal(boot('/app/journal', { stored: 'nonsense', prefersDark: false }).attributes['data-theme'], 'light');
 });
 
-// The one room where a stored choice would be wrong is the one room that never reads it.
-test('a pinned room ignores the stored choice and the device alike', () => {
-  for (const options of [{ stored: 'light' }, { stored: 'system', prefersDark: false }, { stored: null }]) {
+test('gym boots in Daylight or Instrument according to the same appearance preference', () => {
+  for (const [options, expected] of [[{ stored: 'light', prefersDark: true }, 'light'], [{ stored: 'dark' }, 'dark'], [{ stored: 'system', prefersDark: true }, 'dark'], [{ stored: null, prefersDark: false }, 'light']]) {
     const { attributes, ground } = boot('/app/gym', options);
-    assert.equal(attributes['data-theme'], 'dark');
-    assert.equal(ground, grounds['dark|gym']);
+    assert.equal(attributes['data-theme'], expected);
+    assert.equal(ground, grounds[`${expected}|gym`]);
   }
 });
 

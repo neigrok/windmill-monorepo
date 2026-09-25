@@ -1,20 +1,19 @@
+import { CoachNavigation } from './CoachNavigation.jsx';
 import React, { useEffect, useRef, useState } from 'react';
 import { Menu } from '../../../design-system/index.js';
 import { ImagePlus, Square } from 'lucide-react';
 import { CoachPhoto } from './CoachPhoto.jsx';
 import { gymApi } from '../gymApi.js';
-import { COACH_HREF, NOTES_HREF, proposalHref, routineHref, THREADS_HREF } from '../log.js';
-import {
-  CARD_ROW_CAP, CARD_ROW_KINDS, countedLabel, diffRows, isPending, moreRowsLabel, receiptLine,
-  stateChip, STILL_WAITING,
-} from '../proposals.js';
-import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
-import { useGymRead } from '../useGymRead.js';
-import { COACH_PLACEHOLDER, COACH_TITLE, MID_SESSION_NOTE, PROPOSAL_NOTE, readLine, stepsLine } from './coach.js';
+import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF } from '../log.js';
+import { ProposalPanel } from '../Proposals.jsx';
+import './coach.css';
+import { DELETE_VERB } from './threads.js';
+import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, readLine, stepsLine } from './coach.js';
 import { forgetCoachDraft, useCoachConversation } from './useCoachConversation.js';
 
-export function CoachRoom({ log, accountId, initialThread }) {
-  const conversation = useCoachConversation({ accountId, initialThread });
+export function CoachRoom({ log, accountId, initialThread, onDelete }) {
+  const conversation = useCoachConversation({ accountId, initialThread, workoutInProgress: log.phase !== 'ready' || Boolean(log.session) });
+  const workoutOnly = Boolean(log.session && !initialThread);
   const reading = useRef(null);
   const follow = useRef(true);
   const [latest, setLatest] = useState(false);
@@ -35,7 +34,7 @@ export function CoachRoom({ log, accountId, initialThread }) {
   };
 
   return (
-    <section className="gym-coach">
+    <section className={`gym-coach${workoutOnly ? ' is-workout' : ''}`}>
       <header className="gym-coach-head">
         <h1 className="gym-title">{COACH_TITLE}</h1>
         <nav className="gym-coach-doors" aria-label="Coach">
@@ -44,10 +43,14 @@ export function CoachRoom({ log, accountId, initialThread }) {
             { label: 'Notes', run: () => { window.location.hash = NOTES_HREF; } },
             { label: 'Connected log', run: () => { window.location.href = '/app/connect'; } },
             { label: 'Account', run: () => { window.location.hash = '#/settings'; } },
+            ...(onDelete ? [{ label: DELETE_VERB, run: onDelete }] : []),
             ...(conversation.turns.length || initialThread || conversation.closed ? [{ label: 'New chat', run: newChat }] : []),
           ]} />
         </nav>
       </header>
+      <p className="gym-coach-subtitle">Reads your log · proposes only</p>
+      <CoachNavigation narrow />
+      {workoutOnly ? <WorkoutInProgress log={log} /> : <>
       <div className="gym-coach-reading" ref={reading} onScroll={() => {
         const element = reading.current;
         if (!element) return;
@@ -65,7 +68,7 @@ export function CoachRoom({ log, accountId, initialThread }) {
         {conversation.olderNote && <p className="gym-coach-note" role="status">{conversation.olderNote}</p>}
         <ol className="gym-coach-thread">
           {conversation.turns.map((turn, index) => <CoachMessage key={`${turn.position ?? turn.requestId ?? index}-${turn.from}`}
-            turn={turn} log={log} accountId={accountId} thread={conversation.thread} onRetry={conversation.send} busy={conversation.busy || conversation.pending} />)}
+            turn={turn} log={log} accountId={accountId} thread={conversation.thread} onRetry={conversation.send} busy={Boolean(log.session) || conversation.busy || conversation.pending} />)}
         </ol>
       </div>
       {latest && <button type="button" className="gym-coach-latest" onClick={() => {
@@ -75,6 +78,7 @@ export function CoachRoom({ log, accountId, initialThread }) {
       <div className="gym-coach-bottom">
         <CoachBody log={log} accountId={accountId} conversation={conversation} onNewChat={newChat} />
       </div>
+      </>}
     </section>
   );
 }
@@ -86,7 +90,8 @@ export function CoachBody({ log, accountId, conversation, onNewChat }) {
   const generating = busy || pending;
   const photoUpload = photo?.status === 'uploading';
   if (log.phase === 'loading' || phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
-  if (log.session) return <p className="gym-coach-closed">{MID_SESSION_NOTE}</p>;
+  if (log.session) return <WorkoutInProgress log={log} />;
+
   return <>
     {note && !(note === 'Response interrupted.' && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
     {stopRequested && <p className="gym-coach-note" role="status">Stopping…</p>}
@@ -130,11 +135,40 @@ export function CoachBody({ log, accountId, conversation, onNewChat }) {
         <button type="button" className="gym-coach-send"
           disabled={generating ? Boolean(stopBusy || stopRequested) : Boolean((!draft.trim() && !photo && !request) || photoUpload || photoBusy)}
           onClick={() => generating ? stop() : send()} aria-label={generating ? 'Stop response' : request ? 'Retry' : 'Send'}>
-          {generating ? <Square size={18} aria-hidden="true" /> : request ? '↻' : '↑'}
+          {generating ? <Square size={18} aria-hidden="true" /> : request ? 'Retry' : 'Send'}
         </button>
       </div>
     </>}
   </>;
+}
+
+export function WorkoutInProgress({ log }) {
+  const [showWorkout, setShowWorkout] = useState(false);
+  const mirror = useRef(null);
+  const workout = coachWorkout(log.session, log.sets, log.catalog);
+  const viewWorkout = () => {
+    setShowWorkout(true);
+    requestAnimationFrame(() => { mirror.current?.scrollIntoView({ block: 'start' }); mirror.current?.focus({ preventScroll: true }); });
+  };
+  return <div className={`gym-coach-workout${showWorkout ? ' is-expanded' : ''}`}>
+    <section className="gym-coach-workout-card" aria-label="Workout in progress">
+      <p className="gym-coach-workout-kicker">Workout in progress</p>
+      <p>Your workout is on your phone. This room is here when it is over.</p>
+      <p className="gym-coach-workout-meta">{workout.name} · started <span>{workout.started}</span> · {workout.count}</p>
+      <div className="gym-coach-workout-doors"><button type="button" onClick={viewWorkout}>View workout</button><a href={NOTES_HREF}>Notes ›</a></div>
+      <p className="gym-coach-workout-meta">Notes are yours to write while you train. Nothing here reads a log that is still being written.</p>
+    </section>
+    <section className="gym-coach-workout-mirror" ref={mirror} tabIndex={-1} aria-label="Live workout, read only">
+      <header><span>{workout.name} · in progress</span><span>{workout.progress}</span></header>
+      {workout.groups.map((group) => <div className="gym-coach-mirror-movement" key={group.id}>
+        <div className="gym-coach-mirror-heading"><div><h2>{group.name}</h2>{group.scheme && <p>{group.scheme}</p>}</div>
+          {group.id !== workout.active && <span className="gym-coach-mirror-rail" aria-label={`${group.rows.length} sets`}>{group.rows.map((row) => <i key={row.key} className={`is-${row.kind}`} />)}</span>}
+        </div>
+        {group.id === workout.active && <ul>{group.rows.map((row, index) => <li key={row.key} aria-label={row.spoken} className={`is-${row.kind}${row.kind === 'target' && group.rows[index - 1]?.kind !== 'target' ? ' is-next' : ''}`}><i aria-hidden="true" /><span>{row.label}</span></li>)}</ul>}
+      </div>)}
+      <p className="gym-coach-workout-meta">A mirror of your phone. Nothing here logs a set.</p>
+    </section>
+  </div>;
 }
 
 export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
@@ -146,8 +180,8 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
   const box = useRef(null);
   const copyButton = useRef(null);
   const text = turn.text ?? '';
-  const clearHold = () => { clearTimeout(hold.current); hold.current = null; };
-  useEffect(() => () => { clearHold(); clearTimeout(noticeTimer.current); }, []);
+  const clearHold = () => { if (hold.current !== null) clearTimeout(hold.current); hold.current = null; };
+  useEffect(() => () => { clearHold(); if (noticeTimer.current !== null) clearTimeout(noticeTimer.current); }, []);
   useEffect(() => {
     if (!open) return undefined;
     copyButton.current?.focus();
@@ -158,9 +192,9 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      clearTimeout(noticeTimer.current);
+      if (noticeTimer.current !== null) clearTimeout(noticeTimer.current);
       setNotice('Message copied.');
-      noticeTimer.current = setTimeout(() => setNotice(''), 2000);
+      noticeTimer.current = setTimeout(() => { noticeTimer.current = null; setNotice(''); }, 2000);
       setOpen(false);
     } catch {
       setNotice('Couldn’t copy. Select the message text and copy it.');
@@ -171,6 +205,9 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
   const steps = stepsLine(receipt.steps);
   return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
     {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
+    {turn.from !== 'lifter' && read && (steps ? <details className="gym-coach-trace">
+      <summary className="gym-coach-read">{read}</summary><p className="gym-coach-steps">{steps}</p>
+    </details> : <p className="gym-coach-read">{read}</p>)}
     {text && <>
       <p className="gym-coach-text" tabIndex={0}
         onContextMenu={(event) => { event.preventDefault(); setOpen(true); }}
@@ -178,7 +215,7 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
           if (event.button !== 0) return;
           clearHold();
           origin.current = { x: event.clientX, y: event.clientY };
-          hold.current = setTimeout(() => setOpen(true), 550);
+          hold.current = setTimeout(() => { hold.current = null; setOpen(true); }, 550);
         }}
         onPointerMove={(event) => {
           if (origin.current && Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8) clearHold();
@@ -194,15 +231,13 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
         onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); box.current?.querySelector('.gym-coach-text')?.focus(); } }}>Copy</button>
     </>}
     {turn.from !== 'lifter' && <>
-      {(receipt.proposals ?? []).map((id) => <CoachProposal key={id} id={id} log={log} />)}
+      {(receipt.proposals ?? []).map((id) => <ProposalPanel key={id} id={id} log={log} inConversation />)}
       {(turn.results ?? []).filter((result) => result.kind === 'routine-created').map((result) =>
         <div key={result.operationId} className="gym-coach-result">
           <span>Routine created · {result.routineName}</span>
           <a href={routineHref(result.routineId)}>Open routine</a>
         </div>)}
-      {read && (steps ? <details className="gym-coach-trace">
-        <summary className="gym-coach-read">{read}</summary><p className="gym-coach-steps">{steps}</p>
-      </details> : <p className="gym-coach-read">{read}</p>)}
+
       {turn.status === 'stopped' && <p className="gym-coach-note">Response stopped.</p>}
       {turn.status === 'failed' && <p className="gym-coach-note">Response interrupted.
         {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>Retry</button>}
@@ -210,69 +245,4 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, busy }) {
     </>}
     <span className="gym-coach-copy-notice" role="status">{notice}</span>
   </li>;
-}
-
-function CoachProposal({ id, log }) {
-  const view = useGymRead(() => gymApi.proposal(id), [id]);
-  const [reviewing, setReviewing] = useState(false);
-  const [receipt, setReceipt] = useState('');
-
-  if (view.phase !== 'ready') {
-    return (
-      <a className="gym-coach-proposal-door" href={proposalHref(id)}>Open the proposal ›</a>
-    );
-  }
-
-  const proposal = view.data;
-  const pending = isPending(proposal);
-  // What MOVED, and only what a card can draw: standing still is not news, and a rename or a reorder
-  // is a claim about the document behind Review.
-  const changed = diffRows(proposal).filter((row) => CARD_ROW_KINDS.includes(row.kind));
-  return (
-    <>
-      <article className="gym-coach-proposal">
-        <p className="gym-proposal-kicker">
-          <span className="gym-proposal-dot" aria-hidden="true" />
-          <span className="gym-proposal-named">
-            <span className="gym-proposal-name">{proposal.baseName}</span>
-            <span className="gym-proposal-count">{`\u00a0· ${countedLabel(proposal)}`}</span>
-          </span>
-          <span className="gym-proposal-when">{pending ? STILL_WAITING : stateChip(proposal)?.toLowerCase()}</span>
-        </p>
-        {/* A rename and a reorder are claims about the whole document, so they stay in the dialog;
-            the count in the head has already said them. A proposal that only moves lines draws no rows. */}
-        {changed.length > 0 && (
-          <ul className="gym-diff">
-            {changed.slice(0, CARD_ROW_CAP).map((row, index) => (
-              <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
-                <DiffRow row={row} catalog={log.catalog} />
-              </li>
-            ))}
-            {changed.length > CARD_ROW_CAP && (
-              <li className="gym-diff-row is-more">
-                <span className="gym-diff-more">{moreRowsLabel(changed.length - CARD_ROW_CAP)}</span>
-              </li>
-            )}
-          </ul>
-        )}
-        <ReviewDoor head={proposal} onReview={() => setReviewing(true)} />
-        {/* A promise about what Apply will do is spent once Apply has been taken or turned down. */}
-        {pending && <p className="gym-coach-proposal-note">{PROPOSAL_NOTE}</p>}
-      </article>
-      {receipt && <p className="gym-coach-receipt" role="status">{receipt}</p>}
-      {reviewing && (
-        <ProposalReview
-          id={id}
-          log={log}
-          onClose={() => setReviewing(false)}
-          onChanged={view.refresh}
-          onSettled={(settled) => {
-            setReviewing(false);
-            setReceipt(receiptLine(settled));
-            view.refresh();
-          }}
-        />
-      )}
-    </>
-  );
 }

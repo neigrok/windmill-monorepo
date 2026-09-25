@@ -5,7 +5,7 @@ import {
   agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, backfillFromOf, backfillHref, backfillTargetOf, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
   dayLabel,
-  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
+  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, fixSetHref, fixSetIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
   groupByExercise,
   FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, hasRecord, isFinished, isFirstSession, isNameOverCap, isNeverTrained, lastTrainedDayLabel,
   loadedLine, logWhenLabel, NEVER_TRAINED, NEVER_TRAINED_ALONE,
@@ -258,8 +258,10 @@ test('recordFromOf — where a record was opened rides in its own link, and read
 
   assert.deepEqual(recordFromOf(recordHref('back-squat')), { screen: 'routines' });
   assert.deepEqual(recordFromOf(recordHref('back-squat', fromSession('ses_9a'))), { screen: 'session', id: 'ses_9a' });
+  const selected = fromSession('ses_9a', '#/gym/session/ses_9a?from=%23%2Fgym%2Flog%3Fyear%3D2024');
+  assert.deepEqual(recordFromOf(recordHref('back-squat', selected)), selected);
   assert.deepEqual(recordFromOf(MOVEMENTS_HREF), { screen: 'routines' });
-  assert.deepEqual(recordFromOf('#/gym/movement/back-squat?from=log'), { screen: 'routines' }, 'an origin nobody writes is the home');
+  assert.deepEqual(recordFromOf('#/gym/movement/back-squat?from=log'), { screen: 'log' });
   assert.deepEqual(recordFromOf('#/gym/movement/back-squat?from=session.'), { screen: 'routines' });
 
   // The origin never changes which record or which screen the link names.
@@ -1008,4 +1010,15 @@ test('restInForce — the routine entry’s own rest wins over the dial and says
   assert.deepEqual(restInForce(session, 'row', 120), { seconds: 120, fromRoutine: false }, 'named twice, so nothing can say which entry: the dial');
   assert.deepEqual(restInForce({ plan: null }, 'bench-press', 120), { seconds: 120, fromRoutine: false });
   assert.equal(FROM_THE_ROUTINE, ' · from the routine');
+});
+
+
+test('focused set correction preserves the filtered history origin in its dedicated route', () => {
+  const href = fixSetHref('ses_1', 'set_2', '#/gym/log?year=2024&exercise=bench&selected=ses_1');
+  assert.equal(href, '#/gym/session/ses_1/set/set_2/edit?from=%23%2Fgym%2Flog%3Fyear%3D2024%26exercise%3Dbench%26selected%3Dses_1');
+  assert.equal(fixSetIdOf(href), 'set_2');
+  assert.equal(sessionIdOf(href), 'ses_1');
+  assert.equal(screenOf(href), 'session');
+  assert.equal(fixSetIdOf('#/gym/session/ses_1/edit'), null);
+  assert.equal(fixSetIdOf('#/gym/session/ses_1/set/set_2/edit/more'), null);
 });

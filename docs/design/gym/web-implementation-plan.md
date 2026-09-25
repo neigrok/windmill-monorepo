@@ -1,7 +1,7 @@
 # Gym web · implementation plan
 
-The shipped gym web reaches the `Web · Gym` Figma page in eight waves, shell first, so every one of
-its 102 boards can turn from Ready to Built. The boards and [web-design.md](web-design.md) are the
+The gym web implementation follows the `Web · Gym` Figma page in eight waves. Acceptance for its
+102 boards is tracked in [web-build-contract.md](web-build-contract.md). The boards and [web-design.md](web-design.md) are the
 spec; this plan orders the work and records the decisions every wave keeps.
 
 ## Scope
@@ -9,9 +9,8 @@ spec; this plan orders the work and records the decisions every wave keeps.
 - **The design.** The Gym file's `Web · Gym` page (`466:132`): six sections (Start, Components,
   Plan, Record, Coach & Notes, Share), every state drawn at 1440 and 390. The written half is
   [web-design.md](web-design.md), [web-form.md](web-form.md) and the briefs they name.
-- **Already built.** The cleanliness rules (room titles, back link, unit once, radius tokens, no set
-  kind) and the past workout from a routine ([brief 20](briefs/20-past-workout.md)) follow the boards,
-  inside a shell that does not yet.
+- **Shared rules.** Room titles, back links, units, radius tokens and the absence of set kind apply
+  to every screen, including past workout entry ([brief 20](briefs/20-past-workout.md)).
 - **Done.** A board turns Built when the running web matches it at both widths, checked side by side
   against live data. The plan is done when no board is Ready.
 - **Out of scope.** Live training stays on the phones. A full Daylight pass is its own wave (W8).
@@ -48,20 +47,23 @@ A wave that seems to need a different answer stops and asks the owner.
 - A multi-set write is one request whose retry is a replay (as `POST /v1/gym/sessions/import`).
 - The web mirrors server rules for early feedback; the server's answer wins.
 
-## Where the web stands
+## Current implementation
 
-| Area | Boards | Shipped web today |
-|---|---|---|
-| Shell | Rooms row + `Routines · The log · Coach` tabs under the header on every gym page | Tabs in a bottom bar, dropped on pushed pages |
-| Routines | `Your routines`, cards with movement names and a tick rail, `New routine` | `Routines`, cards with counts, `Movements`/`New` buttons, a "Not training now" line |
-| Routine editor | Desktop split: movements left, ladder right; picker in the same pane | Single column; targets and picker in sheets |
-| The log | Desktop split: history left, workout reader and progress cards right; filters, density, date jump | Single column list; no filters |
-| Movement record | Dot chart, one e1RM rule ([brief 18](briefs/18-progress.md)) | Bar chart |
-| Edit workout · fix set | Corrected in place with editable numbers | Keypad sheet |
-| Past workout | Brief 20 | Built; lands on the session page, not the log split |
-| Coach | Inline proposal, `Apply` / `Turn this down`, receipt in place | Review dialog; composer overlaps the tab bar |
-| Notes | Title, disclosure panel; editor titled `Edit note` / `New note` | Page matches; editor has no title or disclosure |
-| Sharing | Log links: snapshot or live, whole or range, revoke, recipient view | Single-workout share only |
+The running comparison and release evidence are in [web-verification.md](web-verification.md).
+
+| Area | Implemented behavior |
+|---|---|
+| Shell | Persistent rooms header and top Gym tabs, including pushed pages |
+| Routines | Movement names, tick rails, contextual Log past/Delete and New routine |
+| Routine editor | Desktop movements/targets split; narrow sheets; set ladders; two-version conflict recovery |
+| The log | History/reader split, complete filters and facets, paging, date jump and density |
+| Movement record | Interactive dot chart and actual-set facts under brief 18 |
+| Edit workout / fix set | Atomic whole-workout correction and inline numeric fields |
+| Past workout | Stated time and duration, overlap refusal, save opens selected log reader |
+| Coach | Inline Apply/Turn this down and persisted decision receipts |
+| Notes | Titled editor, disclosure and shared Coach navigation |
+| Sharing | Whole/range snapshot/live links, recipient preview, expiration and revocation |
+| Daylight | Shared theme tokens, accessible PR ink and published Gym Figma library |
 
 ## Waves
 
@@ -74,7 +76,7 @@ then what reads further, then what leaves the app.
 | W2 · The log split | History index + workout reader + progress cards on desktop; narrow reader on its own screen; Saved lands in the split | Past workout, record and Coach all land here |
 | W3 · Routines and editor | Routines home as drawn; editor split with the ladder pane, `Every set` / `Set by set`, picker in the pane, conflict state | The plan is the unit everything else refers to |
 | W4 · Correcting | Edit workout and fix set in place with the editable number; the keypad sheet retires | Reuses the W2 reader and the past-workout number row |
-| W5 · Coach and Notes | Inline proposals with receipt, review dialog deleted; composer above the tabs; note editor title and disclosure | Needs W3's routine diff and the W1 shell |
+| W5 · Coach and Notes | Inline proposals with receipt, review dialog deleted; composer below the conversation; active-workout refusal and mirror; note editor title and disclosure | Needs W3's routine diff and the W1 shell |
 | W6 · Exploring the log | Filters that read their value, density, the 2024 date jump, the movement record's dot chart | Builds on the W2 split |
 | W7 · Sharing | Log share links (snapshot / live, whole / range), revoke, the recipient's read-only log | Needs backend work and the W6 reader |
 | W8 · Daylight and library | Light theme across every screen; Figma library republished | Last, once layouts stop moving |
@@ -87,8 +89,8 @@ Each wave closes with its boards moved to Built in Figma and its ledger entries 
   served by the backend rather than computed from a page of summaries.
 - **W5.** Proposals already exist (`propose_routine_change`, Apply); the inline receipt needs only the
   proposal's settled state on read.
-- **W7.** Log share links, their scope and revocation are backend gaps listed in
-  [log-exploration.md](log-exploration.md).
+- **W7.** Log share links, scope intersection, immutable snapshots and revocation follow
+  [log-exploration.md](log-exploration.md) and the shared API contract.
 - **Phones.** A rule that changes meaning (wording, a new state) lands on iOS and Android in the same
   wave or gets a ledger entry naming the lag.
 
@@ -103,14 +105,10 @@ Each wave closes with its boards moved to Built in Figma and its ledger entries 
 6. Commit and push; watch CI and the deploy.
 7. Bookkeeping: boards to Built, ledger entries closed, the dogfood tree node marked.
 
-## Open decisions for the owner
+## Implementation choices
 
-- **Desktop movement picker.** In the editor's right pane (the boards) or a dialog (shipped). The plan
-  assumes the pane.
-- **Saved past workout.** Lands in the log split (the boards) once W2 ships; until then on the session
-  page.
-- **Retired boards.** The Gym file's `Boards` page still presents the Today and Ask generations
-  (ledger F53): delete them, or move them to an archive page.
-- **Movement names.** The catalog says `Chin Up`, the boards `Chin-up`; one of them changes.
-- **Time field.** The native time input follows the system's 12- or 24-hour clock; the boards draw
-  24-hour. Keep native, or draw a custom field.
+- The desktop movement picker occupies the editor’s right pane; narrow uses a sheet.
+- A saved past workout opens the log with that workout selected.
+- Catalog spelling is preserved, including `Chin Up`.
+- Native time inputs follow the system’s 12- or 24-hour presentation.
+- The retired `Boards` page remains a separate design-led archive decision (ledger F53).

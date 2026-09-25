@@ -28,10 +28,10 @@ surfaces. What that means in practice:
   tool and — pinned — nothing that writes one, the footprint, the last slot in both phones' claim
   replay, and the reading, the chip, the dated
   weigh-in sheet and the dot chart on all three surfaces.
-- **The review is a sheet over the conversation on every surface** (`09-coach.md` beat two): one
-  Apply, unreachable until the diff has been seen to its end; kept rows folded in place; the
-  writer's kicker; an ephemeral receipt derived from the server's apply reply; and a superseded
-  refusal that names its reason off `gym_proposals.superseded_by`.
+- **Phone review uses a sheet over the conversation** (`09-coach.md` beat two), with a scroll-to-end
+  gate and pinned Apply. Web renders the full diff, Apply and Turn this down inline and restores the
+  settled proposal outcome on reopening. Kept rows fold in place; superseded refusals use the
+  server's recorded reason.
 - **The room is Coach on every surface.** The server's strings, the three client suites and the tab
   labels moved together, because the suites pin the server's bytes: a copy change that lands in one
   place turns another suite red, which is why a server string never changes without its three
@@ -429,12 +429,13 @@ receipt exists to make impossible.
 touch no thread: `ProgramService` holds a `ProgramRepository` and a `Clock` and nothing else
 (`ProgramService.h:69-71`). `ThreadProposal` (`Thread.h:25-34`) carries `createdAtMs` and no
 settled-at, so on reopening a thread the receipt cannot be placed back in chronology.
-**The *ephemeral* receipt is built on every surface and needed no backend work:** the apply reply
+**The proposal outcome is available on every surface without a thread ledger row:** the apply reply
 carries `proposal` and `routine` (`ProgramApi.cpp:207-210`) and `toJson(RoutineProposal)` emits
 `baseName`, `name` and `changeCount` (`TrainingJson.cpp:441-449,556-560`), which is what the three
-clients derive "Applied · Push A · 4 changes" from. Only durability is missing, and `09-coach.md`
-beat four says the receipt is stated as ephemeral until this row exists. Shipping it as history
-without the row is the failure the brief names.
+clients derive "Applied · Push A · 4 changes" from. Web restores its inline outcome from the stored
+proposal state; phone return receipts remain transient. The missing piece is a separate dated
+conversation turn, not the durability of the proposal decision. Do not render a transient receipt
+as a historical thread turn without that row.
 *The seam:* wiring a `ThreadService` into `ProgramService` would put a conversation write inside the
 program aggregate's apply transaction, against the dependency rule and against the file's own
 comment at `ProgramService.h:34-36`. Either an application-level coordinator above both, or the

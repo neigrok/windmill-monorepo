@@ -164,15 +164,10 @@ export function keptRunLabel(count) {
   return count === 1 ? 'and 1 line unchanged' : `and ${count} lines unchanged`;
 }
 
-// The card outside the dialog is a SKIM, not the document: what moved, three lines of it, and the
-// rest counted. The rows that are the document as well as the diff are behind Review, where the
-// scroll gate makes reading them the price of applying them.
+// Compact cards show up to three changed rows; Review unfolds the full inline diff.
 export const CARD_ROW_CAP = 3;
 
-// The rows a card may draw. A kept line is the routine standing still; the rename and the order are
-// claims about the whole document, and the document is only in the dialog — `the lines run in the
-// order below` has no lines below it on a card. `countedLabel` reads the store's own `changeCount`,
-// which counts a rename and a reorder, so nothing a card stops drawing stops being counted.
+// Rename, order and kept rows belong to the full diff; counts remain the store's own changeCount.
 export const CARD_ROW_KINDS = ['added', 'removed', 'retargeted'];
 
 export function moreRowsLabel(count) {
@@ -200,9 +195,7 @@ export function collapseKept(rows, expanded = new Set()) {
   return folded.flatMap((item) => (item.kind === 'kept-run' && expanded.has(item.at) ? item.rows : [item]));
 }
 
-// The receipt is derived from the server's settle reply and never from the model's prose, and it is
-// not stored: it lands in the thread for the visit and is gone on reopening. The count is the
-// server's to state; a reply without one gets no count, never a made-up one.
+// Settled receipts use the stored proposal state and server count, never the model's prose.
 export function receiptLine({ verb, proposal }) {
   if (verb === 'dismiss') return 'Turned down · nothing changed.';
   const name = proposal?.name ?? proposal?.baseName;

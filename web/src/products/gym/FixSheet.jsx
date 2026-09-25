@@ -1,139 +1,63 @@
-import React, { useState } from 'react';
-import { Input } from '../../design-system/index.js';
-import { alsoReadsLabel, fmtKg } from './log.js';
-import {
-  fixDraftOf, fixOf, fixSubtitle, isSetNoteOverCap, keepsItsOwnNumbers, NO_RPE_LABEL, RPE_RUNGS,
-  setNoteCountLabel, SET_NOTE_CAPTION, SET_NOTE_LABEL, setNoteRefusal, showsSetNoteCount,
-  withReps, withWeight,
-} from './fix.js';
-import { Keypad } from './logger/Keypad.jsx';
-import { LADDER_KEYS, ladderLabels } from './logger/ladder.js';
+import React, { useRef, useState } from 'react';
+import { Button } from '../../design-system/index.js';
+import { fixOf, fixSubtitle, NO_RPE_LABEL, RPE_RUNGS, SET_NOTE_CAPTION, SET_NOTE_LABEL, setNoteRefusal, showsSetNoteCount, setNoteCountLabel, isSetNoteOverCap } from './fix.js';
+import { alsoReadsLabel, dayLabel, setLoadLabel } from './log.js';
+import { correctionScheme, readSetFields, setFields } from './correction/correction.js';
 
-export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) {
-  const [draft, setDraft] = useState(() => fixDraftOf(set));
-  const [typing, setTyping] = useState(null);
-  // `LADDER_KEYS` and these labels pair by index.
-  const rungs = ladderLabels(draft.weightKg);
-  const keeps = keepsItsOwnNumbers(session);
-  const alsoReads = alsoReadsLabel(draft.weightKg);
-  // The store's own refusal for a long note is swallowed by the API, so this one is the lifter's.
-  const refusal = setNoteRefusal(draft.note);
-
-  return (
-    <>
-      <div className="gym-sheet-catch is-dimmed" role="presentation" onClick={onClose}>
-        <div className="gym-sheet gym-fix" role="dialog" aria-label="Fix this set" onClick={(event) => event.stopPropagation()}>
-          <div className="gym-fix-head">
-            <span className="gym-fix-title">Fix this set</span>
-            <span className="gym-fix-sub">{fixSubtitle(movement, set)}</span>
-            <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
-          </div>
-
-          <button type="button" className="gym-fix-weight" onClick={() => setTyping('weight')}>
-            <span className="gym-fix-kg">{fmtKg(draft.weightKg)}</span>
-            <span className="gym-fix-unit">kg</span>
-          </button>
-          {/* The field is kilograms; null when the account also reads kilograms. */}
-          {alsoReads && <p className="gym-fix-reads">{alsoReads}</p>}
-
-          <div className="gym-rungs">
-            {LADDER_KEYS.map((rung, index) => (
-              <button
-                key={`${rung.direction}${rung.big}`}
-                type="button"
-                className={rung.weight === 'inner' ? 'gym-rung is-loud' : 'gym-rung'}
-                onClick={() => setDraft((held) => withWeight(held, rung.direction, rung.big))}
-              >
-                {rungs[index]}
-              </button>
-            ))}
-          </div>
-
+export function FixSheet({ set, sets = [set], movement, session, onSave, onDelete, onClose }) {
+  const [draft, setDraft] = useState(() => setFields(set));
+  const [failure, setFailure] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const form = useRef(null);
+  const parsed = readSetFields(draft);
+  const group = sets.filter((row) => row.exerciseId === set.exerciseId);
+  const ratings = [null, ...(set.rpe != null && !RPE_RUNGS.includes(set.rpe) ? [set.rpe] : []), ...RPE_RUNGS];
+  const save = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    if (parsed.reason) {
+      setFailure(parsed);
+      form.current?.querySelector(`[name="${parsed.field}"]`)?.focus();
+      return;
+    }
+    setBusy(true);
+    const reason = await onSave(fixOf(set, parsed.value));
+    if (reason) {
+      setFailure({ reason, field: 'weightKg' });
+      form.current?.querySelector('[name="weightKg"]')?.focus();
+    }
+    setBusy(false);
+  };
+  const update = (field, value) => { setFailure(null); setDraft({ ...draft, [field]: value }); };
+  return <section className="gym-fix-page" aria-label="Fix set">
+    <header className="gym-fix-head">
+      <div><h1 className="gym-title">Fix set</h1><p className="gym-fix-sub">{fixSubtitle(movement, set)}{session.startedAt != null ? ` · ${dayLabel(session.startedAt)}` : ''}</p></div>
+      <button type="button" className="gym-fix-cancel" onClick={onClose} disabled={busy}>Cancel</button>
+    </header>
+    <form ref={form} className="gym-fix-form" onSubmit={save}>
+      <fieldset disabled={busy}>
+        <p className="gym-fix-units">kg × reps</p>
+        <div className="gym-fix-movement"><h2>{movement}</h2><p>{correctionScheme(group.map((row) => ({ fields: setFields(row) })))}</p></div>
+        {group.map((row) => row.id !== set.id ? <div key={row.id} className="gym-fix-sibling"><span className="gym-set-rail" aria-hidden="true"><i /></span><span>{setLoadLabel(row, 'kg')}</span></div> : <React.Fragment key={row.id}>
           <div className="gym-fix-row">
-            <span className="gym-fix-label">Reps</span>
-            <button type="button" className="gym-fix-step" aria-label="One rep fewer" onClick={() => setDraft((held) => withReps(held, -1))}>−</button>
-            <button type="button" className="gym-fix-value" onClick={() => setTyping('reps')}>{draft.reps}</button>
-            <button type="button" className="gym-fix-step" aria-label="One rep more" onClick={() => setDraft((held) => withReps(held, 1))}>+</button>
+            <span className="gym-set-rail" aria-hidden="true"><i /></span>
+            <input className="gym-num" name="weightKg" inputMode="decimal" aria-label="Load in kg" aria-invalid={failure?.field === 'weightKg'} aria-describedby={failure?.field === 'weightKg' ? 'gym-fix-refusal' : undefined} value={draft.weightKg} onChange={(event) => update('weightKg', event.target.value)} />
+            <span className="gym-number-times" aria-hidden="true">×</span>
+            <input className="gym-num" name="reps" inputMode="numeric" aria-label="Reps" aria-invalid={failure?.field === 'reps'} aria-describedby={failure?.field === 'reps' ? 'gym-fix-refusal' : undefined} value={draft.reps} onChange={(event) => update('reps', event.target.value)} />
+            <button type="button" className="gym-fix-remove" aria-label="Delete set" onClick={onDelete}>×</button>
           </div>
-
-          {/* Six to ten by halves, and the seat before them is no rating at all: a set the lifter
-              never rated has to be reachable again after one was chosen by mistake. That seat says
-              `Not rated` in its own face, so a screen reader names it from the same words a sighted
-              lifter reads — the dash it used to wear was announced as nothing. */}
-          <div className="gym-fix-rpe">
-            <span className="gym-fix-label">RPE</span>
-            <div className="gym-rpes">
-              <button
-                type="button"
-                className={draft.rpe == null ? 'gym-rpe is-unrated is-on' : 'gym-rpe is-unrated'}
-                aria-pressed={draft.rpe == null}
-                onClick={() => setDraft((held) => ({ ...held, rpe: null }))}
-              >
-                {NO_RPE_LABEL}
-              </button>
-              {RPE_RUNGS.map((rung) => (
-                <button
-                  key={rung}
-                  type="button"
-                  className={draft.rpe === rung ? 'gym-rpe is-on' : 'gym-rpe'}
-                  aria-pressed={draft.rpe === rung}
-                  onClick={() => setDraft((held) => ({ ...held, rpe: rung }))}
-                >
-                  {rung}
-                </button>
-              ))}
-            </div>
+          {failure && failure.field !== 'note' && <p id="gym-fix-refusal" className="gym-fix-refusal" role="alert">{failure.reason}</p>}
+          <div className="gym-fix-extra">
+            {alsoReadsLabel(parsed.value?.weightKg) && <p className="gym-quiet">{alsoReadsLabel(parsed.value.weightKg)}</p>}
+            <div className="gym-fix-effort"><span id="gym-fix-rpe-label">RPE</span><div className="gym-fix-ratings" role="group" aria-labelledby="gym-fix-rpe-label">{ratings.map((rating) => <button key={rating ?? 'none'} type="button" aria-pressed={draft.rpe === (rating == null ? '' : String(rating))} onClick={() => update('rpe', rating == null ? '' : String(rating))}>{rating ?? NO_RPE_LABEL}</button>)}</div></div>
+            <label className="gym-fix-note" htmlFor="gym-set-note"><span>{SET_NOTE_LABEL}{showsSetNoteCount(draft.note) && <span className={isSetNoteOverCap(draft.note) ? 'gym-name-count is-over' : 'gym-name-count'}>{setNoteCountLabel(draft.note)}</span>}</span><textarea rows="1" name="note" id="gym-set-note" aria-label={SET_NOTE_LABEL} aria-describedby="gym-set-note-caption" aria-invalid={Boolean(setNoteRefusal(draft.note))} placeholder="felt heavy" value={draft.note} onChange={(event) => update('note', event.target.value)} /></label>
+            <p id="gym-set-note-caption" className="gym-fix-note-caption">{SET_NOTE_CAPTION}</p>
+            {setNoteRefusal(draft.note) && <p className="gym-fix-refusal" role="alert">{setNoteRefusal(draft.note)}</p>}
           </div>
-
-          {/* The caption is load-bearing and not decoration: a set note is a RECORD the prompt reads
-              as data, where a note is directive text Coach follows. Emptying the field clears the
-              stored note; leaving it alone sends nothing. The counter goes alarm past the bound, the
-              same state and the same class the room's other byte counters wear. */}
-          <div className="gym-fix-note">
-            <Input
-              label={SET_NOTE_LABEL}
-              value={draft.note}
-              placeholder="felt heavy"
-              error={refusal ?? undefined}
-              onChange={(event) => setDraft((held) => ({ ...held, note: event.target.value }))}
-              describedBy="gym-set-note-caption"
-              trailing={showsSetNoteCount(draft.note) && (
-                <span className={isSetNoteOverCap(draft.note) ? 'gym-name-count is-over' : 'gym-name-count'}>
-                  {setNoteCountLabel(draft.note)}
-                </span>
-              )}
-            />
-            <p className="gym-fix-note-caption" id="gym-set-note-caption">{SET_NOTE_CAPTION}</p>
-          </div>
-
-          <button
-            type="button"
-            className={refusal ? 'gym-fix-save is-inert' : 'gym-fix-save'}
-            onClick={() => { if (!refusal) onSave(fixOf(set, draft)); }}
-          >
-            Save the fix
-          </button>
-
-          <div className="gym-fix-foot">
-            <button type="button" className="gym-fix-delete" onClick={onDelete}>Delete set</button>
-            {keeps && <span className="gym-fix-keeps">{keeps}</span>}
-          </div>
-        </div>
-      </div>
-      {/* Keep the keypad outside the sheet; nested, a tap on it closes the sheet. */}
-      {typing && (
-        <Keypad
-          key={typing}
-          mode={typing}
-          current={typing === 'weight' ? draft.weightKg : draft.reps}
-          editing
-          onCommit={(value) => {
-            setDraft((held) => (typing === 'weight' ? { ...held, weightKg: value } : { ...held, reps: value }));
-            setTyping(null);
-          }}
-          onCancel={() => setTyping(null)}
-        />
-      )}
-    </>
-  );
+        </React.Fragment>)}
+      </fieldset>
+      <p className="gym-fix-proof">Changes update this saved set. The workout stays in your log.</p>
+      <footer className="gym-fix-actions"><button type="button" className="gym-fix-delete" onClick={onDelete} disabled={busy}>Delete set</button><Button type="submit" disabled={busy} ariaBusy={busy}>{busy ? 'Saving…' : 'Save changes'}</Button></footer>
+    </form>
+  </section>;
 }

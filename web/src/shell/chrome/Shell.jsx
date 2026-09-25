@@ -99,7 +99,7 @@ export function Shell({ location, neutral = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
+    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme} data-layout={room.product?.shell?.layout}>
       <header className="wm-head">
         <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label="Rooms">
@@ -108,12 +108,17 @@ export function Shell({ location, neutral = null }) {
             <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
           ))}
         </nav>
+        {room.product?.shell?.layout === 'desk' && <label className="wm-room-select"><span aria-hidden="true">{room.product.label} <span className="wm-room-caret">▾</span></span><select aria-label="Room" value={room.product.shell.room} onChange={(event) => navigate(event.target.value)}>
+          <option value="/app">Home</option>
+          {PRODUCTS.filter((product) => product.shell?.status === 'open').map((product) => <option key={product.id} value={product.shell.room}>{product.label}</option>)}
+        </select></label>}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
           <AccountSeat
             user={user}
             status={status}
             size={30}
+            display={room.product?.shell?.layout === 'desk' ? 'label' : 'avatar'}
             onSignIn={openSignInDoor}
             onSettings={() => navigate('/app/settings')}
             onConnect={() => navigate('/app/connect')}

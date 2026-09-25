@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  backOf, chartOf, daysOf, recordsOf, recordView, RENAME_PROOF, renameProofOf, subheadOf, tilesOf,
+  backOf, daysOf, recordsOf, recordView, RENAME_PROOF, renameProofOf, subheadOf, tilesOf,
   whenOf,
 } from '../../../src/products/gym/record.js';
 import { FROM_ROUTINES, fromSession } from '../../../src/products/gym/log.js';
@@ -115,45 +115,6 @@ test('tilesOf — a movement with no honest estimate has no e1RM tile, and its h
   assert.deepEqual(tilesOf(NEVER, NOW), []);
 });
 
-test('chartOf — bars from zero to the series’ own top, oldest first, named by the days on screen', () => {
-  const chart = chartOf(BACK_SQUAT, NOW);
-  assert.equal(chart.top, 122.5);
-  assert.deepEqual(chart.bars.map((bar) => bar.pct), [95.27, 97.63, 100]);
-  assert.deepEqual(chart.bars.map((bar) => bar.at), [MAY_19, JUL_27, TODAY]);
-  assert.equal(chart.from, '19 May');
-  assert.equal(chart.to, '10 Aug');
-
-  assert.deepEqual(chart.bars.map((bar) => bar.standing), [false, false, true]);
-
-  const older = chartOf({ ...BACK_SQUAT, bestE1rm: { weightKg: 110, reps: 5, at: MAY_19 - 86_400_000, e1rm: 128.3 } }, NOW);
-  assert.deepEqual(older.bars.map((bar) => bar.standing), [false, false, false]);
-
-  assert.deepEqual(chart.bars.map((bar) => bar.label), [
-    '19 May · 100 × 5 · e1RM 116.7',
-    '27 Jul · 102.5 × 5 · e1RM 119.6',
-    'today · 105 × 5 · e1RM 122.5',
-  ]);
-});
-
-test('chartOf — a movement with no estimate draws no chart, and neither does one with no history', () => {
-  assert.equal(chartOf(CHIN_UP, NOW), null);
-  assert.equal(chartOf(NEVER, NOW), null);
-  assert.equal(chartOf({ ...BACK_SQUAT, e1rmSeries: [] }, NOW), null);
-});
-
-test('chartOf — a point with no estimate in it draws no chart at all', () => {
-  const holed = { ...BACK_SQUAT, e1rmSeries: [{ at: MAY_19, weightKg: 100, reps: 5 }, { at: TODAY, weightKg: 105, reps: 5, e1rm: 122.5 }] };
-  assert.equal(chartOf(holed, NOW), null);
-});
-
-test('chartOf — one session is one bar at full height, because it is the top of its own series', () => {
-  const chart = chartOf({ ...BACK_SQUAT, e1rmSeries: [{ at: TODAY, weightKg: 105, reps: 5, e1rm: 122.5 }] }, NOW);
-  assert.equal(chart.bars.length, 1);
-  assert.equal(chart.bars[0].pct, 100);
-  assert.equal(chart.from, '10 Aug');
-  assert.equal(chart.to, '10 Aug');
-});
-
 test('recordsOf — the ladder, newest first, and only the newest one still stands', () => {
   assert.deepEqual(recordsOf(BACK_SQUAT, NOW), [
     { at: TODAY, load: '105 × 5', e1rm: 'e1RM 122.5', when: 'today', standing: true },
@@ -180,7 +141,6 @@ test('recordView — the whole page, made once', () => {
   assert.equal(view.subhead, 'barbell · in 2 routines · 34 sessions');
   assert.equal(view.logged, true);
   assert.equal(view.tiles.length, 2);
-  assert.equal(view.chart.bars.length, 3);
   assert.equal(view.records.length, 2);
   assert.equal(view.days.length, 2);
 });
@@ -191,7 +151,6 @@ test('recordView — a movement nobody has worked draws nothing but its name and
   assert.equal(view.subhead, 'barbell · in no routine · never logged');
   assert.equal(view.logged, false);
   assert.deepEqual(view.tiles, []);
-  assert.equal(view.chart, null);
   assert.deepEqual(view.records, []);
   assert.deepEqual(view.days, []);
 });
@@ -201,7 +160,6 @@ test('recordView — a movement only ever dropped is in the log, and says so abo
   assert.equal(view.subhead, 'cable · in no routine · no working sets');
   assert.equal(view.logged, true);
   assert.deepEqual(view.tiles, []);
-  assert.equal(view.chart, null);
   assert.deepEqual(view.records, []);
   assert.deepEqual(view.days, [{ sessionId: 'ses_jul27', when: '27 Jul', sets: '60 × 12 drop' }]);
 });

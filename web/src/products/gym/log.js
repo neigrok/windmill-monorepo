@@ -12,6 +12,14 @@ export function sessionIdOf(hash) {
   return match ? match[1] : null;
 }
 
+export function fixSetIdOf(hash) {
+  return /^#\/gym\/session\/[A-Za-z0-9_-]+\/set\/([A-Za-z0-9_-]+)\/edit(?:\?|$)/.exec(hash || '')?.[1] ?? null;
+}
+
+export function fixSetHref(sessionId, setId, from = '#/gym/log') {
+  return `${sessionHref(sessionId)}/set/${setId}/edit?from=${encodeURIComponent(from)}`;
+}
+
 export function sessionHref(id) {
   return `#/gym/session/${id}`;
 }
@@ -104,20 +112,26 @@ export function movementIdOf(hash) {
 // A record opened from a workout carries that session in its own hash, so its back link returns
 // there. A record opened with no origin was opened from Routines, the home.
 export const FROM_ROUTINES = { screen: 'routines' };
+export const FROM_LOG = { screen: 'log' };
 
-export function fromSession(sessionId) {
-  return { screen: 'session', id: sessionId };
+export function fromSession(sessionId, href) {
+  return { screen: 'session', id: sessionId, ...(href ? { href } : {}) };
 }
 
 export function recordHref(exerciseId, from = FROM_ROUTINES) {
-  if (from.screen === 'session') return `#/gym/movement/${exerciseId}?from=session.${from.id}`;
+  if (from.screen === 'session') return `#/gym/movement/${exerciseId}?from=session.${from.id}${from.href ? `&return=${encodeURIComponent(from.href)}` : ''}`;
+  if (from.screen === 'log') return `#/gym/movement/${exerciseId}?from=${encodeURIComponent(from.href ?? 'log')}`;
   return `#/gym/movement/${exerciseId}`;
 }
 
 export function recordFromOf(hash) {
-  const match = /^#\/gym\/movement\/[A-Za-z0-9_-]+\?from=session\.([A-Za-z0-9_-]+)$/.exec(hash || '');
+  const query = new URLSearchParams((hash ?? '').split('?').slice(1).join('?'));
+  const origin = query.get('from');
+  if (origin === 'log' || /^#\/gym\/log(?:\?|$)/.test(origin ?? '')) return { screen: 'log', ...(origin === 'log' ? {} : { href: origin }) };
+  const match = /^session\.([A-Za-z0-9_-]+)$/.exec(origin ?? '');
   if (!match) return FROM_ROUTINES;
-  return fromSession(match[1]);
+  const target = query.get('return');
+  return fromSession(match[1], /^#\/gym\/session\/[A-Za-z0-9_-]+(?:\?|$)/.test(target ?? '') ? target : undefined);
 }
 
 export const MOVEMENTS_HREF = '#/gym/movement';
@@ -128,6 +142,11 @@ export function sharedTokenOf(hash) {
   return match ? match[1] : null;
 }
 
+export function sharedLogTokenOf(hash) {
+  const match = /^#\/gym\/shared-log\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
 export function sharedHref(token) {
   return `#/gym/shared/${token}`;
 }
@@ -135,7 +154,9 @@ export function sharedHref(token) {
 // Longest first: a routine id is also a routines URL. Anything else under #/gym is the routines
 // home, which is what `#/gym` itself names.
 export function screenOf(hash) {
+  if (sharedLogTokenOf(hash)) return 'shared-log';
   if (sharedTokenOf(hash)) return 'shared';
+  if (/^#\/gym\/share-log(?:[/?]|$)/.test(hash || '')) return 'share-log';
   if (sessionIdOf(hash)) return 'session';
   if (finishIdOf(hash)) return 'finish';
   if (proposalIdOf(hash)) return 'proposal';
@@ -253,8 +274,8 @@ export function durLabel(ms) {
 
 // Every printed weight in gym comes through here: display units (units.js), the ladder's rounding
 // grid, and a real U+2212 minus for the band-assisted loads that sit below zero.
-export function fmt(weightKg) {
-  const shown = inDisplayUnit(weightKg);
+export function fmt(weightKg, unit = weightUnit()) {
+  const shown = inDisplayUnit(weightKg, unit);
   return (shown < 0 ? '−' : '') + String(Math.abs(round(shown)));
 }
 
@@ -298,9 +319,9 @@ export function tonnageOf(session, sets = null) {
 // Grouped in one fixed spelling and never localised, like every date in this product.
 const TONNAGE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
-export function tonnageLabel(kg) {
+export function tonnageLabel(kg, unit = weightUnit()) {
   if (!Number.isFinite(kg) || kg <= 0) return null;
-  return TONNAGE.format(inDisplayUnit(kg));
+  return TONNAGE.format(inDisplayUnit(kg, unit));
 }
 
 // Both numbers are of what is in hand; the log carries no total. The line is also where the log
@@ -636,14 +657,15 @@ export function slotRows(sets, entry) {
 }
 
 // Zero is the absence of a load: the movement done at bodyweight. A band-assisted −20 prints itself.
-export function setLoadLabel(set) {
+export function setLoadLabel(set, unit = weightUnit()) {
   if (set.weightKg === 0) return `bodyweight × ${set.reps}`;
-  return `${fmt(set.weightKg)} × ${set.reps}`;
+  return `${fmt(set.weightKg, unit)} × ${set.reps}`;
 }
 
 export const NO_ROUTINE = 'Free session';
 
 export function routineNameOf(session) {
+  if (typeof session?.routineName === 'string') return session.routineName || null;
   // The snapshot is frozen jsonb echoed back verbatim: a non-string is no routine.
   const routine = planOf(session)?.routine;
   return typeof routine === 'string' && routine !== '' ? routine : null;

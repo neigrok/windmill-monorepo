@@ -28,22 +28,22 @@ through `data-brand`, and the light block pins no ground of its own.
 `apps/ios/WindmillKit/Sources/WindmillJournal/JournalSkin.swift:31`, which paints
 `canvas: 0xFBF6EA`, so the phone's day sheet is warmer than the web's.
 
-**F4 · `--pr-ink` fails the 4.5 gate in Daylight, and the gold ramp has no darker step** → a
-designer's token before Daylight renders. `gym.css:66-68` states 3.2:1 for `--pr-ink`
-(`--accent-gold-600`) against `--pr-soft` over `--surface-card` in pietra, which agrees with the
-ledger's own recompute (3.19 on the tinted record card; 2.83 on the tinted canvas, 3.73 untinted).
-Nothing renders this skin while gym pins dark (F5), which is when the token has to be decided.
+**F4 · Daylight PR ink** → Figma and web verified; native alignment pending.
+`Gym · Colour` defines `ramp/gold-700` as `#6E5217` (`VariableID:872:7735`) and aliases Daylight
+`state/pr-ink` to it. The 14% gold-600 PR tint stays unchanged. WCAG luminance calculation gives
+5.92:1 on canvas, 6.76:1 on card and 5.25:1 on raised; with that tint the ratios are 5.13:1,
+5.79:1 and 4.60:1. The [Figma specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
+documents all six cases. Instrument remains gold-400. The local web resolves both aliases correctly
+on the log, reader and correction at 1440 and 390 in both themes. Android's `GymSkin.kt` Daylight `prInk`
+still uses `#A17822`; its palette owner must adopt gold-700 and verify native PR rows. iOS
+`GymSkin.swift` currently defines only Instrument; any Daylight palette must use gold-700.
 
-**F5 · gym's Daylight skin has no producer** → **ruled 2026-08-24: build it**, owed a build.
-`routes.js` pins `theme: 'dark'` and `GymApp.jsx` hardcodes `data-theme="dark"`, so the light block
-in `gym.css` has never rendered. The Coach wave rules that gym stops being dark-only, because a room
-that ignores the system Appearance is not native and `superapp-shell.md:80-83` already says a room
-owns its palette and never the choice. Three things the ruling found and that the build owes:
-fourteen of the light declarations are byte-identical aliases onto tokens that already flip per
-theme, so only four are real light decisions; `--set-done-glow` is **deleted** in light rather than
-dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it
-(done in `gym.css`; the Figma collection still carries it — `1w`); and `--pr-ink` needs a designer's
-value first — see F4, which puts it at 3.2:1 with no darker gold in the ramp.
+**F5 · gym Daylight appearance** → web verified; unused library glow values remain a separate cleanup.
+`GymApp.jsx` resolves appearance through the shared `useAppearance` hook. Gym owns its
+Instrument/Daylight palettes while the shared appearance choice selects the mode. The W8 runtime
+matrix covers the web screens at 1440 and 390, including the gold-700 PR ink from F4. Figma's
+Daylight set-done glow variables retain values but bind no Web · Gym nodes; the web Daylight skin
+has no glow. Their library/native reconciliation remains independent of the verified web build.
 Android follows system appearance through `LocalWindmillDark` and immutable Instrument/Daylight
 palettes. Shared chrome, Settings, account sheets and system icons have native verification in
 Android delivery Wave 1; the wider device/motion audit remains in Wave 6.
@@ -2294,20 +2294,20 @@ status to say they are superseded. They are the only consumers of `Gym/Archive/T
 the rest mix Nunito prose with mono numerals in one run, which a style would flatten. Twelve sheet
 radii (20–26) and six mixed-corner nodes stay raw because `Gym · Metrics` has no sheet radius.
 
-**F57 · every `Web · Gym` board is Ready and none is Built** → build owner. The shipped web draws the
-layout the boards replace — no desktop splits, no set rail, no log filters or log sharing, a keypad
-sheet where the boards edit numbers in place. The shell differs too: the boards draw the Routines ·
-The log · Coach tabs under the header on every gym page, while the web puts them in a bottom bar and
-drops them on pushed pages such as the past workout. The catalog names the movement `Chin Up` where
-the boards write `Chin-up`. Each board turns Built as the web matches it.
+**F57 · Gym web implementation acceptance** → verified: 102 Built, zero Ready. Final Figma readback
+confirms every implementation board on Web · Gym is Built. All 51 desktop/narrow pairs were checked
+against the running local web with live fixtures at 1440 and 390. The additional Daylight matrix
+and published Gym library complete W8. [web-build-contract.md](gym/web-build-contract.md) records
+the per-board evidence, measurements and accepted current compositions. Catalog spelling stays
+`Chin Up`; fixture drawings do not rename stored movements. Native lag and the independent F53
+archive and F5 unused-glow follow-ups remain recorded separately.
 
 ## Gym web past workout · 24 September 2026
 
 **F55 · the web's past workout is drawn ahead of the build** → built 2026-09-24, nothing owed for the
 form. The web starts from a routine, prefills targets then last time, takes the day in one tap, states
 the stored default hour beside Save, and writes the workout through `POST /v1/gym/sessions/import`.
-Its boards stay Ready under F57: the page-wide shell, the log split the Saved board lands on, and the
-Routines page the From-a-routine board draws are not built.
+Its desktop/narrow board states are verified under F57. The Saved desktop/narrow drawings reuse the current selected-reader composition and saved Undo receipt; the form has no separate frozen-plan or working-set reader.
 
 **F56 · a routine never trained has three spellings** → built 2026-09-24, nothing owed. Web and
 Android say never trained; the word is capitalised where it stands alone (`Never trained`) and lower
@@ -2405,3 +2405,16 @@ Web (`pre-wrap` text) and iOS (`Text(text)`) still draw `**` and `- ` literally,
 streaming specimens (`744:3844`, `744:3801`) show plain paragraphs. Design owns whether the two other
 surfaces adopt the same block typography and pacing rule; the Android choices are the reference until
 then. Tracking node: `gym-android-coach-stream-markdown`.
+
+
+**Gym web · Daylight coverage** → verified. All 102 boards in 51 width pairs are Built; the additional
+Daylight runtime matrix covers the shared layouts at 1440 and 390. Routines has its own Daylight
+drawings (`476:1082`, `476:1115`); the other layouts use the approved mode tokens. The Gym library
+is published to Sam Gold's team, including gold-700 and the Logger component with unused properties
+removed; Manage libraries confirms No changes. Both Routines open menus contain Log past and
+Delete. [web-build-contract.md](gym/web-build-contract.md) maps the evidence. Native PR token lag
+and unused glow values are tracked independently in F4 and F5.
+
+**Gym web · Coach chrome** → drawings reconciled with the [feedback contract](gym/feedback-contract.md). All eight conversation boards include History and More; the six editable conversation states include Add photo and omit the standing allowance. The active-workout states retain their refusal. Existing inline proposal masters and the 640px conversation measure remain the reference. All four conversation-state pairs pass runtime verification in both themes under F57.
+
+**Gym workout correction · native display names** → open iOS and Android follow-up. The session response has an optional `routineName` for a corrected workout's display name. Web uses it without changing the frozen plan or living routine. Phone readers that derive the title only from the frozen plan show its original name; both native readers need to prefer the explicit session display name, including an empty name for a free session.

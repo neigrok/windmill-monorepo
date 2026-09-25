@@ -5,6 +5,8 @@ import { gymApi } from './gymApi.js';
 import { cappedName, isNameOverCap, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { backOf, NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
+import { recordProgress } from './progress/progress.js';
+import { MovementChart } from './progress/Progress.jsx';
 import { useGymRead } from './useGymRead.js';
 
 // `from` is where the record was opened (log.js `recordFromOf`); its back link returns there.
@@ -60,7 +62,7 @@ function OneMovement({ id, from, log }) {
     );
   }
 
-  const model = recordView(view.data.record);
+  const model = recordView({ ...view.data.record, ...recordProgress(log.progress?.data, id, view.data.record.exercise.equipment) });
   return (
     <section className="gym-record-screen">
       <BackTo from={from} session={view.data.session} />
@@ -68,7 +70,8 @@ function OneMovement({ id, from, log }) {
         <h1 className="gym-record-name">{model.name}</h1>
         <button type="button" className="gym-record-rename" onClick={() => setRenaming(true)}>Rename</button>
       </header>
-      <p className="gym-record-sub">{model.subhead}</p>
+      <p className="gym-record-sub">{view.data.record.exercise.equipment ? `${view.data.record.exercise.equipment[0].toUpperCase()}${view.data.record.exercise.equipment.slice(1)} · ` : ''}Movement record</p>
+      {model.logged && <MovementChart id={id} log={log} equipment={view.data.record.exercise.equipment} />}
 
       {!model.logged && (
         <>
@@ -77,6 +80,7 @@ function OneMovement({ id, from, log }) {
         </>
       )}
 
+      <details className="gym-record-more"><summary>More movement facts</summary>
       {model.tiles.length > 0 && (
         <ul className="gym-record-tiles">
           {model.tiles.map((tile) => (
@@ -89,7 +93,6 @@ function OneMovement({ id, from, log }) {
         </ul>
       )}
 
-      {model.chart && <Chart chart={model.chart} />}
 
       {model.records.length > 0 && (
         <section className="gym-record-block">
@@ -123,6 +126,7 @@ function OneMovement({ id, from, log }) {
         </section>
       )}
 
+      </details>
       {renaming && (
         <RenameSheet
           name={model.name}
@@ -144,33 +148,6 @@ function OneMovement({ id, from, log }) {
 function BackTo({ from, session = null }) {
   const back = backOf(from, session);
   return <Back href={back.href}>{back.label}</Back>;
-}
-
-function Chart({ chart }) {
-  return (
-    <figure className="gym-record-chart">
-      <figcaption className="gym-record-chart-head">
-        <span>e1RM per session</span>
-        <span className="gym-record-chart-window">12 weeks</span>
-      </figcaption>
-      <div className="gym-record-bars" role="list">
-        {chart.bars.map((bar, index) => (
-          <div
-            className={bar.standing ? 'gym-record-bar is-standing' : 'gym-record-bar'}
-            key={`${bar.at}-${index}`}
-            role="listitem"
-            aria-label={bar.label}
-          >
-            <span className="gym-record-bar-fill" style={{ height: `${bar.pct}%` }} />
-          </div>
-        ))}
-      </div>
-      <p className="gym-record-span">
-        <span>{chart.from}</span>
-        <span>{chart.to}</span>
-      </p>
-    </figure>
-  );
 }
 
 function RenameSheet({ name, record, onClose, onSave }) {

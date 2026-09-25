@@ -205,3 +205,28 @@ a.wm-switch-btn:hover {
     padding: 18px 16px 32px;
   }
 }
+
+.wm-shell[data-layout='desk'] .wm-head {
+  box-sizing: border-box;
+  width: min(1056px, 100%);
+  height: calc(80px + env(safe-area-inset-top, 0px));
+  align-self: center;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.wm-shell[data-layout='desk'] .wm-head-mark { display: none; }
+.wm-shell[data-layout='desk'] .wm-switch { justify-self: start; gap: 8px; }
+.wm-shell[data-layout='desk'] .wm-switch-btn { font-size: 14px; }
+@media (max-width: 600px) {
+  .wm-shell[data-layout='desk'] .wm-head { padding-left: 20px; padding-right: 20px; }
+  .wm-shell[data-layout='desk'] .wm-switch { gap: 2px; }
+  .wm-shell[data-layout='desk'] .wm-switch-btn { padding: 0 8px; font-size: 13px; }
+}
+.wm-room-select { display: none; }
+@media (max-width: 600px) {
+  .wm-shell[data-layout='desk'] .wm-switch { display: none; }
+  .wm-shell[data-layout='desk'] .wm-room-select { display: flex; align-items: center; position: relative; justify-self: start; height: 30px; padding: 0 13px; border-radius: var(--radius-full); background: var(--surface-card); color: var(--text-primary); font: 700 14px/20px var(--font-body); }
+  .wm-room-select select { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+  .wm-room-select:focus-within { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .wm-room-caret { font-size: 10px; }
+}

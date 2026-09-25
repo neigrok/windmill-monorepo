@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  ADD_SET, blankRoutine, builtLabel, commitLabel, draftFrom,
+  ADD_SET, blankRoutine, commitLabel, draftFrom,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, EVERY_SET, FILL, headOf,
-  historyRows, isOpenEntry, LAST_TIME_PLACEHOLDER, MATCH_SET_ONE, MAX_PLACEHOLDER, ONE_DECIMAL,
+  isOpenEntry, LAST_TIME_PLACEHOLDER, MATCH_SET_ONE, MAX_PLACEHOLDER, ONE_DECIMAL,
   OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
   REPS_BAND, routineFromSession, routineWrite, saysNeverLogged, SET_BY_SET, SETS_BAND, SHEET_CHROME,
   targetEntryOf, targetFieldsOf, targetRefusal, VARIES_PLACEHOLDER, withEntryAdded, withEntryRemoved,
@@ -556,82 +556,4 @@ test('entryPlaceLabel — the position in the run, and the routine when it has a
   assert.equal(entryPlaceLabel(0, 1, 'Legs'), '1 of 1 · Legs');
   assert.equal(entryPlaceLabel(1, 4, '   '), '2 of 4');
   assert.equal(entryPlaceLabel(1, 4, ''), '2 of 4');
-});
-
-test('builtLabel — the day the routine was written, and only a count the store sent', () => {
-  const now = new Date(2026, 7, 12, 20, 0).getTime();          // Wed 12 Aug 2026
-  const sunday = new Date(2026, 7, 9, 11, 0).getTime();        // Sun 9 Aug 2026
-  const fortnight = new Date(2026, 6, 29, 11, 0).getTime();    // Wed 29 Jul 2026
-  const built = (at, movements) => ({
-    history: [{ kind: 'created', at, ...(movements == null ? {} : { movements }) }],
-  });
-
-  assert.equal(builtLabel(built(sunday, 4), now), 'built Sunday · 4 movements');
-  assert.equal(builtLabel(built(sunday, 1), now), 'built Sunday · 1 movement');
-  assert.equal(builtLabel(built(sunday), now), 'built Sunday');
-  assert.equal(builtLabel(built(fortnight, 4), now), 'built 29 Jul · 4 movements');
-  assert.equal(builtLabel({ history: [] }, now), null);
-  assert.equal(builtLabel({}, now), null);
-  assert.equal(builtLabel(null, now), null);
-});
-
-test('historyRows — the day it was written and every proposal since, each spelled once', () => {
-  const proposal = {
-    id: 'prop_1',
-    routineId: 'rt_1',
-    intent: 'update',
-    state: 'pending',
-    summary: '',
-    changeCount: 3,
-    createdAt: new Date(2026, 7, 10, 21, 14).getTime(),
-    source: { door: 'mcp' },
-  };
-  const rows = historyRows({
-    history: [
-      { kind: 'proposal', at: proposal.createdAt, proposal },
-      { kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), movements: 4 },
-    ],
-  });
-  assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0], {
-    key: 'prop_1',
-    pending: true,
-    href: '#/gym/proposals/prop_1',
-    thread: null,
-    line: '10 Aug · 3 changes from your connected agent · waiting for you',
-  });
-  assert.deepEqual(rows[1], {
-    key: 'created-1',
-    pending: false,
-    href: null,
-    line: '9 Aug · created by you · 4 movements',
-  });
-
-  const asked = historyRows({
-    history: [{
-      kind: 'proposal',
-      at: proposal.createdAt,
-      proposal: { ...proposal, source: { door: 'ask', thread: 'thr_0a1b2c3d4e5f6071' } },
-    }],
-  });
-  assert.equal(asked[0].thread, 'thr_0a1b2c3d4e5f6071');
-  const deleted = historyRows({
-    history: [{ kind: 'proposal', at: proposal.createdAt, proposal: { ...proposal, source: { door: 'ask' } } }],
-  });
-  assert.equal(deleted[0].thread, null);
-  assert.equal(deleted[0].line, '10 Aug · 3 changes from Coach · waiting for you');
-
-  const byAgent = historyRows({
-    history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'ask', movements: 2 }],
-  });
-  assert.equal(byAgent[0].line, '9 Aug · created by Coach · 2 movements');
-  assert.equal(byAgent[0].line.includes('by you'), false);
-  assert.equal(
-    historyRows({ history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'mcp' }] })[0].line,
-    '9 Aug · created by your connected agent',
-  );
-
-  assert.deepEqual(historyRows({ history: [] }), []);
-  assert.deepEqual(historyRows({}), []);
-  assert.deepEqual(historyRows(null), []);
 });

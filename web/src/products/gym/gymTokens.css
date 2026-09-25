@@ -68,10 +68,7 @@
   --warmup-ink: var(--neutral-500);
   --unsynced-ink: var(--neutral-500);
   --target-ink: var(--color-brand);
-  /* The 600, gold getting lighter and not darker from --color-warning's 500. Computed 3.2:1 against
-     --pr-soft over --surface-card in pietra, under the 4.5 gate, and the ramp has no darker gold: a
-     passing value is a designer's token (ledger F4). Nothing renders this skin while gym pins dark. */
-  --pr-ink: var(--accent-gold-600);
+  --pr-ink: var(--accent-gold-700);
   --pr-soft: rgba(161, 120, 34, 0.14);
   --alarm-ink: var(--accent-brick-500);
   --alarm-soft: var(--color-danger-bg);
@@ -117,3 +114,11 @@
   --chip-selected-edge: var(--color-brand);
 }
 
+
+.gym-skin {
+  --gym-measure-read: 640px;
+  --gym-measure-figures: 420px;
+  --gym-measure-desk: 1024px;
+  --gym-section-gap: 32px;
+  --gym-card-radius: 16px;
+}

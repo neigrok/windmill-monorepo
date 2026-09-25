@@ -30,6 +30,10 @@ const drawn = (tree, className) => findByClass(tree, className).map(textOf);
 const refusals = (tree) => elementsOf(tree)
   .filter((each) => each.props?.error != null)
   .map((each) => [each.props.label ?? each.props.ariaLabel, each.props.error]);
+const setCount = (sheet, count) => {
+  while (rows(sheet.tree).length < count) findByClass(sheet.tree, 'gym-ladder-add')[0].props.onClick();
+  while (rows(sheet.tree).length > count) findByClass(sheet.tree, 'gym-ladder-drop').at(-1).props.onClick();
+};
 const typed = (value) => ({ target: { value } });
 const type = (tree, name, value) => field(tree, name).props.onChange(typed(value));
 const rows = (tree) => findByClass(tree, 'gym-ladder-row')
@@ -76,20 +80,20 @@ async function openRamp(t) {
   return sheetOf(t, editor);
 }
 
-test('an open line: the sentence, the two head fields inert, no ladder — and a count brings the ladder', async (t) => {
+test('an open line keeps the head fields inert until Add set creates a target', async (t) => {
   const sheet = await openSheet(t);
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), [OPEN_LINE]);
   assert.deepEqual(refusals(sheet.tree), []);
-  assert.deepEqual(findByClass(sheet.tree, 'gym-ladder'), []);
+  assert.deepEqual(rows(sheet.tree), []);
   assert.equal(findByClass(sheet.tree, 'gym-target-head')[0].props.disabled, true);
   assert.equal(commit(sheet.tree), 'Set · open');
 
-  type(sheet.tree, 'Sets', '3');
+  setCount(sheet, 3);
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), []);
   assert.equal(findByClass(sheet.tree, 'gym-target-head')[0].props.disabled, false);
   assert.deepEqual(rows(sheet.tree), [['', ''], ['', ''], ['', '']]);
   assert.equal(field(sheet.tree, 'Reps').props.placeholder, 'max');
-  assert.equal(field(sheet.tree, 'Weight').props.placeholder, 'last time');
+  assert.equal(field(sheet.tree, 'Weight · kg').props.placeholder, 'last time');
   assert.equal(commit(sheet.tree), 'Set · 3 × max');
 
   // A refusal is drawn under the row that carries the fault, and nowhere else.
@@ -101,37 +105,37 @@ test('an open line: the sentence, the two head fields inert, no ladder — and a
 
   // The head writes every row.
   type(sheet.tree, 'Reps', '5');
-  type(sheet.tree, 'Weight', '80');
+  type(sheet.tree, 'Weight · kg', '80');
   assert.deepEqual(rows(sheet.tree), [['5', '80'], ['5', '80'], ['5', '80']]);
   assert.equal(commit(sheet.tree), 'Set · 3 × 5 · 80');
 
-  // Clearing Sets hides the ladder without discarding it, and retyping the count brings it back.
-  type(sheet.tree, 'Sets', '');
+  // Deleting all rows returns to an open target; Add set starts a new target.
+  setCount(sheet, 0);
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), [OPEN_LINE]);
-  assert.deepEqual(findByClass(sheet.tree, 'gym-ladder'), []);
-  type(sheet.tree, 'Sets', '3');
-  assert.deepEqual(rows(sheet.tree), [['5', '80'], ['5', '80'], ['5', '80']]);
+  assert.deepEqual(rows(sheet.tree), []);
+  setCount(sheet, 3);
+  assert.deepEqual(rows(sheet.tree), [['', ''], ['', ''], ['', '']]);
 });
 
-test('the ramp fixture: head 5 · varies · varies, five rows, commit `Set · 5 sets`, and fourteen words of chrome', async (t) => {
+test('the ramp fixture: head varies · varies, five rows, commit `Set · 5 sets`, and fourteen words of chrome', async (t) => {
   const sheet = await openRamp(t);
-  assert.equal(field(sheet.tree, 'Sets').props.value, '5');
+  assert.equal(field(sheet.tree, 'Sets'), undefined);
   assert.equal(field(sheet.tree, 'Reps').props.value, '');
   assert.equal(field(sheet.tree, 'Reps').props.placeholder, VARIES_PLACEHOLDER);
-  assert.equal(field(sheet.tree, 'Weight').props.value, '');
-  assert.equal(field(sheet.tree, 'Weight').props.placeholder, VARIES_PLACEHOLDER);
+  assert.equal(field(sheet.tree, 'Weight · kg').props.value, '');
+  assert.equal(field(sheet.tree, 'Weight · kg').props.placeholder, VARIES_PLACEHOLDER);
   assert.deepEqual(rows(sheet.tree), [['5', '60'], ['5', '80'], ['3', '90'], ['1', '100'], ['5', '80']]);
   assert.equal(commit(sheet.tree), 'Set · 5 sets');
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), []);
 
   const chrome = [
     ...elementsOf(sheet.tree).filter((each) => each.type === 'h3').map(textOf),
-    ...['Sets', 'Reps', 'Weight'].map((name) => field(sheet.tree, name).props.label),
+    ...['Reps', 'Weight · kg'].map((name) => field(sheet.tree, name).props.label),
     fill(t, sheet.tree).opener,
     ...drawn(sheet.tree, 'gym-ladder-add'),
     commit(sheet.tree),
   ];
-  assert.deepEqual(chrome, ['Every set', 'Set by set', 'Sets', 'Reps', 'Weight', 'Fill', 'Add set', 'Set · 5 sets']);
+  assert.deepEqual(chrome, ['Every set', 'Set by set', 'Reps', 'Weight · kg', 'Fill', 'Add set', 'Set · 5 sets']);
   assert.equal(chrome.join(' ').split(/[\s·]+/).filter(Boolean).length, 14);
 
   // Typing over `varies` writes every row again.
@@ -142,7 +146,7 @@ test('the ramp fixture: head 5 · varies · varies, five rows, commit `Set · 5 
 
 test('Fill: Ramp up interpolates between the two ends, and Match set 1 is the way back to a straight scheme', async (t) => {
   const sheet = await openSheet(t);
-  type(sheet.tree, 'Sets', '5');
+  setCount(sheet, 5);
   assert.equal(fill(t, sheet.tree).items[0].disabled, true, 'nothing to ramp between while the ends agree');
   type(sheet.tree, 'Set 1 reps', '5');
   type(sheet.tree, 'Set 1 load', '60');
@@ -162,24 +166,24 @@ test('Fill: Ramp up interpolates between the two ends, and Match set 1 is the wa
 test('Add set copies the row above; deleting the last row lands on the open line; twenty is the ceiling', async (t) => {
   const sheet = await openRamp(t);
   findByClass(sheet.tree, 'gym-ladder-add')[0].props.onClick();
-  assert.equal(field(sheet.tree, 'Sets').props.value, '6');
+  assert.equal(rows(sheet.tree).length, 6);
   assert.deepEqual(rows(sheet.tree)[5], ['5', '80']);
 
-  // Sets grows the same way: 6 → 7 copies the sixth.
-  type(sheet.tree, 'Sets', '7');
+  // Adding again copies the sixth set.
+  setCount(sheet, 7);
   assert.deepEqual(rows(sheet.tree)[6], ['5', '80']);
   assert.equal(rows(sheet.tree).length, 7);
 
   for (let index = 6; index > 0; index -= 1) findByClass(sheet.tree, 'gym-ladder-drop')[index].props.onClick();
   assert.deepEqual(rows(sheet.tree), [['5', '60']]);
-  assert.equal(field(sheet.tree, 'Sets').props.value, '1');
+  assert.equal(rows(sheet.tree).length, 1);
   assert.equal(commit(sheet.tree), 'Set · 1 × 5 · 60');
   findByClass(sheet.tree, 'gym-ladder-drop')[0].props.onClick();
-  assert.equal(field(sheet.tree, 'Sets').props.value, '');
+  assert.equal(rows(sheet.tree).length, 0);
   assert.deepEqual(drawn(sheet.tree, 'gym-open-line'), [OPEN_LINE]);
-  assert.deepEqual(findByClass(sheet.tree, 'gym-ladder'), []);
+  assert.deepEqual(rows(sheet.tree), []);
 
-  type(sheet.tree, 'Sets', '20');
+  setCount(sheet, 20);
   assert.equal(rows(sheet.tree).length, 20);
   findByClass(sheet.tree, 'gym-ladder-add')[0].props.onClick();
   assert.equal(rows(sheet.tree).length, 20);
@@ -191,11 +195,11 @@ test('Add set copies the row above; deleting the last row lands on the open line
 
 test('the ± is drawn on a bodyweight movement’s load fields only, named `Flip the sign — band-assisted`', async (t) => {
   const barbell = await openSheet(t);
-  type(barbell.tree, 'Sets', '3');
+  setCount(barbell, 3);
   assert.deepEqual(findByClass(barbell.tree, 'gym-target-sign'), []);
 
   const sheet = await openSheet(t, 'chin-up');
-  type(sheet.tree, 'Sets', '3');
+  setCount(sheet, 3);
   const signs = findByClass(sheet.tree, 'gym-target-sign');
   assert.equal(signs.length, 4, 'the head and the three rows');
   for (const sign of signs) {
@@ -204,13 +208,13 @@ test('the ± is drawn on a bodyweight movement’s load fields only, named `Flip
     assert.equal(sign.props.type, 'button');
   }
   type(sheet.tree, 'Reps', '8');
-  type(sheet.tree, 'Weight', '20');
+  type(sheet.tree, 'Weight · kg', '20');
   findByClass(sheet.tree, 'gym-target-sign')[0].props.onClick();
   assert.deepEqual(rows(sheet.tree), [['8', '-20'], ['8', '-20'], ['8', '-20']]);
-  assert.equal(field(sheet.tree, 'Weight').props.value, '-20');
+  assert.equal(field(sheet.tree, 'Weight · kg').props.value, '-20');
   findByClass(sheet.tree, 'gym-target-sign')[2].props.onClick();
   assert.deepEqual(rows(sheet.tree), [['8', '-20'], ['8', '20'], ['8', '-20']]);
-  assert.equal(field(sheet.tree, 'Weight').props.placeholder, VARIES_PLACEHOLDER);
+  assert.equal(field(sheet.tree, 'Weight · kg').props.placeholder, VARIES_PLACEHOLDER);
   assert.deepEqual(refusals(sheet.tree), []);
 });
 

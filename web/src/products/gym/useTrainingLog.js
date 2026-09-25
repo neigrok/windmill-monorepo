@@ -37,6 +37,10 @@ function olderAfter(page, asked) {
 // `onSignedOut` fires when the boot is answered 401; the frame settles the auth state.
 export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   const [phase, setPhase] = useState('loading');
+  const [progress, setProgress] = useState({ phase: 'loading', data: null });
+  const [revision, setRevision] = useState(0);
+  const progressRequest = useRef(0);
+  const progressLive = useRef(false);
   const [session, setSession] = useState(null);
   const [sets, setSets] = useState([]);
   const [catalog, setCatalog] = useState([]);
@@ -230,7 +234,25 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     withheld.current = [];
   }, []);
 
-  // The only two places the held session, its sets, its tag and the id ref move together.
+  const reloadProgress = useCallback(async () => {
+    if (!api.progress || !progressLive.current) return;
+    const request = ++progressRequest.current;
+    try {
+      const data = await api.progress();
+      if (progressLive.current && request === progressRequest.current) setProgress({ phase: 'ready', data });
+    } catch {
+      if (progressLive.current && request === progressRequest.current) setProgress((current) => ({ ...current, phase: 'failed' }));
+    }
+  }, [api]);
+
+  useEffect(() => {
+    progressLive.current = true;
+    reloadProgress();
+    return () => { progressLive.current = false; progressRequest.current += 1; };
+  }, [reloadProgress]);
+
+  // The mirror updates its session, sets and freshness tag together.
+
   const hold = useCallback((detail) => {
     mirrorTag.current = detail.etag ?? null;
     mirrored.current = detail.session.id;
@@ -333,6 +355,8 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   // and the walk is stamped so a page in the air cannot land on the new list. The catch must reset
   // the foot, which that bump has otherwise left loading forever. It adopts what it reads.
   const reloadLog = useCallback(async () => {
+    setRevision((current) => current + 1);
+    reloadProgress();
     const depth = Math.min(SERVER_PAGE_CAP, Math.max(LOG_PAGE, reach.current));
     walk.current += 1;
     let log;
@@ -345,7 +369,7 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     setSummaries(log);
     setOlderStatus(olderAfter(log, depth));
     await adopt(log);
-  }, [api, adopt]);
+  }, [api, adopt, reloadProgress]);
 
   // The mirror's beat: visible tab only, one immediate read on the way back to it, and the last
   // read's ETag as If-None-Match so the steady state is a 304. A failed poll keeps the last true
@@ -458,6 +482,9 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
 
   return {
     phase,
+    revision,
+    progress,
+    reloadProgress,
     // 'signal' · 'server' · 'signed-out'. Null in every other phase.
     failure,
     // The boot read, asked again.

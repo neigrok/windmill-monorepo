@@ -194,3 +194,56 @@ test('the primitive fits nothing, projects nothing and scores nothing', () => {
   }
   assert.equal(/\/ top\b|series max|normalis/.test(spoken), false, 'never normalised to the series maximum');
 });
+
+
+test('interactive reading is opt-in, keeps pinned axes and releases its readout after1500ms', async (t) => {
+  browserWith();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { DotChart } = await loadScreen('design-system/charts/DotChart.jsx');
+  const screen = renderHook(t, () => DotChart({ ...words, interactive: true, points: [{ at: AUG(1), value: 82, label: 'first measurement' }, { at: AUG(20), value: 84, label: 'last measurement' }] }));
+  const plot = () => elementsOf(screen.tree).find((each) => each.type === 'svg');
+  plot().props.onKeyDown({ key: 'ArrowLeft', preventDefault() {} });
+  assert.equal(plot().props['aria-label'], 'chart. first measurement');
+  assert.equal(elementsOf(screen.tree).find((each) => each.props['aria-live'] === 'polite').props.children, 'first measurement');
+  plot().props.onPointerUp();
+  t.mock.timers.tick(1499);
+  assert.equal(plot().props['aria-label'], 'chart. first measurement');
+  t.mock.timers.tick(1);
+  assert.equal(plot().props['aria-label'], 'chart');
+  const axis = elementsOf(screen.tree).find((each) => each.type === 'svg' && each.props['aria-hidden'] === 'true');
+  assert.equal(axis.props.style.position, 'absolute');
+  assert.equal(axis.props.style.pointerEvents, 'none');
+  assert.equal(elementsOf(axis).filter((each) => each.type === 'text').at(-1).props.textAnchor, 'end');
+  const staticScreen = renderHook(t, () => DotChart({ ...words, compact: true, points: [{ at: AUG(1), value: 82, label: 'first' }, { at: AUG(20), value: 84, label: 'last' }] }));
+  const staticPlot = elementsOf(staticScreen.tree).find((each) => each.type === 'svg');
+  assert.equal(staticPlot.props.onPointerMove, undefined);
+  assert.equal(staticPlot.props.onPointerUp, undefined);
+  assert.equal(staticPlot.props.style.touchAction, undefined);
+  assert.equal(elementsOf(staticPlot).filter((each) => each.type === 'text').at(-1).props.textAnchor, 'end');
+});
+
+test('compact axes use the plot edges and interactive gap captions stay clear of the pinned axis', async (t) => {
+  browserWith();
+  const { DotChart, dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  const layout = dotChartLayout({ ...words, compact: true, height: 64, fontSize: 13, points: [{ at: AUG(1), value: 66 }, { at: AUG(20), value: 76 }] });
+  assert.deepEqual(layout.yTicks.map(({ value, y }) => ({ value, y })), [{ value: 64.5, y: 38 }, { value: 77.5, y: 14 }]);
+  const screen = renderHook(t, () => DotChart({ ...words, interactive: true, axisFontSize: 13,
+    domain: { from: new Date(2025, 0, 1).getTime(), to: AUG(30) },
+    points: [{ at: AUG(1), value: 82, label: 'first' }, { at: AUG(9), value: 82, label: 'last' }],
+  }));
+  assert.deepEqual(findByClass(screen.tree, 'dot-chart-gap').map(textOf), ['no weigh-in · 1 Aug – 9 Aug']);
+  for (const svg of elementsOf(screen.tree).filter((element) => element.type === 'svg')) {
+    assert.equal(svg.props.height, 220);
+    assert.equal(elementsOf(svg).some((element) => element.type === 'text' && textOf(element).startsWith('no weigh-in')), false);
+  }
+});
+
+test('interactive points and focus rings have space inside the pinned axis edge', async (t) => {
+  browserWith();
+  const { DotChart } = await loadScreen('design-system/charts/DotChart.jsx');
+  const screen = renderHook(t, () => DotChart({ ...words, interactive: true, points: [{ at: AUG(1), value: 82, label: 'first' }, { at: AUG(20), value: 84, label: 'last' }] }));
+  const axes = elementsOf(screen.tree).find((each) => each.type === 'svg' && each.props['aria-hidden'] === 'true');
+  const edge = elementsOf(axes).find((each) => each.type === 'rect').props.width;
+  const first = elementsOf(screen.tree).find((each) => each.type === 'g' && each.props['aria-label'] === 'first');
+  assert.equal(elementsOf(first).find((each) => each.type === 'circle').props.cx - edge, 14);
+});

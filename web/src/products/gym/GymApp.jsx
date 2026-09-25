@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button, TabRail, Toast } from '../../design-system/index.js';
+import { Button, Toast } from '../../design-system/index.js';
+import { useAppearance } from '../../shell/useAppearance.js';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { navigate } from '../../shell/navigation.js';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
@@ -10,34 +11,35 @@ import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
 import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
 import { FinishScreen } from './Finish.jsx';
-import { LogList, SessionDetail } from './Log.jsx';
+import { LogList } from './Log.jsx';
 import { Notes } from './notes/Notes.jsx';
 import { MovementRecord } from './Record.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
 import {
-  backfillFromOf, backfillTargetOf, COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, recordFromOf, ROUTINES_HREF, routineIdOf, screenOf,
-  sessionIdOf, sharedTokenOf, threadIdOf,
+  backfillFromOf, backfillTargetOf, COACH_HREF, finishIdOf, fixSetIdOf, movementIdOf, proposalIdOf, recordFromOf, ROUTINES_HREF, routineIdOf, screenOf,
+  sessionIdOf, sharedTokenOf, sharedLogTokenOf, threadIdOf,
 } from './log.js';
+import { LogShareScreen, SharedLogScreen } from './share/LogShare.jsx';
 import { SharedSession } from './share/SharedSession.jsx';
 import { useTrainingLog } from './useTrainingLog.js';
+import { historyHref, historyQuery } from './logbook/history.js';
 import './gym.css';
 
-const TAB_SCREENS = ['routines', 'log', 'coach'];
-
-// A routable proposal opens its dialog over the routines home, so the bar under it is the home's.
 function tabOf(screen) {
-  return screen === 'proposal' ? 'routines' : screen;
+  if (['coach', 'thread', 'threads', 'notes'].includes(screen)) return 'coach';
+  if (['log', 'session', 'finish', 'backfill', 'bodyweight', 'record', 'share-log'].includes(screen)) return 'log';
+  return 'routines';
 }
 
-// Coach fills the viewport's height; the past workout takes the desk's width for its side column.
 function columnClass(screen) {
   if (screen === 'coach' || screen === 'thread') return ' has-coach';
-  if (screen === 'backfill') return ' has-desk';
+  if (['backfill', 'log', 'session', 'routine', 'record', 'share-log'].includes(screen)) return ' has-desk';
   return '';
 }
 
 export function GymApp({ hash, inShell = false }) {
   const { user, status, signOut } = useAuth();
+  const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const legacyConnect = /^#\/gym\/connect(\/|$|\?)/.test(hash || '');
@@ -45,18 +47,19 @@ export function GymApp({ hash, inShell = false }) {
     if (legacyConnect) navigate('/app/connect', { replace: true });
   }, [legacyConnect]);
   const sharedToken = sharedTokenOf(hash);
+  const sharedLogToken = sharedLogTokenOf(hash);
   if (legacyConnect) return null;
   // The token is the whole credential; this early return must stay below every hook.
-  if (sharedToken) {
+  if (sharedToken || sharedLogToken) {
     return (
-      <div className="gym-root gym-skin" data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
-        <SharedSession token={sharedToken} />
+      <div className="gym-root gym-skin" data-chrome={inShell ? 'shell' : 'own'} data-theme={theme} data-brand="gym">
+        {sharedLogToken ? <SharedLogScreen token={sharedLogToken} hash={hash} /> : <SharedSession token={sharedToken} />}
       </div>
     );
   }
 
   return (
-    <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
+    <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme={theme} data-brand="gym">
       {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
       {status === 'ghost' && (
         <>
@@ -75,9 +78,10 @@ function Chrome({ inShell, user, status, onSignIn, onSignOut }) {
   if (inShell) return null;
   return (
     <>
-      <div className="wm-post wm-post-seat">
+      <header className="gym-own-header"><div className="gym-own-seat">
         <AccountSeat
           user={user}
+          display="label"
           status={status}
           onSignIn={onSignIn}
           onSignOut={onSignOut}
@@ -85,9 +89,9 @@ function Chrome({ inShell, user, status, onSignIn, onSignOut }) {
           onConnect={() => { window.location.hash = '#/connect'; }}
         />
       </div>
-      <div className="wm-post wm-post-switch">
+      <div className="gym-own-switch">
         <ProductSwitcher current="gym" />
-      </div>
+      </div></header>
     </>
   );
 }
@@ -107,39 +111,41 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   // One instance only: a second doubles the boot read and the poll.
   const log = useTrainingLog({ onSignedOut: refresh });
   const screen = screenOf(hash);
+  const historyPositions = React.useRef(new Map());
+  const pagePositions = React.useRef(new Map());
+  const content = React.useRef(null);
+  const pageKey = screen === 'log' ? historyHref(historyQuery(hash), { selected: null }) : hash.split('?')[0];
+  React.useLayoutEffect(() => {
+    const root = content.current?.closest('.gym-root');
+    if (!root) return;
+    root.scrollTop = 0;
+    return () => { if (screen === 'log') pagePositions.current.set(pageKey, root.scrollTop); };
+  }, [pageKey, screen]);
 
   return (
     <>
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
-      <main className={`gym-column${columnClass(screen)}`}>
-        {/* An external link's proposal is the home's to open: its dialog settles into the home's own read. */}
-        {tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
-        {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
+      <TabBar screen={tabOf(screen)} />
+      <main ref={content} className={`gym-column${columnClass(screen)}`}>
+        {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
+        {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} onSignIn={onSignIn} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
         {screen === 'bodyweight' && <BodyweightScreen log={log} />}
         {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
-        {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
         {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
         {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
         {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
         {screen === 'notes' && <Notes log={log} />}
+        {screen === 'share-log' && <LogShareScreen log={log} />}
       </main>
-      {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
       <Transient transient={log.transient} />
     </>
   );
 }
 
-// The room's one transient, hosted here and not by a screen, so a withheld delete's Undo follows the
-// lifter wherever they go next. Undo does not close it: it re-reads for whatever the window is still
-// holding. The detail is a second field beside the sentence and never folded into it — `Toast` puts
-// its children in one bare span, where a newline would collapse to a space and run the two together.
-//
-// The slot stands whether or not there is a sentence in it: a live region injected in the same
-// commit as its content is a region a reader may never announce, and the deletes routed here close
-// the editor or the sheet they were taken in, so this is the only place their way back is drawn.
+// Keep the live region mounted so Undo and announcements survive screen changes.
 export function Transient({ transient }) {
   return (
     <div className="gym-toast-slot" role="status">
@@ -164,19 +170,14 @@ export function Transient({ transient }) {
   );
 }
 
-// The three rooms, in the design system's rail — which reserves its own height, so no screen under
-// it has to know how tall it is. The list here is the only place the room count is stated.
 function TabBar({ screen }) {
-  return (
-    <TabRail
-      label="Gym"
-      items={[
-        { label: 'Routines', href: ROUTINES_HREF, active: screen === 'routines' },
-        { label: 'The log', href: '#/gym/log', active: screen === 'log' },
-        { label: 'Coach', href: COACH_HREF, active: screen === 'coach' },
-      ]}
-    />
-  );
+  return <nav className="gym-tabs" aria-label="Gym">
+    {[
+      { label: 'Routines', href: ROUTINES_HREF, screen: 'routines' },
+      { label: 'The log', href: '#/gym/log', screen: 'log' },
+      { label: 'Coach', href: COACH_HREF, screen: 'coach' },
+    ].map((tab) => <a key={tab.screen} href={tab.href} aria-current={screen === tab.screen ? 'page' : undefined}>{tab.label}</a>)}
+  </nav>;
 }
 
 export default GymApp;

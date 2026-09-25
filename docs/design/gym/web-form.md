@@ -41,7 +41,7 @@ Narrow is 358 at 16px margins — the width `Gym / Set row` carries. The `Web sh
 at 20, so a narrow board's rows sit 4px left of the nav above them; the shell owns that reconciliation
 and it is ledgered as F39.
 
-Vertical: 8px grid. Row heights 44 and 56 only. Section gap 32. A board with no chrome starts its
+Vertical: 8px grid. Editable and movement row heights are 44 and 56; the history index uses 48. Section gap 32. A board with no chrome starts its
 content at 96; every board on the proposal page carries the `Web shell`, so content starts one section
 gap below it — 184 on desktop, 164 on narrow. The action band sits at the foot of the **content**, not
 the viewport, and never floats over empty canvas.
@@ -105,8 +105,9 @@ Feedback class throughout — immediate, never queued, inside the ceilings of
 
 ## The boards
 
-Every board is drawn at 1440 and 390, in Instrument and Daylight, bound to `gym/*` variables, on the
-one fixture of `web-design.md`.
+Every state is drawn at 1440 and 390, bound to `gym/*` variables, on the fixtures of `web-design.md`.
+Instrument covers every state. Daylight is drawn for Routines; the remaining Daylight matrix belongs
+to implementation wave W8.
 
 1. **Plan** — Routines, Routines empty, Routine editor (desktop split · narrow), Target sheet
    (straight · ladder · open), New routine, stale-save recovery.

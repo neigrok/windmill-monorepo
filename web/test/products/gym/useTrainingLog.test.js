@@ -889,3 +889,38 @@ test('a settings read that does not come back still opens the log, in kilograms'
   assert.deepEqual(view.log.preferences, DEFAULT_PREFERENCES);
   assert.equal(weightUnit(), 'kg');
 });
+
+
+test('progress refresh ignores older success and failure responses and stops at unmount', async (t) => {
+  browserWith();
+  const pending = [];
+  const api = {
+    exercises: async () => [], sessions: async () => [], preferences: async () => ({}),
+    progress: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
+  };
+  const view = await open(t, api);
+  const newer = view.log.reloadProgress();
+  pending[1].resolve({ asOf: 200, sessions: [] });
+  await newer;
+  pending[0].resolve({ asOf: 100, sessions: [] });
+  await settle();
+  assert.deepEqual(view.log.progress, { phase: 'ready', data: { asOf: 200, sessions: [] } });
+  const stale = view.log.reloadProgress();
+  const newest = view.log.reloadProgress();
+  pending[3].resolve({ asOf: 400, sessions: [] });
+  await newest;
+  pending[2].reject(new Error('old request failed'));
+  await stale;
+  assert.deepEqual(view.log.progress, { phase: 'ready', data: { asOf: 400, sessions: [] } });
+  const failed = view.log.reloadProgress();
+  pending[4].reject(new Error('current request failed'));
+  await failed;
+  assert.deepEqual(view.log.progress, { phase: 'failed', data: { asOf: 400, sessions: [] } });
+  const final = view.log.reloadProgress();
+  view.unmount();
+  pending[5].resolve({ asOf: 600, sessions: [] });
+  await final;
+  assert.deepEqual(view.log.progress, { phase: 'failed', data: { asOf: 400, sessions: [] } });
+  await view.log.reloadProgress();
+  assert.equal(pending.length, 6);
+});

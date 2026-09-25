@@ -21,8 +21,8 @@ export function weightUnit() {
 }
 
 // Pounds land on a tenth, half away from zero so negative (band-assisted) loads mirror.
-export function inDisplayUnit(weightKg) {
-  if (spelling !== LB) return weightKg;
+export function inDisplayUnit(weightKg, unit = spelling) {
+  if (unit !== LB) return weightKg;
   const pounds = weightKg / KILOGRAMS_PER_POUND;
   return Math.sign(pounds) * Math.round(Math.abs(pounds) * 10) / 10;
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
-import { CLOSED_ITSELF_NOTE, sessionDetailMeta } from '../../../src/products/gym/log.js';
+import { CLOSED_ITSELF_NOTE } from '../../../src/products/gym/log.js';
 import {
   browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, roomLog, settle, textOf,
 } from './harness.mjs';
@@ -227,18 +227,17 @@ test('the session’s stance and its closed-on-its-own note read the store, and 
   const room = await sessionInARoom(t);
   const quiet = () => findByClass(room.screen(), 'gym-quiet').map(textOf);
   const closed = () => findByClass(room.screen(), 'gym-detail-closed').map(textOf);
-  const meta = () => textOf(findByClass(room.screen(), 'gym-detail-when')[0]);
+  const totals = () => textOf(findByClass(room.screen(), 'gym-reader-totals')[0]);
 
   assert.deepEqual(quiet(), []);
   assert.deepEqual(closed(), [CLOSED_ITSELF_NOTE], 'the session ended on its last set’s instant');
-  assert.equal(meta(), sessionDetailMeta(session, [set]));
+  assert.equal(totals(), 'sets1reps5kg external500');
 
   deleteTheFirstSet(room);
   assert.equal(findByClass(room.screen(), 'gym-set').length, 0, 'the row is off the screen, which is all the window decides');
   assert.deepEqual(quiet(), [], 'a session holding one set the window has taken off the screen is not an empty session');
   assert.deepEqual(closed(), [CLOSED_ITSELF_NOTE], 'and how it ended is a fact about the log, which no window has changed');
-  assert.equal(meta(), sessionDetailMeta(session, []), 'the meta counts what is drawn under it');
-  assert.notEqual(sessionDetailMeta(session, []), sessionDetailMeta(session, [set]));
+  assert.equal(totals(), 'sets0reps0kg external0', 'the totals count what is drawn under them');
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
@@ -275,19 +274,79 @@ test('the log that did not open names its reason, and offers the repair for it',
   assert.deepEqual(pressed, ['sign-in', 'retry', 'retry']);
 });
 
-test('the log names its unit once, in the head, and no row or week under it repeats it', async (t) => {
+test('history uses server scope totals and names the unit once, with no legacy session estimate', async (t) => {
   browserWith();
-  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ weighIns: [], latest: null }) });
-  const { LogList } = await loadScreen('products/gym/Log.jsx');
   const summaries = [
-    { id: 'ses_2', startedAt: new Date(2026, 8, 7, 18, 0).getTime(), finishedAt: new Date(2026, 8, 7, 19, 0).getTime(), plan: { routine: 'Push A' }, workingSetCount: 9, tonnageKg: 2160, topE1rm: 76 },
-    { id: 'ses_1', startedAt: new Date(2026, 7, 24, 18, 0).getTime(), finishedAt: new Date(2026, 7, 24, 19, 0).getTime(), plan: { routine: 'Bench day' }, workingSetCount: 3, tonnageKg: 1380 },
+    { id: 'ses_2', startedAt: new Date(2026, 8, 7, 18).getTime(), finishedAt: new Date(2026, 8, 7, 19).getTime(), routineName: 'Push A', workingSetCount: 9, tonnageKg: 2160 },
+    { id: 'ses_1', startedAt: new Date(2026, 7, 24, 18).getTime(), finishedAt: new Date(2026, 7, 24, 19).getTime(), routineName: 'Bench day', workingSetCount: 3, tonnageKg: 1380 },
   ];
-  const tree = renderHook(t, () => LogList({ log: roomLog({ summaries }), onSignIn: () => {} })).tree;
-  assert.deepEqual(findByClass(tree, 'gym-log-count').map(textOf), ['2 sessions · 2 weeks loaded · loads in kg']);
-  assert.deepEqual(findByClass(tree, 'gym-week-tonnage').map(textOf), ['2,160', '1,380']);
-  const facts = elementsOf(tree)
-    .filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow')
-    .map((row) => findByClass(row.type(row.props), 'gym-row-facts').map((line) => elementsOf(line).slice(1).map(textOf)));
-  assert.deepEqual(facts, [[['9 working', '2,160', 'e1RM 76']], [['3 working', '1,380']]]);
+  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => url.includes('/history') ? { sessions: summaries, summary: { sessions: 2, sets: 12, reps: 84 }, months: [], exercises: [], routines: [], next: null } : { entries: [], latest: null } });
+  const { LogList, HistoryIndex } = await loadScreen('products/gym/Log.jsx');
+  const view = renderHook(t, () => LogList({ log: roomLog({ summaries }), onSignIn: () => {} }));
+  await settle();
+  assert.deepEqual(findByClass(view.tree, 'gym-log-count').map(textOf), ['2 workouts · 12 sets · 84 reps · loads in kg']);
+  const rows = elementsOf(HistoryIndex({ sessions: summaries })).filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow');
+  assert.deepEqual(rows.map((row) => findByClass(row.type(row.props), 'gym-row-facts').map(textOf)), [['9 sets2,160'], ['3 sets1,380']]);
+});
+
+
+test('empty filtered history names its scope and clears it without drawing unrelated progress', async (t) => {
+  browserWith();
+  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => url.includes('/history') ? { sessions: [], summary: { sessions: 0, sets: 0, reps: 0 }, months: [], exercises: [], routines: [], next: null } : { entries: [], latest: null } });
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const view = renderHook(t, () => LogList({ hash: '#/gym/log?year=2024&exercise=chin', log: roomLog({ catalog: [{ id: 'chin', name: 'Chin-up' }] }) }));
+  await settle();
+  const empty = findByClass(view.tree, 'gym-history-empty')[0];
+  assert.equal(textOf(empty), 'No Chin-up sessions in 2024.');
+  assert.equal(findByClass(view.tree, 'gym-history-workspace').length, 0);
+  assert.equal(findByClass(view.tree, 'gym-log-footer').length, 0);
+  const clear = elementsOf(empty).find((element) => typeof element.type === 'function');
+  assert.equal(clear.props.children, 'Clear filters');
+  clear.props.onClick();
+  assert.equal(window.location.hash, '#/gym/log');
+});
+
+test('an index return restores its scoped offset after paging enough history and keeps it across remounts', async (t) => {
+  browserWith();
+  const pending = [];
+  const empty = { sessions: [], summary: { sessions: 100, sets: 300, reps: 2400 }, months: [], exercises: [], routines: [], next: null };
+  global.fetch = async (url) => {
+    const query = new URL(url, 'https://windmill.test').searchParams;
+    if (url.includes('/history') && query.get('limit') === '50') return new Promise((resolve) => pending.push((data) => resolve({ ok: true, status: 200, json: async () => data })));
+    return { ok: true, status: 200, json: async () => url.includes('/history') ? empty : { entries: [], latest: null } };
+  };
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const positions = new Map([['#/gym/log', 900]]);
+  const pagePositions = new Map([['#/gym/log', 300]]);
+  const listeners = new Map();
+  const page = { scrollHeight: 1200, clientHeight: 600, scrollTop: 0, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) };
+  const log = roomLog();
+  const first = renderHook(t, () => LogList({ log, positions, pagePositions }));
+  const aside = () => findByClass(first.tree, 'gym-history-index')[0];
+  const node = { scrollHeight: 1000, clientHeight: 400, scrollTop: 0, closest: () => page };
+  aside().ref.current = node;
+  pending[0]({ ...empty, sessions: [{ id: 'new' }], next: { before: 10, beforeId: 'new' } });
+  await settle();
+  assert.equal(pending.length, 2, 'the missing scroll range fetches the next history page');
+  aside().props.onScroll({ currentTarget: { scrollTop: 600 } });
+  assert.equal(positions.get('#/gym/log'), 900, 'a temporary clamp while pages load cannot erase the destination');
+  node.scrollHeight = 1800;
+  pending[1]({ ...empty, sessions: [{ id: 'old' }] });
+  await settle();
+  assert.equal(node.scrollTop, 900);
+  assert.equal(page.scrollTop, 300);
+  page.scrollTop = 450;
+  listeners.get('scroll')();
+  assert.equal(pagePositions.get('#/gym/log'), 450);
+  aside().props.onScroll({ currentTarget: { scrollTop: 1100 } });
+  assert.equal(positions.get('#/gym/log'), 1100);
+  first.unmount();
+  const second = renderHook(t, () => LogList({ log, positions, pagePositions }));
+  const nextNode = { scrollHeight: 1900, clientHeight: 400, scrollTop: 0, closest: () => page };
+  page.scrollTop = 0;
+  findByClass(second.tree, 'gym-history-index')[0].ref.current = nextNode;
+  pending[2]({ ...empty, sessions: [{ id: 'new' }, { id: 'old' }] });
+  await settle();
+  assert.equal(nextNode.scrollTop, 1100);
+  assert.equal(page.scrollTop, 450);
 });
